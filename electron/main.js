@@ -1320,3 +1320,39 @@ ipcMain.handle('open-external', async (_, url) => {
   log.warn(`[open-external] blocked non-http URL: ${url}`);
   return false;
 });
+
+// OAuth consent in a window the app OWNS. A grant used to open in the system
+// browser (open-external), which the app can neither observe nor close — so every
+// connection ended on a stray "connected" tab. Owning the window lets a confirmed
+// grant close it, and lets the renderer hear that the user closed it.
+const authWindows = new Map();
+let nextAuthWindowId = 1;
+
+ipcMain.handle('open-auth-window', async (event, url) => {
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
+    log.warn(`[auth-window] blocked non-http URL: ${url}`);
+    return null;
+  }
+  const id = nextAuthWindowId++;
+  const win = new BrowserWindow({
+    parent: BrowserWindow.fromWebContents(event.sender) || undefined,
+    width: 520,
+    height: 760,
+    autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  authWindows.set(id, win);
+  win.on('closed', () => {
+    authWindows.delete(id);
+    if (!event.sender.isDestroyed()) event.sender.send('auth-window-closed', id);
+  });
+  log.info(`[auth-window] ${id} opened`);
+  win.loadURL(url);
+  return id;
+});
+
+ipcMain.handle('close-auth-window', async (_, id) => {
+  const win = authWindows.get(id);
+  if (win && !win.isDestroyed()) win.close();
+  return true;
+});

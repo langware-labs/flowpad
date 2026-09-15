@@ -1692,10 +1692,15 @@ def get_desktop_bootstrap_info() -> LmInfo:
     """Cheap paths and stored identity needed before the first render."""
     from flow_sdk.cloud_client import ApiConfig
     from flow_sdk.cloud_client.auth_state import login_block
+    from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
     cloud_config = ApiConfig.from_env()
     return LmInfo(
         login=login_block(),
+        # Same builder as /cloud/status, and an in-memory read. Without it the
+        # client seeded no connection slot, so a fresh load painted a signed-in
+        # hub account "Not connected" until a websocket push happened to arrive.
+        connection=hub_ws_manager.connection_payload(),
         cloud_url=cloud_config.api_base_url,
         cloud_app_url=cloud_config.app_base_url,
         paths=build_app_paths(),

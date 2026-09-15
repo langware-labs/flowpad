@@ -43,6 +43,49 @@ def _safe_next(candidate: str | None, default: str = "/") -> str:
     return candidate
 
 
+@router.get("/oauth/complete", response_class=HTMLResponse)
+async def oauth_complete(state: str = Query(""), provider: str = Query("")):
+    """Where the hub returns the browser after it stored a grant — the default flow's end.
+
+    Stores this instance's copy and tells the initiator (``complete_hub_flow``), then
+    renders the one landing: close-only when the initiator was told, the full
+    confirmation when nobody is left to tell. Never a 500 — a person is looking at it.
+    """
+    from flow_sdk.app.actions.oauth_action import complete_hub_flow
+    from flow_sdk.app.actions.oauth_templates import landing_page
+    from flow_sdk.cloud_client.shared.errors import HubError
+    from flow_sdk.core.oauth import flows
+
+    flow = flows.get_flow(state) if state else None
+    provider = flow.provider if flow is not None else provider
+    if not state or not provider:
+        return landing_page(None, delivered=False)
+
+    failure: flows.AuthFlowResult | None = None
+    try:
+        result, delivered = await complete_hub_flow(provider, state)
+        if result is None:
+            failure = flows.AuthFlowResult(
+                status=flows.AuthFlowStatus.ERROR,
+                provider=provider,
+                code="not_finished",
+                detail="The provider has not finished authorizing. Start the connection again.",
+            )
+    except HubError as exc:
+        failure = flows.AuthFlowResult(
+            status=flows.AuthFlowStatus.ERROR, provider=provider, code=exc.code or "hub_error", detail=exc.reason
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("oauth_complete: could not complete %s", provider)
+        failure = flows.AuthFlowResult(
+            status=flows.AuthFlowStatus.ERROR, provider=provider, code="completion_failed", detail=str(exc)
+        )
+    if failure is not None:
+        # Tell the initiator it failed rather than leaving its screen waiting.
+        result, delivered = failure, await flows.finish_flow(state, failure)
+    return landing_page(result, delivered=delivered)
+
+
 @router.get("/gate")
 async def gate(
     cookie_gate: str = Query(None, alias="cookie-gate"),
@@ -232,10 +275,9 @@ async def login_callback(
 @router.get("/oauth_callback", response_class=HTMLResponse)
 async def oauth_callback(state: str = "", code: str = "", error: str = ""):
     """Redeem a sandbox sign-in code only against its server-held PKCE state."""
-    from flow_sdk.cli.auth.sandbox_login import complete_sandbox_login
-    from flow_sdk.cli.auth.cloud_login import _broadcast_oauth_error
-
     from flow_sdk.app.actions.desktop_oauth import _desktop_oauth_sessions
+    from flow_sdk.cli.auth.cloud_login import _broadcast_oauth_error
+    from flow_sdk.cli.auth.sandbox_login import complete_sandbox_login
 
     provider_session = _desktop_oauth_sessions.get(state)
     if provider_session is not None:

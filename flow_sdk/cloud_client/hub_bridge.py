@@ -246,7 +246,23 @@ class HubWsBridge:
             return
         self.manager.register_handler("data_op_msg", self._on_data_op)
         self.manager.register_handler("install_request", self._on_install_request)
+        self.manager.register_handler("oauth_msg", self._on_oauth_msg)
         self._installed = True
+
+    async def _on_oauth_msg(self, message: dict) -> None:
+        """The hub says a grant it runs ended: finish the matching flow here too.
+
+        Covers a browser whose return to this instance never arrives (tab closed,
+        redirect blocked). Same completion as the landing route and the poll.
+        """
+        from flow_sdk.app.actions.oauth_action import complete_hub_flow  # noqa: PLC0415
+        from flow_sdk.core.oauth.flows import AuthFlowKind, get_flow  # noqa: PLC0415
+
+        flow_id = str(message.get("oauth_request_id") or "")
+        flow = get_flow(flow_id)
+        if flow is None or flow.kind != AuthFlowKind.HUB_CODE:
+            return
+        await complete_hub_flow(flow.provider, flow_id)
 
     def is_hub_conversation(self, conversation_id: str) -> bool:
         """Whether this conversation has been seen on the hub WS — i.e., is

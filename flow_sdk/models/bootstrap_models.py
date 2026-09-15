@@ -106,6 +106,10 @@ class LmInfo(BaseModel):
     # shape shared with another route, and modelling it here would create a second
     # definition to keep in step with that one.
     login: Optional[dict] = None
+    # The hub websocket slot ``{status, error}``, from ``hub_ws_manager.connection_payload``
+    # — the block ``GET /api/v1/cloud/status`` returns beside ``login``. Untyped for
+    # the same passthrough reason as ``login``.
+    connection: Optional[dict] = None
     cloud_url: Optional[str] = None  # FLOWPAD_HUB_URL — shown in login button tooltip
     # Hub browser application origin. Distinct from ``cloud_url``, whose
     # historical wire value is the API base ending in ``/api/v1``.

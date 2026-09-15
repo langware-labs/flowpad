@@ -411,3 +411,134 @@ async def test_catalogue_rows_survive_a_server_that_disagrees_about_the_shape():
     older = ConnectionSpec.from_wire({"provider": "github", "display_name": "GitHub"})
     assert older.credential_ref == "" and older.connected is False
     assert older.scopes == () and older.identity == "" and older.icon == ""
+
+
+def test_a_record_on_a_port_other_than_the_settings_default_is_still_borrowed():
+    """A launcher instance selected by FLOW_INSTANCE alone has no LOCAL_SERVER_PORT,
+    so ``settings.port`` is the prod default while its record says 60xx. Refusing that
+    record made `flow connections` report a healthy backend as "not conclusively down"."""
+    from flow_sdk.core.connections.service import _strict_record_generation
+
+    settings = SimpleNamespace(instance_name="oast-5", port=9007)
+    process = SimpleNamespace(instance="oast-5", create_time=5.0)
+
+    class Table:
+        ports_degraded = False
+
+        def adopt_server_json(self, instance, pid, port):
+            return (instance, pid, port) == ("oast-5", 81, 6005)
+
+        def owner_of(self, pid):
+            return process if pid == 81 else None
+
+        def listeners(self, port):
+            return [SimpleNamespace(instance="oast-5")] if port == 6005 else []
+
+    info = {"server_pid": 81, "port": 6005, "server_create_time": 5.0, "generation": None}
+    generation = _strict_record_generation(settings, info, Table())
+
+    assert generation == ServiceGeneration("oast-5", 81, 5.0, 6005, "borrowed:81:5.0")
+
+    foreign = SimpleNamespace(instance_name="oast-5", port=9007)
+    Table.listeners = lambda self, port: [SimpleNamespace(instance="prod")]
+    assert _strict_record_generation(foreign, info, Table()) is None
+
+
+def _adoption_rig(monkeypatch, *, held_after: bool):
+    """A hub provider whose owner already holds a valid grant: the delegated probe
+    passes on the FIRST call, while this machine holds nothing yet."""
+    import flow_sdk.core.connections.orchestrator as orchestrator
+    import flow_sdk.core.connections.service as service_module
+    import flow_sdk.core.connections.specs as specs_module
+
+    def spec(connected):
+        return ConnectionSpec(
+            provider="linear",
+            display_name="Linear",
+            credential_ref="linear_credentials",
+            connected=connected,
+            identity="",
+            scopes=(),
+            icon="",
+        )
+
+    catalogue_calls = 0
+
+    async def catalogue(_client):
+        nonlocal catalogue_calls
+        catalogue_calls += 1
+        return [spec(False)] if catalogue_calls == 1 else [spec(held_after)]
+
+    monkeypatch.setattr(specs_module, "_list_connection_specs_with_client", catalogue)
+
+    class Lock:
+        is_locked = True
+
+        def release(self):
+            self.is_locked = False
+
+    monkeypatch.setattr(orchestrator, "_acquire_provider_lock", lambda _provider: Lock())
+
+    class Client:
+        def __init__(self):
+            self.calls = []
+
+        async def request(self, method, path, json=None):
+            self.calls.append((method, path))
+            if path == "/api/v1/graph/secrets/is-enabled":
+                return SimpleNamespace(success=True, data={"enabled": True}, error_code=None, message=None)
+            if path == "/api/v1/graph/oauth/linear/test":
+                return SimpleNamespace(success=True, data={"ok": True, "identity": "me"}, error_code=None, message=None)
+            if path == "/api/v1/graph/oauth/linear/auth":
+                data = {"provider": "linear", "oauth_request_id": "r1", "status": "success"}
+                return SimpleNamespace(success=True, data=data, error_code=None, message=None)
+            raise AssertionError((method, path, json))
+
+    client = Client()
+
+    class LeaseContext:
+        async def __aenter__(self):
+            return SimpleNamespace(client=client)
+
+        async def __aexit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(service_module, "flow_service", LeaseContext)
+
+    class Presenter:
+        def __init__(self):
+            self.providers = []
+
+        async def present(self, authorization):
+            self.providers.append(authorization.provider)
+
+    return client, Presenter()
+
+
+async def test_a_passing_probe_on_an_unheld_row_still_adopts_through_auth(monkeypatch):
+    """The early return used to fire on `test.ok` alone. A hub provider's test is
+    delegated to the hub, so it passed before anything was adopted: connect said
+    "connected", nothing landed locally, and `require()` failed right after."""
+    client, presenter = _adoption_rig(monkeypatch, held_after=True)
+
+    result = await connect("linear", presenter)
+
+    assert result.spec.connected is True
+    # Adoption completes synchronously: no URL to present, nothing to wait for.
+    assert presenter.providers == []
+    assert client.calls == [
+        ("GET", "/api/v1/graph/secrets/is-enabled"),
+        ("GET", "/api/v1/graph/oauth/linear/test"),
+        ("POST", "/api/v1/graph/oauth/linear/auth"),
+        ("GET", "/api/v1/graph/oauth/linear/test"),
+    ]
+
+
+async def test_connect_refuses_to_report_a_credential_it_does_not_hold(monkeypatch):
+    _client, presenter = _adoption_rig(monkeypatch, held_after=False)
+
+    with pytest.raises(ConnectionConnectError) as caught:
+        await connect("linear", presenter)
+
+    assert caught.value.code == "credential_not_held"
+    assert caught.value.stage is ConnectionStage.SECRETS

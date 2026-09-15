@@ -167,7 +167,12 @@ def _pid_live(table, pid: Any) -> bool:
 def _strict_record_generation(settings, info: dict[str, Any], table) -> ServiceGeneration | None:
     pid = info.get("server_pid")
     port = info.get("port")
-    if not isinstance(pid, int) or not isinstance(port, int) or port != settings.port:
+    # The record's port is the authority, not ``settings.port``: that is only
+    # LOCAL_SERVER_PORT or the prod default, so a named instance selected by
+    # FLOW_INSTANCE alone (a launcher instance on 60xx) read as a mismatch and a
+    # healthy backend was refused as "not conclusively down". Ownership is
+    # proven below by pid, create-time and every listener on the port.
+    if not isinstance(pid, int) or not isinstance(port, int):
         return None
     if table.ports_degraded or not table.adopt_server_json(settings.instance_name, pid, port):
         return None

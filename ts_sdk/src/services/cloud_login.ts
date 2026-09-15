@@ -838,12 +838,15 @@ class CloudManager extends EventEmitter {
     if (data?.cloud_app_url) this._cloudAppUrl = data.cloud_app_url;
     else if (data?.cloud_url) this._cloudAppUrl = hubAppUrlFromApiUrl(data.cloud_url);
 
-    // Prefer nested shape; fall back to legacy aliases.
+    // Prefer nested shape; fall back to legacy aliases. EMIT: this is a refresh,
+    // not a seed. Silent here, a changed slot reached no listener — the login
+    // block below only emits when LOGIN changes, so a signed-in account whose
+    // socket came up kept rendering "Not connected" until an unrelated push.
     if (data?.connection) {
-      this._applyConnectionStatus(data.connection.status, data.connection.error ?? null, false);
+      this._applyConnectionStatus(data.connection.status, data.connection.error ?? null);
     } else {
       const legacy = legacyConnectionStatus(data ?? {});
-      if (legacy) this._applyConnectionStatus(legacy, data?.hub_ws_error ?? null, false);
+      if (legacy) this._applyConnectionStatus(legacy, data?.hub_ws_error ?? null);
     }
 
     if (data?.login) {

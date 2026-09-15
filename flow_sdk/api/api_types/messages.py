@@ -72,6 +72,8 @@ class PongMessage(BaseMessage):
 class OAuthMessageStatus(Enum):
     SUCCESS = "success"
     ERROR = "error"
+    # The hub's vocabulary already has it; a declined consent is not an error.
+    CANCELLED = "cancelled"
 
 
 class OAuthMessage(BaseMessage):
@@ -80,6 +82,11 @@ class OAuthMessage(BaseMessage):
     status: OAuthMessageStatus
     message: Optional[str] = None
     user: Optional[Dict[str, Any]] = None
+    # Carried so the initiating screen can confirm without a follow-up read.
+    # Optional: older senders omit them and older clients ignore them.
+    provider: Optional[str] = None
+    identity: Optional[str] = None
+    code: Optional[str] = None
 
 
 class HubClientErrorMessage(BaseMessage):
@@ -139,6 +146,9 @@ class APIMessage(BaseMessage, APIRequest):
     # Per-call hub-reflection opt-in for the WS-REST path (the HTTP path uses the
     # ``Hub-Reflect`` header). Default False — do not reflect.
     hub_reflect: bool = False
+    # This call names its own socket as the initiator of a flow the server answers
+    # back to (the HTTP path sends ``X-Flow-Connection-Id``).
+    carries_initiator: bool = False
 
 
 class ComputeMessage(BaseMessage):

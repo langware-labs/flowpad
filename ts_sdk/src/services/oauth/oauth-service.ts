@@ -207,6 +207,11 @@ export class OauthFlow extends EventEmitter {
       console.error(`[OAuthFlow] Window not found for OAuth request: ${this.oAuthRequestInfo.oauth_request_id}`);
     }
   }
+
+  /** The user closed the consent window, where the window can say so. Returns the unsubscribe. */
+  public onWindowClosed(listener: () => void): () => void {
+    return this.authWindow?.onClosed?.(listener) ?? (() => {});
+  }
 }
 
 export class OAuthService {
@@ -386,6 +391,7 @@ export class OAuthService {
       const actionInfo = new ActionInfo('oauth');
       if (targetEntity) actionInfo.targetEntity = targetEntity;
       actionInfo.subpath = [provider, 'auth'];
+      actionInfo.carriesInitiator = true;
       if (sharedEntityVarName) {
         actionInfo.queryParameters = { shared_entity_var_name: sharedEntityVarName };
       }
@@ -487,7 +493,7 @@ export class OAuthService {
 
       // Both popup grants need the backend to finish the exchange/adoption.
       // A loopback callback only captures the code; wait-callback exchanges it.
-      void this.drivePopupCallback(oauthFlow);
+      void this.drivePopupCallback(oauthFlow, String(raw.kind ?? ''));
 
       return oauthFlow;
     } catch (error) {
@@ -570,17 +576,20 @@ export class OAuthService {
   }
 
   /**
-   * Carry a popup grant through the backend token exchange and storage.
+   * Carry a popup grant to its end.
    *
-   * `wait-callback` answers `success` once the hub holds the token (the backend
-   * then copies it into local SOD), or `polling` when the user is still at the
-   * provider. `polling` is the backend asking to be called again — it is the
-   * protocol's own continuation, not a retry budget bolted on out here, and the
-   * loop is bounded by the popup: close it and the flow is over. Emitting
-   * OAUTH_FLOW_COMPLETE is what releases every caller's spinner, so it happens
-   * on EVERY exit, including the one where the user walks away.
+   * A hub grant (`kind: 'code'`) ends on the SERVER: the hub returns the browser
+   * to this instance, or pushes its result, and the backend answers THIS tab with
+   * an addressed `oauth_msg` (flow_sdk/core/oauth/flows.py). There is nothing to
+   * poll — only a window the user abandoned is decided here.
+   *
+   * A loopback grant needs `wait-callback` to exchange the code the callback
+   * captured; it answers once, with the terminal state.
+   *
+   * Emitting OAUTH_FLOW_COMPLETE is what releases every caller's spinner, so it
+   * happens on every exit.
    */
-  private async drivePopupCallback(flow: OauthFlow): Promise<void> {
+  private async drivePopupCallback(flow: OauthFlow, kind: string): Promise<void> {
     const { oAuthRequestInfo: info, targetEntity } = flow;
     const { provider } = info;
     const finish = async (status: OAuthStatus) => {
@@ -589,41 +598,61 @@ export class OAuthService {
       await this.onOAuthMessage({ oauth_request_id: info.oauth_request_id, status } as OAuthMessage);
     };
 
+    if (kind === 'code') {
+      this.cancelWhenAbandoned(flow);
+      return;
+    }
+
     try {
-      // `isClosed` reports whether the popup is OPEN (an inversion this class
-      // already carries); read it through the flow so the two agree.
-      for (;;) {
-        const result = await this.waitCallback(provider, info.oauth_request_id, targetEntity);
-        const status = String(result?.status ?? '');
-        if (status === 'success') {
-          await finish(OAuthStatus.SUCCESS);
-          return;
-        }
-        if (status === 'cancelled') {
-          await finish(OAuthStatus.CANCELLED);
-          return;
-        }
-        if (status !== 'pending' && status !== 'polling') {
-          console.warn(`[OAuthService] hub wait-callback for ${provider} answered ${status || 'nothing'}`);
-          await finish(OAuthStatus.ERROR);
-          return;
-        }
-        if (!flow.isClosed) {
-          // The popup is gone and the hub still has nothing: the user closed it
-          // or gave up. Say so rather than leaving the caller waiting.
-          const cancelled = await this.cancelFlow(provider, info.oauth_request_id, targetEntity);
-          if (cancelled?.status === 'success') {
-            await finish(OAuthStatus.SUCCESS);
-          } else {
-            await finish(OAuthStatus.CANCELLED);
-          }
-          return;
-        }
+      const result = await this.waitCallback(provider, info.oauth_request_id, targetEntity);
+      const status = String(result?.status ?? '');
+      if (status === 'success') {
+        await finish(OAuthStatus.SUCCESS);
+      } else if (status === 'cancelled') {
+        await finish(OAuthStatus.CANCELLED);
+      } else {
+        console.warn(`[OAuthService] wait-callback for ${provider} answered ${status || 'nothing'}`);
+        await finish(OAuthStatus.ERROR);
       }
     } catch (err) {
-      console.warn(`[OAuthService] hub wait-callback failed for ${provider}:`, err);
+      console.warn(`[OAuthService] wait-callback failed for ${provider}:`, err);
       await finish(OAuthStatus.ERROR);
     }
+  }
+
+  /**
+   * End a hub grant whose consent window the user left — the one decision the client owns.
+   *
+   * "Closed" is read only where it can be trusted: the app's own Electron window
+   * reports it, and a web popup is re-checked when this tab regains focus. A timer
+   * on `popup.closed` would cancel people mid-consent — a COOP provider (claude.ai,
+   * Google) severs the popup, which then reads closed while consent is on screen.
+   * The backend's cancel answers `success` when the hub had already finished, and
+   * stores the local copy before saying so.
+   */
+  private cancelWhenAbandoned(flow: OauthFlow): void {
+    const { oAuthRequestInfo: info, targetEntity } = flow;
+    let stopped = false;
+    const stop = () => {
+      stopped = true;
+      window.removeEventListener('focus', onFocus);
+      offClosed();
+    };
+    const check = async () => {
+      if (stopped) return;
+      if (!this.oAuthFlows.has(info.oauth_request_id)) return stop();
+      // `isClosed` reports whether the window is OPEN — an inversion this class carries.
+      if (flow.isClosed) return;
+      stop();
+      const cancelled = await this.cancelFlow(info.provider, info.oauth_request_id, targetEntity);
+      if (!this.oAuthFlows.has(info.oauth_request_id)) return;
+      const status = cancelled?.status === 'success' ? OAuthStatus.SUCCESS : OAuthStatus.CANCELLED;
+      await this.onOAuthMessage({ oauth_request_id: info.oauth_request_id, status } as OAuthMessage);
+    };
+    const onFocus = () => void check();
+    window.addEventListener('focus', onFocus);
+    const offClosed = flow.onWindowClosed(() => void check());
+    flow.on(OAuthEventType.WINDOW_CLOSE, stop);
   }
 
   /**
