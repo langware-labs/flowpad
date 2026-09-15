@@ -18,7 +18,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
-import { getViewMode, rememberedDockViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { getViewMode, rememberedDockViewMode, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
@@ -63,6 +63,12 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> {
  */
 export interface NavigationCommitOptions {
   replace?: boolean;
+  /**
+   * The user switched view mode (the footer toggle). Travels as history state so
+   * `useDockViewModeOverrideSync` can tell it from a redirect that merely adds a
+   * mode to a bare URL — only a switch saves the preference.
+   */
+  viewModeSwitch?: boolean;
 }
 
 interface PendingDockNavigation {
@@ -258,6 +264,7 @@ export class NavigationActions {
       routerUrl,
       willNavigate,
       replace: opts?.replace === true,
+      viewModeSwitch: opts?.viewModeSwitch === true,
       historyLen: window.history.length,
     });
     if (willNavigate) {
@@ -265,7 +272,10 @@ export class NavigationActions {
       // A hand-written pushState/popstate updates useLocation but can bypass
       // data-router revalidation, leaving the new URL rendered against stale
       // context. Every dock transition therefore enters through navigate().
-      void this.navigate(routerUrl, opts?.replace ? { replace: true } : undefined);
+      void this.navigate(routerUrl, {
+        ...(opts?.replace ? { replace: true } : {}),
+        ...(opts?.viewModeSwitch ? { state: VIEW_MODE_SWITCH_STATE } : {}),
+      });
     }
   }
 
