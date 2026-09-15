@@ -32,8 +32,8 @@ from flow_sdk.core import action as core_action
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.ingest.driver import SendOutcome, SetupVerdict
 from flow_sdk.ingest.health import SourceHealth
+from flow_sdk.ingest.sources import SendOutcome
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
@@ -363,7 +363,7 @@ class DataSource(Entity):
         unsupported attachment or recipient shape before provider I/O begins.
         """
         from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
         if spec.attachments:
             raise NotImplementedError(
@@ -373,7 +373,7 @@ class DataSource(Entity):
         if len(spec.to) != 1:
             raise ValueError(f"exactly one recipient for now, got {len(spec.to)}")
 
-        driver = get_driver(self.provider)
+        driver = source_type(self.provider)
         if driver is None or not driver.sends:
             raise RuntimeError(f"the {self.provider} driver cannot send")
         return await driver.send(
@@ -394,14 +394,14 @@ class DataSource(Entity):
         ingested reply returns without needless network I/O.
         """
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
         from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
 
         expected = _normalize_message_id(sent.external_id)
         if not expected:
             raise ValueError("cannot expect a reply to a send with no external_id")
-        driver = get_driver(self.provider)
+        driver = source_type(self.provider)
 
         while True:
             items = await SourceItem.get_all({"data_source_id": self.id})
@@ -410,15 +410,10 @@ class DataSource(Entity):
                     return SourceItemSpec.model_validate(
                         {key: getattr(item, key) for key in SourceItemSpec.model_fields}
                     )
-            if driver is not None and driver.wait_for_reply is not None:
+            if driver is not None and driver.finds_replies:
                 reply = await driver.wait_for_reply(self, str(sent.external_id))
                 await ingest_items([reply])
                 return reply
-            if driver is not None and driver.find_reply is not None:
-                reply = await driver.find_reply(self, str(sent.external_id))
-                if reply is not None:
-                    await ingest_items([reply])
-                    return reply
             else:
                 await sync_source(self, now=datetime.now(timezone.utc))
 
@@ -760,19 +755,8 @@ class DataSource(Entity):
 
             self.owner = await owner_of(self)
         if self.status == SourceStatus.NEW.value:
-            # An AUTHORED source's driver comes from a row, not an import, so it
-            # may not be registered yet on a cold process. Resolving NEW without
-            # it would send a source that HAS a setup step straight to ACTIVE.
-            from flow_sdk.ingest.driver import DRIVERS  # noqa: PLC0415
-            from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
-
-            # Only when the answer isn't already in hand: a shipped provider is
-            # registered at import, and warming the spec table for it is a DB
-            # round trip on a request a person is waiting on.
-            if self.provider not in DRIVERS:
-                await refresh_spec_drivers(self.provider)
-            driver = self._driver()
-            if driver is not None and driver.verify is not None:
+            stype = self._driver()
+            if stype is not None and stype.has_setup:
                 self.status = SourceStatus.SETUP.value
                 if not self.setup_detail:
                     self.setup_detail = "Finish setup, then press Verify."
@@ -791,18 +775,14 @@ class DataSource(Entity):
         self._validate_config(spec)
         self._coerce_reflect(spec)
         if not (self.channel or "").strip():
-            # Stamp the channel at CREATE, not first poll: the credential probe
-            # keys on it (Verify on a fresh source probed nothing) and the UI
-            # badges by it. `sync_source` keeps re-stamping every poll, so this
-            # is the first answer, not a fork of the rule. The driver is asked
-            # DIRECTLY — not through `channel_of_driver`, whose provider
-            # fallback is indistinguishable from a driver whose channel simply
-            # IS its provider name (agentmail). A driver that answers empty
-            # (agent transport with no connector yet) stamps nothing.
-            driver = self._driver()
-            if driver is not None and driver.channel_for is not None:
+            # Stamp the channel at CREATE, not first poll: the credential probe keys on it (Verify on
+            # a fresh source probed nothing) and the UI badges by it. `sync_source` keeps re-stamping
+            # every poll; a type that answers empty (a file source, an agent transport with no
+            # connector yet) stamps nothing here.
+            stype = self._driver()
+            if stype is not None:
                 try:
-                    stamped = str(driver.channel_for(self) or "").strip()
+                    stamped = str(stype.channel_for(self) or "").strip()
                 except Exception:  # noqa: BLE001 — a probe must never fail a save
                     stamped = ""
                 if stamped:
@@ -967,26 +947,18 @@ class DataSource(Entity):
         ``SourceError`` centrally rather than asking each driver to.
         """
         from flow_sdk.builtin.data_source_spec import DataSourceSpec
-        from flow_sdk.ingest.driver import DRIVERS, get_driver  # noqa: PLC0415
         from flow_sdk.ingest.health import SourceError  # noqa: PLC0415
-        from flow_sdk.ingest.spec_registry import refresh_spec_drivers  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
         from flow_sdk.schema.data_spec.choice_spec import ChoiceSet  # noqa: PLC0415
+        from flow_sdk.sources import errors as contract  # noqa: PLC0415
 
         spec = await DataSourceSpec.get_one({"name": provider})
         field_spec = (spec.config or {}).get(field) if spec is not None else None
         if field_spec is None or not field_spec.choices:
             return None
 
-        # Only when the answer isn't already in hand — the guard `save` makes for the
-        # same reason. A shipped provider is registered at import, so warming the spec
-        # table for it is a DB round trip on a popover a person is waiting on; but the
-        # registry IS empty on a request that arrives before anything imported the
-        # drivers package, and without the refresh every picker would then report "this
-        # provider can't list" on a driver that can.
-        if provider not in DRIVERS:
-            await refresh_spec_drivers(provider)
-        driver = get_driver(provider)
-        if driver is None or driver.choices is None:
+        stype = source_type(provider)
+        if stype is None or not stype.offers_choices:
             # The shipped-manifest test catches this pairing at CI. At runtime — a spec
             # authored outside this repo — it still must not be a dead end.
             logger.warning("[ingest] %s declares choices on %r but its driver offers none", provider, field)
@@ -994,7 +966,9 @@ class DataSource(Entity):
 
         draft = cls(provider=provider, config=spec.coerce_config(dict(config or {})))
         try:
-            return ChoiceSet(items=await driver.choices(draft, field))
+            return ChoiceSet(items=await stype.choices(draft, field))
+        except contract.SourceError as exc:
+            return ChoiceSet(detail=str(exc))
         except SourceError as exc:
             # `detail`, not `str(exc)`: the latter prefixes the machine code
             # ("no_project: Set 'GCP project'…"), and this sentence is rendered verbatim
@@ -1082,9 +1056,9 @@ class DataSource(Entity):
         return await sync_source(self, budget=budget or DEFAULT_SEGMENT_BUDGET)
 
     def _driver(self):
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
-        return get_driver(self.provider)
+        return source_type(self.provider)
 
     async def _verify_connection(self) -> Optional[str]:
         """None when the token works; otherwise why it does not.
@@ -1106,18 +1080,15 @@ class DataSource(Entity):
             return str(data.get("detail") or "the stored credential was refused")
         return None
 
-    async def _verify_setup(self, driver) -> "SetupVerdict":
-        from flow_sdk.ingest.driver import SetupVerdict  # noqa: PLC0415
+    async def _verify_setup(self, stype):
+        """The type's setup verdict; a source that raises becomes a verdict, never a 500."""
+        from flow_sdk.sources.protocols import Verdict  # noqa: PLC0415
 
-        check = driver.verify
-        if check is None:
-            # A driver with no setup step is ready as soon as it is configured.
-            return SetupVerdict.ok()
         try:
-            return await check(self)
-        except Exception as exc:  # noqa: BLE001 — a driver must not 500 the button
+            return await stype.verify(self)
+        except Exception as exc:  # noqa: BLE001 — a source must not 500 the button
             logger.warning("verify failed for %s: %s", self.id, exc, exc_info=True)
-            return SetupVerdict.waiting(f"could not verify: {exc}")
+            return Verdict(ready=False, detail=f"could not verify: {exc}")
 
     async def delete(self):
         """The verb in-process callers actually use."""

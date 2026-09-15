@@ -28,8 +28,8 @@ from flow_sdk.builtin.agentic_process.launch_health import (
     emit_launch_failed,
     ensure_launchable,
 )
-from flow_sdk.ingest.driver import ingest_run_context
 from flow_sdk.ingest.health import SourceError
+from flow_sdk.ingest.sources import ingest_run_context
 from flow_sdk.sources.providers.agent import profile_of
 
 logger = logging.getLogger(__name__)

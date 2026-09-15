@@ -73,11 +73,10 @@ async def email_source_for_agent(agent_id: str) -> "Optional[DataSource]":
     most — reporting state, and disabling — have to work when there is no
     mailbox at all and therefore no projection to hang it off.
     """
-    import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
-    CloudEmailDriver = get_driver("cloud_email")  # noqa: N806 — the registered source
+    CloudEmailDriver = source_type("cloud_email")  # noqa: N806 — the registered source
 
     return await DataSource.find_for_account(
         CloudEmailDriver.provider,
@@ -561,11 +560,10 @@ class EmailInbox(Entity):
         Writes only when something actually changed — this runs on every read of
         the inbox state, and an unconditional save put a row write on a poll.
         """
-        import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
         from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
-        CloudEmailDriver = get_driver("cloud_email")  # noqa: N806 — the registered source
+        CloudEmailDriver = source_type("cloud_email")  # noqa: N806 — the registered source
 
         config = {
             CloudEmailDriver.identity_config_key: self.agent_id,

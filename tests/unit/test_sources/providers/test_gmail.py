@@ -13,15 +13,16 @@ from types import SimpleNamespace
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
-from flow_sdk.ingest.driver import SegmentCursorView, get_driver
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, Credentials
 from flow_sdk.sources.providers.gmail import GmailSource, smtp_message
 from flow_sdk.sources.providers.gmail import source as gmail_source
 from flow_sdk.sources.testing import Subject, checks_for
+from tests.unit._ingest_helpers import position
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -142,7 +143,7 @@ def _row(**config):
 
 
 def _view(state=None, window_start=None):
-    return SegmentCursorView(segment_key="INBOX", state=state or {}, window_start=window_start, first_run=not state)
+    return position(segment_key="INBOX", prior=state or {}, window_start=window_start)
 
 
 @pytest.mark.parametrize("check", checks_for(GmailSource), ids=str)
@@ -163,44 +164,44 @@ def test_gmail_is_a_registered_message_source_with_env_only_auth():
     manifest = json.loads(
         (Path(__file__).parents[4] / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/gmail/data_source.json").read_text()
     )
-    driver = get_driver("gmail")
+    driver = source_type("gmail")
     assert (driver.kind, driver.sends, driver.identity_config_key) == ("datasource.api.gmail", True, "address")
     assert manifest["auth"]["env"] == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"] and "app_password" not in manifest["config"]
 
 
 async def test_the_password_is_a_credential_with_googles_display_spacing_dropped(monkeypatch):
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "abcd efgh ijkl mnop")
-    source = await get_driver("gmail").open(_row())
+    source = await source_type("gmail").open(_row())
     assert source.credentials.value("app_password") == "abcdefghijklmnop" and "app_password" not in source.config
 
 
 async def test_the_address_falls_back_to_the_environment(monkeypatch):
     monkeypatch.setenv("GMAIL_ADDRESS", "env@gmail.com")
-    source = await get_driver("gmail").open(_row(address=""))
+    source = await source_type("gmail").open(_row(address=""))
     assert source.address == "env@gmail.com"
 
 
 async def test_an_imap_message_maps_and_advances_the_uid_cursor(gmail):
     gmail.deliver(_raw(), "9988", uid=7)
-    result = await get_driver("gmail").fetch(_row(), _view({"uid_validity": "44", "last_uid": 6}))
+    result = await source_type("gmail").traverse(_row(), _view({"uid_validity": "44", "last_uid": 6}))
     (item,) = result.items
     assert (item.external_id, item.thread_key, item.reply_to_external_id) == ("<incoming@gmail.test>", "captain@gmail.com:9988", "<question@gmail.test>")
     assert (item.author_external_id, item.body.strip()) == ("sailor@example.com", "The treasure is under the mast.")
     assert ("SEARCH", None, "UID 7:*") in gmail.calls
-    assert result.next_state == {"cursor": GmailSource.resume_at("44", 7)}
+    assert result.cursor == GmailSource.resume_at("44", 7)
 
 
 async def test_changed_uid_validity_resets_the_cursor_and_supplies_stable_identity(gmail):
     gmail.validity = "45"
     gmail.deliver(_raw(message_id=""), "7", uid=1)
-    result = await get_driver("gmail").fetch(_row(), _view({"cursor": GmailSource.resume_at("44", 900)}))
-    assert result.items[0].external_id == "imap:45:1" and result.next_state == {"cursor": GmailSource.resume_at("45", 1)}
+    result = await source_type("gmail").traverse(_row(), _view({"cursor": GmailSource.resume_at("44", 900)}))
+    assert result.items[0].external_id == "imap:45:1" and result.cursor == GmailSource.resume_at("45", 1)
 
 
 async def test_a_refused_login_needs_a_person(gmail, monkeypatch):
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "wrong")
     with pytest.raises(Exception) as caught:
-        await get_driver("gmail").fetch(_row(), _view())
+        await source_type("gmail").traverse(_row(), _view())
     assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
 
 
@@ -227,7 +228,7 @@ def test_imap_page_is_fetched_in_one_round_trip():
 
 async def test_a_reply_routes_to_the_author_with_the_reply_headers(gmail):
     gmail.deliver(_raw(), "9988")
-    out = await get_driver("gmail").send(_row(), thread_key="", to="sailor@example.com", text="Arr.", in_reply_to="<incoming@gmail.test>")
+    out = await source_type("gmail").send(_row(), thread_key="", to="sailor@example.com", text="Arr.", in_reply_to="<incoming@gmail.test>")
     (sent,) = gmail.sent
     assert (sent["To"], sent["In-Reply-To"], sent["Subject"]) == ("sailor@example.com", "<incoming@gmail.test>", "Re: Treasure")
     assert out.external_id == str(sent["Message-ID"]) and out.recorded is False
@@ -285,7 +286,7 @@ async def test_reply_wait_reuses_the_targeted_lookup(monkeypatch):
     monkeypatch.setattr(gmail_source, "_find_reply_messages", lambda active, external_id: searches.pop(0))
     monkeypatch.setattr(gmail_source, "close_inbox", lambda active: closes.append(active))
 
-    reply = await get_driver("gmail").wait_for_reply(_row(), "<question@gmail.test>")
+    reply = await source_type("gmail").wait_for_reply(_row(), "<question@gmail.test>")
 
     assert reply.external_id == "<incoming@gmail.test>"
     assert opens == [(ADDRESS, "password"), (ADDRESS, "password")] and len(closes) == 2

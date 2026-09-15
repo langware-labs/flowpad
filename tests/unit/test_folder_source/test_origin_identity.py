@@ -46,6 +46,7 @@ async def test_re_observing_the_same_origin_keeps_one_entity(
         {"data_source_id": source.id, "segment_key": "root"}
     )
     cursor.state = {}
+    cursor.manifest = {}
     await cursor.save()
 
     await poll(source)
@@ -73,6 +74,7 @@ async def test_switching_reflect_mode_keeps_one_entity(
         {"data_source_id": source.id, "segment_key": "root"}
     )
     cursor.state = {}
+    cursor.manifest = {}
     await cursor.save()
 
     await poll(source)

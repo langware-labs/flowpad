@@ -1,7 +1,7 @@
 """``docs/snippets/agent-email.md``, run as written with the Hub legs stubbed.
 
 ``flow_sdk.auth.login`` and ``Agent.allocate_inbox`` reach the Hub; here they answer a fake
-allocation. The mail is a ``ScriptedDriver`` under ``cloud_email`` and the worker is the mock.
+allocation. The mail is a ``ScriptedSource`` under ``cloud_email`` and the worker is the mock.
 The live leg is ``tests/hub_tests/test_agent_email_conversation.py``.
 """
 

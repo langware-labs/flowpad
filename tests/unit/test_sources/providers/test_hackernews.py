@@ -8,17 +8,17 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.ingest.driver import SegmentCursorView, get_driver
 from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.ingest.sources import source_type
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.sources import CloudOrigin
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.providers.hackernews import STREAM_KEY, HackerNewsSource
 from flow_sdk.sources.testing import Subject, checks_for
-from tests.unit._ingest_helpers import local_http_server, make_data_source
+from tests.unit._ingest_helpers import local_http_server, make_data_source, position
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -63,8 +63,8 @@ def _row(base: str, **config):
     return make_data_source("hackernews", kind="datasource.api.hackernews", name="HN", config={"base_url": base, **config})
 
 
-def _view(state=None) -> SegmentCursorView:
-    return SegmentCursorView(segment_key=STREAM_KEY, state=state or {}, window_start=(NOW - timedelta(days=7)).isoformat())
+def _view(state=None):
+    return position(segment_key=STREAM_KEY, prior=state or {}, window_start=(NOW - timedelta(days=7)).isoformat())
 
 
 @pytest.mark.parametrize("check", checks_for(HackerNewsSource), ids=str)
@@ -76,11 +76,11 @@ async def test_conformance(check, hn_server):
 
 
 async def test_hacker_news_has_exactly_one_segment(hn_server):
-    assert [ref.key for ref in await get_driver("hackernews").segments(_row(hn_server))] == [STREAM_KEY]
+    assert [ref.key for ref in await source_type("hackernews").segments(_row(hn_server))] == [STREAM_KEY]
 
 
 async def test_changed_ids_are_hydrated_and_filtered(hn_server):
-    result = await get_driver("hackernews").fetch(_row(hn_server), _view())
+    result = await source_type("hackernews").traverse(_row(hn_server), _view())
     assert sorted(item.external_id for item in result.items) == ["101", "102"], "comments and deleted items are filtered"
     story = next(item for item in result.items if item.external_id == "101")
     assert (story.name, story.author_display) == ("A story about narwhals", "ada")
@@ -88,20 +88,20 @@ async def test_changed_ids_are_hydrated_and_filtered(hn_server):
 
 
 async def test_min_score_filter(hn_server):
-    result = await get_driver("hackernews").fetch(_row(hn_server, min_score=50), _view())
+    result = await source_type("hackernews").traverse(_row(hn_server, min_score=50), _view())
     assert [item.external_id for item in result.items] == ["101"]
 
 
 async def test_an_empty_update_set_is_the_free_no_op(hn_server):
     _STATE["updates"] = []
-    result = await get_driver("hackernews").fetch(_row(hn_server), _view())
-    assert result.unchanged and result.items == [] and result.next_state == {}
+    result = await source_type("hackernews").traverse(_row(hn_server), _view())
+    assert result.unchanged and result.items == [] and result.cursor is None
 
 
 async def test_5xx_is_transient(hn_server):
     _STATE["fail"] = True
     with pytest.raises(Exception) as caught:
-        await get_driver("hackernews").fetch(_row(hn_server), _view())
+        await source_type("hackernews").traverse(_row(hn_server), _view())
     assert classify(caught.value)[0] is SourceHealth.TRANSIENT_ERROR
 
 

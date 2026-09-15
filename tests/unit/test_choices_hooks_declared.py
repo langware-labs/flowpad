@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped providers
-from flow_sdk.ingest.driver import get_driver
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
+from flow_sdk.ingest.sources import source_type
 from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -38,7 +38,7 @@ def test_a_choosable_field_has_a_driver_that_can_list_it(path: Path):
     if not choosable:
         return  # nine of the twelve ask for an address the user already knows
 
-    driver = get_driver(manifest.name)
+    driver = source_type(manifest.name)
     assert driver is not None, f"{manifest.name} declares choices but registers no driver"
     assert driver.choices is not None, (
         f"{manifest.name} marks {choosable} choosable, but its driver has no `choices` hook — "

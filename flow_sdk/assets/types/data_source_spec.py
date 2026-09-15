@@ -27,7 +27,7 @@ def data_source_spec_identity_key(ref: "FSRef | Path") -> str:
     install location, which the provider picker rendered as one button each.
 
     ``name`` is already the type's unique key everywhere else — the driver
-    registry is a flat dict that refuses a collision (`ingest/spec_registry.py`),
+    registry is a flat dict that refuses a collision (`ingest/sources.py`),
     `DataSource` resolves its spec with ``get_one({"name": provider})``, and the
     dialog keys its lookup map by it. Identity just agrees with that now.
 

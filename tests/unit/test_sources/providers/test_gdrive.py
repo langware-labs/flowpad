@@ -15,15 +15,15 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
-from flow_sdk.ingest.driver import SegmentCursorView, get_driver
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, Credentials
 from flow_sdk.sources.errors import SourceError
 from flow_sdk.sources.providers.gdrive import DriveSource
 from flow_sdk.sources.testing import Subject, checks_for
-from tests.unit._ingest_helpers import local_http_server, make_data_source
+from tests.unit._ingest_helpers import local_http_server, make_data_source, position
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -39,7 +39,7 @@ def _credentials(credentials):
 
 @pytest.fixture
 def driver(monkeypatch):
-    gdrive = get_driver("gdrive")
+    gdrive = source_type("gdrive")
     monkeypatch.setattr(gdrive, "_credentials", _credentials(TOKEN))
     return gdrive
 
@@ -48,8 +48,8 @@ def _source(tmp_path, base: str, **config):
     return make_data_source("gdrive", name="Drive test", config={"base_url": base, "cache_root": str(tmp_path / "cache"), **config})
 
 
-def _view(state: dict | None = None, segment: str = "root") -> SegmentCursorView:
-    return SegmentCursorView(segment_key=segment, state=state or {}, first_run=not state)
+def _view(state: dict | None = None, segment: str = "root"):
+    return position(segment_key=segment, prior=state or {})
 
 
 def _file(file_id: str, name: str, mime: str = "text/plain") -> dict:
@@ -114,46 +114,46 @@ async def test_conformance(check):
 async def test_first_pass_enumerates_then_takes_a_start_token(driver, tmp_path):
     drive = _Drive(files=[_file("f1", "one.txt"), _file("f2", "two.txt")])
     with local_http_server(drive) as base:
-        result = await driver.fetch(_source(tmp_path, base), _view())
+        result = await driver.traverse(_source(tmp_path, base), _view())
 
     assert len(result.refs) == 2
     # Enumerate, THEN ask where the log starts; downloads follow and cannot affect that window.
     assert drive.calls[:2] == ["/files", "/changes/startPageToken"]
     assert sorted(drive.calls[2:]) == ["/files/f1", "/files/f2"]
-    assert result.next_state["cursor"] == DriveSource.changes_from("T1")
+    assert result.cursor == DriveSource.changes_from("T1")
 
 
 async def test_a_google_doc_is_exported_not_downloaded(driver, tmp_path):
     drive = _Drive(files=[_file("d1", "notes", "application/vnd.google-apps.document")])
     with local_http_server(drive) as base:
-        result = await driver.fetch(_source(tmp_path, base), _view())
+        result = await driver.traverse(_source(tmp_path, base), _view())
     assert [Path(r).name for r in result.refs] == ["notes.md"] and "/files/d1/export" in drive.calls
     assert Path(result.refs[0]).read_bytes() == b"# exported"
 
 
 async def test_a_native_type_with_no_export_target_is_not_listed(driver, tmp_path):
     with local_http_server(_Drive(files=[_file("x1", "signup", "application/vnd.google-apps.form")])) as base:
-        result = await driver.fetch(_source(tmp_path, base), _view())
+        result = await driver.traverse(_source(tmp_path, base), _view())
     assert result.refs == [] and result.unchanged is True
 
 
 async def test_a_folder_is_never_a_ref(driver, tmp_path):
     drive = _Drive(files=[_file("dir1", "Reports", "application/vnd.google-apps.folder"), _file("f1", "one.txt")])
     with local_http_server(drive) as base:
-        result = await driver.fetch(_source(tmp_path, base), _view())
+        result = await driver.traverse(_source(tmp_path, base), _view())
     assert [Path(r).name for r in result.refs] == ["one.txt"]
 
 
 async def test_origin_id_is_the_drive_file_id(driver, tmp_path):
     with local_http_server(_Drive(files=[_file("f1", "one.txt")])) as base:
         source = _source(tmp_path, base)
-        result = await driver.fetch(source, _view())
+        result = await driver.traverse(source, _view())
     assert driver.origin_id_for(source, result.refs[0]) == "gdrive:f1"
 
 
 async def test_a_name_that_would_traverse_is_reduced_to_one_segment(driver, tmp_path):
     with local_http_server(_Drive(files=[_file("f1", "../../escape.txt")])) as base:
-        result = await driver.fetch(_source(tmp_path, base), _view())
+        result = await driver.traverse(_source(tmp_path, base), _view())
     placed = Path(result.refs[0])
     assert placed.parent == (tmp_path / "cache").resolve() and placed.name == ".._.._escape.txt"
 
@@ -164,40 +164,40 @@ async def test_a_name_that_would_traverse_is_reduced_to_one_segment(driver, tmp_
 async def test_a_later_pass_follows_the_log_and_never_enumerates(driver, tmp_path):
     drive = _Drive(changes=[{"fileId": "f9", "file": _file("f9", "new.txt")}])
     with local_http_server(drive) as base:
-        result = await driver.fetch(_source(tmp_path, base), _view({"cursor": DriveSource.changes_from("T1")}))
+        result = await driver.traverse(_source(tmp_path, base), _view({"cursor": DriveSource.changes_from("T1")}))
     assert "/files" not in drive.calls, "a source that walks is a folder source wearing a Drive hat"
     assert [Path(r).name for r in result.refs] == ["new.txt"]
-    assert result.next_state["cursor"] == DriveSource.changes_from("T2")
+    assert result.cursor == DriveSource.changes_from("T2")
 
 
 async def test_a_delta_leaves_what_it_did_not_mention_alone(driver, tmp_path):
     drive = _Drive(files=[_file("f1", "one.txt"), _file("f2", "two.txt")])
     with local_http_server(drive) as base:
         source = _source(tmp_path, base)
-        first = await driver.fetch(source, _view())
+        first = await driver.traverse(source, _view())
         drive.changes = [{"fileId": "f3", "file": _file("f3", "three.txt")}]
-        second = await driver.fetch(source, _view(first.next_state))
+        second = await driver.traverse(source, _view(first))
     assert second.tombstones == [], "a file the log did not mention is not gone"
-    assert set(second.next_state["manifest"]) == {"f1", "f2", "f3"}
+    assert set(second.manifest) == {"f1", "f2", "f3"}
 
 
 async def test_a_removal_becomes_a_tombstone(driver, tmp_path):
     drive = _Drive(files=[_file("f1", "one.txt")])
     with local_http_server(drive) as base:
         source = _source(tmp_path, base)
-        first = await driver.fetch(source, _view())
+        first = await driver.traverse(source, _view())
         drive.changes = [{"fileId": "f1", "removed": True}]
-        second = await driver.fetch(source, _view(first.next_state))
-    assert [Path(t).name for t in second.tombstones] == ["one.txt"] and second.next_state["manifest"] == {}
+        second = await driver.traverse(source, _view(first))
+    assert [Path(t).name for t in second.tombstones] == ["one.txt"] and second.manifest == {}
 
 
 async def test_a_trashed_file_is_a_removal_too(driver, tmp_path):
     drive = _Drive(files=[_file("f1", "one.txt")])
     with local_http_server(drive) as base:
         source = _source(tmp_path, base)
-        first = await driver.fetch(source, _view())
+        first = await driver.traverse(source, _view())
         drive.changes = [{"fileId": "f1", "file": {**_file("f1", "one.txt"), "trashed": True}}]
-        second = await driver.fetch(source, _view(first.next_state))
+        second = await driver.traverse(source, _view(first))
     assert len(second.tombstones) == 1 and not second.refs
 
 
@@ -205,9 +205,9 @@ async def test_a_rename_carries_the_identity_and_clears_the_stale_bytes(driver, 
     drive = _Drive(files=[_file("f1", "draft.txt")])
     with local_http_server(drive) as base:
         source = _source(tmp_path, base)
-        first = await driver.fetch(source, _view())
+        first = await driver.traverse(source, _view())
         drive.changes = [{"fileId": "f1", "file": _file("f1", "final.txt")}]
-        second = await driver.fetch(source, _view(first.next_state))
+        second = await driver.traverse(source, _view(first))
     (new, old), = second.renames.items()
     assert (Path(new).name, Path(old).name) == ("final.txt", "draft.txt") and not second.tombstones
     assert not Path(old).exists() and driver.origin_id_for(source, new) == "gdrive:f1"
@@ -220,7 +220,7 @@ async def test_a_legacy_cursor_and_index_keep_their_removals(driver, tmp_path):
     cache.mkdir()
     (cache / ".gdrive-index.json").write_text(json.dumps({"one.txt": "f1"}))
     with local_http_server(_Drive(changes=[{"fileId": "f1", "removed": True}])) as base:
-        result = await driver.fetch(_source(tmp_path, base), _view({"page_token": "T1", "index": {"one.txt": "f1"}}))
+        result = await driver.traverse(_source(tmp_path, base), _view({"page_token": "T1", "index": {"one.txt": "f1"}}))
     assert [Path(t).name for t in result.tombstones] == ["one.txt"]
 
 
@@ -231,7 +231,7 @@ async def test_a_legacy_cursor_and_index_keep_their_removals(driver, tmp_path):
 async def test_a_refusal_needs_a_person_and_a_server_error_does_not(driver, tmp_path, status, health):
     with local_http_server(lambda path, headers: (status, b"{}", {})) as base:
         with pytest.raises(SourceError) as caught:
-            await driver.fetch(_source(tmp_path, base), _view())
+            await driver.traverse(_source(tmp_path, base), _view())
     assert classify(caught.value)[0] is health
 
 
@@ -274,4 +274,4 @@ async def test_the_picker_answers_nothing_for_a_field_it_does_not_furnish(driver
 
 
 async def test_the_cache_is_never_stamped():
-    assert get_driver("gdrive").stamps_identity is False
+    assert source_type("gdrive").stamps_identity is False

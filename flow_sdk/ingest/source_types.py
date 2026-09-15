@@ -1,8 +1,8 @@
-"""Provider drivers — the only modules allowed to know a provider's shape.
+"""The shipped source types — each contract source class with the application hooks it needs.
 
-Importing this package registers every shipped driver. Nothing outside
-``drivers/`` may read a provider-private key out of a cursor's ``state``;
-``test_cursor_state_is_opaque_to_the_subsystem`` enforces that by grep.
+Importing this module registers them. It is the one application module that knows a provider's
+legacy cursor keys (each ``lift_cursor`` reads the dict an older build left on the cursor row);
+``test_cursor_state_is_opaque_to_the_subsystem`` keeps them out of everything else.
 """
 
 import os
@@ -10,8 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from flow_sdk.ingest.agent_transport import HarnessWorker
-from flow_sdk.ingest.driver import register_driver
-from flow_sdk.ingest.source_driver import SourceDriver, read_cache_index
+from flow_sdk.ingest.sources import SourceType, read_cache_index, register_source
 from flow_sdk.sources.providers.agent import AgentSendData, AgentSource
 from flow_sdk.sources.providers.agentmail import SECRET_NAME as AGENTMAIL_SECRET
 from flow_sdk.sources.providers.agentmail import AgentMailSource
@@ -79,7 +78,7 @@ def _gcs_origin_id(row, ref: str) -> str:
 
 
 def _indexed_origin_id(prefix: str):
-    """``<prefix>:<key>`` for a cached file, read out of the index the bridge keeps beside the
+    """``<prefix>:<key>`` for a cached file, read out of the index the engine keeps beside the
     cache — a key the provider assigns (Drive's ``fileId``) survives rename, move and content
     replacement, which neither a path nor an inode can promise."""
 
@@ -468,10 +467,10 @@ def _gmail_config(row):
     return {"address": address} if address else {}
 
 
-register_driver(SourceDriver(RssSource, kind="datasource.feed.rss"))
-register_driver(SourceDriver(HackerNewsSource, kind="datasource.api.hackernews"))
-register_driver(
-    SourceDriver(
+register_source(SourceType(RssSource, kind="datasource.feed.rss"))
+register_source(SourceType(HackerNewsSource, kind="datasource.api.hackernews"))
+register_source(
+    SourceType(
         HelpdeskSource,
         kind="datasource.hub.helpdesk",
         build=lambda binding: HelpdeskSource(binding, hub=AppHub()),
@@ -483,8 +482,8 @@ register_driver(
         ),
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         AgentSource,
         kind="datasource.agent",
         build=lambda binding: AgentSource(binding, worker=HarnessWorker()),
@@ -495,8 +494,8 @@ register_driver(
         lift_cursor=lambda state: AgentSource.resume_after(state["high_water"]) if state.get("high_water") else None,
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         AgentMailSource,
         kind="datasource.api.agentmail",
         credentials=_machine_secret(AGENTMAIL_SECRET, config_key="api_key"),
@@ -504,8 +503,8 @@ register_driver(
         lift_cursor=lambda state: AgentMailSource.resume_after(state["high_water"]) if state.get("high_water") else None,
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         CloudEmailSource,
         kind="datasource.cloud.email",
         build=lambda binding: CloudEmailSource(binding, mailbox=AppMailbox()),
@@ -517,8 +516,8 @@ register_driver(
         ),
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         WatchedFolderSource,
         kind="datasource.fs.folder",
         ref_for=lambda source, key: os.path.join(source.root, key),
@@ -526,8 +525,8 @@ register_driver(
         origin_id_for=_folder_origin_id,
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         DriveSource,
         kind="datasource.fs.gdrive",
         credentials=_connection_token("google"),
@@ -537,8 +536,8 @@ register_driver(
         lift_cursor=lambda state: DriveSource.changes_from(state["page_token"]) if state.get("page_token") else None,
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         GcsSource,
         kind="datasource.fs.gcs",
         credentials=_connection_token("google"),
@@ -547,8 +546,8 @@ register_driver(
         origin_id_for=_gcs_origin_id,
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         GitSource,
         kind="datasource.vcs.git",
         ref_for=lambda source, key: os.path.join(source.repo, key),
@@ -557,8 +556,8 @@ register_driver(
         lift_cursor=lambda state: GitSource.resume_at(state["sha"]) if state.get("sha") else None,
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         GmailSource,
         kind="datasource.api.gmail",
         credentials=_env_secret("GMAIL_APP_PASSWORD", value_key="app_password", compact=True),
@@ -569,8 +568,8 @@ register_driver(
         ),
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         SlackSource,
         kind="datasource.api.slack",
         credentials=_connection_token("slack"),
@@ -579,8 +578,8 @@ register_driver(
         lift_cursor=lambda state: SlackSource.resume_after(state["last_ts"]) if state.get("last_ts") else None,
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         TeamsSource,
         kind="datasource.api.teams",
         credentials=_connection_token("microsoft"),
@@ -589,8 +588,8 @@ register_driver(
         lift_cursor=lambda state: TeamsSource.resume_after(state["last_created"]) if state.get("last_created") else None,
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         TelegramSource,
         kind="datasource.api.telegram",
         credentials=_config_secret("bot_token"),
@@ -599,8 +598,8 @@ register_driver(
         lift_cursor=lambda state: TelegramSource.resume_at(state["next_offset"]) if state.get("next_offset") else None,
     )
 )
-register_driver(
-    SourceDriver(
+register_source(
+    SourceType(
         WhatsAppSource,
         kind="datasource.api.whatsapp",
         credentials=_config_secret("access_token"),
@@ -609,5 +608,3 @@ register_driver(
     )
 )
 
-__all__ = [
-]

@@ -7,10 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
-from flow_sdk.ingest.driver import SegmentCursorView, get_driver
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
+from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.testing import Subject, checks_for
+from tests.unit._ingest_helpers import position
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -31,7 +32,7 @@ def _row(**config):
 
 
 def _view(state):
-    return SegmentCursorView(segment_key="root", state=state)
+    return position(segment_key="root", prior=state)
 
 
 @pytest.mark.parametrize("check", checks_for(WatchedFolderSource), ids=str)
@@ -51,7 +52,7 @@ async def test_hidden_entries_and_dependency_trees_are_never_listed(root):
 
 
 async def test_setup_is_verified_in_the_words_a_person_acts_on(tmp_path):
-    driver = get_driver("folder")
+    driver = source_type("folder")
     (tmp_path / "file").write_text("x")
     assert (await driver.verify(_row())).detail == "Set the folder to watch."
     assert (await driver.verify(_row(root=str(tmp_path / "nope")))).detail.endswith("does not exist yet.")
@@ -60,16 +61,16 @@ async def test_setup_is_verified_in_the_words_a_person_acts_on(tmp_path):
 
 
 async def test_a_same_size_edit_is_a_change_and_a_rename_is_not_a_removal(root):
-    driver, row, real = get_driver("folder"), _row(root=str(root)), os.path.realpath(root)
-    first = await driver.fetch(row, _view({}))
+    driver, row, real = source_type("folder"), _row(root=str(root)), os.path.realpath(root)
+    first = await driver.traverse(row, _view({}))
 
     target = root / "a.txt"
     before = target.stat()
     target.write_bytes(b"ALPHA")
     os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns + 5_000_000_000))
-    edited = await driver.fetch(row, _view(first.next_state))
+    edited = await driver.traverse(row, _view(first))
     assert edited.refs == [os.path.join(real, "a.txt")]
 
     os.rename(root / "b.txt", root / "sub" / "b2.txt")
-    moved = await driver.fetch(row, _view(edited.next_state))
+    moved = await driver.traverse(row, _view(edited))
     assert moved.tombstones == [] and moved.refs == [os.path.join(real, "sub", "b2.txt")]

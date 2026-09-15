@@ -10,14 +10,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
-from flow_sdk.ingest.driver import SegmentCursorView, get_driver
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources import CloudOrigin
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.providers.rss import RssSource
 from flow_sdk.sources.testing import Subject, checks_for
-from tests.unit._ingest_helpers import fixture_bytes, local_http_server, make_data_source
+from tests.unit._ingest_helpers import fixture_bytes, local_http_server, make_data_source, position
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -49,8 +49,8 @@ def _row(*urls: str):
     return make_data_source("rss", name="fixture feed", config={"feed_urls": list(urls)})
 
 
-def _view(url: str, *, state=None) -> SegmentCursorView:
-    return SegmentCursorView(segment_key=url, state=state or {}, window_start=(NOW - timedelta(days=7)).isoformat())
+def _view(url: str, *, state=None):
+    return position(segment_key=url, prior=state or {}, window_start=(NOW - timedelta(days=7)).isoformat())
 
 
 @pytest.mark.parametrize("check", checks_for(RssSource), ids=str)
@@ -64,12 +64,12 @@ async def test_conformance(check, feed_server):
 
 async def test_each_feed_url_is_a_segment():
     row = _row("https://a.test/f", "https://b.test/f")
-    assert [ref.key for ref in await get_driver("rss").segments(row)] == ["https://a.test/f", "https://b.test/f"]
+    assert [ref.key for ref in await source_type("rss").segments(row)] == ["https://a.test/f", "https://b.test/f"]
 
 
 async def test_atom_is_parsed_and_the_window_drops_old_entries(feed_server):
     url = f"{feed_server}/atom"
-    result = await get_driver("rss").fetch(_row(url), _view(url))
+    result = await source_type("rss").traverse(_row(url), _view(url))
     assert sorted(item.external_id for item in result.items) == list(ATOM_IDS[:2]), "the 2020 entry is outside the window"
     assert [item.external_id for item in result.items] == [ATOM_IDS[1], ATOM_IDS[0]], "records ingest in the order they happened"
     first = next(item for item in result.items if item.external_id == ATOM_IDS[0])
@@ -80,19 +80,19 @@ async def test_atom_is_parsed_and_the_window_drops_old_entries(feed_server):
 
 async def test_rss2_is_parsed_including_rfc822_dates(feed_server):
     url = f"{feed_server}/rss"
-    result = await get_driver("rss").fetch(_row(url), _view(url))
+    result = await source_type("rss").traverse(_row(url), _view(url))
     by_id = {item.external_id: item for item in result.items}
     assert sorted(by_id) == ["rss-item-0001", "rss-item-0002"]
     assert "platypus" in by_id["rss-item-0001"].body and by_id["rss-item-0001"].occurred_at.startswith("2026-07-30T10:00:00")
 
 
 async def test_a_304_is_the_free_no_op_poll(feed_server):
-    url, driver = f"{feed_server}/atom", get_driver("rss")
+    url, driver = f"{feed_server}/atom", source_type("rss")
     row = _row(url)
-    first = await driver.fetch(row, _view(url))
-    assert first.next_state.get("cursor"), "the conditional pair must travel as the resume cursor"
-    second = await driver.fetch(row, _view(url, state=first.next_state))
-    assert second.unchanged and second.items == [] and second.next_state == first.next_state
+    first = await driver.traverse(row, _view(url))
+    assert first.cursor, "the conditional pair must travel as the resume cursor"
+    second = await driver.traverse(row, _view(url, state=first))
+    assert second.unchanged and second.items == [] and second.cursor == first.cursor
 
 
 @pytest.mark.parametrize(("path", "health"), [
@@ -103,5 +103,5 @@ async def test_a_304_is_the_free_no_op_poll(feed_server):
 async def test_a_failure_classifies_by_what_fixes_it(feed_server, path, health):
     url = f"{feed_server}{path}"
     with pytest.raises(Exception) as caught:
-        await get_driver("rss").fetch(_row(url), _view(url))
+        await source_type("rss").traverse(_row(url), _view(url))
     assert classify(caught.value)[0] is health

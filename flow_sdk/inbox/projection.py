@@ -320,7 +320,7 @@ def _origins(item, source, channel: str, key: str):
     origin; `origin_local` is PRIVATE and carries the row ids that only resolve
     here."""
     from flow_sdk.fs_store.origin.cloud_origin import CloudOriginLocal  # noqa: PLC0415
-    from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
+    from flow_sdk.inbox.channel_links import permalink_for  # noqa: PLC0415
 
     # The connector's link when it gives one; otherwise the channel's own address
     # formula, so "Open in Gmail" works for records whose provider never supplied

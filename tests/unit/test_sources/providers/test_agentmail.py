@@ -14,15 +14,15 @@ from urllib.parse import parse_qs, unquote
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
-from flow_sdk.ingest.driver import SegmentCursorView, SendStatus, get_driver
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.ingest.sources import SendStatus, source_type
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, Credentials
 from flow_sdk.sources.providers.agentmail import SECRET_NAME, AgentMailSource, address_of
 from flow_sdk.sources.testing import Subject, checks_for
-from tests.unit._ingest_helpers import local_http_server
+from tests.unit._ingest_helpers import local_http_server, position
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -87,7 +87,7 @@ def _row(mail, **config):
 
 
 def _view(state=None):
-    return SegmentCursorView(segment_key=INBOX, state=state or {}, window_start=None, first_run=not state)
+    return position(segment_key=INBOX, prior=state or {}, window_start=None)
 
 
 @pytest.mark.parametrize("check", checks_for(AgentMailSource), ids=str)
@@ -105,21 +105,21 @@ async def test_conformance(check, mail):
 
 class TestTheSource:
     def test_it_sends_on_its_own_channel(self, mail):
-        driver = get_driver("agentmail")
+        driver = source_type("agentmail")
         assert driver.sends is True and driver.channel_for(_row(mail)) == "agentmail"
 
     async def test_one_inbox_is_one_segment(self, mail):
-        assert [s.key for s in await get_driver("agentmail").segments(_row(mail))] == [INBOX]
+        assert [s.key for s in await source_type("agentmail").segments(_row(mail))] == [INBOX]
 
     async def test_a_missing_inbox_is_a_config_error(self, mail):
         with pytest.raises(Exception) as caught:
-            await get_driver("agentmail").segments(_row(mail, inbox=""))
+            await source_type("agentmail").segments(_row(mail, inbox=""))
         assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
 
 
 class TestMapping:
     async def test_the_providers_own_id_the_thread_and_the_sender(self, mail):
-        (item,) = (await get_driver("agentmail").fetch(_row(mail), _view())).items
+        (item,) = (await source_type("agentmail").traverse(_row(mail), _view())).items
         assert (item.external_id, item.thread_key, item.kind) == ("<abc@email.amazonses.com>", "t-1", "content.message.email")
         assert item.author_display == "Joe the FlowPad agent <joe@agentmail.to>"
         assert item.author_external_id == "joe@agentmail.to", "the address is what `_sender_for` compares"
@@ -132,32 +132,32 @@ class TestMapping:
 class TestCursor:
     async def test_only_what_is_newer_than_the_high_water_returns(self, mail):
         mail.messages = [MSG, {**MSG, "message_id": "<old@x>", "timestamp": "2026-08-01T00:00:00.000Z"}]
-        result = await get_driver("agentmail").fetch(_row(mail), _view({"cursor": AgentMailSource.resume_after("2026-08-02T00:00:00.000Z")}))
+        result = await source_type("agentmail").traverse(_row(mail), _view({"cursor": AgentMailSource.resume_after("2026-08-02T00:00:00.000Z")}))
         assert [i.external_id for i in result.items] == ["<abc@email.amazonses.com>"]
-        assert result.next_state["cursor"] == AgentMailSource.resume_after(MSG["timestamp"])
+        assert result.cursor == AgentMailSource.resume_after(MSG["timestamp"])
 
     async def test_a_legacy_high_water_is_adopted(self, mail):
-        result = await get_driver("agentmail").fetch(_row(mail), _view({"high_water": MSG["timestamp"]}))
+        result = await source_type("agentmail").traverse(_row(mail), _view({"high_water": MSG["timestamp"]}))
         assert result.items == [] and result.unchanged is True
 
     async def test_nothing_new_is_reported_unchanged(self, mail):
         mail.messages = []
-        assert (await get_driver("agentmail").fetch(_row(mail), _view())).unchanged is True
+        assert (await source_type("agentmail").traverse(_row(mail), _view())).unchanged is True
 
 
 class TestSend:
     async def test_a_reply_uses_the_reply_route_with_an_encoded_id(self, mail):
-        out = await get_driver("agentmail").send(_row(mail), thread_key="t-1", to="joe@agentmail.to", text="hi", in_reply_to=MSG["message_id"])
+        out = await source_type("agentmail").send(_row(mail), thread_key="t-1", to="joe@agentmail.to", text="hi", in_reply_to=MSG["message_id"])
         assert "%3Cabc%40email.amazonses.com%3E" in mail.requests[-1] and mail.requests[-1].endswith("/reply")
         assert (out.status, out.external_id) == (SendStatus.SENT, "<sent-1@x>")
 
     async def test_without_a_parent_it_starts_a_new_message(self, mail):
-        await get_driver("agentmail").send(_row(mail), thread_key="", to="joe@agentmail.to", text="hi", subject="Hello")
+        await source_type("agentmail").send(_row(mail), thread_key="", to="joe@agentmail.to", text="hi", subject="Hello")
         assert mail.requests[-1].endswith("/messages/send")
         assert (mail.bodies[-1]["to"], mail.bodies[-1]["subject"]) == (["joe@agentmail.to"], "Hello")
 
     async def test_the_sent_copy_is_not_recorded_here(self, mail):
-        out = await get_driver("agentmail").send(_row(mail), thread_key="", to="j@x.to", text="hi")
+        out = await source_type("agentmail").send(_row(mail), thread_key="", to="j@x.to", text="hi")
         assert out.recorded is False, "the listing returns the sent copy; recording it here would be the same row twice"
 
 
@@ -166,29 +166,29 @@ class TestTheKey:
     as the fallback for sources created before the move."""
 
     async def _headers(self, mail, **config):
-        await get_driver("agentmail").fetch(_row(mail, **config), _view())
+        await source_type("agentmail").traverse(_row(mail, **config), _view())
         return mail.requests
 
     async def test_the_key_comes_from_the_store_without_a_project(self, mail, monkeypatch):
         seen = {}
         monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: seen.setdefault("name", name) and "am_test")
-        await get_driver("agentmail").fetch(_row(mail, api_key=""), _view())
+        await source_type("agentmail").traverse(_row(mail, api_key=""), _view())
         assert seen["name"] == SECRET_NAME and mail.requests, "the store's key reached AgentMail"
 
     async def test_the_store_wins_over_a_legacy_config_key(self, mail, monkeypatch):
         monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: "am_test")
-        result = await get_driver("agentmail").fetch(_row(mail, api_key="am_wrong"), _view())
+        result = await source_type("agentmail").traverse(_row(mail, api_key="am_wrong"), _view())
         assert result.items, "the store's key was used, so AgentMail answered"
 
     async def test_a_legacy_config_key_still_works(self, mail):
-        assert (await get_driver("agentmail").fetch(_row(mail), _view())).items
+        assert (await source_type("agentmail").traverse(_row(mail), _view())).items
 
     async def test_no_key_anywhere_names_the_store(self, mail):
         with pytest.raises(Exception) as caught:
-            await get_driver("agentmail").fetch(_row(mail, api_key=""), _view())
+            await source_type("agentmail").traverse(_row(mail, api_key=""), _view())
         assert SECRET_NAME in str(caught.value) and classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
 
     async def test_a_refused_key_needs_a_person(self, mail):
         with pytest.raises(Exception) as caught:
-            await get_driver("agentmail").fetch(_row(mail, api_key="am_wrong"), _view())
+            await source_type("agentmail").traverse(_row(mail, api_key="am_wrong"), _view())
         assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR

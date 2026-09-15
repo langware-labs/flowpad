@@ -87,15 +87,11 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
     indistinguishable once stored. An empty ``SourceItem.thread_key`` is the
     only honest signal that we have no addressable thread.
     """
-    # Side-effect import: `drivers/__init__` is what populates the registry, and
-    # `get_driver` alone does not pull it in. Without this the resolver races
-    # server startup and reports "cannot send" for a driver that can.
-    import flow_sdk.ingest.drivers  # noqa: F401,PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.builtin.user import User  # noqa: PLC0415
-    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
     # Newest-first and bounded: the DB does the ordering, and one page is
     # always enough because every message here shares a channel.
@@ -154,7 +150,7 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
         # missing record report as a missing address.
         raise ChannelSendUnavailable("the record this arrived through is gone")
 
-    driver = get_driver(source.provider)
+    driver = source_type(source.provider)
     if driver is None or not driver.sends:
         raise ChannelSendUnavailable(f"the {origin.kind} transport cannot send")
 

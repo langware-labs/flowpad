@@ -116,15 +116,15 @@ class DataSourceSpec(Entity):
         Computed at serialization, not derived by the indexer like ``runtime``:
         the answer lives on the driver CLASS, and importing the drivers package
         from inside the indexer's per-record sync deadlocks on the import lock
-        (``ingest/spec_registry.py`` records the 120s stall). By the time a row
+        (the old spec registry recorded a 120s stall). By the time a row
         reaches the wire the shipped drivers are registered and every
         script-runtime adapter has been refreshed, so this is a dict lookup.
         A provider nothing has registered answers False — the same answer the
         poller gives, which reports it as ``unknown_provider``.
         """
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
-        driver = get_driver(self.name or "")
+        driver = source_type(self.name or "")
         return bool(driver is not None and driver.sends)
 
     def coerce_config(self, config: dict) -> dict:

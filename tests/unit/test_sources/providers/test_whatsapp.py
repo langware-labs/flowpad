@@ -11,17 +11,17 @@ import json
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.driver import SegmentCursorView, get_driver
 from flow_sdk.ingest.legacy_lift import envelope_of
+from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, Credentials
 from flow_sdk.sources.providers.whatsapp import MESSAGES_SEGMENT, WhatsAppSource, digits
 from flow_sdk.sources.providers.whatsapp import source as wa_source
 from flow_sdk.sources.testing import Subject, checks_for
-from tests.unit._ingest_helpers import local_http_server
+from tests.unit._ingest_helpers import local_http_server, position
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -97,7 +97,7 @@ def test_a_number_is_read_in_one_spelling():
 
 
 async def test_fetch_reports_unchanged_because_there_is_nothing_to_poll():
-    result = await get_driver("whatsapp").fetch(_source(), SegmentCursorView(segment_key="messages", state={}, window_start=None, first_run=True))
+    result = await source_type("whatsapp").traverse(_source(), position(segment_key="messages", prior={}, window_start=None))
     assert result.unchanged is True and result.items == []
 
 
@@ -160,7 +160,7 @@ def recorded(monkeypatch):
 
 async def test_a_reply_quotes_the_message_it_answers(serve, recorded):
     graph = serve([(200, {"messages": [{"id": "wamid.OUT"}]})])
-    outcome = await get_driver("whatsapp").send(_source(), thread_key=WA_ID, to=WA_ID, text="hi", in_reply_to="wamid.AAA")
+    outcome = await source_type("whatsapp").send(_source(), thread_key=WA_ID, to=WA_ID, text="hi", in_reply_to="wamid.AAA")
     body = json.loads(graph.bodies[0])
     assert outcome.external_id == "wamid.OUT"
     assert (body["to"], body["type"], body["context"]) == (WA_ID, "text", {"message_id": "wamid.AAA"})
@@ -171,7 +171,7 @@ async def test_the_sent_copy_is_recorded_because_nothing_will_echo_it(serve, rec
     serve([(200, {"messages": [{"id": "wamid.OUT"}]}), (200, {"display_phone_number": "15550001111"})])
     source = _source()
     source.account_key, source.account_identities = PHONE_ID, [PHONE_ID]
-    outcome = await get_driver("whatsapp").send(source, thread_key=WA_ID, to=WA_ID, text="answering")
+    outcome = await source_type("whatsapp").send(source, thread_key=WA_ID, to=WA_ID, text="answering")
     assert outcome.recorded is True and [i.external_id for i in recorded] == ["wamid.OUT"]
     assert (recorded[0].thread_key, recorded[0].author_external_id) == (WA_ID, PHONE_ID)
 
@@ -179,12 +179,12 @@ async def test_the_sent_copy_is_recorded_because_nothing_will_echo_it(serve, rec
 async def test_a_refused_send_does_not_park_the_source(serve):
     serve([(400, {"error": {"message": "Message failed to send because more than 24 hours have passed"}})])
     with pytest.raises(ValueError, match="24 hours"):
-        await get_driver("whatsapp").send(_source(), thread_key=WA_ID, to=WA_ID, text="too late")
+        await source_type("whatsapp").send(_source(), thread_key=WA_ID, to=WA_ID, text="too late")
 
 
 async def test_a_send_without_a_recipient_refuses():
     with pytest.raises(ValueError, match="wa_id"):
-        await get_driver("whatsapp").send(_source(), thread_key="", to="", text="hi")
+        await source_type("whatsapp").send(_source(), thread_key="", to="", text="hi")
 
 
 # ── verify ───────────────────────────────────────────────────────────────────
@@ -193,21 +193,21 @@ async def test_a_send_without_a_recipient_refuses():
 async def test_verify_names_the_number_it_will_send_as_and_stamps_it(serve):
     serve([(200, {"display_phone_number": "15550001111", "id": PHONE_ID})])
     source = _source()
-    verdict = await get_driver("whatsapp").verify(source)
+    verdict = await source_type("whatsapp").verify(source)
     assert verdict.ready is True and "15550001111" in verdict.detail
     assert source.account_key == "15550001111" and PHONE_ID in source.account_identities
 
 
 async def test_an_expired_token_says_which_token_to_make(serve):
     serve([(401, {"error": {"message": "Session has expired"}})])
-    verdict = await get_driver("whatsapp").verify(_source())
+    verdict = await source_type("whatsapp").verify(_source())
     assert verdict.ready is False and "System User" in verdict.detail
 
 
 async def test_a_source_with_no_token_asks_for_one():
     source = _source()
     source.config = {"phone_number_id": PHONE_ID}
-    verdict = await get_driver("whatsapp").verify(source)
+    verdict = await source_type("whatsapp").verify(source)
     assert verdict.ready is False and "access token" in verdict.detail
 
 

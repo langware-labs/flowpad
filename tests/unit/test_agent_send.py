@@ -10,7 +10,7 @@ import asyncio
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
 from flow_sdk.ingest import agent_transport
 from flow_sdk.ingest.agent_transport import (
@@ -22,7 +22,7 @@ from flow_sdk.ingest.agent_transport import (
     send_instruction,
     send_result_from,
 )
-from flow_sdk.ingest.driver import get_driver
+from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources.providers.agent import CONNECTOR_PROFILES
 
 
@@ -88,7 +88,7 @@ class TestTimeoutIsNotRetryable:
 
         source = _source(send_deadline_seconds=1)
         with pytest.raises(LaunchError) as caught:
-            await get_driver("agent").send(source, thread_key="t", to="a@b.c", text="hi")
+            await source_type("agent").send(source, thread_key="t", to="a@b.c", text="hi")
 
         # CONFIG, never TRANSIENT: transient is what tells the caller to try
         # again, and there must not be a next attempt.
@@ -106,7 +106,7 @@ class TestTimeoutIsNotRetryable:
         monkeypatch.setattr(agent_transport, "ensure_launchable", _async_none)
 
         with pytest.raises(LaunchError):
-            await get_driver("agent").send(_source(), thread_key="t", to="a@b.c", text="hi")
+            await source_type("agent").send(_source(), thread_key="t", to="a@b.c", text="hi")
 
     @pytest.mark.asyncio
     async def test_an_unlaunchable_harness_is_reported_before_any_worker(self, monkeypatch):
@@ -117,7 +117,7 @@ class TestTimeoutIsNotRetryable:
 
         monkeypatch.setattr(agent_transport, "ensure_launchable", _problem)
         with pytest.raises(LaunchError) as caught:
-            await get_driver("agent").send(_source(), thread_key="t", to="a@b.c", text="hi")
+            await source_type("agent").send(_source(), thread_key="t", to="a@b.c", text="hi")
         assert caught.value is problem
 
 
@@ -152,7 +152,7 @@ class TestInstruction:
 
 class TestDriverContract:
     def test_the_agent_transport_declares_that_it_sends(self):
-        assert get_driver("agent").sends is True
+        assert source_type("agent").sends is True
 
     def test_replying_uses_its_own_agent_not_the_summarizer(self):
         # Each connector's send persona is distinct from its fetch persona —

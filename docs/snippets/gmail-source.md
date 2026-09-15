@@ -11,7 +11,7 @@ Then create the official Gmail `DataSource`:
 
 ```python
 import os
-import flow_sdk.ingest.drivers  # noqa: F401 — register shipped drivers
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
 
 address = os.environ["GMAIL_ADDRESS"]

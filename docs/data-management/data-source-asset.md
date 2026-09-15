@@ -111,17 +111,13 @@ happens on an old host.
 
 ### `name`
 
-The folder name, the driver-registry key, and the asset id — one noun, not three.
+The folder name, the source-type registry key, and the asset id — one noun, not three.
 `rss` resolves the shipped `RssSource`.
 
-**A name that collides with a shipped driver is refused at driver registration,
-not at load.** The manifest still indexes as a `data_source_spec` row; it is
-`refresh_spec_drivers` (`flow_sdk/ingest/spec_registry.py`) that sees the name in
-the builtin set, logs "shadows a shipped driver and is ignored — rename the
-folder", and never registers the adapter. A folder cannot shadow a shipped source:
-overriding ours would mean no bug report could ever say which driver ran, and a
-working source could break silently on install. `register_driver` is a bare dict
-assignment, which is why the refusal has to live in front of it.
+**A folder cannot shadow a shipped source.** Only the shipped source types are
+registered (`flow_sdk/ingest/source_types.py`); a manifest whose name collides with one
+still indexes as a `data_source_spec` row but runs the shipped class. Overriding ours
+would mean no bug report could ever say which source ran.
 
 ### `auth`
 
@@ -140,9 +136,9 @@ hub, refresh mid-sync, and drive both `capabilities_ready()` and the probe in
 name**, never authored beside it. That derivation does not exist yet (see the open
 list at the end): a builtin's driver still declares its own capability need, and
 the manifest's `auth.connector` is documentation for the picker. `env` names ARE
-consumed: `ScriptSource._env` resolves each one from the host environment into the
-spawned `fetch.py` process at launch and fails the poll with `missing_env` when one
-is unset — a forwarding list and a fail-fast declaration, not confinement.
+meant to be forwarded into the source host process at launch, failing the poll with
+`missing_env` when one is unset — a forwarding list and a fail-fast declaration, not
+confinement. Until the host lands nothing consumes them (see *Runtime*).
 
 `scopes` is not decoration. `drive.readonly` and `drive` differ by a write grant,
 and two sources sharing a connector consent once — whoever authorises first wins,
@@ -197,12 +193,8 @@ with the endpoint that serves the choices.
 ### `setup_wiki` and `channel_icon_names`
 
 `setup_wiki` names the wiki page explaining the setup step a provider cannot do
-for you (Slack: inviting the bot). For a **builtin** it is display only — the
-driver class decides whether it has `verify`. For an **authored** source it is
-the switch: a non-empty `setup_wiki` is what gives the `ScriptSource` adapter its
-`verify` verb, and therefore what parks a new source in SETUP until the module's
-`verify` answers `ready`. A `fetch.py` with a `verify` verb and no `setup_wiki`
-is never asked.
+for you (Slack: inviting the bot). It is display only: the source class decides
+whether it has a setup step (it is `Verifiable`).
 
 `channel_icon_names` is a per-CHANNEL glyph map for a transport that serves
 several channels (`agent`: `gmail → Mail`, `slack → Slack`). The inbox chip
@@ -263,7 +255,7 @@ folder `copy` is ours, a Drive `copy` is a cache the next download clobbers.
 | `account_key` VALUE | lives on the `DataSource` row; the manifest only marks WHICH form field supplies it (`account_key: true` above) |
 | `id` | derived from the folder path (`identity_carrier=derived_identity()`, a v5), never written into the manifest — stable for a shipped asset, identical on every machine, and a shared source never arrives carrying the sender's id |
 | poll cadence | per-instance on `DataSource` — a big site wants six hours, a small one five minutes |
-| cursor shape | `state` is opaque by contract, and a test greps for leaks |
+| cursor shape | `cursor` is the source's opaque string, and a test greps the engine for leaks |
 
 ## Runtime is discovered, not declared
 
@@ -276,11 +268,11 @@ folder `copy` is ours, a Drive `copy` is a cache the next download clobbers.
 
 The extractor (`derive_data_source_spec`) stats only those two names — it never
 lists the folder — and writes the answer to the row's `runtime` field
-(`Persist.TRUE`, so the shadow index carries it). `refresh_spec_drivers` queries
-`runtime == "script"` on every heartbeat tick and on the create path, builds a
-`ScriptSource` adapter per row, and unregisters an adapter whose folder left the
-disk. It is deliberately not a post-sync hook: importing the drivers package from
-inside the indexer's worker threads deadlocked on the import lock.
+(`Persist.TRUE`, so the shadow index carries it). **A `script` runtime does not run
+today.** The `fetch.py` adapter and its spec sweep were removed with the old driver
+surface; an authored source runs again when the source host lands, which loads a
+`source.py` contract class in its own process. Until then a row whose provider is an
+authored name reports `unknown_provider`.
 
 A definition's **editor** is not declared in the manifest either: a webapp asset
 at `<name>/agentic-assets/webapp/editor/` is found by the same walker and becomes
