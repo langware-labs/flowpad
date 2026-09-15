@@ -77,7 +77,10 @@ class _Imap:
         return "OK", []
 
     def select(self, box, readonly=True):
-        self.box = box
+        # Gmail's own parser: a mailbox name with a space must arrive quoted.
+        if " " in box and not (box.startswith('"') and box.endswith('"')):
+            return "BAD", [b"Could not parse command"]
+        self.box = box.strip('"')
         return "OK", []
 
     def response(self, name):

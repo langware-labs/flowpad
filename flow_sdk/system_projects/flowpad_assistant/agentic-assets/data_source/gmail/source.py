@@ -332,7 +332,8 @@ def open_inbox(address: str, password: str, mailbox: str = INBOX) -> tuple[imapl
             raise
         except imaplib.IMAP4.error as exc:
             raise LoginRefused(str(exc)) from exc
-        status, _ = client.select(mailbox, readonly=True)
+        # A mailbox name is an IMAP string: `[Gmail]/All Mail` unquoted is "Could not parse command".
+        status, _ = client.select(f'"{mailbox}"', readonly=True)
         _require_ok(status, f"select {mailbox}")
         return client, _uid_validity(client, mailbox)
     except Exception:
@@ -430,7 +431,7 @@ def _uid_validity(client: imaplib.IMAP4_SSL, mailbox: str) -> str:
     match = _UID_VALIDITY_RE.search(b" ".join(v for v in (values or []) if isinstance(v, bytes)))
     if match:
         return match.group(1).decode("ascii")
-    status, values = client.status(mailbox, "(UIDVALIDITY)")
+    status, values = client.status(f'"{mailbox}"', "(UIDVALIDITY)")
     _require_ok(status, "read UIDVALIDITY")
     match = re.search(rb"UIDVALIDITY\s+(\d+)", b" ".join(v for v in (values or []) if isinstance(v, bytes)), re.IGNORECASE)
     if not match:
