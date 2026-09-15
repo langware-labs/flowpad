@@ -67,12 +67,13 @@ config, or the default.
 
 ## Store types
 
-Two ship out of the box:
+Three ship out of the box:
 
-| type       | config                                   | where a value lives                                             |
-| ---------- | ---------------------------------------- | --------------------------------------------------------------- |
-| `env_file` | `env_file_path` — the file to read/write | that file, one `NAME=value` line per variable                   |
-| `vault`    | `prefix`, `entries` — the entry names    | the per-instance encrypted store, `<prefix><NAME>` or `entries` |
+| type                 | config                                   | where a value lives                                                                       |
+| -------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `env_file`           | `env_file_path` — the file to read/write | that file, one `NAME=value` line per variable                                             |
+| `vault`              | `prefix`, `entries` — the entry names    | the per-instance encrypted store, `<prefix><NAME>` or `entries`                           |
+| `gcp_secret_manager` | `gcp_project`, `prefix`                  | the secret `<prefix><NAME>` in that GCP project, latest version — read with a bound `google` connection ([§6](#6-connections--the-same-pattern-for-accounts)) |
 
 `SecretStore.get()` with no arguments is `env_file` on
 `project.env_file_path()` for `await context.current_project()` — the
@@ -335,7 +336,7 @@ request — what a connect consents to. `require(provider)` is the older name fo
 `Connection.get` and stays.
 
 An external store is a consumer of both kinds — it acts as an account and holds
-named values. None ships; a type like this registers with `register_store`:
+named values. `gcp_secret_manager` ships as one; another registers with `register_store`:
 
 ```python
 from flow_sdk.builtin.data_source import DataSource

@@ -5,7 +5,8 @@ prefix from a scope or an environment. Every store is keyed by the environment v
 (``ENV_VAR_NAME``); how it spells that key inside (a file line, a vault entry) is its own business,
 so moving values between stores, or into a process, is a dict.
 
-Two types ship: ``env_file`` and ``vault``. Another registers with :func:`register_store`.
+Three types ship: ``env_file``, ``vault`` and ``gcp_secret_manager``. Another registers with
+:func:`register_store`.
 """
 from __future__ import annotations
 
