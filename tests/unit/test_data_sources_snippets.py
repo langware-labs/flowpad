@@ -28,11 +28,9 @@ def _fresh_feed():
     The page says a first run takes only items inside ``window_days``; the fixture's entries
     are months old, so served as-is the snippet's sync would honestly create nothing.
     """
-    import re
-    from datetime import datetime, timezone
+    from flow_sdk.ingest.testing import fresh_timestamps
 
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    body = re.sub(rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", stamp.encode(), fixture_bytes("atom.xml"))
+    body = fresh_timestamps(fixture_bytes("atom.xml"))
 
     def respond(_path, _headers):
         return 200, body, {"Content-Type": "application/xml"}

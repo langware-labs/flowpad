@@ -5,9 +5,19 @@ to drive the engine — importable from the SDK, so an asset folder's tests impo
 """
 from __future__ import annotations
 
+import re
 import uuid
+from datetime import datetime, timezone
 
 from flow_sdk.sources.testing.http import Responder, local_http_server
+
+_ISO_STAMP = re.compile(rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
+
+
+def fresh_timestamps(body: bytes) -> bytes:
+    """``body`` with every ISO-8601 timestamp set to now — a recorded fixture served inside a sync
+    window that runs on the real clock."""
+    return _ISO_STAMP.sub(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ").encode(), body)
 
 
 def make_data_source(provider: str = "rss", **fields):
@@ -34,4 +44,4 @@ def position(segment_key: str = "", prior=None, window_start=None, **_ignored):
     return SegmentPosition(segment_key=segment_key, legacy_state=prior, window_start=window_start)
 
 
-__all__ = ["Responder", "local_http_server", "make_data_source", "position"]
+__all__ = ["Responder", "fresh_timestamps", "local_http_server", "make_data_source", "position"]

@@ -640,9 +640,8 @@ class DataSource(Entity):
         the work lives in ``replay`` so callers (and tests) can drive it
         without a request at all.
         """
-        request_info = get_current_request_info()
-        body = await request_info.get_post_data() if request_info else {}
-        raw_since = str((body or {}).get("since") or "").strip()
+        body = await self._body()
+        raw_since = str(body.get("since") or "").strip()
 
         since, problem = parse_since(raw_since)
         if problem:
@@ -765,10 +764,12 @@ class DataSource(Entity):
             from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
 
             self.owner = await owner_of(self)
-        from flow_sdk.ingest.source_registry import resolve_source_type  # noqa: PLC0415
+        if not self.exist_in_db or self.status == SourceStatus.NEW.value:
+            # An authored source's folder loads on first use, so the create rules below can ask its
+            # class. The poller's per-tick re-save of an existing row never pays for the lookup.
+            from flow_sdk.ingest.source_registry import resolve_source_type  # noqa: PLC0415
 
-        # An authored source's folder loads on first use; every rule below asks its class.
-        await resolve_source_type(self.provider or "")
+            await resolve_source_type(self.provider or "")
         if self.status == SourceStatus.NEW.value:
             stype = self._driver()
             if stype is not None and stype.has_setup:
@@ -934,8 +935,7 @@ class DataSource(Entity):
         the call, and a draft config is exactly where a secret lives — ``telegram``'s
         ``bot_token`` is a config field. That must never reach a URL or an access log.
         """
-        request_info = get_current_request_info()
-        body = (await request_info.get_post_data() if request_info else {}) or {}
+        body = await cls._body()
         provider = str(body.get("provider") or "").strip()
         field = str(body.get("field") or "").strip()
         if not provider or not field:
@@ -1061,11 +1061,15 @@ class DataSource(Entity):
 
     async def recent_items(self, limit: int = 20) -> list[dict]:
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-        rows = await SourceItem.get_all({"data_source_id": self.id}) or []
-        rows = sorted(rows, key=lambda r: str(getattr(r, "occurred_at", "") or getattr(r, "created_date", "") or ""), reverse=True)
+        rows = await SourceItem.get_all(QueryFilter(
+            match=ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", str(self.id)]),
+            order_by=[{"occurred_at": "desc"}, {"created_date": "desc"}],
+            limit=max(limit, 0),
+        )) or []
         fields = ("id", "external_id", "kind", "name", "thread_key", "segment_key", "author_external_id", "author_display", "occurred_at")
-        return [{**{f: getattr(r, f, None) for f in fields}, "body": str(getattr(r, "body", "") or "")[:500]} for r in rows[: max(limit, 0)]]
+        return [{**{f: getattr(r, f, None) for f in fields}, "body": str(getattr(r, "body", "") or "")[:500]} for r in rows]
 
     @core_action.post(action_name="sync")
     async def sync_action(self) -> ApiResponse:
@@ -1076,10 +1080,11 @@ class DataSource(Entity):
         await self._make_due()
         await self.save()
         report = await self.sync()
+        # The cycle writes health through its own row handle; read what it left.
         refreshed = await type(self).get_one({"id": self.id}) or self
         return ApiSuccessResponse(data={
-            **{k: getattr(report, k, 0) for k in ("created", "updated", "unchanged")},
-            "health": refreshed.health, "status": refreshed.status, "error_detail": getattr(refreshed, "error_detail", None),
+            "created": report.created, "updated": report.updated, "unchanged": report.unchanged,
+            "health": refreshed.health, "status": refreshed.status, "error_detail": refreshed.error_detail,
         })
 
     @core_action.post(action_name="set_enabled")
@@ -1089,12 +1094,6 @@ class DataSource(Entity):
         self.status = SourceStatus.ACTIVE.value if enabled else SourceStatus.DISABLED.value
         await self.save()
         return ApiSuccessResponse(data={"status": self.status})
-
-    @core_action.post(action_name="remove")
-    async def remove_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_source/{id}/remove — delete the source row."""
-        await self.delete()
-        return ApiSuccessResponse(data={"removed": self.id})
 
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:

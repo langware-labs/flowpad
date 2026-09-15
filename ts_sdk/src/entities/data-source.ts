@@ -267,13 +267,6 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.post('replay', since ? { since } : undefined);
   }
 
-  /**
-   * Re-run setup verification: the connection first, then the driver's own
-   * check. A source only becomes `active` when both pass.
-   *
-   * Idempotent and safe to press repeatedly — it is the button beside "invite
-   * the bot to the channel", and the only way out of `setup`.
-   */
   /** Send one message into the channel. `to` is what the channel addresses (a chat, a channel
    *  id, an address); the source class decides how it reads it. */
   async send(message: { to: string; text: string; thread_key?: string; subject?: string; in_reply_to?: string }): Promise<DataSourceSendOutcome> {
@@ -300,11 +293,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.post('set_enabled', { enabled });
   }
 
-  /** Delete the source row. */
-  async remove(): Promise<{ removed: string }> {
-    return this.post('remove');
-  }
-
+  /**
+   * Re-run setup verification: the connection first, then the driver's own
+   * check. A source only becomes `active` when both pass.
+   *
+   * Idempotent and safe to press repeatedly — it is the button beside "invite
+   * the bot to the channel", and the only way out of `setup`.
+   */
   async verify(): Promise<{
     status: SourceStatus;
     ready: boolean;

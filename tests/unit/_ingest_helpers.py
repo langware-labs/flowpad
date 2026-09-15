@@ -10,15 +10,6 @@ from flow_sdk.ingest.testing import Responder, local_http_server, make_data_sour
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "ingest"
 
 
-def with_token(monkeypatch, driver_class, token: str = "tok"):
-    """*driver_class*, with `_token` answering *token*."""
-    async def _answer(self, source):
-        return token
-
-    monkeypatch.setattr(driver_class, "_token", _answer)
-    return driver_class()
-
-
 def fixture_bytes(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
 
@@ -33,4 +24,4 @@ def serve_fixture(name: str, *, headers: dict | None = None) -> Responder:
     return respond
 
 
-__all__ = ["FIXTURES", "fixture_bytes", "local_http_server", "make_data_source", "position", "serve_fixture", "with_token"]
+__all__ = ["FIXTURES", "fixture_bytes", "local_http_server", "make_data_source", "position", "serve_fixture"]
