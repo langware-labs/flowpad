@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 14
+version: 15
 ---
 # Secret stores — snippets (draft)
 
@@ -37,7 +37,7 @@ keeps a connection's token as one of its secrets.
 ```python
 from flow_sdk.secrets import SecretStore
 store = SecretStore.get(name,config) # just like we get data soruce 
-store = SecretStore.get("env_file",{path:})          # <mount>/.env.local
+store = SecretStore.get("env_file",)          # <mount>/.env.local
 store = SecretStore.for_scope("env_file", project=project)          # <mount>/.env.local
 await store.save({"DATABASE_URL": "postgres://localhost:54322/dev"})
 
