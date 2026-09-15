@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 66
+version: 67
 ---
 # Secret stores
 
@@ -34,30 +34,30 @@ connection's token as one of its secrets.
 
 ## The API in one place
 
-| call                                           | returns / does                                                              |
-| ---------------------------------------------- | --------------------------------------------------------------------------- |
-| `await context.current_project()`              | the project of the working directory (nearest folder up), or `None`         |
-| `project.env_file_path(environment)`           | that project's env file for an environment                                  |
-| `await SecretStore.get()`                      | the default store: `env_file` on the current project's `.env.local`         |
-| `await SecretStore.get(type, config)`          | a store of that type, configured                                            |
-| `await store.load(names)`                      | `{ENV_VAR_NAME: SecretStr}` — a missing name is absent                      |
-| `await store.save(values)`                     | writes `{ENV_VAR_NAME: str or SecretStr}`; an empty value is skipped        |
-| `await store.names()`                          | the names the store holds — never values                                    |
-| `await store.validate_keys(names)`             | nothing; raises `MissingSecrets` naming what the store lacks                |
-| `await store.forget(names)`                    | `(deleted, kept)` — vault entries go, env file lines stay                   |
-| `store.ref`                                    | the store as a value (`{type, config}`) — what a binding saves              |
-| `await CredentialSpec.get(name, project=None)` | the credential with that name                                               |
-| `await spec.secret_store(environment)`         | the store `credential.json` names for that environment                      |
-| `await DataSource.get(name)`                   | the one data source instance with that name                                 |
-| `consumer.credentials.names()`                 | the names a data source or credential needs                                 |
-| `await source.set_secret_store(store)`         | binds the store the source loads from, and saves it                         |
-| `await Connection.get(provider)`               | the held connection; raises `NotConnected` when there is none               |
-| `await connection.validate_scopes(scopes)`     | nothing; raises `MissingScopes` naming the scopes the grant lacks           |
-| `await connection.connect(reauthorize=False)`  | runs the provider's flow; `reauthorize=True` consents again over a grant    |
-| `consumer.connections.names()`                 | the providers a data source or store needs                                  |
-| `consumer.connections.scopes(provider)`        | the scopes it needs from that provider                                      |
-| `await source.set_connection(connection)`      | binds the account the source acts as, and saves it                          |
-| `await source.open()`                          | the configured source, with what is bound loaded in                         |
+| call                                           | returns / does                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------ |
+| `await context.current_project()`              | the project of the working directory (nearest folder up), or `None`      |
+| `project.env_file_path(environment)`           | that project's env file for an environment                               |
+| `await SecretStore.get()`                      | the default store: `env_file` on the current project's `.env.local`      |
+| `await SecretStore.get(type, config)`          | a store of that type, configured                                         |
+| `await store.load(names)`                      | `{ENV_VAR_NAME: SecretStr}` — a missing name is absent                   |
+| `await store.save(values)`                     | writes `{ENV_VAR_NAME: str or SecretStr}`; an empty value is skipped     |
+| `await store.names()`                          | the names the store holds — never values                                 |
+| `await store.validate_keys(names)`             | nothing; raises `MissingSecrets` naming what the store lacks             |
+| `await store.forget(names)`                    | `(deleted, kept)` — vault entries go, env file lines stay                |
+| `store.ref`                                    | the store as a value (`{type, config}`) — what a binding saves           |
+| `await CredentialSpec.get(name, project=None)` | the credential with that name                                            |
+| `await spec.secret_store(environment)`         | the store `credential.json` names for that environment                   |
+| `await DataSource.get(name)`                   | the one data source instance with that name                              |
+| `consumer.credentials.names()`                 | the names a data source or credential needs                              |
+| `await source.set_secret_store(store)`         | binds the store the source loads from, and saves it                      |
+| `await Connection.get(provider)`               | the held connection; raises `NotConnected` when there is none            |
+| `await connection.validate_scopes(scopes)`     | nothing; raises `MissingScopes` naming the scopes the grant lacks        |
+| `await connection.connect(reauthorize=False)`  | runs the provider's flow; `reauthorize=True` consents again over a grant |
+| `consumer.connections.names()`                 | the providers a data source or store needs                               |
+| `consumer.connections.scopes(provider)`        | the scopes it needs from that provider                                   |
+| `await source.set_connection(connection)`      | binds the account the source acts as, and saves it                       |
+| `await source.open()`                          | the configured source, with what is bound loaded in                      |
 
 One verb for lookups — `get` — on every class, always awaited. A credential is
 resolved by project, then the user scope ([§2](#how-get-resolves-a-name)); a data
@@ -69,9 +69,9 @@ config, or the default.
 
 Two ship out of the box:
 
-| type       | config                                   | where a value lives                                              |
-| ---------- | ---------------------------------------- | ---------------------------------------------------------------- |
-| `env_file` | `env_file_path` — the file to read/write | that file, one `NAME=value` line per variable                    |
+| type       | config                                   | where a value lives                                             |
+| ---------- | ---------------------------------------- | --------------------------------------------------------------- |
+| `env_file` | `env_file_path` — the file to read/write | that file, one `NAME=value` line per variable                   |
 | `vault`    | `prefix`, `entries` — the entry names    | the per-instance encrypted store, `<prefix><NAME>` or `entries` |
 
 `SecretStore.get()` with no arguments is `env_file` on
@@ -179,11 +179,11 @@ it, `DataSourceAmbiguous` (with `candidates`) when several do.
 `spec.secret_store(environment)` is the only place a credential's scope and
 environment become a config:
 
-| `value_store`       | config it passes to `SecretStore.get`                                                                                 |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `env` / `env_file`  | `env_file_path`: the scope root's `.env.local` (`development`) or `.env.<env>.local`                                  |
-| `vault`             | `prefix`: `credential.project.<pid>.` / `credential.user.`, with `<env>.` after `credential.` for a named environment |
-| `vault` + `lm_provider` | `entries`: the one `lm_api.<provider>` entry, whatever the variable is called                                     |
+| `value_store`           | config it passes to `SecretStore.get`                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `env` / `env_file`      | `env_file_path`: the scope root's `.env.local` (`development`) or `.env.<env>.local`                                  |
+| `vault`                 | `prefix`: `credential.project.<pid>.` / `credential.user.`, with `<env>.` after `credential.` for a named environment |
+| `vault` + `lm_provider` | `entries`: the one `lm_api.<provider>` entry, whatever the variable is called                                         |
 
 `value_store` names a store type, and `environments.<env>.value_store` overrides
 it for one environment:
@@ -271,9 +271,11 @@ What a source reads, per manifest `auth` shape (`ingest/credentials.resolve_cred
 * **`env`** — the names, from the bound store. Unbound: the default store
   (`SecretStore.get()`, when there is a current project), then the process
   environment for any name still missing.
+
 * **`secrets`** — `{value key: machine secret name}`: the value key from the
   bound (or default) store, else the named machine secret, else the row's own
   `config[value key]`.
+
 * **`connector`** — the bound connection's provider, else the manifest's
   ([§6](#6-connections--the-same-pattern-for-accounts)).
 
@@ -353,18 +355,18 @@ await agentmail.set_secret_store(remote)                                # the ag
 
 ## What each call replaced
 
-| call                                                   | before                                                                                                   |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `SecretStore.get("env_file", …)`                       | `env_local_store.read_env_local_values`, `write_env_local`, `list_env_local` (gitignore guard kept)      |
-| `SecretStore.get("vault", …)`                          | `credential_store._load_vault`, `cli.auth.secrets.write_secret`, `get_secrets`                           |
-| `CredentialSpec.get(name, project=None)`               | `credential_resolver.credentials_in_scope(project)` filtered by hand                                    |
-| `spec.secret_store(environment)`                       | `credential_store.location_name` + `CredentialSpec.store_for(env)` spread over read, write and forget    |
-| `DataSource.get(name)`                                 | `DataSource.get_all({"name": ...})`                                                                      |
+| call                                                  | before                                                                                                   |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `SecretStore.get("env_file", …)`                      | `env_local_store.read_env_local_values`, `write_env_local`, `list_env_local` (gitignore guard kept)      |
+| `SecretStore.get("vault", …)`                         | `credential_store._load_vault`, `cli.auth.secrets.write_secret`, `get_secrets`                           |
+| `CredentialSpec.get(name, project=None)`              | `credential_resolver.credentials_in_scope(project)` filtered by hand                                     |
+| `spec.secret_store(environment)`                      | `credential_store.location_name` + `CredentialSpec.store_for(env)` spread over read, write and forget    |
+| `DataSource.get(name)`                                | `DataSource.get_all({"name": ...})`                                                                      |
 | `source.set_secret_store` / `set_connection` + `open` | `resolve_credentials` reading `os.environ`, a named vault entry and `token_for(auth.connector)` directly |
-| `Connection.get(provider)`                             | `flow_sdk.connections.require(provider)` (kept)                                                          |
-| `connection.validate_scopes(scopes)`                   | comparing `Connection.scopes` by hand; a missing scope failed at the provider call                       |
-| `connection.connect(reauthorize=True)`                 | the Connections screen's Reconnect only                                                                  |
-| `context.current_project()`                            | `Project.find_by_cwd` at each call site, exact folder only                                               |
+| `Connection.get(provider)`                            | `flow_sdk.connections.require(provider)` (kept)                                                          |
+| `connection.validate_scopes(scopes)`                  | comparing `Connection.scopes` by hand; a missing scope failed at the provider call                       |
+| `connection.connect(reauthorize=True)`                | the Connections screen's Reconnect only                                                                  |
+| `context.current_project()`                           | `Project.find_by_cwd` at each call site, exact folder only                                               |
 
 Every guarantee carries over: values and tokens travel as `SecretStr`, only
 names are ever logged (`MissingSecrets` carries variable names, `MissingScopes`
@@ -380,3 +382,4 @@ git would commit.
 2. **`os.environ`** **as a store.** A third, load-only type (`env_vars`, no config)
    for CI and cloud machines — then a machine with no env file binds that instead
    of relying on the unbound fallback.
+
