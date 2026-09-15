@@ -50,6 +50,32 @@ const status = (over: Partial<CredentialsStatus> = {}): CredentialsStatus => ({
 });
 
 describe('buildCredentialRows', () => {
+  it('points an env-file credential at its scope\'s .env.local, when that file exists', () => {
+    const file = (scope: 'user' | 'project', exists: boolean) => ({
+      scope,
+      project_id: scope === 'project' ? 'p1' : null,
+      path: scope === 'project' ? '/p/.env.local' : '/home/.env.local',
+      exists,
+      blocked: false,
+      block_code: null,
+      block_reason: null,
+      detected: [],
+    });
+    const rows = buildCredentialRows(
+      status({
+        credentials: [
+          row({ name: 'proj-env', scope: 'project' }),
+          row({ name: 'proj-vault', scope: 'project', value_store: 'vault' }),
+          row({ name: 'user-env', scope: 'user' }),
+        ],
+        files: [file('project', true), file('user', false)],
+      }),
+    );
+    const byName = Object.fromEntries(rows.map((r) => [r.name, r.envPath]));
+
+    expect(byName).toEqual({ 'proj-env': '/p/.env.local', 'proj-vault': undefined, 'user-env': undefined });
+  });
+
   it('lists every declared credential, the project’s before the user’s', () => {
     const rows = buildCredentialRows(
       status({

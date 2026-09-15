@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { KeyRound, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { FileText, FolderOpen, KeyRound, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { Badge } from '../ui/badge';
@@ -28,11 +28,17 @@ export function CredentialConnectionRows({
   onSetValues,
   onEdit,
   onDelete,
+  onOpenEnvFile,
+  onRevealEnvFile,
 }: {
   rows: CredentialRow[];
   onSetValues: (row: CredentialRow) => void;
   onEdit: (row: CredentialRow) => void;
   onDelete: (row: CredentialRow) => void;
+  /** Open the row's `.env.local` in the editor. Offered only for env-file credentials. */
+  onOpenEnvFile: (path: string) => void;
+  /** Reveal the row's `.env.local` in the OS file manager. */
+  onRevealEnvFile: (path: string) => void;
 }) {
   const { t } = useLingui();
 
@@ -154,6 +160,24 @@ export function CredentialConnectionRows({
                       <Pencil className="me-2 h-3.5 w-3.5" />
                       <Trans>Edit</Trans>
                     </DropdownMenuItem>
+                    {row.envPath && (
+                      <>
+                        <DropdownMenuItem
+                          onSelect={() => onOpenEnvFile(row.envPath!)}
+                          data-testid={`connection-open-env-${testKey}`}
+                        >
+                          <FileText className="me-2 h-3.5 w-3.5" />
+                          <Trans>Open .env.local in editor</Trans>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => onRevealEnvFile(row.envPath!)}
+                          data-testid={`connection-reveal-env-${testKey}`}
+                        >
+                          <FolderOpen className="me-2 h-3.5 w-3.5" />
+                          <Trans>Reveal in Finder/Explorer</Trans>
+                        </DropdownMenuItem>
+                      </>
+                    )}
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
                       onSelect={() => onDelete(row)}
