@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 64
+version: 66
 ---
 # Secret stores — snippets (draft)
 
@@ -19,11 +19,11 @@ consumer needs (**`validate_keys`**).
 Everything that needs access — a data source, a credential, a spawned process, an
 external store — follows the same three steps, for **both** kinds of access:
 
-| step                                       | secrets (named values)                                                 | connections (accounts)                                                             |
-| ------------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 1. **The consumer declares what it needs** | `source.credentials.names()` → `["AGENTMAIL_API_KEY"]`                 | `source.connections.names()` → `["google"]`                                        |
-| 2. **The provider is got and checked**     | `store = await SecretStore.get()` · `await store.validate_keys(names)` | `google = await Connection.get("google")` · `await google.validate_scopes(scopes)` |
-| 3. **It is bound to the consumer**         | `source.set_secret_store(store)`                                       | `source.set_connection(google)`                                                    |
+| step                                       | secrets (named values)                                                 | connections (accounts)                                                                                          |
+| ------------------------------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 1. **The consumer declares what it needs** | `source.credentials.names()` → `["AGENTMAIL_API_KEY"]`                 | `source.connections.names()` → `["google"]`                                                                     |
+| 2. **The provider is got and checked**     | `store = await SecretStore.get()` · `await store.validate_keys(names)` | `google = await Connection.get("google")` · `await google.validate_scopes(source.connections.scopes("google"))` |
+| 3. **It is bound to the consumer**         | `source.set_secret_store(store)`                                       | `source.set_connection(google)`                                                                                 |
 
 When the consumer opens, it loads its names from the bound store and its token
 from the bound connection. Nothing reads `os.environ`, a file or the connection
@@ -56,8 +56,11 @@ Every snippet below uses only these calls:
 | `consumer.set_connection(connection)`                | binds the account the consumer acts as                              |
 | `context.current_project.env_file_path(environment)` | the project's env file for an environment                           |
 
-One verb for lookups — `get` — on every class, always awaited, and resolved the
-same way (see [§2](#2-a-credential-uses-its-store-as-is)).
+One verb for lookups — `get` — on every class, always awaited. Rows with a name
+(`DataSource`, `CredentialSpec`) resolve it by project, then generally available
+([§2](#how-get-resolves-a-name)); a connection is resolved by provider for the
+current user ([§6](#6-connections--the-same-pattern-for-accounts)); a store is
+resolved by type and config, or the default.
 
 ## Store types
 
@@ -205,6 +208,7 @@ terminal, node command). Inside it is the same pattern per credential:
 ## 4. Moving values between stores
 
 ```python
+project = context.current_project
 spec = await CredentialSpec.get("database")
 names = spec.credentials.names()
 
@@ -240,7 +244,7 @@ store = await SecretStore.get()                  # default: the current project'
 await store.validate_keys(names)                 # MissingSecrets if the file lacks any
 source.set_secret_store(store)
 
-async with await source.open() as connection:    # open() loads `names` from the bound store into the binding
+async with await source.open() as live:          # open() loads `names` from the bound store into the binding
     ...
 ```
 
@@ -254,7 +258,8 @@ for `auth.env` and a named vault entry for `auth.secrets`. With the pattern:
   `source.set_secret_store(await SecretStore.get("vault", {"prefix": ""}))`.
 
 * A source with no bound store uses `SecretStore.get()` — the same default as
-  everywhere else.
+  everywhere else. Likewise a source with no bound connection uses
+  `Connection.get(provider)` for each of `source.connections.names()` ([§6](#6-connections--the-same-pattern-for-accounts)).
 
 No new auth shape: a data source's names are the same `ENV_VAR_NAME`s a
 credential declares, so one store serves both.
@@ -303,10 +308,13 @@ named values:
 agentmail = await DataSource.get("agent_email")
 
 remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "agentmail-production-"})
-remote.set_connection(await Connection.get("google"))    # the account comes from the connection, never from config
+
+google = await Connection.get("google")                                 # remote.connections.names() → ["google"]
+await google.validate_scopes(remote.connections.scopes("google"))
+remote.set_connection(google)                                           # the account comes from the connection, never from config
 
 await remote.validate_keys(agentmail.credentials.names())
-agentmail.set_secret_store(remote)                        # the agentmail source now loads its key from GCP
+agentmail.set_secret_store(remote)                                      # the agentmail source now loads its key from GCP
 ```
 
 ## What already exists, and what it becomes
@@ -324,12 +332,13 @@ agentmail.set_secret_store(remote)                        # the agentmail source
 | `project.env_file_path(environment)`                                        | `project_scope(project).root` + `env_file_name(environment)`                                             |
 | `Connection.get(provider)`                                                  | `flow_sdk.connections.require(provider)` / `get_connection(provider)`                                    |
 | `connection.validate_scopes(scopes)`                                        | new; today `Connection.scopes` compared by hand, a missing scope fails at the provider call              |
-| `consumer.connections.names()` + `set_connection(...)`                      | a data source's manifest `auth.connector`; `token_for(provider)` inside `resolve_credentials`            |
+| `consumer.connections.names()` / `scopes(provider)` + `set_connection(...)` | a data source's manifest `auth.connector`; `token_for(provider)` inside `resolve_credentials`            |
 | `store.forget(names)`                                                       | `credential_store.forget_values` (vault entries go; env file lines stay)                                 |
 
-Every guarantee carries over: values travel as `SecretStr`, only names are ever
-logged (`MissingSecrets` carries names), status never reads a value, and a value
-is never written to a file git would commit.
+Every guarantee carries over: values and tokens travel as `SecretStr`, only
+names are ever logged (`MissingSecrets` carries variable names, `MissingScopes`
+scope names), status never reads a value, and a value is never written to a file
+git would commit.
 
 ## Open questions
 
@@ -337,9 +346,10 @@ is never written to a file git would commit.
    shipped types. A `SecretStore` row (like `DataSource`, with a name, owner and
    saved config) only when a configured external store with an account arrives —
    then `get` also accepts a saved store's name.
-2. **Is the binding saved?** `source.set_secret_store(store)` binds for this
-   process. Persist it on the `DataSource` row (so the heartbeat's sync uses the
-   same store), or bind at every open.
+2. **Is the binding saved?** `source.set_secret_store(store)` and
+   `source.set_connection(connection)` bind for this process. Persist both on the
+   `DataSource` row (so the heartbeat's sync uses the same store and account), or
+   bind at every open.
 3. **`os.environ`** **as a store.** A third, load-only type (`env_vars`, no config)
    for CI and cloud machines — then a machine with no env file binds that instead
    of relying on a hidden fallback.
