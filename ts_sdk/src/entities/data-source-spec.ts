@@ -58,14 +58,18 @@ export interface IDataSourceSpec extends IEntity {
   /** Per-CHANNEL glyphs for a multi-channel transport (agent: gmail→Mail, slack→Slack). */
   channel_icon_names?: Record<string, string>;
   setup_wiki?: string;
+  /** The record kind a source row carries (`datasource.api.slack`). */
+  kind?: string;
+  /** Always `source`: the folder's own `source.py`. */
   runtime?: string;
-  /** The driver can push a reply back to its channel — a source of this provider is a MessageSource. */
+  /** The source class can push a reply back to its channel — a source of this provider is a MessageSource. */
   sends?: boolean;
+  /** Why the folder's source did not load, or empty. */
+  load_error?: string;
   reflect?: string[];
   /** The form's fields, under the manifest's own key. */
   config?: Record<string, SpecConfigField>;
   auth?: Record<string, unknown> | null;
-  traits?: Record<string, unknown> | null;
   requires?: Record<string, string>;
   manifest_schema?: number;
 }
@@ -96,11 +100,12 @@ export class DataSourceSpec extends APIEntity<DataSourceSpec> implements IDataSo
   icon_name: string = '';
   channel_icon_names: Record<string, string> = {};
   setup_wiki: string = '';
-  runtime: string = 'builtin';
+  kind: string = '';
+  runtime: string = 'source';
+  load_error: string = '';
   reflect: string[] = [];
   config: Record<string, SpecConfigField> = {};
   auth: Record<string, unknown> | null = null;
-  traits: Record<string, unknown> | null = null;
   requires: Record<string, string> = {};
   manifest_schema: number = 1;
 

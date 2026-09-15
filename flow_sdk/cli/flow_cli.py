@@ -1246,6 +1246,10 @@ from flow_sdk.cli.commands.show_cmd import show_app
 
 app.add_typer(show_app, name="show")
 
+from flow_sdk.cli.commands.source_cmd import source_app
+
+app.add_typer(source_app, name="source")
+
 from flow_sdk.cli.commands.terminal_cmd import terminal_app
 
 app.add_typer(terminal_app, name="terminal")

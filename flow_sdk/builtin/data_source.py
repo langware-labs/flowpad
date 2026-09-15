@@ -48,6 +48,17 @@ logger = logging.getLogger(__name__)
 MIN_POLL_INTERVAL_SECONDS = 60
 
 
+def _outcome_dict(outcome: SendOutcome) -> dict:
+    """A send outcome on the wire: the id the channel assigned, whether it was only drafted, and
+    whether the local copy was recorded (a SENT but unrecorded message must never be re-sent)."""
+    return {
+        "external_id": outcome.external_id,
+        "status": str(outcome.status),
+        "recorded": outcome.recorded,
+        "artifact_id": outcome.artifact_id,
+    }
+
+
 def _normalize_message_id(value: object) -> str:
     """Comparable form of an RFC message id from a send or received header."""
     normalized = "".join(str(value or "").split()).casefold()
@@ -981,6 +992,105 @@ class DataSource(Entity):
         except Exception as exc:  # noqa: BLE001 — a driver must not 500 the picker
             logger.warning("choices failed for %s.%s: %s", provider, field, exc, exc_info=True)
             return ChoiceSet(detail=f"could not list: {exc}")
+
+    # ── the verbs the CLI, the TS SDK and the UI share ────────────────────────
+    # Thin routes over real verbs, the `replay`/`replay_action` shape: bodies come from the request
+    # info (see `replay_action` on why an action declares no parameters).
+
+    @staticmethod
+    async def _body() -> dict:
+        request_info = get_current_request_info()
+        return dict(await request_info.get_post_data() or {}) if request_info else {}
+
+    @core_action.post(action_name="send")
+    async def send_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/send — one message into the channel.
+
+        Body: ``{"to", "text", "thread_key"?, "subject"?, "in_reply_to"?}``. ``to`` is what the channel
+        addresses (a chat, a channel id, an address); the source class reads it (``message_for``)."""
+        body = await self._body()
+        try:
+            return ApiSuccessResponse(data=await self.send_text(
+                to=str(body.get("to") or ""), text=str(body.get("text") or ""), thread_key=str(body.get("thread_key") or ""),
+                subject=str(body.get("subject") or ""), in_reply_to=str(body.get("in_reply_to") or ""),
+            ))
+        except (ValueError, RuntimeError, NotImplementedError) as exc:
+            return ApiFailResponse(message=str(exc))
+
+    async def send_text(self, *, to: str, text: str, thread_key: str = "", subject: str = "", in_reply_to: str = "") -> dict:
+        from flow_sdk.ingest.source_registry import resolve_source_type  # noqa: PLC0415
+
+        driver = await resolve_source_type(self.provider or "")
+        if driver is None or not driver.sends:
+            raise RuntimeError(f"{self.provider} cannot send")
+        if not (text or "").strip():
+            raise ValueError("text is required")
+        outcome = await driver.send(self, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to)
+        return _outcome_dict(outcome)
+
+    @core_action.post(action_name="reply")
+    async def reply_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/reply — answer one of this source's items.
+
+        Body: ``{"item_id", "text"}``. Who the reply goes to is the channel's rule (``reply_spec``)."""
+        body = await self._body()
+        try:
+            return ApiSuccessResponse(data=await self.reply_to_item(str(body.get("item_id") or ""), str(body.get("text") or "")))
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except (ValueError, RuntimeError, NotImplementedError) as exc:
+            return ApiFailResponse(message=str(exc))
+
+    async def reply_to_item(self, item_id: str, text: str) -> dict:
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+        item = await SourceItem.get_one({"id": item_id, "data_source_id": self.id}) if item_id else None
+        if item is None:
+            raise LookupError(f"no item {item_id!r} on this source")
+        if not (text or "").strip():
+            raise ValueError("text is required")
+        return _outcome_dict(await self.send(self.reply_spec(item, body=text)))
+
+    @core_action.post(action_name="items")
+    async def items_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/items — this source's records, newest first.
+
+        Body: ``{"limit"?}`` (default 20)."""
+        body = await self._body()
+        return ApiSuccessResponse(data={"items": await self.recent_items(int(body.get("limit") or 20))})
+
+    async def recent_items(self, limit: int = 20) -> list[dict]:
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+        rows = await SourceItem.get_all({"data_source_id": self.id}) or []
+        rows = sorted(rows, key=lambda r: str(getattr(r, "occurred_at", "") or getattr(r, "created_date", "") or ""), reverse=True)
+        fields = ("id", "external_id", "kind", "name", "thread_key", "segment_key", "author_external_id", "author_display", "occurred_at")
+        return [{**{f: getattr(r, f, None) for f in fields}, "body": str(getattr(r, "body", "") or "")[:500]} for r in rows[: max(limit, 0)]]
+
+    @core_action.post(action_name="sync")
+    async def sync_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/sync — one sync cycle NOW, reported. Unlike ``poll_now``
+        this waits for the cycle: it is what a person or an agent runs to see a source work."""
+        report = await self.sync()
+        refreshed = await type(self).get_one({"id": self.id}) or self
+        return ApiSuccessResponse(data={
+            **{k: getattr(report, k, 0) for k in ("created", "updated", "unchanged")},
+            "health": refreshed.health, "status": refreshed.status, "error_detail": getattr(refreshed, "error_detail", None),
+        })
+
+    @core_action.post(action_name="set_enabled")
+    async def set_enabled_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/set_enabled — ``{"enabled": bool}``. Disabled stops polling."""
+        enabled = bool((await self._body()).get("enabled", True))
+        self.status = SourceStatus.ACTIVE.value if enabled else SourceStatus.DISABLED.value
+        await self.save()
+        return ApiSuccessResponse(data={"status": self.status})
+
+    @core_action.post(action_name="remove")
+    async def remove_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/remove — delete the source row."""
+        await self.delete()
+        return ApiSuccessResponse(data={"removed": self.id})
 
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:
