@@ -99,22 +99,21 @@ def _count(root: str, revisions: str, rel: str) -> Optional[int]:
 
 
 def behind_count(
-    agent: "Agent",
     source_revision: Optional[str],
     published_commit: str,
-    repo: Optional[tuple[str, str]] = None,
+    repo: Optional[tuple[str, str]],
 ) -> Optional[int]:
     """Published commits touching the agent's folder that a cloud machine does not run yet.
 
-    None when it cannot be known here: nothing published, the machine never
-    recorded its revision, or the commits are not in this computer's repository.
-    Blocking (git); call it off the event loop.
+    ``repo`` is ``_agent_repo(agent)``. None when it cannot be known here:
+    nothing published, the machine never recorded its revision, or the agent
+    is not in a checkout on this computer. Blocking (git); call it off the
+    event loop.
     """
     if not source_revision or not published_commit:
         return None
     if source_revision == published_commit:
         return 0
-    repo = repo or _agent_repo(agent)
     return _count(repo[0], f"{source_revision}..{published_commit}", repo[1]) if repo else None
 
 
@@ -127,10 +126,9 @@ def version_state(agent: "Agent") -> dict[str, Any]:
     """
     from flow_sdk.utils.git import _sync  # noqa: PLC0415
 
-    origin = agent.origin if getattr(agent.origin, "head_commit", None) else None
-    published_commit = str(getattr(origin, "head_commit", "") or "")
+    published_commit = str(getattr(agent.origin, "head_commit", "") or "")
     state: dict[str, Any] = {
-        "published": bool(agent.remote and origin is not None),
+        "published": bool(agent.remote and published_commit),
         "published_commit": published_commit,
         "has_repo": False,
         "pending_changes": 0,
@@ -141,13 +139,8 @@ def version_state(agent: "Agent") -> dict[str, Any]:
     root, rel = repo
     state["has_repo"] = True
     dirty = [line for line in _sync(root, "status", "--porcelain", "--", rel).splitlines() if line.strip()]
-    if published_commit:
-        ahead = _count(root, f"{published_commit}..HEAD", rel) or 0
-    elif not state["published"]:
-        # Never published: everything under the folder is unpublished.
-        ahead = _count(root, "HEAD", rel) or 0
-    else:
-        ahead = 0
+    # Never published: every commit touching the folder is unpublished.
+    ahead = _count(root, f"{published_commit}..HEAD" if published_commit else "HEAD", rel) or 0
     state["pending_changes"] = len(dirty) + ahead
     return state
 
@@ -160,19 +153,20 @@ async def list_places(agent: "Agent") -> list[dict[str, Any]]:
     from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
     from flow_sdk.schema.data_spec.trigger_types import TriggerType  # noqa: PLC0415
 
-    local = await agent.local_deployment()
-    deployments = [local] + [d for d in await agent.deployments() if d.id != local.id]
-    schedules = [
-        t
-        for t in await Trigger.get_all({"match": {"parent_type_id": str(agent.typeid)}})
-        if t.trigger_type == TriggerType.SCHEDULE
-    ]
+    local, placed, triggers = await asyncio.gather(
+        agent.local_deployment(),
+        agent.deployments(),
+        Trigger.get_all({"match": {"parent_type_id": str(agent.typeid)}}),
+    )
+    deployments = [local] + [d for d in placed if d.id != local.id]
+    schedules = [t for t in triggers if t.trigger_type == TriggerType.SCHEDULE]
     # Unset keeps the legacy rule, reported as this computer: the machine asking is the one polling.
     answering = agent.email_place or local.id
     published = str(getattr(agent.origin, "head_commit", "") or "")
     cloud = [d for d in deployments if not d.is_local]
     repo = await asyncio.to_thread(_agent_repo, agent) if cloud and published else None
-    behind = {d.id: await asyncio.to_thread(behind_count, agent, d.source_revision, published, repo) for d in cloud}
+    counts = await asyncio.gather(*(asyncio.to_thread(behind_count, d.source_revision, published, repo) for d in cloud))
+    behind = dict(zip((d.id for d in cloud), counts))
 
     rows = []
     for deployment in deployments:

@@ -23,15 +23,15 @@ import { AgentPlaceEmail } from './AgentPlaceEmail';
 import { AgentScheduleSection } from './AgentScheduleSection';
 import { DeployedAgentChatPanel } from './DeployedAgentChatPanel';
 
-export const PLACE_TABS = ['activity', 'schedules', 'config', 'email'] as const;
-export type PlaceTab = (typeof PLACE_TABS)[number];
+const PLACE_TABS = ['activity', 'schedules', 'config', 'email'] as const;
+type PlaceTab = (typeof PLACE_TABS)[number];
 
 /** Dock option holding one place card's selected tab. Per card, so two cards keep their own tab. */
 export function placeTabOption(deploymentId: string): string {
   return `tab-${deploymentId}`;
 }
 /** Dock option naming the place whose chat is open. */
-export const PLACE_CHAT_OPTION = 'chat';
+const PLACE_CHAT_OPTION = 'chat';
 
 interface AgentPlaceCardProps {
   agent: Agent;

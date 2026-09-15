@@ -294,11 +294,8 @@ export class Agent extends APIEntity<Agent> {
 
   /** Fire one of this agent's schedules on a CLOUD place, through the hub (`run_now`). */
   async placeAction(deploymentId: string, op: 'run_now', triggerId: string): Promise<Record<string, unknown>> {
-    return ((await this.post('place_action', {
-      deployment_id: deploymentId,
-      op,
-      ...(triggerId ? { trigger_id: triggerId } : {}),
-    })) ?? {}) as Record<string, unknown>;
+    return ((await this.post('place_action', { deployment_id: deploymentId, op, trigger_id: triggerId })) ??
+      {}) as Record<string, unknown>;
   }
 
   /** Commit, push and register this agent on the hub. `force` republishes an agent already there. */

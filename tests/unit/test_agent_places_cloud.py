@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agent_places import PlaceError, adopt_placement, behind_count, list_places
+from flow_sdk.builtin.agent_places import PlaceError, _agent_repo, adopt_placement, behind_count, list_places
 from flow_sdk.builtin.deployment import KIND_AGENT, Deployment, DeploymentActionError
 from tests.unit.agent._seed import seed_agent, seed_project
 
@@ -55,7 +55,8 @@ class _Hub:
 
     async def get(self, etype, eid=None, action=None, **kw):
         self.calls.append(("GET", etype, eid, action, kw.get("params")))
-        return {"runs": [{"id": "r1", "badge": "done"}, "junk"]} if self.configured else None
+        # What the hub's runs action answers: runs only (it drops anything else).
+        return {"runs": [{"id": "r1", "badge": "done"}]} if self.configured else None
 
 
 @pytest.fixture
@@ -134,10 +135,12 @@ async def test_behind_counts_published_commits_the_machine_lacks(tmp_path):
     git("commit", "-q", "-m", "outside the agent")
     published = git("rev-parse", "HEAD")
 
-    assert behind_count(agent, deployed, published) == 1, "only commits touching the agent's folder count"
-    assert behind_count(agent, published, published) == 0
-    assert behind_count(agent, None, published) is None
-    assert behind_count(agent, deployed, "") is None
+    repo = _agent_repo(agent)
+    assert behind_count(deployed, published, repo) == 1, "only commits touching the agent's folder count"
+    assert behind_count(published, published, repo) == 0
+    assert behind_count(None, published, repo) is None
+    assert behind_count(deployed, "", repo) is None
+    assert behind_count(deployed, published, None) is None, "not in a checkout here: unknown"
 
     cloud = await _cloud_place(agent, source_revision=deployed)
     object.__setattr__(agent, "origin", SimpleNamespace(kind="git", head_commit=published))
@@ -176,7 +179,7 @@ async def test_this_computer_has_no_update_or_remote_runs(tmp_path, hub):
         await local.update()
     assert update.value.status_code == 409
     with pytest.raises(DeploymentActionError):
-        await local.remote_runs()
+        await local.remote_runs(8)
     assert hub.calls == []
 
 
@@ -190,5 +193,5 @@ async def test_a_relay_without_a_hub_says_to_log_in(tmp_path, hub):
         await cloud.update()
     assert update.value.status_code == 401
     with pytest.raises(DeploymentActionError) as runs:
-        await cloud.remote_runs()
+        await cloud.remote_runs(8)
     assert runs.value.status_code == 502

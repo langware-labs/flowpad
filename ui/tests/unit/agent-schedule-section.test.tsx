@@ -27,6 +27,8 @@ import { AgentScheduleSection } from '@src/components/assets/editor/agent-profil
 
 const AGENT_ID = '11111111-1111-4111-8111-111111111111';
 const AGENT_KEY = `agent-${AGENT_ID}`;
+/** This computer's place; schedules with no `runs_on` (the legacy shape) show on it. */
+const LOCAL_PLACE = '66666666-6666-4666-8666-666666666666';
 
 function schedule(overrides: Record<string, unknown> = {}) {
   return {
@@ -54,7 +56,7 @@ afterEach(() => {
 
 function renderSection(autoLaunchPrompt = '') {
   const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
-  render(<AgentScheduleSection agent={agent} autoLaunchPrompt={autoLaunchPrompt} />);
+  render(<AgentScheduleSection agent={agent} autoLaunchPrompt={autoLaunchPrompt} deploymentId={LOCAL_PLACE} isLocal />);
   return agent;
 }
 
