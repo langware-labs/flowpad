@@ -46,6 +46,29 @@ hard way:
   ACTIVE from `driver.verify is not None`. Presence of a verb cannot lie; a
   boolean can, and a wrong one parks a source no button releases.
 
+## Self-contained
+
+Everything one source needs lives in its folder, shipped or authored alike — the rule in
+`CLAUDE.md` ("Data sources are self-contained assets"):
+
+```
+agentic-assets/data_source/<name>/
+  data_source.json          # the DataSourceSpec
+  source.py                 # exactly one flow_sdk.sources.Source subclass — the source
+  transport.py …            # optional helper modules, imported relatively (`from .transport import …`)
+  tests/test_<name>_source.py   # conformance kit + wire cases, against flow_sdk.sources.testing doubles
+  tests/fixtures/…          # the responder packs those tests serve
+  agentic-assets/webapp/editor/   # optional editor
+  README.md                 # setup, credentials, live-validation notes
+```
+
+Outside asset folders only generic machinery exists: the contract, the loader, the sync engine,
+reflection, projection, generic routes and UI. None of it names a provider. What machinery needs
+to know about a source, the source declares — a manifest field, or a classmethod on its class.
+Asset code may import the public SDK; it never imports another asset. An exception is the user's
+call, recorded with its date and reason in `EXCEPTIONS` in
+`tests/unit/test_data_sources_are_self_contained.py`, which fails on any unlisted trace.
+
 ## The manifest
 
 ```yaml
