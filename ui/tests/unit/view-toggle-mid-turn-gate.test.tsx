@@ -166,7 +166,9 @@ describe('ViewToggle refuses a gated segment instead of lying about it', () => {
     fireEvent.click(seg(ViewMode.Vibe));
 
     expect(openDock).toHaveBeenCalledTimes(1);
-    expect(openDock).toHaveBeenCalledWith(expect.objectContaining({ viewMode: ViewMode.Vibe }));
+    expect(openDock).toHaveBeenCalledWith(expect.objectContaining({ viewMode: ViewMode.Vibe }), undefined, {
+      viewModeSwitch: true,
+    });
   });
 
   it('uses aria-disabled rather than the native one, so the segment can still be hovered', () => {

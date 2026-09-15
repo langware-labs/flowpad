@@ -14,6 +14,7 @@ import {
 import { usePreference, usePreferenceResolved } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useLocation } from 'react-router';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 
 declare global {
@@ -401,6 +402,13 @@ export function useViewMode(): ViewMode {
   return mode;
 }
 
+/** History state a user's mode switch travels with — see `useDockViewModeOverrideSync`. */
+export const VIEW_MODE_SWITCH_STATE = { viewModeSwitch: true } as const;
+
+export function isViewModeSwitchState(state: unknown): boolean {
+  return (state as { viewModeSwitch?: unknown } | null)?.viewModeSwitch === true;
+}
+
 /**
  * Sync the current DockPointer's viewMode override into useViewMode(), and turn
  * a mode SWITCH into `setViewMode`.
@@ -416,15 +424,19 @@ export function useDockViewModeOverrideSync(): void {
   const currentDock = useCurrentDock();
   const override = currentDock?.viewMode ?? null;
   const previous = useRef(currentDock);
+  const marked = isViewModeSwitchState(useLocation().state);
 
   useEffect(() => {
     const prev = previous.current;
     previous.current = currentDock;
     setDockViewModeOverride(override);
-    // A switch is the same dock committing with a different mode.
-    if (!currentDock || !override || !prev?.viewMode || prev.viewMode === override) return;
+    // A switch is the same dock committing with a different mode. From a bare
+    // URL only the toggle's marker makes it one: a redirect that adds the mode
+    // carries no marker, so it only displays.
+    if (!currentDock || !prev || !override || prev.viewMode === override) return;
+    if (!prev.viewMode && !marked) return;
     if (prev.withViewMode(null).equals(currentDock.withViewMode(null))) setViewMode(override, currentDock);
-  }, [currentDock, override]);
+  }, [currentDock, override, marked]);
 
   useEffect(() => () => setDockViewModeOverride(null), []);
 }
