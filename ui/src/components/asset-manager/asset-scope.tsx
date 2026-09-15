@@ -156,31 +156,28 @@ function ScopeGlyph({ scope }: { scope: AssetScope }) {
  */
 export function AssetScopeChip({ scope, testidSuffix }: { scope: AssetScope; testidSuffix: string }) {
   const revealPath = scope.revealPath;
-  // One element, two grid cells: `display:contents` lets the glyph and the name
-  // sit in the row's own tracks while staying a single chip, so the reveal
-  // behaviour is written once instead of once per cell.
   const Cell = revealPath ? 'button' : 'span';
+  // One real cell carrying the one title, so hovering the glyph shows it too —
+  // which matters in the dense row layout, where the name is hidden
+  // (`.asset-scope-label`, see styles/index.css).
   return (
     <Cell
-      {...(revealPath
-        ? {
-            type: 'button' as const,
-            onClick: () => void openExternalFromComputeNode('@local', revealPath, { select: true }),
-            title: `${scope.tooltip}\n\nClick to reveal in the file browser`,
-          }
-        : { title: scope.tooltip })}
-      className="contents"
+      {...(revealPath && {
+        type: 'button' as const,
+        onClick: () => void openExternalFromComputeNode('@local', revealPath, { select: true }),
+        'aria-label': scope.label,
+      })}
+      title={revealPath ? `${scope.tooltip}\n\nClick to reveal in the file browser` : scope.tooltip}
+      className={cn(
+        'flex min-w-0 items-center gap-2 rounded text-muted-foreground',
+        revealPath && 'hover:bg-muted hover:text-foreground',
+      )}
       data-testid={`asset-manager-scope-${testidSuffix}`}
     >
-      <span className={cn('flex items-center justify-center rounded', revealPath && 'hover:bg-muted')}>
+      <span className="flex w-5 flex-shrink-0 justify-center">
         <ScopeGlyph scope={scope} />
       </span>
-      <span
-        className={cn(
-          'min-w-0 truncate rounded text-start text-[10px] uppercase tracking-wider text-muted-foreground',
-          revealPath && 'hover:bg-muted hover:text-foreground',
-        )}
-      >
+      <span className="asset-scope-label min-w-0 truncate text-start text-[10px] uppercase tracking-wider">
         {scope.label}
       </span>
     </Cell>
