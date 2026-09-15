@@ -14,7 +14,9 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.email_inbox import EmailInbox
-from flow_sdk.sources.providers.cloud_email import CloudEmailSource
+from flow_sdk.ingest.source_registry import asset_module
+
+CloudEmailSource = asset_module("cloud_email").CloudEmailSource
 
 pytestmark = pytest.mark.asyncio
 

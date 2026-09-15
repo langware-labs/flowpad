@@ -45,17 +45,6 @@ SHIPPED_ROOT = Path(__file__).resolve().parents[1] / "system_projects" / "flowpa
 MANIFEST_FILE = "data_source.json"
 SOURCE_FILE = "source.py"
 
-#: Shipped sources whose code still lives in ``flow_sdk/sources/providers`` — the consolidation
-#: checklist (``tests/unit/test_data_sources_are_self_contained.py``). Empty once every source has
-#: moved into its folder.
-NOT_YET_MOVED: dict[str, str] = {
-    name: f"flow_sdk.sources.providers.{name}.source"
-    for name in (
-        "agent", "agentmail", "cloud_email", "folder", "gcs", "gdrive", "git", "gmail",
-        "hackernews", "helpdesk", "rss", "slack", "teams", "telegram", "whatsapp",
-    )
-}
-
 #: ``{name: why it did not load}`` — read by ``DataSourceSpec.load_error``.
 _LOAD_ERRORS: dict[str, str] = {}
 
@@ -132,9 +121,6 @@ def _typed(cls: type[Source], manifest: ManifestSpec, folder: Path) -> "SourceTy
 
 def asset_module(name: str, module: str = "source") -> ModuleType:
     """A shipped source's module — what its own tests, and nothing else, import."""
-    if name in NOT_YET_MOVED:
-        base = NOT_YET_MOVED[name].rsplit(".", 1)[0]
-        return importlib.import_module(f"{base}.{module}")
     return load_module(SHIPPED_ROOT / name, module)
 
 
@@ -147,10 +133,7 @@ def register_shipped(registry: "KindRegistry[SourceType]") -> None:
         if registry.get_or_none(name) is not None:
             continue
         try:
-            if name in NOT_YET_MOVED:
-                registry.register(_typed(source_class(importlib.import_module(NOT_YET_MOVED[name])), read_manifest(folder), folder))
-            else:
-                registry.register(load_source(folder))
+            registry.register(load_source(folder))
             _LOAD_ERRORS.pop(name, None)
         except SourceLoadError as exc:
             _LOAD_ERRORS[name] = str(exc)
@@ -203,7 +186,6 @@ def load_error_for(name: str) -> str:
 
 __all__ = [
     "MANIFEST_FILE",
-    "NOT_YET_MOVED",
     "SHIPPED_ROOT",
     "SOURCE_FILE",
     "SourceLoadError",

@@ -39,18 +39,8 @@ ORDINARY_WORDS = frozenset({"agent", "folder", "git"})
 #: Only the user grants one.
 EXCEPTIONS: dict[str, str] = {}
 
-#: The consolidation checklist — today's offenders. It may only shrink.
-MIGRATING: frozenset[str] = frozenset(
-    {
-        LEGACY_PROVIDERS,
-        *(f"{ASSETS_REL}/{name}" for name in (
-            "agent", "agentmail", "cloud_email", "folder", "gcs", "gdrive", "git", "gmail",
-            "hackernews", "helpdesk", "rss", "slack", "teams", "telegram", "whatsapp",
-        )),
-        # The loader's NOT_YET_MOVED table — empties as each source moves into its folder.
-        "flow_sdk/ingest/source_registry.py",
-    }
-)
+#: The consolidation checklist. Done: it stays empty.
+MIGRATING: frozenset[str] = frozenset()
 
 
 @lru_cache(maxsize=1)
