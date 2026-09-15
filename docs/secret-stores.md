@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 45
+version: 46
 ---
 # Secret stores — snippets (draft)
 
@@ -189,7 +189,7 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.sources import source_type
 #this has changed 
 source = await DataSource.get("agent_email)
-cradential = sources.cradentials.names()
+cradential_names = sources.cradentials.names()
 kind = source_type(row.provider)
 creds = await kind.credentials_for(row)    # Credentials(shape=ENV, values={"AGENTMAIL_API_KEY": SecretStr(...)})
 async with await kind.open(row) as source:  # open() resolves the same credentials into the source's binding
