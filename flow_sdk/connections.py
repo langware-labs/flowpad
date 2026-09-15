@@ -25,7 +25,6 @@ from flow_sdk.core.connections import (
     Authorization,
     ConnectionSpec,
     list_connections,
-    resolve_connection_spec,
     token_for_spec,
 )
 from flow_sdk.core.connections import (
@@ -35,6 +34,7 @@ from flow_sdk.core.connections import (
     test as _test,
 )
 from flow_sdk.core.connections.presentation import open_authorization_in_system_browser
+from flow_sdk.core.connections.specs import match_provider
 from flow_sdk.schema.data_spec.connection_spec import (
     BrowserAuthorization,
     ConnectionCancelled,
@@ -201,7 +201,8 @@ class Connection:
     async def token(self) -> str:
         """Resolve the access token now, without caching it on this object."""
 
-        spec = self._spec or await resolve_connection_spec(self.provider)
+        row = self if self._spec is not None else await get_connection(self.provider)
+        spec = row._spec if row is not None else None
         if spec is None:
             raise NotConnected(self.provider, self.display_name)
         result = await token_for_spec(spec)
@@ -233,7 +234,11 @@ def _from_spec(
 
 
 async def get_connections(project_id: str = "") -> list[Connection]:
-    """Every connection this box has, in the order the screen shows them.
+    """Every connection this box has AND every OAuth provider it could connect.
+
+    Each row's ``connected`` says which: an unconnected provider is listed with
+    ``connected=False`` so ``await row.connect()`` can start its flow. (The
+    Connections screen's table shows held rows only; its Add dialog is the rest.)
 
     Machine-level kinds always; API-key credentials only when ``project_id`` is
     given, because their identity is ``(project_id, env_var)`` and the server has
@@ -241,14 +246,13 @@ async def get_connections(project_id: str = "") -> list[Connection]:
     list rather than a guess.
     """
 
-    return [_from_spec(spec) for spec in await list_connections(project_id)]
+    return [_from_spec(spec) for spec in await list_connections(project_id, include_unconnected=True)]
 
 
-async def get_connection(provider: str) -> Optional[Connection]:
-    """Return one canonical provider row, or ``None`` when it is resolvably absent."""
+async def get_connection(provider: str, project_id: str = "") -> Optional[Connection]:
+    """The :func:`get_connections` row for ``provider``, or ``None`` when there is none."""
 
-    spec = await resolve_connection_spec(provider)
-    return _from_spec(spec) if spec is not None else None
+    return match_provider(await get_connections(project_id), provider)
 
 
 async def require(provider: str) -> Connection:

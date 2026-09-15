@@ -40,12 +40,20 @@ provider call that proves it still works.
 
 ```console
 $ flow connections list
-github         connected       GitHub
-slack          not connected   Slack
+flowpad	flowpad	disconnected	FlowPad
+claude	harness	unknown	Claude
 
 $ flow connections connect slack
 {"ok": true, "provider": "slack", "connected": true, "identity": "me"}
+
+$ flow connections list
+flowpad	flowpad	disconnected	FlowPad
+claude	harness	unknown	Claude
+slack	oauth	connected	Slack
 ```
+
+Each row is `provider`, `kind`, `state`, `display_name`, tab-separated. The list
+is what this box holds, so an unconnected provider appears only after it connects.
 
 Use `--json` for a machine-readable list or error. Browser instructions and
 progress use stderr; credentials, tokens and callback state are never printed.
@@ -53,7 +61,7 @@ progress use stderr; credentials, tokens and callback state are never printed.
 ## Require and use a held connection
 
 ```python
-from flow_sdk.connections import NotConnected, TokenUnavailable, require
+from flow_sdk.connections import NotConnected, TokenUnavailable, get_connections, require
 
 try:
     slack = await require("slack")
