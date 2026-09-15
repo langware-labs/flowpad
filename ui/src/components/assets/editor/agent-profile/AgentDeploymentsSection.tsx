@@ -4,7 +4,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { Cloud, ExternalLink, Loader2, MessageSquare, PauseCircle, Trash2 } from 'lucide-react';
 
-import { errorMessage } from '@src/lib/error-message';
+import { describeApiError, errorMessage } from '@src/lib/error-message';
+import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -81,6 +82,10 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
       }
       await refetch();
     } catch (e) {
+      // The checklist's git rows are only as fresh as their last ask, and an
+      // editor save can auto-commit behind them. A refusal for unpushed commits
+      // proves the answer is stale — re-ask, so the Push row appears.
+      if (describeApiError(e).code === 'branch_ahead') invalidateGitPreflight(agent.typeId);
       notify.error({
         title: t`Could not deploy`,
         // `errorMessage`, not `e.message`: an AxiosError IS an Error whose

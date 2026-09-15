@@ -21,10 +21,13 @@ interface OneLiner {
 }
 
 /**
- * Dense one-row summary of every non-text event in an assistant turn:
- * tool calls, reasoning, hook status, errors. Defaults to `count + latest
- * one-liner`; an expand chevron reveals every event, and individual tool
- * entries can expand again to show full args + result JSON.
+ * Dense one-row summary of every non-text, non-reasoning event in an
+ * assistant turn: tool calls, hook status, errors. Defaults to `count +
+ * latest one-liner`; an expand chevron reveals every event, and individual
+ * tool entries can expand again to show full args + result JSON.
+ *
+ * Reasoning is grouped separately by `groupTurnEvents` and rendered by
+ * `ThinkingSummary` — the REASONING handling below is defensive only.
  */
 export function ToolEntryRow({ events }: ToolEntryRowProps) {
   const [expanded, setExpanded] = useState(false);
@@ -86,7 +89,7 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
 
 /**
  * The per-event list for one turn's dense events: paired TOOL_CALL/TOOL_RESULT
- * rows, other events (reasoning / status / error), then orphan results. Every
+ * rows, other events (status / error), then orphan results. Every
  * row is click-expandable to its pretty-printed payload (JSON-string payloads
  * are parsed and re-indented — the one-liner detail is truncated, so the
  * expansion is the only way to actually read an init / rate-limit event).
