@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 4
+version: 5
 ---
 # Secret stores — snippets (draft)
 
@@ -47,7 +47,8 @@ await store.save({"DATABASE_URL": "postgres://localhost:54322/dev"})
 values = await store.load(["DATABASE_URL", "SENTRY_DSN"])           # a missing name is simply absent
 values["DATABASE_URL"].get_secret_value()
 
-await store.names()                                                 # ["DATABASE_URL"] — names only, never values
+await store.names()                                                 # ["DATABASE_'AFTER FIX '+JSON.stringify(__w.map(x=>x.sc))+' overlaysDisplayed='+__ov.filter(e=>getComputedStyle(e).display!=='none').length
+URL"] — names only, never values
 ```
 
 The same verbs on the other store type, and on a named environment:
