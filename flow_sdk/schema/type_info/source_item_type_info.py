@@ -25,7 +25,9 @@ SOURCE_ITEM = TypeInfo(
     fts_content=("body",),
     asset_spec=SourceItemSpec,
     # The DB medium's identity and no-op policy: a re-poll resolves the row by
-    # its natural key and is silent when the digested fields are unchanged.
-    natural_key=("data_source_id", "segment_key", "external_id"),
+    # its natural key and is silent when the digested fields are unchanged. The
+    # key is the resource's origin triple, partitioned by the source that mirrors
+    # it — two sources reading one account keep their own rows.
+    natural_key=("data_source_id", "origin_kind", "origin_namespace", "origin_key"),
     digest_fields=DIGESTED_FIELDS,
 )

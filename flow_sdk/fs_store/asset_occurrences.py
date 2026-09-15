@@ -246,7 +246,7 @@ def resolve_asset_collisions(
     # ignore rules could evict it. Live candidates are deliberately NOT filtered:
     # those come from a walk that already applied the policy, or from an explicit
     # "index this exact file" request, which outranks it.
-    from flow_sdk.fs_store.indexer.gitignore import is_under_denylisted_dir  # noqa: PLC0415
+    from flow_sdk.fs_store.gitignore import is_under_denylisted_dir  # noqa: PLC0415
 
     for key, occurrences in previous.items():
         for occurrence in occurrences:

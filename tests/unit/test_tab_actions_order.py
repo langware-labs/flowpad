@@ -101,6 +101,15 @@ async def test_new_tab_opener_inserts_after_opener() -> None:
     assert order.index(xid) == order.index(a.id) + 1
 
 
+async def test_new_tab_reports_created_only_for_a_minted_row() -> None:
+    pointer = f"created/{uuid.uuid4()}"
+    first = await _http_new_tab(Tab, pointer=pointer, project_id=P1)
+    again = await _http_new_tab(Tab, pointer=pointer, project_id=P1)
+    await (await Tab.get_one({"id": tab_id_for(pointer)})).close()
+    reshown = await _http_new_tab(Tab, pointer=pointer, project_id=P1)
+    assert [r.data["created"] for r in (first, again, reshown)] == [True, False, False]
+
+
 async def test_reopen_keeps_slot() -> None:
     a = await ensure_tab("r/a", project_id=P1)
     b = await ensure_tab("r/b", project_id=P1)

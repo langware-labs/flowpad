@@ -27,7 +27,7 @@ from typing import Any, Callable, Optional
 from fastapi import APIRouter, Body, Query
 from pydantic import BaseModel
 
-from flow_sdk.activity import Activity, canonical_verb, monitor
+from flow_sdk.activity import Activity, ActivityEnded, canonical_verb, monitor
 from flow_sdk.responses import ApiFailResponse, ApiResponse
 
 logger = logging.getLogger(__name__)
@@ -137,6 +137,8 @@ async def report(path: str, verb: str, body: VerbBody = Body(default=VerbBody())
 
     try:
         apply(act, body)
+    except ActivityEnded as exc:  # block/resume on a node that has already ended
+        return _fail("ACTIVITY_ENDED", str(exc))
     except (TypeError, ValueError) as exc:
         return _fail("BAD_ARGUMENT", f"bad argument for {verb!r}: {exc}")
 

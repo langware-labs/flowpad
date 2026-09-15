@@ -114,23 +114,18 @@ async def get_env_vars_context(user: User, project: Entity) -> list[FlowEnv]:
 
 
 async def resolve_node_secret_env(project) -> list[FlowEnv]:
-    """The project's ATTACHED secrets, as FlowEnv for a compute node.
+    """The project's ATTACHED credentials, as FlowEnv for a compute node.
 
     The node-side half of the same resolution the worker path uses — one
-    resolver, two transports (see ``secret_origin_resolver``). Values ride the
+    resolver, two transports (see ``credential_resolver``). Values ride the
     per-command prefix and are never written to the node's filesystem; ``set_env``
     stays reserved for the FLOWPAD_* proxy config.
     """
-    from flow_sdk.builtin.secret_origin_resolver import (  # noqa: PLC0415
-        attached_env_vars_for,
-        resolve_project_secrets,
-    )
+    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
 
     if project is None:
         return []
-    only = await attached_env_vars_for(project)
-    resolved = await resolve_project_secrets(project, only=only)
     return [
         FlowEnv.model_construct(name=name, var_type=EnvVarType.API_KEY, value=value)
-        for name, value in resolved.items()
+        for name, value in (await resolve_attached_secrets(project)).items()
     ]

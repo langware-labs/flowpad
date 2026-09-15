@@ -14,7 +14,7 @@ from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 from flow_sdk.tags import emit_tag, target_of
 from flow_sdk.tags.bus import _INFLIGHT
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 
 #: Drain rounds before we call it a runaway. Not a time budget — each round
 #: awaits real tasks to completion, so this only bounds handler-emits-handler

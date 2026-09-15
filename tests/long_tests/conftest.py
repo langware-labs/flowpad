@@ -49,6 +49,18 @@ class LiveE2EInstance:
     backend_port: int
     backend_pid: int
     hub_url: str
+    flow_home: str
+
+    def subprocess_env(self) -> dict[str, str]:
+        """The environment a CLI / SDK process needs to reach THIS instance.
+
+        Pytest's sandbox HOME, DB and records root are dropped; the process sees the
+        real flow root the instance was launched under, pinned to its name.
+        """
+        sandbox_only = ("SQLITE_DATABASE_PATH", "FS_RECORD_PATH", "LOCAL_SERVER_PORT", "TESTING")
+        env = {key: value for key, value in os.environ.items() if key not in sandbox_only}
+        env.update(HOME=_REAL_HOME, USERPROFILE=_REAL_HOME, FLOW_HOME=self.flow_home, FLOW_INSTANCE=self.name)
+        return env
 
 
 def _normalized_url(value: str) -> str:
@@ -161,6 +173,7 @@ def resolve_live_e2e_instance() -> Callable[[str], LiveE2EInstance]:
             backend_port=backend.port,
             backend_pid=backend.pid,
             hub_url=_normalized_url(record.hub_url),
+            flow_home=flow_home,
         )
 
     return _resolve
@@ -382,6 +395,27 @@ def live_backend(initialize_test_db, allocate_ports, tmp_path, monkeypatch):
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=3)
+        import asyncio  # noqa: PLC0415
+
+        asyncio.get_event_loop().run_until_complete(_forget_login_verdicts())
+
+
+async def _forget_login_verdicts() -> None:
+    """Drop the harness login verdicts the subprocess wrote into the shared DB.
+
+    Its boot sweep probes each vendor CLI under THIS process's HOME — the sandbox for
+    most modules, where every CLI answers "not logged in" — and saves ``login_state``.
+    Left behind, that verdict makes every later worker test on the session DB refuse
+    its spawn as "signed out". ``None`` is what a fresh boot has: nobody has asked.
+    """
+    from flow_sdk.builtin.capability import Capability
+
+    for row in await Capability.get_all():
+        if row.login_state is None and row.login_denied is None:
+            continue
+        row.login_state = row.login_message = row.login_denied = None
+        row.login_identity = row.login_plan = None
+        await row.save(notify=False)
 
 
 def _await_backend_health(proc: subprocess.Popen, port: int, log: Path) -> None:

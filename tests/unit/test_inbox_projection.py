@@ -17,6 +17,29 @@ from flow_sdk.inbox.projection import (
 )
 
 
+class TestEnvelope:
+    """The bubble renders a message's header from `FlowMessage.envelope`; the projection
+    reads it from the item's payload, lifting a row the migration has not reached."""
+
+    def test_an_unmigrated_email_row_yields_its_header(self):
+        from flow_sdk.inbox.projection import _envelope_of
+
+        row = SimpleNamespace(
+            origin=None, data=None, provider="gmail", kind="content.message.email", segment_key="INBOX",
+            external_id="m1", name="Hi", author_external_id="ada@x.test", author_display="Ada",
+            recipients=["Bo <bo@x.test>"], occurred_at="2026-07-30T10:00:00+00:00",
+        )
+        envelope = _envelope_of(row, SimpleNamespace(channel="gmail", account_key="me@x.test"))
+        assert envelope.subject == "Hi" and envelope.sender.address == "ada@x.test"
+        assert [p.name for p in envelope.recipients] == ["Bo"] and envelope.sent_at.year == 2026
+
+    def test_a_feed_item_has_no_envelope(self):
+        from flow_sdk.inbox.projection import _envelope_of
+
+        row = SimpleNamespace(origin=None, data=None, provider="rss", kind="content.feed.item", segment_key="f", external_id="e")
+        assert _envelope_of(row, None) is None
+
+
 class TestNormalizeSubject:
     @pytest.mark.parametrize("raw", [
         "Q3 planning",
@@ -243,27 +266,27 @@ class TestPermalinkDerivation:
     rewrite the whole corpus.
     """
 
-    def test_gmail_addresses_by_thread(self):
-        from flow_sdk.ingest.drivers.channel_links import permalink_for
+    @staticmethod
+    def _permalink(channel: str, external_id: str, thread_key: str) -> str:
+        from flow_sdk.ingest.sources import source_type
 
-        assert permalink_for("gmail", "msg-1", "thread-9").endswith("#all/thread-9")
+        channel_type = source_type(channel)
+        return channel_type.cls.permalink(external_id, thread_key) if channel_type else ""
+
+    def test_gmail_addresses_by_thread(self):
+        assert self._permalink("gmail", "msg-1", "thread-9").endswith("#all/thread-9")
 
     def test_it_falls_back_to_the_message_id(self):
-        from flow_sdk.ingest.drivers.channel_links import permalink_for
-
-        assert permalink_for("gmail", "msg-1", "").endswith("#all/msg-1")
+        assert self._permalink("gmail", "msg-1", "").endswith("#all/msg-1")
 
     def test_it_is_stable_across_calls(self):
-        from flow_sdk.ingest.drivers.channel_links import permalink_for
-
-        assert permalink_for("gmail", "m", "t") == permalink_for("gmail", "m", "t")
+        assert self._permalink("gmail", "m", "t") == self._permalink("gmail", "m", "t")
 
     def test_an_unknown_channel_yields_no_link(self):
-        from flow_sdk.ingest.drivers.channel_links import permalink_for
-
         # Better an inert badge than a URL that 404s.
-        assert permalink_for("slack", "m", "t") == ""
-        assert permalink_for("gmail", "", "") == ""
+        assert self._permalink("slack", "m", "t") == ""
+        assert self._permalink("no-such-channel", "m", "t") == ""
+        assert self._permalink("gmail", "", "") == ""
 
 
 class TestDisplayName:

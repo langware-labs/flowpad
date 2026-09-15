@@ -2,8 +2,9 @@
   "schema": 1,
   "name": "rss",
   "title": "RSS / Atom",
-  "icon_name": "Rss",
+  "icon_name": "RssFeed",
   "description": "One segment per feed URL. No credentials \u2014 the simplest source there is.",
+  "kind": "datasource.feed.rss",
   "config": {
     "feed_urls": {
       "type": "lines",

@@ -44,6 +44,9 @@ from urllib.parse import parse_qs, urlencode, urlparse
 #: pass 0 and get an ephemeral one.
 DEFAULT_PORT = 6787
 
+#: RFC 8628 device grant type, as a provider's ``device_grant`` names it.
+DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
+
 
 @dataclass
 class _Issuance:
@@ -61,10 +64,12 @@ class DummyOAuthState:
 
     issuances: list[_Issuance] = field(default_factory=list)
     rejections: list[dict[str, Any]] = field(default_factory=list)
-    counts: dict[str, int] = field(default_factory=lambda: {"authorize": 0, "token": 0, "userinfo": 0})
+    counts: dict[str, int] = field(default_factory=lambda: {"authorize": 0, "token": 0, "userinfo": 0, "device": 0})
     #: code -> the request it was minted for. Popped on exchange, so a replay is
     #: a miss rather than a second token.
     outstanding: dict[str, dict[str, str]] = field(default_factory=dict)
+    #: device_code -> the device authorization it belongs to. Popped on exchange.
+    devices: dict[str, dict[str, str]] = field(default_factory=dict)
 
     @property
     def latest_token(self) -> Optional[str]:
@@ -77,6 +82,7 @@ class DummyOAuthState:
         self.issuances.clear()
         self.rejections.clear()
         self.outstanding.clear()
+        self.devices.clear()
         for key in self.counts:
             self.counts[key] = 0
 
@@ -100,6 +106,10 @@ class DummyOAuthServer:
     @property
     def userinfo_url(self) -> str:
         return f"{self.base_url}/userinfo"
+
+    @property
+    def device_code_url(self) -> str:
+        return f"{self.base_url}/device/code"
 
     @property
     def latest_token(self) -> Optional[str]:
@@ -209,10 +219,9 @@ def _handler_class(
             if parsed.path == "/_reset":
                 state.reset()
                 return self._send(200, {"ok": True})
-            if parsed.path != "/token":
+            if parsed.path not in ("/token", "/device/code"):
                 return self._send(404, {"error": "not_found"})
 
-            state.counts["token"] += 1
             # Accept form-encoded (the RFC) or JSON — Anthropic's exchange posts
             # JSON, and refusing it here would be the harness inventing a rule.
             if raw.startswith("{"):
@@ -223,6 +232,12 @@ def _handler_class(
             else:
                 form = {k: v[0] for k, v in parse_qs(raw).items()}
 
+            if parsed.path == "/device/code":
+                return self._device_code(form)
+
+            state.counts["token"] += 1
+            if form.get("grant_type") == DEVICE_GRANT:
+                return self._device_token(form)
             if form.get("grant_type") != "authorization_code":
                 return self._reject(400, "unsupported_grant_type", got=form.get("grant_type"))
 
@@ -240,6 +255,49 @@ def _handler_class(
             if client_secret and form.get("client_secret") not in (None, client_secret):
                 return self._reject(400, "invalid_client_secret")
 
+            self._issue(
+                code=code,
+                state_value=minted["state"],
+                redirect_uri=minted["redirect_uri"],
+                client_id=minted["client_id"],
+                scope=form.get("scope"),
+            )
+
+        # ── RFC 8628 device grant ─────────────────────────────────────────
+        def _device_code(self, form: dict[str, str]) -> None:
+            state.counts["device"] += 1
+            n = len(state.devices) + len(state.issuances) + 1
+            device_code = f"dmy_device_{n}_{uuid.uuid4().hex[:8]}"
+            user_code = f"DMY-{n:04d}"
+            state.devices[device_code] = {"client_id": form.get("client_id") or "", "user_code": user_code}
+            # Interval 1s: the desktop polls at the provider's own pace, so a slow
+            # interval here would be wall-clock the test pays for nothing.
+            self._send(
+                200,
+                {
+                    "device_code": device_code,
+                    "user_code": user_code,
+                    "verification_uri": f"http://{self.headers.get('Host')}/device",
+                    "expires_in": 600,
+                    "interval": 1,
+                },
+            )
+
+        def _device_token(self, form: dict[str, str]) -> None:
+            device_code = form.get("device_code") or ""
+            device = state.devices.get(device_code)
+            # Errors answer 200 with an ``error`` field, as GitHub does — the desktop
+            # classifies on that field and reads any other status as a hard failure.
+            if device is None:
+                return self._send(200, {"error": "expired_token"})
+            if not auto_approve:
+                state.devices.pop(device_code, None)
+                state.rejections.append({"reason": "access_denied", "device_code": device_code})
+                return self._send(200, {"error": "access_denied"})
+            state.devices.pop(device_code, None)
+            self._issue(code=device_code, state_value="", redirect_uri="", client_id=device["client_id"], scope=None)
+
+        def _issue(self, *, code: str, state_value: str, redirect_uri: str, client_id: str, scope: Any) -> None:
             n = len(state.issuances) + 1
             # Distinct per issuance, and unlike anything else in the fixtures —
             # so finding this exact string in SOD proves it travelled the chain.
@@ -249,9 +307,9 @@ def _handler_class(
                     n=n,
                     token=token,
                     code=code,
-                    state=minted["state"],
-                    redirect_uri=minted["redirect_uri"],
-                    client_id=minted["client_id"],
+                    state=state_value,
+                    redirect_uri=redirect_uri,
+                    client_id=client_id,
                 )
             )
             self._send(
@@ -259,7 +317,7 @@ def _handler_class(
                 {
                     "access_token": token,
                     "token_type": "bearer",
-                    "scope": form.get("scope") or "read write",
+                    "scope": scope or "read write",
                     "expires_in": 3600,
                 },
             )

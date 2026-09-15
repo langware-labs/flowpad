@@ -33,7 +33,7 @@ function mockTabStore() {
   const getSpy = vi.spyOn(Tab, 'getFromDockPointer').mockImplementation(async (d) => {
     const t = new Tab({ id: nextTabId(), pointer: d.toJSON?.() ?? '', visible: true });
     store.push(t);
-    return [t];
+    return { tabs: [t], created: true };
   });
   return { store, getSpy };
 }

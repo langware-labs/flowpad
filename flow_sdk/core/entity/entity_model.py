@@ -1002,6 +1002,10 @@ class Entity(DBEntity):
             return mint_uuid(f"{type_str}:{data['id']}", namespace=uuid.NAMESPACE_DNS)
         return mint_uuid()
 
+    async def find_existing_for_create(self) -> "Entity | None":
+        """Create-route hook: the stored row this unsaved entity duplicates by natural key, or None."""
+        return None
+
     @classmethod
     async def from_record(cls, record: "Record", notify: bool = True) -> Entity:
         """Create or update an Entity from a Record's meta_dict()."""
@@ -1591,7 +1595,8 @@ class Entity(DBEntity):
             if not record.index_required:
                 return False
             try:
-                await record.sync_to_db()
+                if not await self._reparse_asset(record):
+                    await record.sync_to_db()
                 record.write_hash()
             except Exception:
                 logging.getLogger(__name__).warning(
@@ -1602,6 +1607,20 @@ class Entity(DBEntity):
                     exc_info=True,
                 )
             return True
+
+    async def _reparse_asset(self, record) -> bool:
+        """A changed asset re-parsed from DISK, the way ``reindex_paths`` does — not rebuilt from the
+        shadow, which never holds the fields the file authors (an agent's system prompt). False for a
+        shadow-only type or a path that no longer resolves; the caller then refreshes from the shadow.
+        The record guard is already held, and is reentrant in this task."""
+        from flow_sdk.fs_store.reindex import reparse_entity  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        info = SchemaRegistry.get(self.get_type())
+        ref = getattr(record, "asset_ref", None)
+        if info is None or info.from_disk_fn is None or ref is None:
+            return False
+        return await reparse_entity(self, fallback=ref.path, write=False) is not None
 
     # ==================== Wiki link capability ====================
     # Mirrors Record.get_links / Record.get_backlinks. Both call into the

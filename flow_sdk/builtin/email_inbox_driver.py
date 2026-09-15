@@ -1,8 +1,7 @@
 """EmailInbox driver registry — where an agent's mailbox actually lives.
 
-The behaviour side of a mailbox, the same way ``SecretOriginDriver`` is the
-behaviour side of a secret pointer and ``ComputeProvider`` is the behaviour side
-of a node. Callers name *an agent*; the driver decides where the address is
+The behaviour side of a mailbox, the same way ``ComputeProvider`` is the
+behaviour side of a node. Callers name *an agent*; the driver decides where the address is
 allocated and who holds the provider credential.
 
 One member ships today (``flowpad-hub``), and that is deliberate rather than
@@ -21,7 +20,6 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Optional, Protocol, runtime_checkable
 
-from flow_sdk.builtin.secret_origin_driver import HUB_KIND_ALIASES
 from flow_sdk.cloud_client.shared.errors import HubErrorCode
 from flow_sdk.utils.kind_registry import KindRegistry
 
@@ -122,7 +120,12 @@ def _build_default_registry(registry: "KindRegistry[EmailInboxDriver]") -> None:
     registry.register(HubEmailInboxDriver())  # the hub — it holds the credential
 
 
-#: The hub's spellings are ``secret_origin_driver``'s — one table, two families.
+#: Spellings that mean the hub.
+HUB_KIND_ALIASES = {
+    "hub": "flowpad-hub",
+    "flowpad_hub": "flowpad-hub",
+}
+
 EMAIL_INBOX_DRIVERS: "KindRegistry[EmailInboxDriver]" = KindRegistry(
     "email inbox", aliases=HUB_KIND_ALIASES, builder=_build_default_registry
 )

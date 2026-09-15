@@ -2,7 +2,7 @@
 
 Generic pre-order DFS over a directory tree, yielding ``(dir_path, subdirs,
 files)`` per surviving directory. All tree walkers consume this so the skip
-policy lives in exactly one place (:mod:`flow_sdk.fs_store.indexer.gitignore`):
+policy lives in exactly one place (:mod:`flow_sdk.fs_store.gitignore`):
 
   * ``denylist`` — the ``_WALK_IGNORED`` basename fast-path plus the
     ``.claude/worktrees`` skip (:func:`is_denylisted`).
@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 from typing import Iterator
 
-from flow_sdk.fs_store.indexer.gitignore import (
+from flow_sdk.fs_store.gitignore import (
     GitignoreStack,
     is_denylisted,
     is_ignored,

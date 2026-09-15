@@ -39,6 +39,7 @@ from flow_sdk.transcript_analyzer.resolver import TranscriptNotFoundError, resol
 from tests.long_tests._model_tier import small_model_for
 from tests.long_tests._transcript_helpers import (
     ANALYZER_WORKER_KEY,
+    INSTRUCTION_FILES,
     assert_prompt_ok,
     safe_exit,
 )
@@ -120,14 +121,9 @@ def _make_marker_and_prompt() -> tuple[str, str]:
     return marker, system_prompt
 
 
-def _assert_assets_materialized(assets, system_prompt: str) -> None:
-    """Every vendor's discovery file carries the instruction (delivery evidence)."""
-    for rel in (
-        "CLAUDE.md",
-        "AGENTS.md",
-        ".agents",
-        ".github/instructions/flowpad.instructions.md",
-    ):
+def _assert_assets_materialized(assets, system_prompt: str, worker_type: WorkerType) -> None:
+    """The worker's own instruction files carry the instruction (delivery evidence)."""
+    for rel in INSTRUCTION_FILES[worker_type]:
         path = assets.os_path / rel
         assert path.exists(), path
         assert system_prompt in path.read_text(encoding="utf-8")
@@ -183,7 +179,7 @@ async def test_settings_instruction_is_obeyed(worker_type, cli_name, tmp_path: P
         assets = process.embedded_assets
         assert assets is not None
         assert str(assets.os_path) in process.resolved_add_dirs
-        _assert_assets_materialized(assets, system_prompt)
+        _assert_assets_materialized(assets, system_prompt, worker_type)
 
         await _await_and_assert_marker(
             process, worker_type, cli_name=cli_name, marker=marker, turn_started=turn_started
@@ -255,7 +251,7 @@ async def test_settings_instruction_is_obeyed_pty(
         # best-effort delivery evidence (the marker assertion is the real gate).
         assets = process.embedded_assets
         if assets is not None:
-            _assert_assets_materialized(assets, system_prompt)
+            _assert_assets_materialized(assets, system_prompt, worker_type)
 
         await _await_and_assert_marker(
             process,

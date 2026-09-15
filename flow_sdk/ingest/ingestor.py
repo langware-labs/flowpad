@@ -15,7 +15,7 @@ committed. A refactor that moves emission to the caller, or into ``save()``'s
 notify path, breaks that silently: keep steps 5-7 in one function.
 
 **The digest gate is the performance story.** An unchanged item costs one
-indexed read (the natural key, via ``ix_entities_source_item_natural_key_v2``) and
+indexed read (the natural key, via ``ix_entities_source_item_origin_v3``) and
 nothing else — no save, no metadata.json write, no FTS write, no WS broadcast,
 no event. Feeds re-serve their whole window on every
 poll, so without this gate a 5-minute poller rewrites and re-announces the same
@@ -29,11 +29,20 @@ from typing import Optional, Sequence
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.ingest.ingest_on_tag import emit_item_tag
+from flow_sdk.ingest.legacy_lift import lift
 from flow_sdk.ingest.models import IngestMode, IngestOutcome, IngestReport
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 logger = logging.getLogger(__name__)
 
+
+async def lift_page(items: Sequence[SourceItemSpec]) -> list[SourceItemSpec]:
+    """Every envelope with its origin and payload — one source-row read per source in the page."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    pending = {item.data_source_id for item in items if item.origin is None or item.data is None}
+    sources = {sid: await DataSource.get_one({"id": sid}) for sid in pending}
+    return [lift(sources.get(item.data_source_id), item) for item in items]
 
 
 async def ingest_item(
@@ -47,11 +56,13 @@ async def ingest_item(
     ``ingest_items``; without it this falls back to a single lookup.
 
     **Identity is the natural key, not the id.** The DB serializer resolves the
-    row by ``(data_source, segment, external id)`` and gates on the digest; a
+    row by ``(data_source, origin)`` and gates on the digest; a
     genuinely new record gets an ordinary ``uuid4``. That is what makes a
     re-poll idempotent — and it works on rows written before ids were v4,
     because nothing here re-derives an id.
     """
+    if item.origin is None or item.data is None:
+        (item,) = await lift_page([item])
     ser = SourceItem.serializer()
     if known is not None:
         existing = known.get(ser.natural_key_of(SourceItem, item))
@@ -100,6 +111,7 @@ async def ingest_items(
     already have advanced past.
     """
     report = IngestReport()
+    items = await lift_page(items)
     known = await SourceItem.serializer().resolve_many(SourceItem, items)
     for item in items:
         report.outcomes.append(await ingest_item(item, owner=owner, mode=mode, known=known))

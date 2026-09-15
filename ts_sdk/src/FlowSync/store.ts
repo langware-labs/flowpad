@@ -591,8 +591,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (!ctor) {
       // Expected, not exceptional. The backend broadcasts ops for every
       // api-visible type, and a dozen of those are deliberately not modelled as
-      // client entities — `secret_origin` reaches the UI as a summary on
-      // Project, `helpdesk` as bare actions, and so on. `api_visible` is the
+      // client entities — `helpdesk` reaches the UI as bare actions, and so
+      // on. `api_visible` is the
       // only dial the backend has and it also gates the schema payload the UI
       // needs for each type's label and icon, so these frames cannot simply be
       // switched off.
@@ -1172,8 +1172,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return p;
   }
 
-  private resolvePendingRequests() {
-    for (const ref of this.entities.values()) {
+  /**
+   * Settle every parked waiter whose ref has reached READY/ERROR. `ownRef` is
+   * the ref the finishing request holds: it may already be gone from the map
+   * (clearCache on a read-scope switch, invalidate, remove), and a waiter
+   * parked on a dropped ref is otherwise never settled — its promise hangs
+   * forever, as the project menu's "Loading…" rows did.
+   */
+  private resolvePendingRequests(ownRef?: EntityRef<T>) {
+    const refs = new Set(this.entities.values());
+    if (ownRef) refs.add(ownRef);
+    for (const ref of refs) {
       if (ref.status === EntityStatus.READY) {
         ref.entityPendingPromises.forEach((p) => {
           p.resolve(ref.entity);
@@ -1254,7 +1263,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
       throw error;
     } finally {
-      this.resolvePendingRequests();
+      this.resolvePendingRequests(ref);
     }
   }
 
@@ -1328,7 +1337,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       ref.status = EntityStatus.ERROR;
       throw error;
     } finally {
-      this.resolvePendingRequests();
+      this.resolvePendingRequests(ref);
     }
   }
 
@@ -1467,7 +1476,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       throw error;
     } finally {
       ref.saveInFlight = false;
-      this.resolvePendingRequests();
+      this.resolvePendingRequests(ref);
     }
   }
 
@@ -1540,6 +1549,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       requestConfig = {
         ...(requestConfig ?? {}),
         headers: { ...(requestConfig?.headers ?? {}), 'Hub-Reflect': 'true' },
+      };
+    }
+
+    // Name this tab as the initiator, so the server answers back to it alone
+    // (flow_sdk/core/oauth/flows.py). Scoped to the calls that ask for it: a
+    // custom header on every request would cost a CORS preflight each time.
+    if (actionInfo.carriesInitiator) {
+      requestConfig = {
+        ...(requestConfig ?? {}),
+        headers: { ...(requestConfig?.headers ?? {}), 'X-Flow-Connection-Id': ConnectionManager.getInstance().id },
       };
     }
 
@@ -1620,6 +1639,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
       hub_reflect: actionInfo.hubReflect && !isHubOnly(),
+      carries_initiator: actionInfo.carriesInitiator,
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);

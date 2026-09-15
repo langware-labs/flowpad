@@ -268,7 +268,7 @@ type with no spec.
 | `AgentSpec`, `SubAgentSpec`, `DatasetManifestSpec`, `ManifestSpec`, `SourceItemSpec` | the `asset_spec` of Agent / SubAgent / Dataset / DataSourceSpec / SourceItem |
 | `SpecDocSpec`, `PromptSpec`, `SkillSpec`, `MarkdownSpec` / `ClaudeMdSpec`, `TaskSpec` | the `asset_spec` of the `.md`-backed types — `TaskSpec` is also the share whitelist |
 | `AgentTraceSpec`, `UsageReportSpec`, `AssetCleanupReportSpec` | flat JSON reports (`manifest_layout="flat"`, a `FreeSection` payload; `SectionedHeader` for `summary`/`data`) |
-| SOURCE_ITEM `asset_spec` = `SourceItemSpec` | the ingestion envelope a driver emits; the DB medium resolves the row by `TypeInfo.natural_key` and no-ops on `TypeInfo.digest_fields` |
+| SOURCE_ITEM `asset_spec` = `SourceItemSpec` | the ingestion envelope a driver emits, lifted to `origin` + tagged `data` before it is stored; the DB medium resolves the row by `TypeInfo.natural_key` (`data_source_id` + the origin triple) and no-ops on `TypeInfo.digest_fields` |
 | DATA_SOURCE_SPEC `asset_spec` = `ManifestSpec` | `data_source.json` — a FLAT manifest (no `FreeSection`), every authoring rule a validator |
 
 ## Related

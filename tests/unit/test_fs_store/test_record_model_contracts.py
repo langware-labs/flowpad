@@ -60,6 +60,13 @@ def test_record_query_has_no_parent_id_field():
         RecordQuery(parent_id="p1")  # type: ignore[call-arg]
 
 
+def test_parse_record_query_builds_a_query_from_filter_params():
+    from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
+
+    q = FsRecordsActionsMixin._parse_record_query({"limit": "1", "parent_id": "p1", "status": "active"})
+    assert (q.limit, q.status) == (1, "active")
+
+
 # ── D4: record_error rows carry a policy-minted id ──────────────────────
 
 

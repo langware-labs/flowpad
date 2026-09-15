@@ -33,6 +33,8 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         return [built] if is_list else built
     if ann is DataSpec or ann is type:          # a field that HOLDS a shape (SpecType)
         return DataSpec.parse({f"{name}_k": "string", f"{name}_n": ["int"]})
+    if isinstance(ann, type) and issubclass(ann, DataSpec):   # a field whose VALUE is a shape
+        return ann(**{n: sample(n, f.annotation, f.default) for n, f in ann.model_fields.items()})
     if ann is str:
         return f"{name}-v"
     if ann is bool:
