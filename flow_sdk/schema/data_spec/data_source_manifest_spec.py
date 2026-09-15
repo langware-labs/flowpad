@@ -187,6 +187,13 @@ class ManifestSpec(DataSpec):
     reflect: list[str] = Field(default_factory=lambda: ["record"])
     #: The user-facing form. Replaces the frontend's hardcoded provider catalog.
     config: dict[str, ConfigFieldSpec] = Field(default_factory=dict)
+    #: Offered in the add-source picker. ``False`` keeps a provider loadable — its rows
+    #: still poll, scripts still name it — without offering it to a person. A vendor
+    #: reached through the cloud (AgentMail behind Agent Email) is unlisted.
+    listed: bool = True
+    #: The cloud creates the account for the owning agent: there is nothing to paste
+    #: and no form, so the picker asks the cloud instead of saving a draft.
+    provisioned: bool = False
 
     @field_validator("name")
     @classmethod

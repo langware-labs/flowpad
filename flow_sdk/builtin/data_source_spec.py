@@ -95,6 +95,8 @@ class DataSourceSpec(Entity):
     auth: Optional[AuthSpec] = APIField(default=None)
     reflect: list[str] = APIField(default_factory=list)
     config: dict[str, ConfigFieldSpec] = APIField(default_factory=dict)
+    listed: bool = APIField(default=True)
+    provisioned: bool = APIField(default=False)
 
     #: DERIVED from the folder by the extractor (``ManifestSpec.runtime_for_folder``), never
     #: authored; mirrored to the shadow.

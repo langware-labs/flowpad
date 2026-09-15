@@ -10,7 +10,7 @@ import { Button } from '@src/components/ui/button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
-import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { useAllocateAgentInbox } from '@src/hooks/use-allocate-agent-inbox';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
@@ -34,7 +34,7 @@ export function AgentInboxView() {
   const agentId = agent?.id ?? null;
   const agentRef = useRef<Agent | null>(null);
   agentRef.current = agent ?? null;
-  const ensureCloudLogin = useCloudLoginGate();
+  const allocateInbox = useAllocateAgentInbox();
   const [state, setState] = useState<AgentInboxState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -71,25 +71,15 @@ export function AgentInboxView() {
     if (!agent || saving) return;
     setSaving(true);
     try {
-      const gate = await ensureCloudLogin();
-      if (!gate.ok) throw new Error(gate.error);
-      const next = await agent.allocateInbox();
+      const next = await allocateInbox(agent);
+      if (!next) return;
       setState(next);
       setSenders((next.inbox?.allowed_senders ?? []).join('\n'));
       setRefresh(String(next.source?.poll_interval_seconds ?? MIN_REFRESH_SECONDS));
-    } catch (error) {
-      // `forceToast` because this is a button the person just pressed: an
-      // alert-level notification is otherwise filed into the footer popover
-      // and never shown outside Dev mode, so the click appeared to do nothing.
-      notify.error({
-        title: t`Could not allocate an inbox`,
-        message: errorMessage(error, t`Email settings could not be saved.`),
-        forceToast: true,
-      });
     } finally {
       setSaving(false);
     }
-  }, [agent, ensureCloudLogin, saving, t]);
+  }, [agent, allocateInbox, saving]);
 
   const saveConfiguration = useCallback(async () => {
     if (!agent || !activeState?.inbox || saving) return;
@@ -207,7 +197,12 @@ export function AgentInboxView() {
           <p>
             <Trans>No channel reaches this Agent yet. Give it an email address to start.</Trans>
           </p>
-          <Button type="button" disabled={saving} onClick={() => void createEmail()} data-testid="agent-email-create-cta">
+          <Button
+            type="button"
+            disabled={saving}
+            onClick={() => void createEmail()}
+            data-testid="agent-email-create-cta"
+          >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             <Trans>Create email for agent</Trans>
           </Button>
