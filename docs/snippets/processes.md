@@ -116,6 +116,7 @@ class McpSpec(DataSpec):                 # flow_sdk/schema/data_spec/mcp_spec.py
     args: list[str] = []
     env: dict[str, str] = {}
     url: str = ""
+    entrypoint: str = ""                 # bundled server: path relative to the asset folder
 ```
 
 Frozen, `extra="forbid"`: a misspelled key raises. `McpSpec.from_record(row)`
