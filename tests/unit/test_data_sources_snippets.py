@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
 from tests.unit._ingest_helpers import fixture_bytes, local_http_server
@@ -154,7 +153,7 @@ async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
     async def _token(_row):
         return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
 
-    monkeypatch.setattr(source_type("gcs"), "_credentials", _token)
+    monkeypatch.setattr(source_type("gcs"), "credentials_for", _token)
 
     def storage(_path, _headers):
         body = {"items": [{"name": "acme-docs", "location": "US"}, {"name": "acme-logs", "location": "EU"}]}

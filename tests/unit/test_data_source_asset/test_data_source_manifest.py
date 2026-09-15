@@ -3,8 +3,8 @@ folder-side ``runtime_for_folder`` — exercised as pure functions.
 
 Every rule here is a load ERROR rather than a warning, and each one exists
 because the silent version of it produced a real bug: a second owner for a fact
-the driver already declares, a picker offering a mode that cannot work, or a
-folder whose implementation nobody meant to ship.
+the source class already declares, a picker offering a mode that cannot work, or
+a folder whose implementation nobody can run.
 """
 from __future__ import annotations
 
@@ -17,37 +17,35 @@ RSS = {"schema": 1, "name": "rss", "title": "RSS / Atom",
        "config": {"feed_urls": {"type": "lines", "required": True, "label": "Feed URLs"}}}
 
 
-def parse(data: dict, files: set[str] = frozenset({"data_source.json"})) -> tuple[ManifestSpec, Runtime]:
+def parse(data: dict, files: set[str] = frozenset({"data_source.json", "source.py"})) -> tuple[ManifestSpec, Runtime]:
     spec = ManifestSpec.model_validate(data)
     return spec, spec.runtime_for_folder(set(files))
 
 
 def test_the_simplest_source_parses():
     m, runtime = parse(RSS)
-    assert (m.name, runtime, m.reflect) == ("rss", Runtime.BUILTIN, ["record"])
+    assert (m.name, runtime, m.reflect) == ("rss", Runtime.SOURCE, ["record"])
     assert m.config["feed_urls"].required is True
     assert m.manifest_schema == 1, "the file says `schema`, the row says `manifest_schema`"
 
 
-WIKI = {**RSS, "name": "wiki", "traits": {"emits": "content.page"}}
+def test_a_source_names_its_record_kind():
+    assert parse({**RSS, "kind": "datasource.feed.rss"})[0].kind == "datasource.feed.rss"
+    assert parse(RSS)[0].kind == "", "omitted: the registry defaults it to datasource.<name>"
 
 
-def test_runtime_comes_from_the_folder_not_a_field():
-    assert parse(RSS, files={"data_source.json"})[1] is Runtime.BUILTIN
-    assert parse(WIKI, files={"fetch.py"})[1] is Runtime.SCRIPT
-    with pytest.raises(ManifestError, match="keep one"):
-        parse(RSS, files={"fetch.py", "FETCH.md"})
+@pytest.mark.parametrize("retired", ["fetch.py", "FETCH.md"])
+def test_a_retired_runtime_is_refused_with_the_upgrade(retired):
+    """A folder carrying the retired authored runtimes indexed as a definition nothing could run;
+    the author is told what to write instead."""
+    with pytest.raises(ManifestError, match="upgrade: write source.py"):
+        parse(RSS, files={retired})
 
 
-def test_a_script_source_must_declare_emits():
-    """The manifest is the ONLY owner of a script source's kind, and it is
-    stamped on every record unvalidated — blank, every item fell outside the
-    inbox projection with nothing raising."""
-    with pytest.raises(ManifestError, match="traits.emits"):
-        parse({**RSS, "name": "wiki"}, files={"fetch.py"})                      # no traits block
-    with pytest.raises(ManifestError, match="traits.emits"):
-        parse({**RSS, "name": "wiki", "traits": {"emits": "  "}}, files={"fetch.py"})   # blank
-    assert parse(WIKI, files={"fetch.py"})[1] is Runtime.SCRIPT                 # declared: loads
+def test_traits_are_the_source_classes_not_the_manifests():
+    """A source's traits are ClassVars on its class; a manifest copy is a second owner that drifts."""
+    with pytest.raises(ValidationError, match="traits"):
+        parse({**RSS, "traits": {"channel": "rss"}})
 
 
 def test_a_choosable_field_must_have_a_picker_shape():
@@ -71,43 +69,20 @@ def test_a_field_is_not_choosable_by_default():
     assert parse(RSS)[0].config["feed_urls"].choices is False
 
 
-def test_a_builtin_may_not_declare_traits():
-    """Its driver class owns them, and a second copy drifts."""
-    with pytest.raises(ManifestError, match="driver class owns them"):
-        parse({**RSS, "traits": {"channel": "rss"}})
-
-
-def test_a_script_source_may_declare_traits():
-    m, runtime = parse({**RSS, "name": "wiki", "traits": {"emits": "content.page", "owns_bytes": False}}, files={"fetch.py"})
-    assert runtime is Runtime.SCRIPT
-    assert m.traits.emits == "content.page"
-    assert m.traits.owns_bytes is False
-
-
-def test_a_trait_nothing_implements_is_refused():
-    """`id_unique_within` promised an irreversible-merge guarantee that the
-    natural key — always (data_source_id, segment_key, external_id) — never provided.
-    Declaring it is a load error rather than a field that changes nothing."""
-    with pytest.raises(ValidationError, match="id_unique_within"):
-        parse({**RSS, "name": "wiki", "traits": {"emits": "x", "id_unique_within": "source"}}, files={"fetch.py"})
-
-
-def test_the_agent_runtime_is_refused_until_it_exists():
-    """A FETCH.md folder used to index as a valid spec and then fail every poll
-    with `unknown_provider`, because only the script runtime is dispatched."""
-    with pytest.raises(ManifestError, match="reserved but not implemented"):
-        parse({**RSS, "name": "wiki"}, files={"FETCH.md"})
-
-
 def test_reflect_cannot_offer_record_beside_filesystem_modes():
     with pytest.raises(ValidationError, match="alongside filesystem modes"):
         parse({**RSS, "reflect": ["record", "copy"]})
 
 
-def test_auth_is_one_shape_or_the_other():
+def test_auth_is_exactly_one_shape():
     with pytest.raises(ValidationError, match="one credential lifetime"):
         parse({**RSS, "auth": {"connector": "slack", "env": ["T"]}}, files=set())
+    with pytest.raises(ValidationError, match="one credential lifetime"):
+        parse({**RSS, "auth": {"env": ["T"], "secrets": {"api_key": ""}}}, files=set())
+    with pytest.raises(ValidationError, match="must declare one of"):
+        parse({**RSS, "auth": {"scopes": ["a"]}}, files=set())
     assert parse({**RSS, "auth": {"connector": "slack", "scopes": ["a"]}}, files=set())[0].auth.scopes == ["a"]
+    assert parse({**RSS, "auth": {"secrets": {"api_key": "ingest_api.x"}}}, files=set())[0].auth.secrets == {"api_key": "ingest_api.x"}
 
 
 def test_unknown_keys_are_refused_not_ignored():
@@ -130,12 +105,11 @@ def test_title_defaults_to_name():
 @pytest.mark.parametrize("build", [
     lambda: ManifestSpec.model_validate(RSS).config["feed_urls"],
     lambda: ManifestSpec.model_validate({**RSS, "auth": {"env": ["TOKEN"]}}).auth,
-    lambda: ManifestSpec.model_validate(WIKI).traits,
-], ids=["ConfigFieldSpec", "AuthSpec", "TraitsSpec"])
+], ids=["ConfigFieldSpec", "AuthSpec"])
 def test_the_value_specs_are_frozen(build):
-    """A value is a value (CLAUDE.md): a field, an auth shape and a traits block
-    travel between the manifest, the row and the form, and none of them is
-    edited in place — `model_copy(update=...)` is the way to a changed one."""
+    """A value is a value (CLAUDE.md): a field and an auth shape travel between the manifest, the
+    row and the form, and neither is edited in place — `model_copy(update=...)` is the way to a
+    changed one."""
     value = build()
     field = next(iter(type(value).model_fields))
     with pytest.raises(ValidationError):

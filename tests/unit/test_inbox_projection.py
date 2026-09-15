@@ -266,27 +266,27 @@ class TestPermalinkDerivation:
     rewrite the whole corpus.
     """
 
-    def test_gmail_addresses_by_thread(self):
-        from flow_sdk.inbox.channel_links import permalink_for
+    @staticmethod
+    def _permalink(channel: str, external_id: str, thread_key: str) -> str:
+        from flow_sdk.ingest.sources import source_type
 
-        assert permalink_for("gmail", "msg-1", "thread-9").endswith("#all/thread-9")
+        channel_type = source_type(channel)
+        return channel_type.cls.permalink(external_id, thread_key) if channel_type else ""
+
+    def test_gmail_addresses_by_thread(self):
+        assert self._permalink("gmail", "msg-1", "thread-9").endswith("#all/thread-9")
 
     def test_it_falls_back_to_the_message_id(self):
-        from flow_sdk.inbox.channel_links import permalink_for
-
-        assert permalink_for("gmail", "msg-1", "").endswith("#all/msg-1")
+        assert self._permalink("gmail", "msg-1", "").endswith("#all/msg-1")
 
     def test_it_is_stable_across_calls(self):
-        from flow_sdk.inbox.channel_links import permalink_for
-
-        assert permalink_for("gmail", "m", "t") == permalink_for("gmail", "m", "t")
+        assert self._permalink("gmail", "m", "t") == self._permalink("gmail", "m", "t")
 
     def test_an_unknown_channel_yields_no_link(self):
-        from flow_sdk.inbox.channel_links import permalink_for
-
         # Better an inert badge than a URL that 404s.
-        assert permalink_for("slack", "m", "t") == ""
-        assert permalink_for("gmail", "", "") == ""
+        assert self._permalink("slack", "m", "t") == ""
+        assert self._permalink("no-such-channel", "m", "t") == ""
+        assert self._permalink("gmail", "", "") == ""
 
 
 class TestDisplayName:

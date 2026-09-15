@@ -27,6 +27,7 @@ from email.utils import formatdate, getaddresses, make_msgid, parseaddr, parseda
 from typing import Any, AsyncGenerator, ClassVar, Optional
 
 from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -75,7 +76,7 @@ class LoginRefused(Exception):
     """An IMAP login refusal, told apart from protocol and network failures."""
 
 
-class GmailSource(Source):
+class GmailSource(EmailAddressing, Source):
     provider = "gmail"
     durable_cursor = True
     page_size = PAGE_LIMIT
@@ -86,9 +87,24 @@ class GmailSource(Source):
     def resume_at(cls, uid_validity: str, last_uid: int) -> str:
         return f"{_RESUME}{uid_validity}:{int(last_uid)}"
 
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def lift_cursor(cls, state: dict) -> Optional[str]:
+        return cls.resume_at(state["uid_validity"], state.get("last_uid") or 0) if state.get("uid_validity") else None
+
+    @classmethod
+    def permalink(cls, external_id: str, thread_key: str = "") -> str:
+        """Gmail's own UI, by thread (else the message). A formula, never a model-composed string:
+        the link is digested, so a URL formatted differently on the next poll would rewrite the corpus."""
+        if not (external_id or thread_key):
+            return ""
+        return f"https://mail.google.com/mail/u/0/#all/{thread_key or external_id}"
+
     @property
     def address(self) -> str:
-        address = str(self.config.get("address") or "").strip()
+        """The row's own address (so aliases are explicit), else the operator's ``GMAIL_ADDRESS``."""
+        fallback = self.credentials.values.get("GMAIL_ADDRESS")
+        address = str(self.config.get("address") or (fallback.get_secret_value() if fallback else "") or "").strip()
         if not address:
             raise Rejected("config.address or GMAIL_ADDRESS is required")
         return address
@@ -216,10 +232,13 @@ class GmailSource(Source):
 
     # ── transport ───────────────────────────────────────────────────────────
     def _password(self) -> str:
-        secret = self.credentials.values.get("app_password")
-        if secret is None or not secret.get_secret_value():
+        """``GMAIL_APP_PASSWORD``, with presentation whitespace dropped — Google shows an app password
+        in four spaced groups."""
+        secret = self.credentials.values.get("GMAIL_APP_PASSWORD")
+        password = "".join(secret.get_secret_value().split()) if secret is not None else ""
+        if not password:
             raise AccessDenied("GMAIL_APP_PASSWORD is required")
-        return secret.get_secret_value()
+        return password
 
     async def _imap(self, fn: Any, *args: Any) -> Any:
         try:

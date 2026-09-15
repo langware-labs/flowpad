@@ -754,6 +754,10 @@ class DataSource(Entity):
             from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
 
             self.owner = await owner_of(self)
+        from flow_sdk.ingest.source_registry import resolve_source_type  # noqa: PLC0415
+
+        # An authored source's folder loads on first use; every rule below asks its class.
+        await resolve_source_type(self.provider or "")
         if self.status == SourceStatus.NEW.value:
             stype = self._driver()
             if stype is not None and stype.has_setup:
@@ -798,7 +802,7 @@ class DataSource(Entity):
         """
         untyped = isinstance(self.config, dict) and any(isinstance(v, str) for v in self.config.values())
         driver = self._driver()
-        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.origin_for is not None
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.reflects
         return untyped or stuck or not self.exist_in_db
 
     async def _spec(self) -> "Optional[object]":
@@ -880,7 +884,7 @@ class DataSource(Entity):
         source never pays a spec read on the poller's per-tick re-save.
         """
         driver = self._driver()
-        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.origin_for is not None
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.reflects
         if self.exist_in_db and not stuck:
             return
         modes = list(getattr(spec, "reflect", None) or []) if spec is not None else []
@@ -897,7 +901,7 @@ class DataSource(Entity):
         (`origin_for`), pure path arithmetic; a driver with no tree leaves it
         unset, and an unknown provider changes nothing."""
         driver = self._driver()
-        if driver is None or driver.origin_for is None:
+        if driver is None or not driver.reflects:
             return
         try:
             self.origin = driver.origin_for(self)

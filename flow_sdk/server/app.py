@@ -62,6 +62,7 @@ from .routes import (
     git_router,
     graph_workflows_router,
     hooks_router,
+    data_source_webhook_router,
     ingest_router,
     agents_router,
     journeys_router,
@@ -83,7 +84,6 @@ from .routes import (
     watch_router,
     webhook_api_router,
     websocket_router,
-    whatsapp_router,
     worldview_router,
 )
 
@@ -661,7 +661,7 @@ server.add_router(ui_router)
 server.add_router(watch_router)
 server.add_router(websocket_router)
 server.add_router(webhook_api_router)
-server.add_router(whatsapp_router)
+server.add_router(data_source_webhook_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(debug_router)

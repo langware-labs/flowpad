@@ -29,15 +29,13 @@ _PROVIDER_STATE_KEYS = ("etag", "last_modified", "last_update_ptr", "oldest_ts",
 
 
 def test_cursor_state_is_opaque_to_the_subsystem():
-    """No provider-private cursor key may be read in ``ingest/`` outside the one module that lifts
-    each shipped source's legacy cursor (``source_types.py``)."""
+    """No provider-private cursor key may be read in ``ingest/``: each source lifts its own legacy
+    cursor (``Source.lift_cursor``) in its asset folder."""
     root = Path(__file__).resolve().parents[2] / "flow_sdk" / "ingest"
     offenders: list[str] = []
 
     for path in root.rglob("*.py"):
-        if path.name == "source_types.py":
-            continue
-        code = "\n".join(line for line in path.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("#"))
+        code ="\n".join(line for line in path.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("#"))
         for key in _PROVIDER_STATE_KEYS:
             if re.search(rf"""["']{key}["']""", code):
                 offenders.append(f"{path.relative_to(root.parent.parent)} references {key!r}")

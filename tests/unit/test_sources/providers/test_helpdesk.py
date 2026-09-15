@@ -15,17 +15,16 @@ from types import SimpleNamespace
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.source_item import HelpdeskMessageSpec
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.ingest.health import SourceHealth, classify
-from flow_sdk.ingest.source_types import AppHub, hub_refusal
 from flow_sdk.ingest.sources import source_type
 from flow_sdk.schema.data_spec.choice_spec import Choice
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import NotFound
 from flow_sdk.sources.providers.helpdesk import HelpdeskSource
+from flow_sdk.sources.providers.helpdesk.transport import AppHub, hub_refusal
 from flow_sdk.sources.testing import Subject, checks_for
 from tests.unit._ingest_helpers import position
 
@@ -78,7 +77,7 @@ def _view(state=None):
 @pytest.fixture
 def hub(monkeypatch):
     fake = _Hub(pool=POOL, messages=[MSG])
-    monkeypatch.setattr(source_type("helpdesk"), "_build", lambda binding: HelpdeskSource(binding, hub=fake))
+    monkeypatch.setattr(HelpdeskSource, "build", classmethod(lambda cls, binding: cls(binding, hub=fake)))
     return fake
 
 

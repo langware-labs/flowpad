@@ -52,12 +52,12 @@ async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
     ent = await Entity.get_by_asset_ref(str(folder))
     assert ent is not None, "the walker did not pick up the manifest"
     assert ent.type == "data_source_spec"
-    assert (ent.name, ent.title, ent.runtime) == ("rss", "RSS / Atom", "builtin")
+    assert (ent.name, ent.title, ent.runtime) == ("rss", "RSS / Atom", "source")
     assert ent.config["feed_urls"].required is True
 
 
 async def test_a_rejected_manifest_yields_no_entity(folder_db, tmp_path):
-    """A builtin declaring traits is a load error, so nothing is indexed."""
+    """A manifest declaring traits (the source class owns them) is a load error, so nothing is indexed."""
     folder = _seed(tmp_path, "bad", {**RSS, "name": "bad", "traits": {"channel": "x"}})
 
     await _index(tmp_path)

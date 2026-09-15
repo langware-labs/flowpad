@@ -7,7 +7,6 @@ exists for people nobody listed, so an empty allowlist is open, not closed.
 
 ```python
 import flow_sdk
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.agent import Agent
 
 await flow_sdk.auth.login()

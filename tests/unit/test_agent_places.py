@@ -151,7 +151,6 @@ async def test_places_list_this_computer_first_with_what_each_owns(tmp_path):
 
 @pytest.mark.asyncio
 async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
-    import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
     from flow_sdk.builtin.data_source import DataSource, SourceStatus
     from flow_sdk.ingest.sources import source_type
 

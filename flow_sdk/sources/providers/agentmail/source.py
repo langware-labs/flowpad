@@ -18,6 +18,7 @@ from urllib.parse import quote
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, OutcomeUnknown, Rejected, Unsupported
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -38,7 +39,7 @@ _RESUME = "resume:"
 _PAGE = "page:"
 
 
-class AgentMailSource(Source):
+class AgentMailSource(EmailAddressing, Source):
     provider = "agentmail"
     durable_cursor = True
     page_size = PAGE_LIMIT
@@ -51,6 +52,10 @@ class AgentMailSource(Source):
     @classmethod
     def resume_after(cls, timestamp: str) -> str:
         return _RESUME + timestamp
+
+    @classmethod
+    def lift_cursor(cls, state: dict) -> Optional[str]:
+        return cls.resume_after(state["high_water"]) if state.get("high_water") else None
 
     @property
     def inbox(self) -> str:

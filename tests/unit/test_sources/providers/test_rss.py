@@ -10,7 +10,6 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources import CloudOrigin

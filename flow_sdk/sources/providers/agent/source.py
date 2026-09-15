@@ -116,6 +116,21 @@ class AgentSource(Source):
         super().__init__(binding)
         self._worker = worker
 
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def build(cls, binding: SourceBinding) -> "AgentSource":
+        from .transport import HarnessWorker  # noqa: PLC0415
+
+        return cls(binding, worker=HarnessWorker())
+
+    @classmethod
+    def lift_cursor(cls, state: Mapping[str, Any]) -> Optional[str]:
+        return cls.resume_after(state["high_water"]) if state.get("high_water") else None
+
+    def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
+        """The worker is handed the application's arguments as they are: it addresses the connector."""
+        return AgentSendData(text=text, subject=subject or None, thread_key=thread_key, to=to, conversation_id=conversation_id), None
+
     @classmethod
     def origin_kind_for(cls, config: Mapping[str, Any]) -> str:
         """The connector IS the channel — otherwise every thread badges and keys as "agent"."""

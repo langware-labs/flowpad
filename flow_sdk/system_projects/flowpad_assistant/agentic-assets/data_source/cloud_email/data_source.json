@@ -4,6 +4,7 @@
   "title": "Cloud mailbox",
   "icon_name": "CloudMailbox",
   "description": "A mailbox the hub allocates and holds the credential for. Nothing to paste.",
+  "kind": "datasource.cloud.email",
   "config": {
     "agent_id": {
       "type": "text",

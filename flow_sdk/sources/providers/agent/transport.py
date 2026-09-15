@@ -1,7 +1,7 @@
-"""``HarnessWorker`` — how the application launches the agent transport's workers.
+"""``HarnessWorker`` — how the agent source's workers launch on this machine.
 
-The ``agent`` source (``flow_sdk/sources/providers/agent``) says WHAT a fetch or a send is; this
-module owns HOW it runs on this machine: the named Agent's deployment, the prompt contract, the
+The ``agent`` source (``source.py`` beside this module) says WHAT a fetch or a send is; this
+module owns HOW it runs here: the named Agent's deployment, the prompt contract, the
 receipt file, and the two budgets that exist nowhere else in ingestion. ``AgenticProcess`` has
 neither — ``run``/``wait`` poll forever and there is no global process cap — so without them one
 stuck worker holds its source's in-flight slot permanently and N due sources spawn N workers.
@@ -30,7 +30,8 @@ from flow_sdk.builtin.agentic_process.launch_health import (
 )
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.ingest.sources import ingest_run_context
-from flow_sdk.sources.providers.agent import profile_of
+
+from .source import profile_of
 
 logger = logging.getLogger(__name__)
 

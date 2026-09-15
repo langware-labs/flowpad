@@ -3,7 +3,13 @@
   "name": "whatsapp",
   "title": "WhatsApp",
   "icon_name": "WhatsApp",
-  "description": "A WhatsApp business number on Meta's Cloud API — people message it, an agent answers. Messages arrive by webhook, so Meta must be able to reach this instance.",
+  "description": "A WhatsApp business number on Meta's Cloud API \u2014 people message it, an agent answers. Messages arrive by webhook, so Meta must be able to reach this instance.",
+  "kind": "datasource.api.whatsapp",
+  "auth": {
+    "secrets": {
+      "access_token": ""
+    }
+  },
   "setup_wiki": "WhatsApp business number",
   "config": {
     "phone_number_id": {
@@ -11,7 +17,7 @@
       "required": true,
       "label": "Phone number ID",
       "placeholder": "123456789012345",
-      "hint": "From the Meta app's WhatsApp setup page — the ID, not the number itself. The free test number works and needs no business verification."
+      "hint": "From the Meta app's WhatsApp setup page \u2014 the ID, not the number itself. The free test number works and needs no business verification."
     },
     "access_token": {
       "type": "text",
@@ -23,7 +29,7 @@
       "type": "text",
       "required": true,
       "label": "Webhook verify token",
-      "hint": "Any string you choose. Paste the same one into Meta's webhook configuration — it is what proves the callback URL is yours."
+      "hint": "Any string you choose. Paste the same one into Meta's webhook configuration \u2014 it is what proves the callback URL is yours."
     }
   }
 }

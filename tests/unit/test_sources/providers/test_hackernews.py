@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.health import SourceHealth, classify

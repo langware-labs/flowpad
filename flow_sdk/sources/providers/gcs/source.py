@@ -72,6 +72,15 @@ class GcsSource(Source):
         # Not refused here: the picker opens a source to LIST buckets before one is chosen.
         return _bucket_name(binding.config) or cls.provider
 
+    @classmethod
+    def origin_id_for(cls, row: Any, ref: str, root: Any) -> str:
+        """``gcs:<bucket>/<object>`` — an object's name IS its identity and the cache mirrors it, so
+        the handle falls out of the path with no sidecar."""
+        from pathlib import Path  # noqa: PLC0415
+
+        rel = Path(ref).resolve().relative_to(Path(root))
+        return f"gcs:{cls.namespace_for(SourceBinding(config=getattr(row, 'config', None) or {}))}/{rel.as_posix()}"
+
     @property
     def bucket(self) -> str:
         name = _bucket_name(self.config)

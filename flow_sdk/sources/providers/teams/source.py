@@ -105,6 +105,30 @@ class TeamsSource(Source):
     def channel_origin(self, segment: str) -> CloudOrigin:
         return self.origin(split_segment(segment)[1], segment)
 
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def lift_cursor(cls, state: dict) -> Optional[str]:
+        return cls.resume_after(state["last_created"]) if state.get("last_created") else None
+
+    @classmethod
+    def outbound_spec(cls) -> type:
+        from flow_sdk.builtin.source_item import TeamsMessageSpec  # noqa: PLC0415
+
+        return TeamsMessageSpec
+
+    def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
+        """``to`` is the composite ``{teamId}/{channelId}`` (a Teams thread key is a bare message id
+        and names no channel); ``thread_key`` is the ROOT the post goes under. Without one it is a new
+        root, and only then does ``subject`` mean anything. Graph posts as the connected user."""
+        segment = str(to or "").strip()
+        if not all(split_segment(segment)):
+            raise ValueError("a teams send needs `{teamId}/{channelId}` in `to`")
+        if not (text or "").strip():
+            raise ValueError("a teams send needs text")
+        root = str(thread_key or "").strip() or str(in_reply_to or "").strip()
+        conversation = self.origin(root, segment) if root else self.channel_origin(segment)
+        return TeamsMessageData(text=text, subject=None if root else (subject or None), conversation=conversation), None
+
     async def _open(self) -> None:
         self._client = http.client()
 

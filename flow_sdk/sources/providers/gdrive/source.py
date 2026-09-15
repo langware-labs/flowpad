@@ -112,6 +112,24 @@ class DriveSource(Source):
         """The cursor that resumes the change log at ``page_token``."""
         return _CHANGES + page_token
 
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def lift_cursor(cls, state: dict) -> Optional[str]:
+        return cls.changes_from(state["page_token"]) if state.get("page_token") else None
+
+    @classmethod
+    def origin_id_for(cls, row: Any, ref: str, root: Any) -> str:
+        """``gdrive:<fileId>`` for a cached file, read out of the index the engine keeps beside the
+        cache — a ``fileId`` survives rename, move and content replacement, which neither a path nor
+        an inode can promise. A file the index does not know falls back to its path."""
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.ingest.sources import read_cache_index  # noqa: PLC0415
+
+        rel = Path(ref).resolve().relative_to(Path(root)).as_posix()
+        key = read_cache_index(Path(root), cls.provider).get(rel)
+        return f"{cls.provider}:{key}" if key else ""
+
     async def _open(self) -> None:
         self._http = http.client()
 

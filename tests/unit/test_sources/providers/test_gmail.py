@@ -13,7 +13,6 @@ from types import SimpleNamespace
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources import UserProfile
@@ -150,7 +149,7 @@ def _view(state=None, window_start=None):
 async def test_conformance(check, gmail):
     for n in (1, 2, 3):
         gmail.deliver(_raw(message_id=f"<m{n}@x>", in_reply_to=""), "9988")
-    binding = SourceBinding(config={"address": ADDRESS}, credentials=Credentials(shape=AuthShape.ENV, values={"app_password": SecretStr(PASSWORD)}))
+    binding = SourceBinding(config={"address": ADDRESS}, credentials=Credentials(shape=AuthShape.ENV, values={"GMAIL_APP_PASSWORD": SecretStr(PASSWORD)}))
     probe = GmailSource(binding)
     await check.run(Subject(
         source=lambda: GmailSource(binding),
@@ -172,7 +171,7 @@ def test_gmail_is_a_registered_message_source_with_env_only_auth():
 async def test_the_password_is_a_credential_with_googles_display_spacing_dropped(monkeypatch):
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "abcd efgh ijkl mnop")
     source = await source_type("gmail").open(_row())
-    assert source.credentials.value("app_password") == "abcdefghijklmnop" and "app_password" not in source.config
+    assert source._password() == "abcdefghijklmnop" and "GMAIL_APP_PASSWORD" not in source.config
 
 
 async def test_the_address_falls_back_to_the_environment(monkeypatch):

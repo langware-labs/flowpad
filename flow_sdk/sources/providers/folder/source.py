@@ -36,6 +36,18 @@ class WatchedFolderSource(FolderSource):
         """Whether setup is finished — every unfinished state here is a person's to fix."""
         return await self._blocking(_verdict, self.root)
 
+    @classmethod
+    def origin_id_for(cls, row: object, ref: str, root: object) -> str:
+        """The filesystem's own handle for the file at ``ref``: its inode.
+
+        It survives a rename within the volume, which a path cannot. Re-read after every index
+        pass, because stamping a capsule rewrites the file atomically and moves the inode; an
+        editor that saves atomically is honestly a new file. Meaningless off its volume, so it is
+        scoped to the source and never shared.
+        """
+        st = os.stat(ref)  # OSError → reflection falls back to the path
+        return f"folder:{getattr(row, 'id', '')}:ino:{st.st_dev}:{st.st_ino}"
+
 
 def _verdict(root: str) -> Verdict:
     if not os.path.exists(root):

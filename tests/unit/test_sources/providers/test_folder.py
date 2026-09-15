@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources.providers.folder import WatchedFolderSource
 from flow_sdk.sources.testing import Subject, checks_for

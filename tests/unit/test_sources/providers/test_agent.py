@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.sources import SendStatus, source_type
 from flow_sdk.sources.binding import SourceBinding
@@ -40,7 +39,7 @@ class _Worker:
 @pytest.fixture
 def worker(monkeypatch):
     fake = _Worker()
-    monkeypatch.setattr(source_type("agent"), "_build", lambda binding: AgentSource(binding, worker=fake))
+    monkeypatch.setattr(AgentSource, "build", classmethod(lambda cls, binding: cls(binding, worker=fake)))
     return fake
 
 

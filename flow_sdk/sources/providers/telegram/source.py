@@ -80,6 +80,30 @@ class TelegramSource(Source):
     def chat_origin(self, chat_id: str, topic: str = "") -> CloudOrigin:
         return self.origin(f"{chat_id}/{topic}" if topic else chat_id)
 
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def lift_cursor(cls, state: dict) -> Optional[str]:
+        return cls.resume_at(state["next_offset"]) if state.get("next_offset") else None
+
+    @classmethod
+    def outbound_spec(cls) -> type:
+        from flow_sdk.builtin.source_item import TelegramMessageSpec  # noqa: PLC0415
+
+        return TelegramMessageSpec
+
+    def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
+        """``to`` is the chat — a chat reply targets the chat, never its author — and a forum topic
+        rides ``thread_key``. ``in_reply_to`` (``<chat_id>/<message_id>``) makes it a reply to that
+        message, which Telegram keeps in the replied message's topic. A subject has no equivalent."""
+        chat = str(to or "").strip() or str(thread_key or "").split("/", 1)[0].strip()
+        if not chat:
+            raise ValueError("a telegram send needs a chat id in `to` or `thread_key`")
+        answered = str(in_reply_to or "").strip()
+        if "/" in answered and answered.rsplit("/", 1)[-1].isdigit():
+            return MessageData(text=text), self.origin(answered)
+        topic = str(thread_key or "").split("/", 1)[1:]
+        return MessageData(text=text, conversation=self.chat_origin(chat, topic[0] if topic and topic[0].isdigit() else "")), None
+
     @property
     def base_url(self) -> str:
         return str(self.config.get("base_url") or DEFAULT_BASE_URL).rstrip("/")

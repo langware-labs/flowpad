@@ -10,10 +10,11 @@ import asyncio
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
-from flow_sdk.ingest import agent_transport
-from flow_sdk.ingest.agent_transport import (
+from flow_sdk.ingest.sources import source_type
+from flow_sdk.sources.providers.agent import CONNECTOR_PROFILES
+from flow_sdk.sources.providers.agent import transport as agent_transport
+from flow_sdk.sources.providers.agent.transport import (
     RECEIPT_FILENAME,
     SEND_RECEIPT_FILENAME,
     HarnessWorker,
@@ -22,8 +23,6 @@ from flow_sdk.ingest.agent_transport import (
     send_instruction,
     send_result_from,
 )
-from flow_sdk.ingest.sources import source_type
-from flow_sdk.sources.providers.agent import CONNECTOR_PROFILES
 
 
 class TestBudgetIsSeparate:

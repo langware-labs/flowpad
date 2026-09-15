@@ -1,10 +1,12 @@
-"""Source types — the application's registry of contract sources, and one segment's traversal.
+"""Source types — the application's registry of data sources, and one segment's traversal.
 
-A ``SourceType`` pairs a contract ``Source`` class (``flow_sdk/sources/providers``) with what only
-the application can supply: the credential it reads with, the hub, mailbox or worker transport it
-is built over, the cache its bytes land in, how a send's arguments address its channel, and how a
-cursor an older build left is adopted. The sync engine, reflection and the inbox ask the type;
-nothing outside ``flow_sdk/sources`` branches on a provider name.
+A ``SourceType`` is one data source asset as the application runs it: the folder's ``Source`` class
+and its manifest (``flow_sdk/ingest/source_registry.py`` loads both). Everything that differs between
+sources the class or the manifest says — the credential shape (``auth``), the transport it is built
+over (``build``), how a send's arguments address its channel (``message_for``), how a cursor an older
+build left is adopted (``lift_cursor``), the identity a reflected file resolves on
+(``origin_id_for``). The sync engine, reflection and the inbox ask the type; nothing here, or
+anywhere outside an asset folder, names a provider.
 
 **One segment's traversal** (``SourceType.traverse``) is the engine step: a page chain capped by
 ``pages_per_pass``, starting from the durable cursor when the class declares one, else from the
@@ -18,10 +20,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.capsules.atomic import atomic_write
@@ -40,8 +43,6 @@ from flow_sdk.sources.protocols import (
     Verdict,
     Verifiable,
 )
-from flow_sdk.sources.values.items import MessageData
-from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import ChangePage
 from flow_sdk.sources.values.query import MessageQuery
 from flow_sdk.sources.values.segment import SegmentRef
@@ -50,6 +51,7 @@ from flow_sdk.utils.serialization import iso_to_utc
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.source_item import MessageSpec
+    from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +66,6 @@ DOWNLOAD_CONCURRENCY = 4
 RUN_SOURCE_KEY = "data_source_id"
 
 _EPOCH = datetime.min.replace(tzinfo=timezone.utc)
-
-#: ``(row) -> Credentials`` — what a source type reads with.
-CredentialResolver = Callable[[Any], Awaitable[Credentials]]
-#: ``(source, *, thread_key, to, text, subject, in_reply_to, conversation_id) -> (MessageData, answered origin | None)``
-Outgoing = Callable[..., "tuple[MessageData, Optional[CloudOrigin]]"]
 
 
 # ── the send outcome (until the messaging verbs return a MessageItem) ──────────
@@ -278,46 +275,23 @@ async def _single_segment(source: Source) -> str:
 
 
 class SourceType:
-    """A contract source class, as this application builds, binds and traverses it."""
+    """A data source asset — its ``Source`` class and its manifest — as this application builds,
+    binds and traverses it."""
 
-    def __init__(
-        self,
-        cls: type[Source],
-        *,
-        kind: str,
-        build: Optional[Callable[[SourceBinding], Source]] = None,
-        credentials: Optional[CredentialResolver] = None,
-        configure: Optional[Callable[[Any], dict]] = None,
-        outgoing: Optional[Outgoing] = None,
-        outbound_spec: Optional[Callable[[Any], type]] = None,
-        lift_cursor: Optional[Callable[[dict], Optional[str]]] = None,
-        choices: Optional[Callable[[Any, str], Awaitable[list]]] = None,
-        ref_for: Optional[Callable[[Source, str], str]] = None,
-        cache_root: Optional[Callable[[Any], Path]] = None,
-        origin_for: Optional[Callable[[Any], Any]] = None,
-        origin_id_for: Optional[Callable[[Any, str], str]] = None,
-    ) -> None:
+    def __init__(self, cls: type[Source], manifest: "Optional[ManifestSpec]" = None, *, kind: str = "", folder: Optional[Path] = None) -> None:
         self.cls = cls
         self.provider = cls.provider
-        self.kind = kind
-        self._build = build or cls
-        self._credentials = credentials
-        self._configure = configure
-        self._outgoing = outgoing
-        self._outbound_spec = outbound_spec
-        self._lift_cursor = lift_cursor
-        self._choices_hook = choices
-        self._ref_for = ref_for
-        self._cache_root = cache_root
-        #: ``(row) -> FSOrigin`` — where a reflecting source's tree lives; stamped on save.
-        self.origin_for = origin_for
-        #: ``(row, ref) -> origin id`` — the identity reflection resolves an unstamped file on.
-        self.origin_id_for = origin_id_for
+        self.manifest = manifest
+        #: The asset folder the source loaded from; ``None`` for a class registered by hand (a test's).
+        self.folder = folder
+        self.kind = kind or (manifest.kind if manifest is not None and manifest.kind else f"datasource.{cls.provider}")
+        #: The folder's code as it loaded — a changed ``source.py`` is loaded again.
+        self.content_hash = _folder_hash(folder)
 
     # ── traits the application reads ───────────────────────────────────────
     @property
     def sends(self) -> bool:
-        return self._outgoing is not None and issubclass(self.cls, Messaging)
+        return issubclass(self.cls, Messaging) and callable(getattr(self.cls, "message_for", None))
 
     @property
     def has_setup(self) -> bool:
@@ -325,7 +299,7 @@ class SourceType:
 
     @property
     def offers_choices(self) -> bool:
-        return self._choices_hook is not None or issubclass(self.cls, Choosing)
+        return callable(getattr(self.cls, "choices_for", None)) or issubclass(self.cls, Choosing)
 
     @property
     def finds_replies(self) -> bool:
@@ -368,24 +342,73 @@ class SourceType:
 
     def outbound_spec(self, row: Any) -> type["MessageSpec"]:
         """The spec class that knows WHO a reply on this channel is addressed to."""
-        if self._outbound_spec is not None:
-            return self._outbound_spec(row)
+        declared = self.cls.outbound_spec()
+        if declared is not None:
+            return declared
         from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
 
         return EmailMessageSpec
 
     # ── binding ─────────────────────────────────────────────────────────────
+    async def credentials_for(self, row: Any) -> Credentials:
+        """What the row reads with, resolved from the manifest's ``auth``."""
+        from flow_sdk.ingest.credentials import resolve_credentials  # noqa: PLC0415
+
+        return await resolve_credentials(self.manifest.auth if self.manifest is not None else None, row)
+
     async def open(self, row: Any, *, persona: bool = False) -> Source:
         """The configured source (not yet in a session). A configuration the class refuses is a
         person's to fix."""
-        credentials = await self._credentials(row) if self._credentials else None
+        credentials = await self.credentials_for(row)
         binding = binding_of(row, credentials=credentials, persona=await _persona_of(row) if persona else None)
-        if self._configure is not None:
-            binding = binding.model_copy(update={"config": {**binding.config, **self._configure(row)}})
+        derived = dict(self.cls.configure(row) or {})
+        if derived:
+            binding = binding.model_copy(update={"config": {**binding.config, **derived}})
         try:
-            return self._build(binding)
+            return self.cls.build(binding)
         except ValueError as exc:
             raise Rejected(str(exc)) from exc
+
+    # ── where a reflecting source's files are ───────────────────────────────
+    def cache_root(self, row: Any) -> Optional[Path]:
+        """Where a REMOTE file source's bytes land: under this instance, not a project, so deleting
+        the source can take its cache without touching anything a person wrote. ``None`` for a
+        source with no remote bytes."""
+        if not self.cls.reflects or self.cls.local_tree_key:
+            return None
+        override = (getattr(row, "config", None) or {}).get("cache_root")
+        if override:
+            return Path(str(override)).expanduser().resolve()
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        return (get_instance_settings().instance_dir / self.provider / str(getattr(row, "id", "") or "")).resolve()
+
+    def tree_root(self, row: Any) -> Optional[Path]:
+        """The tree every ref of a reflecting source is relative to: the local tree the source reads
+        in place, else its cache. ``None`` when the row does not name one yet."""
+        key = self.cls.local_tree_key
+        if not key:
+            return self.cache_root(row)
+        raw = str((getattr(row, "config", None) or {}).get(key) or "")
+        return Path(raw).expanduser().resolve() if raw else None
+
+    def origin_for(self, row: Any) -> Any:
+        """The tree, as the origin a reflecting row is stamped with on save; ``None`` for a record
+        source or a row that names no tree yet."""
+        if not self.cls.reflects:
+            return None
+        root = self.tree_root(row)
+        if root is None:
+            return None
+        from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
+
+        return local_origin_for_path(root)
+
+    def origin_id_for(self, row: Any, ref: str) -> str:
+        """The identity reflection resolves an unstamped file on, from the class; ``""`` falls back
+        to the path."""
+        root = self.tree_root(row)
+        return str(self.cls.origin_id_for(row, ref, root) or "") if root is not None else ""
 
     async def segments(self, row: Any) -> list[SegmentRef]:
         source = await self.open(row)
@@ -408,9 +431,7 @@ class SourceType:
             query = segment.query if segment else None
             cursor = None
             if cls.durable_cursor:
-                cursor = position.cursor or (
-                    self._lift_cursor(position.legacy_state) if self._lift_cursor and position.legacy_state else None
-                )
+                cursor = position.cursor or (cls.lift_cursor(position.legacy_state) if position.legacy_state else None)
             complete = cursor is None
             started_at = cursor
             floor = iso_to_utc(position.window_start) if position.window_start else None
@@ -460,13 +481,14 @@ class SourceType:
         A traversal from the beginning is ``complete``: a key it no longer lists is gone. A delta
         traversal (resumed from a durable cursor) reports only what changed, so it merges into the
         manifest and only what the source says it removed is gone. A local tree's refs are its own
-        paths (``ref_for``). A remote one's bytes are pulled through ``open`` into the row's cache
-        (``cache_root``), laid out along each file's ``path`` and indexed ``{path: key}`` beside
+        paths under ``tree_root``. A remote one's bytes are pulled through ``open`` into the row's
+        cache (``cache_root``), laid out along each file's ``path`` and indexed ``{path: key}`` beside
         them — reflection is handed a ref, never a cursor, and names identity from that index.
         """
         handle_of = source.handle_of if isinstance(source, StableHandle) else (lambda _item: "")
         by_key = {item.origin.key: item for item in items}
-        root = self._cache_root(row) if self._cache_root is not None else None
+        root = self.cache_root(row)
+        tree = None if root is not None else self.tree_root(row)
         placed: dict[str, str] = {}
         known: dict[str, str] = {}
         if root is not None:
@@ -482,8 +504,8 @@ class SourceType:
 
         def ref(key: str, rel: Optional[str] = None) -> Optional[str]:
             if root is None:
-                assert self._ref_for is not None, f"{self.provider} reflects but names neither ref_for nor cache_root"
-                return self._ref_for(source, key)
+                assert tree is not None, f"{self.provider} reflects but its row names no {self.cls.local_tree_key or 'tree'}"
+                return os.path.join(str(tree), key)
             path = cached_path(root, rel if rel is not None else known.get(key, key))
             return str(path) if path is not None else None
 
@@ -544,10 +566,9 @@ class SourceType:
         reply must never become source health."""
         if not self.sends:
             raise NotImplementedError(f"{self.provider} cannot send")
-        assert self._outgoing is not None
         source = await self.open(row, persona=True)
-        data, answered = self._outgoing(
-            source, thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to, conversation_id=conversation_id
+        data, answered = source.message_for(  # type: ignore[attr-defined]
+            thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to, conversation_id=conversation_id
         )
         try:
             async with source:
@@ -582,6 +603,31 @@ class SourceType:
             logger.exception("[ingest] %s sent %s but could not record the copy", self.provider, sent.origin.key)
             return False
         return True
+
+    async def ingest_pushed(self, row: Any, payload: Any) -> dict:
+        """A provider's push delivery (a webhook body), as the records it carries, through the one
+        ingestion chokepoint. Total: a payload carrying nothing we render ingests nothing."""
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+
+        source = await self.open(row)
+        async with source:
+            events = source.events_from_webhook(payload)  # type: ignore[attr-defined]
+            segment = await _single_segment(source)
+        items = [
+            envelope_of(
+                event.item,
+                data_source_id=str(row.id),
+                provider=self.provider,
+                segment_key=segment,
+                segment_label=str(getattr(getattr(event.item.data, "conversation", None), "key", "") or ""),
+            )
+            for event in events
+            if event.item is not None
+        ]
+        if not items:
+            return {"ingested": 0}
+        report = await ingest_items(items)
+        return {"ingested": len(items), "created": getattr(report, "created", 0)}
 
     async def find_reply(self, row: Any, external_id: str) -> Any:
         """The reply to ``external_id`` as an envelope, or ``None`` — one look."""
@@ -628,9 +674,9 @@ class SourceType:
     async def choices(self, row: Any, field: str) -> list:
         """What the credential can see for one config field. Raises like a fetch; the one caller
         (``DataSource.choices_for``) turns a refusal into a sentence. A field whose offer is
-        APPLICATION state (the desks this instance adopted) is answered by the application."""
-        if self._choices_hook is not None:
-            return list(await self._choices_hook(row, field))
+        APPLICATION state (the desks this instance adopted) the class answers from that state."""
+        if callable(getattr(self.cls, "choices_for", None)):
+            return list(await self.cls.choices_for(row, field))  # type: ignore[attr-defined]
         from flow_sdk.schema.data_spec.choice_spec import Choice  # noqa: PLC0415
 
         async with await self.open(row) as source:
@@ -638,9 +684,23 @@ class SourceType:
         return [Choice(**{k: str(entry[k]) for k in ("id", "name", "detail") if entry.get(k)}) for entry in offered]
 
 
-#: Keyed by provider. A miss answers ``None`` — an unknown provider is a diagnosable source state
-#: (``unknown_provider``), not a crash in the poller.
-SOURCES: "KindRegistry[SourceType]" = KindRegistry("data source type", key="provider")
+def _folder_hash(folder: Optional[Path]) -> str:
+    if folder is None:
+        return ""
+    from flow_sdk.ingest.source_registry import content_hash  # noqa: PLC0415
+
+    return content_hash(folder)
+
+
+def _register_shipped(registry: "KindRegistry[SourceType]") -> None:
+    from flow_sdk.ingest.source_registry import register_shipped  # noqa: PLC0415
+
+    register_shipped(registry)
+
+
+#: Keyed by provider; the shipped asset folders load on the first lookup. A miss answers ``None`` —
+#: an unknown provider is a diagnosable source state (``unknown_provider``), not a crash in the poller.
+SOURCES: "KindRegistry[SourceType]" = KindRegistry("data source type", key="provider", builder=_register_shipped)
 
 
 def register_source(source_type: SourceType) -> SourceType:
@@ -648,9 +708,8 @@ def register_source(source_type: SourceType) -> SourceType:
 
 
 def source_type(provider: str) -> Optional[SourceType]:
-    """The registered type for ``provider`` — the shipped ones register on first ask."""
-    import flow_sdk.ingest.source_types  # noqa: F401, PLC0415 — registers the shipped sources
-
+    """The registered type for ``provider``. An authored folder not loaded yet is a miss here;
+    ``source_registry.resolve_source_type`` loads it."""
     return SOURCES.get_or_none(provider or "")
 
 

@@ -46,6 +46,7 @@ class FolderSource(CollectionSource):
     origin_kind = "local"
     altitude = Altitude.IN_PROCESS
     reflects = True
+    local_tree_key = "root"
     supported_queries = (ObjectQuery,)
     page_type = FileDataPage
     #: Refuses a bare directory or file name; refused directories are never descended.

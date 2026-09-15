@@ -4,6 +4,7 @@
   "title": "Hacker News",
   "icon_name": "HackerNews",
   "description": "The public firehose, filtered. No credentials.",
+  "kind": "datasource.api.hackernews",
   "config": {
     "types": {
       "type": "csv",

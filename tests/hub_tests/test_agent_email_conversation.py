@@ -42,7 +42,6 @@ import httpx
 import pytest
 
 import flow_sdk
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver

@@ -15,7 +15,6 @@ from urllib.parse import parse_qs
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.sources import source_type
@@ -53,7 +52,7 @@ def _credentials(token):
 
 @pytest.fixture(autouse=True)
 def _a_token(monkeypatch):
-    monkeypatch.setattr(source_type("slack"), "_credentials", _credentials("xoxp-test"))
+    monkeypatch.setattr(source_type("slack"), "credentials_for", _credentials("xoxp-test"))
 
 
 class _Slack:
@@ -259,7 +258,7 @@ async def test_a_200_with_ok_false_is_a_failure_classified_by_what_fixes_it(serv
 
 async def test_no_credential_is_reported_before_any_request(serve, monkeypatch):
     slack = serve([{"ok": True, "messages": []}])
-    monkeypatch.setattr(source_type("slack"), "_credentials", _credentials(None))
+    monkeypatch.setattr(source_type("slack"), "credentials_for", _credentials(None))
     with pytest.raises(Exception) as caught:
         await source_type("slack").traverse(_source(), _view())
     assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR and "Connect Slack" in str(caught.value)

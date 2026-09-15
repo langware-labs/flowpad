@@ -97,6 +97,29 @@ class SlackSource(Source):
     def channel_origin(self, channel: str) -> CloudOrigin:
         return self.origin(channel, channel)
 
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def lift_cursor(cls, state: dict) -> Optional[str]:
+        return cls.resume_after(state["last_ts"]) if state.get("last_ts") else None
+
+    @classmethod
+    def outbound_spec(cls) -> type:
+        from flow_sdk.builtin.source_item import SlackMessageSpec  # noqa: PLC0415
+
+        return SlackMessageSpec
+
+    def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
+        """The application's send arguments as a Slack message: ``to`` is the channel (a Slack thread
+        key is a bare ``ts`` and names none), and the thread it lands in is ``thread_key``. A subject
+        has no Slack equivalent."""
+        channel = str(to or "").strip()
+        if not channel:
+            raise ValueError("a slack send needs the channel id in `to`")
+        if not (text or "").strip():
+            raise ValueError("a slack send needs text")
+        thread = str(thread_key or "").strip() or str(in_reply_to or "").strip()
+        return MessageData(text=text, conversation=self.origin(thread, channel) if thread else self.channel_origin(channel)), None
+
     # ── session ─────────────────────────────────────────────────────────────
     async def _open(self) -> None:
         self._client = http.client()

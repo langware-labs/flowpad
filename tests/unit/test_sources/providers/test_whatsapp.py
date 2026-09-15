@@ -11,7 +11,6 @@ import json
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.sources import source_type
@@ -235,33 +234,40 @@ async def _saved(**config) -> DataSource:
 
 
 async def test_the_handshake_echoes_the_challenge_when_the_token_matches():
-    from flow_sdk.server.routes.whatsapp import verify_webhook
+    from flow_sdk.server.routes.data_source_webhook import webhook_handshake
 
     await _saved(verify_token="s3cret", phone_number_id="handshake-ok")
-    response = await verify_webhook(_Request(query={"hub.mode": "subscribe", "hub.verify_token": "s3cret", "hub.challenge": "1234"}))
+    response = await webhook_handshake("whatsapp", _Request(query={"hub.mode": "subscribe", "hub.verify_token": "s3cret", "hub.challenge": "1234"}))
     assert (response.status_code, response.body) == (200, b"1234")
 
 
 async def test_the_handshake_refuses_a_token_no_source_carries():
-    from flow_sdk.server.routes.whatsapp import verify_webhook
+    from flow_sdk.server.routes.data_source_webhook import webhook_handshake
 
     await _saved(verify_token="s3cret", phone_number_id="handshake-bad")
-    response = await verify_webhook(_Request(query={"hub.mode": "subscribe", "hub.verify_token": "guess", "hub.challenge": "1234"}))
+    response = await webhook_handshake("whatsapp", _Request(query={"hub.mode": "subscribe", "hub.verify_token": "guess", "hub.challenge": "1234"}))
     assert response.status_code == 403
 
 
-async def test_a_batch_for_an_unknown_number_answers_200():
-    from flow_sdk.server.routes.whatsapp import receive_webhook
+async def test_a_source_with_no_webhook_has_no_handshake():
+    from flow_sdk.server.routes.data_source_webhook import webhook_handshake
 
-    response = await receive_webhook(_Request(body=_webhook(_text("wamid.ZZZ", "hi"), phone_number_id="nobody-here")))
+    response = await webhook_handshake("rss", _Request(query={"hub.mode": "subscribe"}))
+    assert response.status_code == 404
+
+
+async def test_a_batch_for_an_unknown_number_answers_200():
+    from flow_sdk.server.routes.data_source_webhook import webhook_delivery
+
+    response = await webhook_delivery("whatsapp", _Request(body=_webhook(_text("wamid.ZZZ", "hi"), phone_number_id="nobody-here")))
     assert response.data["ingested"] == 0 and "no source" in response.data["reason"]
 
 
 async def test_a_batch_reaches_the_ingestor_through_the_one_chokepoint(recorded):
-    from flow_sdk.server.routes import whatsapp as route
+    from flow_sdk.server.routes.data_source_webhook import webhook_delivery
 
     mine = "chokepoint-999"
     source = await _saved(verify_token="t", phone_number_id=mine)
-    response = await route.receive_webhook(_Request(body=_webhook(_text("wamid.YYY", "hello there"), phone_number_id=mine)))
+    response = await webhook_delivery("whatsapp", _Request(body=_webhook(_text("wamid.YYY", "hello there"), phone_number_id=mine)))
     assert response.data["ingested"] == 1
     assert [i.external_id for i in recorded] == ["wamid.YYY"] and recorded[0].data_source_id == source.id

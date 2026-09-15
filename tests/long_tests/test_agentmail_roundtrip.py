@@ -28,7 +28,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
@@ -130,7 +129,7 @@ async def test_agentmail_roundtrip():
 
         # ── reply: the driver's real send, threaded on the provider's id ──
         reply_marker = f"{marker}-reply"
-        from flow_sdk.ingest.sources import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
         outcome = await source_type("agentmail").send(
             source,

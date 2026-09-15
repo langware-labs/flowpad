@@ -4,6 +4,7 @@
   "title": "Slack",
   "icon_name": "Slack",
   "description": "Channels in a connected Slack workspace. Connect Slack first, then invite the bot to each channel and press Verify.",
+  "kind": "datasource.api.slack",
   "setup_wiki": "Slack channels",
   "auth": {
     "connector": "slack"
