@@ -52,11 +52,16 @@ async def credentials_action() -> ApiResponse:
         if method == "GET" and sub_path == "status":
             from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
 
-            project_id = request_info.request.query_params.get("project_id")
+            params = request_info.request.query_params
+            project_id = params.get("project_id")
             project = await get_project(project_id)
             if project_id and project is None:
                 return ApiFailResponse(message="project not found")
-            return ApiSuccessResponse(data=(await credentials_status(project)).model_dump(mode="json"))
+            try:
+                status = await credentials_status(project, params.get("environment") or "development")
+            except ValueError as e:
+                return ApiFailResponse(message=str(e))
+            return ApiSuccessResponse(data=status.model_dump(mode="json"))
         if method == "POST":
             payload = await request_info.get_post_data() or {}
             if sub_path == "save":
@@ -66,10 +71,13 @@ async def credentials_action() -> ApiResponse:
                     project_id=payload.get("project_id"),
                     typeid=payload.get("typeid"),
                     values=payload.get("values") or {},
+                    environment=payload.get("environment"),
                 )
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "values":
-                spec = await set_credential_values(payload.get("typeid") or "", payload.get("values") or {})
+                spec = await set_credential_values(
+                    payload.get("typeid") or "", payload.get("values") or {}, payload.get("environment")
+                )
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "delete":
                 return ApiSuccessResponse(data=await delete_credential(payload.get("typeid") or ""))

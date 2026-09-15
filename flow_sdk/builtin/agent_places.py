@@ -268,32 +268,47 @@ async def set_email_place(agent: "Agent", deployment_id: str) -> "Agent":
     return agent
 
 
-async def adopt_placement(agent: "Agent", deployment_id: str) -> "Deployment":
+async def adopt_placement(agent: "Agent", deployment_id: str, environment: str | None = None) -> "Deployment":
     """Make this machine's placement of ``agent`` carry the hub's id for it.
 
     Called ON a cloud machine by the hub at deploy and update. The box minted its
     own local placement; the definition's place entries (overrides, ``runs_on``,
     ``email_place``) name the hub's id. One placement, one id everywhere — so the
     row is re-keyed here rather than translating ids at every read.
+
+    ``environment`` is the placement's credential environment. It is stamped on
+    the row and becomes this instance's default, so plain terminals on the box
+    read the same environment as its agent runs.
     """
     from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.instance_settings.environment import set_default_environment  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
 
     deployment_id = str(deployment_id or "").strip()
     if not is_valid_entity_id(deployment_id):
         raise PlaceError("deployment_id must be a UUID v4 or v5")
+    try:
+        env = normalize_environment(environment) if environment is not None else None
+    except ValueError as e:
+        raise PlaceError(str(e)) from e
     existing = await Deployment.get_by_id(deployment_id)
     if existing is not None:
         if existing.parent_type_id != str(agent.typeid):
             raise PlaceError(f"{deployment_id} places a different element", status_code=409)
         if not existing.is_local:
             raise PlaceError(f"{deployment_id} is not a placement on this machine", status_code=409)
-        return existing.with_element(agent)
-
-    current = await agent.local_deployment()
-    data = current.model_dump(mode="json", exclude={"id", "created_date", "updated_date", "remote"})
-    adopted = Deployment(**{**data, "id": deployment_id})
-    await adopted.save()
-    await current.delete()
-    logger.info("agent %s: local placement %s re-keyed to %s", agent.id, current.id, deployment_id)
+        if env is not None and existing.environment != env:
+            existing.environment = env
+            await existing.save()
+        adopted = existing
+    else:
+        current = await agent.local_deployment()
+        data = current.model_dump(mode="json", exclude={"id", "created_date", "updated_date", "remote"})
+        adopted = Deployment(**{**data, "id": deployment_id, **({"environment": env} if env is not None else {})})
+        await adopted.save()
+        await current.delete()
+        logger.info("agent %s: local placement %s re-keyed to %s", agent.id, current.id, deployment_id)
+    if env is not None:
+        set_default_environment(env)
     return adopted.with_element(agent)

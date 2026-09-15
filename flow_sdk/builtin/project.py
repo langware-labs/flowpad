@@ -657,6 +657,15 @@ class Project(Entity):
             return rid
         return mint_uuid()
 
+    def env_file_path(self, environment: Optional[str] = None) -> "Path | None":
+        """This project's env file for ``environment`` (default ``development``: ``.env.local``), or
+        ``None`` when the project has no folder on this machine."""
+        from flow_sdk.builtin.credential_store import project_scope  # noqa: PLC0415
+        from flow_sdk.builtin.env_local_store import env_local_path  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
+
+        return env_local_path(project_scope(self).root, normalize_environment(environment))
+
     @classmethod
     async def find_by_cwd(cls, cwd: str) -> "Project | None":
         """Find an existing Project whose ``fs_storage_mount_path`` matches the

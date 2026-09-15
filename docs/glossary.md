@@ -151,7 +151,8 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   `reason` field is what both the picker and the spawn error render.
 * **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, email-inbox, serializer, ingest-provider and reflect-mode registries.
 * **`CredentialSpec`** — ours. A named set of environment variables (a "secret pack") and the ONLY way a secret is declared: a folder asset at `agentic-assets/credential/<name>/` in **user** or **project** scope; the shipped ones are **templates** (`system` scope). Not an OAuth connection, and not an `ApiKey` (an inbound Flowpad token). See [secret_share](secret_share.md).
-* **value store** — ours. Where a credential's values live, named by `value_store`: `env` (the scope root's `.env.local`, the default) or `vault` (the per-instance encrypted store, `sodot` on disk).
+* **`SecretStore`** — ours (was *value store*). A place secret values live, keyed by environment variable name: a type plus its config (`flow_sdk/secrets`). Two ship: `env_file` (a dotenv file; a credential's `value_store` spells it `env`, the scope root's `.env.local` by default) and `vault` (the per-instance encrypted store, `sodot` on disk). A credential names its store per environment; a `DataSource` instance binds one (`set_secret_store`). Not a `Connection`, which is an account that hands out a token. See [secret-stores](snippets/secret-stores.md).
+* **environment** — ours. A credential environment: a `Deployment`'s `environment`, which decides which set of credential values its processes read (`.env.<env>.local`, `credential.<env>.…`). `development` is this computer and the default. Not the hub's `DEPLOY_ENV` tier, which the e2b/GCP `environment` labels carry. See [secret_share](secret_share.md#environments--one-declaration-a-value-per-environment).
 
 ## Consolidation seams (2026-08-29, Phase 1)
 

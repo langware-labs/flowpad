@@ -104,6 +104,13 @@ export function AgentPlaceCard({ agent, place, autoLaunchPrompt, pendingChanges 
         <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground" data-testid="agent-place-meta">
           {meta}
         </div>
+        <span
+          className="shrink-0 rounded-full border px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+          title={t`Credential environment this place reads`}
+          data-testid="agent-place-environment"
+        >
+          {deployment.environment || 'development'}
+        </span>
         {place.is_local ? (
           <span
             className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${

@@ -2,7 +2,9 @@ import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ChevronDown, ChevronRight, Info, Plus, X } from 'lucide-react';
 import {
+  credentialEnvFileName,
   credentialsService,
+  DEFAULT_CREDENTIAL_ENVIRONMENT,
   secretApprovalGate,
   type CredentialSaved,
   type CredentialScopeName,
@@ -27,9 +29,11 @@ import {
   hasProblems,
   namesLocked,
   scopeLocked,
+  storeIn,
   storeLocked,
   toSaveRequest,
   validateDraft,
+  withStoreIn,
   type CredentialDraft,
   type DraftProblem,
   type DraftVar,
@@ -47,6 +51,8 @@ export interface CredentialDialogProps {
   /** The selected project, when there is one — required for project scope. */
   projectId: string | null;
   status: CredentialsStatus;
+  /** The environment values are written into and the Storage select sets; `development` by default. */
+  environment?: string;
   /** Re-read status (after enabling the vault). */
   onRefresh: () => void | Promise<void>;
   onSaved: (saved: CredentialSaved) => void | Promise<void>;
@@ -60,7 +66,15 @@ export interface CredentialDialogProps {
  * sits behind Advanced, with defaults that fit most packs: this project, the
  * `.env.local` file.
  */
-export function CredentialDialog({ draft, onClose, projectId, status, onRefresh, onSaved }: CredentialDialogProps) {
+export function CredentialDialog({
+  draft,
+  onClose,
+  projectId,
+  status,
+  environment = DEFAULT_CREDENTIAL_ENVIRONMENT,
+  onRefresh,
+  onSaved,
+}: CredentialDialogProps) {
   const { t } = useLingui();
   const [d, setD] = React.useState<CredentialDraft>(draft);
   const [advanced, setAdvanced] = React.useState(false);
@@ -74,10 +88,13 @@ export function CredentialDialog({ draft, onClose, projectId, status, onRefresh,
 
   const taken = takenInScope(status, d.scope, d.typeid);
   const problems = validateDraft(d, taken);
+  const store = storeIn(d, environment);
+  const envFileName = credentialEnvFileName(environment);
+  const isDevelopment = environment === DEFAULT_CREDENTIAL_ENVIRONMENT;
   const file = status.files.find((f) => f.scope === d.scope);
-  const writesToFile = d.store === 'env' && asksValues(d) && Object.keys(draftValues(d)).length > 0;
+  const writesToFile = store === 'env' && asksValues(d) && Object.keys(draftValues(d)).length > 0;
   const fileBlocked = writesToFile && !!file?.blocked;
-  const vaultDisabled = d.store === 'vault' && !status.vault_enabled;
+  const vaultDisabled = store === 'vault' && !status.vault_enabled;
   const locked = namesLocked(d);
   const editsDefinition = asksDefinition(d) && d.mode !== 'template';
   const editsVariables = d.mode === 'custom' || d.mode === 'edit';
@@ -95,7 +112,7 @@ export function CredentialDialog({ draft, onClose, projectId, status, onRefresh,
       pattern: t`Does not look right`,
     })[p];
 
-  const title = (() => {
+  const baseTitle = (() => {
     switch (d.mode) {
       case 'custom':
         return t`New credentials`;
@@ -109,6 +126,7 @@ export function CredentialDialog({ draft, onClose, projectId, status, onRefresh,
         return d.title;
     }
   })();
+  const title = isDevelopment || !asksValues(d) ? baseTitle : t`${baseTitle} · ${environment}`;
 
   const save = async () => {
     setAttempted(true);
@@ -118,8 +136,8 @@ export function CredentialDialog({ draft, onClose, projectId, status, onRefresh,
     try {
       const saved =
         d.mode === 'values' && d.typeid
-          ? await credentialsService.setValues(d.typeid, draftValues(d))
-          : await credentialsService.save(toSaveRequest(d, projectId));
+          ? await credentialsService.setValues(d.typeid, draftValues(d), environment)
+          : await credentialsService.save(toSaveRequest(d, projectId, environment));
       await onSaved(saved);
     } catch (error) {
       const { code, message } = describeApiError(error, t`The credentials could not be saved.`);
@@ -207,7 +225,7 @@ export function CredentialDialog({ draft, onClose, projectId, status, onRefresh,
                       />
                     ) : (
                       <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                        {d.mode === 'pack' ? <Trans>Value stays in .env.local</Trans> : v.description}
+                        {d.mode === 'pack' ? <Trans>Value stays in {envFileName}</Trans> : v.description}
                       </span>
                     )}
                     {editsVariables && d.vars.length > 1 && (
@@ -290,13 +308,13 @@ export function CredentialDialog({ draft, onClose, projectId, status, onRefresh,
                     />
                     <FieldSelect<CredentialValueStore>
                       id="credential-store"
-                      label={t`Storage`}
+                      label={isDevelopment ? t`Storage` : t`Storage · ${environment}`}
                       fragment="storage"
-                      value={d.store}
+                      value={store}
                       disabled={storeLocked(d)}
-                      onChange={(store) => update({ store })}
+                      onChange={(next) => update(withStoreIn(d, environment, next))}
                       options={[
-                        { value: 'env', label: t`.env.local file` },
+                        { value: 'env', label: t`${envFileName} file` },
                         { value: 'vault', label: t`Encrypted vault` },
                       ]}
                     />

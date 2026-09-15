@@ -80,6 +80,8 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
   observations: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
   source_revision?: string | null;
   project_id?: string | null;
+  /** Credential environment: `development` (this computer) or a named one (`production`, `staging`, …). */
+  environment?: string;
 }
 
 // `implements IDeployment` only checks the class; it contributes no members, so every
@@ -111,6 +113,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   observations: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
   source_revision: string | null;
   project_id: string | null;
+  environment: string;
 
   constructor(entity: Partial<IDeployment> | IEntity = {}) {
     super(entity);
@@ -143,6 +146,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     this.observations = normalizeObservations(deployment.observations);
     this.source_revision = deployment.source_revision ?? null;
     this.project_id = deployment.project_id ?? null;
+    this.environment = deployment.environment || 'development';
     this.validateStructure();
   }
 

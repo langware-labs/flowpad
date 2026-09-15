@@ -816,7 +816,7 @@ class Agent(Entity):
 
     # ── deploy to the cloud ───────────────────────────────────────────────
 
-    async def deploy_to_cloud(self, actor: TypeId) -> dict:
+    async def deploy_to_cloud(self, actor: TypeId, environment: str | None = None) -> dict:
         """Give this agent a machine of its own on the hub.
 
         Publish is implicit: a deploy names an agent the hub has to already
@@ -824,10 +824,11 @@ class Agent(Entity):
         orderable by a caller.
 
         The hub does everything else — it mints the ComputeNode, provisions the
-        Identity, and logs the sandbox in AS the agent. Deliberately no
-        parameters: were the node or the principal passable from here they would
-        be passable from anywhere, which is the exact hole the hub's pentest
-        guards exist to keep shut. This call says only *which agent*.
+        Identity, and logs the sandbox in AS the agent. Deliberately no node or
+        principal parameter: were either passable from here they would be
+        passable from anywhere, which is the exact hole the hub's pentest guards
+        exist to keep shut. This call says only *which agent*, and which
+        credential ``environment`` the placement reads (``production`` by default).
 
         The credentials live in this process, so the browser never talks to the
         hub directly.
@@ -835,7 +836,7 @@ class Agent(Entity):
         from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
 
         await self.ensure_on_hub(actor)
-        return await deploy_entity_to_cloud(self)
+        return await deploy_entity_to_cloud(self, environment)
 
     @action.post(action_name="deploy")
     async def deploy_action(self):
@@ -856,9 +857,13 @@ class Agent(Entity):
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.credential_contract import is_valid_environment  # noqa: PLC0415
 
+        environment = str((await self._body()).get("environment") or "").strip() or None
+        if environment is not None and not is_valid_environment(environment):
+            return ApiFailResponse(message=f"{environment!r} is not a valid environment name", status_code=400)
         try:
-            data = await self.deploy_to_cloud(actor)
+            data = await self.deploy_to_cloud(actor, environment)
         except AssetPublishError as exc:
             # Deploy publishes the agent through git first, so every publish
             # precondition is a deploy precondition. These are the caller's
@@ -1017,7 +1022,9 @@ class Agent(Entity):
         body = await self._body()
 
         async def run():
-            adopted = await agent_places.adopt_placement(self, str(body.get("deployment_id") or ""))
+            adopted = await agent_places.adopt_placement(
+                self, str(body.get("deployment_id") or ""), body.get("environment")
+            )
             return adopted.model_dump(mode="json")
 
         return await self._place_answer(run)

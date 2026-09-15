@@ -141,20 +141,25 @@ def _sentinel_body(text: str, marker: str, end: int) -> str:
 
 
 async def _with_attached_project_secrets(
-    project_id: str | None, extra_env: dict[str, str] | None
+    project_id: str | None, extra_env: dict[str, str] | None, *, process_id: str | None = None
 ) -> dict[str, str] | None:
     """Merge declared credentials (user scope + the project's) under any
     explicit ``extra_env``.
+
+    The environment is the owning process's (its Deployment's) when the terminal
+    belongs to one, else this instance's default.
 
     Best-effort by design: a terminal must open even when a secret cannot be
     resolved, so every failure here is swallowed and the PTY spawns without it.
     """
     try:
-        from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.builtin.credential_resolver import environment_for, resolve_attached_secrets  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
         project = await Project.get_by_id(str(project_id)) if project_id else None
-        resolved = await resolve_attached_secrets(project)
+        process = await AgenticProcess.get_by_id(str(process_id)) if process_id else None
+        resolved = await resolve_attached_secrets(project, environment=await environment_for(process))
         if not resolved:
             return extra_env
         # Explicit ``extra_env`` wins over a declared value.
@@ -575,7 +580,9 @@ class Shell(Entity):
             # same set a worker gets. Transient: it reaches the child process
             # env and is never written to the node's filesystem. An explicitly
             # passed value always wins.
-            extra_env = await _with_attached_project_secrets(self.project_id, extra_env)
+            extra_env = await _with_attached_project_secrets(
+                self.project_id, extra_env, process_id=self.agentic_process_id
+            )
             await cn.create_pty(
                 self.id,
                 rows=rows,

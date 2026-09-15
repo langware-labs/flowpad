@@ -20,7 +20,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from math import ceil
-from typing import ClassVar, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 from pydantic import model_validator
 
@@ -39,13 +39,35 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
+from flow_sdk.secrets.store import SecretStoreRef
 from flow_sdk.utils.serialization import iso_to_utc
+
+if TYPE_CHECKING:
+    from flow_sdk.connections import ConnectionRequirements
+    from flow_sdk.secrets.requirements import SecretRequirements
 
 logger = logging.getLogger(__name__)
 
 #: The heartbeat ticks once a minute, and every provider floor we care about is
 #: at least that. A source may ask for less frequent polling, never more.
 MIN_POLL_INTERVAL_SECONDS = 60
+
+
+class DataSourceNotFound(LookupError):
+    """No data source has that name."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(f"no data source named {name!r}")
+
+
+class DataSourceAmbiguous(LookupError):
+    """Several data source instances share the name; ``candidates`` are their typeids."""
+
+    def __init__(self, name: str, candidates: list[str]) -> None:
+        self.name = name
+        self.candidates = candidates
+        super().__init__(f"{len(candidates)} data sources are named {name!r}; get one by id: {', '.join(candidates)}")
 
 
 def _outcome_dict(outcome: SendOutcome) -> dict:
@@ -234,6 +256,17 @@ class DataSource(Entity):
     error_code: Optional[str] = APIField(default=None)
     error_detail: Optional[str] = APIField(default=None)
 
+    # ── what this instance reads with (`set_secret_store` / `set_connection`) ──
+    # Saved on the row, not held by the process: the heartbeat's sync, a webhook and an outbound
+    # send receive only the row, and must read with what a person bound. Two instances of one
+    # source type (two Drives, different folders) each keep their own. PRIVATE: a path, a prefix,
+    # an account — facts about this machine.
+    #: The store the manifest's names load from; unbound is the default store, then the process
+    #: environment.
+    secret_store: Optional[SecretStoreRef] = APIField(default=None, sharing=Sharing.PRIVATE)
+    #: The provider of the account this source acts as; unbound is the manifest's ``auth.connector``.
+    connection: str = APIField(default="", sharing=Sharing.PRIVATE)
+
     _api_visible: ClassVar[bool] = True
 
     @model_validator(mode="before")
@@ -293,6 +326,67 @@ class DataSource(Entity):
         if self.health == SourceHealth.CONFIG_ERROR.value:
             return "this source is parked on a configuration error"
         return ""
+
+    # ── the access pattern: declare → get and check → bind ──────────────────
+    @classmethod
+    async def get(cls, name: str) -> "DataSource":
+        """The data source named ``name``. Raises :class:`DataSourceNotFound`, or
+        :class:`DataSourceAmbiguous` when several instances share the name."""
+        from flow_sdk.ingest.source_registry import resolve_source_type  # noqa: PLC0415
+
+        rows = await cls.get_all({"name": name})
+        if not rows:
+            raise DataSourceNotFound(name)
+        if len(rows) > 1:
+            raise DataSourceAmbiguous(name, [str(row.typeid) for row in rows])
+        # An authored source's folder loads on first use; the accessors below read its manifest.
+        await resolve_source_type(rows[0].provider or "")
+        return rows[0]
+
+    def _auth(self):
+        stype = self._driver()
+        manifest = getattr(stype, "manifest", None) if stype is not None else None
+        return getattr(manifest, "auth", None)
+
+    @property
+    def credentials(self) -> "SecretRequirements":
+        """The names this source loads from a store — its manifest's ``auth.env`` or ``auth.secrets`` keys."""
+        from flow_sdk.secrets.requirements import SecretRequirements  # noqa: PLC0415
+
+        auth = self._auth()
+        return SecretRequirements((list(auth.env) or list(auth.secrets)) if auth is not None else [])
+
+    @property
+    def connections(self) -> "ConnectionRequirements":
+        """The provider this source acts as, and the scopes it needs — its manifest's ``auth.connector``."""
+        from flow_sdk.connections import ConnectionRequirements  # noqa: PLC0415
+
+        auth = self._auth()
+        return ConnectionRequirements({auth.connector: auth.scopes} if auth is not None and auth.connector else {})
+
+    async def set_secret_store(self, store) -> None:
+        """Bind the store this source loads its names from, and save it; ``None`` unbinds."""
+        self.secret_store = store.ref if store is not None else None
+        await self.save()
+
+    async def set_connection(self, connection) -> None:
+        """Bind the account this source acts as (a ``Connection`` or its provider), and save it;
+        ``None`` unbinds. Refuses a provider the source does not declare."""
+        provider = "" if connection is None else str(getattr(connection, "provider", connection))
+        wanted = self.connections.names()
+        if provider and provider not in wanted:
+            raise ValueError(f"{self.name or self.provider} acts as {', '.join(wanted) or 'no account'}, not {provider}")
+        self.connection = provider
+        await self.save()
+
+    async def open(self, *, persona: bool = False):
+        """The configured source with what is bound loaded in — ``async with await source.open() as live``."""
+        from flow_sdk.ingest.source_registry import resolve_source_type  # noqa: PLC0415
+
+        stype = await resolve_source_type(self.provider or "")
+        if stype is None:
+            raise LookupError(f"no data source type {self.provider!r}")
+        return await stype.open(self, persona=persona)
 
     @classmethod
     async def find_for_account(

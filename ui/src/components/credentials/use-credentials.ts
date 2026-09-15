@@ -1,6 +1,12 @@
 import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CredentialSpec, QueryRequest, credentialsService, EMPTY_CREDENTIALS_STATUS } from '@sdk';
+import {
+  CredentialSpec,
+  QueryRequest,
+  credentialsService,
+  DEFAULT_CREDENTIAL_ENVIRONMENT,
+  EMPTY_CREDENTIALS_STATUS,
+} from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /**
@@ -27,13 +33,13 @@ export const CREDENTIALS_STATUS_KEY = ['credentials-status'] as const;
  * `.env.local` elsewhere shows up on return — and `refresh` invalidates it after
  * a write.
  */
-export function useCredentials(projectId: string | null) {
+export function useCredentials(projectId: string | null, environment: string = DEFAULT_CREDENTIAL_ENVIRONMENT) {
   const { data: specs = NO_SPECS } = useEntitiesQuery<CredentialSpec>(credentialSpecsQuery);
   const templates = useMemo(() => specs.filter((spec) => spec.isTemplate), [specs]);
 
   const { data, isPending } = useQuery({
-    queryKey: [...CREDENTIALS_STATUS_KEY, projectId ?? ''],
-    queryFn: () => credentialsService.status(projectId),
+    queryKey: [...CREDENTIALS_STATUS_KEY, projectId ?? '', environment],
+    queryFn: () => credentialsService.status(projectId, environment),
     refetchOnWindowFocus: true,
   });
 

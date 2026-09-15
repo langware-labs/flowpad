@@ -2,6 +2,7 @@ import {
   ConnectionKind,
   ConnectionStatus,
   type CredentialSpec,
+  DEFAULT_CREDENTIAL_ENVIRONMENT,
   FSRef,
   TypeId,
   type OAuthConnection,
@@ -29,6 +30,10 @@ import { useConnectionTimestamps } from './connections-manager/use-connection-ti
 import { Button } from './ui/button';
 import { ConfirmDialog } from './ui/confirm-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+
+/** The URL option naming the credential environment the table shows; absent means development. */
+const CREDENTIAL_ENVIRONMENT_OPTION = 'env';
 import { UsageCell } from './connections-manager/usage-cell';
 import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use-credential-usage';
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
@@ -320,12 +325,22 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // The credential half of the table: the user's credentials always, and the
   // selected project's when there is one. Status is value-free.
   const selectedProject = project ?? null;
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
+  // URL-first: the environment rides in the dock's options, so a reload or a
+  // shared link lands on the same values. Development is the absent option.
+  const credentialEnvironment =
+    currentDock?.options?.[CREDENTIAL_ENVIRONMENT_OPTION] || DEFAULT_CREDENTIAL_ENVIRONMENT;
+  const showCredentialEnvironment = (next: string) => {
+    if (!currentDock) return;
+    navigation.openDock(
+      currentDock.withOption(CREDENTIAL_ENVIRONMENT_OPTION, next === DEFAULT_CREDENTIAL_ENVIRONMENT ? null : next),
+    );
+  };
   const {
     status: credentialStatus,
     templates: credentialTemplates,
     refresh: refreshCredentials,
-  } = useCredentials(selectedProject?.id ?? null);
+  } = useCredentials(selectedProject?.id ?? null, credentialEnvironment);
   const credentialRows = React.useMemo(() => buildCredentialRows(credentialStatus), [credentialStatus]);
   const detectedGroups = React.useMemo(() => buildDetectedGroups(credentialStatus), [credentialStatus]);
   const defaultScope = selectedProject ? 'project' : 'user';
@@ -609,6 +624,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           draft={credentialDraft.draft}
           projectId={selectedProject?.id ?? null}
           status={credentialStatus}
+          environment={credentialEnvironment}
           onRefresh={refreshCredentials}
           onClose={() => setCredentialDraft(null)}
           onSaved={async (saved) => {
@@ -620,6 +636,28 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       )}
 
       <div className="flex-1 overflow-auto">
+        {/* Which environment the credential rows show and write: development is
+            this computer, every other one is a deployment's. Hidden until a
+            deployment names one. */}
+        {((credentialStatus.environments ?? []).length > 1 || credentialEnvironment !== DEFAULT_CREDENTIAL_ENVIRONMENT) && (
+          <div className="mb-3 flex max-w-5xl items-center gap-2" data-testid="credential-environment">
+            <span className="text-xs text-muted-foreground">
+              <Trans>Credential environment</Trans>
+            </span>
+            <Select value={credentialEnvironment} onValueChange={showCredentialEnvironment}>
+              <SelectTrigger className="h-8 w-48 font-mono text-xs" data-testid="credential-environment-select">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from(new Set([...(credentialStatus.environments ?? []), credentialEnvironment])).map((env) => (
+                  <SelectItem key={env} value={env} className="font-mono text-xs" data-testid={`credential-environment-${env}`}>
+                    {env === DEFAULT_CREDENTIAL_ENVIRONMENT ? t`development · this computer` : env}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         {/* Capped: the columns are all short, so a full-width dock strands the
             status and the button metres away from the provider they belong to. */}
         <Table className="max-w-5xl">
