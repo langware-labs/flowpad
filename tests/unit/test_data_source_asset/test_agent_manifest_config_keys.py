@@ -9,9 +9,9 @@ import re
 from pathlib import Path
 
 import flow_sdk
-from flow_sdk.ingest import agent_transport as agent_driver
 from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 from flow_sdk.sources.providers.agent import source as agent_source
+from flow_sdk.sources.providers.agent import transport as agent_driver
 
 ROOT = Path(flow_sdk.__file__).parent
 MANIFEST = ROOT / "system_projects/flowpad_assistant/agentic-assets/data_source/agent/data_source.json"

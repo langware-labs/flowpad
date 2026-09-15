@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.sources import source_type
 
 MANIFEST = (

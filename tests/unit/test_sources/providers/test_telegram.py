@@ -14,7 +14,6 @@ from urllib.parse import parse_qs
 import pytest
 from pydantic import SecretStr, ValidationError
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.source_item import TelegramMessageSpec
 from flow_sdk.ingest.sources import SendStatus, source_type
 from flow_sdk.sources import UserProfile

@@ -9,7 +9,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path

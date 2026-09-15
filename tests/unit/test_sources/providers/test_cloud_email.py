@@ -15,16 +15,15 @@ from types import SimpleNamespace
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.ingestor import ingest_items
-from flow_sdk.ingest.source_types import AppMailbox
 from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import NotFound, SourceUnavailable
 from flow_sdk.sources.providers.cloud_email import CloudEmailSource
+from flow_sdk.sources.providers.cloud_email.transport import AppMailbox
 from flow_sdk.sources.testing import Subject, checks_for
 from tests.unit._ingest_helpers import position
 
@@ -98,7 +97,7 @@ def _view(state=None, window_start=None):
 @pytest.fixture
 def mailbox(monkeypatch):
     fake = _Mailbox([LIST_ITEM])
-    monkeypatch.setattr(source_type("cloud_email"), "_build", lambda binding: CloudEmailSource(binding, mailbox=fake))
+    monkeypatch.setattr(CloudEmailSource, "build", classmethod(lambda cls, binding: cls(binding, mailbox=fake)))
     return fake
 
 

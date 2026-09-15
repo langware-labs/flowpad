@@ -13,9 +13,8 @@ import asyncio
 from collections import deque
 from contextlib import contextmanager
 from dataclasses import replace
-from typing import AsyncGenerator, Iterable, Optional
+from typing import AsyncGenerator, ClassVar, Iterable, Optional
 
-import flow_sdk.ingest.source_types  # noqa: F401 — the shipped sources register FIRST, so an override below is not undone by a later import
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.ingest.sources import SOURCES, SourceType
 from flow_sdk.sources import UserProfile
@@ -61,10 +60,16 @@ class ScriptedSource(Source):
     provider = "scripted"
     #: The scripted channel records nothing on send, like a real sender whose copy arrives later.
     echoes_sends = True
+    #: The script a registered subclass is built over — the engine builds a fresh source per session.
+    script_of: ClassVar[Optional[Script]] = None
 
-    def __init__(self, binding: SourceBinding, script: Script) -> None:
+    def __init__(self, binding: SourceBinding, script: Optional[Script] = None) -> None:
         super().__init__(binding)
-        self.script = script
+        self.script = script or type(self).script_of
+
+    def message_for(self, *, thread_key, to, text, subject="", in_reply_to="", conversation_id=""):
+        self.script._outgoing = {"thread_key": thread_key, "to": to, "subject": subject, "in_reply_to": in_reply_to}
+        return EmailMessageData(text=text, subject=subject or None), None
 
     @classmethod
     def namespace_for(cls, binding: SourceBinding) -> str:
@@ -121,19 +126,11 @@ class ScriptedSource(Source):
         return MessageItem(origin=self.origin(external_id), data=data)
 
 
-def _outgoing(script: Script):
-    def build(source, *, thread_key, to, text, subject="", in_reply_to="", conversation_id=""):
-        script._outgoing = {"thread_key": thread_key, "to": to, "subject": subject, "in_reply_to": in_reply_to}
-        return EmailMessageData(text=text, subject=subject or None), None
-
-    return build
-
-
 class _ScriptedType(SourceType):
     """The scripted provider's type: a send the test replaced answers first."""
 
-    def __init__(self, cls, script: Script, **hooks):
-        super().__init__(cls, **hooks)
+    def __init__(self, cls, script: Script, *, kind: str):
+        super().__init__(cls, kind=kind)
         self.script = script
 
     async def traverse(self, row, position):
@@ -156,10 +153,8 @@ def scripted_provider(provider: str = "scripted", *, pages: Iterable[list[dict]]
     """Register a scripted source under *provider* for the block, restoring what was there."""
     previous: Optional[SourceType] = SOURCES.get_or_none(provider)
     script = Script(provider, pages)
-    cls = type(f"Scripted_{provider}", (ScriptedSource,), {"provider": provider})
-    SOURCES.register(
-        _ScriptedType(cls, script, kind=f"datasource.api.{provider}", build=lambda binding: cls(binding, script), outgoing=_outgoing(script))
-    )
+    cls = type(f"Scripted_{provider}", (ScriptedSource,), {"provider": provider, "script_of": script})
+    SOURCES.register(_ScriptedType(cls, script, kind=f"datasource.api.{provider}"))
     try:
         yield script
     finally:

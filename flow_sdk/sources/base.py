@@ -74,6 +74,50 @@ class Source:
     connection: ClassVar[Optional[str]] = None
     #: The payload is files placed on disk (reflection), not records in the graph.
     reflects: ClassVar[bool] = False
+    #: The config key naming the local tree a reflecting source reads in place (``root``,
+    #: ``repo``). Empty on a reflecting source: its bytes are remote, pulled into a cache.
+    local_tree_key: ClassVar[str] = ""
+
+    # ── what the application asks the class ─────────────────────────────────
+    # Everything the application needs to know about ONE source, the source says itself — so no
+    # table outside its asset folder ever names it. Optional capabilities are methods a class
+    # defines when it has them, discovered with ``hasattr``: ``message_for`` (how the application's
+    # send arguments address this channel), ``choices_for`` (a field whose options are application
+    # state), ``webhook_challenge`` / ``webhook_account`` / ``events_from_webhook`` (push delivery).
+
+    @classmethod
+    def build(cls, binding: SourceBinding) -> "Source":
+        """The configured source. A class that runs over an application transport (a hub, a mailbox,
+        a harness worker) builds it here, where the application — never a test — constructs it."""
+        return cls(binding)
+
+    @classmethod
+    def configure(cls, row: Any) -> Mapping[str, Any]:
+        """Config the application derives for a row beyond what it stores (the agent a mailbox serves)."""
+        return {}
+
+    @classmethod
+    def lift_cursor(cls, state: Mapping[str, Any]) -> Optional[str]:
+        """The cursor an older build left on a row as a dict, as this class's cursor string — read
+        once, never written. ``None`` when there is nothing to adopt."""
+        return None
+
+    @classmethod
+    def outbound_spec(cls) -> Optional[type]:
+        """The message spec that knows who a reply on this channel is addressed to; ``None`` means email's."""
+        return None
+
+    @classmethod
+    def origin_id_for(cls, row: Any, ref: str, root: Any) -> str:
+        """The identity reflection resolves an unstamped file at ``ref`` (under ``root``) on — a handle
+        that survives a rename. ``""`` means the source-relative path is the best there is."""
+        return ""
+
+    @classmethod
+    def permalink(cls, external_id: str, thread_key: str = "") -> str:
+        """A link into the channel's own UI for a record the provider gave no URL — a formula, never
+        a fetch, because the link is digested. ``""`` when the channel cannot be addressed."""
+        return ""
 
     def __init__(self, binding: SourceBinding) -> None:
         if not isinstance(binding, SourceBinding):

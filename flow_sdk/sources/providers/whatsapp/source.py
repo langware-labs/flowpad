@@ -81,6 +81,53 @@ class WhatsAppSource(Source):
     def message_origin(self, message_id: str, wa_id: str) -> CloudOrigin:
         return self.origin(message_id, MESSAGES_SEGMENT, wa_id)
 
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def outbound_spec(cls) -> type:
+        from flow_sdk.builtin.source_item import WhatsAppMessageSpec  # noqa: PLC0415
+
+        return WhatsAppMessageSpec
+
+    def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
+        """``to`` is the person's wa_id — the person IS the conversation — and ``in_reply_to`` quotes
+        their message, which renders as a quote and starts no thread. A subject has no equivalent."""
+        wa_id = digits(to) or digits(thread_key)
+        if not wa_id:
+            raise ValueError("a whatsapp send needs the recipient's wa_id in `to`")
+        quoted = str(in_reply_to or "").strip()
+        if quoted:
+            return MessageData(text=text), self.message_origin(quoted, wa_id)
+        return MessageData(text=text, conversation=self.conversation_origin(wa_id)), None
+
+    @classmethod
+    def webhook_challenge(cls, params: dict, configs: list) -> Optional[str]:
+        """Meta's one-time handshake: the challenge back when ``hub.verify_token`` matches a row's,
+        compared in constant time against every row so a wrong guess is not distinguishable by how
+        long the refusal took. ``None`` refuses."""
+        import hmac  # noqa: PLC0415
+
+        if params.get("hub.mode") != "subscribe":
+            return None
+        offered = str(params.get("hub.verify_token") or "")
+        matched = False
+        for config in configs:
+            expected = str((config or {}).get("verify_token") or "")
+            if expected and hmac.compare_digest(expected, offered):
+                matched = True
+        return str(params.get("hub.challenge") or "") if matched else None
+
+    @classmethod
+    def webhook_account(cls, payload: dict) -> str:
+        """Which business number a delivery is about — the row's ``phone_number_id``. Meta nests it three
+        deep and repeats it per change; the first wins, because one POST is about one number."""
+        for entry in _list(payload.get("entry") if isinstance(payload, dict) else None):
+            for change in _list(entry.get("changes") if isinstance(entry, dict) else None):
+                value = change.get("value") if isinstance(change, dict) else None
+                metadata = value.get("metadata") if isinstance(value, dict) else None
+                if isinstance(metadata, dict) and metadata.get("phone_number_id"):
+                    return str(metadata["phone_number_id"])
+        return ""
+
     async def _open(self) -> None:
         self._client = http.client()
 

@@ -259,7 +259,7 @@ def origin_id_for(source: "DataSource", ref: str, root: Optional[Path]) -> str:
     from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
     driver = source_type(source.provider)
-    if driver is not None and driver.origin_id_for is not None:
+    if driver is not None:
         try:
             resolved = (driver.origin_id_for(source, ref) or "").strip()
             if resolved:

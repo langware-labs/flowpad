@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import AsyncGenerator, ClassVar, Optional
 
 from flow_sdk.sources.base import Altitude, Source, positive_int
@@ -50,6 +51,15 @@ class GitFileData(FileData):
     blob: Optional[str] = None
 
 
+@lru_cache(maxsize=64)
+def _remote_url(repo: str) -> str:
+    """A repository's remote, once per process: it is a property of the repository, not of a ref,
+    and a subprocess per changed file made a 50-file commit pay 50 of them."""
+    from flow_sdk.utils.git import git_remote_url  # noqa: PLC0415
+
+    return git_remote_url(repo)
+
+
 @dataclass(frozen=True)
 class _Change:
     code: str
@@ -62,6 +72,7 @@ class GitSource(Source):
     provider = "git"
     altitude = Altitude.IN_PROCESS
     reflects = True
+    local_tree_key = "repo"
     durable_cursor = True
     page_size = MAX_PAGE_SIZE
     #: A tracked file is not ours to rewrite: the working tree stays byte-clean after an index pass.
@@ -70,6 +81,24 @@ class GitSource(Source):
     def __init__(self, binding: SourceBinding) -> None:
         super().__init__(binding)
         self._diffs: dict[tuple[str, str], tuple[_Change, ...]] = {}
+
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def lift_cursor(cls, state: dict) -> Optional[str]:
+        return cls.resume_at(state["sha"]) if state.get("sha") else None
+
+    @classmethod
+    def origin_id_for(cls, row: object, ref: str, root: object) -> str:
+        """``GitOrigin.key()`` — the documented cross-machine handle, branch-independent, and computable
+        for a path that no longer exists, so a deleted or renamed-from path still resolves to its row.
+        No parseable remote: the generic path handle, never a second git-shaped key."""
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+
+        repo = Path(str(root))
+        origin = GitOrigin.from_url(_remote_url(str(repo)), rel_path=Path(ref).resolve().relative_to(repo).as_posix())
+        return str(origin.key()) if origin is not None else ""
 
     @classmethod
     def namespace_for(cls, binding: SourceBinding) -> str:

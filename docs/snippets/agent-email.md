@@ -5,7 +5,6 @@ and send a threaded reply through that same inbox.
 
 ```python
 import flow_sdk
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
 

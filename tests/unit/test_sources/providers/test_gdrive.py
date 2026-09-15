@@ -15,7 +15,6 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources.binding import SourceBinding
@@ -40,7 +39,7 @@ def _credentials(credentials):
 @pytest.fixture
 def driver(monkeypatch):
     gdrive = source_type("gdrive")
-    monkeypatch.setattr(gdrive, "_credentials", _credentials(TOKEN))
+    monkeypatch.setattr(gdrive, "credentials_for", _credentials(TOKEN))
     return gdrive
 
 
@@ -270,7 +269,7 @@ async def test_shared_drives_are_separate_segments_labelled_by_their_picked_name
 
 
 async def test_verify_says_what_to_do_when_there_is_no_credential(driver, tmp_path, monkeypatch):
-    monkeypatch.setattr(driver, "_credentials", _credentials(Credentials()))
+    monkeypatch.setattr(driver, "credentials_for", _credentials(Credentials()))
     verdict = await driver.verify(_source(tmp_path, ""))
     assert verdict.ready is False and "Connect Google" in verdict.detail
 

@@ -28,6 +28,7 @@ from typing import Any, AsyncGenerator, ClassVar, Optional, Protocol
 
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import (
     InvalidCursor,
     NotFound,
@@ -71,7 +72,7 @@ class CloudEmailMessageData(EmailMessageData):
     raw: Optional[dict] = None
 
 
-class CloudEmailSource(Source):
+class CloudEmailSource(EmailAddressing, Source):
     provider = "cloud_email"
     origin_kind = CHANNEL
     durable_cursor = True
@@ -88,6 +89,27 @@ class CloudEmailSource(Source):
     @classmethod
     def resume_at(cls, high_water: str, boundary_ids: list[str]) -> str:
         return _MARK + json.dumps({"high_water": high_water, "boundary_ids": list(boundary_ids)})
+
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def build(cls, binding: SourceBinding) -> "CloudEmailSource":
+        from .transport import AppMailbox  # noqa: PLC0415
+
+        return cls(binding, mailbox=AppMailbox())
+
+    @classmethod
+    def configure(cls, row: Any) -> dict:
+        """The agent a mailbox row serves: its config, else the Agent that owns it."""
+        from flow_sdk.inbox.projection import agent_id_of  # noqa: PLC0415
+
+        agent = agent_id_of(row)
+        return {"agent_id": agent} if agent else {}
+
+    @classmethod
+    def lift_cursor(cls, state: dict) -> Optional[str]:
+        if state.get("high_water") and state.get("boundary_ids"):
+            return cls.resume_at(state["high_water"], state["boundary_ids"])
+        return None
 
     @staticmethod
     def thread_key(agent_id: str, thread_id: str) -> Optional[str]:

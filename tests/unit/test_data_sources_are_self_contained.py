@@ -47,12 +47,8 @@ MIGRATING: frozenset[str] = frozenset(
             "agent", "agentmail", "cloud_email", "folder", "gcs", "gdrive", "git", "gmail",
             "hackernews", "helpdesk", "rss", "slack", "teams", "telegram", "whatsapp",
         )),
-        "flow_sdk/ingest/agent_transport.py",
-        "flow_sdk/ingest/source_types.py",
-        "flow_sdk/ingest/sources.py",
-        "flow_sdk/inbox/channel_links.py",
-        "flow_sdk/schema/data_spec/data_source_manifest_spec.py",
-        "flow_sdk/server/routes/whatsapp.py",
+        # The loader's NOT_YET_MOVED table — empties as each source moves into its folder.
+        "flow_sdk/ingest/source_registry.py",
     }
 )
 

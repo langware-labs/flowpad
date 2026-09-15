@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.sources import source_type
 from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 
@@ -40,7 +39,7 @@ def test_a_choosable_field_has_a_driver_that_can_list_it(path: Path):
 
     driver = source_type(manifest.name)
     assert driver is not None, f"{manifest.name} declares choices but registers no driver"
-    assert driver.choices is not None, (
-        f"{manifest.name} marks {choosable} choosable, but its driver has no `choices` hook — "
-        "the form would offer a picker that can never fill"
+    assert driver.offers_choices, (
+        f"{manifest.name} marks {choosable} choosable, but its source class can list none "
+        "(neither `choices` nor `choices_for`) — the form would offer a picker that can never fill"
     )

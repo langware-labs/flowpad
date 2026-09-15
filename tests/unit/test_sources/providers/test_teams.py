@@ -13,7 +13,6 @@ from urllib.parse import parse_qs, unquote
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources import UserProfile
@@ -58,7 +57,7 @@ def _token(value):
 
 @pytest.fixture(autouse=True)
 def _a_token(monkeypatch):
-    monkeypatch.setattr(source_type("teams"), "_credentials", _token("graph-test-token"))
+    monkeypatch.setattr(source_type("teams"), "credentials_for", _token("graph-test-token"))
 
 
 class _Graph:

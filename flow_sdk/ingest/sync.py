@@ -32,7 +32,8 @@ from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
 from flow_sdk.ingest.reflect import get_reflector, reflect_refs
-from flow_sdk.ingest.sources import SegmentPass, SegmentPosition, SourceType, source_type
+from flow_sdk.ingest.source_registry import resolve_source_type
+from flow_sdk.ingest.sources import SegmentPass, SegmentPosition, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ async def sync_source(
     now = now or datetime.now(timezone.utc)
     combined = IngestReport()
 
-    stype = source_type(source.provider)
+    stype = await resolve_source_type(source.provider)
     if stype is None:
         await _fail_source(source, "unknown_provider", f"no source type registered for {source.provider!r}", now)
         return combined

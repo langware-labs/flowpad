@@ -8,9 +8,9 @@ from flow_sdk.fs_store.fs_ref import FSRef
 
 
 def derive_data_source_spec(data: dict, root: Path, header_raw: dict) -> None:
-    """The runtime the folder's marker files imply — a fact the manifest alone
-    cannot state. Only the two markers are stat'ed: listing the folder cost one
-    syscall per entry for a source that vendors an implementation tree."""
+    """The runtime the folder implies — a fact the manifest alone cannot state. Only the retired
+    runtimes' marker names are stat'ed: listing the folder cost one syscall per entry for a source
+    that vendors helper modules."""
     from flow_sdk.schema.data_spec.data_source_manifest_spec import AGENT_FILE, SCRIPT_FILE, ManifestSpec
 
     markers = {name for name in (SCRIPT_FILE, AGENT_FILE) if (root / name).is_file()}
@@ -26,8 +26,8 @@ def data_source_spec_identity_key(ref: "FSRef | Path") -> str:
     every upgrade. Keying identity on it forked one shipped source into a row per
     install location, which the provider picker rendered as one button each.
 
-    ``name`` is already the type's unique key everywhere else — the driver
-    registry is a flat dict that refuses a collision (`ingest/sources.py`),
+    ``name`` is already the type's unique key everywhere else — the source
+    registry is a flat dict keyed by it (`ingest/sources.py`),
     `DataSource` resolves its spec with ``get_one({"name": provider})``, and the
     dialog keys its lookup map by it. Identity just agrees with that now.
 

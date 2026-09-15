@@ -8,7 +8,6 @@ import json
 
 import pytest
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source_spec import DataSourceSpec
 from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
 from flow_sdk.fs_store.schema_registry import SchemaRegistry

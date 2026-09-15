@@ -4,6 +4,12 @@
   "title": "AgentMail",
   "icon_name": "AgentMail",
   "description": "A hosted mailbox over its HTTP API \u2014 reads the inbox and really sends.",
+  "kind": "datasource.api.agentmail",
+  "auth": {
+    "secrets": {
+      "api_key": "ingest_api.agentmail"
+    }
+  },
   "config": {
     "inbox": {
       "type": "text",

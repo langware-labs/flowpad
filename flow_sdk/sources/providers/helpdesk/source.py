@@ -95,6 +95,55 @@ class HelpdeskSource(Source):
     def ticket_origin(self, ticket: str) -> CloudOrigin:
         return self.origin(ticket, ticket)
 
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def build(cls, binding: SourceBinding) -> "HelpdeskSource":
+        from .transport import AppHub  # noqa: PLC0415
+
+        return cls(binding, hub=AppHub())
+
+    @classmethod
+    def lift_cursor(cls, state: dict) -> Optional[str]:
+        return cls.resume_at(state["high_water"], state.get("boundary_ids") or []) if state.get("high_water") else None
+
+    @classmethod
+    def outbound_spec(cls) -> type:
+        from flow_sdk.builtin.source_item import HelpdeskMessageSpec  # noqa: PLC0415
+
+        return HelpdeskMessageSpec
+
+    def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
+        """A reply goes to the TICKET — the hub conversation id — which the hub threads by."""
+        ticket = str(to or "").strip() or str(thread_key or "").strip()
+        if not ticket:
+            raise ValueError("a help-desk reply needs the ticket's conversation id")
+        return MessageData(text=text, conversation=self.ticket_origin(ticket)), None
+
+    @classmethod
+    async def choices_for(cls, row: Any, field: str) -> list:
+        """The desks this login can reach: the deployment's default desk and every desk adopted into a
+        local project. Application state, not the hub's — so it is read from the application. Typing
+        an id still works."""
+        from flow_sdk.app.actions.flow_message_action import resolve_helpdesk  # noqa: PLC0415
+        from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.choice_spec import Choice  # noqa: PLC0415
+
+        if field != "desk_project_id":
+            return []
+        out: list = []
+        default = await resolve_helpdesk()
+        if default is not None:
+            out.append(Choice(id=default.project_id, name="Flowpad Support", detail="the deployment's default desk"))
+        try:
+            desks = await Helpdesk.get_all({})
+        except Exception:  # noqa: BLE001 — no adopted desks is not a failure
+            desks = []
+        for desk in desks or []:
+            queue = str(getattr(desk, "desk_project_id", "") or "").strip()
+            if queue and all(c.id != queue for c in out):
+                out.append(Choice(id=queue, name=str(getattr(desk, "display_name", "") or queue), detail="adopted desk"))
+        return out
+
     # ── the pool ────────────────────────────────────────────────────────────
     async def segments(self) -> list[SegmentRef]:
         """One segment per ticket in the pool, picked up or not, newest activity first. The pool

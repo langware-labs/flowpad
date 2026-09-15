@@ -4,6 +4,7 @@
   "title": "Local folder",
   "icon_name": "SourceFolder",
   "description": "A directory on this machine. Enumerates and diffs; no credentials.",
+  "kind": "datasource.fs.folder",
   "reflect": [
     "none",
     "copy",

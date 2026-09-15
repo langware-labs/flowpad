@@ -364,7 +364,6 @@ async def test_channel_is_stamped_at_create_not_first_poll():
     mid-fetch project BEFORE sync's post-fetch save lands, and a source whose
     channel is still empty bakes origin.kind="agent" into every message
     (observed live, inbox-7 2026-09-01). Stamping at create closes the race."""
-    import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 
     src = await _source(provider="agent", config={"connector": "slack", "segments": ["C1"]})
     assert src.channel == "slack", "channel must be present before any poll"

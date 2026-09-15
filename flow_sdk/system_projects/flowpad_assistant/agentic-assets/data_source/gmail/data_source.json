@@ -4,6 +4,7 @@
   "title": "Gmail",
   "icon_name": "Gmail",
   "description": "A Gmail mailbox read over IMAP and sent through SMTP using an app password from the environment.",
+  "kind": "datasource.api.gmail",
   "auth": {
     "env": [
       "GMAIL_ADDRESS",

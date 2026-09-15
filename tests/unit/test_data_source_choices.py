@@ -37,9 +37,11 @@ def provider(request):
 
     async def _make(hook=None, **config) -> str:
         name = f"stub-{mint_uuid()[:8]}"
-        stub = type("_Stub", (Source,), {"provider": name})
-        choices = (lambda row, field: hook(None, row, field)) if hook is not None else None
-        SOURCES.register(SourceType(stub, kind="datasource.test.stub", choices=choices))
+        attrs: dict = {"provider": name}
+        if hook is not None:
+            attrs["choices_for"] = classmethod(lambda cls, row, field: hook(None, row, field))
+        stub = type("_Stub", (Source,), attrs)
+        SOURCES.register(SourceType(stub, kind="datasource.test.stub"))
         request.addfinalizer(lambda: SOURCES.unregister(name))
         await DataSourceSpec(name=name, title=name, config=config).save()
         return name

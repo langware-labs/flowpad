@@ -12,7 +12,6 @@ fence is run as written by `tests/unit/test_data_sources_snippets.py`. Deeper
 reading: [docs/data-management/data-sources.md](../data-management/data-sources.md).
 
 ```python
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 ```
 
 ## 1. Connect a feed and sync it once

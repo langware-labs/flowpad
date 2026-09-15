@@ -14,7 +14,6 @@ from urllib.parse import parse_qs, unquote
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.sources import SendStatus, source_type
 from flow_sdk.sources import UserProfile
