@@ -124,21 +124,29 @@ field is an error, not a row with an empty name.
 
 ## The source contract
 
-Every provider is a contract source: a `Source` class in
-`flow_sdk/sources/providers/<name>/` implementing the access protocols it can honour
+Every data source is a **self-contained asset folder**,
+`agentic-assets/data_source/<name>/` (the shipped ones under
+`flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/`): the manifest,
+a `source.py` holding one `Source` class, any helper modules beside it (`transport.py`),
+its `tests/` and its editor. The class implements the access protocols it can honour
 (`Listable`, `Readable`, `Messaging`, `Segmented`, `Verifiable`, `Choosing`,
 `Identified`, `StableHandle`) — a capability is discovered by `isinstance`, never
 declared. A source answers *what is there* and *what changed since a cursor*; it never
-writes an entity, emits an event, or advances a cursor. It imports only the contract
-and the standard library; what only the application can supply (a hub, mailbox or
-worker transport, a credential) is injected.
+writes an entity, emits an event, or advances a cursor. It imports the public SDK, never
+another asset.
 
-The application registers each class as a **source type** (`flow_sdk/ingest/sources.py`,
-`SourceType`), pairing it with its application hooks: the credential resolver, the
-transport it is built over, how a send's arguments address its channel, where a remote
-file source's cache lives, how a reflected file's identity is named, and how a cursor an
-older build left is lifted. The shipped types are registered in
-`flow_sdk/ingest/source_types.py`, imported by the first `source_type(provider)` call.
+The loader (`flow_sdk/ingest/source_registry.py`) builds each folder into a **source
+type** (`flow_sdk/ingest/sources.py`, `SourceType`) from the manifest and the class. What
+differs between sources, the source says itself: the credential shape is the manifest's
+`auth` (one resolver, `flow_sdk/ingest/credentials.py`); `build` constructs it over an
+application transport; `message_for` reads a send's arguments; `lift_cursor` adopts an
+older cursor; `local_tree_key` / `origin_id_for` place and name reflected files;
+`permalink` addresses its channel's UI; `webhook_challenge` / `webhook_account` /
+`events_from_webhook` take push delivery through the one generic route,
+`/api/v1/data_source/webhook/<name>`. The shipped folders load on the first
+`source_type(provider)` call; an authored folder loads on first use
+(`resolve_source_type`). `tests/unit/test_data_sources_are_self_contained.py` fails on
+any provider knowledge outside an asset folder.
 
 **The cursor is the source's own.** `DataSourceCursor.cursor` is an opaque string the
 loop carries and never reads, persisted only for a class that declares
@@ -367,9 +375,10 @@ can overlap (see *Known gaps*).
 
 ## Adding a source
 
-1. Write the class in `flow_sdk/sources/providers/<name>/source.py`. It imports only
-   `flow_sdk.sources` and the standard library; implement the protocols the provider
-   can honour — `fetch`/`iterate` for a listing, `send`/`reply` for a channel,
+1. Make the folder `agentic-assets/data_source/<name>/` and write the class in its
+   `source.py` — one `Source` subclass whose `provider` is the manifest's `name`. It
+   imports the SDK; implement the protocols the provider can honour —
+   `fetch`/`iterate` for a listing, `send`/`reply` (and `message_for`) for a channel,
    `open` for bytes, `verify` for a setup step.
 2. Choose the segment unit. **Never key it on a mutable grouping**: a folder or a space
    that items move between produces duplicates nothing cleans up.
@@ -379,19 +388,22 @@ can overlap (see *Known gaps*).
    not honour is worse than one that omits it.
 5. Decide the destination — a record source yields messages or feed items, a reflecting
    source yields `FileItem`s and never produces a `SourceItem`.
-6. If the bytes are not yours to write, set `stamps_identity = False` and give the type
-   an `origin_id_for` hook.
-7. Register a `SourceType` in `flow_sdk/ingest/source_types.py` with its application
-   hooks, and write the manifest — `agentic-assets/data_source/<name>/data_source.json`
-   (the shipped ones live under
-   `flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/`). The create
-   form is generated from its `config` block; nothing in `ui/` is edited.
-8. Add `tests/unit/test_sources/providers/test_<name>.py`: the conformance kit
+6. If the bytes are not yours to write, set `stamps_identity = False` and give the class
+   an `origin_id_for` classmethod.
+7. Write the manifest beside it, `data_source.json` — `kind`, `auth`, `config`,
+   `reflect`. The create form is generated from its `config` block; nothing in `ui/` is
+   edited, and nothing is registered anywhere else.
+8. Add `tests/test_<name>_source.py` in the folder: the conformance kit
    (`flow_sdk.sources.testing.checks_for`) over the class, plus its wire cases against a
-   loopback server.
+   loopback server (`flow_sdk.ingest.testing.local_http_server`); import the class with
+   `asset_module("<name>")`.
+9. Add `tests/matrix.py`: a `case(monkeypatch, tmp_path)` context manager yielding the
+   config, the provider doubles and the expectations. The data source matrix
+   (`tests/api/test_source_matrix.py`, `tests/api/test_source_cli_matrix.py`) drives it
+   through create, verify, sync, items, send, reply, disable and delete.
 
-Authored sources (a manifest and a `fetch.py` in a project) have no runtime until the
-source host lands; see [the data-source asset](data-source-asset.md).
+A shipped source and an authored one (the same folder in a project) load the same way;
+see [the data-source asset](data-source-asset.md).
 
 ## The row a record becomes
 
@@ -430,16 +442,21 @@ on the spec, not in drivers: `occurred_at` is coerced to aware-UTC ISO, and an
   same source.
 * One segment's `config_error` parks the whole source (roll-up above); the
   per-segment isolation holds only within the cycle that discovers it.
-* Authored `fetch.py` sources do not run: the script adapter was removed with the old
-  driver surface and the source host that replaces it has not landed.
+* A source's code runs in the backend process; the sandboxed source host is a later step
+  (no asset changes when it lands).
+* The outbound message specs are still named per channel in
+  `flow_sdk/builtin/source_item.py` (`SlackMessageSpec`, …) until the messaging verbs
+  replace them.
 
-**Key source files:** `flow_sdk/builtin/data_source.py`,
-`data_source_cursor.py`, `source_item.py` (`SourceItemSpec` = the row's header),
-`data_source_spec.py` (`ManifestSpec` = the manifest's header), `flow_sdk/ingest/`
-(`sources.py`, `source_types.py`, `poller.py`, `sync.py`, `ingestor.py`, `models.py`,
+**Key source files:** `flow_sdk/builtin/data_source.py` (the `send`, `reply`, `items`,
+`sync`, `set_enabled`, `remove` actions), `data_source_cursor.py`, `source_item.py`
+(`SourceItemSpec` = the row's header), `data_source_spec.py` (`ManifestSpec` = the
+manifest's header), `flow_sdk/ingest/` (`source_registry.py`, `sources.py`,
+`credentials.py`, `testing.py`, `poller.py`, `sync.py`, `ingestor.py`, `models.py`,
 `reflect.py`, `change_event.py`, `health.py`, `digest.py`, `ingest_on_tag.py`,
-`legacy_lift.py`, `agent_transport.py`), `flow_sdk/sources/` (the contract and
-`providers/`),
+`legacy_lift.py`), `flow_sdk/sources/` (the contract), each data source's asset folder,
+`flow_sdk/cli/commands/source_cmd.py` (`flow source`),
+`flow_sdk/server/routes/data_source_webhook.py`,
 `flow_sdk/server/routes/ingest.py`,
 `flow_sdk/schema/type_info/{data_source,source_item}_type_info.py`,
 `flow_sdk/fs_store/serializer/db.py` (natural-key identity + digest gate),
