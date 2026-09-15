@@ -34,11 +34,11 @@ pytestmark = [
     pytest.mark.timeout(240),  # budget — do not raise
 ]
 
-BASE = (
-    os.environ.get("SCHEDULE_E2E_API_URL")
-    or os.environ.get("QA_API_URL")
-    or f"http://127.0.0.1:{os.environ.get('LOCAL_SERVER_PORT', '9007')}"
-)
+# No port fallback: pytest_plugin strips LOCAL_SERVER_PORT, so a default port only
+# ever named a person's own instance (9007 is `prod`) and this test wrote into it.
+BASE = os.environ.get("SCHEDULE_E2E_API_URL") or os.environ.get("QA_API_URL") or ""
+if not BASE:
+    pytest.skip("set SCHEDULE_E2E_API_URL (or QA_API_URL) to a launcher-owned instance", allow_module_level=True)
 
 #: How late a fire may land after its scheduled second. The scheduler wakes on
 #: time; anything beyond this is a stalled event loop, which is a bug.

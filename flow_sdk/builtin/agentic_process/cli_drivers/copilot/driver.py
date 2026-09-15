@@ -132,7 +132,15 @@ class CopilotDriver:
     # stronger readiness signal than the generic prompt glyph (the trust
     # choice list has its own glyph).
     pty_composer_ready_pattern = re.compile(r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used")
+    # A PTY launch drops the prompt (copilot reads it from stdin); prompt() types it.
+    pty_launch_drops_prompt = True
     pins_resume_cwd = False  # no transcript-cwd pinning, no fork
+
+    @staticmethod
+    def is_transcript_user_turn(entry: dict) -> bool:
+        """The interactive record has no terminal marker, so ``stream_transcript``
+        ends a turn on the IDLE that follows a new one of these."""
+        return entry.get("type") == "user.message"
 
     def cli_options(self, process: "AgenticProcess") -> CopilotAgentOptions:
         cmd = CopilotAgentOptions.from_json(process.cli_config)
@@ -447,10 +455,14 @@ class CopilotDriver:
         if process.session_id:
             path = find_copilot_session_jsonl(process.session_id)
         else:
-            path = find_latest_copilot_session_jsonl(
-                cwd=process.workdir,
-                started_at=self._worker_started_at(process),
-            )
+            # BOUNDED by this worker's own launch, like opencode: a process that
+            # never launched a worker owns no session, and the newest session for
+            # its cwd may be another process's LIVE one — adopting it resumes into
+            # copilot's "Session in use" dialog and the prompt never lands.
+            started_at = self._worker_started_at(process)
+            if started_at is None:
+                return None
+            path = find_latest_copilot_session_jsonl(cwd=process.workdir, started_at=started_at)
         if path is None or not path.exists():
             return None
         meta = read_copilot_session_meta(path)

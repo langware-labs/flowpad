@@ -44,6 +44,14 @@ _ANALYZER_NAME = {
     WorkerType.COPILOT: "copilot",
 }
 
+#: Every driver writes the canonical CLAUDE.md prompt plus its OWN discovery file
+#: (``WorkerDriver.prepare_instruction_assets``); no worker gets another's file.
+_INSTRUCTION_FILES = {
+    WorkerType.CLAUDE_CODE: ("CLAUDE.md",),
+    WorkerType.CODEX: ("CLAUDE.md", "AGENTS.md"),
+    WorkerType.COPILOT: ("CLAUDE.md", ".github/instructions/flowpad.instructions.md"),
+}
+
 
 def _small_cli_config(worker_type: WorkerType) -> dict:
     # Persist the portable small tier for every worker. Native Copilot resolves
@@ -89,12 +97,7 @@ async def test_system_prompt(worker_type, cli_name, tmp_path: Path):
         assets = process.embedded_assets
         assert assets is not None
         assert str(assets.os_path) in process.resolved_add_dirs
-        for rel in (
-            "CLAUDE.md",
-            "AGENTS.md",
-            ".agents",
-            ".github/instructions/flowpad.instructions.md",
-        ):
+        for rel in _INSTRUCTION_FILES[worker_type]:
             path = assets.os_path / rel
             assert path.exists(), path
             assert system_prompt in path.read_text(encoding="utf-8")

@@ -143,6 +143,8 @@ class CodexDriver:
     # cursor, so a prompt-glyph marker would false-positive). The banner text
     # is painted contiguously, so it survives ``strip_pty_controls``.
     pty_composer_ready_pattern = re.compile(r">_ OpenAI Codex")
+    # A PTY launch drops the prompt (codex reads it from stdin); prompt() types it.
+    pty_launch_drops_prompt = True
     pins_resume_cwd = False  # codex mints its own rollout; no transcript-cwd pinning, no fork
 
     # ── CLI shape ────────────────────────────────────────────────────────────
