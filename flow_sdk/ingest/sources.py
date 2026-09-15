@@ -194,6 +194,37 @@ def write_cache_index(root: Path, provider: str, index: dict[str, str]) -> None:
     atomic_write(cache_index_path(root, provider), json.dumps(index, indent=2, sort_keys=True).encode("utf-8"))
 
 
+def _place_without_collisions(wanted: dict[str, str], known: dict[str, str]) -> dict[str, str]:
+    """Each key's cache path, never shared with another key.
+
+    A remote file's ``path`` is its name, and names are not unique (Drive keeps several files called
+    ``report.csv`` side by side): the same path for two keys would overwrite one with the other and
+    hand both refs one identity. A key keeps the placement it already has; a key whose wanted path
+    another key holds gets a stable, distinct one carrying its own key.
+    """
+    owners = {rel: key for key, rel in known.items()}
+    placed: dict[str, str] = {}
+    for key, rel in wanted.items():
+        distinct = _distinct_path(rel, key)
+        if known.get(key) in (rel, distinct):
+            placed[key] = known[key]
+        elif owners.get(rel, key) != key:
+            placed[key] = distinct
+        else:
+            placed[key] = rel
+        owners[placed[key]] = key
+    return placed
+
+
+def _distinct_path(rel: str, key: str) -> str:
+    """``dir/name~<key prefix>.ext`` — the same file name, told apart by its key."""
+    head, _, name = rel.rpartition("/")
+    stem, dot, suffix = name.rpartition(".")
+    tag = "".join(ch for ch in key if ch.isalnum())[:10] or "x"
+    renamed = f"{stem}~{tag}.{suffix}" if dot and stem else f"{name}~{tag}"
+    return f"{head}/{renamed}" if head else renamed
+
+
 async def _pull(source: Source, wanted: list) -> None:
     """Each ``(item, path)``'s bytes, through the source's ``open``, atomically into place — a pass
     that dies mid-download never leaves a half file for the indexer to type."""
@@ -439,14 +470,15 @@ class SourceType:
         placed: dict[str, str] = {}
         known: dict[str, str] = {}
         if root is not None:
-            placed = {key: getattr(item.data, "path", None) or key for key, item in by_key.items()}
-            refused = [key for key, rel in placed.items() if cached_path(root, rel) is None]
+            known = {key: rel for rel, key in read_cache_index(root, self.provider).items()}
+            wanted = {key: getattr(item.data, "path", None) or key for key, item in by_key.items()}
+            refused = [key for key, rel in wanted.items() if cached_path(root, rel) is None]
             if refused:
                 # Never a silent drop: a source that quietly reflected 40 of 45 objects reads as complete.
                 logger.info("[ingest] %s %s: skipped %d object(s) with no usable path", self.provider, row.id, len(refused))
             for key in refused:
-                del by_key[key], placed[key]
-            known = {key: rel for rel, key in read_cache_index(root, self.provider).items()}
+                del by_key[key], wanted[key]
+            placed = _place_without_collisions(wanted, known)
 
         def ref(key: str, rel: Optional[str] = None) -> Optional[str]:
             if root is None:
@@ -468,7 +500,9 @@ class SourceType:
             ]
         else:
             current, gone = {**previous, **observed}, []
-        gone.extend(origin.key for origin in removed)
+        # A removal counts only for a key this source placed: a change log also reports files it never
+        # listed (deleted elsewhere on the account), and those have nothing to tombstone.
+        gone.extend(origin.key for origin in removed if origin.key in previous or origin.key in known)
         for key in (*gone, *moved_from):
             current.pop(key, None)
         renames = {ref(move.origin.key): ref(move.previous.key) for move in moved}

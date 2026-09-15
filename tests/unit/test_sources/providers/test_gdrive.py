@@ -224,6 +224,31 @@ async def test_a_legacy_cursor_and_index_keep_their_removals(driver, tmp_path):
     assert [Path(t).name for t in result.tombstones] == ["one.txt"]
 
 
+async def test_a_removal_of_a_file_this_source_never_listed_is_not_a_tombstone(driver, tmp_path):
+    """Drive's change log also reports files deleted elsewhere on the account (found live: seven
+    removals of files the source had never placed). There is nothing to tombstone for them."""
+    drive = _Drive(files=[_file("f1", "one.txt")])
+    with local_http_server(drive) as base:
+        source = _source(tmp_path, base)
+        first = await driver.traverse(source, _view())
+        drive.changes = [{"fileId": "never-seen", "removed": True}]
+        second = await driver.traverse(source, _view(first))
+    assert second.tombstones == [] and set(second.manifest) == {"f1"}
+
+
+async def test_two_files_with_the_same_name_are_both_kept(driver, tmp_path):
+    """Drive names are not unique (found live: three distinct `apollo-…csv` files). One shared cache
+    path would overwrite the first with the second and give both one identity."""
+    drive = _Drive(files=[_file("fA1", "report.csv"), _file("fB2", "report.csv")])
+    with local_http_server(drive) as base:
+        source = _source(tmp_path, base)
+        result = await driver.traverse(source, _view())
+        again = await driver.traverse(source, _view(result))
+    assert len(result.refs) == 2 and len({Path(r).name for r in result.refs}) == 2
+    assert {driver.origin_id_for(source, r) for r in result.refs} == {"gdrive:fA1", "gdrive:fB2"}
+    assert again.unchanged, "a stable placement: the second pass neither moves nor re-downloads either file"
+
+
 # ── health ───────────────────────────────────────────────────────────────────
 
 
