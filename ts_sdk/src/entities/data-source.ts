@@ -28,6 +28,15 @@ export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_e
  */
 export type SourceStatus = 'new' | 'setup' | 'active' | 'disabled';
 
+/** What the channel confirmed about one sent message (data_source.py `_outcome_dict`).
+ *  `recorded: false` on a sent message means the local copy is missing — never re-send to fix it. */
+export interface DataSourceSendOutcome {
+  external_id: string;
+  status: 'sent' | 'drafted';
+  recorded: boolean;
+  artifact_id: string;
+}
+
 export interface IDataSource extends IEntity {
   owner?: string | null;
   name: string;
@@ -265,6 +274,37 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    * Idempotent and safe to press repeatedly — it is the button beside "invite
    * the bot to the channel", and the only way out of `setup`.
    */
+  /** Send one message into the channel. `to` is what the channel addresses (a chat, a channel
+   *  id, an address); the source class decides how it reads it. */
+  async send(message: { to: string; text: string; thread_key?: string; subject?: string; in_reply_to?: string }): Promise<DataSourceSendOutcome> {
+    return this.post('send', message);
+  }
+
+  /** Reply to one of this source's records; who it reaches is the channel's rule. */
+  async reply(itemId: string, text: string): Promise<DataSourceSendOutcome> {
+    return this.post('reply', { item_id: itemId, text });
+  }
+
+  /** This source's records, newest first. */
+  async items(limit = 20): Promise<{ items: Array<Record<string, unknown>> }> {
+    return this.post('items', { limit });
+  }
+
+  /** One sync cycle NOW, reported — unlike `pollNow`, which only marks the source due. */
+  async syncNow(): Promise<{ created: number; updated: number; unchanged: number; health: SourceHealth; status: SourceStatus }> {
+    return this.post('sync');
+  }
+
+  /** Resume or stop polling. */
+  async setEnabled(enabled: boolean): Promise<{ status: SourceStatus }> {
+    return this.post('set_enabled', { enabled });
+  }
+
+  /** Delete the source row. */
+  async remove(): Promise<{ removed: string }> {
+    return this.post('remove');
+  }
+
   async verify(): Promise<{
     status: SourceStatus;
     ready: boolean;
