@@ -542,3 +542,101 @@ async def test_connect_refuses_to_report_a_credential_it_does_not_hold(monkeypat
 
     assert caught.value.code == "credential_not_held"
     assert caught.value.stage is ConnectionStage.SECRETS
+
+
+def _account_rig(monkeypatch, *, logged_in_after: bool, logged_in_before: bool = False):
+    """The account row lives in the consolidated list, not the OAuth catalogue."""
+    import flow_sdk.core.connections.orchestrator as orchestrator
+    import flow_sdk.core.connections.service as service_module
+    import flow_sdk.core.connections.specs as specs_module
+
+    state = {"logged_in": logged_in_before}
+
+    def account():
+        return ConnectionSpec(
+            provider="flowpad_account",
+            display_name="FlowPad",
+            kind="flowpad",
+            state="connected" if state["logged_in"] else "disconnected",
+            connected=state["logged_in"],
+            identity="me@example.com" if state["logged_in"] else "",
+        )
+
+    async def rows(_client, *_args, **_kwargs):
+        return [account()]
+
+    async def catalogue(_client):
+        raise AssertionError("the account row must not be looked up in the OAuth catalogue")
+
+    async def cloud_login(provider, _client, presenter):
+        await presenter.present(SimpleNamespace(provider="flowpad_cloud"))
+        state["logged_in"] = logged_in_after
+
+    class Lock:
+        is_locked = True
+
+        def release(self):
+            self.is_locked = False
+
+    class LeaseContext:
+        async def __aenter__(self):
+            return SimpleNamespace(client=object())
+
+        async def __aexit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(specs_module, "_list_connections_with_client", rows)
+    monkeypatch.setattr(specs_module, "_list_connection_specs_with_client", catalogue)
+    monkeypatch.setattr(orchestrator, "_ensure_cloud_login", cloud_login)
+    monkeypatch.setattr(orchestrator, "_acquire_provider_lock", lambda _provider: Lock())
+    monkeypatch.setattr(service_module, "flow_service", LeaseContext)
+
+    class Presenter:
+        def __init__(self):
+            self.providers = []
+
+        async def present(self, authorization):
+            self.providers.append(authorization.provider)
+
+    return Presenter()
+
+
+async def test_connecting_the_account_row_runs_the_hub_sign_in(monkeypatch):
+    """`flowpad_account` is this instance's hub login: its connect is the cloud
+    login, never the "FlowPad (OAuth)" provider's flow."""
+    presenter = _account_rig(monkeypatch, logged_in_after=True)
+
+    result = await connect("flowpad_account", presenter)
+
+    assert presenter.providers == ["flowpad_cloud"]
+    assert (result.spec.provider, result.spec.connected) == ("flowpad_account", True)
+    assert (result.test.ok, result.test.identity) == (True, "me@example.com")
+
+
+async def test_a_signed_in_account_connects_without_a_login(monkeypatch):
+    presenter = _account_rig(monkeypatch, logged_in_before=True, logged_in_after=True)
+
+    result = await connect("flowpad_account", presenter)
+
+    assert presenter.providers == []
+    assert result.test.ok is True
+
+
+async def test_an_account_login_that_does_not_land_is_an_error(monkeypatch):
+    presenter = _account_rig(monkeypatch, logged_in_after=False)
+
+    with pytest.raises(ConnectionConnectError) as caught:
+        await connect("flowpad_account", presenter)
+
+    assert caught.value.code == "cloud_login_failed"
+    assert caught.value.stage is ConnectionStage.CLOUD
+
+
+async def test_testing_the_account_row_reads_the_hub_login(monkeypatch):
+    from flow_sdk.core.connections.orchestrator import test as test_connection
+
+    _account_rig(monkeypatch, logged_in_after=False)
+
+    result = await test_connection("flowpad_account")
+
+    assert (result.ok, result.code) == (False, "cloud_login_required")

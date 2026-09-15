@@ -34,7 +34,7 @@ def _no_harnesses(monkeypatch):
 def _no_flowpad(monkeypatch):
     async def out():
         return ConnectionSpec(
-            provider="flowpad",
+            provider="flowpad_account",
             display_name="FlowPad",
             kind=ConnectionKind.FLOWPAD,
             state=ConnectionState.DISCONNECTED,
@@ -248,9 +248,9 @@ async def test_include_unconnected_keeps_every_oauth_provider_in_screen_order(mo
     held = await status_mod.list_connections()
     every = await status_mod.list_connections(include_unconnected=True)
 
-    assert [r.provider for r in held] == ["flowpad", "github", "OPENAI"]
+    assert [r.provider for r in held] == ["flowpad_account", "github", "OPENAI"]
     assert [(r.provider, r.connected) for r in every] == [
-        ("flowpad", False),
+        ("flowpad_account", False),
         ("github", True),
         ("slack", False),
         ("OPENAI", True),
@@ -348,3 +348,45 @@ async def test_a_row_carries_its_own_scope(monkeypatch):
     rows = await status_mod._credential_rows(object())
 
     assert [(r.provider, r.scope) for r in rows] == [("personal", "user"), ("team", "project")]
+
+
+# ── provider ids are names ────────────────────────────────────────────────────
+
+
+async def test_provider_ids_are_unique_across_the_real_composition(monkeypatch):
+    """Every lookup (`get_connection`, `match_provider`, `connect`) addresses a row by
+    provider id alone, so two rows sharing one make the second unreachable by name.
+
+    The FlowPad account row and the "FlowPad (OAuth)" catalogue provider both said
+    ``flowpad`` — `get_connection("flowpad")` could never reach the OAuth one. This
+    runs the REAL row producers (account, every harness, the whole local OAuth
+    catalogue); only their external reads are stubbed."""
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import HUB_ENDPOINT_HARNESSES
+    from flow_sdk.cloud_client import auth_state
+    from flow_sdk.core.connections import specs
+    from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars
+    from flow_sdk.core.oauth import hub_providers
+
+    async def nothing(*_args, **_kwargs):
+        return None
+
+    async def no_hub():
+        return EntityEnvVars(values=[])
+
+    monkeypatch.setattr(auth_state, "login_block", lambda: {})
+    monkeypatch.setattr(status_mod, "_installed_harnesses", lambda: list(HUB_ENDPOINT_HARNESSES))
+    monkeypatch.setattr(status_mod, "_harness_capability", nothing)
+    monkeypatch.setattr(llm_source, "device_candidate", nothing)
+    monkeypatch.setattr(hub_providers, "hub_provider_rows", no_hub)
+    monkeypatch.setattr(specs, "_connection_user", nothing)
+    _no_credentials(monkeypatch)
+
+    rows = await status_mod.list_connections(include_unconnected=True)
+    ids = [r.provider.strip().lower() for r in rows]
+
+    assert {r.kind for r in rows} >= {ConnectionKind.FLOWPAD, ConnectionKind.HARNESS, ConnectionKind.OAUTH}
+    assert "flowpad" in ids, "the FlowPad OAuth provider must stay addressable as 'flowpad'"
+    assert sorted({i for i in ids if ids.count(i) > 1}) == []
+    account = next(r for r in rows if r.kind is ConnectionKind.FLOWPAD)
+    assert account.provider == "flowpad_account"

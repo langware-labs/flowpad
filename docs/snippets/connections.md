@@ -20,7 +20,7 @@ asyncio REPL ...
 >>> from flow_sdk.connections import get_connections
 >>> connections = await get_connections()
 >>> [(c.provider, c.connected) for c in connections]
-[('anthropic', False), ('github', True), ('slack', False)]
+[('flowpad_account', False), ('claude', True), ('codex', True), ('copilot', True), ('opencode', False), ('anthropic', False), ('atlassian', False), ('flowpad', False), ('github', False), ('gitlab', False), ('google', False), ('linear', False), ('slack', False)]
 >>> slack = next(c for c in connections if c.provider == "slack")
 >>> slack = await slack.connect()
 >>> slack.connected
@@ -43,14 +43,14 @@ provider call that proves it still works.
 
 ```console
 $ flow connections list
-flowpad	flowpad	disconnected	FlowPad
+flowpad_account	flowpad	disconnected	FlowPad
 claude	harness	unknown	Claude
 
 $ flow connections connect slack
 {"ok": true, "provider": "slack", "connected": true, "identity": "me"}
 
 $ flow connections list
-flowpad	flowpad	disconnected	FlowPad
+flowpad_account	flowpad	disconnected	FlowPad
 claude	harness	unknown	Claude
 slack	oauth	connected	Slack
 ```

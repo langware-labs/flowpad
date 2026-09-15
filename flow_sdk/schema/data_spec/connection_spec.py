@@ -41,6 +41,13 @@ class ConnectionKind(StrEnum):
     HARNESS = "harness"
 
 
+#: The provider id of this instance's own hub-account row (kind ``FLOWPAD``).
+#: Deliberately NOT ``"flowpad"``: that id belongs to the "FlowPad (OAuth)"
+#: provider in the OAuth catalogue, and every lookup matches on provider id, so
+#: two rows sharing it made the OAuth one unreachable by name.
+FLOWPAD_ACCOUNT_PROVIDER = "flowpad_account"
+
+
 class ConnectionState(StrEnum):
     """What we can say about it right now.
 
@@ -64,7 +71,7 @@ class ConnectionSpec(DataSpec):
     Two definitions of "connected" is how they drifted.
 
     ``provider`` is the identifier WITHIN a kind — a provider name, a credential
-    definition's name, ``flowpad``, or a worker type. It keeps its old name
+    definition's name, ``flowpad_account``, or a worker type. It keeps its old name
     because the OAuth state machine addresses rows by it.
 
     Per-kind fields are defaulted rather than ``Optional`` and the class is

@@ -9,6 +9,7 @@ from urllib.parse import quote
 from filelock import FileLock, Timeout
 
 from flow_sdk.schema.data_spec.connection_spec import (
+    FLOWPAD_ACCOUNT_PROVIDER,
     Authorization,
     BrowserAuthorization,
     ConnectionCancelled,
@@ -71,6 +72,48 @@ async def _test_with_client(provider: str, client) -> ConnectionTestResult:
         raise _error(provider, ConnectionStage.VERIFICATION, "invalid_response", str(exc)) from exc
 
 
+async def _account_row(client, provider: str):
+    """This instance's hub-account row, read from the consolidated list.
+
+    The account is not in the OAuth catalogue — it is its own kind — so the
+    connect/test state machines cannot find it there.
+    """
+    from flow_sdk.core.connections.specs import _list_connections_with_client  # noqa: PLC0415
+
+    rows = await _list_connections_with_client(client)
+    row = next((item for item in rows if item.provider.lower() == FLOWPAD_ACCOUNT_PROVIDER), None)
+    if row is None:
+        raise _error(provider, ConnectionStage.CATALOG, "unknown_provider")
+    return row
+
+
+def _account_test(row) -> ConnectionTestResult:
+    """The account's verdict is the hub login itself; there is no token to probe."""
+    return ConnectionTestResult(
+        ok=bool(row.connected),
+        identity=row.identity or None,
+        detail=row.detail or None,
+        code=None if row.connected else "cloud_login_required",
+    )
+
+
+async def _connect_account(provider: str, client, presenter: AuthorizationPresenter, *, reauthorize: bool):
+    """Sign this instance in to its hub — the account row's whole connect."""
+    row = await _account_row(client, provider)
+    if row.connected and not reauthorize:
+        return ConnectionResult(spec=row, test=_account_test(row))
+    await _ensure_cloud_login(provider, client, presenter)
+    refreshed = await _account_row(client, provider)
+    if not refreshed.connected:
+        raise _error(
+            provider,
+            ConnectionStage.CLOUD,
+            "cloud_login_failed",
+            refreshed.detail or "Cloud login finished but this instance is not signed in",
+        )
+    return ConnectionResult(spec=refreshed, test=_account_test(refreshed))
+
+
 async def test(provider: str) -> ConnectionTestResult:
     from flow_sdk.core.connections.service import FlowServiceError, flow_service
     from flow_sdk.core.connections.specs import _list_connection_specs_with_client
@@ -78,6 +121,8 @@ async def test(provider: str) -> ConnectionTestResult:
     try:
         async with flow_service() as lease:
             wanted = provider.strip().lower()
+            if wanted == FLOWPAD_ACCOUNT_PROVIDER:
+                return _account_test(await _account_row(lease.client, provider))
             specs = await _list_connection_specs_with_client(lease.client)
             spec = next((item for item in specs if item.provider.lower() == wanted), None)
             if spec is None:
@@ -275,6 +320,8 @@ async def connect(provider: str, presenter: AuthorizationPresenter, *, reauthori
         try:
             async with flow_service() as lease:
                 client = lease.client
+                if provider == FLOWPAD_ACCOUNT_PROVIDER:
+                    return await _connect_account(provider, client, presenter, reauthorize=reauthorize)
                 specs = await _list_connection_specs_with_client(client)
                 wanted = provider.lower()
                 spec = next((item for item in specs if item.provider.lower() == wanted), None)
