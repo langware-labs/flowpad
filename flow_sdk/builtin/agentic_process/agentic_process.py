@@ -3066,10 +3066,20 @@ class AgenticProcess(Entity):
         if not self.exist_in_db:
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
         await self.reconcile_name(first_prompt=instruction)
+        # A vendor whose PTY launch drops the prompt (copilot, codex read it from
+        # stdin) boots to an empty composer and treats a raw paste+CR as literal
+        # text, so its prompt is typed once the composer is ready instead.
+        typed = getattr(self.driver, "pty_launch_drops_prompt", False)
         if await self.is_running():
-            await self.send(instruction)
+            if typed:
+                self._schedule_gated_pty_delivery(instruction)
+            else:
+                await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
-        return await self.start_pty(instruction=instruction)
+        res = await self.start_pty(instruction=None if typed else instruction)
+        if typed and not isinstance(res, ApiFailResponse):
+            self._schedule_gated_pty_delivery(instruction)
+        return res
 
     async def _is_live_pty(self) -> bool:
         """True iff this is a PTY transport with a worker currently alive — the
@@ -3224,6 +3234,13 @@ class AgenticProcess(Entity):
         _settle_seconds = 2.0
         _post_tool_settle_seconds = 8.0
         _terminal_states = {_WS.COMPLETE, _WS.INTERRUPTED, _WS.INACTIVE}
+        # A driver whose interactive transcript never writes a terminal marker
+        # (copilot) ends a turn on IDLE — but only once a user turn has landed since
+        # the stream opened: a reused session's tail is the PRIOR turn's IDLE. Not
+        # global: Claude's bare ``system:init`` is IDLE before its first turn lands.
+        _is_user_turn = getattr(self.driver, "is_transcript_user_turn", None)
+        _user_turns_at_open: int | None = None
+        _user_turns_seen = 0
         _terminal_since: float | None = None
         _terminal_size: int | None = None
         _post_tool_since: float | None = None
@@ -3258,7 +3275,11 @@ class AgenticProcess(Entity):
                             extended - deadline,
                         )
                         deadline = extended
+                if _is_user_turn is not None and _is_user_turn(entry):
+                    _user_turns_seen += 1
                 yield entry
+            if _user_turns_at_open is None:
+                _user_turns_at_open = _user_turns_seen  # the first read is the file as opened
 
             tail_status = self.driver.tail_status(transcript_path)
             # Resume-aware guard: while THIS process's turn worker is still live,
@@ -3275,7 +3296,10 @@ class AgenticProcess(Entity):
             # release while the tail still shows the prior marker — re-opening the
             # off-by-one.
             _worker_active = prompt_worker_active(self.id)
-            _terminal = tail_status in _terminal_states and not _worker_active
+            _turn_idle = (
+                _is_user_turn is not None and tail_status == _WS.IDLE and _user_turns_seen > _user_turns_at_open
+            )
+            _terminal = (tail_status in _terminal_states or _turn_idle) and not _worker_active
             # Post-tool-idle peek: only meaningful for Claude (Codex never
             # writes WORKING followed by tool_result without further events).
             # Only treat as soft-terminal when the last assistant turn ended with
@@ -3743,6 +3767,16 @@ class AgenticProcess(Entity):
         if composer_gated:
             return None, True
         return message, not driver.pty_submits_on_paste
+
+    def _schedule_gated_pty_delivery(self, message: str) -> None:
+        """Type ``message`` once the composer is ready, without blocking ``prompt()``."""
+        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+        async def _deliver() -> None:
+            if not await self._typed_pty_delivery(message, landed=asyncio.Event()):
+                logger.warning("prompt: PTY for %s closed before its composer was ready — prompt not typed", self.id)
+
+        create_detached_task(_deliver(), name=f"pty-prompt-delivery-{self.id}")
 
     # ── EXPERIMENT: PTY-transcript streaming prompt ─────────────────────────
     #

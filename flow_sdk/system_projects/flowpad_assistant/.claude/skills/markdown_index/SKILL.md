@@ -89,8 +89,14 @@ questions from the docs — it only (re)generates indexes. If you were asked to
      (`<subfolder>/index.md.json`), pull its `self_summary` field, and use it
      verbatim. Do NOT re-summarise the child; never parse the child's `.md`.
    - Render `prompts/folder_index.prompt.md` to produce a **single JSON object**
-     conforming to `IndexMdJson` (schema in
-     `flow_sdk/assets/types/markdown_index_render.py`). Required fields:
+     conforming to `IndexMdJson`. Print its schema from the installed package —
+     never search the filesystem for the source file:
+
+     ```bash
+     python -c "import json; from flow_sdk.assets.types.markdown_index_render import IndexMdJson; print(json.dumps(IndexMdJson.model_json_schema()))"
+     ```
+
+     Required fields:
      `typeid`, `parent_ref`, `vault_root`, `folder_rel_path`, `folder_name`,
      `inputs_hash` (use the planner's value verbatim), `self_summary` (≤ 60 words),
      `files[]` (each with `name`, `rel_path`, `title`, `summary`, `content_hash`),
