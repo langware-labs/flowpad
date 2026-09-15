@@ -28,10 +28,12 @@ pinned by a test so it cannot drift silently.
   connection operations lease the selected standard service for their normal
   HTTP actions and restore its initial up/down state. Long tests that pin live
   legs run under the standard 30s cap and skip without credentials.
-* **Import the drivers once.** `import flow_sdk.ingest.drivers` registers the
-  twelve shipped providers (`rss`, `hackernews`, `folder`, `git`, `gdrive`,
-  `gcs`, `gmail`, `agentmail`, `cloud_email`, `slack`, `telegram`, `agent`). Without it
-  `get_driver()` returns `None` and a source parks on `config_error`.
+* **The shipped sources register on first ask.** `source_type(provider)` imports
+  `flow_sdk.ingest.source_types`, which registers every shipped provider (`rss`,
+  `hackernews`, `folder`, `git`, `gdrive`, `gcs`, `gmail`, `agentmail`,
+  `cloud_email`, `helpdesk`, `slack`, `teams`, `telegram`, `whatsapp`, `agent`).
+  A snippet may still `import flow_sdk.ingest.source_types` up front so an
+  override it registers is not undone by a later import.
 * **Values travel as `DataSpec`.** What a driver emits is a
   `SourceItemSpec`, what you send back is a `MessageSpec` subclass, and what an
   agent returns is a `RunOutput`. They are frozen and refuse unknown keys. A

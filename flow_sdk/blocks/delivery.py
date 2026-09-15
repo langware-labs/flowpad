@@ -30,7 +30,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.consumer_position import ConsumerPosition
     from flow_sdk.builtin.source_item import MessageSpec
     from flow_sdk.core.entity.entity_model import Entity
-    from flow_sdk.ingest.driver import SendOutcome
+    from flow_sdk.ingest.sources import SendOutcome
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
@@ -114,8 +114,8 @@ class Delivered(Generic[T]):
         from datetime import datetime, timezone  # noqa: PLC0415
 
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-        from flow_sdk.ingest.driver import SendOutcome  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
+        from flow_sdk.ingest.sources import SendOutcome  # noqa: PLC0415
 
         position, row = self._position, self._row
         source = await self._source()

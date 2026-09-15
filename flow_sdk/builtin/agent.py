@@ -654,14 +654,13 @@ class Agent(Entity):
         lands in ``SETUP`` and answers no one until it is verified — the same
         rule ``EmailInbox.allowed`` enforces for a mailbox.
         """
-        import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
         from flow_sdk.blocks import Inbox  # noqa: PLC0415
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
         channel = str(channel or "").strip()
         if not channel:
             raise ValueError("a binding needs the channel's id")
-        driver = get_driver(provider)
+        driver = source_type(provider)
         if driver is None:
             raise ValueError(f"unknown provider {provider!r}")
         if not driver.sends:

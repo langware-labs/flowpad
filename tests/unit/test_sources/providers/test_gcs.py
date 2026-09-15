@@ -14,15 +14,15 @@ from urllib.parse import parse_qs, unquote, urlparse
 import pytest
 from pydantic import SecretStr
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
-from flow_sdk.ingest.driver import SegmentCursorView, get_driver
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, Credentials
 from flow_sdk.sources.errors import NotFound, Rejected
 from flow_sdk.sources.providers.gcs import GcsSource
 from flow_sdk.sources.testing import Subject, checks_for
-from tests.unit._ingest_helpers import local_http_server, make_data_source
+from tests.unit._ingest_helpers import local_http_server, make_data_source, position
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -38,7 +38,7 @@ def _credentials(credentials):
 
 @pytest.fixture
 def driver(monkeypatch):
-    gcs = get_driver("gcs")
+    gcs = source_type("gcs")
     monkeypatch.setattr(gcs, "_credentials", _credentials(TOKEN))
     return gcs
 
@@ -49,8 +49,8 @@ def _source(tmp_path, base: str, **config):
     )
 
 
-def _view(state: dict | None = None, segment: str = "/") -> SegmentCursorView:
-    return SegmentCursorView(segment_key=segment, state=state or {}, first_run=not state)
+def _view(state: dict | None = None, segment: str = "/"):
+    return position(segment_key=segment, prior=state or {})
 
 
 def _obj(name: str, generation: str = "1") -> dict:
@@ -133,7 +133,7 @@ async def test_open_streams_an_objects_bytes_and_a_missing_one_is_not_found():
 
 async def test_a_first_pass_downloads_every_object_into_the_cache(driver, tmp_path):
     with local_http_server(_Bucket([_obj("handbook/intro.md"), _obj("handbook/policy/leave.md")])) as base:
-        result = await driver.fetch(source := _source(tmp_path, base), _view())
+        result = await driver.traverse(source := _source(tmp_path, base), _view())
 
     root = (tmp_path / "cache").resolve()
     assert sorted(str(p.relative_to(root)) for p in root.rglob("*.md")) == ["handbook/intro.md", "handbook/policy/leave.md"]
@@ -149,9 +149,9 @@ async def test_an_unchanged_generation_costs_no_download(driver, tmp_path):
     bucket = _Bucket([_obj("intro.md"), _obj("leave.md")])
     with local_http_server(bucket) as base:
         source = _source(tmp_path, base)
-        first = await driver.fetch(source, _view())
+        first = await driver.traverse(source, _view())
         bucket.downloaded.clear()
-        second = await driver.fetch(source, _view(first.next_state))
+        second = await driver.traverse(source, _view(first))
     assert second.unchanged is True and bucket.downloaded == []
 
 
@@ -159,10 +159,10 @@ async def test_a_new_generation_re_downloads_only_that_object(driver, tmp_path):
     bucket = _Bucket([_obj("intro.md"), _obj("leave.md")])
     with local_http_server(bucket) as base:
         source = _source(tmp_path, base)
-        first = await driver.fetch(source, _view())
+        first = await driver.traverse(source, _view())
         bucket.objects = [_obj("intro.md"), _obj("leave.md", generation="2")]
         bucket.downloaded.clear()
-        second = await driver.fetch(source, _view(first.next_state))
+        second = await driver.traverse(source, _view(first))
     assert bucket.downloaded == ["leave.md"] and [r.rsplit("/", 1)[1] for r in second.refs] == ["leave.md"]
 
 
@@ -170,9 +170,9 @@ async def test_an_object_that_vanished_is_a_tombstone(driver, tmp_path):
     bucket = _Bucket([_obj("intro.md"), _obj("leave.md")])
     with local_http_server(bucket) as base:
         source = _source(tmp_path, base)
-        first = await driver.fetch(source, _view())
+        first = await driver.traverse(source, _view())
         bucket.objects = [_obj("intro.md")]
-        second = await driver.fetch(source, _view(first.next_state))
+        second = await driver.traverse(source, _view(first))
     assert len(second.tombstones) == 1 and second.tombstones[0].endswith("leave.md")
 
 
@@ -180,9 +180,9 @@ async def test_a_rename_is_a_tombstone_and_a_new_ref_never_a_rename_entry(driver
     bucket = _Bucket([_obj("old.md")])
     with local_http_server(bucket) as base:
         source = _source(tmp_path, base)
-        first = await driver.fetch(source, _view())
+        first = await driver.traverse(source, _view())
         bucket.objects = [_obj("new.md")]
-        second = await driver.fetch(source, _view(first.next_state))
+        second = await driver.traverse(source, _view(first))
     assert second.renames == {}, "inventing a rename would carry identity to the wrong object"
     assert second.refs[0].endswith("new.md") and second.tombstones[0].endswith("old.md")
 
@@ -194,7 +194,7 @@ async def test_pagination_is_followed(driver, tmp_path):
     bucket = _Bucket(pages=[[_obj("one.md")], [_obj("two.md")], [_obj("three.md")]])
     bucket.objects = [o for page in bucket.pages for o in page]
     with local_http_server(bucket) as base:
-        result = await driver.fetch(_source(tmp_path, base), _view())
+        result = await driver.traverse(_source(tmp_path, base), _view())
     assert len(result.refs) == 3 and len(bucket.listed) == 3
 
 
@@ -203,28 +203,28 @@ async def test_a_prefix_is_a_segment_and_bounds_the_listing(driver, tmp_path):
     with local_http_server(bucket) as base:
         source = _source(tmp_path, base, prefixes=["handbook/"])
         segments = await driver.segments(source)
-        result = await driver.fetch(source, _view(segment="handbook/"))
+        result = await driver.traverse(source, _view(segment="handbook/"))
     assert [s.key for s in segments] == ["handbook/"] and bucket.listed[-1]["prefix"] == "handbook/"
     assert len(result.refs) == 1 and result.refs[0].endswith("handbook/intro.md")
 
 
 async def test_a_name_that_would_escape_the_cache_is_refused(driver, tmp_path):
     with local_http_server(_Bucket([_obj("../../etc/passwd"), _obj("fine.md")])) as base:
-        result = await driver.fetch(_source(tmp_path, base), _view())
+        result = await driver.traverse(_source(tmp_path, base), _view())
     assert len(result.refs) == 1 and result.refs[0].endswith("fine.md")
     assert not (tmp_path / "etc" / "passwd").exists()
 
 
 async def test_a_directory_placeholder_is_not_a_document(driver, tmp_path):
     with local_http_server(_Bucket([_obj("handbook/"), _obj("handbook/intro.md")])) as base:
-        result = await driver.fetch(_source(tmp_path, base), _view())
+        result = await driver.traverse(_source(tmp_path, base), _view())
     assert len(result.refs) == 1 and result.refs[0].endswith("intro.md")
 
 
 async def test_a_missing_bucket_is_a_config_error_named_by_its_field(driver, tmp_path):
     with local_http_server(_Bucket()) as base:
         with pytest.raises(Exception) as caught:
-            await driver.fetch(_source(tmp_path, base, bucket=""), _view())
+            await driver.traverse(_source(tmp_path, base, bucket=""), _view())
     assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR and "bucket" in str(caught.value)
 
 

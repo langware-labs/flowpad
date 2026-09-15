@@ -13,7 +13,7 @@ import pytest_asyncio
 
 import flow_sdk.db.drivers.db_driver as db_driver_mod
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
-import flow_sdk.ingest.drivers  # noqa: F401 — side-effect: register every driver
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity

@@ -12,7 +12,7 @@ health, not thrown. The cursor advances only after the write lands.
 
 ```python
 from flow_sdk.builtin.data_source import DataSource
-import flow_sdk.ingest.drivers          # registers the shipped providers
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 
 source = DataSource(name="Notes", provider="folder", config={"root": "/src"})
 await source.save()

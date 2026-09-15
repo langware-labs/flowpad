@@ -53,11 +53,11 @@ class AgentInboxScope:
 
 def is_message_source(source) -> bool:
     """The domain predicate: a DataSource on a channel whose driver can send."""
-    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
     if not (getattr(source, "channel", "") or "").strip():
         return False
-    driver = get_driver(getattr(source, "provider", "") or "")
+    driver = source_type(getattr(source, "provider", "") or "")
     return bool(driver is not None and getattr(driver, "sends", False))
 
 
@@ -75,7 +75,6 @@ async def resolve_agent_inbox_scope(agent_id: str) -> AgentInboxScope:
     turn may write rows that are not source-backed), and the inbox list keys
     on this one.
     """
-    import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415

@@ -122,55 +122,58 @@ record written from outside converges with what the poller writes instead of
 racing it. `SourceItemSpec`'s own `extra="forbid"` is the refusal: a misspelt
 field is an error, not a row with an empty name.
 
-## The driver contract
+## The source contract
 
-Implemented once per provider in `ingest/drivers/`, registered into a
-kind-keyed registry. A driver answers *which segments does this source have* and
-*what changed in one segment* — it never writes an entity, emits an event, or
-advances a cursor.
+Every provider is a contract source: a `Source` class in
+`flow_sdk/sources/providers/<name>/` implementing the access protocols it can honour
+(`Listable`, `Readable`, `Messaging`, `Segmented`, `Verifiable`, `Choosing`,
+`Identified`, `StableHandle`) — a capability is discovered by `isinstance`, never
+declared. A source answers *what is there* and *what changed since a cursor*; it never
+writes an entity, emits an event, or advances a cursor. It imports only the contract
+and the standard library; what only the application can supply (a hub, mailbox or
+worker transport, a credential) is injected.
 
-**The cursor state it receives is its own.** `SegmentCursorView.state` is an
-opaque dict the loop carries and never reads. That is what lets one loop serve
-conditional-GET (RSS keeps `{etag, last_modified}`), changed-ids (Hacker News
-keeps an update pointer) and a commit sha (git) without a branch.
-`test_cursor_state_is_opaque_to_the_subsystem` (`tests/unit/test_ingest_sync.py`)
-greps for violations. `DataSourceCursor.high_water` is the other half: recorded
-for operators, never read back as a floor.
+The application registers each class as a **source type** (`flow_sdk/ingest/sources.py`,
+`SourceType`), pairing it with its application hooks: the credential resolver, the
+transport it is built over, how a send's arguments address its channel, where a remote
+file source's cache lives, how a reflected file's identity is named, and how a cursor an
+older build left is lifted. The shipped types are registered in
+`flow_sdk/ingest/source_types.py`, imported by the first `source_type(provider)` call.
 
-### Declared traits
+**The cursor is the source's own.** `DataSourceCursor.cursor` is an opaque string the
+loop carries and never reads, persisted only for a class that declares
+`durable_cursor` (a change log, a commit, a watermark). `DataSourceCursor.manifest` is
+the traversal's own diff bookkeeping for a reflecting source. `state` is what an older
+build kept on the row: the type's `lift_cursor` reads it once and a good pass clears it.
+`test_cursor_state_is_opaque_to_the_subsystem` (`tests/unit/test_ingest_sync.py`) greps
+the engine for provider keys. `DataSourceCursor.high_water` is recorded for operators,
+never read back as a floor.
 
-Capabilities are declared on the driver class; the optional hooks (`verify`,
-`channel_for`, `origin_id_for`, `segment_budget`, `sends`, reply lookup) default to `None`/`False`
-on the `IngestDriver` base, so the engine reads them directly — no `getattr` probes.
+### Traits
+
+Traits are class variables on the `Source`; `SourceType` exposes the ones the
+application reads, so the engine asks the type rather than probing.
 
 | Trait | Default | Meaning |
 |---|---|---|
-| `provider` | — | Registry key. Distinct from `channel`, the user-facing name |
-| `record_kind` | — | Ontology kind stamped on each item; decides inbox membership — the projection admits `content.message.*` and nothing else (see [the inbox projection](inbox-projection.md)). Carried by record-emitting drivers only, not the `IngestDriver` base; an authored source declares `emits` instead (see [the data-source asset](data-source-asset.md#resolved-and-what-is-left)) |
-| `segment_budget` | `None` → the loop's `DEFAULT_SEGMENT_BUDGET` (5) | Segments per run; the engine takes `min(caller, driver)`. Slack declares 1 — one history call a minute |
+| `provider` | — | Registry key. Distinct from `channel`, the user-facing name (`origin_kind_for`) |
+| `kind` (on the type) | — | Ontology kind of the **source** row (`datasource.feed.rss`); stamped by `sync_source` |
+| `durable_cursor` | `False` | Whether `ChangePage.resume_cursor` is persisted and resumed |
+| `reflects` | `False` | The payload is files for reflection, never records |
+| `segment_budget` | `None` → the loop's `DEFAULT_SEGMENT_BUDGET` (5) | Segments per run; the engine takes `min(caller, class)`. Slack declares 1 |
+| `pages_per_pass` | `None` | Page chain cap per traversal |
 | `attention_poll_seconds` | `None` | Sub-tick cadence while watched (see *Attention*). Telegram declares 5 |
-| `kind` | — | Ontology kind of the **source** row (`datasource.feed.rss`); stamped by `sync_source` |
 | `stamps_identity` | `True` | Whether this source's bytes are ours to write to |
-| `origin_id_for()` | path | The source's own name for an asset |
-| `origin_for()` | — | The source's tree as a typed `FSOrigin`, stamped on `DataSource.origin` at save; reflection reads it so relative structure survives |
-| `verify()` | — | Is the setup finished? Distinct from health, which is about the last run |
-| `send()` | — | Can this driver push a message back to its channel? |
-| `identity_config_key` | `inbox` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.Inbox`) matches on to reuse a source instead of minting a twin. Telegram declares `bot_token` |
-| `find_reply()` | — | Optional targeted reply lookup for transports such as Gmail that can query provider headers without backfilling unrelated mail |
-| `wait_for_reply()` | — | Optional session-level reply wait for transports such as Gmail that can correlate a response without repeatedly backfilling the mailbox |
+| `identity_config_key` | `inbox` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.Inbox`) matches on to reuse a source |
+| `connection` | `None` | The machine connection it reads with (`google`, `slack`), checked before a row exists |
+| `open_inbound` | `False` | Strangers are the point (a help desk): an empty allowlist admits everyone |
+| `echoes_sends` | `False` | The provider returns our own sends on the next read, so a send is not recorded twice |
 
-Shipped drivers: `rss`, `hackernews`, `slack`, `agent`, `agentmail`, `gmail`,
-`telegram`, `cloud_email`, `folder`, `git`, `gdrive` — registered by importing
-`ingest/drivers/__init__.py`. Authored sources are registered from rows, not
-imports: `spec_registry.refresh_spec_drivers()` sweeps `DataSourceSpec` rows
-with `runtime=script` on every heartbeat tick (and, name-scoped, on the create
-path in `DataSource.save`), wraps each in a `ScriptSource`, and unregisters
-the ones whose spec left the disk. A spec whose name collides with a shipped
-driver is refused and logged — builtins always win.
-
-The registry is a `KindRegistry` keyed on `provider`; a miss answers `None`,
-and `sync_source` records that as the `unknown_provider` config error rather
-than crashing the poller.
+Setup (`Verifiable.verify`), a picker (`Choosing.choices`), identity (`Identified.whoami`)
+and a targeted reply lookup (`find_reply`, Gmail's In-Reply-To scan) come from the
+protocols the class implements. The registry is a `KindRegistry` keyed on `provider`; a
+miss answers `None`, and `sync_source` records that as the `unknown_provider` config
+error rather than crashing the poller.
 
 Callers send through `DataSource.send(MessageSpec)`, which validates the common
 message shape before delegating to the driver's `send()` hook. For transports
@@ -215,16 +218,16 @@ and not in `config_error`; otherwise the returned sentence says exactly why it
 cannot run. `is_due`, `request_poll` and the fast lane all ask it.
 
 **Lifecycle.** `NEW` is transient: `DataSource.save` resolves it on the way
-in — to `SETUP` (with a default `setup_detail`) when the driver declares
-`verify`, else straight to `ACTIVE`. An unknown provider also goes `ACTIVE`,
+in — to `SETUP` (with a default `setup_detail`) when the source class is
+`Verifiable`, else straight to `ACTIVE`. An unknown provider also goes `ACTIVE`,
 deliberately, so the poller reaches `sync_source` and the card can show
 `unknown_provider` instead of a source that silently never runs. `verify`
 runs two layers in order — the channel's OAuth probe (the same one the
-Connections "Test" button uses), then the driver's own `SetupVerdict` — and
+Connections "Test" button uses), then the source's own `Verdict` — and
 moves the source to `ACTIVE` (due on the next tick) only when both pass.
-`save` also stamps `channel` (from the driver, on an empty field only),
+`save` also stamps `channel` (from the source type, on an empty field only),
 coerces `config` by the spec's field types, and re-derives `origin` via the
-driver's `origin_for`.
+type's `origin_for`.
 
 **Operator controls** (`core_action`s on `DataSource`; all asynchronous — they
 make the source due, the heartbeat does the work within a minute):
@@ -233,7 +236,7 @@ make the source due, the heartbeat does the work within a minute):
 |---|---|---|
 | `poll_now` | make due | **the only un-latch** for `config_error` besides `replay` (`_make_due`) |
 | `request_poll` | make due, arm the fast lane | never un-latches, never wakes `disabled`/`setup` — see *Attention* |
-| `reset_cursors` | clear `state` + `high_water`, keep the rows | alone it is invisible: the digest gate suppresses re-delivery. Rows are kept so `last_synced_at` survives and the next run is not a silent `BACKFILL` |
+| `reset_cursors` | clear `cursor`, `manifest`, legacy `state` and `high_water`, keep the rows | alone it is invisible: the digest gate suppresses re-delivery. Rows are kept so `last_synced_at` survives and the next run is not a silent `BACKFILL` |
 | `purge_items` | destroy the source's `SourceItem`s and their inbox projection | rebuilt rows are **new** entities; `read`/`starred` are lost |
 | `replay` | `purge_items` (optionally `since=`) + `reset_cursors` + make due | widens `window_days` to cover `since`, never shrinks it; undated rows survive a bounded replay |
 | `verify` | the two-layer setup check above | |
@@ -318,12 +321,12 @@ identity derivation never fails a poll.
 A folder's handle is re-read after every index pass: stamping a capsule rewrites
 the file atomically, so the inode moves and a handle read once would drift.
 
-**Renames need the transport to report them.** `FetchResult.renames` carries
-old→new pairs, and only a source that can genuinely observe a move may fill it —
+**Renames need the transport to report them.** `ChangePage.moved` carries
+`Move(origin, previous)` pairs, and only a source that can genuinely observe a move may fill it —
 git can (`--find-renames`), a lossy watcher cannot. Without the pair, identity is
 destroyed at the old path and re-minted at the new one.
 
-**Some bytes are not ours to write.** A driver declaring `stamps_identity = False`
+**Some bytes are not ours to write.** A source declaring `stamps_identity = False`
 reflects with `write=False`, so the identity carrier is read but never
 stamped. Git declares it: an id stamped into a tracked file dirties the
 working tree, is committed, and propagates to everyone who pulls. See
@@ -364,33 +367,31 @@ can overlap (see *Known gaps*).
 
 ## Adding a source
 
-**Most sources need no Python at all.** Write a manifest and a `fetch.py` in
-`agentic-assets/data_source/<name>/`, index the project, and `ScriptSource`
-(`ingest/drivers/script.py`) adapts it to this same contract by calling the module
-over `utils/module_rpc.py` — the engine cannot tell the difference. That path is
-the one the `connect-data-source` skill drives, and it is described in
-[the data-source asset](data-source-asset.md).
+1. Write the class in `flow_sdk/sources/providers/<name>/source.py`. It imports only
+   `flow_sdk.sources` and the standard library; implement the protocols the provider
+   can honour — `fetch`/`iterate` for a listing, `send`/`reply` for a channel,
+   `open` for bytes, `verify` for a setup step.
+2. Choose the segment unit. **Never key it on a mutable grouping**: a folder or a space
+   that items move between produces duplicates nothing cleans up.
+3. Put resumption in the cursor string, and declare `durable_cursor` only when the
+   provider can resume from it. Nothing outside the source reads it.
+4. Declare only what the source can promise. A class that claims a capability it does
+   not honour is worse than one that omits it.
+5. Decide the destination — a record source yields messages or feed items, a reflecting
+   source yields `FileItem`s and never produces a `SourceItem`.
+6. If the bytes are not yours to write, set `stamps_identity = False` and give the type
+   an `origin_id_for` hook.
+7. Register a `SourceType` in `flow_sdk/ingest/source_types.py` with its application
+   hooks, and write the manifest — `agentic-assets/data_source/<name>/data_source.json`
+   (the shipped ones live under
+   `flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/`). The create
+   form is generated from its `config` block; nothing in `ui/` is edited.
+8. Add `tests/unit/test_sources/providers/test_<name>.py`: the conformance kit
+   (`flow_sdk.sources.testing.checks_for`) over the class, plus its wire cases against a
+   loopback server.
 
-Write a Python driver only when the source needs something a subprocess cannot
-have — a live credential that refreshes mid-sync, or an in-process client. Then:
-
-1. Implement a driver in `ingest/drivers/` — `segments()` and `fetch()` are the
-   whole required surface, both async. Register it in that package's `__init__`.
-2. Choose the segment unit. **Never key it on a mutable grouping**: `segment_key`
-   participates in the natural key, so a folder or a space that items move
-   between produces duplicates nothing cleans up.
-3. Put resumption state in the opaque `state` dict. Nothing outside the driver
-   may read it.
-4. Declare only what the source can promise. A driver that claims a capability
-   it does not honour is worse than one that omits it.
-5. Decide the destination — a record source fills `items`, an asset source fills
-   `refs`/`tombstones` and never produces a `SourceItem`.
-6. If the bytes are not yours to write, set `stamps_identity = False` and supply
-   an `origin_id_for`.
-7. Write the manifest — `agentic-assets/data_source/<name>/data_source.json`
-   (the shipped ten live under
-   `flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/`). The
-   create form is generated from its `config` block; nothing in `ui/` is edited.
+Authored sources (a manifest and a `fetch.py` in a project) have no runtime until the
+source host lands; see [the data-source asset](data-source-asset.md).
 
 ## The row a record becomes
 
@@ -429,19 +430,16 @@ on the spec, not in drivers: `occurred_at` is coerced to aware-UTC ISO, and an
   same source.
 * One segment's `config_error` parks the whole source (roll-up above); the
   per-segment isolation holds only within the cycle that discovers it.
-* A `record`-mode source whose driver returns `refs` (a `folder`/`git` source
-  saved with the row default) logs a warning, skips the refs, and still
-  advances its cursor and reports `ok`.
-* A failure inside `ingest_items`/`reflect_refs` is not classified: it
-  escapes `_sync_stream`'s `try` (which wraps only `driver.fetch`), reaches
-  the poller's "this is a bug" catch, and leaves no health on the cursor.
+* Authored `fetch.py` sources do not run: the script adapter was removed with the old
+  driver surface and the source host that replaces it has not landed.
 
 **Key source files:** `flow_sdk/builtin/data_source.py`,
 `data_source_cursor.py`, `source_item.py` (`SourceItemSpec` = the row's header),
 `data_source_spec.py` (`ManifestSpec` = the manifest's header), `flow_sdk/ingest/`
-(`driver.py`, `poller.py`, `sync.py`, `ingestor.py`, `models.py`, `reflect.py`,
-`change_event.py`, `health.py`, `http.py`, `digest.py`, `ingest_on_tag.py`,
-`spec_registry.py`, `drivers/`, `drivers/script.py`),
+(`sources.py`, `source_types.py`, `poller.py`, `sync.py`, `ingestor.py`, `models.py`,
+`reflect.py`, `change_event.py`, `health.py`, `digest.py`, `ingest_on_tag.py`,
+`legacy_lift.py`, `agent_transport.py`), `flow_sdk/sources/` (the contract and
+`providers/`),
 `flow_sdk/server/routes/ingest.py`,
 `flow_sdk/schema/type_info/{data_source,source_item}_type_info.py`,
 `flow_sdk/fs_store/serializer/db.py` (natural-key identity + digest gate),

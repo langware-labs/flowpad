@@ -9,12 +9,12 @@ from types import SimpleNamespace
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — register every driver
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
 from flow_sdk.ingest import reflect
-from flow_sdk.ingest.driver import get_driver
+from flow_sdk.ingest.sources import source_type
 from tests.unit.test_git_source.conftest import git_db  # noqa: F401 — an isolated driver
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -24,13 +24,13 @@ def test_each_tree_driver_derives_a_local_origin(tmp_path):
     root = tmp_path / "watched"
     root.mkdir()
     expected = local_origin_for_path(root.resolve())   # THE one LocalOrigin shape
-    folder = get_driver("folder").origin_for(SimpleNamespace(config={"root": str(root)}))
+    folder = source_type("folder").origin_for(SimpleNamespace(config={"root": str(root)}))
     assert isinstance(folder, LocalOrigin) and folder == expected
-    git = get_driver("git").origin_for(SimpleNamespace(config={"repo": str(root)}))
+    git = source_type("git").origin_for(SimpleNamespace(config={"repo": str(root)}))
     assert git == expected
-    assert get_driver("git").origin_for(SimpleNamespace(config={})) is None
+    assert source_type("git").origin_for(SimpleNamespace(config={})) is None
     cache = tmp_path / "cache"
-    gdrive = get_driver("gdrive").origin_for(SimpleNamespace(config={"cache_root": str(cache)}, id="s"))
+    gdrive = source_type("gdrive").origin_for(SimpleNamespace(config={"cache_root": str(cache)}, id="s"))
     assert gdrive == local_origin_for_path(cache.resolve())
 
 

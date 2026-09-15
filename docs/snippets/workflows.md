@@ -17,7 +17,7 @@ The canonical program. Pinned by `tests/unit/test_workflows_snippets.py`
 typed reply → delivery verified at the counterpart inbox, 17–18s end to end).
 
 ```python
-import flow_sdk.ingest.drivers  # noqa: F401
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
 from flow_sdk.builtin.agent_registry import get_agent
 
@@ -114,7 +114,7 @@ everyone is reading.
 Slack differs from both: the reply targets the channel, inside the message's
 thread, and Slack echoes the bot's own post back through history, so the
 driver records nothing itself. Pinned by `tests/unit/test_workflows_snippets.py`,
-and by `tests/unit/test_slack_driver.py` (send, identity stamp, channel reuse)
+and by `tests/unit/test_sources/providers/test_slack.py` (send, identity stamp, channel reuse)
 against a loopback Slack.
 
 ```python

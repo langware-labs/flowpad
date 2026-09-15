@@ -185,7 +185,7 @@ async def test_a_stranger_is_refused_by_the_pool_in_a_sentence(hub_session, bob_
     membership sentence, not a generic error. Exercised through the driver's
     hub seam with bob's token, since this instance is logged in as alice."""
     from flow_sdk.cloud_client.shared.errors import HubError
-    from flow_sdk.ingest.drivers import hub_refusal
+    from flow_sdk.ingest.source_types import hub_refusal
     from flow_sdk.ingest.health import SourceHealth, classify
 
     base = hub_session["base_url"]

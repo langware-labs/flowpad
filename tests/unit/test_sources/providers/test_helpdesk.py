@@ -15,18 +15,19 @@ from types import SimpleNamespace
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped sources
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.source_item import HelpdeskMessageSpec
 from flow_sdk.cloud_client.shared.errors import HubError
-from flow_sdk.ingest.driver import SegmentCursorView, get_driver
-from flow_sdk.ingest.drivers import AppHub, hub_refusal
 from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.ingest.source_types import AppHub, hub_refusal
+from flow_sdk.ingest.sources import source_type
 from flow_sdk.schema.data_spec.choice_spec import Choice
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import NotFound
 from flow_sdk.sources.providers.helpdesk import HelpdeskSource
 from flow_sdk.sources.testing import Subject, checks_for
+from tests.unit._ingest_helpers import position
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -71,13 +72,13 @@ def _row(**config):
 
 
 def _view(state=None):
-    return SegmentCursorView(segment_key=TICKET, state=state or {}, window_start=None, first_run=not state)
+    return position(segment_key=TICKET, prior=state or {}, window_start=None)
 
 
 @pytest.fixture
 def hub(monkeypatch):
     fake = _Hub(pool=POOL, messages=[MSG])
-    monkeypatch.setattr(get_driver("helpdesk"), "_build", lambda binding: HelpdeskSource(binding, hub=fake))
+    monkeypatch.setattr(source_type("helpdesk"), "_build", lambda binding: HelpdeskSource(binding, hub=fake))
     return fake
 
 
@@ -95,7 +96,7 @@ async def test_conformance(check):
 
 class TestTheSource:
     def test_it_is_registered_sends_and_answers_strangers(self):
-        driver = get_driver("helpdesk")
+        driver = source_type("helpdesk")
         assert driver.sends is True and driver.open_inbound is True and driver.channel_for(_row()) == "helpdesk"
 
     def test_the_manifest_matches_the_source(self):
@@ -104,55 +105,55 @@ class TestTheSource:
         manifest = json.loads((folder / "data_source.json").read_text())
         assert manifest["name"] == HelpdeskSource.provider == folder.name
         assert manifest["config"]["desk_project_id"]["choices"] is True
-        assert get_driver("helpdesk").choices is not None, "a choosable field needs its hook"
+        assert source_type("helpdesk").choices is not None, "a choosable field needs its hook"
         assert "traits" not in manifest, "a builtin never declares traits"
 
     def test_replies_target_the_ticket(self):
         item = SimpleNamespace(segment_key=TICKET, thread_key=TICKET, external_id=MSG["id"])
-        spec = get_driver("helpdesk").outbound_spec(_row()).reply_to(item, body="try restarting it")
+        spec = source_type("helpdesk").outbound_spec(_row()).reply_to(item, body="try restarting it")
         assert isinstance(spec, HelpdeskMessageSpec) and spec.to == [TICKET] and spec.thread_key == TICKET
 
 
 class TestThePool:
     async def test_every_ticket_is_a_segment_carrying_the_pool_rows_change_token(self, hub):
-        (segment,) = await get_driver("helpdesk").segments(_row())
+        (segment,) = await source_type("helpdesk").segments(_row())
         assert (segment.key, segment.label) == (TICKET, "my printer is broken")
         assert segment.stamp == f"{POOL[0]['message_count']}:{POOL[0]['updated_at']}"
 
     async def test_a_source_without_a_desk_cannot_poll(self, hub):
         with pytest.raises(Exception) as caught:
-            await get_driver("helpdesk").segments(_row(desk_project_id=""))
+            await source_type("helpdesk").segments(_row(desk_project_id=""))
         assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR and "desk" in str(caught.value)
 
 
 class TestMapping:
     async def test_a_ticket_message_becomes_a_record_with_the_hub_ids_as_hints(self, hub):
-        (item,) = (await get_driver("helpdesk").fetch(_row(), _view())).items
+        (item,) = (await source_type("helpdesk").traverse(_row(), _view())).items
         assert item.external_id == MSG["id"] and item.message_id == MSG["id"], "the projection mints the FlowMessage with the hub's id"
         assert item.conversation_id == TICKET, "the projection adopts the hub conversation"
         assert (item.thread_key, item.segment_key, item.body, item.kind) == (TICKET, TICKET, "my printer is broken", "content.message.chat")
         assert (item.author_external_id, item.author_display) == (GUEST, "Guest")
 
     async def test_the_cursor_is_a_watermark_on_updated_date(self, hub):
-        first = await get_driver("helpdesk").fetch(_row(), _view())
-        assert first.next_state["cursor"] == HelpdeskSource.resume_at(MSG["updated_date"], [MSG["id"]])
-        again = await get_driver("helpdesk").fetch(_row(), _view(first.next_state))
+        first = await source_type("helpdesk").traverse(_row(), _view())
+        assert first.cursor == HelpdeskSource.resume_at(MSG["updated_date"], [MSG["id"]])
+        again = await source_type("helpdesk").traverse(_row(), _view(first))
         assert again.items == [] and again.unchanged is True
 
     async def test_a_legacy_watermark_is_adopted(self, hub):
-        again = await get_driver("helpdesk").fetch(_row(), _view({"high_water": MSG["updated_date"], "boundary_ids": [MSG["id"]]}))
+        again = await source_type("helpdesk").traverse(_row(), _view({"high_water": MSG["updated_date"], "boundary_ids": [MSG["id"]]}))
         assert again.items == []
 
     async def test_an_edit_re_arrives_because_its_stamp_moved(self, hub):
         hub.messages = [{**MSG, "text": "my printer is on fire", "updated_date": "2026-09-06T10:05:00+00:00"}]
         state = {"cursor": HelpdeskSource.resume_at(MSG["updated_date"], [MSG["id"]])}
-        result = await get_driver("helpdesk").fetch(_row(), _view(state))
+        result = await source_type("helpdesk").traverse(_row(), _view(state))
         assert [i.body for i in result.items] == ["my printer is on fire"]
 
 
 class TestSend:
     async def test_it_picks_the_ticket_up_before_answering_every_time(self, hub):
-        out = await get_driver("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
+        out = await source_type("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
         assert [c for c in hub.calls if c[0] == "post"] == [("post", "conversation", TICKET, "pickup"), ("post", "conversation", TICKET, "add_message")]
         assert out.recorded is False, "the next poll ingests the sent copy onto the hub's id"
         assert out.external_id == hub.messages[-1]["id"]
@@ -165,13 +166,13 @@ class TestSend:
 
         row = _row()
         row.save = save
-        await get_driver("helpdesk").send(row, thread_key="", to=TICKET, text="on it")
+        await source_type("helpdesk").send(row, thread_key="", to=TICKET, text="on it")
         assert row.account_identities == [ME] and saved
 
     async def test_a_failed_reply_never_parks_the_source(self, hub):
         hub.tickets = set()
         with pytest.raises(ValueError):
-            await get_driver("helpdesk").send(_row(), thread_key="", to=TICKET, text="x")
+            await source_type("helpdesk").send(_row(), thread_key="", to=TICKET, text="x")
 
 
 class TestTheAppHub:
@@ -211,6 +212,6 @@ class TestChoices:
 
         monkeypatch.setattr("flow_sdk.app.actions.flow_message_action._hub_default_helpdesk", default)
         monkeypatch.setattr("flow_sdk.builtin.helpdesk.Helpdesk.get_all", none)
-        offered = await get_driver("helpdesk").choices(_row(), "desk_project_id")
+        offered = await source_type("helpdesk").choices(_row(), "desk_project_id")
         assert offered and isinstance(offered[0], Choice) and offered[0].id == DESK
-        assert await get_driver("helpdesk").choices(_row(), "other") == []
+        assert await source_type("helpdesk").choices(_row(), "other") == []

@@ -20,7 +20,7 @@ import uuid
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped drivers
+import flow_sdk.ingest.source_types  # noqa: F401 — registers the shipped sources
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
@@ -57,9 +57,9 @@ async def test_telegram_send_records_its_own_copy():
     assert source.channel == "telegram", "channel must be stamped at create"
     mark("source saved")
 
-    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+    from flow_sdk.ingest.sources import get_driver  # noqa: PLC0415
 
-    outcome = await get_driver("telegram").send(
+    outcome = await source_type("telegram").send(
         source,
         thread_key=CHAT_ID,
         to=CHAT_ID,

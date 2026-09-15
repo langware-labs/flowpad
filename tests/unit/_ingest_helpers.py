@@ -113,3 +113,19 @@ def make_data_source(provider: str = "rss", **fields):
     return DataSource(
         **resolved,
     )
+
+
+def position(segment_key: str = "", prior=None, window_start=None, **_ignored):
+    """Where a segment's traversal resumes: a prior pass's cursor and manifest, or the dict an older
+    build left on the cursor row (lifted by the source type)."""
+    from flow_sdk.ingest.sources import SegmentPass, SegmentPosition
+
+    if isinstance(prior, SegmentPass):
+        return SegmentPosition(segment_key=segment_key, cursor=prior.cursor, manifest=dict(prior.manifest), window_start=window_start)
+    prior = dict(prior or {})
+    if "cursor" in prior or "manifest" in prior:
+        # A position written the way the engine carries it: the cursor and the manifest themselves.
+        return SegmentPosition(
+            segment_key=segment_key, cursor=prior.get("cursor"), manifest=dict(prior.get("manifest") or {}), window_start=window_start
+        )
+    return SegmentPosition(segment_key=segment_key, legacy_state=prior, window_start=window_start)

@@ -339,7 +339,7 @@ class TestInboxSend:
                 calls.update(kw)
                 return SimpleNamespace(external_id="<sent@provider>")
 
-        monkeypatch.setattr("flow_sdk.ingest.driver.get_driver", lambda p: _Driver())
+        monkeypatch.setattr("flow_sdk.ingest.sources.source_type", lambda p: _Driver())
         spec = EmailMessageSpec.reply_to(_inbound(), body="yes!")
         sent = await inbox.send(spec)
         assert sent == "<sent@provider>"

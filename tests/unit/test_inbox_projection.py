@@ -267,22 +267,22 @@ class TestPermalinkDerivation:
     """
 
     def test_gmail_addresses_by_thread(self):
-        from flow_sdk.ingest.drivers.channel_links import permalink_for
+        from flow_sdk.inbox.channel_links import permalink_for
 
         assert permalink_for("gmail", "msg-1", "thread-9").endswith("#all/thread-9")
 
     def test_it_falls_back_to_the_message_id(self):
-        from flow_sdk.ingest.drivers.channel_links import permalink_for
+        from flow_sdk.inbox.channel_links import permalink_for
 
         assert permalink_for("gmail", "msg-1", "").endswith("#all/msg-1")
 
     def test_it_is_stable_across_calls(self):
-        from flow_sdk.ingest.drivers.channel_links import permalink_for
+        from flow_sdk.inbox.channel_links import permalink_for
 
         assert permalink_for("gmail", "m", "t") == permalink_for("gmail", "m", "t")
 
     def test_an_unknown_channel_yields_no_link(self):
-        from flow_sdk.ingest.drivers.channel_links import permalink_for
+        from flow_sdk.inbox.channel_links import permalink_for
 
         # Better an inert badge than a URL that 404s.
         assert permalink_for("slack", "m", "t") == ""

@@ -6,14 +6,14 @@ row (concurrent advances lose each other) and would leave nowhere to record
 per-stream health. A row per stream gives failure isolation for free: one feed
 returning 500s leaves its siblings advancing normally.
 
-**The state is split, and the split is enforced by a test.** Resumption is
-driven entirely by ``state`` — an opaque dict only the driver touches (RSS keeps
-``{etag, last_modified}`` there, Hacker News a changed-id pointer). If the sync
-loop ever reads a key out of it, the abstraction has leaked and the next
-provider will need a special case; ``test_cursor_state_is_opaque_to_the_subsystem``
-catches that.
-``high_water`` is the operator-facing half: recorded so a human can see how far
-a stream got, never read back as a floor.
+**The position is split, and the split is enforced by a test.** Resumption is
+driven by ``cursor`` — an opaque string only the source reads, persisted only for
+a source that declares ``durable_cursor``. ``manifest`` is the engine's own diff
+bookkeeping for a reflecting source. ``state`` is what an older build kept here:
+it is read once, through the source type's ``lift_cursor``, and never written.
+``test_cursor_state_is_opaque_to_the_subsystem`` keeps provider keys out of the
+engine. ``high_water`` is the operator-facing half: recorded so a human can see
+how far a stream got, never read back as a floor.
 """
 from __future__ import annotations
 
@@ -42,7 +42,11 @@ class DataSourceCursor(Entity):
         default=None, description="Greatest successfully-ingested ordinal (observability)"
     )
 
-    # ── opaque half — ONLY the driver reads or writes this ──
+    # ── opaque half — ONLY the source reads this ──
+    cursor: Optional[str] = APIField(default=None, description="Where the next traversal resumes (durable sources only)")
+    #: The engine's diff bookkeeping for a reflecting source: an observed stamp per key.
+    manifest: dict = APIField(default_factory=dict)
+    #: What an older build kept here — lifted once into ``cursor``/``manifest``, never written.
     state: dict = APIField(default_factory=dict)
     #: The listing's change token (`SegmentRef.stamp`) as of the last good
     #: fetch. Sync-owned, not driver state: the sync compares it to the token
@@ -132,6 +136,8 @@ class DataSourceCursor(Entity):
         cursors = await cls.get_all({"data_source_id": source_id})
         for cursor in cursors:
             cursor.high_water = None
+            cursor.cursor = None
+            cursor.manifest = {}
             cursor.state = {}
             cursor.mark_ok()
             await cursor.save()

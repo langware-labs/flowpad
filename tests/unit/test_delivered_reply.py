@@ -1,7 +1,7 @@
 """``Delivered.reply()`` — the piggybacked ack, and the one thing it must never do: send twice.
 
 Every path here is a crash window: before the send, between send and record, between record
-and ack. The provider is a ``ScriptedDriver`` that, like four of the five real senders, does
+and ack. The provider is a ``ScriptedSource`` that, like four of the five real senders, does
 NOT record its own sent copy — so the redelivery lookup has to work the eventually-consistent
 way it does in production.
 """
@@ -14,7 +14,7 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
 from flow_sdk.builtin.consumer_position import ConsumerPosition
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.driver import SendOutcome, SendStatus
+from flow_sdk.ingest.sources import SendOutcome, SendStatus
 from flow_sdk.tags import on_tag
 from tests.utils.fake_source import scripted_provider
 

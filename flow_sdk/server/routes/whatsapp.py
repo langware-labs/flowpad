@@ -92,10 +92,9 @@ async def receive_webhook(request: Request):
     items, which is the normal case for delivery receipts. See the module note
     on why a failure here is worse than a dropped record.
     """
-    import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — registers the shipped sources
-    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
     from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
     from flow_sdk.ingest.legacy_lift import envelope_of  # noqa: PLC0415
+    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
     from flow_sdk.sources.providers.whatsapp import MESSAGES_SEGMENT  # noqa: PLC0415
 
     try:
@@ -114,7 +113,7 @@ async def receive_webhook(request: Request):
         logger.warning("[whatsapp] webhook for %r matches no source on this instance", phone_number_id)
         return ApiSuccessResponse(data={"ingested": 0, "reason": "no source for this number"})
 
-    whatsapp = await get_driver("whatsapp").open(source)
+    whatsapp = await source_type("whatsapp").open(source)
     items = [
         envelope_of(
             event.item,
