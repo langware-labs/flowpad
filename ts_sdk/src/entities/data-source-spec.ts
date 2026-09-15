@@ -72,6 +72,10 @@ export interface IDataSourceSpec extends IEntity {
   auth?: Record<string, unknown> | null;
   requires?: Record<string, string>;
   manifest_schema?: number;
+  /** Offered in the add-source picker; an unlisted provider still loads and polls. */
+  listed?: boolean;
+  /** The cloud creates the account for the owning agent — no form to fill. */
+  provisioned?: boolean;
 }
 
 // `implements IDataSourceSpec` only checks the class; it contributes no members, so every
@@ -108,6 +112,8 @@ export class DataSourceSpec extends APIEntity<DataSourceSpec> implements IDataSo
   auth: Record<string, unknown> | null = null;
   requires: Record<string, string> = {};
   manifest_schema: number = 1;
+  listed: boolean = true;
+  provisioned: boolean = false;
 
   /**
    * Re-apply the payload after construction.
