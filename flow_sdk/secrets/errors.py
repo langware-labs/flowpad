@@ -43,4 +43,45 @@ class VaultNotEnabled(SecretStoreError):
     code = "vault-disabled"
 
 
-__all__ = ["MissingSecrets", "NoCurrentProject", "SecretStoreError", "UnknownSecretStore", "VaultNotEnabled"]
+class StoreNeedsConnection(SecretStoreError):
+    """A store that acts as an account was used before a connection was bound to it."""
+
+    code = "needs-connection"
+
+    def __init__(self, store: str, providers: Iterable[str]) -> None:
+        self.store = store
+        self.providers = list(providers)
+        wanted = " or ".join(self.providers)
+        first = self.providers[0] if self.providers else ""
+        super().__init__(
+            f"the {store} store has no bound connection; run "
+            f'`await store.set_connection(await Connection.get("{first}"))` ({wanted})'
+        )
+
+
+class StoreAccessDenied(SecretStoreError, PermissionError):
+    """The remote store refused the bound account (401/403). Names the scope, never a token."""
+
+    code = "access-denied"
+
+    def __init__(self, store: str, provider: str, scopes: Iterable[str], detail: str = "") -> None:
+        self.store = store
+        self.provider = provider
+        self.scopes = list(scopes)
+        why = f": {detail}" if detail else ""
+        super().__init__(
+            f"the {store} store refused the {provider} connection{why}; the grant needs "
+            f"{', '.join(self.scopes)} and the account needs access to the secrets "
+            "(`await connection.connect(reauthorize=True)` to consent again)"
+        )
+
+
+__all__ = [
+    "MissingSecrets",
+    "NoCurrentProject",
+    "SecretStoreError",
+    "StoreAccessDenied",
+    "StoreNeedsConnection",
+    "UnknownSecretStore",
+    "VaultNotEnabled",
+]
