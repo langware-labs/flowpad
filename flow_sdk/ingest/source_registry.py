@@ -32,7 +32,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Optional
 
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
+from flow_sdk.schema.data_spec.data_source_manifest_spec import SOURCE_FILE, ManifestSpec
 from flow_sdk.sources.base import Source
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -43,7 +43,6 @@ logger = logging.getLogger(__name__)
 
 SHIPPED_ROOT = Path(__file__).resolve().parents[1] / "system_projects" / "flowpad_assistant" / "agentic-assets" / "data_source"
 MANIFEST_FILE = "data_source.json"
-SOURCE_FILE = "source.py"
 
 #: ``{name: why it did not load}`` — read by ``DataSourceSpec.load_error``.
 _LOAD_ERRORS: dict[str, str] = {}
@@ -73,10 +72,11 @@ def content_hash(folder: Path) -> str:
     return digest.hexdigest()
 
 
-def load_module(folder: Path, module: str = "source") -> ModuleType:
-    """``<folder>/<module>.py``, imported inside the folder's own package."""
+def load_module(folder: Path, module: str = "source", *, digest: str = "") -> ModuleType:
+    """``<folder>/<module>.py``, imported inside the folder's own package (``digest``: the folder's
+    ``content_hash`` when the caller already has it)."""
     folder = folder.resolve()
-    package = f"flowpad_source_{re.sub(r'[^0-9A-Za-z_]', '_', folder.name)}_{content_hash(folder)[:8]}"
+    package = f"flowpad_source_{re.sub(r'[^0-9A-Za-z_]', '_', folder.name)}_{(digest or content_hash(folder))[:8]}"
     if package not in sys.modules:
         spec = importlib.machinery.ModuleSpec(package, None, is_package=True)
         spec.submodule_search_locations = [str(folder)]
@@ -104,19 +104,16 @@ def source_class(module: ModuleType) -> type[Source]:
 def load_source(folder: Path) -> "SourceType":
     """A data source folder as a source type, or ``SourceLoadError`` naming what is wrong."""
 
+    from flow_sdk.ingest.sources import SourceType  # noqa: PLC0415
+
     manifest = read_manifest(folder)
     if not (folder / SOURCE_FILE).is_file():
         raise SourceLoadError(f"{folder} has no {SOURCE_FILE} — a data source carries its own Source class")
-    cls = source_class(load_module(folder))
-    return _typed(cls, manifest, folder)
-
-
-def _typed(cls: type[Source], manifest: ManifestSpec, folder: Path) -> "SourceType":
-    from flow_sdk.ingest.sources import SourceType  # noqa: PLC0415
-
+    digest = content_hash(folder)
+    cls = source_class(load_module(folder, digest=digest))
     if cls.provider != manifest.name:
         raise SourceLoadError(f"{cls.__name__}.provider is {cls.provider!r} but the manifest names {manifest.name!r}")
-    return SourceType(cls, manifest, folder=folder)
+    return SourceType(cls, manifest, folder=folder, content_hash=digest, shipped=folder.resolve().is_relative_to(SHIPPED_ROOT))
 
 
 def asset_module(name: str, module: str = "source") -> ModuleType:
@@ -146,7 +143,7 @@ async def resolve_source_type(name: str) -> "Optional[SourceType]":
     from flow_sdk.ingest.sources import SOURCES, source_type  # noqa: PLC0415
 
     known = source_type(name)
-    if known is not None and (known.folder is None or known.folder.resolve().is_relative_to(SHIPPED_ROOT)):
+    if known is not None and (known.folder is None or known.shipped):
         return known
     folder = await _authored_folder(name)
     if folder is None:

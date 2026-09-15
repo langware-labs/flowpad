@@ -10,4 +10,4 @@ def case(monkeypatch, tmp_path):
     (root / "sub").mkdir(parents=True)
     for rel, body in (("a.md", "alpha"), ("b.md", "bravo"), ("sub/c.md", "charlie")):
         (root / rel).write_text(body)
-    yield {"config": {"root": str(root)}, "fields": {"reflect": "none"}, "files": True}
+    yield {"config": {"root": str(root)}, "fields": {"reflect": "none"}}

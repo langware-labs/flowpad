@@ -278,15 +278,26 @@ class SourceType:
     """A data source asset — its ``Source`` class and its manifest — as this application builds,
     binds and traverses it."""
 
-    def __init__(self, cls: type[Source], manifest: "Optional[ManifestSpec]" = None, *, kind: str = "", folder: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        cls: type[Source],
+        manifest: "Optional[ManifestSpec]" = None,
+        *,
+        kind: str = "",
+        folder: Optional[Path] = None,
+        content_hash: str = "",
+        shipped: bool = False,
+    ) -> None:
         self.cls = cls
         self.provider = cls.provider
         self.manifest = manifest
         #: The asset folder the source loaded from; ``None`` for a class registered by hand (a test's).
         self.folder = folder
         self.kind = kind or (manifest.kind if manifest is not None and manifest.kind else f"datasource.{cls.provider}")
-        #: The folder's code as it loaded — a changed ``source.py`` is loaded again.
-        self.content_hash = _folder_hash(folder)
+        #: The folder's code as it loaded (set by the loader) — a changed ``source.py`` is loaded again.
+        self.content_hash = content_hash
+        #: Loaded from the wheel's own folders: never reloaded, never shadowed.
+        self.shipped = shipped
 
     # ── traits the application reads ───────────────────────────────────────
     @property
@@ -682,14 +693,6 @@ class SourceType:
         async with await self.open(row) as source:
             offered = await source.choices(field)  # type: ignore[attr-defined]
         return [Choice(**{k: str(entry[k]) for k in ("id", "name", "detail") if entry.get(k)}) for entry in offered]
-
-
-def _folder_hash(folder: Optional[Path]) -> str:
-    if folder is None:
-        return ""
-    from flow_sdk.ingest.source_registry import content_hash  # noqa: PLC0415
-
-    return content_hash(folder)
 
 
 def _register_shipped(registry: "KindRegistry[SourceType]") -> None:

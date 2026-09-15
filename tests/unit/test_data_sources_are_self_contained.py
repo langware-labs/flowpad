@@ -2,17 +2,13 @@
 assets").
 
 Outside ``agentic-assets/data_source/<name>/`` only generic machinery may exist. This scans the
-application tiers for the traces a provider leaves when its KNOWLEDGE escapes its folder: provider
-code living elsewhere, an import of it, a shipped source's class name, a query filtering rows by one
-source's name, or a per-source table row. It also requires every shipped asset to carry its own
-``source.py``.
+application tiers for the traces a provider leaves when its KNOWLEDGE escapes its folder: an import
+of provider code, a shipped source's class name, a query filtering rows by one source's name, or a
+per-source table row. It also requires every shipped asset to carry its own ``source.py``.
 
 Naming an asset to USE it — ``Inbox(provider="agentmail")``, ``source_type("cloud_email")`` — is
 not knowledge about it, the way opening a skill by name is not; what the machinery then needs, it
-asks the source for.
-
-``EXCEPTIONS`` is the user's to grant. ``MIGRATING`` is the consolidation checklist: it may only
-shrink, and it is empty once the move is done.
+asks the source for. ``EXCEPTIONS`` is the user's to grant.
 """
 from __future__ import annotations
 
@@ -30,7 +26,6 @@ ASSETS = REPO / ASSETS_REL
 SCANNED = ("flow_sdk", "ts_sdk/src", "ui/src")
 SUFFIXES = (".py", ".ts", ".tsx")
 IGNORED = ("flow_sdk/system_projects/", "flow_sdk/server/static/")
-LEGACY_PROVIDERS = "flow_sdk/sources/providers"
 #: Source names that are also ordinary words the engine uses in their own sense (an ``"agent"``
 #: key in a run record is not the agent source). Only the table-row trace skips them.
 ORDINARY_WORDS = frozenset({"agent", "folder", "git"})
@@ -39,9 +34,6 @@ ORDINARY_WORDS = frozenset({"agent", "folder", "git"})
 #: Only the user grants one.
 EXCEPTIONS: dict[str, str] = {}
 
-#: The consolidation checklist. Done: it stays empty.
-MIGRATING: frozenset[str] = frozenset()
-
 
 @lru_cache(maxsize=1)
 def shipped_names() -> tuple[str, ...]:
@@ -49,10 +41,16 @@ def shipped_names() -> tuple[str, ...]:
 
 
 @lru_cache(maxsize=1)
+def row_names() -> tuple[str, ...]:
+    """The names a per-source table row could be keyed on."""
+    return tuple(name for name in shipped_names() if name not in ORDINARY_WORDS)
+
+
+@lru_cache(maxsize=1)
 def source_class_names() -> frozenset[str]:
-    """Every ``*Source`` class a shipped source defines, wherever its code lives today."""
+    """Every ``*Source`` class a shipped source defines."""
     names: set[str] = set()
-    for path in [*ASSETS.glob("*/*.py"), *(REPO / LEGACY_PROVIDERS).glob("*/*.py")]:
+    for path in ASSETS.glob("*/*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         names |= {node.name for node in tree.body if isinstance(node, ast.ClassDef) and node.name.endswith("Source")}
     return frozenset(names)
@@ -61,9 +59,9 @@ def source_class_names() -> frozenset[str]:
 @lru_cache(maxsize=1)
 def traces() -> tuple[tuple[str, re.Pattern], ...]:
     names = "|".join(map(re.escape, shipped_names()))
-    rows = "|".join(map(re.escape, (n for n in shipped_names() if n not in ORDINARY_WORDS)))
+    rows = "|".join(map(re.escape, row_names()))
     return (
-        ("imports provider code", re.compile(r"sources[./]providers")),
+        ("imports provider code", re.compile(rf"sources[./]providers|flowpad_source_(?:{names})_")),
         ("names a source class", re.compile(rf"\b(?:{'|'.join(sorted(source_class_names()))})\b")),
         ("filters rows by a source name", re.compile(rf"""["']provider["']\s*:\s*["'](?:{names})["']""")),
         ("a per-source table row", re.compile(rf"""^\s*["']?(?:{rows})["']?\s*:\s*["'`]""", re.M)),
@@ -74,9 +72,9 @@ def _candidates() -> list[str]:
     """Files that could carry a trace, by a fixed-string pre-pass (``git grep -F``, tracked and
     untracked): reading every file of the tiers in Python is most of a second, and few files hold
     any of these strings at all. The exact traces then run on the candidates only."""
-    needles = ["sources/providers", "sources.providers", "provider", *source_class_names(),
+    needles = ["sources/providers", "sources.providers", "flowpad_source_", "provider", *source_class_names(),
                # a table row, quoted (`"gmail":`) or an unquoted TS key (`gmail: 'Mail'`)
-               *(f"{name}{q}:" for name in shipped_names() if name not in ORDINARY_WORDS for q in ("\"", "'", ""))]
+               *(f"{name}{q}:" for name in row_names() for q in ("\"", "'", ""))]
     pathspecs = [f"{tier}/*{suffix}" for tier in SCANNED for suffix in SUFFIXES] + [f":!{p}" for p in IGNORED]
     listed = subprocess.run(
         ["git", "grep", "-l", "-I", "--untracked", "-F", *(arg for n in needles for arg in ("-e", n)), "--", *pathspecs],
@@ -97,32 +95,24 @@ def _first_trace(rel: str, text: str) -> str:
 @lru_cache(maxsize=1)
 def offenders() -> dict[str, str]:
     """``{path: first trace}`` for every place that carries provider knowledge outside its asset."""
-    found: dict[str, str] = {}
-    for name in shipped_names():
-        if not (ASSETS / name / "source.py").is_file():
-            found[f"{ASSETS_REL}/{name}"] = f"{ASSETS_REL}/{name} has no source.py of its own"
-    if any((REPO / LEGACY_PROVIDERS).glob("*/*.py")):
-        found[LEGACY_PROVIDERS] = f"{LEGACY_PROVIDERS}/: provider code outside its asset folder"
+    found: dict[str, str] = {
+        f"{ASSETS_REL}/{name}": f"{ASSETS_REL}/{name} has no source.py of its own"
+        for name in shipped_names()
+        if not (ASSETS / name / "source.py").is_file()
+    }
     for rel in _candidates():
-        if rel.startswith(LEGACY_PROVIDERS + "/"):
-            continue
         if trace := _first_trace(rel, (REPO / rel).read_text(encoding="utf-8", errors="replace")):
             found[rel] = trace
     return found
 
 
 def test_no_provider_knowledge_outside_asset_folders():
-    unexpected = {path: trace for path, trace in offenders().items() if path not in MIGRATING and path not in EXCEPTIONS}
+    unexpected = {path: trace for path, trace in offenders().items() if path not in EXCEPTIONS}
     assert not unexpected, (
         "provider knowledge escaped its data_source asset folder — move it into the source's folder "
         "(a manifest field or a classmethod the machinery asks), or ask the user for an exception:\n  "
         + "\n  ".join(sorted(unexpected.values()))
     )
-
-
-def test_the_migration_checklist_only_shrinks():
-    cleaned = sorted(MIGRATING - offenders().keys())
-    assert not cleaned, f"these no longer offend — remove them from MIGRATING: {cleaned}"
 
 
 def test_every_exception_carries_its_approval():

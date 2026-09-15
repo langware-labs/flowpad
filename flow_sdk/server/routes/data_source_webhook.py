@@ -65,11 +65,10 @@ async def webhook_delivery(name: str, request: Request):
         return ApiFailResponse(message="Expected a JSON object body")
     if not isinstance(payload, dict):
         return ApiFailResponse(message="Expected a JSON object body")
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
     account = str(stype.cls.webhook_account(payload) or "")
-    row = next(
-        (r for r in await _rows(name) if account and str((r.config or {}).get(stype.identity_config_key) or "") == account),
-        None,
-    )
+    row = await DataSource.find_for_account(name, stype.identity_config_key, account) if account else None
     if row is None:
         # No amount of retrying makes a source exist; the log is where a person finds out.
         logger.warning("[webhook] %s delivery for %r matches no source on this instance", name, account)

@@ -3,7 +3,7 @@
  *
  * The same verbs the REST and CLI matrices drive (`tests/api/test_source_matrix.py`), called the way
  * the Data Sources screen calls them: create, verify, syncNow, items, send, reply, setEnabled,
- * remove. The api tier runs against a live backend, so a provider can be doubled only where the
+ * delete. The api tier runs against a live backend, so a provider can be doubled only where the
  * source's manifest lets config point it somewhere — a feed URL, a `base_url`, a local tree. Those
  * doubles are served from this process; the rest of the matrix is the Python tiers' and the live
  * tier's.
@@ -154,7 +154,6 @@ describe('data source matrix — TS SDK', () => {
         name: testEntityName(`data-source-${c.provider}`),
         provider: c.provider,
         config: await c.config(),
-        window_days: 36500,
         ...(c.fields ?? {}),
       } as never).save();
       try {
@@ -177,7 +176,7 @@ describe('data source matrix — TS SDK', () => {
         expect((await created.setEnabled(false)).status).toBe('disabled');
         expect((await created.setEnabled(true)).status).toBe('active');
       } finally {
-        await created.remove();
+        await created.delete();
       }
     });
   }
