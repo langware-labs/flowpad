@@ -34,6 +34,14 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _STORE_ALIASES = {"env_file": VALUE_STORE_ENV}
 
 
+def _normalize_store(value: str) -> str:
+    """The store's canonical name; raises for one this build does not know."""
+    value = _STORE_ALIASES.get(value, value)
+    if value not in VALUE_STORES:
+        raise ValueError(f"unknown value_store {value!r}; expected one of {list(VALUE_STORES)}")
+    return value
+
+
 class CredentialVarSpec(DataSpec):
     """One environment variable a credential is made of.
 
@@ -75,11 +83,8 @@ class CredentialEnvironmentSpec(DataSpec):
     @field_validator("value_store")
     @classmethod
     def _known_store(cls, value: str | None) -> str | None:
-        value = str(value or "").strip() or None
-        value = _STORE_ALIASES.get(value, value) if value is not None else None
-        if value is not None and value not in VALUE_STORES:
-            raise ValueError(f"unknown value_store {value!r}; expected one of {list(VALUE_STORES)}")
-        return value
+        value = str(value or "").strip()
+        return _normalize_store(value) if value else None
 
 
 class CredentialManifestSpec(DataSpec):
@@ -152,11 +157,7 @@ class CredentialManifestSpec(DataSpec):
     @field_validator("value_store")
     @classmethod
     def _known_store(cls, value: str) -> str:
-        value = str(value or "").strip() or VALUE_STORE_ENV
-        value = _STORE_ALIASES.get(value, value)
-        if value not in VALUE_STORES:
-            raise ValueError(f"unknown value_store {value!r}; expected one of {list(VALUE_STORES)}")
-        return value
+        return _normalize_store(str(value or "").strip() or VALUE_STORE_ENV)
 
     @field_validator("vars")
     @classmethod

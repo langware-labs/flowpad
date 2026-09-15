@@ -51,6 +51,7 @@ async def credentials_action() -> ApiResponse:
     try:
         if method == "GET" and sub_path == "status":
             from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT  # noqa: PLC0415
 
             params = request_info.request.query_params
             project_id = params.get("project_id")
@@ -58,7 +59,7 @@ async def credentials_action() -> ApiResponse:
             if project_id and project is None:
                 return ApiFailResponse(message="project not found")
             try:
-                status = await credentials_status(project, params.get("environment") or "development")
+                status = await credentials_status(project, params.get("environment") or DEFAULT_ENVIRONMENT)
             except ValueError as e:
                 return ApiFailResponse(message=str(e))
             return ApiSuccessResponse(data=status.model_dump(mode="json"))

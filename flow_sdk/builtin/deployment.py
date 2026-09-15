@@ -40,6 +40,7 @@ from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.core import Entity, action
+from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (
     ArtifactLinkSource,
@@ -171,7 +172,7 @@ class Deployment(Entity):
     #: The credential environment processes placed here read their values from.
     #: ``development`` is this computer; a cloud placement defaults to ``production``.
     environment: str = APIField(
-        default="development",
+        default=DEFAULT_ENVIRONMENT,
         description="Credential environment: development (this computer) or a named one (production, staging, ...)",
     )
 
@@ -226,7 +227,7 @@ class Deployment(Entity):
                 continue
             # One placement per environment: a staging and a production machine
             # of the same element on the same provider are two rows.
-            if environment is not None and (row.environment or "development") != environment:
+            if environment is not None and (row.environment or DEFAULT_ENVIRONMENT) != environment:
                 continue
             return row
         return None

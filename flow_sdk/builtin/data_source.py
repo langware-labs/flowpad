@@ -29,6 +29,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.source_item import MessageSpec
 from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
+from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.type_id import TypeId
@@ -53,21 +54,16 @@ logger = logging.getLogger(__name__)
 MIN_POLL_INTERVAL_SECONDS = 60
 
 
-class DataSourceNotFound(LookupError):
+class DataSourceNotFound(NameNotFound):
     """No data source has that name."""
 
-    def __init__(self, name: str) -> None:
-        self.name = name
-        super().__init__(f"no data source named {name!r}")
+    message = "no data source named {name!r}"
 
 
-class DataSourceAmbiguous(LookupError):
+class DataSourceAmbiguous(NameAmbiguous):
     """Several data source instances share the name; ``candidates`` are their typeids."""
 
-    def __init__(self, name: str, candidates: list[str]) -> None:
-        self.name = name
-        self.candidates = candidates
-        super().__init__(f"{len(candidates)} data sources are named {name!r}; get one by id: {', '.join(candidates)}")
+    plural = "data sources"
 
 
 def _outcome_dict(outcome: SendOutcome) -> dict:
@@ -373,11 +369,7 @@ class DataSource(Entity):
     async def set_connection(self, connection) -> None:
         """Bind the account this source acts as (a ``Connection`` or its provider), and save it;
         ``None`` unbinds. Refuses a provider the source does not declare."""
-        provider = "" if connection is None else str(getattr(connection, "provider", connection))
-        wanted = self.connections.names()
-        if provider and provider not in wanted:
-            raise ValueError(f"{self.name or self.provider} acts as {', '.join(wanted) or 'no account'}, not {provider}")
-        self.connection = provider
+        self.connection = self.connections.bind(connection, who=self.name or self.provider)
         await self.save()
 
     async def open(self, *, persona: bool = False):

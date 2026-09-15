@@ -46,7 +46,6 @@ def _vault_names() -> tuple[bool, set[str]]:
 
 def _file_status(scope: CredentialScope, environment: str) -> tuple[dict, list[dict]]:
     from flow_sdk.builtin.env_local_store import (  # noqa: PLC0415
-        GITIGNORE_NOT_IGNORED,
         env_local_block,
         env_local_path,
         gitignore_status,
@@ -55,13 +54,6 @@ def _file_status(scope: CredentialScope, environment: str) -> tuple[dict, list[d
 
     path = env_local_path(scope.root, environment)
     block = env_local_block(gitignore_status(scope.root, environment))
-    # Not ignored YET is not a block: a write appends the file's own name to
-    # .gitignore and verifies with git first (`ensure_gitignored`). Blocking here
-    # made a named environment's file — which no .gitignore lists until then —
-    # unwritable from the form. A negation that defeats the append still
-    # refuses at write time.
-    if block is not None and block["code"] == GITIGNORE_NOT_IGNORED:
-        block = None
     head = {
         "path": str(path) if path is not None else None,
         "exists": bool(path is not None and path.exists()),

@@ -316,6 +316,6 @@ export function toSaveRequest(
 /** The overrides that actually say something — an empty entry would read as a real one. */
 function realOverrides(d: CredentialDraft): Record<string, CredentialEnvironmentSettings> {
   return Object.fromEntries(
-    Object.entries(d.environments).filter(([, o]) => (o.value_store ?? null) !== null || (o.required ?? null) !== null),
+    Object.entries(d.environments).filter(([, o]) => o.value_store != null || o.required != null),
   );
 }

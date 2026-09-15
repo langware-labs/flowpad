@@ -1,3 +1,6 @@
+---
+id: dbca46b5-dba1-4e7d-a0fc-882bcb851cb2
+---
 # Connections — Python SDK and CLI
 
 Connections are the OAuth providers published by this instance. Python, the

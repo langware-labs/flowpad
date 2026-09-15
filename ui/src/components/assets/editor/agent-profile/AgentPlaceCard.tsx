@@ -1,4 +1,4 @@
-import { Agent, Deployment, type AgentPlace } from '@sdk';
+import { Agent, DEFAULT_CREDENTIAL_ENVIRONMENT, Deployment, type AgentPlace } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquare, MoreHorizontal } from 'lucide-react';
@@ -109,7 +109,7 @@ export function AgentPlaceCard({ agent, place, autoLaunchPrompt, pendingChanges 
           title={t`Credential environment this place reads`}
           data-testid="agent-place-environment"
         >
-          {deployment.environment || 'development'}
+          {deployment.environment || DEFAULT_CREDENTIAL_ENVIRONMENT}
         </span>
         {place.is_local ? (
           <span

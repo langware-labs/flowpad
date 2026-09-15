@@ -3,8 +3,8 @@
 ``curl -d '{...}'`` without ``-H`` sends ``Content-Type: application/x-www-form-urlencoded``.
 That is the spelling a person types, and every doc snippet uses it. Left alone, a declared
 FastAPI ``Body(...)`` answers it with a 422 and the shared ``RequestInfo`` parser reads it as a
-form and hands the action ``{}``. Fixing that per route grew three different readers; this is
-the one place it is fixed, at the transport, so no route or parser needs to know.
+form and hands the action ``{}``. This fixes it once, at the transport, before any route or
+parser reads the body.
 
 Rule: a ``POST``/``PUT``/``PATCH``/``DELETE`` whose ``Content-Type`` is form-urlencoded or
 absent, and whose body IS a JSON object or array, has its ``Content-Type`` header rewritten to
@@ -39,7 +39,7 @@ _FORM = "application/x-www-form-urlencoded"
 _WHITESPACE = b" \t\r\n"
 
 
-def json_container_or_none(raw: bytes) -> dict | list | None:
+def _json_container_or_none(raw: bytes) -> dict | list | None:
     """``raw`` decoded as a JSON object or array, else ``None`` (not JSON, or a bare scalar)."""
     text = raw.strip()
     if text[:1] not in (b"{", b"["):
@@ -100,7 +100,7 @@ class JsonBodyRelabelMiddleware:
             if size > MAX_SNIFF_BYTES:
                 break  # too large to hold for a sniff: keep the original label
 
-        if ended and looks_like_json and json_container_or_none(bytes(body)) is not None:
+        if ended and looks_like_json and _json_container_or_none(bytes(body)) is not None:
             scope = _relabelled(scope)
 
         async def replay() -> Message:

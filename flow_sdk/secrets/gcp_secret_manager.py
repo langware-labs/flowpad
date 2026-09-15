@@ -19,14 +19,17 @@ import asyncio
 import base64
 import logging
 import re
-from typing import Any, Awaitable, Callable, ClassVar, Iterable, Mapping, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Iterable, Mapping, Optional, TypeVar
 
 import httpx
 from pydantic import ConfigDict, Field, SecretStr
 
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.secrets.errors import StoreAccessDenied, StoreNeedsConnection, SecretStoreError
+from flow_sdk.secrets.errors import SecretStoreError, StoreAccessDenied, StoreNeedsConnection
 from flow_sdk.secrets.store import SecretStore, plain_values, register_store
+
+if TYPE_CHECKING:
+    from flow_sdk.connections import Connection
 
 logger = logging.getLogger(__name__)
 
@@ -162,13 +165,19 @@ class GcpSecretManagerStore(SecretStore):
         return deleted, kept
 
     # ── the account ─────────────────────────────────────────────────────────
+    #: The bound connection's row, looked up once per binding. Its token is not: that is resolved
+    #: on every client, so a revoked or refreshed grant is seen by the next verb.
+    _held: Optional["Connection"] = None
+
     async def _client(self) -> httpx.AsyncClient:
         if not self.connection:
             raise StoreNeedsConnection(self.type_name, list(self.connection_scopes))
         from flow_sdk.connections import Connection  # noqa: PLC0415
 
         # NotConnected / TokenUnavailable come from the SDK's own token path, as they are.
-        token = await (await Connection.get(self.connection)).token()
+        if self._held is None or self._held.provider != self.connection:
+            self._held = await Connection.get(self.connection)
+        token = await self._held.token()
         return httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"})
 
     def _raise_for(self, response: httpx.Response) -> None:

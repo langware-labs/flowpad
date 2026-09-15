@@ -151,12 +151,14 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
     return _reply_target(source, item, origin.kind)
 
 
-async def _target_for_item(item) -> ReplyTarget:
+async def _target_for_item(item, source=None) -> ReplyTarget:
     """The reply to one known inbound record — the turn that answers it quotes IT, not whatever
-    arrived last (a burst of messages each got a reply quoting the final one)."""
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    arrived last (a burst of messages each got a reply quoting the final one). ``source`` is the
+    row ``item`` arrived through when the caller already holds it; otherwise it is read."""
+    if source is None:
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
-    source = await DataSource.get_one({"id": item.data_source_id})
+        source = await DataSource.get_one({"id": item.data_source_id})
     if source is None:
         raise ChannelSendUnavailable("the data source this arrived through is gone")
     return _reply_target(source, item, str(getattr(source, "channel", "") or source.provider))
@@ -201,13 +203,19 @@ async def dispatch_channel_reply(
     text: str,
     source_id: str | None = None,
     item=None,
+    source=None,
 ):
     """Accept a reply and start it. Returns once DISPATCHED. ``item`` is the message this answers;
-    without it the reply answers the newest message someone else wrote."""
+    without it the reply answers the newest message someone else wrote. ``source`` is ``item``'s
+    already-loaded row, when the caller holds one."""
     from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
     try:
-        target = await (_target_for_item(item) if item is not None else resolve_reply_target(conversation_id, source_id=source_id))
+        target = await (
+            _target_for_item(item, source)
+            if item is not None
+            else resolve_reply_target(conversation_id, source_id=source_id)
+        )
     except ChannelSendUnavailable as exc:
         return ApiFailResponse(message=str(exc))
 
