@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 5
+version: 6
 ---
 # Secret stores — snippets (draft)
 
@@ -29,7 +29,7 @@ values between stores, or into a process, is a dict.
 A `CredentialSpec` uses the stores **as is**: it declares which names exist,
 names a store type per environment (`value_store`), and is the allow-list for
 both verbs. Connections stay what they are — accounts. A store can *use* a
-co\_\_ov.forEach(e=>e.style.display='');__w=\[];'restored '+__ov.length
+co\_\_ov.forEach(e=>e.style.display='');\_\_w=\[];'restored '+\_\_ov.length
 
 nnection to reach an external system, exactly like a data source; it never
 keeps a connection's token as one of its secrets.
