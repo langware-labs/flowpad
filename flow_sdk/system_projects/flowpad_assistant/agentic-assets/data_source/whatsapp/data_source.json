@@ -6,8 +6,10 @@
   "description": "A WhatsApp business number on Meta's Cloud API \u2014 people message it, an agent answers. Messages arrive by webhook, so Meta must be able to reach this instance.",
   "kind": "datasource.api.whatsapp",
   "auth": {
-    "secrets": {
-      "access_token": ""
+    "credential": "whatsapp",
+    "vars": {
+      "access_token": "FLOW_WHATSAPP_TOKEN",
+      "app_secret": "FLOW_WHATSAPP_SECRET"
     }
   },
   "setup_wiki": "WhatsApp business number",
@@ -21,15 +23,21 @@
     },
     "access_token": {
       "type": "text",
-      "required": true,
+      "required": false,
       "label": "Access token",
-      "hint": "The setup page's temporary token expires in 24 hours; a System User token does not. Stored on this machine, like a bot token."
+      "hint": "Leave empty when the agent's project declares the `whatsapp` credential (FLOW_WHATSAPP_TOKEN) \u2014 it is read from there. The setup page's temporary token expires in 24 hours; a System User token does not."
     },
     "verify_token": {
       "type": "text",
       "required": true,
       "label": "Webhook verify token",
       "hint": "Any string you choose. Paste the same one into Meta's webhook configuration \u2014 it is what proves the callback URL is yours."
+    },
+    "app_secret": {
+      "type": "text",
+      "required": false,
+      "label": "App secret",
+      "hint": "Leave empty when the agent's project declares the `whatsapp` credential (FLOW_WHATSAPP_SECRET). Otherwise the Meta app's App settings \u2192 Basic \u2192 App secret. Meta signs every webhook delivery with it, and a delivery whose signature does not verify is refused \u2014 the webhook URL is public."
     }
   }
 }

@@ -167,3 +167,17 @@ def test_spec_type_reads_the_authoring_form_and_dumps_it_back() -> None:
         assert Holder.model_validate(h.model_dump(mode="json")).shape == h.shape
     assert Holder().model_dump(mode="json")["shape"] is None
     assert Holder(shape=str).shape is str          # a type passes straight through
+
+
+def test_a_kind_miss_asks_the_loader_that_owns_its_namespace(monkeypatch) -> None:
+    """A kind defined by lazily loaded code (a data source asset's value class) resolves on first
+    read; a miss outside the loader's prefix never runs it."""
+    calls: list[str] = []
+
+    def loader() -> None:
+        calls.append("ran")
+        SchemaRegistry.register_kind("test.lazy.loaded", DataSpec.parse({"a": "int"}))
+
+    monkeypatch.setattr(SchemaRegistry, "_kind_loaders", [("test.lazy.", loader)])
+    assert SchemaRegistry.kind_type("other.namespace.kind") is None and calls == []
+    assert SchemaRegistry.kind_type("test.lazy.loaded") is not None and calls == ["ran"]

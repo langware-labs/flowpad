@@ -172,3 +172,42 @@ async def test_open_builds_the_source_with_what_is_bound(home, source_types):
 
     assert isinstance(live, _KeyedSource)
     assert live.credentials.values["KEYED_API_KEY"].get_secret_value() == "bound-value"
+
+
+CHANNEL = AuthSpec(credential="channel-pack", vars={"api_key": "CHANNEL_API_KEY"})
+
+
+async def _agent_in(project):
+    from flow_sdk.builtin.agent import Agent
+
+    agent = Agent(name="channel-owner", project_id=str(project.id))
+    await agent.save()
+    return agent
+
+
+async def test_a_credential_resolves_from_the_owning_agents_project_declaration(project):
+    from flow_sdk.builtin.credential_service import save_credential
+
+    await save_credential(
+        scope="project", project_id=str(project.id),
+        manifest={"name": "channel-pack", "vars": {"CHANNEL_API_KEY": {"label": "key"}}},
+        values={"CHANNEL_API_KEY": "from-project-env-local"},
+    )
+    agent = await _agent_in(project)
+    row = make_data_source("channel-test", owner=f"agent-{agent.id}", config={"api_key": "from-config"})
+
+    resolved = await resolve_credentials(CHANNEL, row)
+
+    assert resolved.shape == AuthShape.SECRETS and _value(resolved, "api_key") == "from-project-env-local"
+
+
+async def test_an_undeclared_credential_falls_back_to_the_row_config(project):
+    agent = await _agent_in(project)
+    row = make_data_source("channel-test", owner=f"agent-{agent.id}", config={"api_key": "from-config"})
+
+    assert _value(await resolve_credentials(CHANNEL, row), "api_key") == "from-config"
+
+
+def test_credential_and_vars_are_declared_together():
+    with pytest.raises(ValueError, match="go together"):
+        AuthSpec(credential="channel-pack")

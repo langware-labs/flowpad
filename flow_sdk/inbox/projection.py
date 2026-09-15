@@ -654,6 +654,14 @@ def is_agent_owner(owner) -> bool:
     return owner is not None and str(getattr(owner, "type", "")) == EntityType.AGENT.value
 
 
+async def owning_agent(entity):
+    """The Agent that owns ``entity``, or None when its owner is a user."""
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+    owner = await owner_of(entity)
+    return await Agent.get_by_id(owner.id) if is_agent_owner(owner) else None
+
+
 def is_self_address(source, address: str) -> bool:
     """Is this address one of OUR account's on that source?
 

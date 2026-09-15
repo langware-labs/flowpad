@@ -9,7 +9,7 @@ from contextlib import contextmanager
 
 from flow_sdk.ingest.testing import local_http_server
 
-from .test_whatsapp_source import WA_ID, _Graph, _text, _webhook, wa_source
+from .test_whatsapp_source import APP_SECRET, WA_ID, _Graph, _text, _webhook, sign, wa_source
 
 
 @contextmanager
@@ -18,7 +18,13 @@ def case(monkeypatch, tmp_path):
     with local_http_server(_Graph()) as base:
         monkeypatch.setattr(wa_source, "GRAPH_API_BASE", base)
         yield {
-            "config": {"phone_number_id": phone_number_id, "access_token": "EAAG-test", "verify_token": "matrix-token"},
+            "config": {
+                "phone_number_id": phone_number_id,
+                "access_token": "EAAG-test",
+                "verify_token": "matrix-token",
+                "app_secret": APP_SECRET,
+            },
+            "sign": lambda raw: {"X-Hub-Signature-256": sign(raw)},
             "push": _webhook(_text("wamid.MATRIX1", "hello from whatsapp", ts=str(int(time.time()))), phone_number_id=phone_number_id),
             "handshake": {"hub.mode": "subscribe", "hub.verify_token": "matrix-token", "hub.challenge": "42"},
             "min_items": 1,

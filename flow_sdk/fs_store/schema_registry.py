@@ -809,6 +809,7 @@ class SchemaRegistry:
     # table is the standing rule. Runtime-only, like ``entity_cls`` — not part
     # of ``to_dict()`` or the schema hash. A miss is None, never a mint.
     _kinds: ClassVar[dict[str, Any]] = {}
+    _kind_loaders: ClassVar[list[tuple[str, Callable[[], Any]]]] = []
     _kind_of_shape: ClassVar[dict[int, str]] = {}   # id(shape) → kind; the O(1) inverse
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
@@ -905,10 +906,25 @@ class SchemaRegistry:
         error). Entity type names resolve through the same table: ONE namespace."""
         cls._ensure_loaded()
         hit = cls._kinds.get(kind)
+        if hit is None and kind not in cls._types:
+            # A kind can be defined by code loaded on demand (a data source asset's value class):
+            # the loader owning its namespace gets a chance to register it, then look again.
+            for prefix, loader in cls._kind_loaders:
+                if kind.startswith(prefix):
+                    loader()
+            hit = cls._kinds.get(kind)
         if hit is not None:
             return hit
         info = cls._types.get(kind)
         return info.entity_cls if info is not None else None
+
+    @classmethod
+    def add_kind_loader(cls, prefix: str, loader: Callable[[], Any]) -> None:
+        """Ask ``loader`` whenever a kind under ``prefix`` misses — for kinds whose classes are defined
+        by code the process loads lazily. The loader must be cheap once loaded; it is never dropped,
+        so code loaded later (an authored source) still answers."""
+        if (prefix, loader) not in cls._kind_loaders:
+            cls._kind_loaders.append((prefix, loader))
 
     @classmethod
     def register_crud_type(cls, type_name: str, *, icon: str | None = None) -> None:

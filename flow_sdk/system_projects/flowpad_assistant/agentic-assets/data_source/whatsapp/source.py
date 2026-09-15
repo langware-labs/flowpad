@@ -20,11 +20,12 @@ Three more facts:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Mapping, Optional
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.credentials import Credentials
 from flow_sdk.sources.errors import (
     AccessDenied,
     NotFound,
@@ -127,6 +128,20 @@ class WhatsAppSource(Source):
                 if isinstance(metadata, dict) and metadata.get("phone_number_id"):
                     return str(metadata["phone_number_id"])
         return ""
+
+    @classmethod
+    def webhook_authentic(cls, headers: Mapping[str, str], body: bytes, credentials: Credentials) -> bool:
+        """Meta's ``X-Hub-Signature-256: sha256=<hex hmac of the raw body>`` under the app secret. A row
+        with no app secret accepts nothing."""
+        import hashlib  # noqa: PLC0415
+        import hmac  # noqa: PLC0415
+
+        stored = credentials.values.get("app_secret")
+        secret = stored.get_secret_value() if stored is not None else ""
+        offered = str(headers.get("x-hub-signature-256") or "")
+        if not secret or not offered:
+            return False
+        return hmac.compare_digest("sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest(), offered)
 
     async def _open(self) -> None:
         self._client = http.client()

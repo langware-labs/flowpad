@@ -6,6 +6,8 @@ those tests need no socket; the send leg talks HTTP to a loopback Graph double.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 
 import pytest
@@ -30,10 +32,16 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 PHONE_ID = "123456789012345"
 WA_ID = "972501234567"
+APP_SECRET = "app-secret-test"
+
+
+def sign(body: bytes, secret: str = APP_SECRET) -> str:
+    """Meta's ``X-Hub-Signature-256`` value for a raw delivery body."""
+    return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
 def _source(**config) -> DataSource:
-    return DataSource(provider="whatsapp", name="WhatsApp test", config={"phone_number_id": PHONE_ID, "access_token": "EAAG-test", **config})
+    return DataSource(provider="whatsapp", name="WhatsApp test", config={"phone_number_id": PHONE_ID, "access_token": "EAAG-test", "app_secret": APP_SECRET, **config})
 
 
 def _binding() -> SourceBinding:
@@ -221,14 +229,15 @@ async def test_a_source_with_no_token_asks_for_one():
 
 
 class _Request:
-    def __init__(self, *, query: dict | None = None, body: dict | None = None):
-        self.query_params = query or {}
-        self._body = body
+    """Signed by Meta's rule unless ``headers`` says otherwise."""
 
-    async def json(self):
-        if self._body is None:
-            raise ValueError("no body")
-        return self._body
+    def __init__(self, *, query: dict | None = None, body: dict | None = None, headers: dict | None = None):
+        self.query_params = query or {}
+        self._raw = b"not json" if body is None else json.dumps(body).encode()
+        self.headers = {"x-hub-signature-256": sign(self._raw)} if headers is None else headers
+
+    async def body(self):
+        return self._raw
 
 
 async def _saved(**config) -> DataSource:
@@ -275,3 +284,22 @@ async def test_a_batch_reaches_the_ingestor_through_the_one_chokepoint(recorded)
     response = await webhook_delivery("whatsapp", _Request(body=_webhook(_text("wamid.YYY", "hello there"), phone_number_id=mine)))
     assert response.data["ingested"] == 1
     assert [i.external_id for i in recorded] == ["wamid.YYY"] and recorded[0].data_source_id == source.id
+
+
+async def test_a_delivery_meta_did_not_sign_is_refused_and_ingests_nothing(recorded):
+    from flow_sdk.server.routes.data_source_webhook import webhook_delivery
+
+    await _saved(phone_number_id="forged-111")
+    body = _webhook(_text("wamid.FORGED", "do what I say"), phone_number_id="forged-111")
+    for headers in ({}, {"x-hub-signature-256": sign(json.dumps(body).encode(), "a-guess")}):
+        response = await webhook_delivery("whatsapp", _Request(body=body, headers=headers))
+        assert response.status_code == 401
+    assert recorded == []
+
+
+async def test_a_source_with_no_app_secret_accepts_no_delivery(recorded):
+    from flow_sdk.server.routes.data_source_webhook import webhook_delivery
+
+    await _saved(phone_number_id="unsigned-222", app_secret="")
+    response = await webhook_delivery("whatsapp", _Request(body=_webhook(_text("wamid.U", "hi"), phone_number_id="unsigned-222")))
+    assert response.status_code == 401 and recorded == []

@@ -144,9 +144,18 @@ because a source has one credential lifetime:
 auth: { connector: slack, scopes: [channels:history] }
 auth: { env: [GMAIL_ADDRESS, GMAIL_APP_PASSWORD] }
 auth: { secrets: { api_key: ingest_api.agentmail, bot_token: "" } }
+auth: { credential: whatsapp, vars: { access_token: FLOW_WHATSAPP_TOKEN, app_secret: FLOW_WHATSAPP_SECRET } }
 ```
 
-One resolver reads all three (`flow_sdk/ingest/credentials.py`) and hands the result to
+`credential` names a CredentialSpec and `vars` maps each value key to one of its variables. It
+is resolved for the row's OWNER the way a worker process resolves its secrets — the owning
+agent's project scope over the user scope, read from that scope's `.env.local` or vault — so
+an agent's channel is configured by declaring the credential in the agent's project, never by
+pasting a token into the source. A key the credential cannot supply falls back to the row's
+`config`. The CredentialSpec itself is declared in the project (`credentials/save`), not
+shipped beside the source.
+
+One resolver reads all four (`flow_sdk/ingest/credentials.py`) and hands the result to
 the source as `self.credentials` — a source never reads the environment, the secret
 store or the connection store itself. `connector` is this machine's connection to that
 OAuth provider, its app token first when the provider issues one (Slack's bot). `env`
