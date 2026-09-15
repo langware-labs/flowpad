@@ -13,7 +13,8 @@ import { useViewerStore } from '@src/hooks/flow-hooks';
 import { ViewType, WebappSubview } from '@sdk';
 import { useContext as useSdkContext } from '@sdk/react/hooks';
 import { hasElectronDisplayCapture } from '@src/components/display-toolbar/capture-region';
-import { ExternalLink, ImagePlus, RefreshCw, Terminal } from 'lucide-react';
+import { Check, Copy, ExternalLink, ImagePlus, RefreshCw, Terminal } from 'lucide-react';
+import { useCopied } from '@src/components/ui/copy-button';
 import React, { useCallback, useRef } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -74,6 +75,11 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
   const handleOpenInNewTab = useCallback(() => {
     if (src) openExternal(src);
   }, [src]);
+
+  const { copied, copy } = useCopied();
+  const handleCopyUrl = useCallback(() => {
+    if (src) void copy(src);
+  }, [copy, src]);
 
   const hasWebApp = Boolean(src);
   const showAnnotate = !!onAnnotate && isDesktop && hasElectronDisplayCapture();
@@ -137,6 +143,24 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
                 <p>{showPanel ? <Trans>Hide panel</Trans> : <Trans>Show panel</Trans>}</p>
               </TooltipContent>
             </Tooltip>}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  aria-label={t`Copy URL`}
+                  data-testid="webapp-viewer-copy-url"
+                  onClick={handleCopyUrl}
+                  disabled={!hasWebApp}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
+                <p>{copied ? <Trans>Copied</Trans> : <Trans>Copy URL</Trans>}</p>
+              </TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
