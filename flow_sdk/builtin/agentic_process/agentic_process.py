@@ -4177,7 +4177,9 @@ class AgenticProcess(Entity):
                                             continue
                                         if entry.kind in _NOISE_KINDS:
                                             continue
-                                        await handler.on_flow_data(entry_to_flowdata(entry, observation_kind="live"))
+
+                                        for fd in entry_to_flowdata(entry, observation_kind="live"):
+                                            await handler.on_flow_data(fd)
                                     emitted = len(entries)
                                     if provider_turn_complete:
                                         logger.info(
@@ -4482,7 +4484,8 @@ class AgenticProcess(Entity):
                                     # in the gap.
                                     saw_marker = True
                                     continue
-                                await handler.on_flow_data(entry_to_flowdata(entry, observation_kind="live"))
+                                for fd in entry_to_flowdata(entry, observation_kind="live"):
+                                    await handler.on_flow_data(fd)
                     if not live:
                         # Backlog-only stream (see ``live``): the pass above just
                         # flushed everything after the client's stated position
