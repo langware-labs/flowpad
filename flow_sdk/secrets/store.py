@@ -78,13 +78,10 @@ class SecretStore:
     async def set_connection(self, connection: Any) -> None:
         """Bind the account this store acts as (a ``Connection`` or its provider); ``None`` unbinds.
         Refuses a provider the store does not declare. The binding travels in :attr:`ref`."""
-        self._bind("" if connection is None else str(getattr(connection, "provider", connection)))
+        self._bind(connection)
 
-    def _bind(self, provider: str) -> None:
-        wanted = list(self.connection_scopes)
-        if provider and provider not in wanted:
-            raise ValueError(f"a {self.type_name} store acts as {', '.join(wanted) or 'no account'}, not {provider}")
-        self.connection = provider
+    def _bind(self, connection: Any) -> None:
+        self.connection = self.connections.bind(connection, who=f"a {self.type_name} store")
 
     # ── lookup ──────────────────────────────────────────────────────────────
     @classmethod

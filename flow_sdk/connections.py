@@ -112,6 +112,15 @@ class ConnectionRequirements:
     def scopes(self, provider: str) -> list[str]:
         return list(self._scopes.get(provider, []))
 
+    def bind(self, connection: object, *, who: str) -> str:
+        """The provider of ``connection`` (a ``Connection`` or its provider; ``None`` → ``""``), refusing
+        one ``who`` does not declare — the one binding rule every consumer that acts as an account uses."""
+        provider = "" if connection is None else str(getattr(connection, "provider", connection))
+        wanted = self.names()
+        if provider and provider not in wanted:
+            raise ValueError(f"{who} acts as {', '.join(wanted) or 'no account'}, not {provider}")
+        return provider
+
     def __repr__(self) -> str:
         return f"ConnectionRequirements({self._scopes})"
 

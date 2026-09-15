@@ -8,6 +8,7 @@ from typing import Optional
 
 from pydantic import ConfigDict
 
+from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
 from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialEnvironmentSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -45,7 +46,7 @@ class CredentialStatusRowSpec(DataSpec):
     scope: str
     project_id: Optional[str] = None
     #: The environment these presences were read for.
-    environment: str = "development"
+    environment: str = DEFAULT_ENVIRONMENT
     #: This credential's store in that environment.
     value_store: str
     #: The manifest's own ``value_store`` and per-environment overrides — what an
@@ -71,7 +72,7 @@ class ScopeFileStatusSpec(DataSpec):
     scope: str
     project_id: Optional[str] = None
     #: The environment this env file belongs to (``.env.local`` is ``development``).
-    environment: str = "development"
+    environment: str = DEFAULT_ENVIRONMENT
     path: Optional[str] = None
     exists: bool = False
     blocked: bool = False
@@ -85,9 +86,9 @@ class CredentialsStatusSpec(DataSpec):
 
     project_id: Optional[str] = None
     #: The environment this status was read for.
-    environment: str = "development"
+    environment: str = DEFAULT_ENVIRONMENT
     #: Every environment there is: ``development`` plus each Deployment's.
-    environments: list[str] = ["development"]
+    environments: list[str] = [DEFAULT_ENVIRONMENT]
     vault_enabled: bool = False
     credentials: list[CredentialStatusRowSpec] = []
     files: list[ScopeFileStatusSpec] = []

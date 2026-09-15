@@ -23,6 +23,7 @@ from pydantic import field_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
+from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
 from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     SCOPE_PROJECT,
@@ -44,21 +45,16 @@ if TYPE_CHECKING:
     from flow_sdk.secrets import SecretStore
 
 
-class CredentialNotFound(LookupError):
+class CredentialNotFound(NameNotFound):
     """Neither the project nor the user scope declares a credential of that name."""
 
-    def __init__(self, name: str) -> None:
-        self.name = name
-        super().__init__(f"no credential named {name!r} in this project or the user scope")
+    message = "no credential named {name!r} in this project or the user scope"
 
 
-class CredentialAmbiguous(LookupError):
+class CredentialAmbiguous(NameAmbiguous):
     """More than one credential of that name in the scope that answered; ``candidates`` are typeids."""
 
-    def __init__(self, name: str, candidates: list[str]) -> None:
-        self.name = name
-        self.candidates = candidates
-        super().__init__(f"{len(candidates)} credentials are named {name!r}; get one by id: {', '.join(candidates)}")
+    plural = "credentials"
 
 
 class CredentialSpec(Entity):
@@ -105,7 +101,7 @@ class CredentialSpec(Entity):
     def store_for(self, environment: str = DEFAULT_ENVIRONMENT) -> str:
         """Where this credential's values live in ``environment``."""
         override = (self.environments or {}).get(environment)
-        return (override.value_store if override and override.value_store else None) or self.value_store
+        return (override and override.value_store) or self.value_store
 
     @property
     def is_template(self) -> bool:

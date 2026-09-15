@@ -14,7 +14,8 @@ interface NavigatorSectionProps {
   /** How many rows `children` will render. Drives the default-open rule ONLY —
    *  it is never displayed. Section headers carry no count badge by design. */
   itemCount: number;
-  /** Rendered in place of `children` when settled and empty. */
+  /** Rendered in place of `children` when settled and empty. Omit it when the
+   *  children render their own empty state — they then show either way. */
   emptyState?: ReactNode;
   /** Trailing header control. A SIBLING of the collapse button, never inside
    *  it: nesting an interactive element in a `<button>` is invalid and the click
@@ -66,7 +67,7 @@ export function NavigatorSection({
         </button>
         {action && <div className="flex flex-shrink-0 items-center pe-1">{action}</div>}
       </div>
-      {open && <div className="pb-1">{isEmpty ? emptyState : children}</div>}
+      {open && <div className="pb-1">{isEmpty ? (emptyState ?? children) : children}</div>}
     </div>
   );
 }

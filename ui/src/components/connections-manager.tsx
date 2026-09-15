@@ -32,8 +32,6 @@ import { ConfirmDialog } from './ui/confirm-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
-/** The URL option naming the credential environment the table shows; absent means development. */
-const CREDENTIAL_ENVIRONMENT_OPTION = 'env';
 import { UsageCell } from './connections-manager/usage-cell';
 import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use-credential-usage';
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
@@ -64,6 +62,9 @@ import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { Plus } from 'lucide-react';
 import { useProjects } from '@src/hooks/use-projects';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+
+/** The URL option naming the credential environment the table shows; absent means development. */
+const CREDENTIAL_ENVIRONMENT_OPTION = 'env';
 
 export interface ConnectionsManagerProps {
   /**

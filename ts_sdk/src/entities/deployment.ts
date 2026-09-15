@@ -5,6 +5,7 @@ import { normalizeKind } from '../models/Kind';
 import { isTypeId, TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
+import { DEFAULT_CREDENTIAL_ENVIRONMENT } from '../services/credentials-service';
 
 /** Provider label carrying a local dev server's port. Pairs with `runtimePort`. */
 const RUNTIME_PORT_LABEL = 'flowpad.runtime.port';
@@ -146,7 +147,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     this.observations = normalizeObservations(deployment.observations);
     this.source_revision = deployment.source_revision ?? null;
     this.project_id = deployment.project_id ?? null;
-    this.environment = deployment.environment || 'development';
+    this.environment = deployment.environment || DEFAULT_CREDENTIAL_ENVIRONMENT;
     this.validateStructure();
   }
 

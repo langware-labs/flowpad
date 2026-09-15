@@ -262,8 +262,14 @@ def ensure_gitignored(root: Path | str | None, environment: str = DEFAULT_ENVIRO
 
 
 def env_local_block(status: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """The reason a value must not be written here, or ``None`` if it may be."""
-    if status["ignored"] and status["code"] != GITIGNORE_NO_DIR:
+    """The reason a value must not be written here, or ``None`` if it may be.
+
+    Not ignored YET is not a block: a write appends the file's own name to
+    .gitignore and verifies with git first (``ensure_env_file_ignored``), so a
+    named environment's file — which no .gitignore lists until then — stays
+    writable. A negation that defeats the append still refuses at write time.
+    """
+    if (status["ignored"] and status["code"] != GITIGNORE_NO_DIR) or status["code"] == GITIGNORE_NOT_IGNORED:
         return None
     return {"code": status["code"], "reason": status["reason"]}
 

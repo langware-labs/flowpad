@@ -336,14 +336,24 @@ def test_env_local_block_is_none_when_writable(tmp_path):
     assert env_local_block(gitignore_status(_project(tmp_path))) is None
 
 
+def test_env_local_block_lets_a_not_yet_ignored_file_through(tmp_path):
+    """A write appends the file to .gitignore and verifies, so not ignored YET is not a block."""
+    _init_repo(tmp_path)
+
+    assert gitignore_status(_project(tmp_path))["code"] == GITIGNORE_NOT_IGNORED
+    assert env_local_block(gitignore_status(_project(tmp_path))) is None
+
+
 def test_env_local_block_reports_a_code(tmp_path):
     _init_repo(tmp_path)
+    (tmp_path / ".env.local").write_text("A=1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", ".env.local"], cwd=tmp_path, check=True, capture_output=True)
 
     block = env_local_block(gitignore_status(_project(tmp_path)))
 
     assert block is not None
-    assert block["code"] == GITIGNORE_NOT_IGNORED
-    assert "NOT excluded" in block["reason"]
+    assert block["code"] == GITIGNORE_TRACKED
+    assert "TRACKED" in block["reason"]
 
 
 def test_writing_outside_a_repo_adds_no_gitignore(tmp_path):

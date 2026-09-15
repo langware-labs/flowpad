@@ -1,3 +1,6 @@
+---
+id: 77bc8d9e-4546-4410-9a56-c0ba8331d97b
+---
 # Pipes — wiring a source to whatever consumes it
 
 How data gets from a source to the thing that wants it. Two halves: what runs

@@ -46,12 +46,14 @@ from flow_sdk.server import FlowServer
 from .routes import (
     activity_router,
     agent_records_router,
+    agents_router,
     asset_share_router,
     assets_router,
     auth_router,
     capabilities_router,
     chat_router,
     cloud_router,
+    data_source_webhook_router,
     debug_router,
     dep_graph_router,
     detection_router,
@@ -62,9 +64,7 @@ from .routes import (
     git_router,
     graph_workflows_router,
     hooks_router,
-    data_source_webhook_router,
     ingest_router,
-    agents_router,
     journeys_router,
     markdown_index_router,
     navigate_router,
@@ -580,8 +580,8 @@ async def _start_cloud_ws_listener() -> None:
 
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
-    from flow_sdk.config import clear_server_info
     from flow_sdk.builtin.agentic_process.naming.runtime import shutdown_name_observation
+    from flow_sdk.config import clear_server_info
 
     await shutdown_name_observation()
 

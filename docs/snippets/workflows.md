@@ -1,3 +1,6 @@
+---
+id: 8b46e44c-566c-4867-8611-b25acf83c86a
+---
 # Workflows — snippets
 
 `flow_sdk.blocks` is the plain-Python workflow surface. No engine, no hidden
