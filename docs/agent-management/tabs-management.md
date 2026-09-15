@@ -50,7 +50,7 @@ Relevant files:
 | Default terminal view | `/dock/shell`                                            | `loadShellRoute()` resolves a default terminal `Tab` with `loadNextProcess()` and redirects to a concrete shell/process pointer.                                                                                   |
 | New plain terminal    | `/dock/shell/new_terminal`                               | Creates a new `Shell`, then replaces the URL with `/dock/shell/shell-<shellId>`; this redirect-only URL is not materialized as a persistent Tab.                                                                   |
 | Plain shell tab       | `/dock/shell/shell-<shellId>` or `/dock/shell/<shellId>` | `setupTab(dock)` materializes the `Tab`, then `loadShell(shellId)` loads the Shell, resolves project/workdir, starts or reattaches the PTY, and clears process context.                                            |
-| Worker terminal tab   | `/dock/shell/agentic_process-<processId>`                | `setupTab(dock)` materializes the `Tab`, then `loadProcess(processId)` loads the process, resolves project/workdir, calls `process.start({ visible: true })`, resolves the linked Shell, and sets process context. |
+| Worker terminal tab   | `/dock/shell/agentic_process-<processId>`                | `setupTab(dock)` materializes the `Tab`, then `loadProcess(processId)` loads the process, resolves project/workdir, reuses a cached linked Shell, and sets process context; the mounted terminal view runs `process.start()`. |
 | Worker transcript     | `/dock/lens/<worker>/transcript/<sessionId>`             | Read-only transcript view. `AgenticProcess.dockPointer` defaults here once `session_id` is known; terminal-opening call sites must use `terminalDockPointer`.                                                      |
 
 `ViewType.AGENTIC_PROCESS` still exists and `ContentPanel` has a
@@ -75,9 +75,10 @@ authoritative. For terminal docks setup is the existing shell/process FSM:
 
 ```text
 loadShellRoute
-  -> loadShell or loadProcess
-  -> process.start({ visible: true }) for agentic processes
-  -> process.shell() / PTY attach
+  -> loadShell or loadProcess     # entity + project/context only; no process.start()
+  -> route commits, terminal view mounts
+  -> mounted view runs process.start({ visible: true, cols, rows, retry: true }) / PTY attach
+     (TabbedTerminal.tsx; loaders must not await PTY/WS side effects)
   -> terminal body can render
 ```
 

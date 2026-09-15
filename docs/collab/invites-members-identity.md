@@ -109,20 +109,22 @@ Hub FMs do not expose a top-level conversation id.
 
 ### Step 3 — Join + fetch (only when a conversation was resolved)
 
-When `linked_conv_id` is set (`:3247`):
+When `linked_conv_id` is set (`:4746`):
 
 ```
-POST /graph/conversation/<id>/join   → enters participants, starts WS fanout  (:3255)
-GET  /graph/conversation/<id>        → the conversation row                   (:3256)
-GET  /graph/conversation/<id>/members→ authoritative roster (overrides         (:3261)
+POST /graph/conversation/<id>/join   → enters participants, starts WS fanout  (:4754)
+GET  /graph/conversation/<id>        → the conversation row                   (:4755)
+GET  /graph/conversation/<id>/members→ authoritative roster (overrides         (:4760)
                                         the conv's embedded participants)
-_learn_address_book(participants)    → upsert local User rows for contacts     (:3276)
-_upsert_hub_conversation_metadata(…) → mirror the conv into local SQLite       (:3277)
-_sync_conversation_messages(…)       → pull pre-accept history (§4)            (:3281)
+_learn_address_book(participants)    → upsert local User rows for contacts     (:4776)
+_upsert_hub_conversation_metadata(…) → mirror the conv into local SQLite       (:4777)
+_sync_conversation_messages(…)       → pull pre-accept history (§4),           (:4785)
+                                        download_bundles=False
+_schedule_conversation_bundle_pull(…)→ bundle bytes pulled after the response  (:4796)
 ```
 
 The `/members` roster, when present, *replaces* the conversation's embedded
-`participants` (`:3267-3269`) — it is the more authoritative shape. The whole
+`participants` (`:4766-4768`) — it is the more authoritative shape. The whole
 block is best-effort: a failure logs and proceeds so the local invitation is
 still marked accepted.
 
@@ -195,8 +197,8 @@ from `created_by` — see [`./conversation-model.md`](./conversation-model.md);
 
 ## 4. Late-joiner full-history sync
 
-`_sync_conversation_messages(conv_id, someone_typeid)`
-(`flow_message_action.py:2508`).
+`_sync_conversation_messages(conv_id, someone_typeid, *, download_bundles=True)`
+(`flow_message_action.py:3692`).
 
 **Why it exists:** the hub WS bridge only fans messages from *join-time
 forward*. A recipient who accepts an invitation has missed everything the
@@ -204,13 +206,15 @@ inviter sent before the join — most importantly the very first message. Withou
 an explicit pull those stay invisible until a manual refresh.
 
 ```
-GET /graph/conversation/<id>/flow_message   (scoped query, auth via membership) (:2531)
+GET /graph/conversation/<id>/flow_message   (scoped query, auth via membership) (:3717)
         ↓
-sort by created_date, oldest-first                                              (:2535)
+sort by created_date, oldest-first                                              (:3721)
         ↓  for each FM:
-materialize_flow_message(remote=True, notify=True)  — idempotent                (:2542)
-        ↓  if it advertises attachment_filename:
-_download_and_unpack_bundle(...)  — pull embedded TYPE_ID attachments           (:2559)
+materialize_flow_message(remote=True, notify=True)  — idempotent                (:3728)
+        ↓  unless download_bundles=False (invitation accept):                   (:3743)
+_pull_bundle_for_hub_fm(conv_id, raw_fm)  — if it advertises attachment_filename,  (:3745)
+                                   _download_and_unpack_bundle(...) pulls
+                                   embedded TYPE_ID attachments
 ```
 
 `materialize_flow_message` is idempotent, so any message already delivered via
@@ -277,26 +281,29 @@ token. The wire fields are a *cushion* for display, not the identity of record.
 ### The UI resolution chain
 
 `FlowMessageBubble.tsx` (`ui/src/components/conversation/FlowMessageBubble.tsx`)
-computes `displayName` through a strictly ordered tiered chain (`:326-343`).
+computes `displayName` through a strictly ordered tiered chain (`:406-424`).
 The tiers exist to avoid flashing an alarm glyph on *legitimate* gaps (cold
 load, a member who has since left, a cross-instance bundle import):
 
 ```
-1. overrideName            local self-edit override — always wins          (:329)
-2. rosterLabel             participantLabelByUserId(participants,sender_id) (:331)
+1. overrideName            local self-edit override — always wins          (:406)
+2. deskBrand               helpdesk, not me → wire sender_name (desk brand) (:408)
+3. rosterLabel             participantLabelByUserId(participants,sender_id) (:410)
                            ← canonical hub-authoritative label
-3. isCurrentUser           it's me → localUser.name || 'You'               (:333)
-4. wireSenderName          wire-stamped sender_name — soft cushion only    (:335)
+4. isCurrentUser           it's me → localUser.name || 'You'               (:412)
+5. wireSenderName          wire-stamped sender_name — soft cushion only    (:414)
                            (departed member / other-instance bundle import)
-5. creatorLabel            creator entity name (invitation/system msgs)    (:337)
-6a. UNRESOLVED_SENDER_LABEL  '⚠ unknown sender' — alert                    (:339)
-6b. t('unknown')             benign fallback                               (:342)
+6. agentSender.name        the sending agent's name                        (:416)
+7. creatorLabel            creator entity name (invitation/system msgs)    (:418)
+8a. UNRESOLVED_SENDER_LABEL  '⚠ unknown sender' — alert                    (:420)
+    (sender_id && rosterReady && !isHelpdesk)
+8b. t`unknown`               benign fallback                               (:423)
 ```
 
-Tier 6a (the alert) fires **only** when `sender_id` is set **and** the roster
-has confirmed loaded (`rosterReady`) **and** it is not a community message —
+Tier 8a (the alert) fires **only** when `sender_id` is set **and** the roster
+has confirmed loaded (`rosterReady`) **and** it is not a helpdesk message (`!isHelpdesk`) —
 i.e. "the hub roster says no, and no other signal exists". Every benign gap
-(roster still loading, no `sender_id`, a cushion matched) routes to 6b instead.
+(roster still loading, no `sender_id`, a cushion matched) routes to 8b instead.
 
 ### The unresolved-sender alert
 
