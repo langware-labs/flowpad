@@ -817,6 +817,9 @@ class SchemaRegistry:
     # Whether the declarative type-info registrations have run in this process.
     _loaded: ClassVar[bool] = False
     _loading: ClassVar[bool] = False
+    # Whether the builtin entity modules (which attach ``entity_cls``) are imported.
+    _entities_loaded: ClassVar[bool] = False
+    _entities_loading: ClassVar[bool] = False
 
     # Backward compat: direct class attribute access for default_index_types
     default_index_types: ClassVar[list[str]] = _BUILTIN_DEFAULT_TYPES
@@ -850,6 +853,29 @@ class SchemaRegistry:
             cls._loaded = True
         finally:
             cls._loading = False
+
+    @classmethod
+    def _ensure_entities_loaded(cls) -> None:
+        """Bind every builtin ``entity_cls`` on the first read that asks for one.
+
+        ``entity_cls`` is attached by ``Entity.__init_subclass__``, i.e. only once
+        the entity modules are imported. A bare SDK script never imports them, so
+        without this ``get_entity_cls("markdown")`` is None and ``from_record``
+        builds a bare ``Entity``. Deliberately separate from ``_ensure_loaded``:
+        plain type metadata reads (the asset/source contract) must stay free of
+        application imports — only readers of ``entity_cls`` pay for them.
+        """
+        if cls._entities_loaded or cls._entities_loading:
+            return
+        cls._ensure_loaded()
+        # Flag BEFORE importing: the entity modules register on import, and any
+        # registry read made mid-import must not re-enter this loader.
+        cls._entities_loading = True
+        try:
+            import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — binds entity_cls
+            cls._entities_loaded = True
+        finally:
+            cls._entities_loading = False
 
     # ---------------------------------------------------------------------------
     # Registration
@@ -1203,11 +1229,13 @@ class SchemaRegistry:
 
     @classmethod
     def get_entity_cls(cls, type_name: str) -> type | None:
+        cls._ensure_entities_loaded()
         info = cls.get(type_name)
         return info.entity_cls if info else None
 
     @classmethod
     def is_entity_type(cls, type_name: str) -> bool:
+        cls._ensure_entities_loaded()
         info = cls.get(type_name)
         return bool(info and info.entity_cls is not None)
 
@@ -1217,17 +1245,18 @@ class SchemaRegistry:
 
     @classmethod
     def is_public_entity(cls, type_name: str) -> bool:
+        cls._ensure_entities_loaded()
         info = cls.get(type_name)
         return bool(info and info.entity_cls is not None and info.api_visible)
 
     @classmethod
     def get_all_entity_types(cls) -> list[str]:
-        cls._ensure_loaded()
+        cls._ensure_entities_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None]
 
     @classmethod
     def get_all_entity_classes(cls) -> list[type]:
-        cls._ensure_loaded()
+        cls._ensure_entities_loaded()
         return [v.entity_cls for v in cls._types.values() if v.entity_cls is not None]
 
     @classmethod
@@ -1239,7 +1268,7 @@ class SchemaRegistry:
         tuple, so a new shareable child type enrolls by setting ``shared_child=True``
         in its ``TypeInfo`` declaration — no edit to the sync code.
         """
-        cls._ensure_loaded()
+        cls._ensure_entities_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None and v.shared_child]
 
     @classmethod
@@ -1288,7 +1317,7 @@ class SchemaRegistry:
 
     @classmethod
     def get_public_entity_types(cls) -> list[str]:
-        cls._ensure_loaded()
+        cls._ensure_entities_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None and v.api_visible]
 
     # --- Presentation read-through getters (registry is the single source) ---
@@ -1336,7 +1365,7 @@ class SchemaRegistry:
 
     @classmethod
     def get_all_record_types(cls) -> list[str]:
-        cls._ensure_loaded()
+        cls._ensure_entities_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None]
 
     @classmethod
