@@ -21,6 +21,15 @@ from flow_sdk.fs_store.indexer.functions.claude_projects import (
 from flow_sdk.schema.type_info.project_type_info import PROJECT
 from tests.fixtures.identity import resolve_id
 
+@pytest.fixture(autouse=True)
+def bind_application_identity_adapters():
+    """PROJECT's carrier, stable key and parser are bound at runtime, not declared
+    on the TypeInfo — without this the file only passes after another test binds them."""
+    from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
+
+    register_asset_runtime_bindings()
+
+
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "existing-project"))
 
