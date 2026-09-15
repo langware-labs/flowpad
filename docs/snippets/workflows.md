@@ -113,7 +113,7 @@ everyone is reading.
 Slack differs from both: the reply targets the channel, inside the message's
 thread, and Slack echoes the bot's own post back through history, so the
 driver records nothing itself. Pinned by `tests/unit/test_workflows_snippets.py`,
-and by `tests/unit/test_sources/providers/test_slack.py` (send, identity stamp, channel reuse)
+and by `flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/slack/tests/test_slack_source.py` (send, identity stamp, channel reuse)
 against a loopback Slack.
 
 ```python
