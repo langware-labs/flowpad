@@ -6,18 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent, Deployment, type AgentPlace } from '@sdk';
 
-type FakeDock = { options: Record<string, string>; withOption: (k: string, v: string | null) => FakeDock };
-function dock(options: Record<string, string> = {}): FakeDock {
-  return {
-    options,
-    withOption: (k, v) => {
-      const next = { ...options };
-      if (v) next[k] = v;
-      else delete next[k];
-      return dock(next);
-    },
-  };
-}
+import { fakeDock as dock, type FakeDock } from './fake-dock';
 
 const nav = vi.hoisted(() => ({ openDock: vi.fn(), current: null as unknown }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -34,8 +23,8 @@ vi.mock('@src/components/assets/editor/agent-profile/AgentScheduleSection', () =
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlaceConfig', () => ({
   AgentPlaceConfig: () => <div data-testid="mock-config" />,
 }));
-vi.mock('@src/components/assets/editor/agent-profile/AgentPlaceEmail', () => ({
-  AgentPlaceEmail: () => <div data-testid="mock-email" />,
+vi.mock('@src/components/assets/editor/agent-profile/AgentPlaceChannels', () => ({
+  AgentPlaceChannels: () => <div data-testid="mock-channels" />,
 }));
 vi.mock('@src/components/assets/editor/agent-profile/DeployedAgentChatPanel', () => ({
   DeployedAgentChatPanel: () => <div data-testid="mock-chat" />,
@@ -44,7 +33,7 @@ vi.mock('@src/notifications', () => ({
   notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 
-import { AgentPlaceCard, placeTabOption } from '@src/components/assets/editor/agent-profile/AgentPlaceCard';
+import { AgentPlaceCard, PLACE_TAB_OPTION } from '@src/components/assets/editor/agent-profile/AgentPlaceCard';
 
 const LOCAL_ID = '11111111-1111-4111-8111-111111111111';
 const CLOUD_ID = '22222222-2222-4222-8222-222222222222';
@@ -76,20 +65,20 @@ afterEach(() => {
 function renderCard(p: AgentPlace, options: Record<string, string> = {}, pending = 0) {
   nav.current = dock(options);
   const agent = new Agent({ id: '33333333-3333-4333-8333-333333333333', name: 'brief', enabled: true });
-  render(<AgentPlaceCard agent={agent} place={p} places={[p]} pendingChanges={pending} onChanged={vi.fn()} />);
+  render(<AgentPlaceCard agent={agent} place={p} pendingChanges={pending} onChanged={vi.fn()} />);
 }
 
 describe('a place card', () => {
-  it('names this computer, shows its version and opens on Activity', () => {
+  it('the local environment shows its version and opens on Activity', () => {
     renderCard(place(LOCAL_ID, true), {}, 2);
-    expect(screen.getByTestId('agent-place-name')).toHaveTextContent('This computer');
+    expect(screen.getByTestId('agent-place-meta')).toHaveTextContent('Runs only while this computer is awake');
     expect(screen.getByTestId('agent-place-version')).toHaveTextContent('2 not published');
     expect(screen.getByTestId('mock-activity')).toBeInTheDocument();
     expect(screen.queryByTestId('agent-place-menu')).toBeNull();
   });
 
   it('shows the tab named in the URL and scopes schedules to this place', () => {
-    renderCard(place(LOCAL_ID, true), { [placeTabOption(LOCAL_ID)]: 'schedules' });
+    renderCard(place(LOCAL_ID, true), { [PLACE_TAB_OPTION]: 'schedules' });
     const schedules = screen.getByTestId('mock-schedules');
     expect(schedules).toHaveAttribute('data-deployment', LOCAL_ID);
     expect(schedules).toHaveAttribute('data-local', 'true');
@@ -100,16 +89,24 @@ describe('a place card', () => {
     fireEvent.mouseDown(screen.getByTestId('agent-place-tab-config'), { button: 0 });
     expect(nav.openDock).toHaveBeenCalledTimes(1);
     const pointer = nav.openDock.mock.calls[0][0] as FakeDock;
-    expect(pointer.options[placeTabOption(CLOUD_ID)]).toBe('config');
+    expect(pointer.options[PLACE_TAB_OPTION]).toBe('config');
   });
 
   it('a cloud machine has a menu and Chat opens its chat through the URL', () => {
     renderCard(place(CLOUD_ID, false));
-    expect(screen.getByTestId('agent-place-name')).toHaveTextContent('Cloud · brief-1');
+    expect(screen.getByTestId('agent-place-meta')).toHaveTextContent('Always on');
     expect(screen.getByTestId('agent-place-menu')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('agent-place-chat'));
     const pointer = nav.openDock.mock.calls[0][0] as FakeDock;
     expect(pointer.options.chat).toBe(CLOUD_ID);
+  });
+
+  it('Channels is the second tab and opens from the URL', () => {
+    renderCard(place(LOCAL_ID, true), { [PLACE_TAB_OPTION]: 'channels' });
+    const triggers = screen.getAllByRole('tab').map((tab) => tab.textContent);
+    expect(triggers[1]).toBe('Channels');
+    expect(triggers.some((label) => label?.includes('Email'))).toBe(false);
+    expect(screen.getByTestId('mock-channels')).toBeInTheDocument();
   });
 
   it('renders the chat when the URL says it is open', () => {
