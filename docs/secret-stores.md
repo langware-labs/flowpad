@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 60
+version: 64
 ---
 # Secret stores — snippets (draft)
 
@@ -16,18 +16,22 @@ consumer needs (**`validate_keys`**).
 
 ## The pattern
 
-Everything that needs secrets — a data source, a credential, a spawned process —
-follows the same three steps:
+Everything that needs access — a data source, a credential, a spawned process, an
+external store — follows the same three steps, for **both** kinds of access:
 
-1. **The consumer declares names.** `source.credentials.names()` — the
-   `ENV_VAR_NAME`s it reads. Never values.
-2. **A store is checked against them.** `store.validate_keys(names)` raises if
-   the store is missing any.
-3. **The store is bound to the consumer.** `source.set_secret_store(store)` —
-   when the consumer opens, it loads its names from that store.
+| step                                       | secrets (named values)                                                 | connections (accounts)                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 1. **The consumer declares what it needs** | `source.credentials.names()` → `["AGENTMAIL_API_KEY"]`                 | `source.connections.names()` → `["google"]`                                        |
+| 2. **The provider is got and checked**     | `store = await SecretStore.get()` · `await store.validate_keys(names)` | `google = await Connection.get("google")` · `await google.validate_scopes(scopes)` |
+| 3. **It is bound to the consumer**         | `source.set_secret_store(store)`                                       | `source.set_connection(google)`                                                    |
 
-Nothing reads `os.environ` or a file behind the consumer's back: the bound store
-is where its secrets come from.
+When the consumer opens, it loads its names from the bound store and its token
+from the bound connection. Nothing reads `os.environ`, a file or the connection
+table behind the consumer's back: what is bound is what it uses.
+
+A connection is an account, not a store: it holds one grant and hands out a
+token; a store holds named values. They never mix — a store never keeps a
+connection's token as one of its secrets.
 
 ## The API in one place
 
@@ -45,6 +49,11 @@ Every snippet below uses only these calls:
 | `await CredentialSpec.get(name, project=None)`       | the credential with that name                                       |
 | `consumer.credentials.names()`                       | the names a data source or credential needs                         |
 | `consumer.set_secret_store(store)`                   | binds the store the consumer loads from                             |
+| `await Connection.get(provider)`                     | the held connection; raises `NotConnected` when there is none       |
+| `await connection.validate_scopes(scopes)`           | nothing; raises `MissingScopes` naming the scopes the grant lacks   |
+| `consumer.connections.names()`                       | the providers a data source or store needs                          |
+| `consumer.connections.scopes(provider)`              | the scopes it needs from that provider                              |
+| `consumer.set_connection(connection)`                | binds the account the consumer acts as                              |
 | `context.current_project.env_file_path(environment)` | the project's env file for an environment                           |
 
 One verb for lookups — `get` — on every class, always awaited, and resolved the
@@ -73,10 +82,6 @@ over — or takes the default.
 entry) is its own business. `load` returns a dict of names and `save` takes one,
 so **env vars are the common currency**: moving values between stores, or into
 a process, is a dict.
-
-Connections stay what they are — accounts. A store can *use* a connection to
-reach an external system, exactly like a data source; it never keeps a
-connection's token as one of its secrets.
 
 ## 1. A store: load, save, validate
 
@@ -254,25 +259,54 @@ for `auth.env` and a named vault entry for `auth.secrets`. With the pattern:
 No new auth shape: a data source's names are the same `ENV_VAR_NAME`s a
 credential declares, so one store serves both.
 
-## 6. Connections — accounts, not stores
+## 6. Connections — the same pattern, for accounts
 
-```python
-from flow_sdk.connections import require
+A data source that acts as an account declares it in its manifest instead of
+variable names:
 
-google = await require("google")      # the account a store (or a data source) acts as
+```json
+{ "name": "gdrive", "auth": { "connector": "google", "scopes": ["https://www.googleapis.com/auth/drive.readonly"] } }
 ```
 
-A future external store is credentialed the way a data source is — its asset
-manifest names a connector:
+```python
+from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.connections import Connection, MissingScopes, NotConnected
+
+source = await DataSource.get("drive tester")
+providers = source.connections.names()             # ["google"] — from the manifest's auth.connector
+
+try:
+    google = await Connection.get("google")         # the held grant for this user
+    await google.validate_scopes(source.connections.scopes("google"))
+except NotConnected as e:
+    google = await e.connection.connect()           # the unconnected row rides on the error; browser or device flow
+except MissingScopes as e:
+    google = await google.connect(reauthorize=True) # e.missing names the scopes; re-consent asks for them
+
+source.set_connection(google)
+
+async with await source.open() as live:            # open() asks the bound connection for a fresh token
+    ...
+```
+
+`Connection.get` resolves a provider name the way `SecretStore.get()` takes a
+default: there is one grant per provider per user, so the name is enough.
+
+An external store is a consumer of both kinds — it acts as an account and holds
+named values:
 
 ```json
 { "name": "gcp_secret_manager", "auth": { "connector": "google", "scopes": ["https://www.googleapis.com/auth/cloud-platform"] } }
 ```
 
 ```python
+agentmail = await DataSource.get("agent_email")
+
 remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "agentmail-production-"})
-await remote.validate_keys(source.credentials.names())   # the account comes from the connection, never from config
-source.set_secret_store(remote)
+remote.set_connection(await Connection.get("google"))    # the account comes from the connection, never from config
+
+await remote.validate_keys(agentmail.credentials.names())
+agentmail.set_secret_store(remote)                        # the agentmail source now loads its key from GCP
 ```
 
 ## What already exists, and what it becomes
@@ -288,6 +322,9 @@ source.set_secret_store(remote)
 | `spec.secret_store(environment)`                                            | `CredentialScope` + `CredentialSpec.store_for(env)` + `credential_contract.env_file_name` / `vault_name` |
 | `consumer.set_secret_store(store)` + `open()`                               | `SourceType.credentials_for(row)` → `ingest/credentials.resolve_credentials`                             |
 | `project.env_file_path(environment)`                                        | `project_scope(project).root` + `env_file_name(environment)`                                             |
+| `Connection.get(provider)`                                                  | `flow_sdk.connections.require(provider)` / `get_connection(provider)`                                    |
+| `connection.validate_scopes(scopes)`                                        | new; today `Connection.scopes` compared by hand, a missing scope fails at the provider call              |
+| `consumer.connections.names()` + `set_connection(...)`                      | a data source's manifest `auth.connector`; `token_for(provider)` inside `resolve_credentials`            |
 | `store.forget(names)`                                                       | `credential_store.forget_values` (vault entries go; env file lines stay)                                 |
 
 Every guarantee carries over: values travel as `SecretStr`, only names are ever
@@ -310,7 +347,9 @@ is never written to a file git would commit.
    current project is resolved per call site. Add it as the public way to ask
    "which project am I in" (worker, terminal, script), or pass the project
    explicitly.
-5. **Naming.** The glossary's *value store* becomes **SecretStore**; `env_file` is
+5. **`require`** **and** **`get_connections`.** `Connection.get(provider)` replaces
+   `require` (same `NotConnected`); `get_connections()` stays as the listing of every provider. Keep `require` as an alias, or remove it.
+6. **Naming.** The glossary's *value store* becomes **SecretStore**; `env_file` is
    the store type's name and `env` its accepted alias in `credential.json`.
    `spec.var_names()` becomes `spec.credentials.names()` so both consumers read
    the same.
