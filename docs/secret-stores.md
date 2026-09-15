@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 32
+version: 33
 ---
 # Secret stores — snippets (draft)
 
@@ -187,7 +187,7 @@ A data source names the variables it needs in its manifest:
 ```python
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.sources import source_type
-
+#this is bad
 row = await DataSource.find_for_account("agentmail", "inbox", "me@agentmail.to")
 kind = source_type(row.provider)
 creds = await kind.credentials_for(row)    # Credentials(shape=ENV, values={"AGENTMAIL_API_KEY": SecretStr(...)})
