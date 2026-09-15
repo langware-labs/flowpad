@@ -46,7 +46,12 @@ interface UseOAuthConnectionReturn {
    *  `deriveGrantStatus`), and only this one is answerable with no project
    *  selected. Decides which actions a row offers. */
   grantStatuses: Record<string, GrantStatus>;
-  connect: (connectionId: string, provider: string, sharedEntityVarName?: string) => Promise<void>;
+  connect: (
+    connectionId: string,
+    provider: string,
+    sharedEntityVarName?: string,
+    options?: { reauthorize?: boolean },
+  ) => Promise<void>;
   /** `targetEntity` defaults to the hook's project. Pass it to attach a project
    *  that is NOT the selected one — the usage popover grants access without
    *  making the user switch projects first. */
