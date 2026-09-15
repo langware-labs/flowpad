@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 28
+version: 32
 ---
 # Secret stores — snippets (draft)
 
@@ -17,15 +17,15 @@ config**. It exposes two verbs, **`load`** and **`save`**.
 
 Every snippet below uses only these calls:
 
-| call                                                 | returns                                                               |
-| ---------------------------------------------------- | --------------------------------------------------------------------- |
-| `await SecretStore.get(type, config)`                | a store of that type, configured                                      |
-| `await store.load(names)`                            | `{ENV_VAR_NAME: SecretStr}` — a missing name is absent                |
-| `await store.save(values)`                           | writes `{ENV_VAR_NAME: str}`                                          |
-| `await store.names()`                                | the names the store holds — never values                              |
-| `await CredentialSpec.get(name, project=...)`        | the credential declared under that name                               |
-| `await spec.secret_store(environment)`               | `SecretStore.get(...)` with the credential's type and resolved config |
-| `context.current_project.env_file_path(environment)` | the project's env file for an environment                             |
+| call                                                 | returns                                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `await SecretStore.get(type, config)`                | a store of that type, configured                                                                                    |
+| `await store.load(names)`                            | `{ENV_VAR_NAME: SecretStr}` — a missing name is absent                                                              |
+| `await store.save(values)`                           | writes `{ENV_VAR_NAME: str}`                                                                                        |
+| `await store.names()`                                | the names the store holds — never values                                                                            |
+| `await CredentialSpec.get(name, project=None)`       | the credential declared under that name — see [§2](#2-a-credential-uses-its-store-as-is) for how `project` defaults |
+| `await spec.secret_store(environment)`               | `SecretStore.get(...)` with the credential's type and resolved config                                               |
+| `context.current_project.env_file_path(environment)` | the project's env file for an environment                                                                           |
 
 One verb for lookups — `get` — on both classes, always awaited.
 
@@ -87,12 +87,39 @@ are skipped, never cleared.
 ```python
 from flow_sdk.builtin.credential_spec import CredentialSpec
 
-spec = await CredentialSpec.get("database", project=project)
+spec = await CredentialSpec.get("database")         # the current project's, else the generally available one
 prod = await spec.secret_store("production")         # the credential's store for production
 
 await prod.save({"DATABASE_URL": "postgres://pooler.hosted.example/prod"})   # a name outside spec.var_names() is refused
 values = await prod.load(spec.var_names())
 ```
+
+`CredentialSpec.get(name, project=None)` resolves one credential:
+
+1. **`project`** **given** — that project's credential named `name`; if it has none,
+   the generally available one (step 3).
+2. **`project`** **omitted** — the current project, `context.current_project` (the
+   working directory's project), and the same lookup as step 1.
+3. **Generally available** — the user-scope credentials (`~/agentic-assets/credential/`),
+   which every project on this machine sees. Exactly one match is returned.
+
+A project credential wins over a generally available one of the same name, the
+same precedence a process gets in §3. Shipped templates are never returned.
+Two failures, both raised rather than guessed:
+
+```python
+from flow_sdk.builtin.credential_spec import CredentialNotFound, CredentialAmbiguous
+
+spec = await CredentialSpec.get("database", project=other_project)   # a specific project instead of the working directory
+try:
+    spec = await CredentialSpec.get("stripe")
+except CredentialAmbiguous as e:     # more than one generally available credential is named "stripe"
+    e.candidates                     # their typeids — pick one with CredentialSpec.get_by_id(...)
+except CredentialNotFound:           # neither the project nor the user scope declares it
+    ...
+```
+
+With no current project (a script outside any project folder), only step 3 runs.
 
 `spec.secret_store(environment)` is the only place a credential's scope and
 environment become a config:
@@ -134,7 +161,7 @@ the credentials declare.
 ## 4. Moving values between stores
 
 ```python
-spec = await CredentialSpec.get("database", project=project)
+spec = await CredentialSpec.get("database")
 names = spec.var_names()
 
 dev_file = await SecretStore.get("env_file", {"env_file_path": project.env_file_path()})
@@ -159,17 +186,16 @@ A data source names the variables it needs in its manifest:
 
 ```python
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.credentials import resolve_credentials
-from flow_sdk.ingest.sources import source_spec, source_type
-from flow_sdk.sources import SourceBinding
+from flow_sdk.ingest.sources import source_type
 
 row = await DataSource.find_for_account("agentmail", "inbox", "me@agentmail.to")
-creds = await resolve_credentials(source_spec(row.provider).auth, row)   # Credentials(shape=ENV, values={"AGENTMAIL_API_KEY": SecretStr(...)})
-async with source_type(row.provider).build(SourceBinding(config=row.config, credentials=creds)) as source:
+kind = source_type(row.provider)
+creds = await kind.credentials_for(row)    # Credentials(shape=ENV, values={"AGENTMAIL_API_KEY": SecretStr(...)})
+async with await kind.open(row) as source:  # open() resolves the same credentials into the source's binding
     ...
 ```
 
-Today `resolve_credentials` reads `os.environ["AGENTMAIL_API_KEY"]`. With stores,
+Today `credentials_for` (through `ingest/credentials.resolve_credentials`) reads `os.environ["AGENTMAIL_API_KEY"]`. With stores,
 the credential that declares `AGENTMAIL_API_KEY` answers first (its store, its
 environment), and `os.environ` is the fallback. `auth.secrets` — a named machine
 secret — is `await (await SecretStore.get("vault", {"prefix": ""})).load([name])`.
@@ -202,7 +228,7 @@ values = await remote.load(spec.var_names())   # the account comes from the conn
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `SecretStore.get("env_file", {"env_file_path": ...})` | `env_local_store.read_env_local_values`, `write_env_local`, `list_env_local` (gitignore guard included)  |
 | `SecretStore.get("vault", {"prefix": ...})`           | `credential_store._load_vault`, `cli.auth.secrets.write_secret`, `get_secrets`                           |
-| `CredentialSpec.get(name, project=...)`               | `CredentialSpec.get_all(...)` filtered by name and scope                                                 |
+| `CredentialSpec.get(name, project=None)`              | `credential_resolver.credentials_in_scope(project)` filtered by name — project first, then user scope    |
 | `spec.secret_store(environment)`                      | `CredentialScope` + `CredentialSpec.store_for(env)` + `credential_contract.env_file_name` / `vault_name` |
 | `project.env_file_path(environment)`                  | `project_scope(project).root` + `env_file_name(environment)`                                             |
 | `store.forget(names)`                                 | `credential_store.forget_values` (vault entries go; env file lines stay)                                 |
