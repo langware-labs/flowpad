@@ -20,7 +20,11 @@ export async function presentDockTab(
   placement: { afterTabId?: string | null; parentTabId?: string | null; projectId?: string | null },
 ): Promise<DockPointer> {
   const placed = placeDockInProject(dock, placement.projectId);
-  await tabManager.ensureDock(placed, { afterTabId: placement.afterTabId, parentTabId: placement.parentTabId });
+  await tabManager.ensureDock(placed, {
+    afterTabId: placement.afterTabId,
+    parentTabId: placement.parentTabId,
+    viewMode: placed.viewMode,
+  });
   // ensureDock returns a scoped list; only the unscoped list can be adopted globally.
   tabManager.adoptGlobal(await tabManager.listAll());
   if (placed.tabHash) highlightTab(placed.tabHash);

@@ -18,7 +18,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
-import { getViewMode, rememberedSessionViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { getViewMode, rememberedDockViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
@@ -135,8 +135,8 @@ function hostToCarry(here: DockPointer | null, target: DockPointer): string | nu
  *
  * Reading the ambient mode here is deliberate, and is NOT the thing
  * `canonicalWorkspaceDisplayPath` refuses to do. That runs in the LOADER, before
- * `applyProjectViewMode` has applied a project's own `last_mode`, so an ambient
- * read there is wrong for exactly the projects that default to vibe. This runs
+ * the mounted dock has settled the effective mode, so an ambient read there can
+ * be wrong for a dock whose own mode differs from the ambient one. This runs
  * at click time, long after mount, when the effective mode is settled.
  */
 function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
@@ -524,16 +524,16 @@ export class NavigationActions {
     // for a Back step to be visible, home included. The cold-load entry is
     // canonicalized in `loadHomePage`, which this cannot reach.
     //
-    // A SESSION dock is the exception, and takes its own remembered mode
-    // instead: a session opens in the mode it was last seen in, so switching to
+    // A SESSION or PROJECT dock is the exception, and takes its own remembered
+    // mode instead: it opens in the mode it was last switched to, so switching to
     // Terminal in one chat no longer repaints every other chat you click into.
-    // Inheritance is still the fallback for a session with no memory yet (a new
-    // one, or one that predates the field) — it adopts the ambient mode and
-    // records it on load. Cache-only: a cold deep link has no entity to read
-    // here, and the loader's `applyProcessViewMode` covers that path.
+    // Inheritance is still the fallback for a dock with no memory yet; it only
+    // DISPLAYS that mode — memory is minted by `VIEW_MODE_STORE`, not by opening.
+    // Cache-only: a cold deep link has no entity to read here, and the shell
+    // loader redirects a session onto its remembered mode instead.
     if (dock.viewMode === null) {
       const liveViewMode =
-        rememberedSessionViewMode(dock) ??
+        rememberedDockViewMode(dock) ??
         NavigationActions.currentBrowserViewMode() ??
         this.currentDock?.viewMode ??
         null;
