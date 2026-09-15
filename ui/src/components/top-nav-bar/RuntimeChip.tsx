@@ -239,6 +239,10 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
           sideOffset={6}
           className="w-72 p-1"
           data-testid="top-nav-project-popover"
+          // Don't focus the first row on open: a row's HoverCard opens on focus,
+          // so auto-focus would pop the first project's tab submenu unhovered and
+          // leave it stuck behind whichever row the pointer visits next.
+          onOpenAutoFocus={(event) => event.preventDefault()}
         >
           <ProjectListPopoverContent menu={menu} />
         </PopoverContent>
