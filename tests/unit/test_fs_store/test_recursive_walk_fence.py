@@ -55,7 +55,8 @@ def _sites() -> dict[str, list[int]]:
     found: dict[str, list[int]] = {}
     for path in sorted(PACKAGE.rglob("*.py")):
         rel = path.relative_to(REPO).as_posix()
-        if "/migrations/" in rel:
+        # A data source asset's own tests/ walk their tmp_path fixtures, never a user tree.
+        if "/migrations/" in rel or ("/agentic-assets/data_source/" in rel and "/tests/" in rel):
             continue
         for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             if PATTERN.search(line) and "gitignore_walk" not in line and not line.lstrip().startswith("#"):
