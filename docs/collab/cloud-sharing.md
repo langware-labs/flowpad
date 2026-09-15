@@ -18,12 +18,11 @@ not Flowpad's. If they cannot clone the repo, they see an error, not your code.
 > that the lists below match what the code actually sends; adding a field to
 > `Project` fails that test until it is classified here.
 
-## Three payloads
+## Two payloads
 
 | Payload | Built by | Carries |
 |---|---|---|
 | The project row | `Project._hub_body()` + `Project.share()` | identity, display metadata, the git origin |
-| Shared secret declarations | `Project._shared_secret_origin_payload()` | names and locations of secrets — never values |
 | A git-published asset | `PortableAssetProjection` | type, id, metadata fields, repo coordinates |
 
 ## The project row
@@ -46,7 +45,7 @@ declaration-withheld field stays hidden even if `_hub_body()` is rewritten,
 while a popped one is hidden only for as long as that line survives:
 
 <!-- pinned:withheld -->
-`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `published`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `shared_secret_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
+`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `host_member_id`, `last_mode`, `last_session_at`, `llm_endpoint_typeid`, `members`, `origin_id`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `published`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
 <!-- pinned:/withheld -->
 
 Note what is in that list: `fs_storage_mount_path` and `fs_storage_provider` —
@@ -68,39 +67,28 @@ A recipient's project gets funded by their own ladder.
 
 ### The exception worth knowing
 
-`_hub_body()` strips three fields and then `Project.share()` **puts them back**:
+`_hub_body()` strips a field and then `Project.share()` **puts it back**:
 
 <!-- pinned:readded -->
-`shared_context_origins`, `shared_secret_origins`
+`shared_context_origins`
 <!-- pinned:/readded -->
 
 Reading `_hub_body()` alone gives the wrong answer. (The project's `origin` is SHARED and
-rides in the body itself, under its hub-wire name `git_origin`.) The two are
-covered below.
+rides in the body itself, under its hub-wire name `git_origin`.)
 
-(Three names in that strip list — `include_dirs`, `context_dir_infos`,
-`secret_origins` — are computed properties rather than stored fields, so those
+(Two names in that strip list — `include_dirs` and `context_dir_infos` — are
+computed properties rather than stored fields, so those
 `pop()` calls have always been no-ops. They are harmless; do not read them as
 evidence that a stored field is being removed.)
 
-## Secrets: declarations travel, values never do
+## Credentials: declarations travel with the repo, values never do
 
-Each shared secret declaration carries exactly:
-
-<!-- pinned:secret-entry -->
-`env_var`, `kind`, `locator`, `name`, `project_id`, `sod_store`
-<!-- pinned:/secret-entry -->
-
-There is no `value` key, and there never has been. Two deliberate details:
-
-* **Every declaration travels, including `local` ones.** A receiver has to
-  *see* a declaration in order to be told they are missing its value. Dropping
-  it would silently hide the fact that the project needs it.
-* **`sod_name` is stripped from a local locator.** It names an entry in *your*
-  keychain and means nothing on anyone else's machine.
-
-If you push a secret's value to the cloud deliberately (`push-secret-to-cloud`),
-the hub becomes its system of record — that is a separate, explicit action. See
+A project's credentials are folder assets at `agentic-assets/credential/<name>/`
+inside the project. The declaration — which environment variables the project
+needs — travels with the repository like any other asset. Values do not travel
+at all: they live in the project's `.env.local` (which Flowpad keeps excluded by
+git) or in this machine's encrypted vault. A teammate who opens the project sees
+the credential as missing and fills it on their own machine. See
 [[secret_share]].
 
 ## Git-published assets
@@ -121,7 +109,7 @@ reads the file at that commit.
   to your code — GitHub does.
 * A teammate without repo access sees the project row and the document's
   title, and gets an error where the content would be.
-* Secret values never leave your machine unless you push them deliberately.
+* Secret values never leave your machine.
 * Your local filesystem paths never leave your machine at all.
 * Linking a project is not the same as inviting people. Access is granted
   separately, in the project's Members list.

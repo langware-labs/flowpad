@@ -34,7 +34,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped drivers
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.flow_message import FlowMessage

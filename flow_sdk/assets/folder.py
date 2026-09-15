@@ -11,6 +11,7 @@ from flow_sdk.assets.identity_carrier import Absent
 from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.placement import mount_matches
 from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult
+from flow_sdk.fs_store.gitignore import is_ignored, load_gitignore_stack, push_gitignore
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -81,6 +82,12 @@ class AssetFolder(DataSpec):
         failed: set[Path] = set()
         scanned: set[tuple[Path, bool, frozenset[str]]] = set()
         expanded_roots: set[Path] = set()
+        # Same skip policy as every other tree walker (the indexer, the
+        # markdown walk): the hardcoded vendor/build denylist plus the scanned
+        # root's `.gitignore` stack. A recursive PROJECT_DIR scan of a checkout
+        # otherwise descends `ui/node_modules` and classifies tens of thousands
+        # of entries — `get-assets` on a live worker took minutes for it.
+        ignore_stack = load_gitignore_stack(self.path)
 
         def issue(path: Path, message: str) -> None:
             if path not in failed:
@@ -135,14 +142,22 @@ class AssetFolder(DataSpec):
             except OSError as error:
                 issue(directory, str(error))
                 return
-            for child in entries:
-                if child.name.startswith("."):
-                    continue
-                asset = collect(child, allowed)
-                if asset is not None and isinstance(asset.info.shape, Folder):
-                    scan_mounts(asset.path, chain)
-                elif recursive and child.is_dir() and child not in failed:
-                    walk(child, recursive, chain, allowed)
+            # The root's own file is already seeded; nested ones stack for
+            # the subtree only, last match wins, and unwind on the way out.
+            pushed = 0 if directory == self.path else push_gitignore(ignore_stack, directory)
+            try:
+                for child in entries:
+                    if child.name.startswith("."):
+                        continue
+                    if is_ignored(child, child.is_dir(), ignore_stack, self.path):
+                        continue
+                    asset = collect(child, allowed)
+                    if asset is not None and isinstance(asset.info.shape, Folder):
+                        scan_mounts(asset.path, chain)
+                    elif recursive and child.is_dir() and child not in failed:
+                        walk(child, recursive, chain, allowed)
+            finally:
+                del ignore_stack[len(ignore_stack) - pushed:]
 
         def scan_mounts(root: Path, ancestors: frozenset[Path]) -> None:
             if root in expanded_roots:

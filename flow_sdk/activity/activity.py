@@ -78,6 +78,24 @@ def split_path(path: str) -> list[str]:
     return [seg for seg in str(path).split(SEP) if seg]
 
 
+class ActivityEnded(Exception):
+    """A lifecycle move on an activity that has already reached a terminal state.
+
+    ``block()`` and ``resume()`` both claim the work is still somebody's — stopped, or
+    going again. A finished row cannot be either, so saying so is a producer bug worth
+    raising, unlike a late ``inc_*`` tick, which is dropped silently.
+    """
+
+    def __init__(self, activity: "Activity", verb: str) -> None:
+        self.path = activity.path
+        self.state = activity.state
+        self.verb = verb
+        where = f" on {activity.subject_entity}" if activity.subject_entity else ""
+        super().__init__(
+            f"activity {activity.path!r}{where} is {activity.state.value}; cannot {verb} an activity that has ended"
+        )
+
+
 class Activity:
     """One node in a progress tree. Get it by address; mutate it in place.
 
@@ -471,9 +489,12 @@ class Activity:
     # ------------------------------------------------------------------ lifecycle
 
     def block(self, message: Optional[str] = None) -> "Activity":
-        """Stop and say why. Not terminal — a blocked activity is still somebody's."""
+        """Stop and say why. Not terminal — a blocked activity is still somebody's.
+
+        Raises :class:`ActivityEnded` on a terminal node: a finished row is nobody's.
+        """
         if self.is_terminal:
-            return self
+            raise ActivityEnded(self, "block")
         if message is not None:
             self.message_text = message
         self.state = ActivityState.BLOCKED
@@ -496,8 +517,9 @@ class Activity:
         return self
 
     def resume(self) -> "Activity":
+        """Back to ``running``. Raises :class:`ActivityEnded` on a terminal node."""
         if self.is_terminal:
-            return self
+            raise ActivityEnded(self, "resume")
         now = _now()
         self._wake(now)
         self.state = ActivityState.RUNNING
@@ -671,4 +693,4 @@ class Activity:
 
 
 
-__all__ = ["SEP", "Activity", "canonical_verb", "split_path"]
+__all__ = ["SEP", "Activity", "ActivityEnded", "canonical_verb", "split_path"]

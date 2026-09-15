@@ -522,6 +522,19 @@ class SQLiteDBDriver(DBDriver):
                 "WHERE type = 'source_item'"
             )
         )
+        # The same lookup under the origin triple (``SOURCE_ITEM.natural_key``). v2 stays
+        # until the engine swap: rows the cutover migration has not reached yet still
+        # carry only the flat header.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_origin_v3 "
+                "ON entities(json_extract(data, '$.data_source_id'), "
+                "json_extract(data, '$.origin_kind'), "
+                "json_extract(data, '$.origin_namespace'), "
+                "json_extract(data, '$.origin_key')) "
+                "WHERE type = 'source_item'"
+            )
+        )
 
         # Identity for a source-backed asset is resolved by ORIGIN, not by a
         # derived id — `reflect._find_by_origin` asks every file-backed type

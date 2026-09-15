@@ -47,7 +47,7 @@ describe('tab lifecycle registry', () => {
     const d = dock();
     const tab = tabFor(d);
     mockNoExistingTabs();
-    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [tab], created: false });
 
     await setupTab(d);
 
@@ -59,7 +59,7 @@ describe('tab lifecycle registry', () => {
     const d = dock();
     const tab = tabFor(d);
     mockNoExistingTabs();
-    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [tab], created: false });
     registerTabContentAdapter(ViewType.SHELL, {
       setupTab() {
         return Promise.reject(new Error('attach failed'));
@@ -83,7 +83,7 @@ describe('tab lifecycle registry', () => {
     // production that re-read includes the new tab; simulate it so onMaterialized
     // carries the materialized global list (not an empty one).
     vi.spyOn(Tab, 'listAll').mockResolvedValueOnce([]).mockResolvedValue([tab]);
-    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [tab], created: false });
 
     let markSetupStarted: () => void = () => {};
     let releaseSetup: () => void = () => {};
@@ -132,7 +132,7 @@ describe('tab lifecycle registry', () => {
       visible: true,
     });
     vi.spyOn(Tab, 'listAll').mockResolvedValueOnce([]).mockResolvedValue([tab]);
-    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [tab], created: false });
     vi.spyOn(Tab, 'activateById').mockResolvedValue([]);
 
     await setupTab(d);
@@ -163,7 +163,7 @@ describe('tab lifecycle registry', () => {
       visible: true,
     });
     vi.spyOn(Tab, 'listAll').mockResolvedValue([legacy]);
-    const materialize = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tabFor(d)]);
+    const materialize = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [tabFor(d)], created: false });
 
     const result = await setupTab(d);
 
@@ -249,7 +249,7 @@ describe('tab lifecycle registry', () => {
     const d = dock();
     const tab = tabFor(d);
     mockNoExistingTabs();
-    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [tab], created: false });
     await setupTab(d);
 
     tabManager.lifecycle.reconcile([]);
@@ -259,7 +259,7 @@ describe('tab lifecycle registry', () => {
 
   it('does not materialize /dock/shell/new_terminal as a persistent tab', async () => {
     const d = new DockPointer(ViewType.SHELL, 'new_terminal');
-    const materialize = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([]);
+    const materialize = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [], created: false });
     const setupContent = vi.fn().mockResolvedValue(undefined);
 
     await setupTab(d, { setupContent });
@@ -319,7 +319,10 @@ describe('workspace child adoption guard', () => {
     mockNoExistingTabs();
     const spy = vi
       .spyOn(Tab, 'getFromDockPointer')
-      .mockResolvedValue([new Tab({ id: nextTabId(), pointer: d.toJSON() ?? '', visible: true })]);
+      .mockResolvedValue({
+        tabs: [new Tab({ id: nextTabId(), pointer: d.toJSON() ?? '', visible: true })],
+        created: true,
+      });
     await setupTab(d);
     expect(spy).toHaveBeenCalledTimes(1);
     return (spy.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId;
@@ -394,7 +397,7 @@ describe('workspace child adoption guard', () => {
     vi.spyOn(Tab, 'listAll').mockResolvedValue([stale]);
     const mint = vi
       .spyOn(Tab, 'getFromDockPointer')
-      .mockResolvedValue([new Tab({ ...stale, parent_tab_id: null })]);
+      .mockResolvedValue({ tabs: [new Tab({ ...stale, parent_tab_id: null })], created: false });
     await setupTab(d);
     expect(mint).toHaveBeenCalledTimes(1);
     expect((mint.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId).toBeNull();
@@ -500,7 +503,7 @@ describe('the URL names the workspace host', () => {
     });
     vi.spyOn(Tab, 'listAll').mockResolvedValue([host]);
     vi.spyOn(Tab, 'activateById').mockResolvedValue([]);
-    const mint = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([doc]);
+    const mint = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [doc], created: false });
 
     await setupTab(hosted);
 
@@ -519,7 +522,7 @@ describe('the URL names the workspace host', () => {
     );
     vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
     vi.spyOn(Tab, 'activateById').mockResolvedValue([]);
-    const mint = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([]);
+    const mint = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [], created: false });
 
     await setupTab(hosted);
 

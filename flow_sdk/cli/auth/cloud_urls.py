@@ -6,9 +6,34 @@ in the auth package because they're auth-specific. ``cloud_login.py``,
 callers.
 """
 
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from flow_sdk.cloud_client import ApiConfig
+
+
+def _desktop_base_url() -> str:
+    """This instance as a browser on the same machine (or its docker host) reaches it."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    settings = get_instance_settings()
+    return settings.docker_public_url or f"http://127.0.0.1:{settings.port}"
+
+
+def desktop_oauth_complete_url(provider: str) -> str:
+    """Where the hub returns the browser after it stored a grant (the default flow).
+
+    The hub appends the flow's ``state``; ``provider`` rides along so a flow this
+    instance no longer remembers (a restart) can still be completed.
+
+    Empty inside a cloud sandbox: its loopback address is not the user's browser's,
+    so a redirect there would land nowhere. The hub then keeps its own page, and the
+    flow still completes here through the hub's ``oauth_msg`` push.
+    """
+    from flow_sdk.instance_settings.runtime import own_sandbox_id  # noqa: PLC0415
+
+    if own_sandbox_id():
+        return ""
+    return f"{_desktop_base_url()}/auth/oauth/complete?{urlencode({'provider': provider})}"
 
 
 def get_login_url(redirect_url: str) -> str:
@@ -28,12 +53,9 @@ def desktop_login_callback_url() -> str:
     browser-window flow and the UI OAuth flow must build it here so the
     param is never dropped.
     """
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     from flow_sdk.utils.machine_id import desktop_instance_id  # noqa: PLC0415
 
-    settings = get_instance_settings()
-    base = settings.docker_public_url or f"http://127.0.0.1:{settings.port}"
-    return f"{base}/auth/login_callback?instance={desktop_instance_id()}"
+    return f"{_desktop_base_url()}/auth/login_callback?instance={desktop_instance_id()}"
 
 
 def get_logout_url(return_url: str) -> str:

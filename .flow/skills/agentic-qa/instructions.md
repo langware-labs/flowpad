@@ -938,3 +938,35 @@ Any Playwright test whose duration exceeds 60s is reported as **timeout** — a 
   (:6001/:5002), qa-w2, qa-w3. Local hub :8093 was already UP and healthy all cycle and was never
   restarted. The user's backends :9008 (oss) and :9007 (prod) were never targeted. Playwright:
   headless Chromium, per-category config, JSON reporter per file, private `--output` per runner.
+
+### 2026-09-12 — Staging OAuth preflight
+
+- Staging https://staging.flowpad.ai returned hub-only bootstrap successfully. Fresh Playwright session redirected to login.dev.flowpad.ai; all eight OAuth test routes rejected anonymous requests with 401. This is blocked live validation, not a provider failure or pass. Existing desktop prod session targets app.flowpad.ai and is not staging authentication. Evidence: `_results/2026-09-12-staging-oauth/`.
+
+### User browser preference — 2026-09-12
+
+- For staging hub/OAuth validation, use Google Chrome with the `eran@langware.ai` profile (Chrome profile label `langware.ai`). Explicit user instruction supersedes the generic fresh/headless-browser policy for this task. Continue with the existing account session.
+- Authenticated staging follow-up: GitLab live Test passed as eran@langware.ai. Atlassian/Notion Connected rows returned Not shared with this project while picker showed Select a project; hidden fallback target suspected. GitHub/Slack/Linear reached consent; Google Drive/Microsoft absent. See `_results/2026-09-12-staging-oauth/report.md`.
+
+### 2026-09-15 — cycle stopped after Phase 3 at user request (commit 0ccac558a)
+
+- **Bail 1, always.** Run every phase with `-x` / `--bail 1` and debug the first failure. Phase 3 run to
+  completion produced 33 failures that were ~5 causes, one cascading harness leak among them.
+- **`live_backend` shares the session DB but inherits the sandbox HOME.** Its boot sweep probes vendor CLIs
+  (`claude auth status` → logged out under sandbox HOME) and persists `login_state=IDLE`; every later worker
+  test then refuses to spawn as "signed out". Order-dependent: prove with a pair run, not the full suite.
+  Monkeypatching the pytest process never reaches the subprocess — a lever must run in the subprocess
+  (sitecustomize on PYTHONPATH gated on `FLOW_INSTANCE=live-e2e-*`) or change its env.
+- **Two long tests defaulted to `LOCAL_SERVER_PORT or 9007`** while `pytest_plugin` strips that variable —
+  they wrote rows into the user's `prod` instance. Now fail closed; always export `QA_API_URL` /
+  `SCHEDULE_E2E_API_URL` pointing at the cycle-owned instance.
+- **A timeout after ~12 minutes of transcript silence: check `pmset -g log` first.** "Clamshell Sleep" mid-turn
+  shows in claude's transcript as "Your computer went to sleep mid-response". Prove with the pmset window plus
+  a passing comparable before calling it environmental; `caffeinate` does not stop lid-close sleep.
+- **Copilot interactive PTY:** a bare `pty.fork()` gives a 0x0 window and the TUI paints nothing — set
+  TIOCSWINSZ before judging a capture. Copilot shows "Session in use" when a second process resumes a live
+  session. `prompt()` must type for stdin-channel vendors; IDLE (`assistant.turn_end`) is copilot's turn end.
+- **Codex `sm`/`md` tiers (`gpt-5.4-mini`, `gpt-5.4`) are rejected with a 400 for ChatGPT-account logins** —
+  flagged; read the rollout's `turn_context model=` and `task_complete.error` before debugging a codex turn.
+- **A skill that names a repo-relative source path is unreachable from the worker's cwd** (a temp docs tree);
+  the agent then runs `find /` and blows the budget. Give a cwd-independent command instead.

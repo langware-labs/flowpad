@@ -17,8 +17,8 @@ class ReflectMode(StrEnum):
     """How a source's payload becomes locally present.
 
     ``RECORD`` is the default and is NOT a filesystem mode — it is the existing
-    ``ingest_items`` path every shipped driver already takes. It lives in this
-    enum because the choice is genuinely one axis: a source lands its payload in
+    ``ingest_items`` path every record source takes. It lives in this enum
+    because the choice is genuinely one axis: a source lands its payload in
     the graph as a record, or on disk as an asset. Splitting it across two
     settings would let a source ask for both and get neither.
     """
@@ -38,12 +38,10 @@ class ReflectMode(StrEnum):
 
 
 class Runtime(StrEnum):
-    """Who implements the source. DERIVED from the folder's contents, never
-    declared, so it cannot disagree with what is actually there."""
+    """Who implements the source. There is one runtime: the folder's own ``source.py``, one
+    ``flow_sdk.sources.Source`` subclass, loaded in process by the source registry."""
 
-    BUILTIN = "builtin"
-    SCRIPT = "script"
-    AGENT = "agent"
+    SOURCE = "source"
 
 
 class FieldType(StrEnum):
@@ -121,11 +119,12 @@ class ConfigFieldSpec(DataSpec):
 
 
 class AuthSpec(DataSpec):
-    """How the source is credentialed. Exactly one shape, never both.
+    """How the source is credentialed. Exactly one shape.
 
-    They are different resolvers, not a style choice: a connector reaches the
-    credential store and refreshes mid-sync, while env names are resolved into a
-    spawned process at launch. Neither ever carries a value.
+    They are different resolvers, not a style choice (``flow_sdk/ingest/credentials.py``): a
+    connector reaches the connection store and refreshes mid-sync, env names are read from the
+    operator's environment, and secrets name the values a row supplies — each optionally kept as a
+    machine secret. None of them ever carries a value.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -133,30 +132,25 @@ class AuthSpec(DataSpec):
     connector: str = ""
     scopes: list[str] = Field(default_factory=list)
     env: list[str] = Field(default_factory=list)
+    #: ``{value key: machine secret name}`` — ``""`` when only the row supplies it.
+    secrets: dict[str, str] = Field(default_factory=dict)
+    #: A CredentialSpec NAME, declared in the owner's project or the user scope — its values come
+    #: from that scope's ``.env.local`` or vault, exactly as a worker process reads them.
+    credential: str = ""
+    #: ``{value key: env var of that credential}`` — required with ``credential``.
+    vars: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _one_shape(self) -> "AuthSpec":
-        if self.connector and self.env:
-            raise ValueError("auth declares both connector and env; a source has one credential lifetime")
-        if not self.connector and not self.env:
-            raise ValueError("auth must declare either connector or env")
+        present = (("connector", self.connector), ("env", self.env), ("secrets", self.secrets), ("credential", self.credential))
+        shapes = [name for name, value in present if value]
+        if len(shapes) > 1:
+            raise ValueError(f"auth declares {' and '.join(shapes)}; a source has one credential lifetime")
+        if not shapes:
+            raise ValueError("auth must declare one of connector, env, secrets or credential")
+        if bool(self.credential) != bool(self.vars):
+            raise ValueError("auth `credential` and `vars` go together: which credential, and which of its variables")
         return self
-
-
-class TraitsSpec(DataSpec):
-    """What only a non-builtin source has to declare about itself.
-
-    ``id_unique_within`` is deliberately NOT a field: the natural key is always
-    ``(data_source_id, segment_key, external_id)``, so declaring it would promise
-    a behaviour nothing implements — ``extra="forbid"`` makes it a load error
-    until something reads it.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    emits: str = ""
-    channel: str = ""
-    owns_bytes: bool = True
 
 
 def coerce_config(fields: dict, config: dict) -> dict:
@@ -169,10 +163,12 @@ class ManifestSpec(DataSpec):
 
     model_config = ConfigDict(populate_by_name=True)   # extra="forbid" is DataSpec's
 
-    #: The registry key AND the folder name. One noun: `rss` resolves RssDriver.
+    #: The registry key AND the folder name. One noun: `rss` resolves the folder's own source class.
     name: str
     title: str = ""
     description: str = ""
+    #: The record kind a source row carries (``datasource.api.slack``); ``datasource.<name>`` when omitted.
+    kind: str = ""
     #: A lucide glyph name for THIS source in the provider picker. Deliberately
     #: not `icon`: `APIEntity.icon` is a getter returning the TYPE's registry
     #: glyph, which every spec shares; a field by that name shadows the getter
@@ -185,24 +181,27 @@ class ManifestSpec(DataSpec):
     #: fact, never a frontend map.
     channel_icon_names: dict[str, str] = Field(default_factory=dict)
     #: Wiki page explaining the setup step a provider cannot do for you. Only
-    #: meaningful for a source whose driver has `verify`.
+    #: meaningful for a source whose class is `Verifiable`.
     setup_wiki: str = ""
     #: Manifest format version — the file says `schema`; the row says
     #: `manifest_schema` because the base Entity already owns `schema_version`.
     manifest_schema: int = Field(default=0, alias="schema", validate_default=True)
-    #: Minimum host for a spec that leans on a builtin driver. Without it,
-    #: installing one on an older build fails as `unknown_provider`, which reads
-    #: as a broken source rather than an old host.
+    #: Minimum host the source's code needs. Recorded, not yet enforced.
     requires: dict[str, str] = Field(default_factory=dict)
-    #: `{connector, scopes}` or `{env: [...]}`. Never a value.
+    #: `{connector, scopes}`, `{env: [...]}` or `{secrets: {...}}`. Never a value.
     auth: Optional[AuthSpec] = None
     #: Supported reflect modes, head first as the default. A list because the
     #: picker must not offer a mode that silently fails.
     reflect: list[str] = Field(default_factory=lambda: ["record"])
     #: The user-facing form. Replaces the frontend's hardcoded provider catalog.
     config: dict[str, ConfigFieldSpec] = Field(default_factory=dict)
-    #: Only non-builtin sources declare these; a builtin's driver class owns them.
-    traits: Optional[TraitsSpec] = None
+    #: Offered in the add-source picker. ``False`` keeps a provider loadable — its rows
+    #: still poll, scripts still name it — without offering it to a person. A vendor
+    #: reached through the cloud (AgentMail behind Agent Email) is unlisted.
+    listed: bool = True
+    #: The cloud creates the account for the owning agent: there is nothing to paste
+    #: and no form, so the picker asks the cloud instead of saving a draft.
+    provisioned: bool = False
 
     @field_validator("name")
     @classmethod
@@ -251,44 +250,20 @@ class ManifestSpec(DataSpec):
         return data
 
     def runtime_for_folder(self, files: set[str]) -> Runtime:
-        """The runtime the folder's contents imply, with the two rules that need
-        both the JSON and the listing. Pure: no reads, no registry, no network.
+        """The runtime the folder's contents imply. Pure: no reads, no registry, no network.
 
-        Both markers present is an error rather than a precedence rule: there is
-        no honest default, and picking one silently would run an implementation
-        the author did not mean to ship.
+        The retired authored runtimes are refused where the author can read why, rather than
+        indexing a definition nothing can run.
         """
-        has_script, has_agent = SCRIPT_FILE in files, AGENT_FILE in files
-        if has_script and has_agent:
-            raise ManifestError(f"folder has both {SCRIPT_FILE} and {AGENT_FILE}; keep one")
-        runtime = Runtime.SCRIPT if has_script else Runtime.AGENT if has_agent else Runtime.BUILTIN
-        if runtime is Runtime.AGENT:
-            # Derived, storable, and dispatched by nothing: `driver_for_spec`
-            # builds an adapter for SCRIPT only. A folder with FETCH.md would
-            # index as a valid spec and then fail every poll with
-            # `unknown_provider`. Reserved, not supported — say so where the
-            # author can read it.
+        retired = sorted(files & {SCRIPT_FILE, AGENT_FILE})
+        if retired:
             raise ManifestError(
-                f"{AGENT_FILE} (agent runtime) is reserved but not implemented — "
-                f"use {SCRIPT_FILE} instead"
+                f"{' and '.join(retired)} belong to a retired runtime — upgrade: write {SOURCE_FILE}, "
+                "one flow_sdk.sources.Source subclass whose provider is this manifest's name"
             )
-        # The driver class is authoritative for a builtin, and `sync_source`
-        # stamps its kind and channel onto the row on the first poll. A manifest
-        # copy is a second owner of the same fact.
-        if self.traits is not None and runtime is Runtime.BUILTIN:
-            raise ManifestError("a builtin source must not declare traits; its driver class owns them")
-        # A script source has no class to hold its kind, so the manifest is the
-        # ONLY owner of `emits` — and `ingest_items` stamps it on every record
-        # unvalidated. Left blank it produced items with an empty kind that
-        # silently fell outside the inbox projection; a load error is the one
-        # place the author can see it.
-        if runtime is Runtime.SCRIPT and (self.traits is None or not self.traits.emits.strip()):
-            raise ManifestError(
-                "an authored source must declare traits.emits — the ontology kind stamped on every record"
-            )
-        return runtime
+        return Runtime.SOURCE
 
 
-
+SOURCE_FILE = "source.py"
 SCRIPT_FILE = "fetch.py"
 AGENT_FILE = "FETCH.md"

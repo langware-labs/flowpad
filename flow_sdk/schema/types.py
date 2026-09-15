@@ -157,7 +157,6 @@ class EntityType(StrEnum):
     SYSTEM_ROOT = "system_root"
     CWD_ROOT = "cwd_root"
     FOLDER = "folder"
-    SECRET_ORIGIN = "secret_origin"
     CONTACTS_GROUP = "contacts_group"
     # A blessed dot-taxonomy tag name (flow_sdk/builtin/tag.py). Optional
     # enrichment — anonymous tags (plain strings) need no entity at all.
@@ -257,9 +256,8 @@ class EntityType(StrEnum):
     #: is. ``DATA_SOURCE`` is the configured instance; this is its definition.
     DATA_SOURCE_SPEC = "data_source_spec"
     #: The authored definition of a NAMED SET OF ENV VARS a provider needs
-    #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD). ``SECRET_ORIGIN`` is one
-    #: project's declaration of ONE variable; this is the global definition of
-    #: the group. Same split as DATA_SOURCE_SPEC : DATA_SOURCE.
+    #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD) — the only way secrets are
+    #: declared, in user or project scope.
     CREDENTIAL_SPEC = "credential_spec"
     # One thread of ingested cloud messages (a Gmail thread, a Slack
     # `thread_ts`). MANY threads may point at ONE conversation — that is the

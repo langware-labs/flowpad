@@ -81,14 +81,14 @@ def _admits(source, author: str) -> bool:
     """
     from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
     from flow_sdk.builtin.email_inbox import sender_allowed  # noqa: PLC0415
-    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
         return False
     allowlist = [a for a in (getattr(source, "inbound_allowed_senders", None) or []) if str(a).strip()]
     if sender_allowed(allowlist, author):
         return True
-    driver = get_driver(getattr(source, "provider", "") or "")
+    driver = source_type(getattr(source, "provider", "") or "")
     return bool(driver is not None and driver.open_inbound and not allowlist)
 
 
@@ -176,7 +176,7 @@ async def handle_inbound(item) -> bool:
     and already-ours are all ordinary outcomes, not errors, and the message has
     already been ingested and projected either way — the owner can see it.
     """
-    from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply  # noqa: PLC0415
+    from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply, conversation_turn_lock  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
     from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
@@ -210,29 +210,33 @@ async def handle_inbound(item) -> bool:
         logger.warning("[agent-mail] no conversation for source_item %s", item.id)
         return False
 
-    workdir = await _workdir_for(agent)
-    ap = await _reuse_or_spawn_agent_process(agent, conversation_id, workdir)
-    prompt_result = await ap.prompt(body)
-    if isinstance(prompt_result, ApiFailResponse):
-        logger.warning(
-            "[agent-mail] prompt for %s was refused: %s",
-            conversation_id,
-            prompt_result.message or "unknown reason",
-        )
-        return False
-    reply = await _capture_assistant_reply(ap)
-    if not reply:
-        logger.info("[agent-mail] turn produced no reply for %s", conversation_id)
-        return False
+    # One turn at a time per conversation. A turn is spawn → prompt → transcript capture → send; a
+    # second message landing mid-turn was refused as "already in flight" and lost, and two turns
+    # that did overlap each captured the LATEST reply and sent it twice. It waits instead.
+    async with conversation_turn_lock(conversation_id):
+        workdir = await _workdir_for(agent)
+        ap = await _reuse_or_spawn_agent_process(agent, conversation_id, workdir)
+        prompt_result = await ap.prompt(body)
+        if isinstance(prompt_result, ApiFailResponse):
+            logger.warning(
+                "[agent-mail] prompt for %s was refused: %s",
+                conversation_id,
+                prompt_result.message or "unknown reason",
+            )
+            return False
+        reply = await _capture_assistant_reply(ap)
+        if not reply:
+            logger.info("[agent-mail] turn produced no reply for %s", conversation_id)
+            return False
 
-    # Body and recipients only. The reply path deliberately passes NO headers:
-    # a correspondent's input must not influence transport metadata.
-    # A refusal here is REPORTED, not swallowed. `dispatch_channel_reply`
-    # answers with a fail response rather than raising when it cannot work out
-    # who to answer, and the turn has already run at that point — so dropping
-    # the result silently spends a real turn and loses the answer with no trace,
-    # which reads downstream as "the agent never replied".
-    outcome = await dispatch_channel_reply(conversation_id, text=reply, source_id=source.id)
+        # Body and recipients only. The reply path deliberately passes NO headers:
+        # a correspondent's input must not influence transport metadata.
+        # A refusal here is REPORTED, not swallowed. `dispatch_channel_reply`
+        # answers with a fail response rather than raising when it cannot work out
+        # who to answer, and the turn has already run at that point — so dropping
+        # the result silently spends a real turn and loses the answer with no trace,
+        # which reads downstream as "the agent never replied".
+        outcome = await dispatch_channel_reply(conversation_id, text=reply, source_id=source.id, item=item, source=source)
     if getattr(outcome, "status", "") == "FAIL":
         logger.warning(
             "[agent-mail] reply for %s could not be dispatched: %s",

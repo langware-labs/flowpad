@@ -40,6 +40,15 @@ ANALYZER_WORKER_KEY = {
     WorkerType.COPILOT: "copilot",
 }
 
+# The instruction files each worker's process assets hold: every driver writes the
+# canonical CLAUDE.md plus its OWN discovery file
+# (``WorkerDriver.prepare_instruction_assets``); no worker gets another's file.
+INSTRUCTION_FILES = {
+    WorkerType.CLAUDE_CODE: ("CLAUDE.md",),
+    WorkerType.CODEX: ("CLAUDE.md", "AGENTS.md"),
+    WorkerType.COPILOT: ("CLAUDE.md", ".github/instructions/flowpad.instructions.md"),
+}
+
 
 def assert_prompt_ok(result) -> None:
     assert getattr(result, "status", "SUCCESS") != "FAIL", f"prompt failed: {result}"

@@ -1,3 +1,6 @@
+---
+id: dbca46b5-dba1-4e7d-a0fc-882bcb851cb2
+---
 # Connections — Python SDK and CLI
 
 Connections are the OAuth providers published by this instance. Python, the
@@ -17,7 +20,7 @@ asyncio REPL ...
 >>> from flow_sdk.connections import get_connections
 >>> connections = await get_connections()
 >>> [(c.provider, c.connected) for c in connections]
-[('anthropic', False), ('github', True), ('slack', False)]
+[('flowpad_account', False), ('claude', True), ('codex', True), ('copilot', True), ('opencode', False), ('anthropic', False), ('atlassian', False), ('flowpad', False), ('github', False), ('gitlab', False), ('google', False), ('linear', False), ('slack', False)]
 >>> slack = next(c for c in connections if c.provider == "slack")
 >>> slack = await slack.connect()
 >>> slack.connected
@@ -40,12 +43,20 @@ provider call that proves it still works.
 
 ```console
 $ flow connections list
-github         connected       GitHub
-slack          not connected   Slack
+flowpad_account	flowpad	disconnected	FlowPad
+claude	harness	unknown	Claude
 
 $ flow connections connect slack
 {"ok": true, "provider": "slack", "connected": true, "identity": "me"}
+
+$ flow connections list
+flowpad_account	flowpad	disconnected	FlowPad
+claude	harness	unknown	Claude
+slack	oauth	connected	Slack
 ```
+
+Each row is `provider`, `kind`, `state`, `display_name`, tab-separated. The list
+is what this box holds, so an unconnected provider appears only after it connects.
 
 Use `--json` for a machine-readable list or error. Browser instructions and
 progress use stderr; credentials, tokens and callback state are never printed.
@@ -53,7 +64,7 @@ progress use stderr; credentials, tokens and callback state are never printed.
 ## Require and use a held connection
 
 ```python
-from flow_sdk.connections import NotConnected, TokenUnavailable, require
+from flow_sdk.connections import NotConnected, TokenUnavailable, get_connections, require
 
 try:
     slack = await require("slack")

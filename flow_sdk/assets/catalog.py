@@ -132,6 +132,28 @@ def catalog_from_folders(folders, sources, types):
     return AssetCatalog(assets=assets, issues=issues)
 
 
+_inflight_scans: dict[tuple, asyncio.Future] = {}
+
+
+async def scan_catalog(folders, sources, types) -> AssetCatalog:
+    """Run one filesystem scan per distinct folder set at a time.
+
+    A scan of a real checkout is seconds of thread-pool work, and every
+    consumer that opens at once (asset manager, picker, project menu) asks for
+    the same folders. Callers that arrive while a scan is running await that
+    scan instead of starting another; nothing is cached past its completion,
+    so a later call still sees the disk as it is.
+    """
+    key = (tuple((str(f.path), f.project_id, f.recursive) for f in folders),
+           tuple((str(p), s) for p, s in sources), tuple(sorted(map(str, types))))
+    future = _inflight_scans.get(key)
+    if future is None or future.get_loop() is not asyncio.get_running_loop():
+        future = asyncio.ensure_future(asyncio.to_thread(catalog_from_folders, folders, sources, types))
+        _inflight_scans[key] = future
+        future.add_done_callback(lambda done: _inflight_scans.pop(key, None) if _inflight_scans.get(key) is done else None)
+    return await asyncio.shield(future)
+
+
 async def scan_path_asset_descriptors(sources, own_project_id, types, limit=10000, offset=0):
-    result = await asyncio.to_thread(catalog_from_folders, folders_for_sources(sources, own_project_id), sources, types)
+    result = await scan_catalog(folders_for_sources(sources, own_project_id), sources, types)
     return result.model_copy(update={"assets": result.assets[offset:offset + limit] if limit else result.assets[offset:]})

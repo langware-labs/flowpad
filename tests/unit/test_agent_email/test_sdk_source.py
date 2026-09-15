@@ -14,7 +14,9 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.email_inbox import EmailInbox
-from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
+from flow_sdk.ingest.source_registry import asset_module
+
+CloudEmailSource = asset_module("cloud_email").CloudEmailSource
 
 pytestmark = pytest.mark.asyncio
 
@@ -41,7 +43,7 @@ async def test_email_source_is_keyed_by_agent_and_created_once(mail_db):
     first = await inbox.ensure_source()
     second = await inbox.ensure_source()
 
-    assert CloudEmailDriver.identity_config_key == "agent_id"
+    assert CloudEmailSource.identity_config_key == "agent_id"
     assert second.id == first.id
     assert second.config == {
         "agent_id": agent.id,

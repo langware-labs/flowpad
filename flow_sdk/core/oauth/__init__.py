@@ -107,9 +107,9 @@ async def get_oauth_providers_as_env_table(user=None) -> EntityEnvVars:
     from flow_sdk.core.oauth.hub_providers import hub_provider_rows, union_providers  # noqa: PLC0415
 
     providers = union_providers(oauth_provider_rows(), await hub_provider_rows())
-    if user is None:
-        return providers
-    return merge_env_tables(providers, user.get_env_table())
+    # No user, nobody holds anything: merged against an empty table, so every row is
+    # still an ``EnvVarStatus`` (MISSING) and readers never branch on the row type.
+    return merge_env_tables(providers, user.get_env_table() if user is not None else EntityEnvVars())
 
 
 async def resolve_user_credentials_name(provider: str) -> Optional[str]:

@@ -37,7 +37,8 @@ import {
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
-import { applyProcessViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { rememberedViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { VIEW_MODE_PARAM } from '@src/navigation/DockPointer';
 import { activeDisplayDock } from '@src/navigation/open-active-display';
 
 /**
@@ -318,12 +319,15 @@ async function routeProcessPointer(
 
   try {
     const { process } = await loadProcess(processId);
-    // Per-session mode memory, applied AFTER loadProcess wrote
-    // CurrentProcessTypeId — same ordering rule as `applyProjectViewMode`, so
-    // the session being stamped is the one just loaded and not its predecessor.
-    // A no-op when the URL names a mode: that one already outranks every
-    // projection, and `useDockViewModeOverrideSync` records it on mount.
-    applyProcessViewMode(process, carry?.viewMode ?? null);
+    // A URL with no mode (cold deep link, hard refresh) opens the session in its
+    // remembered mode by STATING it on the URL. Restoring never writes memory or
+    // the preference — only a mode switch does (`VIEW_MODE_STORE`).
+    const remembered = carry?.viewMode ? null : rememberedViewMode(process);
+    if (remembered) {
+      const pointer = `${AgenticProcess.type}${TypeId.DELIMITER}${processId}`;
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw replace(buildShellRedirectUrl(requestPath, pointer, { ...carry?.options, [VIEW_MODE_PARAM]: remembered }));
+    }
     // Successful load — clear any prior runtime-error banner.
     dataContext.setTerminalRuntimeError(null);
     // Restore AFTER the load: the process is in cache, and the scope has already

@@ -2,78 +2,102 @@
 
 > **Ground rules (inline by design):**
 > **1. Evidence, never events.** A 200 is not proof; `poll_now` only marks a
-> source due, so "I polled" is never "items landed".
-> **2. Read before you poke** — `poll_now` clears `health`, `error_code` and
-> `error_detail` together.
+> source due, so "I polled" is never "items landed" — `flow source sync` is.
+> **2. Read before you poke** — `poll_now` and `sync` clear `health`, `error_code`
+> and `error_detail` together.
 > **3. Never widen a wait, a timeout, or a retry to make something pass.**
 > **4. Never destroy the user's data to fix a symptom.**
 > **5. Credentials and invites are the user's step** — name the exact click.
 
-Reached when no installed spec can express what the user named. The output is a
-folder asset, not SDK code — nothing is edited in `flow_sdk`.
+Reached when no installed source can express what the user named. The output is
+ONE self-contained folder asset — everything the source needs lives in it, and
+nothing is edited in `flow_sdk`, `ts_sdk` or `ui`.
 
-`SC` means `python3 <this skill>/scripts/source_ctl.py`.
+`SC` means `python3 <this skill>/scripts/source_ctl.py`; `flow source …` is the CLI
+over the same backend actions.
 
 ## What you are writing
 
 ```
 <project>/agentic-assets/data_source/<name>/
-    data_source.json    the manifest — presentation + the config form
-    fetch.py            the module that actually reads the system
+    data_source.json          the manifest (DataSourceSpec): presentation, kind, auth, the config form
+    source.py                 exactly ONE flow_sdk.sources.Source subclass — the source
+    transport.py …            optional helper modules, imported relatively (`from .transport import …`)
+    tests/test_<name>_source.py   the conformance kit + wire cases against a loopback double
+    tests/matrix.py           the source's case in the data source matrix
+    README.md                 setup, credentials, what a person must click
 ```
 
-The runtime is derived from the folder, never declared: `fetch.py` ⇒ script,
-neither ⇒ a builtin resolved by `name`. `FETCH.md` is **reserved and refused at
-load** (`ManifestError`), so write `fetch.py`. A source that should fetch through a worker is not authored
-at all: it is the shipped `agent` transport, configured per
-`references/mapping.md`. Read `docs/data-management/data-source-asset.md` for the manifest
-rules before writing one; the ones that bite:
+A source that should fetch through a worker is not authored at all: it is the
+shipped `agent` transport, configured per `references/mapping.md`. Read
+`docs/data-management/data-source-asset.md` (the manifest) and
+`docs/data-management/data-sources.md` ("Adding a source") before writing.
 
-- `name` must not collide with an installed source — a collision is refused and
-  the folder is ignored.
-- `icon_name`, never `icon`.
-- `auth` is `{connector, scopes}` **or** `{env: [...]}`, never both, and never a
-  credential value.
-- A `traits` block is REQUIRED for an authored source (it is what a builtin's
-  driver class would hold) and forbidden on a builtin. At minimum `emits` — the
-  ontology kind stamped on every record; the loader refuses a `fetch.py` folder
-  whose `emits` is missing or blank, and the folder is not indexed.
-- `config` field `type` is one of `text` `lines` `csv` `number` `path`. Anything
-  else is a load error.
+## The manifest — the rules that bite
 
-## The module contract
-
-`fetch.py` is invoked as `<python> fetch.py <verb> --request <path>`, reads that
-JSON file, and prints one JSON object. Exit `0` ok, `3` config failure (a person
-must fix it), `4` transient (retry next tick). stderr is captured for the author
-and never parsed.
-
-Request, every verb:
 ```json
-{ "protocol": 1,
-  "source": { "id": "...", "name": "...", "account_key": "...",
-              "config": { }, "window_days": 7 } }
+{
+  "schema": 1,
+  "name": "wiki",
+  "title": "Team wiki",
+  "description": "Pages from the team wiki.",
+  "kind": "datasource.api.wiki",
+  "icon_name": "BookOpen",
+  "auth": {"secrets": {"api_token": ""}},
+  "config": {
+    "base_url": {"type": "text", "required": true, "label": "Wiki URL", "pattern": "^https?://"},
+    "api_token": {"type": "text", "required": true, "label": "API token"}
+  }
+}
 ```
-`fetch` additionally gets
-`"cursor": {"segment_key": "...", "state": {}, "window_start": "...", "first_run": true}`.
 
-Responses:
-- `segments` → `{"segments": [{"key": "...", "label": "..."}]}`
-- `fetch` → `{"items": [...], "state": {...}, "unchanged": false}`; an item needs
-  at least `external_id`, plus `title`, `body`, `occurred_at`, `permalink`,
-  `author_display` as available.
-- `verify` (only if the manifest sets `setup_wiki`) →
-  `{"ready": false, "detail": "a sentence for the user", "pending": [...]}`
+- `name` is the folder name and the registry key. It must not collide with a
+  shipped source — the shipped one wins and your folder reports a `load_error`.
+- `icon_name`, never `icon`.
+- `auth` is exactly ONE of `{connector, scopes}` (an OAuth connection),
+  `{env: [NAMES]}` (the operator's environment) or `{secrets: {value_key: machine
+  secret name or ""}}` (a row value, optionally kept as a machine secret). Never a
+  credential value. The source reads what it declares from `self.credentials`.
+- No `traits`, no `fetch.py`, no `FETCH.md` — all refused at load. Traits are
+  ClassVars on the class.
+- `config` field `type` is one of `text` `lines` `csv` `number` `path`.
 
-**Two rules that cause silent data loss if ignored:**
-1. **Omitting `state` carries the previous one forward; `{}` CLEARS it.** Return
-   your position every time you have one.
-2. **Never send `source_id`, `provider`, `kind` or `segment_key` on an item** —
-   the host stamps them, and they are ignored. That is what stops one source
-   writing records attributed to another.
+## The class
 
-Use the standard library only unless the user accepts a dependency; the module
-runs as a plain subprocess with no package management.
+```python
+from flow_sdk.sources import CollectionSource, FeedItemData, SourceItemSpec
+from flow_sdk.sources import http
+
+
+class WikiSource(CollectionSource):
+    provider = "wiki"            # = the manifest's name
+    durable_cursor = False       # True only when the provider can resume from your cursor string
+
+    async def _scan(self, query):
+        token = self.credentials.value("api_token")
+        ...                      # list pages → [(key, raw), ...] sorted by key
+
+    async def _lookup(self, key): ...
+    def _item(self, key, raw) -> SourceItemSpec: ...
+```
+
+Implement only the protocols the provider honours — `fetch`/`iterate` to list,
+`send`/`reply` plus `message_for` for a channel, `open` for bytes, `verify` for a
+setup step. Everything the application needs to know about THIS source is the
+class's own method (`build`, `configure`, `lift_cursor`, `origin_id_for`,
+`permalink`, `webhook_*`) — never a table elsewhere. Import the public SDK
+(`flow_sdk.sources`, `flow_sdk.connections`, `token_for`), never another asset.
+
+## The tests, in the folder
+
+- `tests/test_<name>_source.py`: `checks_for(WikiSource)` from
+  `flow_sdk.sources.testing` over a `local_http_server` double
+  (`flow_sdk.ingest.testing`), plus the wire cases (paging, errors → the right
+  health). Import the class with
+  `WikiSource = asset_module("wiki").WikiSource` (`flow_sdk.ingest.source_registry`).
+  Name the file `test_<name>_source.py` — test module names are global.
+- `tests/matrix.py`: `case(monkeypatch, tmp_path)`, a context manager yielding
+  `{"config": …, "fields": …, "min_items": …, "send": …}` over the same doubles.
 
 ## Shipping an editor with the source
 
@@ -81,31 +105,25 @@ A definition's editor is a **webapp asset nested inside the definition** —
 nothing more. Put it at `<spec folder>/agentic-assets/webapp/editor/`:
 
 ```
-<spec folder>/data_source.json
 <spec folder>/agentic-assets/webapp/editor/webapp.json   {"name":"editor","kind":"application.web.editor","build":"."}
 <spec folder>/agentic-assets/webapp/editor/index.html
 <spec folder>/agentic-assets/webapp/editor/app.js        import { mountSourceEditor } from '/sdk/flowpad-sdk.js'; mountSourceEditor();
 ```
 
-Nothing registers it: a nested asset is a child of the asset it sits in, so
-re-indexing makes it the definition's app. `kind: application.web.editor` is
-what makes the Data Sources menu offer "Open editor"; the app is served and
-addressed like any other webapp (`/dock/app/micro_app-<id>`), and its address
-bar reads `Project / <definition> / editor`.
-
-`mountSourceEditor()` is the shipped editor (config form + items + dataset
-pane) — the nine bundled definitions each carry those three lines. To write a
-different one, copy `web-app-builder/template-flowpad` into that folder instead
-and call `sdk.resolveAppHost()`; its `subject` is the definition you are editing.
-A definition with no such folder simply has no editor.
+`kind: application.web.editor` is what makes the Data Sources menu offer "Open
+editor". `mountSourceEditor()` is the shipped editor (config form + items +
+dataset pane). A definition with no such folder simply has no editor.
 
 ## After writing
 
 1. `flow record index <project> --types data_source_spec` — point it at the
    PROJECT, not the source folder.
-2. `SC specs` — the new name must appear. If it does not, the manifest was
-   rejected; the backend log names the rule.
-3. Create the source and run the five gates in `modes/connect.md`.
-4. **The runtime probe.** If the test gate stalls with `unknown_provider`, the
-   spec is written and indexed but no runtime picked it up. Say exactly that —
-   never report a source as connected when it has never run.
+2. `flow source types` — the new name must appear with an empty `load_error`. A
+   non-empty one names the problem (no `source.py`, two classes, an import error,
+   a taken name); fix it and index again.
+3. `flow source create <name> --config k=v …`, then the gates, each with evidence:
+   `flow source verify <id>` → `flow source sync <id>` (health `ok`) →
+   `flow source items <id>` (the records are there) → for a channel
+   `flow source send <id> --to … --text …` and `flow source reply <id> <item> --text …`.
+4. Run the folder's own tests (`pytest <folder>/tests`). Never report a source as
+   connected when `flow source sync` has not returned `ok` with items.

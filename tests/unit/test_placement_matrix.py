@@ -163,15 +163,6 @@ def test_docs_type_reaches_both_scopes(tmp_path):
     assert resolve_destination("markdown", Scope.USER, default_worker="claude") is not None
 
 
-def test_internal_type_is_project_only(tmp_path):
-    # INTERNAL is now flowpad state only (secret_origin → assets/sodot), and
-    # state never installs into the user's home.
-    assert resolve_destination(
-        "secret_origin", Scope.PROJECT, default_worker="claude", project_mount=tmp_path
-    ) == tmp_path / "assets" / "sodot"
-    assert resolve_destination("secret_origin", Scope.USER, default_worker="claude") is None
-
-
 # ── Golden table: the permanent byte-identical guard ─────────────────────────
 # Type → (expected project-scope subdir, expected asset_class). This is the
 # authoritative placement contract. Add a row when you add a file-backed type.
@@ -209,8 +200,6 @@ GOLDEN = {
     # Free documents at the scope root — no container, no harness prefix.
     "markdown": ("docs", AssetClass.DOCS),
     "markdown_index": ("docs", AssetClass.DOCS),
-    # Flowpad's own state. INTERNAL means state, not user content.
-    "secret_origin": ("assets/sodot", AssetClass.INTERNAL),
 }
 
 # The ONLY family names flowpad may write inside a harness dot-dir, because they

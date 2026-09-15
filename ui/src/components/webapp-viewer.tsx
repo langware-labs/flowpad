@@ -1,6 +1,7 @@
 import { openExternal } from '@src/lib/open-external';
 import { ServiceStatusLed } from '@src/components/machine-overview/service-status-led';
-import PersistentIframe, { type PersistentIframeHandle } from '@src/components/persistent-iframe';
+import type { PersistentIframeHandle } from '@src/components/persistent-iframe';
+import { WebUrlDisplay } from '@src/components/web-url-display/WebUrlDisplay';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappTerminalPanel } from '@src/components/webapp-viewer/webapp-terminal-panel';
 import { useAgentContext } from '@src/contexts/agent-context';
@@ -12,7 +13,8 @@ import { useViewerStore } from '@src/hooks/flow-hooks';
 import { ViewType, WebappSubview } from '@sdk';
 import { useContext as useSdkContext } from '@sdk/react/hooks';
 import { hasElectronDisplayCapture } from '@src/components/display-toolbar/capture-region';
-import { ExternalLink, ImagePlus, RefreshCw, Terminal } from 'lucide-react';
+import { Check, Copy, ExternalLink, ImagePlus, RefreshCw, Terminal } from 'lucide-react';
+import { useCopied } from '@src/components/ui/copy-button';
 import React, { useCallback, useRef } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -73,6 +75,11 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
   const handleOpenInNewTab = useCallback(() => {
     if (src) openExternal(src);
   }, [src]);
+
+  const { copied, copy } = useCopied();
+  const handleCopyUrl = useCallback(() => {
+    if (src) void copy(src);
+  }, [copy, src]);
 
   const hasWebApp = Boolean(src);
   const showAnnotate = !!onAnnotate && isDesktop && hasElectronDisplayCapture();
@@ -142,6 +149,24 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7"
+                  aria-label={t`Copy URL`}
+                  data-testid="webapp-viewer-copy-url"
+                  onClick={handleCopyUrl}
+                  disabled={!hasWebApp}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
+                <p>{copied ? <Trans>Copied</Trans> : <Trans>Copy URL</Trans>}</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
                   aria-label={t`Refresh`}
                   onClick={handleRefresh}
                   disabled={!hasWebApp}
@@ -177,7 +202,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
         {/* Main content area - iframe or placeholder */}
         <div className={`relative w-full ${showPanel ? 'h-[60%]' : 'h-full'}`}>
           {webUrl ? (
-            <PersistentIframe ref={iframeRef} src={webUrl} testId="web-url-frame" />
+            <WebUrlDisplay ref={iframeRef} url={webUrl} testId="web-url-frame" />
           ) : hasWebApp ? (
             <WebappDisplay
               ref={iframeRef}
