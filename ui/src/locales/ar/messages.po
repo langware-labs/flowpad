@@ -11207,6 +11207,10 @@ msgstr ""
 msgid "Machine secrets"
 msgstr "أسرار الجهاز"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Machine size"
+msgstr ""
+
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Make a todo app"
 msgstr "إنشاء تطبيق قائمة مهام"
@@ -19903,6 +19907,8 @@ msgid "thinking"
 msgstr "التفكير"
 
 #: src/components/entity-execution-panel/current-activity.ts
+#: src/components/floating-chat/ThinkingSummary.tsx
+#: src/components/floating-chat/ThinkingSummary.tsx
 msgid "Thinking"
 msgstr "التفكير"
 

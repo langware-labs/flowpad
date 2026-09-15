@@ -1,4 +1,4 @@
-"""0.2.168 — every ingested record carries its origin; every projected message its row's.
+"""0.2.169 — every ingested record carries its origin; every projected message its row's.
 
 Runs ``flow_sdk.migrations.migration_2026_09_sources_cutover`` once on upgrade. Without it
 the ingestor, which now resolves rows by their origin, would miss every record ingested
