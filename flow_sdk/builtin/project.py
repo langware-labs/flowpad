@@ -708,6 +708,12 @@ class Project(Entity):
                 return proj
         return None
 
+    async def find_existing_for_create(self) -> "Project | None":
+        """A folder is one project: a create for an owned mount resolves to its owner."""
+        if self.remote or not self.fs_storage_mount_path:
+            return None
+        return await type(self).find_by_cwd(self.fs_storage_mount_path)
+
     @classmethod
     async def index_by_mount(cls) -> dict[str, "Project"]:
         """One read → ``{canonical_mount: Project}``, for resolving MANY paths.

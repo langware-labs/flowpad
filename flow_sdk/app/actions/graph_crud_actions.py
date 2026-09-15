@@ -425,6 +425,19 @@ async def handle_create_entity(request: Request):
         service_log.highlighted_error(err_msg)
         raise HTTPException(status_code=400, detail=err_msg)
 
+    # A type with a natural key answers a repeat create with the row it already
+    # has. Only for an id-less, parentless (or user-parented, which dispatches the
+    # same) create: a caller-supplied id is an identity minted elsewhere, and a
+    # parented create must still attach to its parent.
+    target_typeid = request_info.target_entity_typeid
+    if (
+        not incoming_id
+        and destination is None
+        and (not target_typeid or target_typeid.type == User.get_type())
+        and (existing := await entity.find_existing_for_create()) is not None
+    ):
+        return ApiSuccessResponse[Entity](data=existing)
+
     # Reject agent creation without a name
     if request_info.direct_resource_type == "subagent" and not getattr(entity, "name", None):
         raise HTTPException(status_code=400, detail="Agent must have a name")
