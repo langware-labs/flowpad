@@ -13,7 +13,7 @@ from flow_sdk.graph_workflow_manager import GraphWorkflowManager, graph_workflow
 from flow_sdk.graph_workflow_manager.envelope import EXTERNAL_SOURCE
 from flow_sdk.graph_workflow_manager.journal import read_run_journal
 from flow_sdk.graph_workflow_manager.manager import run_record_dir
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 
 
 async def _until(cond, what: str = "condition") -> None:

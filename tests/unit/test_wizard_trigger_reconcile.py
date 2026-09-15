@@ -30,7 +30,7 @@ from flow_sdk.server.builtin_triggers import (
     _upsert_one,
     reconcile_wizard_triggers,
 )
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 from tests.fixtures.identity import index_path
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval

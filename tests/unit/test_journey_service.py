@@ -11,7 +11,7 @@ import pytest
 
 from flow_sdk.builtin.journey import Journey
 from flow_sdk.builtin.journey_journal import ACTIVE_STATUSES, JourneyJournal, JourneyStatus
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 
 USER = "user-1"
 OTHER = "user-2"
