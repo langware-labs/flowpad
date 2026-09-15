@@ -7,6 +7,7 @@ import pytest
 from flow_sdk import connections
 from flow_sdk.connections import Connection, ConnectionRequirements, MissingScopes, NotConnected, require
 from flow_sdk.schema.data_spec.connection_spec import ConnectionResult, ConnectionSpec, ConnectionTestResult
+from tests.utils.connection_rows import fake_connections
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -21,15 +22,8 @@ def _spec(provider: str, *, connected: bool = False, scopes: tuple[str, ...] = (
     )
 
 
-def _catalogue(monkeypatch, rows: list[ConnectionSpec]) -> None:
-    async def resolve(provider: str):
-        return next((row for row in rows if row.provider == provider), None)
-
-    monkeypatch.setattr(connections, "resolve_connection_spec", resolve)
-
-
 async def test_get_returns_the_held_connection(monkeypatch):
-    _catalogue(monkeypatch, [_spec("google", connected=True)])
+    fake_connections(monkeypatch, [_spec("google", connected=True)])
 
     google = await Connection.get("google")
 
@@ -38,7 +32,7 @@ async def test_get_returns_the_held_connection(monkeypatch):
 
 
 async def test_an_unconnected_provider_raises_carrying_its_row(monkeypatch):
-    _catalogue(monkeypatch, [_spec("google")])
+    fake_connections(monkeypatch, [_spec("google")])
 
     with pytest.raises(NotConnected) as not_connected:
         await Connection.get("google")
@@ -48,7 +42,7 @@ async def test_an_unconnected_provider_raises_carrying_its_row(monkeypatch):
 
 
 async def test_an_unknown_provider_raises_with_no_row(monkeypatch):
-    _catalogue(monkeypatch, [])
+    fake_connections(monkeypatch, [])
 
     with pytest.raises(NotConnected) as not_connected:
         await Connection.get("nowhere")
@@ -56,8 +50,19 @@ async def test_an_unknown_provider_raises_with_no_row(monkeypatch):
     assert not_connected.value.connection is None
 
 
+async def test_get_connection_is_the_get_connections_row(monkeypatch):
+    fake_connections(monkeypatch, [_spec("google", connected=True), _spec("slack")])
+
+    rows = await connections.get_connections()
+    slack = await connections.get_connection("slack")
+
+    assert slack == next(c for c in rows if c.provider == "slack")
+    assert slack is not None and slack.connected is False
+    assert await connections.get_connection("nowhere") is None
+
+
 async def test_validate_scopes_names_only_what_the_grant_lacks(monkeypatch):
-    _catalogue(monkeypatch, [_spec("google", connected=True, scopes=("drive.readonly",))])
+    fake_connections(monkeypatch, [_spec("google", connected=True, scopes=("drive.readonly",))])
     google = await Connection.get("google")
 
     await google.validate_scopes(["drive.readonly"])
@@ -70,7 +75,7 @@ async def test_validate_scopes_names_only_what_the_grant_lacks(monkeypatch):
 
 async def test_connect_passes_reauthorize_to_the_orchestrator_only_when_asked(monkeypatch):
     held = _spec("google", connected=True)
-    _catalogue(monkeypatch, [held])
+    fake_connections(monkeypatch, [held])
     asked: list[bool] = []
 
     async def connect(provider, presenter, *, reauthorize=False):

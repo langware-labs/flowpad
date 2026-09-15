@@ -230,7 +230,9 @@ async def _credential_rows(project: Optional["Project"]) -> list[ConnectionSpec]
     ]
 
 
-async def list_connections(*, project: Optional["Project"] = None) -> list[ConnectionSpec]:
+async def list_connections(
+    *, project: Optional["Project"] = None, include_unconnected: bool = False
+) -> list[ConnectionSpec]:
     """Every connection, in the order the screen shows them.
 
     Machine-level kinds and user-scope credentials always; a project's own
@@ -240,6 +242,11 @@ async def list_connections(*, project: Optional["Project"] = None) -> list[Conne
     A pure read: nothing here probes, and :func:`check_harness_logins` is the
     verb that does. ``flow_sdk.connections.require`` resolves through here on
     paths a person is waiting on.
+
+    ``include_unconnected`` keeps every OAuth provider — connected or not — in the
+    same place in the order. The screen's table leaves it off (an unconnected
+    provider belongs in its Add dialog); the SDK turns it on, because code asks
+    "which providers exist, and is each connected" and each row says which.
     """
     from flow_sdk.core.connections.specs import _list_connection_specs_local  # noqa: PLC0415
 
@@ -252,8 +259,8 @@ async def list_connections(*, project: Optional["Project"] = None) -> list[Conne
         _credential_rows(project),
     )
     rows: list[ConnectionSpec] = [flowpad, *harnesses]
-    # Held only: the table lists what exists, and an unconnected provider belongs
-    # in the Add dialog. The catalogue itself stays complete for the connect flow.
-    rows.extend(spec for spec in oauth if spec.connected)
+    # Held only by default: the table lists what exists, and an unconnected provider
+    # belongs in the Add dialog. The catalogue itself stays complete for the connect flow.
+    rows.extend(spec for spec in oauth if include_unconnected or spec.connected)
     rows.extend(credentials)
     return rows

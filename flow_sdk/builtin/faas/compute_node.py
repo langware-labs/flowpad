@@ -1651,7 +1651,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         return self._desktop_get_host(port, redirect)
 
     @action.get(action_name="connections")
-    async def connections_action(self, project_id: str = "") -> "ApiResponse":
+    async def connections_action(self, project_id: str = "", include_unconnected: bool = False) -> "ApiResponse":
         """Every connection this box has, in one read.
 
         Consolidated HERE rather than in the browser, which used to fetch four
@@ -1666,12 +1666,16 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         A pure read. ``check-harness-logins`` is the verb that asks the vendor
         CLIs; keeping it out of here is what stops a GET from spawning
         subprocesses on the path ``require()`` resolves through.
+
+        ``include_unconnected`` also lists every OAuth provider not yet connected
+        (``connected=False``) — the SDK's ``get_connections()``; the screen and the
+        CLI leave it off.
         """
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
         from flow_sdk.core.connections.status import list_connections  # noqa: PLC0415
 
         project = await Project.get_by_id(project_id) if project_id else None
-        rows = await list_connections(project=project)
+        rows = await list_connections(project=project, include_unconnected=include_unconnected)
         return ApiSuccessResponse(data={"connections": [r.model_dump(mode="json") for r in rows]})
 
     @action.post(action_name="check-harness-logins")

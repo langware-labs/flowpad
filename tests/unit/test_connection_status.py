@@ -237,6 +237,33 @@ async def test_lists_only_held_oauth_grants(monkeypatch):
     assert [r.provider for r in rows if r.kind is ConnectionKind.OAUTH] == ["slack"]
 
 
+async def test_include_unconnected_keeps_every_oauth_provider_in_screen_order(monkeypatch):
+    """The SDK's list: the same order, the OAuth block complete, each row saying
+    whether it is connected. Default (screen, CLI) stays held-only."""
+    _no_harnesses(monkeypatch)
+    _no_flowpad(monkeypatch)
+    _oauth(monkeypatch, [_spec("github", connected=True), _spec("slack", connected=False)])
+    monkeypatch.setattr(status_mod, "_credential_rows", _async_rows([_api_row("OPENAI", scope="user")]))
+
+    held = await status_mod.list_connections()
+    every = await status_mod.list_connections(include_unconnected=True)
+
+    assert [r.provider for r in held] == ["flowpad", "github", "OPENAI"]
+    assert [(r.provider, r.connected) for r in every] == [
+        ("flowpad", False),
+        ("github", True),
+        ("slack", False),
+        ("OPENAI", True),
+    ]
+
+
+def _async_rows(specs):
+    async def rows(project):
+        return specs
+
+    return rows
+
+
 async def test_user_credentials_are_listed_without_a_project(monkeypatch):
     """User-scope credentials apply to every project, so they are rows even when
     no project is named; the call passes the project through unchanged."""
