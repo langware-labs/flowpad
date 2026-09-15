@@ -1607,10 +1607,10 @@ class AgenticProcess(Entity):
             return await self._relay_json("exit", body={}, refresh=False)
         worker = _PROMPT_WORKERS.get(self.id)
         turn = _PROMPT_TASKS.get(self.id)
+        # A completion must not launch another queued turn during teardown.
+        if (worker is not None or turn is not None or not self.shell_id) and self.queue.exists():
+            self.queue.clear(source="exit")
         if worker is not None or turn is not None:
-            # A completion must not launch another queued turn during teardown.
-            if self.queue.exists():
-                self.queue.clear(source="exit")
             if worker is not None:
                 await worker.close_session()
             if turn is not None and turn is not asyncio.current_task():
@@ -1618,12 +1618,11 @@ class AgenticProcess(Entity):
                 await asyncio.gather(turn, return_exceptions=True)
             if worker is not None:
                 unregister_prompt_worker(self.id, worker)
-            if not self.shell_id:
-                self.status = ProcessStatus.STOPPED.value
-                await self.save()
-                return ApiSuccessResponse(data={"status": "stopped"})
         if not self.shell_id:
-            return ApiFailResponse(message="No active shell session")
+            # Headless: a finished turn leaves nothing to kill, but the process still ends STOPPED.
+            self.status = ProcessStatus.STOPPED.value
+            await self.save()
+            return ApiSuccessResponse(data={"status": "stopped"})
 
         try:
             from flow_sdk.builtin.shell import Shell

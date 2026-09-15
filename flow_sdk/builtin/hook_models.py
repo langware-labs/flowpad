@@ -432,8 +432,8 @@ async def _finish_agent_run(process: Any) -> None:
             return
         errored = process.fetch_worker_status() == WorkerStatus.ERROR
         await process.exit()
-        # `exit` only settles a process it still holds a worker or turn for; a
-        # turn that already unregistered itself is left RUNNING, so settle it here.
+        # `exit` settles a headless process STOPPED; a run whose worker ended in
+        # ERROR is re-settled FAILED here.
         final = ProcessStatus.FAILED.value if errored else ProcessStatus.STOPPED.value
         if process.status != final:
             process.status = final
