@@ -83,7 +83,13 @@ in `ui/src/tabs/tab-content-lifecycle.ts`, because they depend on the concrete U
 `DockPointer`, route classifiers, and content adapters.
 
 ```ts
-type TabLifecycleState = 'opening' | 'opened' | 'open_failed' | 'closing' | 'close_failed';
+enum TabLifecycleState {
+  Opening = 'opening',
+  Opened = 'opened',
+  OpenFailed = 'open_failed',
+  Closing = 'closing',
+  CloseFailed = 'close_failed',
+}
 
 interface TabContentAdapter {
   setupTab(dock: DockPointer): Promise<TabSetupResult>;
@@ -376,13 +382,12 @@ any dock-less URL — is parked for the unified-tabs phase, Part 2).
 
 ```
 BACKEND — membership + order truth
-  compute_node._terminal_list   (compute_node.py:498)  strip membership: {pure_shells, visible_processes};
-                                                       drops AP-owned/sidecar shells; reaps stuck STOPPING
-  compute_node._terminal_close  (compute_node.py:611)  batched close: AP→STOPPING+visible=False, shell→CLOSING,
-                                                       async PTY teardown
-  Shell                         (shell.py:100,102)     tab_order (Persist.FALSE), last_active_at (stamped at PTY START only)
-  AgenticProcess                (agentic_process.py:386-391) shell_id (transport), visible (membership),
-                                                       last_active_at (new; not yet stamped server-side)
+  Tab entity list / close       (tab.py)                strip membership + order: the `Tab` placement rows
+  compute_node._terminal_close  (faas/compute_node.py:909) batched close (behind the `tabs/close` compat router):
+                                                       AP→STOPPING+visible=False, shell→CLOSING, async PTY teardown
+  Entity                        (entity_model.py:376,385) tab_order (Persist.FALSE), last_active_at (base-Entity fields,
+                                                       stamped by the generic `activate` action; Shell also at PTY start)
+  AgenticProcess                (agentic_process.py:586,618) shell_id (transport), visible (shown as a terminal tab)
 SDK — live entities
   dataManager.callAction + castAndDeepAssign            hydrate entity cache; WS subscribeToEntityOps streams ops
 MODULE STORES — derived, per-client

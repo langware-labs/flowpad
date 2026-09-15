@@ -74,26 +74,25 @@ recency forward.
 
 ## 2. Attachments
 
-An `Attachment` (`flow_sdk/builtin/flow_message.py:202`) is a small BaseModel: an
+An `Attachment` (`flow_sdk/builtin/flow_message.py:353`) is a small BaseModel: an
 `attachment_type` plus a single `data` string whose meaning depends on the type.
-`AttachmentType` (`flow_sdk/builtin/flow_message.py:18`) enumerates five:
+`AttachmentType` (`flow_sdk/builtin/flow_message.py:33`) enumerates four:
 
 ```
 AttachmentType   data is interpreted as                              body?
 --------------   ---------------------------------------------       -----
-TYPE_ID          "type-id" — ref to a LOCAL entity; pack_bundle      yes
+TYPE_ID          "type_id" — ref to a LOCAL entity; pack_bundle      yes
                  serializes it into the bundle's attachment subtree,
                  or records a git transfer declaration in git mode
 FILE             path relative to the .flowmsg VFS root              yes
-                 (stored at data/<filename>, FILE_VFS_PREFIX)        (:124)
-REPO             full repo path; the uuid5 is derived from it        no
+                 (stored at data/<filename>, FILE_VFS_PREFIX)        (:172)
 URL              a URL                                               no
 PROMPT           inline prompt TEXT, or VFS subpath prompt/<file>    inline=no
-                 (PROMPT_FILE_VFS_PREFIX, :125)                      file=yes
+                 (PROMPT_FILE_VFS_PREFIX, :173)                      file=yes
 ```
 
 So `data` is overloaded by type: a local entity reference (`TYPE_ID`), a VFS
-path under `data/` (`FILE`), a repo path that *derives* its uuid5 (`REPO`), a raw
+path under `data/` (`FILE`), a raw
 URL (`URL`), or — for `PROMPT` — either the literal prompt text (inline, no body)
 or a `prompt/<filename>` subpath (file-backed, needs body).
 
@@ -129,7 +128,7 @@ out when counting/copying user-meaningful attachments.
 
 A message "has a body" iff at least one attachment needs packed bytes:
 `has_body()` (`flow_sdk/builtin/flow_message.py:470`) returns True for `FILE`,
-`TYPE_ID`, or a `PROMPT`-with-file; URL / REPO / inline-PROMPT are body-free. The
+`TYPE_ID`, or a `PROMPT`-with-file; URL / inline-PROMPT are body-free. The
 body itself is a single `.flowmsg` zip named `BODY_FILENAME = "body.flowmsg"`
 (`flow_sdk/builtin/flow_message.py:112`), stored on the hub at
 `flow_message/<id>/fs/<BODY_FILENAME>`.
@@ -138,7 +137,7 @@ body itself is a single `.flowmsg` zip named `BODY_FILENAME = "body.flowmsg"`
 **hub-enforced**:
 
 ```
-            (text-only / URL / REPO / inline-PROMPT)
+            (text-only / URL / inline-PROMPT)
         ┌───────────────────────────────────────────────┐
         │                                                │
         ▼                                                │
