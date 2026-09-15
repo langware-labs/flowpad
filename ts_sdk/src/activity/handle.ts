@@ -40,6 +40,22 @@ function asSpec(payload: unknown): ActivityProgressSpec | null {
   return candidate;
 }
 
+/**
+ * The backend refused a verb — e.g. `ACTIVITY_ENDED` for `block()` / `resume()` on an
+ * activity that has already finished. Thrown only by the lifecycle verbs that must not be
+ * silently dropped; ticks still swallow refusals.
+ */
+export class ActivityRefusedError extends Error {
+  constructor(
+    readonly errorCode: string,
+    readonly path: string,
+    readonly verb: string,
+  ) {
+    super(`activity '${path}': ${verb} refused (${errorCode})`);
+    this.name = 'ActivityRefusedError';
+  }
+}
+
 interface VerbBody {
   value?: unknown;
   n?: number;
@@ -69,15 +85,23 @@ export class Activity {
   /** Chains verbs in issue order so a burst cannot arrive out of sequence. */
   private queue: Promise<ActivityProgressSpec | null> = Promise.resolve(null);
 
-  private send(verb: string, body: VerbBody = {}): Promise<ActivityProgressSpec | null> {
+  /**
+   * `strict` verbs reject with `ActivityRefusedError` when the backend REFUSES them.
+   * Transport failures are still swallowed for every verb: a failed report must never
+   * take down whatever is being reported ON (the client's interceptor already logged it).
+   */
+  private send(verb: string, body: VerbBody = {}, strict = false): Promise<ActivityProgressSpec | null> {
     const payload = { ...body, subject_entity: this.subject_entity ?? undefined };
-    this.queue = this.queue
-      .then(() => apiClient.post(`${BASE}/${this.path}/${verb}`, payload))
-      .then(asSpec)
-      // A failed report must never take down whatever is being reported ON. The failure
-      // is already logged by the client's own interceptor.
-      .catch(() => null);
-    return this.queue;
+    const result = this.queue
+      .then(() => apiClient.post(`${BASE}/${this.path}/${verb}`, payload).catch(() => null))
+      .then((res: unknown) => {
+        const code = (res as { error_code?: string } | null)?.error_code;
+        if (strict && code) throw new ActivityRefusedError(code, this.path, verb);
+        return asSpec(res);
+      });
+    // The chain itself never stays rejected, so one refusal does not poison later verbs.
+    this.queue = result.catch(() => null);
+    return result;
   }
 
   label(text: string) { return this.send('label', { value: text }); }
@@ -96,9 +120,11 @@ export class Activity {
   }
   inc(counter: string, n = 1) { return this.send('inc', { counter, n }); }
 
-  block(message?: string) { return this.send('block', { message }); }
+  /** Rejects with `ActivityRefusedError` (`ACTIVITY_ENDED`) if the activity has already ended. */
+  block(message?: string) { return this.send('block', { message }, true); }
   pause(message?: string) { return this.send('pause', { message }); }
-  resume() { return this.send('resume'); }
+  /** Rejects with `ActivityRefusedError` (`ACTIVITY_ENDED`) if the activity has already ended. */
+  resume() { return this.send('resume', {}, true); }
   done(message?: string) { return this.send('done', { message }); }
   fail(message?: string) { return this.send('fail', { message }); }
   cancel(message?: string) { return this.send('cancel', { message }); }

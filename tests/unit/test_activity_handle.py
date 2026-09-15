@@ -9,7 +9,7 @@ and an error is not.
 
 import pytest
 
-from flow_sdk.activity import Activity, ActivityState, monitor
+from flow_sdk.activity import Activity, ActivityEnded, ActivityState, monitor
 from flow_sdk.schema.data_spec.activity_spec import MAX_DEPTH, MAX_ERROR_SAMPLE
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -206,11 +206,38 @@ def test_terminal_is_sticky_and_later_mutations_are_dropped():
     act.inc_success(99)
     act.inc_error("late")
     act.label("renamed")
-    act.block("nope")
 
     spec = act.spec()
     assert (spec.done, spec.errors_count, spec.state) == (3, 0, ActivityState.COMPLETED)
     assert spec.label is None
+
+
+@pytest.mark.parametrize("end", ["done", "fail", "cancel"])
+@pytest.mark.parametrize("verb", ["block", "resume"])
+def test_block_and_resume_on_an_ended_activity_raise(end, verb):
+    """Unlike a late tick, a lifecycle move on a finished row is a producer bug: it claims
+    the work is still somebody's. It raises, names the path and state, and moves nothing."""
+    act = Activity.get("index/pdf")
+    act.inc_success()
+    getattr(act, end)()
+    ended = act.state
+
+    with pytest.raises(ActivityEnded) as info:
+        getattr(act, verb)(*(["late"] if verb == "block" else []))
+
+    assert info.value.path == "index/pdf" and info.value.state is ended and info.value.verb == verb
+    assert "'index/pdf'" in str(info.value) and ended.value in str(info.value)
+    assert act.state is ended and act.spec().message is None
+
+
+def test_block_on_an_interrupted_child_raises():
+    root = Activity.get("index")
+    child = root.child("pdf")
+    child.inc_success()
+    root.done()
+    assert child.state is ActivityState.INTERRUPTED
+    with pytest.raises(ActivityEnded):
+        child.block("late")
 
 
 def test_root_terminal_marks_unfinished_children_interrupted():

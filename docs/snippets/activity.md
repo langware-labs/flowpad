@@ -76,13 +76,27 @@ counters, not on the wire.
 
 ```python
 act = Activity.get("index")
+act.block("waiting for hub login")          # running → blocked, NOT terminal
+act.resume()                                # blocked → running
 act.done("indexed 5,000 · 17 orphans")     # completed, sticky, root → untracked
-act.block("waiting for hub login")          # running ⇄ blocked, NOT terminal
-act.resume()
+```
+
+Once it has ended, a lifecycle move on it is a mistake, and it raises:
+
+```python
+from flow_sdk.activity import ActivityEnded
+
+act.inc_success()                           # dropped silently — a late tick is not an error
+try:
+    act.block("waiting for hub login")      # but blocking a finished row is
+except ActivityEnded as exc:
+    print(exc)                              # activity 'index' is completed; cannot block …
 ```
 
 Terminal states are sticky: an `inc_success()` after `done()` is dropped, not applied and
 not raised — a late tick from a background thread is not worth failing a job over.
+`block()` and `resume()` are different: each says the work is still somebody's, which a
+finished row is not, so both raise `ActivityEnded` (over HTTP, an `ACTIVITY_ENDED` refusal).
 `done()` on a child ends that child and leaves the tree tracked. `done()` on the ROOT ends
 the tree: any child still running is recorded `interrupted`, because it was cut off rather
 than finished, and recording it as completed would be a lie the receipt carries forever.
@@ -148,8 +162,8 @@ tree with it.
 
 ```python
 Activity.get("index")                                    # the instance — this box
-Activity.get("run", scope="agentic_process-abc")         # a row on another entity
-monitor.list(scope="agentic_process-abc")
+Activity.get("run", subject_entity="agentic_process-abc")  # a row on another entity
+monitor.list(subject_entity="agentic_process-abc")
 ```
 
 Scope is part of the address, so two entities can each have an `index` row. It is also the
