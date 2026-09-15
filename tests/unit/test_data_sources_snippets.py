@@ -174,3 +174,39 @@ async def test_9_a_refusal_is_a_sentence_not_an_exception():
     assert await DataSource.choices_for("gcs", "cache_root") is None, (
         "a field the manifest never marked is a caller bug, not a refusal"
     )
+
+
+async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
+    """The Drive fence, against the gdrive asset's own loopback Drive and a
+    doubled `google` connection. Two runs pin the section's two sentences: with
+    no connection `verify()` says so, parks the row and fetches nothing; with
+    one, the first `sync()` lands the drive in `cache_root` and the mirror.
+    """
+    from flow_sdk.ingest.source_registry import SHIPPED_ROOT, load_module
+    from flow_sdk.ingest.sources import source_type
+    from flow_sdk.sources.credentials import Credentials
+
+    drive = load_module(SHIPPED_ROOT / "gdrive" / "tests", "test_gdrive_source")
+    cache, dest = tmp_path / "cache", tmp_path / "dest"
+
+    def names(root):
+        return sorted(p.name for p in root.rglob("*.txt"))
+
+    with local_http_server(drive._Drive(drive.SEEDED)) as base:
+        env = {"CACHE_ROOT": str(cache), "BASE_URL": base, "DESTINATION": str(dest)}
+
+        monkeypatch.setattr(source_type("gdrive"), "credentials_for", drive._credentials(Credentials()))
+        ns = await _section("10.", dict(env))
+        assert ns["verdict"]["ready"] is False
+        assert "Google" in ns["verdict"]["detail"]
+        assert ns["src"].status == "setup"
+        assert names(cache) == [], "nothing is fetched without a connection"
+        await ns["src"].delete()
+
+        monkeypatch.setattr(source_type("gdrive"), "credentials_for", drive._credentials(drive.TOKEN))
+        ns = await _section("10.", dict(env))
+        assert ns["verdict"]["ready"] is True
+        assert ns["src"].status == "active"
+        assert names(cache) == names(dest) == ["one.txt", "three.txt", "two.txt"]
+        assert ns["outcome"].created == 0, "the report counts records; a file source shows in the tree"
+        await ns["src"].delete()
