@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { KeyRound, KeySquare } from 'lucide-react';
-import type { CredentialSpec, OAuthProvider } from '@sdk';
+import type { SecretPack, OAuthProvider } from '@sdk';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { getIconPacks, resolveIcon } from '@sdk/icons';
 import { flowIconComponent } from '@sdk/react/FlowIcon';
@@ -25,9 +25,9 @@ export interface AddConnectionDialogProps {
   /** OAuth providers with no credential held yet. */
   providers: OAuthProvider[];
   /** Credential definitions with nothing declared or detected yet. */
-  specs: CredentialSpec[];
+  specs: SecretPack[];
   onPickProvider: (providerName: string) => void;
-  onPickCredential: (spec: CredentialSpec) => void;
+  onPickCredential: (spec: SecretPack) => void;
   /** Declare your own set of environment variables. */
   onPickCustom: () => void;
   /** Set while a pick is in flight, so the tile can spell "working". */
@@ -62,7 +62,7 @@ function providerIcon(provider: OAuthProvider) {
  *  Same order as a provider's, because the two sections show the same companies:
  *  "Anthropic" and "Anthropic API key" are one brand and must not wear two
  *  different colours one row apart. */
-function credentialIcon(spec: CredentialSpec) {
+function credentialIcon(spec: SecretPack) {
   const ref = brandRef(String(spec.name ?? ''), spec.icon_name);
   return ref ? flowIconComponent(ref) : KeyRound;
 }

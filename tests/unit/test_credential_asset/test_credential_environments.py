@@ -34,7 +34,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     normalize_environment,
     vault_name,
 )
-from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialManifestSpec
+from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -124,7 +124,7 @@ def test_invalid_environment_names_are_refused(name):
 
 
 def test_an_environment_overrides_the_store_and_the_required_set():
-    parsed = CredentialManifestSpec.model_validate(
+    parsed = CredentialSpec.model_validate(
         {
             "schema": 2,
             **_manifest("db", "DATABASE_URL", "SENTRY_DSN"),
@@ -137,14 +137,14 @@ def test_an_environment_overrides_the_store_and_the_required_set():
 
 def test_an_environment_cannot_require_an_undeclared_variable():
     with pytest.raises(ValueError, match="undeclared"):
-        CredentialManifestSpec.model_validate(
+        CredentialSpec.model_validate(
             {"schema": 2, **_manifest("db", "DATABASE_URL"), "environments": {"production": {"required": ["NOPE"]}}}
         )
 
 
 def test_an_llm_provider_key_has_no_environments():
     with pytest.raises(ValueError, match="no environments"):
-        CredentialManifestSpec.model_validate(
+        CredentialSpec.model_validate(
             {
                 "schema": 2,
                 **_manifest("openrouter", "OPENROUTER_API_KEY"),

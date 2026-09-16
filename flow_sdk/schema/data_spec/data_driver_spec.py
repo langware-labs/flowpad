@@ -134,7 +134,7 @@ class AuthSpec(DataSpec):
     env: list[str] = Field(default_factory=list)
     #: ``{value key: machine secret name}`` — ``""`` when only the row supplies it.
     secrets: dict[str, str] = Field(default_factory=dict)
-    #: A CredentialSpec NAME, declared in the owner's project or the user scope — its values come
+    #: A SecretPack NAME, declared in the owner's project or the user scope — its values come
     #: from that scope's ``.env.local`` or vault, exactly as a worker process reads them.
     credential: str = ""
     #: ``{value key: env var of that credential}`` — required with ``credential``.

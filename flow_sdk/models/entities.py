@@ -29,7 +29,7 @@ except ImportError as e:
     print(f"[WARN] Failed to import Wiki entities: {e}")
 
 # A core type: a failure here must be loud, not a WARN that leaves the type unregistered.
-from flow_sdk.builtin.credential_spec import CredentialSpec  # noqa: F401
+from flow_sdk.builtin.secret_pack import SecretPack  # noqa: F401
 from flow_sdk.builtin.data_driver import DataDriver  # noqa: F401
 
 try:

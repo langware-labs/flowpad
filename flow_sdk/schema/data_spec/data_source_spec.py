@@ -10,7 +10,7 @@ The file key names the thing it points at (``data_driver_name``, ``data_driver_c
 its engine names (``provider``, ``config``). Aliases carry the file keys, the way ``DataDriverSpec``
 carries ``schema`` for ``manifest_schema``.
 
-Value-free by construction, like ``credential.json``: a secret never lands in a folder a project
+Value-free by construction, like ``secret_pack.json``: a secret never lands in a folder a project
 shares through git. A secret is a credential the driver declares, resolved through the bound store.
 """
 from __future__ import annotations

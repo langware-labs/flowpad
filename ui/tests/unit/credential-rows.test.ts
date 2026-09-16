@@ -12,7 +12,7 @@ import {
 } from '@src/components/credentials-view/credential-rows';
 
 const row = (over: Partial<CredentialStatusRow> & Pick<CredentialStatusRow, 'name' | 'scope'>): CredentialStatusRow => ({
-  typeid: `credential_spec-${over.scope}-${over.name}`,
+  typeid: `secret_pack-${over.scope}-${over.name}`,
   title: over.name,
   description: '',
   icon_name: '',
@@ -118,7 +118,7 @@ describe('buildCredentialRows', () => {
 
   it('marks a user credential overridden when the project declares all its variables', () => {
     const [r] = buildCredentialRows(
-      status({ credentials: [row({ name: 'mine', scope: 'user', vars: [v('K', { shadowed_by: 'credential_spec-x' })] })] }),
+      status({ credentials: [row({ name: 'mine', scope: 'user', vars: [v('K', { shadowed_by: 'secret_pack-x' })] })] }),
     );
 
     expect(r.shadowed).toBe(true);
@@ -135,7 +135,7 @@ describe('takenInScope', () => {
     });
 
     expect([...takenInScope(s, 'user')]).toEqual(['USER_KEY']);
-    expect([...takenInScope(s, 'user', 'credential_spec-user-a')]).toEqual([]);
+    expect([...takenInScope(s, 'user', 'secret_pack-user-a')]).toEqual([]);
   });
 });
 

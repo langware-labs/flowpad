@@ -13,7 +13,7 @@ Run by an agent with browser control (Chrome MCP): WhatsApp Web cannot be driven
 the tester's own session, so this is a checklist run, not a Playwright spec. Record results under
 `ui/tests/manual_regression/_results/<date>/whatsapp_agent_e2e.json`.
 
-What this proves: a message source's credential is DECLARED (a CredentialSpec in the agent's
+What this proves: a message source's credential is DECLARED (a SecretPack in the agent's
 project) and FOUND (the project's `.env.local`) without being pasted into the source; a person on
 WhatsApp drives the agent through the agent's local deployment; the answer comes back on WhatsApp;
 and the agent's inbox holds the conversation with each side attributed correctly.

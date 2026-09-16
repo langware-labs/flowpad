@@ -244,6 +244,7 @@ async def _on_server_startup():
     await _seed_service_triggers()
     await _prune_orphan_scheduler_jobs()
     await _prune_fileless_data_sources()
+    await _prune_retired_type_rows()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
     await _start_system_content_index()
@@ -371,6 +372,24 @@ async def _prune_orphan_scheduler_jobs() -> None:
         print(f"  Scheduler jobstore: pruned {pruned} orphan job(s)")
     except Exception:
         logging.getLogger(__name__).exception("Scheduler jobstore: orphan prune failed")
+
+
+#: Entity types renamed without a migration (0.2.170): their folders re-index under the new type,
+#: so a row still carrying the old string is dead weight no index sweep reaches.
+RETIRED_TYPES = ("data_source_spec", "credential_spec")
+
+
+async def _prune_retired_type_rows() -> None:
+    try:
+        from flow_sdk.db import get_db_driver
+        from flow_sdk.db.drivers.query import QueryFilter
+        from flow_sdk.fs_store.orphan_removal import remove_orphan_row
+
+        for type_name in RETIRED_TYPES:
+            for record in await get_db_driver().get_all(QueryFilter(type=type_name)):
+                await remove_orphan_row(str(record.id), type_name)
+    except Exception:
+        logging.getLogger(__name__).exception("Retired entity types: prune failed")
 
 
 async def _prune_fileless_data_sources() -> None:

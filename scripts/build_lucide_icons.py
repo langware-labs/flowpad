@@ -64,7 +64,7 @@ def emitted_names() -> dict[str, set[str]]:
             for found in pattern.findall(text):
                 add(found, path.name)
     for path in (REPO / "flow_sdk").rglob("*.json"):
-        if path.name not in ("data_driver.json", "credential.json"):
+        if path.name not in ("data_driver.json", "secret_pack.json"):
             continue
         try:
             blob = json.loads(path.read_text())

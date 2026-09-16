@@ -1459,8 +1459,7 @@ async def prune_fileless_data_sources() -> int:
     A data source is an asset: the file is the truth and the row is its index. Rows written before
     sources were files have no file to be re-indexed from, so they go — through the cascade, so no
     record, cursor or projected message is left pointing at a source that is gone. Also takes rows a
-    development build wrote under ``data_driver``, the type string the definition now owns, and the
-    definition rows still typed ``data_source_spec``.
+    development build wrote under ``data_driver``, the type string the definition now owns.
     Idempotent: after the first run every row has a file and this reads a handful of rows.
     """
     from flow_sdk.db import get_db_driver  # noqa: PLC0415
@@ -1473,7 +1472,4 @@ async def prune_fileless_data_sources() -> int:
             if type_name != EntityType.DATA_SOURCE.value:  # a data_source row's cascade is its type's orphan hook
                 await DataSource.delete_children_of(str(record.id))
             removed += bool(await remove_orphan_row(str(record.id), type_name))
-    # The driver definition's retired type: its folders re-index as ``data_driver``.
-    for record in await get_db_driver().get_all(QueryFilter(type="data_source_spec")):
-        await remove_orphan_row(str(record.id), "data_source_spec")
     return removed

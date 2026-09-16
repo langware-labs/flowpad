@@ -19,7 +19,7 @@ from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialManifestSpec
+from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -36,14 +36,14 @@ TWILIO = {
 }
 
 SHIPPED_ROOT = (
-    Path(__file__).resolve().parents[3] / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/credential"
+    Path(__file__).resolve().parents[3] / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/secret_pack"
 )
 
 
 def _seed(root: Path, name: str, manifest: dict) -> Path:
-    folder = root / "agentic-assets" / "credential" / name
+    folder = root / "agentic-assets" / "secret_pack" / name
     folder.mkdir(parents=True)
-    (folder / "credential.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (folder / "secret_pack.json").write_text(json.dumps(manifest), encoding="utf-8")
     return folder
 
 
@@ -51,7 +51,7 @@ async def _index(root: Path) -> None:
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER, scope="user"))
     idx.add_function(RecordType.USER_HOME_FOLDER, repo_assets_fn)
-    await idx.index(IndexerOptions(verbose=False, types=[RecordType.CREDENTIAL_SPEC]))
+    await idx.index(IndexerOptions(verbose=False, types=[RecordType.SECRET_PACK]))
 
 
 @pytest.mark.asyncio
@@ -62,7 +62,7 @@ async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
 
     ent = await Entity.get_by_asset_ref(str(folder))
     assert ent is not None, "the walker did not pick up the manifest"
-    assert ent.type == "credential_spec"
+    assert ent.type == "secret_pack"
     assert (ent.name, ent.title, ent.value_store) == ("twilio", "Twilio", "env")
     assert sorted(ent.vars) == ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]
     assert ent.vars["TWILIO_AUTH_TOKEN"].secret is True
@@ -72,14 +72,14 @@ async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
 @pytest.mark.asyncio
 async def test_an_indexed_credential_gets_a_v4_id_written_beside_it(folder_db, tmp_path):
     """Identity is a writable capsule: minted once, kept with the folder, not in
-    credential.json (a definition carries no id of its own)."""
+    secret_pack.json (a definition carries no id of its own)."""
     folder = _seed(tmp_path, "twilio", TWILIO)
 
     await _index(tmp_path)
 
     ent = await Entity.get_by_asset_ref(str(folder))
     assert uuid.UUID(str(ent.id)).version == 4
-    assert "id" not in json.loads((folder / "credential.json").read_text())
+    assert "id" not in json.loads((folder / "secret_pack.json").read_text())
 
 
 @pytest.mark.asyncio
@@ -100,9 +100,9 @@ def test_a_row_stored_by_an_earlier_build_still_loads():
     """A stored row may carry variable fields this build no longer has
     (`sod_name`). One such row must not fail every credential query — the
     manifest on disk stays strict, the row is read field by field."""
-    from flow_sdk.builtin.credential_spec import CredentialSpec
+    from flow_sdk.builtin.secret_pack import SecretPack
 
-    row = CredentialSpec.model_validate(
+    row = SecretPack.model_validate(
         {
             "name": "anthropic-key",
             "vars": {"ANTHROPIC_API_KEY": {"label": "API key", "sod_name": "lm_api.anthropic", "secret": True}},
@@ -112,13 +112,13 @@ def test_a_row_stored_by_an_earlier_build_still_loads():
     assert row.var_names() == ["ANTHROPIC_API_KEY"]
     assert row.vars["ANTHROPIC_API_KEY"].label == "API key"
     with pytest.raises(Exception):
-        CredentialManifestSpec.model_validate(
+        CredentialSpec.model_validate(
             {**TWILIO, "vars": {"K": {"label": "x", "sod_name": "legacy"}}}
         )
 
 
 def test_the_type_is_a_creatable_asset_with_a_writable_id():
-    info = SchemaRegistry.get("credential_spec")
+    info = SchemaRegistry.get("secret_pack")
 
     assert info.creatable is True
     assert info.identity_carrier.writable is True
@@ -141,7 +141,7 @@ def test_every_shipped_template_commits_a_unique_v4_id(folder):
 
 
 def test_the_shipped_gmail_definition_is_valid():
-    manifest = CredentialManifestSpec.model_validate(json.loads((SHIPPED_ROOT / "gmail/credential.json").read_text()))
+    manifest = CredentialSpec.model_validate(json.loads((SHIPPED_ROOT / "gmail/secret_pack.json").read_text()))
 
     assert manifest.name == "gmail"
     assert list(manifest.vars) == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
@@ -151,8 +151,8 @@ def test_the_shipped_gmail_definition_is_valid():
 
 
 def test_the_store_defaults_to_the_env_file():
-    assert CredentialManifestSpec.model_validate({**TWILIO}).value_store == "env"
-    assert CredentialManifestSpec.model_validate({**TWILIO, "value_store": "vault"}).value_store == "vault"
+    assert CredentialSpec.model_validate({**TWILIO}).value_store == "env"
+    assert CredentialSpec.model_validate({**TWILIO, "value_store": "vault"}).value_store == "vault"
 
 
 @pytest.mark.parametrize(
@@ -168,7 +168,7 @@ def test_the_store_defaults_to_the_env_file():
 )
 def test_authoring_rules_are_load_errors(override, why):
     with pytest.raises(Exception):
-        CredentialManifestSpec.model_validate({**TWILIO, **override})
+        CredentialSpec.model_validate({**TWILIO, **override})
 
 
 SHIPPED_LM = {
@@ -181,7 +181,7 @@ SHIPPED_LM = {
 @pytest.mark.parametrize("folder, expected", sorted(SHIPPED_LM.items()))
 def test_the_shipped_llm_definitions_are_valid(folder, expected):
     provider, env_var = expected
-    manifest = CredentialManifestSpec.model_validate(json.loads((SHIPPED_ROOT / folder / "credential.json").read_text()))
+    manifest = CredentialSpec.model_validate(json.loads((SHIPPED_ROOT / folder / "secret_pack.json").read_text()))
 
     assert manifest.lm_provider == provider
     assert list(manifest.vars) == [env_var]
@@ -214,4 +214,4 @@ def test_a_provider_key_is_stored_where_the_funding_resolver_reads():
 )
 def test_lm_provider_authoring_rules_are_load_errors(override, why):
     with pytest.raises(Exception):
-        CredentialManifestSpec.model_validate({**TWILIO, **override})
+        CredentialSpec.model_validate({**TWILIO, **override})
