@@ -61,6 +61,16 @@ from flow_sdk.builtin.agentic_process.process_assets import (
     SystemInstructionAssets,
 )
 from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
+from flow_sdk.builtin.agentic_process.display_context import (
+    DISPLAY_CONTEXT_KEY,
+    DisplayContextTooLarge,
+    NothingShown,
+    describe_display_context,
+    same_display_target,
+    take_prompt_context,
+    with_display_context,
+    without_stale_display_context,
+)
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
     is_process_startable,
@@ -475,37 +485,11 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
 # back-compat readers (standard-mode viewer). Capped; consecutive identical
 # targets refresh the timestamp instead of duplicating.
 DISPLAY_STACK_CAP = 50
-# Every field that can distinguish one display target from another. A kind that
-# adds its own address fields MUST list them here: the keys a payload does not
-# carry are ``None`` on both sides and compare equal, so an omission silently
-# collapses that whole kind into a single "same target" — the DOCK kind (whose
-# address is view_type/pointer/page/options and none of typeid/type/id/path/port)
-# was doing exactly that, refreshing one stack entry instead of appending each
-# screen the agent showed.
-_DISPLAY_TARGET_KEYS = (
-    "kind",
-    "typeid",
-    "type",
-    "id",
-    "path",
-    "port",
-    "view_type",
-    "pointer",
-    "page",
-    "options",
-)
-
-
-def _same_display_target(a: dict, b: dict) -> bool:
-    """Two display payloads point at the same thing (ignoring ``shown_at``)."""
-    return all(a.get(k) == b.get(k) for k in _DISPLAY_TARGET_KEYS)
-
-
 def _append_display_entry(stack: list[dict], payload: dict, shown_at: str) -> list[dict]:
     """Append ``payload`` (stamped ``shown_at``) to ``stack``; a consecutive
     identical target just refreshes its timestamp. Capped to the newest N."""
     entry = {**payload, "shown_at": shown_at}
-    if stack and isinstance(stack[-1], dict) and _same_display_target(stack[-1], payload):
+    if stack and isinstance(stack[-1], dict) and same_display_target(stack[-1], payload):
         stack = [*stack[:-1], entry]
     else:
         stack = [*stack, entry]
@@ -2810,17 +2794,20 @@ class AgenticProcess(Entity):
             if latest is not None and latest is not self:
                 latest_ctx = latest.context_data if isinstance(latest.context_data, dict) else {}
                 base = _union_display_stacks(base, latest_ctx.get("display_stack") or [])
+                # This save is authoritative for the page's display context too:
+                # carry the freshest copy rather than the one loaded with self.
+                context = {k: v for k, v in context.items() if k != DISPLAY_CONTEXT_KEY}
+                if DISPLAY_CONTEXT_KEY in latest_ctx:
+                    context[DISPLAY_CONTEXT_KEY] = latest_ctx[DISPLAY_CONTEXT_KEY]
         stack = _append_display_entry(base, payload, shown_at)
-        self.context_data = {**context, "display_stack": stack, "last_shown": payload}
-        # This is the authoritative display write — the save() guard must trust
-        # this in-memory stack, not mirror the (older) DB over it.
-        self._set_display_authoritative(True)
+        # A context speaks only for the page it was written on.
+        self.context_data = without_stale_display_context(
+            {**context, "display_stack": stack, "last_shown": payload}
+        )
         try:
-            await self.save()
+            await self._save_display_authoritative()
         except Exception:
             logger.warning("on_show: display persist failed", exc_info=True)
-        finally:
-            self._set_display_authoritative(False)
         await self.emit_entity_event("on_show", payload)
         # Auto-file the shown target into the Auto/<type>/item favorites tree.
         # Best-effort: a bookmark failure must never break `flow show`.
@@ -5120,7 +5107,29 @@ class AgenticProcess(Entity):
             await self.emit_flow_data(flow_data.model_dump(mode="python"))
         except Exception:
             logger.exception("process hook FlowData emission failed for %s", self.id)
-        return await self.hooks.deliver(data)
+        answer = await self.hooks.deliver(data)
+        if answer is None and event is HookEventType.USER_PROMPT_SUBMIT:
+            answer = await self._display_context_for_prompt()
+        return answer
+
+    async def _display_context_for_prompt(self):
+        """Built-in ``UserPromptSubmit`` answer: hand the agent a changed display context.
+
+        Runs after registered callbacks, so an explicit answer wins. Marks the
+        context delivered (an authoritative display save) so the same page state
+        is not re-sent on every turn.
+        """
+        from flow_sdk.builtin.hooks.types import ContextResponse  # noqa: PLC0415
+
+        text, recorded = take_prompt_context(self.context_data)
+        if text is None:
+            return None
+        self.context_data = recorded
+        try:
+            await self._save_display_authoritative()
+        except Exception:
+            logger.warning("display context: delivered-mark persist failed", exc_info=True)
+        return ContextResponse(additional_context=text)
 
     @action.post(action_name="set-hook")
     async def _http_set_hook(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -5588,6 +5597,19 @@ class AgenticProcess(Entity):
     def _is_display_authoritative(self) -> bool:
         return bool(object.__getattribute__(self, "__dict__").get("_display_authoritative", False))
 
+    async def _save_display_authoritative(self) -> None:
+        """Save with the in-memory display state trusted over the DB's.
+
+        For the writers that own the display keys: ``on_show`` (stack, pin,
+        context binding), ``set-display-context`` and the prompt hook's
+        delivered mark.
+        """
+        self._set_display_authoritative(True)
+        try:
+            await self.save()
+        finally:
+            self._set_display_authoritative(False)
+
     async def _preserve_latest_display_pin(self) -> None:
         """Keep the display state (``context_data.display_stack`` + ``last_shown``)
         from being lost — or corrupted — by a stale whole-row save.
@@ -5615,8 +5637,9 @@ class AgenticProcess(Entity):
         # Drop any stale in-memory display, then re-attach the DB's authoritative
         # copy — so this save can neither clobber a newer show nor resurrect an
         # entry ``on_show`` already deduped away.
-        rebuilt = {k: v for k, v in current_context.items() if k not in ("display_stack", "last_shown")}
-        for k in ("display_stack", "last_shown"):
+        display_keys = ("display_stack", "last_shown", DISPLAY_CONTEXT_KEY)
+        rebuilt = {k: v for k, v in current_context.items() if k not in display_keys}
+        for k in display_keys:
             if k in latest_context:
                 rebuilt[k] = latest_context[k]
         self.context_data = rebuilt
@@ -6660,6 +6683,35 @@ class AgenticProcess(Entity):
         summary = self._render_context_summary(resolved)
         self.context_data = {**data, "context_summary": summary}
         return summary
+
+    @action.post(action_name="set-display-context")
+    async def set_display_context_action(self, data: dict | None = None) -> "ApiResponse":
+        """The shown page reports its live state (TS ``process.setDisplayContext``).
+
+        Bound to the target on display now; quiet — no turn starts. See
+        ``display_context.py`` for how the agent receives it.
+        """
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not isinstance(data, dict):
+            return ApiFailResponse(message="data must be a JSON object", status_code=400)
+        try:
+            updated = with_display_context(self.context_data, data)
+        except NothingShown as e:
+            return ApiFailResponse(message=str(e), status_code=409)
+        except DisplayContextTooLarge as e:
+            return ApiFailResponse(message=str(e), status_code=413)
+        if updated is not None:  # None: the page reported what is already stored
+            self.context_data = updated
+            await self._save_display_authoritative()
+        return ApiSuccessResponse(data=describe_display_context(self.context_data))
+
+    @action.get(action_name="display-context")
+    async def display_context_action(self) -> "ApiResponse":
+        """``{fresh, target, version, updated_at, data}`` — ``flow context display``."""
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=describe_display_context(self.context_data))
 
     @action.post(action_name="set-graph-context")
     async def set_graph_context_action(self, graph_context_id: str) -> "ApiResponse":

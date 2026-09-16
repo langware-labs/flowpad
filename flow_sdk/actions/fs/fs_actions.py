@@ -405,6 +405,9 @@ async def serve(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Response
             api_url_scheme=default_service_config.service_urls_config.api_url_scheme,
             fallback_index=False,
             cache_control="no-store",
+            # The display passes the process it shows this page beside, so the
+            # page's SDK can reach that process (displayContext, enqueue).
+            process_id=request_info.request.query_params.get("process"),
         )
     except AppNotBuilt:
         return ApiFailResponse(message="File not found", status_code=404)
