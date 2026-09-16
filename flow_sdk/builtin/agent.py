@@ -1042,6 +1042,26 @@ class Agent(Entity):
 
         return await self._place_answer(lambda: asyncio.to_thread(agent_places.version_state, self))
 
+    @action.post(action_name="set_public")
+    async def set_public_action(self):
+        """`POST /agent/<id>/set_public {public: "anonymous"}` — hub-authoritative.
+
+        Stamps `visitor_role` on the agent's HUB row; there is no local equivalent.
+        The TS SDK sends `Hub-Reflect: true`, so for a published (`remote=True`)
+        agent the dispatcher in `graph.py` forwards this to the hub and returns
+        its response — this body never runs in that path. It exists only so the
+        route resolves to a real action (with the right `action_name` for
+        `reflect_to_hub` to forward) instead of 400ing at the router. A local/
+        offline call has no hub row to stamp, so it fails loudly rather than
+        faking success.
+        """
+        from fastapi import HTTPException  # noqa: PLC0415
+
+        raise HTTPException(
+            status_code=409,
+            detail="Making an agent public requires Flowpad Cloud; you're offline or signed out.",
+        )
+
     # ── schedules: child trigger assets (HTTP) ────────────────────────────
 
     @action.post(action_name="add_schedule")
