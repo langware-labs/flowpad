@@ -29,7 +29,7 @@ let hubPermissions: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   mocks.error = vi.fn();
-  hubPermissions = vi.spyOn(Agent.prototype, 'fetchPermissions').mockResolvedValue(new Agent({ id: AGENT_ID }));
+  hubPermissions = vi.spyOn(Agent.prototype, 'fetchPermissions').mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -58,9 +58,7 @@ describe('AgentPublicVisibilitySection', () => {
   });
 
   it('reads the hub permissions of a published agent and shows it as public, with nothing to click', async () => {
-    const fetch = vi
-      .spyOn(Agent.prototype, 'fetchPermissions')
-      .mockResolvedValue(new Agent({ id: AGENT_ID, expand: { roles: ['anonymous_viewer'] } } as never));
+    const fetch = vi.spyOn(Agent.prototype, 'fetchPermissions').mockResolvedValue(['anonymous_viewer']);
     const call = vi.spyOn(dataManager, 'callAction');
 
     render(<AgentPublicVisibilitySection agent={agent()} />);
@@ -107,12 +105,12 @@ describe('Agent.fetchPermissions', () => {
       .spyOn(dataManager, 'callAction')
       .mockResolvedValue({ id: AGENT_ID, expand: { roles: ['anonymous_viewer'] } });
 
-    const expanded = await agent().fetchPermissions();
+    const roles = await agent().fetchPermissions();
 
     const info = call.mock.calls[0][0];
     expect(info.method).toBe('GET');
     expect(info.hubReflect).toBe(true);
     expect(info.fullActionUrl).toContain(`agent/${AGENT_ID}?expand=permissions`);
-    expect(expanded.ImAnonymousViewer).toBe(true);
+    expect(roles).toEqual(['anonymous_viewer']);
   });
 });

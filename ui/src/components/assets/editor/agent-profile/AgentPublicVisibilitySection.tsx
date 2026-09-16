@@ -41,8 +41,8 @@ export function AgentPublicVisibilitySection({ agent }: { agent: Agent }) {
     let live = true;
     agent
       .fetchPermissions()
-      .then((expanded) => {
-        if (live && expanded.ImAnonymousViewer) setIsPublic(true);
+      .then((roles) => {
+        if (live && roles.includes('anonymous_viewer')) setIsPublic(true);
       })
       .catch(() => {}); // unknown stays "not public": the button is still the way to make it so
     return () => {
