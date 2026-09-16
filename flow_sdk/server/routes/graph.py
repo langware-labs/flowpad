@@ -252,7 +252,6 @@ async def handle_request(
             if name in json_data:
                 kwargs[name] = json_data[name]
 
-
     # Hub reflection: if the call opts in (``request_info.hub_reflect``) and the
     # entity has a hub counterpart (remote=True), forward the call to the
     # hub and mirror its response into the local row instead of running

@@ -1,10 +1,4 @@
-"""The cost overview loads token stats without building transcript search text.
-
-``extract_claude_session_from_path`` builds the searchable ``content`` with a
-full transcript parse; the cost aggregation never reads it, and the stats pass
-parses every file again. Home loads this for the 100 newest sessions on every
-refresh (~206MB), so the content parse doubled its cost.
-"""
+"""The cost overview loads token stats without the searchable-content parse."""
 
 import json
 
