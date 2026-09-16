@@ -32,7 +32,7 @@ deletions all propagate, because the driver diffs `{rel_path: [mtime, size,
 inode]}` and so *observes* absence rather than guessing it.
 
 ```python
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 
 source = DataSource(
     name="Mirror notes",

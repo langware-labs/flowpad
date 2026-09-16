@@ -57,7 +57,7 @@ def _editors_by_spec() -> dict[str, dict]:
     out: dict[str, dict] = {}
     for row in _get("/graph/micro_app") or []:
         parent = str(row.get("parent_type_id") or "")
-        if not parent.startswith("data_source_spec-"):
+        if not parent.startswith("data_driver-"):
             continue
         if not kind_matches(EDITOR_KIND, str(row.get("kind") or "")):
             continue
@@ -101,7 +101,7 @@ def cmd_specs(args) -> dict:
                 #: `flow show view "app/<typeid>?source=<source id>"` opens it.
                 "editor": editors.get(s.get("id")),
             }
-            for s in (_get("/graph/data_source_spec") or [])
+            for s in (_get("/graph/data_driver") or [])
         ]
     }
 

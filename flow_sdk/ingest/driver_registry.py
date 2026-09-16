@@ -12,7 +12,7 @@ module attribute patches what the class reads.
 
 **Discovery.** The shipped folders are scanned from the wheel on the registry's first lookup — no
 database, deterministic, warm before the first poll. An authored folder registers on a name-scoped
-miss (``resolve_driver_type``), read off its ``DataDriverSpec`` row; never from the indexer's
+miss (``resolve_driver_type``), read off its ``DataDriver`` row; never from the indexer's
 per-record sync, which imports under the import lock.
 
 **Collisions.** A shipped name wins; an authored folder claiming it records a load error instead.
@@ -32,7 +32,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Optional
 
-from flow_sdk.schema.data_spec.data_source_manifest_spec import SOURCE_FILE, ManifestSpec
+from flow_sdk.schema.data_spec.data_driver_spec import SOURCE_FILE, DataDriverSpec
 from flow_sdk.sources.base import Source
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 SHIPPED_ROOT = Path(__file__).resolve().parents[1] / "system_projects" / "flowpad_assistant" / "agentic-assets" / "data_driver"
 MANIFEST_FILE = "data_driver.json"
 
-#: ``{name: why it did not load}`` — read by ``DataDriverSpec.load_error``.
+#: ``{name: why it did not load}`` — read by ``DataDriver.load_error``.
 _LOAD_ERRORS: dict[str, str] = {}
 
 
@@ -52,13 +52,13 @@ class DriverLoadError(Exception):
     """A data source folder that cannot become a source type. The message is shown to its author."""
 
 
-def read_manifest(folder: Path) -> ManifestSpec:
+def read_manifest(folder: Path) -> DataDriverSpec:
     try:
         raw = json.loads((folder / MANIFEST_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise DriverLoadError(f"{folder}: {MANIFEST_FILE} is unreadable: {exc}") from exc
     try:
-        return ManifestSpec.model_validate(raw)
+        return DataDriverSpec.model_validate(raw)
     except ValueError as exc:
         raise DriverLoadError(f"{folder}: {MANIFEST_FILE} is invalid: {exc}") from exc
 
@@ -169,10 +169,10 @@ async def resolve_driver_type(name: str) -> "Optional[DriverType]":
 
 
 async def _authored_folder(name: str) -> Optional[Path]:
-    from flow_sdk.builtin.data_driver_spec import DataDriverSpec  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
     try:
-        spec = await DataDriverSpec.get_one({"name": name})
+        spec = await DataDriver.get_one({"name": name})
     except Exception:  # noqa: BLE001 — no spec row is "no authored source"
         return None
     ref = str(getattr(spec, "asset_ref", "") or "") if spec is not None else ""

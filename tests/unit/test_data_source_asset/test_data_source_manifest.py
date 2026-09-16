@@ -1,4 +1,4 @@
-"""The manifest's validation rules — ``ManifestSpec`` validators plus its
+"""The manifest's validation rules — ``DataDriverSpec`` validators plus its
 folder-side ``runtime_for_folder`` — exercised as pure functions.
 
 Every rule here is a load ERROR rather than a warning, and each one exists
@@ -11,14 +11,14 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestError, ManifestSpec, Runtime
+from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec, ManifestError, Runtime
 
 RSS = {"schema": 1, "name": "rss", "title": "RSS / Atom",
        "config": {"feed_urls": {"type": "lines", "required": True, "label": "Feed URLs"}}}
 
 
-def parse(data: dict, files: set[str] = frozenset({"data_driver.json", "source.py"})) -> tuple[ManifestSpec, Runtime]:
-    spec = ManifestSpec.model_validate(data)
+def parse(data: dict, files: set[str] = frozenset({"data_driver.json", "source.py"})) -> tuple[DataDriverSpec, Runtime]:
+    spec = DataDriverSpec.model_validate(data)
     return spec, spec.runtime_for_folder(set(files))
 
 
@@ -103,9 +103,9 @@ def test_title_defaults_to_name():
 
 
 @pytest.mark.parametrize("build", [
-    lambda: ManifestSpec.model_validate(RSS).config["feed_urls"],
-    lambda: ManifestSpec.model_validate({**RSS, "auth": {"env": ["TOKEN"]}}).auth,
-], ids=["ConfigFieldSpec", "AuthSpec"])
+    lambda: DataDriverSpec.model_validate(RSS).config["feed_urls"],
+    lambda: DataDriverSpec.model_validate({**RSS, "auth": {"env": ["TOKEN"]}}).auth,
+], ids=["FieldHints", "AuthSpec"])
 def test_the_value_specs_are_frozen(build):
     """A value is a value (CLAUDE.md): a field and an auth shape travel between the manifest, the
     row and the form, and neither is edited in place — `model_copy(update=...)` is the way to a

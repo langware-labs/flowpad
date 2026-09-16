@@ -16,8 +16,8 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.data_driver_spec import DataDriverSpec
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.schema.data_spec.choice_spec import Choice
 
@@ -43,7 +43,7 @@ def provider(request):
         stub = type("_Stub", (Source,), attrs)
         DRIVERS.register(DriverType(stub, kind="datasource.test.stub"))
         request.addfinalizer(lambda: DRIVERS.unregister(name))
-        await DataDriverSpec(name=name, title=name, config=config).save()
+        await DataDriver(name=name, title=name, config=config).save()
         return name
 
     return _make

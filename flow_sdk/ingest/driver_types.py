@@ -52,7 +52,7 @@ from flow_sdk.utils.serialization import iso_to_utc
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.source_item import MessageSpec
-    from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
+    from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,7 @@ class DriverType:
     def __init__(
         self,
         cls: type[Source],
-        manifest: "Optional[ManifestSpec]" = None,
+        manifest: "Optional[DataDriverSpec]" = None,
         *,
         kind: str = "",
         folder: Optional[Path] = None,

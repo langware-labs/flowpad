@@ -13,7 +13,7 @@ one, and shows whether each is actually alive. Everything lives under
 |------|------|
 | `DataSourcesView.tsx` | The grid. Owns the one instance each of the add/edit dialog, the replay dialog and the delete confirm ("list holds a nullable pending target, rows hold no dialog"). Deliberately does **not** query cursors. |
 | `DataSourceCard.tsx` | One source: lifecycle chip, health, `synced …` / `next …` countdown, the parked warning, the setup panel with **Verify**, the **Pull changes** button, and an expandable stream list. |
-| `DataSourceDialog.tsx` | Add/edit form driven entirely by the installed `DataDriverSpec`s. Writes `name`, `provider`, `account_key`, `config`, `status`, `poll_interval_seconds`, `window_days`; never `kind` or `channel` (the driver sets those on first poll). |
+| `DataSourceDialog.tsx` | Add/edit form driven entirely by the installed `DataDriver`s. Writes `name`, `provider`, `account_key`, `config`, `status`, `poll_interval_seconds`, `window_days`; never `kind` or `channel` (the driver sets those on first poll). |
 | `SourceMenu.tsx` | The "more" menu: pause/resume, edit, replay, open a spec-shipped editor app, Events, Runs, delete. |
 | `SourceStreams.tsx` | Rows for the source's `DataSourceCursor`s (segment label, health, failure count, last sync). |
 | `ReplayDialog.tsx` | Optional `since` date, then `source.replay(since)`. |
@@ -31,7 +31,7 @@ call is an entity query or an entity action.
 source is a property of the instance, not of a project):
 
 - `data-sources:list` — `DataSource.type` (in `use-source-specs.ts`, shared with the inbox's channel attribution).
-- `data-sources:specs` — `DataDriverSpec.type`, the installed definitions. This replaced a hardcoded provider catalog: a spec added as an asset appears with no frontend release.
+- `data-sources:specs` — `DataDriver.type`, the installed definitions. This replaced a hardcoded provider catalog: a spec added as an asset appears with no frontend release.
 - `data-sources:cursors:<id>` — `DataSourceCursor.type` filtered by `data_source_id`, created per card but `enabled` only while the card is expanded, so a collapsed grid watches nothing.
 
 **Writes** are entity saves: `new DataSource({...}).save()` (create, with
@@ -56,7 +56,7 @@ each `this.post('<action>')` → `dataManager.callAction(ActionInfo)` →
 Pause/resume is not an action: the card sets `status` to `'disabled'` or back to
 `'new'` and saves. "Connect" is the dialog's save; the config form is the
 spec's `config` map (`specFields(spec)` → `Object.entries(spec.config)`). There is no reflect verb in the UI — `reflect` is a
-`DataDriverSpec` property (`ReflectMode`, `flow_sdk/ingest/reflect.py`) consumed
+`DataDriver` property (`ReflectMode`, `flow_sdk/ingest/reflect.py`) consumed
 by the ingest pipeline, not something the user triggers here.
 
 ## URL-first navigation

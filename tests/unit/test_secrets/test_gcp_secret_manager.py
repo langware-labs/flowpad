@@ -13,7 +13,7 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.connections import Connection
 from flow_sdk.ingest.driver_types import DriverType, register_driver
 from flow_sdk.ingest.testing import make_data_source
-from flow_sdk.schema.data_spec.data_source_manifest_spec import CURRENT_SCHEMA, AuthSpec, ManifestSpec
+from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec, DataDriverSpec
 from flow_sdk.secrets import (
     GcpSecretManagerStore,
     MissingSecrets,
@@ -226,7 +226,7 @@ def keyed_source():
     register_driver(
         DriverType(
             _GcpKeyedSource,
-            manifest=ManifestSpec(name=_GcpKeyedSource.provider, schema=CURRENT_SCHEMA, auth=AuthSpec(env=["KEYED_API_KEY"])),
+            manifest=DataDriverSpec(name=_GcpKeyedSource.provider, schema=CURRENT_SCHEMA, auth=AuthSpec(env=["KEYED_API_KEY"])),
         )
     )
 

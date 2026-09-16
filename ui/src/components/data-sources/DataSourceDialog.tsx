@@ -46,7 +46,7 @@ import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 import { useSourceSpecs } from './use-source-specs';
-import { FieldType, type DataSourceChoice, type DataDriverSpec, type SpecConfigField } from '@sdk';
+import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
 
 /**
  * The switch's boolean → a lifecycle status.
@@ -65,7 +65,7 @@ function statusFor(enabled: boolean, current: SourceStatus): SourceStatus {
  *  submit-time extraction and the pre-fill all agree on the reserved key. */
 const ALLOWED_SENDERS_KEY = 'allowed_senders';
 
-function draftFrom(source: DataSource, spec?: DataDriverSpec): SourceDraft {
+function draftFrom(source: DataSource, spec?: DataDriver): SourceDraft {
   const fields: Record<string, string> = {};
   const picked: Record<string, DataSourceChoice[]> = {};
   for (const [key, field] of specFields(spec)) {
@@ -107,7 +107,7 @@ export function DataSourceDialog({
   owner?: TypeId | null;
   /** Narrow the provider tiles — the channels line offers only specs that
    *  `sends`. An empty result renders as a sentence, not a blank picker. */
-  only?: (spec: DataDriverSpec) => boolean;
+  only?: (spec: DataDriver) => boolean;
 }) {
   const { t } = useLingui();
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
@@ -126,7 +126,7 @@ export function DataSourceDialog({
   const [busy, setBusy] = useState(false);
 
   // Seed the form once per opening, keyed on WHAT is being edited. `specs` /
-  // `specFor` change identity on every live `DataDriverSpec` emission, and
+  // `specFor` change identity on every live `DataDriver` emission, and
   // depending on them re-seeded the draft mid-typing — discarding whatever had
   // been entered. The spec is read through a ref so the seed still sees the
   // current one without subscribing the effect to it.

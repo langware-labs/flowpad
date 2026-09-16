@@ -7,7 +7,7 @@ Status, health, cursors, the next poll, the identities a sync discovers: those l
 so a poll never rewrites the file and a git-shared project never commits a heartbeat.
 
 The file key names the thing it points at (``data_driver_name``, ``data_driver_config``); the row keeps
-its engine names (``provider``, ``config``). Aliases carry the file keys, the way ``ManifestSpec``
+its engine names (``provider``, ``config``). Aliases carry the file keys, the way ``DataDriverSpec``
 carries ``schema`` for ``manifest_schema``.
 
 Value-free by construction, like ``credential.json``: a secret never lands in a folder a project

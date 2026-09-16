@@ -9,7 +9,7 @@ from flow_sdk.ingest.change_event import change_tag, emit_change, handle_change,
 from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.reflect import origin_id_for
 from flow_sdk.ingest.sync import sync_source
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.utils.git import git_remote_url
 from tests.unit._ingest_helpers import position
 

@@ -16,7 +16,7 @@
  * dialog to the view (so N rows don't mount 2N of them).
  */
 import { useCallback, useMemo, useState } from 'react';
-import { DataSource, DataSourceCursor, type DataDriverSpec, QueryRequest } from '@sdk';
+import { DataSource, DataSourceCursor, type DataDriver, QueryRequest } from '@sdk';
 import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -41,7 +41,7 @@ interface Props {
    *  subscriptions to the same rows. The view already owns the grid — and it
    *  hands over the WHOLE spec, so a third field the card wants is not a third
    *  prop and a third lookup. */
-  spec?: DataDriverSpec | null;
+  spec?: DataDriver | null;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;

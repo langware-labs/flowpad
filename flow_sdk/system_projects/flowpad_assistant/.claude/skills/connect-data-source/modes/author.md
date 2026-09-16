@@ -20,7 +20,7 @@ over the same backend actions.
 
 ```
 <project>/agentic-assets/data_driver/<name>/
-    data_driver.json          the manifest (DataDriverSpec): presentation, kind, auth, the config form
+    data_driver.json          the manifest (DataDriver): presentation, kind, auth, the config form
     source.py                 exactly ONE flow_sdk.sources.Source subclass — the source
     transport.py …            optional helper modules, imported relatively (`from .transport import …`)
     tests/test_<name>_source.py   the conformance kit + wire cases against a loopback double
@@ -116,7 +116,7 @@ dataset pane). A definition with no such folder simply has no editor.
 
 ## After writing
 
-1. `flow record index <project> --types data_source_spec` — point it at the
+1. `flow record index <project> --types data_driver` — point it at the
    PROJECT, not the source folder.
 2. `flow source types` — the new name must appear with an empty `load_error`. A
    non-empty one names the problem (no `source.py`, two classes, an import error,

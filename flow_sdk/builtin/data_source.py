@@ -41,7 +41,7 @@ from flow_sdk.ingest.driver_types import SendOutcome
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.secrets.store import SecretStoreRef
@@ -1000,10 +1000,10 @@ class DataSource(Entity):
     async def _spec(self) -> "Optional[object]":
         """The provider's definition row, or None when it cannot be resolved —
         an unresolvable spec changes nothing about any of the three rules."""
-        from flow_sdk.builtin.data_driver_spec import DataDriverSpec
+        from flow_sdk.builtin.data_driver import DataDriver
 
         try:
-            return await DataDriverSpec.get_one({"name": self.provider})
+            return await DataDriver.get_one({"name": self.provider})
         except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
             return None
 
@@ -1012,7 +1012,7 @@ class DataSource(Entity):
         as a string where ``lines`` is declared must not produce a source that
         looks configured and fails on its first sync (the rss driver iterating
         the characters of a URL). The rule is the spec's
-        (``ConfigFieldSpec.coerce``); this is only where a row applies it, and
+        (``FieldHints.coerce``); this is only where a row applies it, and
         ``save`` is the one gate the dialog, the API and an agent all pass.
 
         Only a string can need shaping, so a config whose values are already
@@ -1141,13 +1141,13 @@ class DataSource(Entity):
         the person filling the form: type it instead. That is why this catches
         ``SourceError`` centrally rather than asking each driver to.
         """
-        from flow_sdk.builtin.data_driver_spec import DataDriverSpec
+        from flow_sdk.builtin.data_driver import DataDriver
         from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
         from flow_sdk.ingest.health import SourceError  # noqa: PLC0415
         from flow_sdk.schema.data_spec.choice_spec import ChoiceSet  # noqa: PLC0415
         from flow_sdk.sources import errors as contract  # noqa: PLC0415
 
-        spec = await DataDriverSpec.get_one({"name": provider})
+        spec = await DataDriver.get_one({"name": provider})
         field_spec = (spec.config or {}).get(field) if spec is not None else None
         if field_spec is None or not field_spec.choices:
             return None
@@ -1460,7 +1460,8 @@ async def prune_fileless_data_sources() -> int:
     A data source is an asset: the file is the truth and the row is its index. Rows written before
     sources were files have no file to be re-indexed from, so they go — through the cascade, so no
     record, cursor or projected message is left pointing at a source that is gone. Also takes rows a
-    development build wrote under ``data_driver``, the type string the definition now owns.
+    development build wrote under ``data_driver``, the type string the definition now owns, and the
+    definition rows still typed ``data_source_spec``.
     Idempotent: after the first run every row has a file and this reads a handful of rows.
     """
     from flow_sdk.db import get_db_driver  # noqa: PLC0415
@@ -1473,4 +1474,7 @@ async def prune_fileless_data_sources() -> int:
             if type_name != EntityType.DATA_SOURCE.value:  # a data_source row's cascade is its type's orphan hook
                 await DataSource.delete_children_of(str(record.id))
             removed += bool(await remove_orphan_row(str(record.id), type_name))
+    # The driver definition's retired type: its folders re-index as ``data_driver``.
+    for record in await get_db_driver().get_all(QueryFilter(type="data_source_spec")):
+        await remove_orphan_row(str(record.id), "data_source_spec")
     return removed

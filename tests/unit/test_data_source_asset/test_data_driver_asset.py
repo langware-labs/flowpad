@@ -41,7 +41,7 @@ async def _index(root: Path) -> None:
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER, scope="user"))
     idx.add_function(RecordType.USER_HOME_FOLDER, repo_assets_fn)
-    await idx.index(IndexerOptions(verbose=False, types=[RecordType.DATA_SOURCE_SPEC]))
+    await idx.index(IndexerOptions(verbose=False, types=[RecordType.DATA_DRIVER]))
 
 
 async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
@@ -51,7 +51,7 @@ async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
 
     ent = await Entity.get_by_asset_ref(str(folder))
     assert ent is not None, "the walker did not pick up the manifest"
-    assert ent.type == "data_source_spec"
+    assert ent.type == "data_driver"
     assert (ent.name, ent.title, ent.runtime) == ("rss", "RSS / Atom", "source")
     assert ent.config["feed_urls"].required is True
 

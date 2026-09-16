@@ -13,7 +13,7 @@ from flow_sdk.connections import Connection
 from flow_sdk.ingest.credentials import resolve_credentials
 from flow_sdk.ingest.driver_types import DriverType, register_driver
 from flow_sdk.ingest.testing import make_data_source
-from flow_sdk.schema.data_spec.data_source_manifest_spec import CURRENT_SCHEMA, AuthSpec, ManifestSpec
+from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec, DataDriverSpec
 from flow_sdk.secrets import SecretStore
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.credentials import AuthShape
@@ -34,12 +34,12 @@ class _DriveSource(Source):
 @pytest.fixture
 def source_types():
     register_driver(
-        DriverType(_KeyedSource, manifest=ManifestSpec(name=_KeyedSource.provider, schema=CURRENT_SCHEMA, auth=KEYED))
+        DriverType(_KeyedSource, manifest=DataDriverSpec(name=_KeyedSource.provider, schema=CURRENT_SCHEMA, auth=KEYED))
     )
     register_driver(
         DriverType(
             _DriveSource,
-            manifest=ManifestSpec(
+            manifest=DataDriverSpec(
                 name=_DriveSource.provider,
                 schema=CURRENT_SCHEMA,
                 auth=AuthSpec(connector="google", scopes=["drive.readonly"]),

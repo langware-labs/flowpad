@@ -117,16 +117,16 @@ async def _gcs_spec():
     """
     import json
 
-    from flow_sdk.builtin.data_driver_spec import DataDriverSpec
-    from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
 
     path = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/gcs/data_driver.json"
-    manifest = ManifestSpec.model_validate(json.loads(path.read_text()))
+    manifest = DataDriverSpec.model_validate(json.loads(path.read_text()))
     assert manifest.config["bucket"].choices is True, "the shipped manifest is what the form reads"
-    existing = await DataDriverSpec.get_all({"name": manifest.name})
+    existing = await DataDriver.get_all({"name": manifest.name})
     if existing:
         return existing[0]
-    row = DataDriverSpec(name=manifest.name, title=manifest.title, config=manifest.config)
+    row = DataDriver(name=manifest.name, title=manifest.title, config=manifest.config)
     await row.save()
     return row
 

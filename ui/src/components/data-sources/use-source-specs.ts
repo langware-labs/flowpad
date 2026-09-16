@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { DataSource, DataDriverSpec, QueryRequest } from '@sdk';
+import { DataSource, DataDriver, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /** The configured sources — ONE named query, shared by DataSourcesView and the
@@ -22,17 +22,17 @@ export const sourcesQuery = new QueryRequest({
  * whatever is installed, so adding a source is an asset — not a frontend release.
  */
 const specsQuery = new QueryRequest({
-  type: DataDriverSpec.type,
+  type: DataDriver.type,
   scope: [],
   name: 'data-sources:specs',
 });
 
 /** Stable while loading — a fresh `[]` per render would change `specFor`'s
  *  identity and re-trigger the dialog effect that depends on it. */
-const EMPTY: DataDriverSpec[] = [];
+const EMPTY: DataDriver[] = [];
 
 export function useSourceSpecs() {
-  const { data: specs = EMPTY } = useEntitiesQuery<DataDriverSpec>(specsQuery);
+  const { data: specs = EMPTY } = useEntitiesQuery<DataDriver>(specsQuery);
   // `name` is the registry key AND the folder name AND the asset id — one noun,
   // so a lookup needs nothing else.
   const byName = useMemo(() => new Map(specs.map((s) => [s.name, s])), [specs]);
@@ -42,4 +42,4 @@ export function useSourceSpecs() {
 
 /** A MessageSource's spec: its driver can push a reply back (`IngestDriver.sends`).
  *  The one client-side spelling of `agent_scope.is_message_source`'s driver half. */
-export const isMessageDriverSpec = (spec: DataDriverSpec | undefined | null): boolean => !!spec?.sends;
+export const isMessageDriverSpec = (spec: DataDriver | undefined | null): boolean => !!spec?.sends;

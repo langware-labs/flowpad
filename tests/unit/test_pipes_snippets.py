@@ -11,7 +11,7 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.tags import on_tag
 from tests.utils.snippets import doc
 

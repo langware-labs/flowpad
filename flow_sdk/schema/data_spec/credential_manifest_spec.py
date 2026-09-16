@@ -45,7 +45,7 @@ def _normalize_store(value: str) -> str:
 class CredentialVarSpec(DataSpec):
     """One environment variable a credential is made of.
 
-    A near-copy of ``ConfigFieldSpec`` (``data_source_spec.py``) without
+    A near-copy of ``FieldHints`` (``data_driver.py``) without
     ``type``/``default``: an env var value is always a string, and a default for
     a secret would write a value nobody typed.
     """
