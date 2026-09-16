@@ -4,33 +4,18 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Optional
 
 import pytest
-from pydantic import ConfigDict
 
 from flow_sdk.assets import document as document_module
 from flow_sdk.assets.document import DocumentConflict, DocumentPatch
 from flow_sdk.assets.entity_document import patch_entity_document, read_entity_document
-from flow_sdk.assets.layout import Folder
-from flow_sdk.assets.versioning import _strip_version
-from flow_sdk.fs_store.schema_registry import ENTITY_LAYOUT, TypeInfo
-from flow_sdk.schema.data_spec import Body, DataSpec
+from flow_sdk.assets.versioning import strip_version
+from tests.unit._entity_document_probe import TYPE, info
 
 pytestmark = pytest.mark.timeout(5)  # do not increase without approval
 
-TYPE = "note_probe"
-
-
-class _NoteSpec(DataSpec):
-    model_config = ConfigDict(extra="ignore")
-
-    title: Optional[str] = None
-    tags: list[str] = []
-    text: Body = ""
-
-
-INFO = TypeInfo(type_name=TYPE, shape=Folder.entity_json(TYPE), asset_spec=_NoteSpec, manifest_layout=ENTITY_LAYOUT, name_from_path=True)
+INFO = info()
 
 
 @pytest.fixture
@@ -101,4 +86,4 @@ def test_the_generic_document_calls_route_an_entity_document(note, monkeypatch):
 def test_a_version_only_difference_is_not_a_change():
     a = json.dumps({"type": TYPE, "id": "1", "title": "x", "version": 2})
     b = json.dumps({"version": 3, "type": TYPE, "id": "1", "title": "x"})
-    assert _strip_version(a) == _strip_version(b)
+    assert strip_version(a) == strip_version(b)

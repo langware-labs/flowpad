@@ -390,10 +390,10 @@ class JsonRoot:
 def dump_json_document(data: dict) -> str:
     """A JSON document's text. An ENTITY document (one that names its ``type``) leads with ``type``
     then ``id`` — the order the shadow ``metadata.json`` reads in; any other keeps its own order."""
-    if "type" not in data:
-        return json.dumps(data, indent=2) + "\n"
-    ordered = {key: data[key] for key in ("type", "id") if key in data}
-    ordered.update((key, value) for key, value in data.items() if key not in ordered)
+    ordered = data
+    if "type" in data:
+        ordered = {key: data[key] for key in ("type", "id") if key in data}
+        ordered.update((key, value) for key, value in data.items() if key not in ordered)
     return json.dumps(ordered, indent=2, ensure_ascii=False) + "\n"
 
 

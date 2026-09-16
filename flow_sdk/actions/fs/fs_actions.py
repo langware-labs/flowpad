@@ -740,6 +740,7 @@ async def document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRe
 
     from flow_sdk.actions.fs.asset_versioning import _real_path, finish_document_version, prepare_document_version
     from flow_sdk.assets.document import DocumentConflict, DocumentPatch, read_document_bytes, update_document
+    from flow_sdk.assets.serialization import entity_body_path
 
     if request_info.method not in ("get", "post") or not fs_info.vpath.typeid:
         return ApiFailResponse(message="Document requires GET or POST and a target", status_code=400)
@@ -764,22 +765,22 @@ async def document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRe
             values = dict(payload)
             expected = values.pop("expected_revision")
             patch = DocumentPatch.model_validate(values)
-            real_path = _real_path(storage, path)
+            real_path = local
             if real_path is None:
                 return ApiFailResponse(message="Storage does not support conditional document writes", status_code=501,
                                        data={"code": "conditional_write_unsupported"})
             version_context = await prepare_document_version(real_path)
             version_base = (version_context[4] if version_context is not None and
                             Path(version_context[3]).resolve() == Path(real_path).resolve() else None)
-            result = await asyncio.to_thread(update_document, real_path, patch,
-                                             expected_revision=expected, version_base=version_base)
+            result = await asyncio.to_thread(update_document, real_path, patch, expected_revision=expected,
+                                             version_base=version_base, info=entity_info)
             if result.revision != expected:
                 await finish_document_version(real_path, result, version_context)
                 await _resync_entity_from_disk(real_path)
         data = result.model_dump(mode="json")
         body_path = fs_info.vpath.entity_sub_path
         if entity_info is not None and entity_info.body_file is not None:
-            body_path = str(PurePosixPath(body_path).with_name(f"{entity_info.body_file}.md"))
+            body_path = str(entity_body_path(PurePosixPath(body_path).parent, entity_info.body_file))
         data["body_ref"] = {"path": body_path, "type_id": str(fs_info.vpath.typeid), "ref_type": "text", "read_only": False}
         return ApiSuccessResponse(data=data)
     except DocumentConflict as exc:
