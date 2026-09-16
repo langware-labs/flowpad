@@ -11,8 +11,8 @@ import uuid
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
-from flow_sdk.ingest.driver_types import DriverType, register_driver
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.protocols import Verdict
@@ -34,8 +34,8 @@ class _NoSetup(Source):
 
 @pytest.fixture
 def sources():
-    register_driver(DriverType(_NeedsSetup, kind="datasource.test.setup"))
-    register_driver(DriverType(_NoSetup, kind="datasource.test.plain"))
+    DataDriver.register(DataDriver.for_class(_NeedsSetup, kind="datasource.test.setup"))
+    DataDriver.register(DataDriver.for_class(_NoSetup, kind="datasource.test.plain"))
     return _NeedsSetup, _NoSetup
 
 

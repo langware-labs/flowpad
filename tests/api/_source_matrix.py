@@ -17,7 +17,6 @@ from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.cli.commands import _common, source_cmd
 from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module, read_manifest
-from flow_sdk.ingest.driver_types import driver_type
 
 NAMES = sorted(p.name for p in SHIPPED_ROOT.iterdir() if (p / "data_driver.json").is_file())
 
@@ -118,7 +117,7 @@ class CliDriver:
 
 
 async def run_case(name: str, driver, client, monkeypatch, tmp_path) -> None:
-    stype = driver_type(name)
+    stype = DataDriver.loaded(name)
     assert stype is not None and stype.manifest is not None, f"{name} did not load"
     await spec_row(name)
     cases = load_module(SHIPPED_ROOT / name / "tests", "matrix")

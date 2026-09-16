@@ -417,9 +417,9 @@ class Inbox:
         """(config key, value) that names WHICH account this block watches —
         the driver owns the key; the value is the address unless the config
         already carries that key (a telegram bot's identity is its token)."""
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        driver = driver_type(self.provider)
+        driver = DataDriver.loaded(self.provider)
         key = getattr(driver, "identity_config_key", "inbox") if driver else "inbox"
         return key, str(self._config.get(key) or self.address).strip()
 
@@ -432,14 +432,14 @@ class Inbox:
         """
         if self._source is not None:
             return self._source
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
         from flow_sdk.connections import require  # noqa: PLC0415
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
         # A provider that reads with a machine-level connection (Slack, Drive)
         # is checked HERE, before any row exists: ``NotConnected`` names the
         # fix, whereas a source created without it parks on its first poll.
-        driver = driver_type(self.provider)
+        driver = DataDriver.loaded(self.provider)
         if driver is not None and driver.connection:
             await require(driver.connection)
 
@@ -532,9 +532,9 @@ class Inbox:
             await asyncio.sleep(cadence)
 
     def _driver(self):
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        return driver_type(self.provider)
+        return DataDriver.loaded(self.provider)
 
     async def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
         """The reply to ``item``, in this inbox's own channel shape — the rule

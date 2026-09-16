@@ -37,7 +37,7 @@ from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.ingest.driver_types import SendOutcome
+from flow_sdk.ingest.driver_runtime import SendOutcome
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -342,7 +342,7 @@ class DataSource(Entity):
     async def get(cls, name: str) -> "DataSource":
         """The data source named ``name``. Raises :class:`DataSourceNotFound`, or
         :class:`DataSourceAmbiguous` when several instances share the name."""
-        from flow_sdk.ingest.driver_registry import resolve_driver_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
         rows = await cls.get_all({"name": name})
         if not rows:
@@ -350,7 +350,7 @@ class DataSource(Entity):
         if len(rows) > 1:
             raise DataSourceAmbiguous(name, [str(row.typeid) for row in rows])
         # An authored source's folder loads on first use; the accessors below read its manifest.
-        await resolve_driver_type(rows[0].provider or "")
+        await DataDriver.get(rows[0].provider or "")
         return rows[0]
 
     def _auth(self):
@@ -388,9 +388,9 @@ class DataSource(Entity):
 
     async def open(self, *, persona: bool = False):
         """The configured source with what is bound loaded in — ``async with await source.open() as live``."""
-        from flow_sdk.ingest.driver_registry import resolve_driver_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        stype = await resolve_driver_type(self.provider or "")
+        stype = await DataDriver.get(self.provider or "")
         if stype is None:
             raise LookupError(f"no data source type {self.provider!r}")
         return await stype.open(self, persona=persona)
@@ -534,8 +534,8 @@ class DataSource(Entity):
         surface: a direct SDK caller and ``blocks.Inbox`` must reject the same
         unsupported attachment or recipient shape before provider I/O begins.
         """
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
         if spec.attachments:
             raise NotImplementedError(
@@ -545,7 +545,7 @@ class DataSource(Entity):
         if len(spec.to) != 1:
             raise ValueError(f"exactly one recipient for now, got {len(spec.to)}")
 
-        driver = driver_type(self.provider)
+        driver = DataDriver.loaded(self.provider)
         if driver is None or not driver.sends:
             raise RuntimeError(f"the {self.provider} driver cannot send")
         return await driver.send(
@@ -565,15 +565,15 @@ class DataSource(Entity):
         Existing rows are checked before the first provider call so an already
         ingested reply returns without needless network I/O.
         """
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
         from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
 
         expected = _normalize_message_id(sent.external_id)
         if not expected:
             raise ValueError("cannot expect a reply to a send with no external_id")
-        driver = driver_type(self.provider)
+        driver = DataDriver.loaded(self.provider)
 
         while True:
             items = await SourceItem.get_all({"data_source_id": self.id})
@@ -947,9 +947,9 @@ class DataSource(Entity):
         if not self.exist_in_db or self.status == SourceStatus.NEW.value:
             # An authored source's folder loads on first use, so the create rules below can ask its
             # class. The poller's per-tick re-save of an existing row never pays for the lookup.
-            from flow_sdk.ingest.driver_registry import resolve_driver_type  # noqa: PLC0415
+            from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-            await resolve_driver_type(self.provider or "")
+            await DataDriver.get(self.provider or "")
         if self.status == SourceStatus.NEW.value:
             stype = self._driver()
             if stype is not None and stype.has_setup:
@@ -1142,7 +1142,6 @@ class DataSource(Entity):
         ``SourceError`` centrally rather than asking each driver to.
         """
         from flow_sdk.builtin.data_driver import DataDriver
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
         from flow_sdk.ingest.health import SourceError  # noqa: PLC0415
         from flow_sdk.schema.data_spec.choice_spec import ChoiceSet  # noqa: PLC0415
         from flow_sdk.sources import errors as contract  # noqa: PLC0415
@@ -1152,7 +1151,7 @@ class DataSource(Entity):
         if field_spec is None or not field_spec.choices:
             return None
 
-        stype = driver_type(provider)
+        stype = DataDriver.loaded(provider)
         if stype is None or not stype.offers_choices:
             # The shipped-manifest test catches this pairing at CI. At runtime — a spec
             # authored outside this repo — it still must not be a dead end.
@@ -1198,9 +1197,9 @@ class DataSource(Entity):
             return ApiFailResponse(message=str(exc))
 
     async def send_text(self, *, to: str, text: str, thread_key: str = "", subject: str = "", in_reply_to: str = "") -> dict:
-        from flow_sdk.ingest.driver_registry import resolve_driver_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        driver = await resolve_driver_type(self.provider or "")
+        driver = await DataDriver.get(self.provider or "")
         if driver is None or not driver.sends:
             raise RuntimeError(f"{self.provider} cannot send")
         if not (text or "").strip():
@@ -1353,9 +1352,9 @@ class DataSource(Entity):
         return await sync_source(self, budget=budget or DEFAULT_SEGMENT_BUDGET)
 
     def _driver(self):
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        return driver_type(self.provider)
+        return DataDriver.loaded(self.provider)
 
     async def _verify_connection(self) -> Optional[str]:
         """None when the token works; otherwise why it does not.

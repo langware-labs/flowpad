@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, make_data_source, position
 from flow_sdk.sources import CloudOrigin
 from flow_sdk.sources.binding import SourceBinding
@@ -71,12 +71,12 @@ async def test_conformance(check, feed_server):
 
 async def test_each_feed_url_is_a_segment():
     row = _row("https://a.test/f", "https://b.test/f")
-    assert [ref.key for ref in await driver_type("rss").segments(row)] == ["https://a.test/f", "https://b.test/f"]
+    assert [ref.key for ref in await DataDriver.loaded("rss").segments(row)] == ["https://a.test/f", "https://b.test/f"]
 
 
 async def test_atom_is_parsed_and_the_window_drops_old_entries(feed_server):
     url = f"{feed_server}/atom"
-    result = await driver_type("rss").traverse(_row(url), _view(url))
+    result = await DataDriver.loaded("rss").traverse(_row(url), _view(url))
     assert sorted(item.external_id for item in result.items) == list(ATOM_IDS[:2]), "the 2020 entry is outside the window"
     assert [item.external_id for item in result.items] == [ATOM_IDS[1], ATOM_IDS[0]], "records ingest in the order they happened"
     first = next(item for item in result.items if item.external_id == ATOM_IDS[0])
@@ -87,14 +87,14 @@ async def test_atom_is_parsed_and_the_window_drops_old_entries(feed_server):
 
 async def test_rss2_is_parsed_including_rfc822_dates(feed_server):
     url = f"{feed_server}/rss"
-    result = await driver_type("rss").traverse(_row(url), _view(url))
+    result = await DataDriver.loaded("rss").traverse(_row(url), _view(url))
     by_id = {item.external_id: item for item in result.items}
     assert sorted(by_id) == ["rss-item-0001", "rss-item-0002"]
     assert "platypus" in by_id["rss-item-0001"].body and by_id["rss-item-0001"].occurred_at.startswith("2026-07-30T10:00:00")
 
 
 async def test_a_304_is_the_free_no_op_poll(feed_server):
-    url, driver = f"{feed_server}/atom", driver_type("rss")
+    url, driver = f"{feed_server}/atom", DataDriver.loaded("rss")
     row = _row(url)
     first = await driver.traverse(row, _view(url))
     assert first.cursor, "the conditional pair must travel as the resume cursor"
@@ -110,5 +110,5 @@ async def test_a_304_is_the_free_no_op_poll(feed_server):
 async def test_a_failure_classifies_by_what_fixes_it(feed_server, path, health):
     url = f"{feed_server}{path}"
     with pytest.raises(Exception) as caught:
-        await driver_type("rss").traverse(_row(url), _view(url))
+        await DataDriver.loaded("rss").traverse(_row(url), _view(url))
     assert classify(caught.value)[0] is health

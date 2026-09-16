@@ -136,7 +136,7 @@ writes an entity, emits an event, or advances a cursor. It imports the public SD
 another asset.
 
 The loader (`flow_sdk/ingest/source_registry.py`) builds each folder into a **source
-type** (`flow_sdk/ingest/sources.py`, `DriverType`) from the manifest and the class. What
+type** (`flow_sdk/ingest/sources.py`, `DataDriver`) from the manifest and the class. What
 differs between sources, the source says itself: the credential shape is the manifest's
 `auth` (one resolver, `flow_sdk/ingest/credentials.py`); `build` constructs it over an
 application transport; `message_for` reads a send's arguments; `lift_cursor` adopts an
@@ -145,11 +145,11 @@ older cursor; `local_tree_key` / `origin_id_for` place and name reflected files;
 `events_from_webhook` take push delivery through the one generic route,
 `/api/v1/data_source/webhook/<name>`, and `webhook_authentic` — when a class declares it —
 must accept the delivery's raw body and headers before anything is ingested. The check is
-`DriverType.ingest_pushed`'s, so no caller can skip it, and the route answers a refusal
+`DataDriver.ingest_pushed`'s, so no caller can skip it, and the route answers a refusal
 with 401 (the URL is public; WhatsApp checks Meta's `X-Hub-Signature-256` against the app
 secret). The shipped folders load on the first
-`driver_type(provider)` call; an authored folder loads on first use
-(`resolve_driver_type`). `tests/unit/test_data_sources_are_self_contained.py` fails on
+`DataDriver.loaded(provider)` call; an authored folder loads on first use
+(`DataDriver.get`). `tests/unit/test_data_sources_are_self_contained.py` fails on
 any provider knowledge outside an asset folder.
 
 **The cursor is the source's own.** `DataSourceCursor.cursor` is an opaque string the
@@ -163,7 +163,7 @@ never read back as a floor.
 
 ### Traits
 
-Traits are class variables on the `Source`; `DriverType` exposes the ones the
+Traits are class variables on the `Source`; `DataDriver` exposes the ones the
 application reads, so the engine asks the type rather than probing.
 
 | Trait | Default | Meaning |

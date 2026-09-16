@@ -77,7 +77,7 @@ def wire(monkeypatch):
     state["spec"] = EmailMessageSpec
 
     monkeypatch.setattr(
-        "flow_sdk.ingest.driver_types.driver_type",
+        "flow_sdk.builtin.data_driver.DataDriver.loaded",
         lambda _p: SimpleNamespace(sends=state["sends"], outbound_spec=lambda _source: state["spec"]),
     )
     return state

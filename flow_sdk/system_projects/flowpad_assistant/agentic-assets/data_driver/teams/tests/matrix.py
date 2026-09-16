@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
-from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.testing import local_http_server
 
 from .test_teams_source import SEGMENT, _FakeGraph, _message, _token, teams_source
@@ -13,7 +13,7 @@ from .test_teams_source import SEGMENT, _FakeGraph, _message, _token, teams_sour
 
 @contextmanager
 def case(monkeypatch, tmp_path):
-    monkeypatch.setattr(driver_type("teams"), "credentials_for", _token("graph-test-token"))
+    monkeypatch.setattr(DataDriver.loaded("teams"), "credentials_for", _token("graph-test-token"))
     now = datetime.now(timezone.utc)
     fake = _FakeGraph()
     fake.roots = [_message(str(n), f"root {n}", created=(now - timedelta(minutes=10 - n)).strftime("%Y-%m-%dT%H:%M:%SZ")) for n in (1, 2, 3)]

@@ -129,9 +129,9 @@ async def test_agentmail_roundtrip():
 
         # ── reply: the driver's real send, threaded on the provider's id ──
         reply_marker = f"{marker}-reply"
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        outcome = await driver_type("agentmail").send(
+        outcome = await DataDriver.loaded("agentmail").send(
             source,
             thread_key=item.thread_key or "",
             to=item.author_external_id or PROBE,

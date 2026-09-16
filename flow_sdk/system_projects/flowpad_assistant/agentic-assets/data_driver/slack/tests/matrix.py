@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 
-from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.testing import local_http_server
 
 from .test_slack_source import _credentials, _FakeSlack, _message, slack_source
@@ -16,7 +16,7 @@ CHANNEL = "C0MATRIX1"
 
 @contextmanager
 def case(monkeypatch, tmp_path):
-    monkeypatch.setattr(driver_type("slack"), "credentials_for", _credentials("xoxb-test"))
+    monkeypatch.setattr(DataDriver.loaded("slack"), "credentials_for", _credentials("xoxb-test"))
     now = int(time.time())
     root = f"{now - 300}.000100"
     fake = _FakeSlack()

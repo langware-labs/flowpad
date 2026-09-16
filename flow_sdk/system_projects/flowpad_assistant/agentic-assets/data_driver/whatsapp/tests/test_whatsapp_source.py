@@ -14,9 +14,9 @@ import uuid
 import pytest
 from pydantic import SecretStr
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
@@ -109,7 +109,7 @@ def test_a_number_is_read_in_one_spelling():
 
 
 async def test_fetch_reports_unchanged_because_there_is_nothing_to_poll():
-    result = await driver_type("whatsapp").traverse(_source(), position(segment_key="messages", prior={}, window_start=None))
+    result = await DataDriver.loaded("whatsapp").traverse(_source(), position(segment_key="messages", prior={}, window_start=None))
     assert result.unchanged is True and result.items == []
 
 
@@ -172,7 +172,7 @@ def recorded(monkeypatch):
 
 async def test_a_reply_quotes_the_message_it_answers(serve, recorded):
     graph = serve([(200, {"messages": [{"id": "wamid.OUT"}]})])
-    outcome = await driver_type("whatsapp").send(_source(), thread_key=WA_ID, to=WA_ID, text="hi", in_reply_to="wamid.AAA")
+    outcome = await DataDriver.loaded("whatsapp").send(_source(), thread_key=WA_ID, to=WA_ID, text="hi", in_reply_to="wamid.AAA")
     body = json.loads(graph.bodies[0])
     assert outcome.external_id == "wamid.OUT"
     assert (body["to"], body["type"], body["context"]) == (WA_ID, "text", {"message_id": "wamid.AAA"})
@@ -183,7 +183,7 @@ async def test_the_sent_copy_is_recorded_because_nothing_will_echo_it(serve, rec
     serve([(200, {"messages": [{"id": "wamid.OUT"}]}), (200, {"display_phone_number": "15550001111"})])
     source = _source()
     source.account_key, source.account_identities = PHONE_ID, [PHONE_ID]
-    outcome = await driver_type("whatsapp").send(source, thread_key=WA_ID, to=WA_ID, text="answering")
+    outcome = await DataDriver.loaded("whatsapp").send(source, thread_key=WA_ID, to=WA_ID, text="answering")
     assert outcome.recorded is True and [i.external_id for i in recorded] == ["wamid.OUT"]
     assert (recorded[0].thread_key, recorded[0].author_external_id) == (WA_ID, PHONE_ID)
 
@@ -191,12 +191,12 @@ async def test_the_sent_copy_is_recorded_because_nothing_will_echo_it(serve, rec
 async def test_a_refused_send_does_not_park_the_source(serve):
     serve([(400, {"error": {"message": "Message failed to send because more than 24 hours have passed"}})])
     with pytest.raises(ValueError, match="24 hours"):
-        await driver_type("whatsapp").send(_source(), thread_key=WA_ID, to=WA_ID, text="too late")
+        await DataDriver.loaded("whatsapp").send(_source(), thread_key=WA_ID, to=WA_ID, text="too late")
 
 
 async def test_a_send_without_a_recipient_refuses():
     with pytest.raises(ValueError, match="wa_id"):
-        await driver_type("whatsapp").send(_source(), thread_key="", to="", text="hi")
+        await DataDriver.loaded("whatsapp").send(_source(), thread_key="", to="", text="hi")
 
 
 # ── verify ───────────────────────────────────────────────────────────────────
@@ -205,21 +205,21 @@ async def test_a_send_without_a_recipient_refuses():
 async def test_verify_names_the_number_it_will_send_as_and_stamps_it(serve):
     serve([(200, {"display_phone_number": "15550001111", "id": PHONE_ID})])
     source = _source()
-    verdict = await driver_type("whatsapp").verify(source)
+    verdict = await DataDriver.loaded("whatsapp").verify(source)
     assert verdict.ready is True and "15550001111" in verdict.detail
     assert source.account_key == "15550001111" and PHONE_ID in source.account_identities
 
 
 async def test_an_expired_token_says_which_token_to_make(serve):
     serve([(401, {"error": {"message": "Session has expired"}})])
-    verdict = await driver_type("whatsapp").verify(_source())
+    verdict = await DataDriver.loaded("whatsapp").verify(_source())
     assert verdict.ready is False and "System User" in verdict.detail
 
 
 async def test_a_source_with_no_token_asks_for_one():
     source = _source()
     source.config = {"phone_number_id": PHONE_ID}
-    verdict = await driver_type("whatsapp").verify(source)
+    verdict = await DataDriver.loaded("whatsapp").verify(source)
     assert verdict.ready is False and "access token" in verdict.detail
 
 

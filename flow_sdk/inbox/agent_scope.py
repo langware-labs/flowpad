@@ -53,11 +53,11 @@ class AgentInboxScope:
 
 def is_message_source(source) -> bool:
     """The domain predicate: a DataSource on a channel whose driver can send."""
-    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
     if not (getattr(source, "channel", "") or "").strip():
         return False
-    driver = driver_type(getattr(source, "provider", "") or "")
+    driver = DataDriver.loaded(getattr(source, "provider", "") or "")
     return bool(driver is not None and getattr(driver, "sends", False))
 
 

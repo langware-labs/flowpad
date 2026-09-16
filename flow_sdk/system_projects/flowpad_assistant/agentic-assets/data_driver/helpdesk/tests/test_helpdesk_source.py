@@ -15,10 +15,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.source_item import HelpdeskMessageSpec
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import position
 from flow_sdk.schema.data_spec.choice_spec import Choice
@@ -98,7 +98,7 @@ async def test_conformance(check):
 
 class TestTheSource:
     def test_it_is_registered_sends_and_answers_strangers(self):
-        driver = driver_type("helpdesk")
+        driver = DataDriver.loaded("helpdesk")
         assert driver.sends is True and driver.open_inbound is True and driver.channel_for(_row()) == "helpdesk"
 
     def test_the_manifest_matches_the_source(self):
@@ -107,55 +107,55 @@ class TestTheSource:
         manifest = json.loads((folder / "data_driver.json").read_text())
         assert manifest["name"] == HelpdeskSource.provider == folder.name
         assert manifest["config"]["desk_project_id"]["choices"] is True
-        assert driver_type("helpdesk").choices is not None, "a choosable field needs its hook"
+        assert DataDriver.loaded("helpdesk").choices is not None, "a choosable field needs its hook"
         assert "traits" not in manifest, "a builtin never declares traits"
 
     def test_replies_target_the_ticket(self):
         item = SimpleNamespace(segment_key=TICKET, thread_key=TICKET, external_id=MSG["id"])
-        spec = driver_type("helpdesk").outbound_spec(_row()).reply_to(item, body="try restarting it")
+        spec = DataDriver.loaded("helpdesk").outbound_spec(_row()).reply_to(item, body="try restarting it")
         assert isinstance(spec, HelpdeskMessageSpec) and spec.to == [TICKET] and spec.thread_key == TICKET
 
 
 class TestThePool:
     async def test_every_ticket_is_a_segment_carrying_the_pool_rows_change_token(self, hub):
-        (segment,) = await driver_type("helpdesk").segments(_row())
+        (segment,) = await DataDriver.loaded("helpdesk").segments(_row())
         assert (segment.key, segment.label) == (TICKET, "my printer is broken")
         assert segment.stamp == f"{POOL[0]['message_count']}:{POOL[0]['updated_at']}"
 
     async def test_a_source_without_a_desk_cannot_poll(self, hub):
         with pytest.raises(Exception) as caught:
-            await driver_type("helpdesk").segments(_row(desk_project_id=""))
+            await DataDriver.loaded("helpdesk").segments(_row(desk_project_id=""))
         assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR and "desk" in str(caught.value)
 
 
 class TestMapping:
     async def test_a_ticket_message_becomes_a_record_with_the_hub_ids_as_hints(self, hub):
-        (item,) = (await driver_type("helpdesk").traverse(_row(), _view())).items
+        (item,) = (await DataDriver.loaded("helpdesk").traverse(_row(), _view())).items
         assert item.external_id == MSG["id"] and item.message_id == MSG["id"], "the projection mints the FlowMessage with the hub's id"
         assert item.conversation_id == TICKET, "the projection adopts the hub conversation"
         assert (item.thread_key, item.segment_key, item.body, item.kind) == (TICKET, TICKET, "my printer is broken", "content.message.chat")
         assert (item.author_external_id, item.author_display) == (GUEST, "Guest")
 
     async def test_the_cursor_is_a_watermark_on_updated_date(self, hub):
-        first = await driver_type("helpdesk").traverse(_row(), _view())
+        first = await DataDriver.loaded("helpdesk").traverse(_row(), _view())
         assert first.cursor == HelpdeskSource.resume_at(MSG["updated_date"], [MSG["id"]])
-        again = await driver_type("helpdesk").traverse(_row(), _view(first))
+        again = await DataDriver.loaded("helpdesk").traverse(_row(), _view(first))
         assert again.items == [] and again.unchanged is True
 
     async def test_a_legacy_watermark_is_adopted(self, hub):
-        again = await driver_type("helpdesk").traverse(_row(), _view({"high_water": MSG["updated_date"], "boundary_ids": [MSG["id"]]}))
+        again = await DataDriver.loaded("helpdesk").traverse(_row(), _view({"high_water": MSG["updated_date"], "boundary_ids": [MSG["id"]]}))
         assert again.items == []
 
     async def test_an_edit_re_arrives_because_its_stamp_moved(self, hub):
         hub.messages = [{**MSG, "text": "my printer is on fire", "updated_date": "2026-09-06T10:05:00+00:00"}]
         state = {"cursor": HelpdeskSource.resume_at(MSG["updated_date"], [MSG["id"]])}
-        result = await driver_type("helpdesk").traverse(_row(), _view(state))
+        result = await DataDriver.loaded("helpdesk").traverse(_row(), _view(state))
         assert [i.body for i in result.items] == ["my printer is on fire"]
 
 
 class TestSend:
     async def test_it_picks_the_ticket_up_before_answering_every_time(self, hub):
-        out = await driver_type("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
+        out = await DataDriver.loaded("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
         assert [c for c in hub.calls if c[0] == "post"] == [("post", "conversation", TICKET, "pickup"), ("post", "conversation", TICKET, "add_message")]
         assert out.recorded is False, "the next poll ingests the sent copy onto the hub's id"
         assert out.external_id == hub.messages[-1]["id"]
@@ -168,13 +168,13 @@ class TestSend:
 
         row = _row()
         row.save_runtime = save
-        await driver_type("helpdesk").send(row, thread_key="", to=TICKET, text="on it")
+        await DataDriver.loaded("helpdesk").send(row, thread_key="", to=TICKET, text="on it")
         assert row.account_identities == [ME] and saved
 
     async def test_a_failed_reply_never_parks_the_source(self, hub):
         hub.tickets = set()
         with pytest.raises(ValueError):
-            await driver_type("helpdesk").send(_row(), thread_key="", to=TICKET, text="x")
+            await DataDriver.loaded("helpdesk").send(_row(), thread_key="", to=TICKET, text="x")
 
 
 class TestTheAppHub:
@@ -214,6 +214,6 @@ class TestChoices:
 
         monkeypatch.setattr("flow_sdk.app.actions.flow_message_action._hub_default_helpdesk", default)
         monkeypatch.setattr("flow_sdk.builtin.helpdesk.Helpdesk.get_all", none)
-        offered = await driver_type("helpdesk").choices(_row(), "desk_project_id")
+        offered = await DataDriver.loaded("helpdesk").choices(_row(), "desk_project_id")
         assert offered and isinstance(offered[0], Choice) and offered[0].id == DESK
-        assert await driver_type("helpdesk").choices(_row(), "other") == []
+        assert await DataDriver.loaded("helpdesk").choices(_row(), "other") == []

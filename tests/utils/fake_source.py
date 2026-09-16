@@ -15,8 +15,11 @@ from contextlib import contextmanager
 from dataclasses import replace
 from typing import AsyncGenerator, ClassVar, Iterable, Optional
 
+from pydantic import PrivateAttr
+
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.ingest.driver_types import DRIVERS, DriverType
+from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.ingest.driver_runtime import DRIVERS
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import SourceBinding
@@ -126,12 +129,19 @@ class ScriptedSource(Source):
         return MessageItem(origin=self.origin(external_id), data=data)
 
 
-class _ScriptedType(DriverType):
-    """The scripted provider's type: a send the test replaced answers first."""
+class _ScriptedType(DataDriver):
+    """The scripted provider's driver: a send the test replaced answers first."""
+
+    _abstract: ClassVar[bool] = True  # a test double, not a second registered type
+    _script: Optional[Script] = PrivateAttr(None)
 
     def __init__(self, cls, script: Script, *, kind: str):
-        super().__init__(cls, kind=kind)
-        self.script = script
+        super().__init__(name=cls.provider, kind=kind)
+        self._cls, self._script = cls, script
+
+    @property
+    def script(self) -> Script:
+        return self._script
 
     async def traverse(self, row, position):
         """The scripted channel's records keep the flat kind the scripted driver always stamped
@@ -151,7 +161,7 @@ class _ScriptedType(DriverType):
 @contextmanager
 def scripted_provider(provider: str = "scripted", *, pages: Iterable[list[dict]] = ()):
     """Register a scripted source under *provider* for the block, restoring what was there."""
-    previous: Optional[DriverType] = DRIVERS.get_or_none(provider)
+    previous: Optional[DataDriver] = DRIVERS.get_or_none(provider)
     script = Script(provider, pages)
     cls = type(f"Scripted_{provider}", (ScriptedSource,), {"provider": provider, "script_of": script})
     DRIVERS.register(_ScriptedType(cls, script, kind=f"datasource.api.{provider}"))

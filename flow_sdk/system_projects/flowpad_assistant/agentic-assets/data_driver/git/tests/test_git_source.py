@@ -13,9 +13,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import position
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.testing import Subject, checks_for
@@ -70,14 +70,14 @@ async def test_conformance(check, seeded_repo):
 async def test_the_first_pass_diffs_the_empty_tree_and_never_walks(tmp_path):
     repo = _repo(tmp_path / "repo", {"a.md": "a", "docs/b.md": "b"})
     (repo / "untracked.md").write_text("never committed")
-    result = await driver_type("git").traverse(_row(repo), _view())
+    result = await DataDriver.loaded("git").traverse(_row(repo), _view())
     assert sorted(Path(r).relative_to(repo.resolve()).as_posix() for r in result.refs) == ["a.md", "docs/b.md"]
     assert result.cursor == GitSource.resume_at(_git(repo, "rev-parse", "HEAD"))
 
 
 async def test_a_later_pass_reads_only_what_moved_since_the_commit(tmp_path):
     repo = _repo(tmp_path / "repo", {"a.md": "a", "b.md": "b"})
-    driver = driver_type("git")
+    driver = DataDriver.loaded("git")
     first = await driver.traverse(_row(repo), _view())
     (repo / "b.md").write_text("b, revised")
     _commit(repo)
@@ -88,7 +88,7 @@ async def test_a_later_pass_reads_only_what_moved_since_the_commit(tmp_path):
 
 async def test_an_unmoved_head_is_unchanged(tmp_path):
     repo = _repo(tmp_path / "repo", {"a.md": "a"})
-    driver = driver_type("git")
+    driver = DataDriver.loaded("git")
     first = await driver.traverse(_row(repo), _view())
     again = await driver.traverse(_row(repo), _view(first))
     assert again.unchanged is True and again.cursor == first.cursor
@@ -96,7 +96,7 @@ async def test_an_unmoved_head_is_unchanged(tmp_path):
 
 async def test_a_deletion_is_exact(tmp_path):
     repo = _repo(tmp_path / "repo", {"a.md": "a", "b.md": "b"})
-    driver = driver_type("git")
+    driver = DataDriver.loaded("git")
     first = await driver.traverse(_row(repo), _view())
     _git(repo, "rm", "-q", "b.md")
     _commit(repo)
@@ -106,7 +106,7 @@ async def test_a_deletion_is_exact(tmp_path):
 
 async def test_a_git_mv_is_a_move_never_a_tombstone(tmp_path):
     repo = _repo(tmp_path / "repo", {"a.md": "a body long enough to be a rename", "keep.md": "k"})
-    driver = driver_type("git")
+    driver = DataDriver.loaded("git")
     first = await driver.traverse(_row(repo), _view())
     _git(repo, "mv", "a.md", "renamed.md")
     _commit(repo)
@@ -120,14 +120,14 @@ async def test_a_legacy_sha_cursor_resumes_there(tmp_path):
     seed = _git(repo, "rev-parse", "HEAD")
     (repo / "b.md").write_text("b")
     _commit(repo)
-    result = await driver_type("git").traverse(_row(repo), _view({"sha": seed}))
+    result = await DataDriver.loaded("git").traverse(_row(repo), _view({"sha": seed}))
     assert [Path(r).name for r in result.refs] == ["b.md"]
 
 
 async def test_a_directory_that_is_not_a_repository_needs_a_person(tmp_path):
     (tmp_path / "plain").mkdir()
     with pytest.raises(Exception) as caught:
-        await driver_type("git").traverse(_row(tmp_path / "plain"), _view())
+        await DataDriver.loaded("git").traverse(_row(tmp_path / "plain"), _view())
     assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
 
 
@@ -139,21 +139,21 @@ async def test_a_directory_that_is_not_a_repository_needs_a_person(tmp_path):
     ],
 )
 async def test_verify_says_what_is_missing(tmp_path, setup, expected):
-    verdict = await driver_type("git").verify(setup(tmp_path))
+    verdict = await DataDriver.loaded("git").verify(setup(tmp_path))
     assert verdict.ready is False and expected in verdict.detail
 
 
 async def test_verify_passes_for_a_repository_with_commits(tmp_path):
-    assert (await driver_type("git").verify(_row(_repo(tmp_path / "repo", {"a.md": "a"})))).ready is True
+    assert (await DataDriver.loaded("git").verify(_row(_repo(tmp_path / "repo", {"a.md": "a"})))).ready is True
 
 
 async def test_identity_is_the_documented_cross_machine_handle_when_there_is_a_remote(tmp_path):
     origin = _repo(tmp_path / "origin", {"a.md": "a"})
     _git(tmp_path, "clone", "-q", origin.as_uri(), str(tmp_path / "clone"))
     clone = tmp_path / "clone"
-    result = await driver_type("git").traverse(_row(clone), _view())
-    assert driver_type("git").origin_id_for(_row(clone), result.refs[0]) not in ("", result.refs[0])
+    result = await DataDriver.loaded("git").traverse(_row(clone), _view())
+    assert DataDriver.loaded("git").origin_id_for(_row(clone), result.refs[0]) not in ("", result.refs[0])
 
 
 async def test_the_working_tree_is_never_stamped():
-    assert driver_type("git").stamps_identity is False
+    assert DataDriver.loaded("git").stamps_identity is False

@@ -15,11 +15,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.ingestor import ingest_items
-from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.testing import position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
@@ -118,7 +118,7 @@ async def test_conformance(check):
 
 class TestTheSource:
     def test_it_is_registered_and_its_channel_is_the_medium(self):
-        driver = driver_type("cloud_email")
+        driver = DataDriver.loaded("cloud_email")
         assert driver is not None and driver.channel_for(_row()) == "email", "naming the transport would fork every thread"
 
     async def test_the_segment_is_keyed_on_the_agent_not_the_address(self, mailbox):
@@ -133,67 +133,67 @@ class TestTheSource:
 
     async def test_a_source_without_an_agent_cannot_poll(self, mailbox):
         with pytest.raises(Exception) as caught:
-            await driver_type("cloud_email").traverse(_row(agent_id=""), _view())
+            await DataDriver.loaded("cloud_email").traverse(_row(agent_id=""), _view())
         assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
 
 
 async def driver_segments(row):
-    return await driver_type("cloud_email").segments(row)
+    return await DataDriver.loaded("cloud_email").segments(row)
 
 
 class TestMapping:
     async def test_a_hub_email_becomes_a_source_item(self, mailbox):
-        (item,) = (await driver_type("cloud_email").traverse(_row(), _view())).items
+        (item,) = (await DataDriver.loaded("cloud_email").traverse(_row(), _view())).items
         assert item.external_id == "<abc@mail.example>", "the RFC id, brackets intact"
         assert item.thread_key == f"{AGENT_ID}:t-1", "scoped to the mailbox, never the bare provider id"
         assert (item.name, item.kind, item.segment_key, item.reply_to_external_id) == ("Round trip", "content.message.email", AGENT_ID, None)
         assert item.occurred_at == "2026-08-04T08:28:47.206000+00:00"
 
     async def test_the_sender_arrives_structured_and_is_not_re_parsed(self, mailbox):
-        (item,) = (await driver_type("cloud_email").traverse(_row(), _view())).items
+        (item,) = (await DataDriver.loaded("cloud_email").traverse(_row(), _view())).items
         assert (item.author_external_id, item.author_display) == ("joe@example.com", "Joe Example")
 
     async def test_the_body_is_the_hydrated_text_never_the_preview(self, mailbox):
-        (item,) = (await driver_type("cloud_email").traverse(_row(), _view())).items
+        (item,) = (await DataDriver.loaded("cloud_email").traverse(_row(), _view())).items
         assert item.body == FULL_TEXT and item.body != LIST_ITEM["preview"]
 
 
 class TestHydration:
     async def test_it_does_not_filter_to_received(self, mailbox):
-        await driver_type("cloud_email").traverse(_row(), _view())
+        await DataDriver.loaded("cloud_email").traverse(_row(), _view())
         assert "labels" not in mailbox.calls[0][2]
 
     async def test_a_hydration_failure_keeps_the_cursor_put(self, mailbox):
         mailbox.fail_hydration = True
-        result = await driver_type("cloud_email").traverse(_row(), _view())
+        result = await DataDriver.loaded("cloud_email").traverse(_row(), _view())
         assert result.items == [] and result.cursor is None, "the cursor moved past a message never read"
 
 
 class TestCursor:
     async def test_it_advances_and_records_the_boundary(self, mailbox):
-        result = await driver_type("cloud_email").traverse(_row(), _view())
+        result = await DataDriver.loaded("cloud_email").traverse(_row(), _view())
         assert result.cursor == CloudEmailSource.resume_at(LIST_ITEM["timestamp"], [LIST_ITEM["message_id"]])
         assert result.high_water.startswith("2026-08-04T08:28:47")
 
     async def test_the_after_parameter_is_nudged_behind_the_floor(self, mailbox):
         state = {"cursor": CloudEmailSource.resume_at(LIST_ITEM["timestamp"], [LIST_ITEM["message_id"]])}
-        await driver_type("cloud_email").traverse(_row(), _view(state))
+        await DataDriver.loaded("cloud_email").traverse(_row(), _view(state))
         filters = mailbox.calls[0][2]
         assert _at(filters["after"]) < _at(LIST_ITEM["timestamp"]) and filters["ascending"] == "true"
 
     async def test_a_legacy_watermark_is_adopted(self, mailbox):
-        result = await driver_type("cloud_email").traverse(_row(), _view({"high_water": LIST_ITEM["timestamp"], "boundary_ids": [LIST_ITEM["message_id"]]}))
+        result = await DataDriver.loaded("cloud_email").traverse(_row(), _view({"high_water": LIST_ITEM["timestamp"], "boundary_ids": [LIST_ITEM["message_id"]]}))
         assert result.items == [] and result.unchanged is True
 
     async def test_a_message_already_seen_at_the_boundary_is_not_re_ingested(self, mailbox):
         state = {"cursor": CloudEmailSource.resume_at(LIST_ITEM["timestamp"], [LIST_ITEM["message_id"]])}
-        result = await driver_type("cloud_email").traverse(_row(), _view(state))
+        result = await DataDriver.loaded("cloud_email").traverse(_row(), _view(state))
         assert result.items == [] and result.unchanged is True
 
     async def test_a_second_message_in_the_same_second_still_arrives(self, mailbox):
         mailbox.messages.append({**LIST_ITEM, "message_id": "<def@mail.example>", "subject": "Sibling"})
         state = {"cursor": CloudEmailSource.resume_at(LIST_ITEM["timestamp"], [LIST_ITEM["message_id"]])}
-        result = await driver_type("cloud_email").traverse(_row(), _view(state))
+        result = await DataDriver.loaded("cloud_email").traverse(_row(), _view(state))
         assert [i.external_id for i in result.items] == ["<def@mail.example>"]
         assert result.cursor == CloudEmailSource.resume_at(LIST_ITEM["timestamp"], ["<abc@mail.example>", "<def@mail.example>"])
 
@@ -205,7 +205,7 @@ class TestCursor:
 
     async def test_an_empty_page_is_unchanged(self, mailbox):
         mailbox.messages = []
-        result = await driver_type("cloud_email").traverse(_row(), _view())
+        result = await DataDriver.loaded("cloud_email").traverse(_row(), _view())
         assert result.items == [] and result.unchanged is True
 
 
@@ -249,7 +249,7 @@ class TestTheAppMailbox:
 class TestTheDigestGateHolds:
     async def test_re_delivering_the_same_message_writes_nothing(self, mailbox):
         row = _row()
-        first = await ingest_items((await driver_type("cloud_email").traverse(row, _view())).items)
+        first = await ingest_items((await DataDriver.loaded("cloud_email").traverse(row, _view())).items)
         assert first.created == 1
-        second = await ingest_items((await driver_type("cloud_email").traverse(row, _view())).items)
+        second = await ingest_items((await DataDriver.loaded("cloud_email").traverse(row, _view())).items)
         assert (second.unchanged, second.created, second.updated) == (1, 0, 0), "the mapping is not deterministic"

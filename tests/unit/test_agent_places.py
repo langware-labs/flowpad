@@ -158,10 +158,10 @@ async def test_places_list_this_computer_first_with_what_each_owns(tmp_path):
 
 @pytest.mark.asyncio
 async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
+    from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.builtin.data_source import DataSource, SourceStatus
-    from flow_sdk.ingest.driver_types import driver_type
 
-    CloudEmailDriver = driver_type("cloud_email")  # noqa: N806 — the registered source
+    CloudEmailDriver = DataDriver.loaded("cloud_email")  # noqa: N806 — the registered source
 
     agent = await _agent(tmp_path, "places-email", system_prompt="Answer mail.")
     local = await agent.local_deployment()

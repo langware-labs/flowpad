@@ -1,6 +1,7 @@
-"""Source types — the application's registry of data sources, and one segment's traversal.
+"""What a ``DataDriver`` does at run time — the registry of loaded drivers, and one segment's traversal.
 
-A ``DriverType`` is one data source asset as the application runs it: the folder's ``Source`` class
+A ``DataDriver`` (``flow_sdk/builtin/data_driver.py``) is one data source driver as the application
+runs it: the folder's ``Source`` class
 and its manifest (``flow_sdk/ingest/driver_registry.py`` loads both). Everything that differs between
 sources the class or the manifest says — the credential shape (``auth``), the transport it is built
 over (``build``), how a send's arguments address its channel (``message_for``), how a cursor an older
@@ -8,7 +9,7 @@ build left is adopted (``lift_cursor``), the identity a reflected file resolves 
 (``origin_id_for``). The sync engine, reflection and the inbox ask the type; nothing here, or
 anywhere outside an asset folder, names a provider.
 
-**One segment's traversal** (``DriverType.traverse``) is the engine step: a page chain capped by
+**One segment's traversal** (``DataDriver.traverse``) is the engine step: a page chain capped by
 ``pages_per_pass``, starting from the durable cursor when the class declares one, else from the
 row's window. A record source's items lower to the flat envelope in the order they happened; a
 reflecting source's files become refs diffed against the manifest the cursor row carries — an
@@ -52,6 +53,7 @@ from flow_sdk.utils.serialization import iso_to_utc
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.source_item import MessageSpec
+    from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
 
 logger = logging.getLogger(__name__)
@@ -275,34 +277,49 @@ async def _single_segment(source: Source) -> str:
     return ROOT_SEGMENT
 
 
-class DriverType:
-    """A data source asset — its ``Source`` class and its manifest — as this application builds,
-    binds and traverses it."""
+class DriverRuntime:
+    """The run-time half of ``DataDriver``: build, bind, traverse, send. A mixin, so the registry
+    holds the entity itself; its state (``_cls``, ``_manifest``, ``_folder``, ...) is the entity's
+    private attributes, set by ``DataDriver.for_class``."""
 
-    def __init__(
-        self,
-        cls: type[Source],
-        manifest: "Optional[DataDriverSpec]" = None,
-        *,
-        kind: str = "",
-        folder: Optional[Path] = None,
-        content_hash: str = "",
-        shipped: bool = False,
-    ) -> None:
-        self.cls = cls
-        self.provider = cls.provider
-        self.manifest = manifest
-        #: The asset folder the source loaded from; ``None`` for a class registered by hand (a test's).
-        self.folder = folder
-        self.kind = kind or (manifest.kind if manifest is not None and manifest.kind else f"datasource.{cls.provider}")
-        #: The folder's code as it loaded (set by the loader) — a changed ``source.py`` is loaded again.
-        self.content_hash = content_hash
-        #: Loaded from the wheel's own folders: never reloaded, never shadowed.
-        self.shipped = shipped
+    _cls: type[Source]
+    _manifest: "Optional[DataDriverSpec]"
+    _folder: Optional[Path]
+    _content_hash: str
+    _shipped: bool
+    kind: str
+    name: str
+
+    @property
+    def cls(self) -> type[Source]:
+        return self._cls
+
+    @property
+    def provider(self) -> str:
+        return self.name
+
+    @property
+    def manifest(self) -> "Optional[DataDriverSpec]":
+        return self._manifest
+
+    @property
+    def folder(self) -> Optional[Path]:
+        """The asset folder the driver loaded from; ``None`` for a class registered by hand (a test's)."""
+        return self._folder
+
+    @property
+    def content_hash(self) -> str:
+        """The folder's code as it loaded — a changed ``source.py`` is loaded again."""
+        return self._content_hash
+
+    @property
+    def shipped(self) -> bool:
+        """Loaded from the wheel's own folders: never reloaded, never shadowed."""
+        return self._shipped
 
     # ── traits the application reads ───────────────────────────────────────
     @property
-    def sends(self) -> bool:
+    def can_send(self) -> bool:
         return issubclass(self.cls, Messaging) and callable(getattr(self.cls, "message_for", None))
 
     @property
@@ -587,7 +604,7 @@ class DriverType:
     ) -> SendOutcome:
         """One message into the channel, recorded. A refused message is a ``ValueError`` — one failed
         reply must never become source health."""
-        if not self.sends:
+        if not self.can_send:
             raise NotImplementedError(f"{self.provider} cannot send")
         source = await self.open(row, persona=True)
         data, answered = source.message_for(  # type: ignore[attr-defined]
@@ -714,7 +731,7 @@ class DriverType:
         return [Choice(**{k: str(entry[k]) for k in ("id", "name", "detail") if entry.get(k)}) for entry in offered]
 
 
-def _register_shipped(registry: "KindRegistry[DriverType]") -> None:
+def _register_shipped(registry: "KindRegistry[DataDriver]") -> None:
     from flow_sdk.ingest.driver_registry import register_shipped  # noqa: PLC0415
 
     register_shipped(registry)
@@ -722,17 +739,7 @@ def _register_shipped(registry: "KindRegistry[DriverType]") -> None:
 
 #: Keyed by provider; the shipped asset folders load on the first lookup. A miss answers ``None`` —
 #: an unknown provider is a diagnosable source state (``unknown_provider``), not a crash in the poller.
-DRIVERS: "KindRegistry[DriverType]" = KindRegistry("data source type", key="provider", builder=_register_shipped)
-
-
-def register_driver(driver_type: DriverType) -> DriverType:
-    return DRIVERS.register(driver_type)
-
-
-def driver_type(provider: str) -> Optional[DriverType]:
-    """The registered type for ``provider``. An authored folder not loaded yet is a miss here;
-    ``driver_registry.resolve_driver_type`` loads it."""
-    return DRIVERS.get_or_none(provider or "")
+DRIVERS: "KindRegistry[DataDriver]" = KindRegistry("data driver", key="provider", builder=_register_shipped)
 
 
 __all__ = [
@@ -744,15 +751,13 @@ __all__ = [
     "SegmentPosition",
     "SendOutcome",
     "SendStatus",
-    "DriverType",
+    "DriverRuntime",
     "binding_of",
     "cache_index_path",
     "cached_path",
     "identity_stamped",
     "ingest_run_context",
     "read_cache_index",
-    "register_driver",
-    "driver_type",
     "stamp_identity",
     "write_cache_index",
 ]

@@ -256,9 +256,9 @@ def origin_id_for(source: "DataSource", ref: str, root: Optional[Path]) -> str:
     The fallback is the source-relative path: always available, never wrong,
     only weaker (a rename reads as a new origin under it).
     """
-    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-    driver = driver_type(source.provider)
+    driver = DataDriver.loaded(source.provider)
     if driver is not None:
         try:
             resolved = (driver.origin_id_for(source, ref) or "").strip()
@@ -347,9 +347,9 @@ async def _retire_row(path: str) -> None:
 
 def _stamps_identity(source: "DataSource") -> bool:
     """May we write into this source's bytes? The driver decides."""
-    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-    driver = driver_type(source.provider)
+    driver = DataDriver.loaded(source.provider)
     return driver is None or driver.stamps_identity
 
 

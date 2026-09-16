@@ -124,7 +124,7 @@ class DriveSource(Source):
         an inode can promise. A file the index does not know falls back to its path."""
         from pathlib import Path  # noqa: PLC0415
 
-        from flow_sdk.ingest.driver_types import read_cache_index  # noqa: PLC0415
+        from flow_sdk.ingest.driver_runtime import read_cache_index  # noqa: PLC0415
 
         rel = Path(ref).resolve().relative_to(Path(root)).as_posix()
         key = read_cache_index(Path(root), cls.provider).get(rel)

@@ -16,7 +16,7 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
 from flow_sdk.builtin.consumer_position import ConsumerPosition
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.driver_types import SendOutcome, SendStatus
+from flow_sdk.ingest.driver_runtime import SendOutcome, SendStatus
 from flow_sdk.tags import on_tag
 from tests.utils.fake_source import scripted_provider
 

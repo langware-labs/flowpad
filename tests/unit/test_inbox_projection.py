@@ -267,9 +267,9 @@ class TestPermalinkDerivation:
 
     @staticmethod
     def _permalink(channel: str, external_id: str, thread_key: str) -> str:
-        from flow_sdk.ingest.driver_types import driver_type
+        from flow_sdk.builtin.data_driver import DataDriver
 
-        channel_type = driver_type(channel)
+        channel_type = DataDriver.loaded(channel)
         return channel_type.cls.permalink(external_id, thread_key) if channel_type else ""
 
     def test_gmail_addresses_by_thread(self):

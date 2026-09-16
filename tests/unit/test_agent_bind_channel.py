@@ -89,7 +89,7 @@ async def test_the_allowlist_defaults_to_nobody(connected):
 async def test_a_one_way_provider_is_refused(monkeypatch):
     """Reading it is fine; an agent bound to it could never answer."""
     monkeypatch.setattr(
-        "flow_sdk.ingest.driver_types.driver_type",
+        "flow_sdk.builtin.data_driver.DataDriver.loaded",
         lambda _p: SimpleNamespace(sends=False, identity_config_key="feeds", kind="datasource.api.rss"),
     )
     agent = await _agent("binder-oneway")

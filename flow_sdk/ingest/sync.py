@@ -25,10 +25,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-from flow_sdk.ingest.driver_registry import resolve_driver_type
-from flow_sdk.ingest.driver_types import DriverType, SegmentPass, SegmentPosition
+from flow_sdk.ingest.driver_runtime import SegmentPass, SegmentPosition
 from flow_sdk.ingest.health import ERROR_DETAIL_MAX, SourceHealth, classify, worst_of
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
@@ -57,7 +57,7 @@ async def sync_source(
     now = now or datetime.now(timezone.utc)
     combined = IngestReport()
 
-    stype = await resolve_driver_type(source.provider)
+    stype = await DataDriver.get(source.provider)
     if stype is None:
         await _fail_source(source, "unknown_provider", f"no source type registered for {source.provider!r}", now)
         return combined
@@ -140,7 +140,7 @@ def _position_of(source: DataSource, cursor: DataSourceCursor, now: datetime) ->
     )
 
 
-async def _sync_stream(source, stype: DriverType, cursor: DataSourceCursor, now: datetime, *, stamp: str = "") -> IngestReport:
+async def _sync_stream(source, stype: DataDriver, cursor: DataSourceCursor, now: datetime, *, stamp: str = "") -> IngestReport:
     report = IngestReport()
     cursor.last_attempted_at = now
 

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.ingest import reflect
-from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.reflect import (
     ReflectMode,
     get_reflector,
@@ -63,7 +63,7 @@ async def test_the_driver_produces_refs_and_never_items(folder_db, watched, make
 
     write_doc(watched)
     source, _project = await make_source(ReflectMode.NONE.value)
-    driver = driver_type("folder")
+    driver = DataDriver.loaded("folder")
 
     result = await driver.traverse(source, position(segment_key="root", prior={}))
 
@@ -107,7 +107,7 @@ async def test_polling_converges_to_quiet(folder_db, watched, make_source):
     from flow_sdk.builtin.data_source_cursor import DataSourceCursor
     from tests.unit._ingest_helpers import position
 
-    driver = driver_type("folder")
+    driver = DataDriver.loaded("folder")
 
     async def probe_is_quiet() -> bool:
         cursor = await DataSourceCursor.get_one(

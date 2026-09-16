@@ -8,11 +8,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.ingest.testing import local_http_server, make_data_source, position
 from flow_sdk.sources import CloudOrigin
@@ -78,11 +78,11 @@ async def test_conformance(check, hn_server):
 
 
 async def test_hacker_news_has_exactly_one_segment(hn_server):
-    assert [ref.key for ref in await driver_type("hackernews").segments(_row(hn_server))] == [STREAM_KEY]
+    assert [ref.key for ref in await DataDriver.loaded("hackernews").segments(_row(hn_server))] == [STREAM_KEY]
 
 
 async def test_changed_ids_are_hydrated_and_filtered(hn_server):
-    result = await driver_type("hackernews").traverse(_row(hn_server), _view())
+    result = await DataDriver.loaded("hackernews").traverse(_row(hn_server), _view())
     assert sorted(item.external_id for item in result.items) == ["101", "102"], "comments and deleted items are filtered"
     story = next(item for item in result.items if item.external_id == "101")
     assert (story.name, story.author_display) == ("A story about narwhals", "ada")
@@ -90,20 +90,20 @@ async def test_changed_ids_are_hydrated_and_filtered(hn_server):
 
 
 async def test_min_score_filter(hn_server):
-    result = await driver_type("hackernews").traverse(_row(hn_server, min_score=50), _view())
+    result = await DataDriver.loaded("hackernews").traverse(_row(hn_server, min_score=50), _view())
     assert [item.external_id for item in result.items] == ["101"]
 
 
 async def test_an_empty_update_set_is_the_free_no_op(hn_server):
     _STATE["updates"] = []
-    result = await driver_type("hackernews").traverse(_row(hn_server), _view())
+    result = await DataDriver.loaded("hackernews").traverse(_row(hn_server), _view())
     assert result.unchanged and result.items == [] and result.cursor is None
 
 
 async def test_5xx_is_transient(hn_server):
     _STATE["fail"] = True
     with pytest.raises(Exception) as caught:
-        await driver_type("hackernews").traverse(_row(hn_server), _view())
+        await DataDriver.loaded("hackernews").traverse(_row(hn_server), _view())
     assert classify(caught.value)[0] is SourceHealth.TRANSIENT_ERROR
 
 

@@ -56,9 +56,9 @@ async def test_telegram_send_records_its_own_copy():
     assert source.channel == "telegram", "channel must be stamped at create"
     mark("source saved")
 
-    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-    outcome = await driver_type("telegram").send(
+    outcome = await DataDriver.loaded("telegram").send(
         source,
         thread_key=CHAT_ID,
         to=CHAT_ID,
