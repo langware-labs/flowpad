@@ -1676,10 +1676,6 @@ msgstr "Agent Hook"
 msgid "Agent inbox not found"
 msgstr "Agent inbox not found"
 
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Agent is publicly visible"
-msgstr "Agent is publicly visible"
-
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "Agent name"
 #~ msgstr "Agent name"
@@ -2180,10 +2176,6 @@ msgstr "Anyone you share with can open, use and delete this sandbox."
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
 msgstr "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Anyone, even without signing in, can see this agent's name, description and system prompt — its files and actions stay private."
-msgstr "Anyone, even without signing in, can see this agent's name, description and system prompt — its files and actions stay private."
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #~ msgid "API"
@@ -5018,10 +5010,6 @@ msgstr "Could not load usage."
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Could not load your token plan."
 msgstr "Could not load your token plan."
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Could not make this agent public"
-msgstr "Could not make this agent public"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "Could not move email here"
@@ -11259,10 +11247,6 @@ msgstr "Machine size"
 msgid "Make a todo app"
 msgstr "Make a todo app"
 
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Make agent publicly visible"
-msgstr "Make agent publicly visible"
-
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Make this the default assistant"
 msgstr "Make this the default assistant"
@@ -15409,10 +15393,6 @@ msgstr "Publish failed."
 #: src/lib/publish-state.ts
 msgid "Publish hit a conflict"
 msgstr "Publish hit a conflict"
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Publish this agent to share it"
-msgstr "Publish this agent to share it"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
@@ -20938,10 +20918,6 @@ msgstr "Triggers"
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
 msgstr "Try again"
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Try again."
-msgstr "Try again."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
