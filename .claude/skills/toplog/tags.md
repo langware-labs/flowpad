@@ -1,12 +1,15 @@
+---
+id: 6df89291-5bef-4cd0-8f4e-b34298f6bb33
+---
 # Tag catalog
 
 The living registry of toplog tags. Each tag names a trace stream that
 `toplog.log([...], …)` calls in the code emit under. `run` reads this to pick the
 right tags for an issue; `scan` diffs it against the code; `learn` maintains it.
 
-The catalog starts empty on purpose — there are no production `toplog.log` calls
-yet. Tags earn their place through `learn`, after a trace proves useful in an
-RCA. That keeps the registry a record of *what actually helped*, not speculation.
+Tags earn their place through `learn`, after a trace proves useful in an RCA (or,
+like `pty`, when past RCAs name the points that would have shown the cause). Keep
+the registry a record of *what actually helps*, not speculation.
 
 ## Registry
 
@@ -17,6 +20,7 @@ The registry is every `### <tag>` heading below. Add entries in this format:
 - **Traces:** <what events / state transitions this stream logs>
 - **Where:** <subsystem + a few representative file paths that emit it>
 - **Use for:** <the symptom classes this tag illuminates>
+- **Verified:** <date, traffic type, line count in a whole-session trace; confirm tag-off produces zero new lines>
 ```
 
 <!-- New tags go here, one `### <tag>` heading each. Keep alphabetical so the
@@ -31,6 +35,37 @@ The registry is every `### <tag>` heading below. Add entries in this format:
 - **Traces:** every frontend navigation transition — `openDock` entry/dedup-no-op/target, the `window.history.pushState` + synthetic `popstate` pair in `commitBrowserNavigation`, `navigateToBaseUrl`, `goBack`/`goForward` (`navigate(±1)`), the mouse X1/X2 → `history.back/forward` bridge, the global `popstate` listener, the zustand history store (`pushHistory`/`goBack`/`goForward` with `currentIndex`), and `currentDock` changes. Each line carries the current browser URL, the target URL, and (where relevant) the dock pointer and history index.
 - **Where:** frontend navigation core — `ui/src/navigation/NavigationActions.ts`, `ui/src/navigation/useDockNavigation.ts`, `ui/src/hooks/use-navigation-state.ts`, `ui/src/main.tsx` (mouse-button bridge + global popstate listener). The Electron main process emits the parallel `[nav]` stream via `electron-log` in `electron/main.js` (back/forward gesture sources + `did-navigate`/`did-navigate-in-page`/`will-navigate`).
 - **Use for:** double-navigation / "back jumps twice" bugs, back/forward landing on the wrong view, dock open/close not reflecting in the URL, history desync between the browser history stack and the zustand `navigation-history` store.
+
+### pty
+- **Traces:** one line per PTY lifecycle event on both sides, never per chunk or keystroke. Backend lines log as `toplog: [pty] …`, frontend lines as `toplog.client: [pty] …`, both in `~/.flow/instances/<name>/logs/*.log`.
+  - **Backend:**
+    - `spawn` (pid, `backend_pid`, argv0, size, `spawn_ms`) and `reader_exit` (exit_code)
+    - `session_start` (`persisted_max_seq`, `start_seq`) and `cap_evict`
+    - `attach` (`latest_seq`, `repaint_ms`, `backend_pid`) and `attach_not_found`
+    - `resize`, `input_dropped` (session_not_found / write_failed)
+    - `output_delayed` (reader thread → loop lag > 200ms, ≤1/s per session)
+    - `ws_slow_message` (a WS message > 100ms blocks that connection's lane; ≤1/s, `slow_in_window`)
+    - `stream_read` (GET pty-stream: bytes, events, ms), `stream_truncate` (10MB rewrite holding the lock)
+    - `turn_end_transcript_parse` (whole-transcript parse on the loop at turn end), `recovery` (after restart)
+  - **Frontend:**
+    - `attach` (ok, force, ms), `reset` (chunks, last_seq)
+    - `dedup_drop` (first of a run), `input_dropped` (not_live / session_not_found / shell_not_connected, first of a run)
+    - `resize` / `resize_failed`, `xterm_mount` / `xterm_dispose`
+    - `on_connected start|superseded|replay_failed|done` with `source=mount|status|recovered|reconnected`
+    - `vt_rebuild_slow` (> 50ms)
+    - Plus the `process_load` lines also tagged `pty`: pty-stream fetch, replay, backlog loop, TabbedTerminal warm/cold flip, WS request TIMEOUT, attachPty.
+- **Where:**
+  - Backend: `compute/providers/desktop/provider.py`, `compute/providers/desktop/pty_stream_file.py`, `builtin/faas/pty_actions.py`, `server/routes/websocket.py`, `server/routes/pty_stream.py`, `server/pty_recovery.py`, `builtin/agentic_process/agentic_process.py`.
+  - Frontend: `ts_sdk/src/services/shell/ptyConnection.ts`, `ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx` (+ the `process_load` sites).
+- **Use for** (symptom → lines to read):
+  - **Laggy typing / slow output:** `ws_slow_message`, `output_delayed`, `turn_end_transcript_parse` / `stream_read` / `stream_truncate` with big `ms` (event-loop stalls; a mouse-wheel flood shows as a high `slow_in_window`).
+  - **Blank or frozen pane:** `attach_not_found`, `attach ok=false`, a missing `recovery` after a restart, `input_dropped`, WS request TIMEOUT, `output_delayed`.
+  - **Terminal "dead after restart":** `session_start persisted_max_seq` vs `start_seq`, then frontend `dedup_drop` with `seq` far below `last_seq` (lost epoch).
+  - **Slow tab switch / reload:** `on_connected` (count `start` lines per `source`; repeated starts = duplicate stream fetches), replay `took Nms serializedKB`, `xterm_mount`/`xterm_dispose` pairs (a "warm" terminal remounted).
+  - **Garbled after resize:** `resize` sizes/sources, `vt_rebuild_slow`.
+  - **Split-brain (two backends on one port):** `spawn backend_pid` ≠ `attach backend_pid`.
+  - **Not covered:** GPU compositing / render bleed (not observable from logs).
+- **Verified 2026-09-16** on a temp instance: 3 API sessions, a browser terminal, `seq 1 200000`, resize and reload → 51 lines total; tag off → 0 new lines.
 
 ### process_load
 - **Traces:** the whole Claude-process load pipeline, cold and warm — `initSdk` (cold bootstrap vs memoised warm), every `/dock/shell` loader step (`perfLog`/`perfTime` in the loaders emit under this tag: loadAgentApp → loadShellRoute → waitForConnected → loadProcess phases → dataContext writes), tab materialization (`Tab.listAll` duration + cache-miss `new_tab` round trips), the SDK runtime attach (`AgenticProcess.start` POST `/open` and `attachPty` durations), WS request timeouts (method/action/target + elapsed + pending-queue depth), terminal mount (`TabbedTerminal` active flip, warm vs cold-mount), and attach-time history replay (`pty-stream` fetch, headless replay + serialized size, backlog `processChunk` loop with chunk counts).

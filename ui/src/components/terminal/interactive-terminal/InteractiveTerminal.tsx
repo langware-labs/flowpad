@@ -210,6 +210,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   // pty-sync unified session (owns adapter, VT, segments)
   const ptySyncRef = useRef(new PtySyncSession());
+  // `pty` toplog: only the first keystroke of a run dropped while disconnected is logged.
+  const inputDropRunRef = useRef(false);
   const harnessRef = useRef<XTermHarness | null>(null);
   // Reactive snapshot — subscribes to ptySyncRef without needing PtySyncProvider context
   const ptySyncSnapshot = usePtySyncSession(ptySyncRef.current);
@@ -845,6 +847,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         if (active) {
           perfLog('term.open() done (active)');
         }
+        // A mount on a tab switch means the "warm" terminal was thrown away.
+        toplog.log('pty', `xterm_mount shell=${sessionId} active=${active} size=${term.cols}x${term.rows}`);
       } catch (e) {
         console.error('[InteractiveTerminal] Failed to open terminal:', e);
         return;
@@ -931,6 +935,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       if (terminalRef.current) {
         const term = terminalRef.current;
+        toplog.log('pty', `xterm_dispose shell=${sessionId} active=${active}`);
         setTimeout(() => {
           try {
             term.dispose();
@@ -1096,11 +1101,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
     let connectGen = 0; // cancellation token: a newer connect/disconnect wins
 
-    const onConnected = () => {
+    // `source` names which of the four triggers ran the attach handshake — the
+    // same shell fetching its stream several times per mount shows up here.
+    const onConnected = (source: 'mount' | 'status' | 'recovered' | 'reconnected') => {
       const gen = ++connectGen;
+      const tConnect = performance.now();
+      const superseded = (at: 'fetch' | 'replay') =>
+        toplog.log('pty', `on_connected superseded shell=${sessionId} source=${source} gen=${gen} at=${at}`);
+      toplog.log('pty', `on_connected start shell=${sessionId} source=${source} gen=${gen}`);
       void (async () => {
         const term = terminalRef.current;
-        if (!term) return;
+        if (!term) {
+          toplog.log('pty', `on_connected no_terminal shell=${sessionId} source=${source} gen=${gen}`);
+          return;
+        }
 
         // Fetch + replay the recorded framed stream (full history at the
         // recorded sizes — see pty-replay.ts). Falls back to live-only on
@@ -1113,14 +1127,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           const stream = await fetchPtyStream(ptyId);
           const tReplay = performance.now();
           toplog.log(
-            'process_load',
+            ['process_load', 'pty'],
             `onConnected pty-stream fetch took ${(tReplay - tFetch).toFixed(1)}ms events=${stream?.events.length ?? 0} pty=${ptyId.slice(0, 8)}`,
           );
-          if (gen !== connectGen) return; // superseded — don't burn a full replay for a dead attach
+          if (gen !== connectGen) return superseded('fetch'); // don't burn a full replay for a dead attach
           if (stream) {
             const replay = await replayPtyStream(stream);
             toplog.log(
-              'process_load',
+              ['process_load', 'pty'],
               `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0}`,
             );
             if (replay) {
@@ -1130,8 +1144,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           }
         } catch (e) {
           console.warn('[InteractiveTerminal] history replay failed, live-only:', e);
+          toplog.log('pty', `on_connected replay_failed shell=${sessionId} source=${source} error=${String(e)}`);
         }
-        if (gen !== connectGen) return; // superseded while fetching
+        if (gen !== connectGen) return superseded('replay');
 
         // Reset xterm to a clean slate for this session, then restore the
         // replayed history (scrollback + final screen + cursor).
@@ -1157,8 +1172,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           wrote = true;
         }
         toplog.log(
-          'process_load',
-          `onConnected backlog processChunk loop took ${(performance.now() - tBacklog).toFixed(1)}ms chunks=${chunks.length} lastSeq=${historyLastSeq}`,
+          ['process_load', 'pty'],
+          `onConnected backlog processChunk loop took ${(performance.now() - tBacklog).toFixed(1)}ms chunks=${chunks.length} lastSeq=${historyLastSeq} shell=${sessionId}`,
         );
 
         // Signal buffer ready after xterm processes the buffered writes.
@@ -1180,6 +1195,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         unsubOutput = shell.onOutput(handlePtyData);
 
         setShellReady(true);
+        toplog.log(
+          'pty',
+          `on_connected done shell=${sessionId} source=${source} gen=${gen} ms=${(performance.now() - tConnect).toFixed(0)} history_kb=${historySerialized ? (historySerialized.length / 1024).toFixed(0) : 0} chunks=${chunks.length}`,
+        );
       })();
     };
 
@@ -1204,7 +1223,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     };
 
     const unsubStatus = shell.on('status', (s: string) => {
-      if (s === 'connected') onConnected();
+      if (s === 'connected') onConnected('status');
       if (s === 'disconnected') onDisconnected();
     });
 
@@ -1215,7 +1234,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     // reopen. connectGen makes re-invocation safe (a newer attach supersedes).
     const onRecovered = (msg: { shell_id?: string; process_id?: string }) => {
       if (msg?.shell_id === sessionId || (process && msg?.process_id === process.id)) {
-        onConnected();
+        onConnected('recovered');
       }
     };
     connectionManager.on('on_recovered', onRecovered);
@@ -1227,11 +1246,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     // and re-subscribe — so the terminal catches up instead of staying on its
     // pre-sleep frame. No backend attach call is issued from here. connectGen
     // makes re-invocation safe (a newer attach supersedes an in-flight one).
-    const onReconnected = () => onConnected();
+    const onReconnected = () => onConnected('reconnected');
     connectionManager.on('on_reconnected', onReconnected);
 
     // Fire immediately if already connected on mount (e.g. navigation to existing terminal).
-    if (shell.connected) onConnected();
+    if (shell.connected) onConnected('mount');
 
     return () => {
       connectGen++; // cancel any in-flight history replay
@@ -1347,7 +1366,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       collectFirstPromptInput(data);
       if (data.includes('\r') || data.includes('\n')) scheduleEnterRefetch();
       const shell = shellRef.current;
-      if (shell?.connected) await shell.sendInput(data);
+      if (shell?.connected) {
+        inputDropRunRef.current = false;
+        await shell.sendInput(data);
+      } else if (!inputDropRunRef.current) {
+        // Typing into a pane whose shell isn't connected is silently lost.
+        inputDropRunRef.current = true;
+        toplog.log('pty', `input_dropped shell=${sessionId} reason=shell_not_connected has_shell=${Boolean(shell)}`);
+      }
     });
 
     return () => disp.dispose();
@@ -1448,7 +1474,17 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (snapshot.adapter && snapshot.vt) {
         const shell = shellRef.current;
         if (shell) {
-          ptySyncRef.current.rebuild(shell.getPtyChunks());
+          const chunks = shell.getPtyChunks();
+          const tRebuild = performance.now();
+          ptySyncRef.current.rebuild(chunks);
+          const rebuildMs = performance.now() - tRebuild;
+          // Replays EVERY stored chunk on each resize — only slow ones are logged.
+          if (rebuildMs > 50) {
+            toplog.log(
+              'pty',
+              `vt_rebuild_slow shell=${sessionId} chunks=${chunks.length} ms=${rebuildMs.toFixed(0)} size=${term.cols}x${term.rows}`,
+            );
+          }
         }
       }
 

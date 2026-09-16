@@ -38,4 +38,11 @@ This file routes — load the row that matches the task at hand.
 | --------------------------------------------------- | -------------------------- |
 | the registry of known tags + reconciliation rules | `tags.md`                |
 | extract tags in code / diff vs catalog            | `scripts/scan_tags.py`   |
-| the toplog mechanism + API (`enable/on/off/disable/is_on`, `/api/v1/toplog/*`) | `docs/toplog.md` (repo) |
+| the toplog mechanism + API (`enable/on/off/disable/persist/is_on`, `/api/v1/toplog/*`) | `docs/toplog.md` (repo) |
+
+## Ground rules
+
+- **Activation is temporary.** A backend restart resets the tags; keep them across
+  a restart (`persist`) only when the user asks for it.
+- **One trail.** Frontend toplog lines are forwarded into the backend instance log
+  (`toplog.client`), so tail `~/.flow/instances/<name>/logs/*.log` for both sides.
