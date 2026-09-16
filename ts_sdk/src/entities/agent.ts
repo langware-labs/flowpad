@@ -11,6 +11,7 @@ import type { IDeployment } from './deployment';
 import { DataSource, type IDataSource } from './data-source';
 import { EmailInbox, type IEmailInbox } from './email-inbox';
 import { Trigger } from './trigger';
+import type { UserRole } from '../services/membershipService';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 
@@ -136,18 +137,25 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
-   * The agent read with `expand=permissions` — `expand.roles` / `allowed_actions`, so
-   * `ImAnonymousViewer` answers whether it is public. Reflected to the hub: visibility is
-   * the hub row's `visitor_role`, which never syncs down to the local copy. The hub only
-   * answers for a published (`remote`) agent; otherwise the local backend answers.
-   * The result is a detached `Agent`, not merged into the cache.
+   * The agent's roles, read with `expand=permissions` — `ImAnonymousViewer(roles)` answers
+   * whether it is public. Reflected to the hub: visibility is the hub row's `visitor_role`,
+   * which never syncs down to the local copy. The hub only answers for a published
+   * (`remote`) agent; otherwise the local backend answers.
+   *
+   * Returns the raw `roles` list, NOT an `Agent` — every `APIEntity` constructor registers
+   * itself into the shared entity cache (`APIEntity.ts`'s ctor -> `register_new_entity`),
+   * unconditionally replacing whatever is cached for this id. The hub's reflected payload
+   * here is a different (sparser) shape than the local row — e.g. it carries no `remote` —
+   * so wrapping it in `new Agent(json)` clobbered the real cached entity for every other
+   * subscriber (confirmed live: `AgentProfileEditor`'s own `remote` read went `undefined`
+   * right after this call, disabling the Publish button too).
    */
-  public async fetchPermissions(): Promise<Agent> {
+  public async fetchPermissions(): Promise<UserRole[]> {
     const info = new ActionInfo('', Agent.type, this.id, 'GET');
     info.hubReflect = true;
     info.queryParameters = { expand: 'permissions' };
-    const json = await dataManager.callAction<undefined, Partial<Agent>>(info);
-    return new Agent(json);
+    const json = await dataManager.callAction<undefined, { expand?: { roles?: UserRole[] | null } }>(info);
+    return json?.expand?.roles ?? [];
   }
 
   /**
