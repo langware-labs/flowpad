@@ -21,7 +21,7 @@ def test_store_writes_a_flat_manifest_and_load_reads_it_back(tmp_path):
         name="wiki", title="Wiki", description="d", icon_name="Book", setup_wiki="setup",
         requires={"flow_sdk": ">=0.2"}, auth=AuthSpec(connector="google", scopes=["s"]),
         reflect=["none", "copy"],
-        config={"root": FieldHints(type="path", required=True, label="Root", pattern="^/")},
+        config={"root": FieldHints(type="path", label="Root")},
     )
     root = tmp_path / "wiki"
     ser.store(spec, local_origin_for_path(root))

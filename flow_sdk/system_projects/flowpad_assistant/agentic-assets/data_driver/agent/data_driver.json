@@ -12,7 +12,6 @@
   "config": {
     "connector": {
       "type": "text",
-      "required": true,
       "label": "Connector",
       "placeholder": "gmail | slack",
       "account_key": true,
@@ -20,7 +19,6 @@
     },
     "harness": {
       "type": "text",
-      "required": true,
       "label": "Harness",
       "placeholder": "claude",
       "hint": "The worker CLI that runs the fetch. Without a launchable one the source parks on config_error."
@@ -62,14 +60,12 @@
       "type": "number",
       "advanced": true,
       "label": "Fetch deadline (seconds)",
-      "default": 300,
       "hint": "Wall-clock for one fetch; a worker past it is killed so it cannot hold the source's slot forever."
     },
     "send_deadline_seconds": {
       "type": "number",
       "advanced": true,
       "label": "Send deadline (seconds)",
-      "default": 120,
       "hint": "Wall-clock for one send — shorter than a fetch: a fetch may sweep a mailbox, a send writes one message."
     }
   }

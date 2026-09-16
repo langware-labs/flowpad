@@ -3,7 +3,7 @@
  *
  * The interesting cases are the ones that used to be `if (provider === 'rss')`
  * branches: a feed URL that is not a URL, a Slack channel NAME where an ID
- * belongs. Both are now one `pattern` on the field, so this file proves the
+ * belongs. Both are now one `pattern` in the driver's Config schema, so this file proves the
  * generic check does what the two special cases did.
  */
 import { describe, expect, it } from 'vitest';
@@ -18,14 +18,16 @@ import {
 
 const rss = {
   config: {
-    feed_urls: { type: 'lines', required: true, label: 'Feed URLs', pattern: '^https?://' },
+    feed_urls: { type: 'lines', label: 'Feed URLs' },
   },
+  config_schema: { required: ['feed_urls'], properties: { feed_urls: { items: { pattern: '^https?://' } } } },
 } as never;
 
 const slack = {
   config: {
-    channels: { type: 'lines', required: true, label: 'Channel IDs', pattern: '^[CGD][A-Z0-9]{6,}$' },
+    channels: { type: 'lines', label: 'Channel IDs' },
   },
+  config_schema: { required: ['channels'], properties: { channels: { items: { anyOf: [{ pattern: '^[CGD][A-Z0-9]{6,}$' }, {}] } } } },
 } as never;
 
 const hn = {
@@ -45,20 +47,26 @@ const draft = (provider: string, fields: Record<string, string>, picked = {}) =>
 
 // The two shapes a picker fills: many (`lines`) and one (`text`).
 const pickable = {
-  config: { channels: { type: 'lines', required: true, choices: true, pattern: '^[CGD][A-Z0-9]{6,}$' } },
+  config: { channels: { type: 'lines', choices: true } },
+  config_schema: { required: ['channels'], properties: { channels: { items: { anyOf: [{ pattern: '^[CGD][A-Z0-9]{6,}$' }, {}] } } } },
 } as never;
 const bucket = {
-  config: { bucket: { type: 'text', required: true, choices: true, account_key: true } },
+  config: { bucket: { type: 'text', choices: true, account_key: true } },
+  config_schema: { required: ['bucket'], properties: { bucket: {} } },
 } as never;
 
-describe('emptyDraft starts from the manifest defaults', () => {
+describe('emptyDraft starts from the Config defaults', () => {
   it('prefills a field that declares a default and leaves the rest empty', () => {
     const waha = {
       name: 'waha',
       config: {
-        base_url: { type: 'text', required: true, label: 'WAHA URL' },
-        session: { type: 'text', required: true, default: 'default', label: 'Session' },
-        types: { type: 'csv', default: ['story', 'job'], label: 'Types' },
+        base_url: { type: 'text', label: 'WAHA URL' },
+        session: { type: 'text', label: 'Session' },
+        types: { type: 'csv', label: 'Types' },
+      },
+      config_schema: {
+        required: ['base_url'],
+        properties: { base_url: {}, session: { default: 'default' }, types: { default: ['story', 'job'] } },
       },
     } as never;
     const draft = emptyDraft(waha);

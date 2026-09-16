@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
+import { FieldType, type ConfigSchemaProperty, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
 
 /**
  * The create form's logic, over a manifest the BACKEND supplies.
@@ -49,7 +49,21 @@ export function specFields(spec?: DataDriver): [string, SpecConfigField][] {
   return Object.entries(spec?.config ?? {});
 }
 
-/** A new source's draft for `spec` — its provider, and the fields the manifest gives a `default`. */
+/** The rules for one field, read off the driver's `Config` schema: whether it is required, the
+ *  pattern a typed value (each entry, for a list) must match, and its default. */
+export function fieldRules(spec: DataDriver | undefined, key: string): { required: boolean; pattern?: string; default?: unknown } {
+  const schema = spec?.config_schema;
+  const prop: ConfigSchemaProperty = schema?.properties?.[key] ?? {};
+  const patternOf = (p?: ConfigSchemaProperty): string | undefined =>
+    p?.pattern ?? p?.anyOf?.map((a) => a.pattern).find(Boolean);
+  return {
+    required: (schema?.required ?? []).includes(key),
+    pattern: patternOf(prop) ?? patternOf(prop.items),
+    default: prop.default,
+  };
+}
+
+/** A new source's draft for `spec` — its provider, and the fields its `Config` gives a `default`. */
 export function emptyDraft(spec?: DataDriver): SourceDraft {
   return {
     name: '',
@@ -64,7 +78,7 @@ export function emptyDraft(spec?: DataDriver): SourceDraft {
     // rendered the way an edited source's stored value is, so create and edit show the same text.
     fields: Object.fromEntries(
       specFields(spec)
-        .map(([key, field]) => [key, fieldValue(key, field, { [key]: field.default })] as const)
+        .map(([key, field]) => [key, fieldValue(key, field, { [key]: fieldRules(spec, key).default })] as const)
         .filter(([, value]) => value !== ''),
     ),
     picked: {},
@@ -245,14 +259,15 @@ export function validateDraft(draft: SourceDraft, spec?: DataDriver): string[] {
     // the provider says is real.
     const picked = pickedIn(draft, key, field);
     if (picked.length) continue;
-    if (field.required && !raw) {
+    const rules = fieldRules(spec, key);
+    if (rules.required && !raw) {
       problems.push(t`${label} is required.`);
       continue;
     }
-    if (!raw || !field.pattern) continue;
+    if (!raw || !rules.pattern) continue;
     // One regex, applied per value, so a multi-line field reports the exact
     // entries at fault rather than "something is wrong".
-    const re = patternFor(field.pattern);
+    const re = patternFor(rules.pattern);
     const values =
       field.type === FieldType.LINES ? splitLines(raw) : field.type === FieldType.CSV ? splitCsv(raw) : [raw];
     const bad = values.filter((v) => !re.test(v));

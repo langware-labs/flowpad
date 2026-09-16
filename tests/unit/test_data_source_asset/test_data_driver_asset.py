@@ -26,7 +26,7 @@ RSS = {
     "title": "RSS / Atom",
     "description": "One stream per feed URL. No credentials.",
     "icon_name": "Rss",
-    "config": {"feed_urls": {"type": "lines", "required": True, "label": "Feed URLs"}},
+    "config": {"feed_urls": {"type": "lines", "label": "Feed URLs"}},
 }
 
 
@@ -53,7 +53,7 @@ async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
     assert ent is not None, "the walker did not pick up the manifest"
     assert ent.type == "data_driver"
     assert (ent.name, ent.title, ent.runtime) == ("rss", "RSS / Atom", "source")
-    assert ent.config["feed_urls"].required is True
+    assert ent.config["feed_urls"].label == "Feed URLs"
 
 
 async def test_a_rejected_manifest_yields_no_entity(folder_db, tmp_path):

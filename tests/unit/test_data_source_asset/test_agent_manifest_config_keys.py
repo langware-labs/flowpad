@@ -29,7 +29,8 @@ def test_every_key_the_driver_reads_is_declared():
 
 def test_the_declared_defaults_are_the_drivers():
     spec = DataDriverSpec.model_validate(json.loads(MANIFEST.read_text()))
-    assert spec.config["deadline_seconds"].default == agent_driver.DEFAULT_DEADLINE_SECONDS
-    assert spec.config["send_deadline_seconds"].default == agent_driver.DEFAULT_SEND_DEADLINE_SECONDS
+    fields = agent_source.AgentConfig.model_fields
+    assert fields["deadline_seconds"].default == agent_driver.DEFAULT_DEADLINE_SECONDS
+    assert fields["send_deadline_seconds"].default == agent_driver.DEFAULT_SEND_DEADLINE_SECONDS
     for key in ("deadline_seconds", "send_agent", "send_subagent", "send_deadline_seconds"):
         assert spec.config[key].advanced, f"{key} is an override, not the form's first screen"

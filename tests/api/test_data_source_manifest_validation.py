@@ -1,31 +1,50 @@
-"""A manifest's ``required`` / ``pattern`` rules hold over HTTP, not only in
-the dialog: ``DataSource.save`` raises ``ValueError`` naming the field and the
-create route maps it to a 400."""
+"""A driver's ``Config`` rules hold over HTTP, not only in the dialog: ``DataSource.save`` raises
+``ValueError`` naming the field and the create route maps it to a 400."""
 from __future__ import annotations
 
 import uuid
+from typing import Annotated
 
 import pytest
+from pydantic import StringConstraints
 
 from flow_sdk.builtin.data_driver import DataDriver
-from flow_sdk.schema.data_spec.data_driver_spec import FieldHints
+from flow_sdk.ingest.driver_runtime import DRIVERS
+from flow_sdk.sources.base import Source
+from flow_sdk.sources.config import SourceConfig
 
 pytestmark = pytest.mark.asyncio
 
 
-async def test_a_missing_required_field_is_a_400_naming_the_field(client):
-    await DataDriver(
-        name="api_strict_provider", title="Strict",
-        config={"root": FieldHints(type="path", required=True), "feed": FieldHints(pattern=r"^https?://")},
-    ).save(notify=False)
+class _StrictConfig(SourceConfig):
+    root: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    feed: Annotated[str, StringConstraints(pattern=r"^https?://")] = "http://default"
 
-    resp = await client.post("/api/v1/graph/data_source", json={"name": f"s {uuid.uuid4().hex[:8]}", "provider": "api_strict_provider", "config": {}})
+
+class _Strict(Source):
+    provider = "api_strict_provider"
+    Config = _StrictConfig
+
+
+@pytest.fixture
+def strict():
+    DataDriver.register(DataDriver.for_class(_Strict))
+    yield
+    DRIVERS.unregister(_Strict.provider)
+
+
+async def _create(client, config):
+    return await client.post("/api/v1/graph/data_source", json={"name": f"s {uuid.uuid4().hex[:8]}", "provider": _Strict.provider, "config": config})
+
+
+async def test_a_missing_required_field_is_a_400_naming_the_field(client, strict):
+    resp = await _create(client, {})
     assert resp.status_code == 400, resp.text
     assert "config.root is required" in resp.text
 
-    resp = await client.post("/api/v1/graph/data_source", json={"name": f"s {uuid.uuid4().hex[:8]}", "provider": "api_strict_provider", "config": {"root": "/x", "feed": "ftp://y"}})
+    resp = await _create(client, {"root": "/x", "feed": "ftp://y"})
     assert resp.status_code == 400, resp.text
     assert "config.feed is not valid: ftp://y" in resp.text
 
-    resp = await client.post("/api/v1/graph/data_source", json={"name": f"s {uuid.uuid4().hex[:8]}", "provider": "api_strict_provider", "config": {"root": "/x", "feed": "http://y"}})
+    resp = await _create(client, {"root": "/x", "feed": "http://y"})
     assert resp.json().get("status") == "SUCCESS", resp.text

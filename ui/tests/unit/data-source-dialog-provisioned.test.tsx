@@ -51,7 +51,8 @@ describe('add a channel', () => {
       title: 'Agent Email',
       description: 'An email address Flowpad creates for this agent.',
       provisioned: true,
-      config: { agent_id: { type: 'text', required: true, label: 'Agent' } },
+      config: { agent_id: { type: 'text', label: 'Agent' } },
+      config_schema: { required: ['agent_id'] },
     }),
     spec({ name: 'slack', title: 'Slack' }),
   ];

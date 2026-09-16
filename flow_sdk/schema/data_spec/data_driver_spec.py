@@ -60,20 +60,18 @@ class ManifestError(ValueError):
 
 
 class FieldHints(DataSpec):
-    """One field of the user-facing form — the whole reason the frontend can
-    stop hardcoding a catalog per provider."""
+    """How the form draws one config field: its widget, words and placement. The field's RULES —
+    required, pattern, default, type — are the driver's Config (DataDriver.config_schema);
+    extra="forbid" refuses a catalog that still states them here."""
 
     model_config = ConfigDict(frozen=True)
 
+    #: The widget: lines / csv a list typed one per line or comma, path a folder picker.
     type: FieldType = FieldType.TEXT
-    required: bool = False
     label: str = ""
     hint: str = ""
     placeholder: str = ""
-    default: Any = None
     advanced: bool = False
-    #: Regex the value must match — replaces the per-provider validators.
-    pattern: str = ""
     #: Marks the field that names the remote account. Descriptive only — ids are
     #: uuid4 and nothing dedupes on it, so a wrong one is a plain edit. Absent
     #: on every field means the source has no account to name, which is Slack's

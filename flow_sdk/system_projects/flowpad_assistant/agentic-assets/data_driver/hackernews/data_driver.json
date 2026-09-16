@@ -8,16 +8,12 @@
   "config": {
     "types": {
       "type": "csv",
-      "default": [
-        "story"
-      ],
       "label": "Item types",
       "placeholder": "story",
       "hint": "Comma separated: story, comment, job, poll. Defaults to story."
     },
     "min_score": {
       "type": "number",
-      "default": 0,
       "label": "Minimum score",
       "placeholder": "0"
     },
