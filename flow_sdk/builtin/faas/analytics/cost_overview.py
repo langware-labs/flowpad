@@ -46,7 +46,9 @@ def load_recent_sessions_for_cost(limit: int = 100) -> list[dict]:
     sessions: list[dict] = []
     for _mtime, path in by_mtime:
         try:
-            rec = extract_claude_session_from_path(path)
+            # Stats only: the searchable content is a second full parse the
+            # aggregation never reads.
+            rec = extract_claude_session_from_path(path, include_content=False)
             ensure_claude_session_stats(rec)
         except Exception:
             continue
