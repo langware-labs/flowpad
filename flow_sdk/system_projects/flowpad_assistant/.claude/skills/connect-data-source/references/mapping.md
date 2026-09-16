@@ -73,7 +73,7 @@ sync result reports zero created rows on success.
 
 Walk `config` in declaration order — that is the form order.
 
-- **Ask only** for fields that are `required: true` **and** not derivable from
+- **Ask only** for fields the driver's `config_schema` lists as `required` **and** not derivable from
   what the user already said. Never ask about `advanced: true` fields.
 - **Omit empty values.** Every optional key has a real driver default, and an
   empty string OVERRIDES it.
