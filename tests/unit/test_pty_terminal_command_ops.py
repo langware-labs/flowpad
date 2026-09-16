@@ -15,6 +15,7 @@ mocked-provider tier as ``test_pty_api.py``. No real OS PTY is spawned:
 
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -93,6 +94,30 @@ def eviction_registry(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
+async def test_input_is_not_logged_at_info_and_never_logs_data(caplog):
+    """Every keystroke and mouse report is an ``input`` op: logging it at INFO
+    flooded the server log (4 lines per input) with what the user typed."""
+    sentinel = "SENTINEL-typed-secret-4b1d"
+    provider = MagicMock()
+    pty = MagicMock()
+    pty.write = AsyncMock()
+    provider.get_pty_session = MagicMock(return_value=pty)
+    node = _Node(provider)
+    info = _request_info()
+    info.sub_path = "input"
+    info.get_post_data = AsyncMock(return_value={"shell_id": "shell-1", "data": sentinel})
+
+    with caplog.at_level(logging.DEBUG), _patch_request_info(info):
+        result = await node._pty_terminal_command()
+
+    assert result.status == "SUCCESS"
+    pty.write.assert_awaited_once_with(sentinel.encode())
+    pty_records = [r for r in caplog.records if "[PTY]" in r.getMessage()]
+    assert pty_records, "the op should still be traceable at DEBUG"
+    assert all(r.levelno < logging.INFO for r in pty_records)
+    assert not [r for r in caplog.records if sentinel in r.getMessage()]
+
+
 async def test_list_enriches_with_agentic_process_id():
     """A session whose shell_id matches an AgenticProcess.pty_pid gets the
     process id joined in; unmatched sessions are left untouched."""
