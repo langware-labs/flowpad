@@ -1676,6 +1676,10 @@ msgstr "הוק סוכן"
 msgid "Agent inbox not found"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
+msgid "Agent is publicly visible"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "Agent name"
 #~ msgstr "שם הסוכן"
@@ -2175,6 +2179,10 @@ msgstr "כל מי שתשתפו איתו יכול לפתוח, להשתמש ולמ
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
+msgid "Anyone, even without signing in, can see this agent's name, description and system prompt — its files and actions stay private."
 msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -5005,6 +5013,10 @@ msgstr ""
 
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Could not load your token plan."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
+msgid "Could not make this agent public"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
@@ -11243,6 +11255,10 @@ msgstr ""
 msgid "Make a todo app"
 msgstr "צרו אפליקציית משימות"
 
+#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
+msgid "Make agent publicly visible"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Make this the default assistant"
 msgstr ""
@@ -15381,6 +15397,10 @@ msgstr ""
 #: src/lib/publish-state.ts
 msgid "Publish hit a conflict"
 msgstr "הפרסום נתקל בהתנגשות"
+
+#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
+msgid "Publish this agent to share it"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
@@ -20906,6 +20926,10 @@ msgstr "טריגרים"
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
 msgstr "נסה שוב"
+
+#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
+msgid "Try again."
+msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
