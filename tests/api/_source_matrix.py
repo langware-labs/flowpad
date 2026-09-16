@@ -13,7 +13,7 @@ import json
 
 from typer.testing import CliRunner
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_driver_spec import DataDriverSpec
 from flow_sdk.cli.commands import _common, source_cmd
 from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module, read_manifest
@@ -41,10 +41,10 @@ class RestDriver:
         self.client = client
 
     async def _action(self, source_id: str, verb: str, payload: dict | None = None) -> dict:
-        return _data(await self.client.post(f"/api/v1/graph/data_driver/{source_id}/{verb}", json=payload or {}))
+        return _data(await self.client.post(f"/api/v1/graph/data_source/{source_id}/{verb}", json=payload or {}))
 
     async def create(self, name: str, config: dict, fields: dict) -> str:
-        return _data(await self.client.post("/api/v1/graph/data_driver", json={"name": f"matrix {name}", "provider": name, "config": config, **fields}))["id"]
+        return _data(await self.client.post("/api/v1/graph/data_source", json={"name": f"matrix {name}", "provider": name, "config": config, **fields}))["id"]
 
     async def verify(self, source_id: str) -> dict:
         return await self._action(source_id, "verify")
@@ -65,7 +65,7 @@ class RestDriver:
         return (await self._action(source_id, "set_enabled", {"enabled": enabled}))["status"]
 
     async def delete(self, source_id: str) -> None:
-        _data(await self.client.delete(f"/api/v1/graph/data_driver/{source_id}"))
+        _data(await self.client.delete(f"/api/v1/graph/data_source/{source_id}"))
 
 
 class CliDriver:
@@ -154,4 +154,4 @@ async def run_case(name: str, driver, client, monkeypatch, tmp_path) -> None:
         assert await driver.set_enabled(source_id, False) == "disabled"
         assert await driver.set_enabled(source_id, True) == "active"
         await driver.delete(source_id)
-        assert await DataDriver.get_one({"id": source_id}) is None
+        assert await DataSource.get_one({"id": source_id}) is None

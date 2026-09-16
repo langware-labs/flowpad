@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, unquote
 import pytest
 from pydantic import SecretStr
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.testing import local_http_server, position
@@ -33,8 +33,8 @@ CHANNEL = "19:4a95f7d8db4c4e7fae857bcebe0623e6@thread.tacv2"
 SEGMENT = f"{TEAM}/{CHANNEL}"
 
 
-def _source(**config) -> DataDriver:
-    return DataDriver(provider="teams", name="Teams test", config={"channels": [SEGMENT], **config})
+def _source(**config) -> DataSource:
+    return DataSource(provider="teams", name="Teams test", config={"channels": [SEGMENT], **config})
 
 
 def _view(state: dict | None = None, window_start: str | None = None):

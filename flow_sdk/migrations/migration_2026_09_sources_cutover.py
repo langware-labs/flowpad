@@ -43,7 +43,7 @@ from typing import Any
 logger = logging.getLogger("migrate.sources_cutover")
 
 ITEM = "source_item"
-SOURCE = "data_driver"
+SOURCE = "data_source"
 MESSAGE = "flow_message"
 CONVERSATION = "conversation"
 

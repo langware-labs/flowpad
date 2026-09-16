@@ -210,7 +210,7 @@ class Conversation(ProjectedFields, Entity):
     # resolves those to the local user. PRIVATE — never travels.
     owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
     # The channel a source-backed conversation replies through (``gmail``, ``slack``)
-    # and the local DataDriver feeding it, stamped by the inbox projection when it
+    # and the local DataSource feeding it, stamped by the inbox projection when it
     # places the first message. ``channel`` travels so a peer renders the badge —
     # HUB_WRITE, so a hub refresh that lacks it never blanks it; ``channel_source_id``
     # is a row id in OUR database, so it is PRIVATE.

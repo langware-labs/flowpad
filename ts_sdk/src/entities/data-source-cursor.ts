@@ -8,7 +8,7 @@
  */
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
-import type { SourceHealth } from './data-driver';
+import type { SourceHealth } from './data-source';
 
 export interface IDataSourceCursor extends IEntity {
   data_source_id?: string;

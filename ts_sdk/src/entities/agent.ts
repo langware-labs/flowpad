@@ -6,7 +6,7 @@ import { mainFileForType } from '../models/asset-editor';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { IDeployment } from './deployment';
-import { DataDriver, type IDataDriver } from './data-driver';
+import { DataSource, type IDataSource } from './data-source';
 import { EmailInbox, type IEmailInbox } from './email-inbox';
 import { Trigger } from './trigger';
 
@@ -374,9 +374,9 @@ interface AgentInboxStateWire {
   agent_id: string;
   enabled: boolean;
   inbox: (Omit<Partial<IEmailInbox>, 'agent_typeid'> & { typeid?: string; agent_typeid: TypeId | string }) | null;
-  source: (Partial<IDataDriver> & { id?: string; typeid?: string }) | null;
+  source: (Partial<IDataSource> & { id?: string; typeid?: string }) | null;
   /** Every message source the agent owns; the mailbox is one of them. */
-  sources?: (Partial<IDataDriver> & { id?: string; typeid?: string })[];
+  sources?: (Partial<IDataSource> & { id?: string; typeid?: string })[];
 }
 
 export interface AgentInboxState {
@@ -385,9 +385,9 @@ export interface AgentInboxState {
   /** The mailbox channel's own row and source — kept for readers that predate
    *  an agent holding more than one channel. */
   inbox: EmailInbox | null;
-  source: DataDriver | null;
+  source: DataSource | null;
   /** Every message source the agent owns (the mailbox included). */
-  sources: DataDriver[];
+  sources: DataSource[];
 }
 
 export interface AgentInboxScope {
@@ -420,10 +420,10 @@ function normalizeAgentInboxState(state: AgentInboxStateWire): AgentInboxState {
                 : state.inbox.agent_typeid,
           })
         : null,
-    source: state.source && sourceId ? new DataDriver({ ...state.source, id: sourceId }) : null,
+    source: state.source && sourceId ? new DataSource({ ...state.source, id: sourceId }) : null,
     sources: (state.sources ?? []).flatMap((row) => {
       const id = entityId(row);
-      return id ? [new DataDriver({ ...row, id })] : [];
+      return id ? [new DataSource({ ...row, id })] : [];
     }),
   };
 }

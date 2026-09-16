@@ -25,7 +25,7 @@ export interface ICloudOrigin {
  * are row ids in one instance's database and resolve nowhere else.
  */
 export interface ICloudOriginLocal {
-  /** The configured DataDriver this arrived through. */
+  /** The configured DataSource this arrived through. */
   data_source_id: string;
   /** The local cache row, 1:1. */
   source_item_id: string;

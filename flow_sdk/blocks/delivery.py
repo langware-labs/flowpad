@@ -7,7 +7,7 @@ position and a source, which are not values. Attribute reads fall through to the
 the value itself.
 
 **Build a reply with ``m.reply_spec(body=…)`` unless the code already knows its channel.**
-Naming a spec class is picking the addressing rule by hand; ``DataDriver.reply_spec`` says
+Naming a spec class is picking the addressing rule by hand; ``DataSource.reply_spec`` says
 what that costs on the wrong channel.
 
 **``ack()`` is an offset.** It commits this item AND everything before it — the Kafka grain,
@@ -42,7 +42,7 @@ def _announce_needs_review(source, row, consumer: str) -> None:
 
     emit_tag(
         f"ingest.{source.provider}.reply.needs_review",
-        target_of("data_driver", str(source.id)),
+        target_of("data_source", str(source.id)),
         {"source_id": str(source.id), "item_id": str(row.id), "consumer": consumer},
     )
 
@@ -83,16 +83,16 @@ class Delivered(Generic[T]):
         """The source this item arrived through. Raises rather than returning
         ``None``: every caller here is about to send, and "gone" is not a case
         any of them can carry on from."""
-        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
-        source = await DataDriver.get_by_id(self.source_id)
+        source = await DataSource.get_by_id(self.source_id)
         if source is None:
             raise LookupError(f"source {self.source_id} is gone; nothing to reply through")
         return source
 
     async def reply_spec(self, *, body: str, attachments=()) -> "MessageSpec":
         """The reply to THIS item, in its own channel's shape — the rule and the
-        reason are ``DataDriver.reply_spec``'s. Async only because it reads the
+        reason are ``DataSource.reply_spec``'s. Async only because it reads the
         source."""
         source = await self._source()
         return source.reply_spec(self.item, body=body, attachments=attachments)

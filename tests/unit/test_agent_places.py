@@ -157,7 +157,7 @@ async def test_places_list_this_computer_first_with_what_each_owns(tmp_path):
 
 @pytest.mark.asyncio
 async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
-    from flow_sdk.builtin.data_driver import DataDriver, SourceStatus
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus
     from flow_sdk.ingest.driver_types import driver_type
 
     CloudEmailDriver = driver_type("cloud_email")  # noqa: N806 — the registered source
@@ -165,7 +165,7 @@ async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
     agent = await _agent(tmp_path, "places-email", system_prompt="Answer mail.")
     local = await agent.local_deployment()
     cloud = await _cloud_place(agent)
-    source = DataDriver(
+    source = DataSource(
         name="Inbox", provider=CloudEmailDriver.provider, kind=CloudEmailDriver.kind,
         config={CloudEmailDriver.identity_config_key: agent.id}, account_key="a@x.io",
         owner=agent.typeid, status=SourceStatus.ACTIVE.value,
@@ -176,12 +176,12 @@ async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
 
     await set_email_place(agent, cloud.id)
     assert "Answer mail." in (Path(agent.asset_ref) / "system_prompt.md").read_text()
-    assert (await DataDriver.get_by_id(source.id)).status == SourceStatus.DISABLED.value
+    assert (await DataSource.get_by_id(source.id)).status == SourceStatus.DISABLED.value
     assert await email_answers_here(agent.id) is False
     assert _document(agent)["email_place"] == cloud.id
 
     await set_email_place(agent, local.id)
-    assert (await DataDriver.get_by_id(source.id)).status == SourceStatus.ACTIVE.value
+    assert (await DataSource.get_by_id(source.id)).status == SourceStatus.ACTIVE.value
     assert await email_answers_here(agent.id) is True
 
 

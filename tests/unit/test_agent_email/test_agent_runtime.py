@@ -7,7 +7,7 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.inbox.agent_runner import _reuse_or_spawn_agent_process, handle_inbound
@@ -50,7 +50,7 @@ async def test_mail_process_uses_agent_deployment_bundle_and_is_reused(mail_db, 
 
 async def test_prompt_refusal_is_checked_before_reply_capture(mail_db, monkeypatch):
     agent = await _agent(f"mail-prompt-fail-{mint_uuid()[:8]}")
-    source = DataDriver(
+    source = DataSource(
         name="Agent inbox",
         provider="cloud_email",
         channel="email",

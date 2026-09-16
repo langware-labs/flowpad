@@ -356,7 +356,7 @@ Registry](schema-registry.md) (how the `dataset` type is registered).
 
 ## Curating a source into a dataset
 
-A dataset can be **bound to a DataDriver** (`Dataset.source_id`, authored in
+A dataset can be **bound to a DataSource** (`Dataset.source_id`, authored in
 `dataset.json`). Its row shape is then `input: "ingest.source_item"` — the item
 envelope — plus the output shape the person chose, in the keyword form:
 

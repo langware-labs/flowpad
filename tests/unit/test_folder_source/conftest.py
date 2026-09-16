@@ -16,7 +16,7 @@ import pytest_asyncio
 
 import flow_sdk.db.drivers.db_driver as db_driver_mod
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
@@ -82,7 +82,7 @@ def in_workspace(tmp_path, monkeypatch):
 
 @pytest.fixture
 def make_source(watched, project, in_workspace):
-    """A saved folder DataDriver in the requested reflect mode.
+    """A saved folder DataSource in the requested reflect mode.
 
     Also creates the Project the assets belong to, mounted at the directory
     that mode actually indexes FROM — the watched tree for ``none``/``symlink``
@@ -91,12 +91,12 @@ def make_source(watched, project, in_workspace):
     explicitly, so no other setup is needed.
     """
 
-    async def _make(mode: str = ReflectMode.NONE.value) -> tuple[DataDriver, Project]:
+    async def _make(mode: str = ReflectMode.NONE.value) -> tuple[DataSource, Project]:
         landing = project if mode == ReflectMode.COPY.value else watched
         proj = Project(name="matrix-project", fs_storage_mount_path=str(landing))
         await proj.save()
 
-        src = DataDriver(
+        src = DataSource(
             name="watched-folder",
             provider="folder",
             config={"root": str(watched)},

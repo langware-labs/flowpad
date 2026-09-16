@@ -4,7 +4,7 @@
  * Credential-gated: `.env.local` must contain GMAIL_ADDRESS and
  * GMAIL_APP_PASSWORD. The Python harness uses the same FLOW_INSTANCE as the
  * browser backend, so it is ordinary SDK/REPL usage against the local Hub test
- * instance. No credential is copied into a DataDriver or printed here.
+ * instance. No credential is copied into a DataSource or printed here.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -28,7 +28,7 @@ import uuid
 import flow_sdk
 import flow_sdk.ingest.drivers  # noqa: F401
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_source import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.email_inbox import EmailInbox, email_source_for_agent
 from flow_sdk.builtin.source_item import EmailMessageSpec
 from flow_sdk.ingest.drivers.gmail import GmailDriver
@@ -43,10 +43,10 @@ async def main():
     address = os.environ["GMAIL_ADDRESS"]
     await flow_sdk.auth.login()
 
-    gmail = await DataDriver.find_for_account("gmail", GmailDriver.identity_config_key, address)
+    gmail = await DataSource.find_for_account("gmail", GmailDriver.identity_config_key, address)
     gmail_created = gmail is None
     if gmail is None:
-        gmail = DataDriver(
+        gmail = DataSource(
             name="gmail",
             provider="gmail",
             config={"address": address},
@@ -149,7 +149,7 @@ import os
 import sys
 import flow_sdk
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_source import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.email_inbox import EmailInbox
 
 async def main():
@@ -162,14 +162,14 @@ async def main():
                 await inbox.release()
         except Exception:
             pass
-        source = await DataDriver.find_for_account("cloud_email", "agent_id", agent.id)
+        source = await DataSource.find_for_account("cloud_email", "agent_id", agent.id)
         if source is not None:
             await source.delete()
         if agent.remote:
             await agent.unshare()
         await agent.delete()
     if sys.argv[2] == "1":
-        gmail = await DataDriver.find_for_account("gmail", "address", os.environ["GMAIL_ADDRESS"])
+        gmail = await DataSource.find_for_account("gmail", "address", os.environ["GMAIL_ADDRESS"])
         if gmail is not None:
             await gmail.delete()
 

@@ -1,4 +1,4 @@
-"""SecretStore — a place secret values live, the way a DataDriver is a place records come from.
+"""SecretStore — a place secret values live, the way a DataSource is a place records come from.
 
 A store is a TYPE plus its CONFIG, and the config says WHERE: a store never infers a path or a
 prefix from a scope or an environment. Every store is keyed by the environment variable name

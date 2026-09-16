@@ -83,7 +83,7 @@ still reads healthy.
 The run has produced something; say so in the graph rather than in prose.
 
 ```bash
-flow artifact entity data_driver-<id>          # --no-show when nothing is watching
+flow artifact entity data_source-<id>          # --no-show when nothing is watching
 ```
 
 **After the test gate, never before.** An artifact is a claim that a deliverable

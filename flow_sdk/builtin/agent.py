@@ -50,7 +50,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.blocks import MessageBlock, RunOutput
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
-    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.mcp import Mcp
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 
@@ -220,7 +220,7 @@ class Agent(Entity):
     # An Agent HOLDS a mailbox; it is not one. Everything about the mailbox —
     # its policy, its lifecycle, the source that polls it, and the local cache
     # the gate reads — lives on ``EmailInbox`` (``flow_sdk/builtin/email_inbox.py``)
-    # and the ``cloud_email`` ``DataDriver`` it owns. Nothing about mail is a
+    # and the ``cloud_email`` ``DataSource`` it owns. Nothing about mail is a
     # field here: an Agent holds a mailbox, it is not one.
     #
     # ── lifecycle ─────────────────────────────────────────────────────────
@@ -643,7 +643,7 @@ class Agent(Entity):
         """
         return await EmailInbox.allocate(self, **options)
 
-    async def bind_channel(self, *, provider: str, channel: str, allowed_senders: "Sequence[str]" = ()) -> "DataDriver":
+    async def bind_channel(self, *, provider: str, channel: str, allowed_senders: "Sequence[str]" = ()) -> "DataSource":
         """Make ``channel`` on ``provider`` reach THIS agent, and answer as it.
 
         The channel sibling of :meth:`allocate_inbox`. A mailbox is *allocated* —
@@ -684,7 +684,7 @@ class Agent(Entity):
         source = await Inbox(channel, provider=provider, owner=self).ensure_source()
         senders = [t for t in (str(s).strip() for s in allowed_senders) if t]
         # Only on change: re-binding is the documented common case, and
-        # `DataDriver.save` is a spec read plus a write.
+        # `DataSource.save` is a spec read plus a write.
         if list(source.inbound_allowed_senders or []) != senders:
             source.inbound_allowed_senders = senders
             await source.save()
@@ -723,7 +723,7 @@ class Agent(Entity):
     @action.get(action_name="inbox_state")
     @_inbox_failures("load the inbox")
     async def inbox_state_action(self):
-        """Browser projection of the mailbox and its local DataDriver.
+        """Browser projection of the mailbox and its local DataSource.
 
         The one action that reconciles: it is the only one that may find no
         mailbox at all, so it goes through ``state_for_agent`` rather than
@@ -764,7 +764,7 @@ class Agent(Entity):
     @action.post(action_name="configure_inbox")
     @_inbox_failures("configure the inbox")
     async def configure_inbox_action(self):
-        """Update the mailbox's policy and the paired DataDriver cadence.
+        """Update the mailbox's policy and the paired DataSource cadence.
 
         Only the LOCAL half is validated here. ``allowed_senders`` and
         ``filters`` belong to the Hub, which validates and normalizes them and

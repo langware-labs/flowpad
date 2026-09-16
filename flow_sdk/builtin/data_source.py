@@ -1,6 +1,6 @@
-"""DataDriver — a configured remote system of record we sync from.
+"""DataSource — a configured remote system of record we sync from.
 
-The filesystem indexer walks roots; this walks a remote API. One DataDriver owns
+The filesystem indexer walks roots; this walks a remote API. One DataSource owns
 the relationship with one remote account or feed set: which driver, what it needs
 to run, how often, and how far back.
 
@@ -54,13 +54,13 @@ logger = logging.getLogger(__name__)
 MIN_POLL_INTERVAL_SECONDS = 60
 
 
-class DataDriverNotFound(NameNotFound):
+class DataSourceNotFound(NameNotFound):
     """No data source has that name."""
 
     message = "no data source named {name!r}"
 
 
-class DataDriverAmbiguous(NameAmbiguous):
+class DataSourceAmbiguous(NameAmbiguous):
     """Several data source instances share the name; ``candidates`` are their typeids."""
 
     plural = "data sources"
@@ -129,8 +129,8 @@ def parse_since(raw: str) -> "tuple[Optional[datetime], Optional[str]]":
     return parsed, None
 
 
-class DataDriver(Entity):
-    type: str = APIField(default=EntityType.DATA_DRIVER.value)
+class DataSource(Entity):
+    type: str = APIField(default=EntityType.DATA_SOURCE.value)
 
     # ── identity / ontology ──
     name: str = APIField(default="")
@@ -325,16 +325,16 @@ class DataDriver(Entity):
 
     # ── the access pattern: declare → get and check → bind ──────────────────
     @classmethod
-    async def get(cls, name: str) -> "DataDriver":
-        """The data source named ``name``. Raises :class:`DataDriverNotFound`, or
-        :class:`DataDriverAmbiguous` when several instances share the name."""
+    async def get(cls, name: str) -> "DataSource":
+        """The data source named ``name``. Raises :class:`DataSourceNotFound`, or
+        :class:`DataSourceAmbiguous` when several instances share the name."""
         from flow_sdk.ingest.driver_registry import resolve_driver_type  # noqa: PLC0415
 
         rows = await cls.get_all({"name": name})
         if not rows:
-            raise DataDriverNotFound(name)
+            raise DataSourceNotFound(name)
         if len(rows) > 1:
-            raise DataDriverAmbiguous(name, [str(row.typeid) for row in rows])
+            raise DataSourceAmbiguous(name, [str(row.typeid) for row in rows])
         # An authored source's folder loads on first use; the accessors below read its manifest.
         await resolve_driver_type(rows[0].provider or "")
         return rows[0]
@@ -384,7 +384,7 @@ class DataDriver(Entity):
     @classmethod
     async def find_for_account(
         cls, provider: str, key: str, value: str, *, owner: "Optional[TypeId]" = None
-    ) -> "Optional[DataDriver]":
+    ) -> "Optional[DataSource]":
         """The source of ``provider`` whose ``config[key]`` names ``value``.
 
         The canonical natural-key lookup (same shape as
@@ -415,7 +415,7 @@ class DataDriver(Entity):
         return None
 
     @classmethod
-    async def find_owned(cls, owner: "TypeId", *, channel: Optional[str] = None) -> "list[DataDriver]":
+    async def find_owned(cls, owner: "TypeId", *, channel: Optional[str] = None) -> "list[DataSource]":
         """Every source ``owner`` holds — optionally only those on ``channel``.
 
         The indexed filter first; then the rows written before ``owner`` existed
@@ -585,7 +585,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="poll_now")
     async def poll_now_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/poll_now — make this source due.
+        """POST /api/v1/graph/data_source/{id}/poll_now — make this source due.
 
         Also the ONLY un-latch for ``config_error``: ``is_due`` refuses a source
         in that state, so without clearing health here a source that hit a
@@ -611,7 +611,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="request_poll")
     async def request_poll_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/request_poll — attention.
+        """POST /api/v1/graph/data_source/{id}/request_poll — attention.
 
         A viewer is looking at this source's output RIGHT NOW; poll on the
         next heartbeat tick. The UI fires this on an interval while a
@@ -657,7 +657,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="reset_cursors")
     async def reset_cursors_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/reset_cursors — forget position.
+        """POST /api/v1/graph/data_source/{id}/reset_cursors — forget position.
 
         Clears the normalized high-water mark AND the provider-opaque ``state``
         (ETags, update pointers), so the next poll re-reads the whole window.
@@ -681,7 +681,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="purge_items")
     async def purge_items_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/purge_items — drop the records.
+        """POST /api/v1/graph/data_source/{id}/purge_items — drop the records.
 
         Safe to pair with a re-poll: re-ingestion rebuilds an equivalent row per
         record. NOT the *same* row — the rebuilt rows are new entities with new
@@ -698,7 +698,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="replay")
     async def replay_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/replay — re-fetch, optionally from a date.
+        """POST /api/v1/graph/data_source/{id}/replay — re-fetch, optionally from a date.
 
         Body: ``{"since": "<ISO-8601>"}`` (optional).
 
@@ -829,7 +829,7 @@ class DataDriver(Entity):
 
     @classmethod
     async def delete_by_id(cls, eid: str):
-        """The path `DELETE /api/v1/graph/data_driver/{id}` takes."""
+        """The path `DELETE /api/v1/graph/data_source/{id}` takes."""
         await cls.delete_children_of(str(eid))
         return await super().delete_by_id(eid)
 
@@ -1009,7 +1009,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="choices")
     async def choices_action(cls) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/choices — the picker's data.
+        """POST /api/v1/graph/data_source/choices — the picker's data.
 
         Body: ``{"provider": str, "field": str, "config": dict}``, read off the request
         context rather than a declared parameter — the dispatcher resolves an annotated
@@ -1091,7 +1091,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="send")
     async def send_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/send — one message into the channel.
+        """POST /api/v1/graph/data_source/{id}/send — one message into the channel.
 
         Body: ``{"to", "text", "thread_key"?, "subject"?, "in_reply_to"?}``. ``to`` is what the channel
         addresses (a chat, a channel id, an address); the source class reads it (``message_for``)."""
@@ -1117,7 +1117,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="reply")
     async def reply_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/reply — answer one of this source's items.
+        """POST /api/v1/graph/data_source/{id}/reply — answer one of this source's items.
 
         Body: ``{"item_id", "text"}``. Who the reply goes to is the channel's rule (``reply_spec``)."""
         body = await self._body()
@@ -1140,7 +1140,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="items")
     async def items_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/items — this source's records, newest first.
+        """POST /api/v1/graph/data_source/{id}/items — this source's records, newest first.
 
         Body: ``{"limit"?}`` (default 20)."""
         body = await self._body()
@@ -1160,7 +1160,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="sync")
     async def sync_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/sync — one sync cycle NOW, reported. Unlike ``poll_now``
+        """POST /api/v1/graph/data_source/{id}/sync — one sync cycle NOW, reported. Unlike ``poll_now``
         this waits for the cycle: it is what a person or an agent runs to see a source work. Like
         ``poll_now`` it un-latches ``config_error`` first: someone asking for a sync after fixing a
         credential means to try again."""
@@ -1176,7 +1176,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="set_enabled")
     async def set_enabled_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/set_enabled — ``{"enabled": bool}``. Disabled stops polling."""
+        """POST /api/v1/graph/data_source/{id}/set_enabled — ``{"enabled": bool}``. Disabled stops polling."""
         enabled = bool((await self._body()).get("enabled", True))
         self.status = SourceStatus.ACTIVE.value if enabled else SourceStatus.DISABLED.value
         await self.save()
@@ -1184,7 +1184,7 @@ class DataDriver(Entity):
 
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_driver/{id}/verify — the route over ``verify``.
+        """POST /api/v1/graph/data_source/{id}/verify — the route over ``verify``.
 
         Thin on purpose, the way ``replay_action`` is thin over ``replay``: the
         verb belongs to the source, and a caller in-process should not have to

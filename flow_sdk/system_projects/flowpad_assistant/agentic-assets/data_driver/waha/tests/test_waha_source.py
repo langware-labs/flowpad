@@ -12,7 +12,7 @@ import json
 import pytest
 from pydantic import SecretStr
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.driver_types import driver_type
@@ -46,8 +46,8 @@ def _config(base: str = "http://127.0.0.1:9", **extra) -> dict:
     return {"base_url": base, "session": SESSION, "webhook_url": HOOK, "api_key": API_KEY, "webhook_hmac": HMAC_KEY, **extra}
 
 
-def _source(base: str = "http://127.0.0.1:9", **extra) -> DataDriver:
-    return DataDriver(provider="waha", name="WAHA test", config=_config(base, **extra))
+def _source(base: str = "http://127.0.0.1:9", **extra) -> DataSource:
+    return DataSource(provider="waha", name="WAHA test", config=_config(base, **extra))
 
 
 def _binding(base: str = "http://127.0.0.1:9") -> SourceBinding:

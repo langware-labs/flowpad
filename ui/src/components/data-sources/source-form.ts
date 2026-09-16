@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { FieldType, type DataDriverChoice, type DataDriverSpec, type SpecConfigField } from '@sdk';
+import { FieldType, type DataSourceChoice, type DataDriverSpec, type SpecConfigField } from '@sdk';
 
 /**
  * The create form's logic, over a manifest the BACKEND supplies.
@@ -41,7 +41,7 @@ export interface SourceDraft {
    * Empty for a field the user typed into instead — which is what makes the fallback work
    * with no mode flag anywhere in this file.
    */
-  picked: Record<string, DataDriverChoice[]>;
+  picked: Record<string, DataSourceChoice[]>;
 }
 
 /** `[key, field]` pairs in declaration order — the order the form renders. */
@@ -104,7 +104,7 @@ export function fieldValue(key: string, field: SpecConfigField, config: Record<s
  * carries an `id` is what the picker writes. Returns null for a shape this form does not
  * model, so a caller drops it rather than rendering `[object Object]` and saving it back.
  */
-export function choiceOf(raw: unknown): DataDriverChoice | null {
+export function choiceOf(raw: unknown): DataSourceChoice | null {
   if (typeof raw === 'string') return raw.trim() ? { id: raw.trim(), name: raw.trim() } : null;
   if (raw && typeof raw === 'object' && 'id' in raw) {
     const entry = raw as { id?: unknown; name?: unknown };
@@ -119,11 +119,11 @@ export function pickedFrom(
   key: string,
   field: SpecConfigField,
   config: Record<string, unknown>,
-): DataDriverChoice[] {
+): DataSourceChoice[] {
   if (!field.choices) return [];
   const raw = config?.[key];
   const entries = Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw];
-  return entries.map(choiceOf).filter((c): c is DataDriverChoice => c !== null);
+  return entries.map(choiceOf).filter((c): c is DataSourceChoice => c !== null);
 }
 
 /**
@@ -138,12 +138,12 @@ export function pickedIn(
   draft: SourceDraft,
   key: string,
   field: SpecConfigField,
-): DataDriverChoice[] {
+): DataSourceChoice[] {
   return field.choices ? (draft.picked[key] ?? []) : [];
 }
 
 /** What a picked choice is STORED as: a bare id when the name adds nothing. */
-const storedChoice = (c: DataDriverChoice): string | { id: string; name: string } =>
+const storedChoice = (c: DataSourceChoice): string | { id: string; name: string } =>
   c.name && c.name !== c.id ? { id: c.id, name: c.name } : c.id;
 
 const splitLines = (raw: string): string[] =>

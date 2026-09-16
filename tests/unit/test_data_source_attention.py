@@ -22,17 +22,17 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver, SourceStatus
+from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.health import SourceHealth
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 
-async def _source(**kw) -> DataDriver:
+async def _source(**kw) -> DataSource:
     base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name="Feed")
     base.update(kw)
-    src = DataDriver(**base)
+    src = DataSource(**base)
     await src.save()
     return src
 
@@ -107,8 +107,8 @@ class TestRequestPoll:
 
         from flow_sdk.actions.action_registry import action as registry
 
-        assert "data_driver.request_poll" in set(registry.function_registry)
-        params = set(inspect.signature(DataDriver.request_poll_action).parameters) - {"self"}
+        assert "data_source.request_poll" in set(registry.function_registry)
+        params = set(inspect.signature(DataSource.request_poll_action).parameters) - {"self"}
         assert not params
 
 
@@ -269,7 +269,7 @@ class TestTickGridSchedule:
     def test_the_stamp_lands_on_the_minute_grid(self):
         # The RCA's switch: a stamp of :00.031 vs a tick firing :00.019 —
         # 12ms apart — cost a full minute. Flooring removes the coin flip.
-        src = DataDriver(provider="rss", name="f", poll_interval_seconds=60)
+        src = DataSource(provider="rss", name="f", poll_interval_seconds=60)
         jittered_now = NOW + timedelta(milliseconds=31)  # a real dispatch time
         due = src.schedule_next(jittered_now)
         assert due == NOW + timedelta(seconds=60)
@@ -278,7 +278,7 @@ class TestTickGridSchedule:
     def test_a_one_tick_interval_means_every_tick(self):
         # The next tick fires at :00 plus SMALLER jitter than the stamp's —
         # the exact losing coin flip. On the grid, it is always due.
-        src = DataDriver(
+        src = DataSource(
             provider="rss", name="f", poll_interval_seconds=60,
             status=SourceStatus.ACTIVE.value,  # is_due gates on lifecycle first
         )
@@ -287,6 +287,6 @@ class TestTickGridSchedule:
         assert src.is_due(next_tick) is True
 
     def test_longer_intervals_keep_their_cadence(self):
-        src = DataDriver(provider="rss", name="f", poll_interval_seconds=300)
+        src = DataSource(provider="rss", name="f", poll_interval_seconds=300)
         due = src.schedule_next(NOW + timedelta(seconds=3, milliseconds=200))
         assert due == NOW + timedelta(seconds=300), "mid-minute drift floors back to the grid"

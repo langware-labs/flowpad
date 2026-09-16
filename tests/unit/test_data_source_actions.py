@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver, SourceStatus, parse_since
+from flow_sdk.builtin.data_source import DataSource, SourceStatus, parse_since
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.health import SourceHealth
@@ -25,10 +25,10 @@ from flow_sdk.ingest.legacy_lift import origin_of
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 
-async def _source(**kw) -> DataDriver:
+async def _source(**kw) -> DataSource:
     base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name="Feed")
     base.update(kw)
-    src = DataDriver(**base)
+    src = DataSource(**base)
     await src.save()
     return src
 
@@ -50,18 +50,18 @@ def test_the_actions_are_reachable_over_http_not_just_callable():
 
     registered = set(registry.function_registry)
     for name in ("poll_now", "reset_cursors", "purge_items", "replay", "choices"):
-        assert f"data_driver.{name}" in registered, f"{name} is not routable"
+        assert f"data_source.{name}" in registered, f"{name} is not routable"
 
     # There is deliberately NO `create` override: the generic handler already
     # sanitizes fields, stamps the owner and expands permissions, and a bespoke
     # one silently drops any field it forgets to copy.
-    assert "data_driver.create" not in registered
+    assert "data_source.create" not in registered
 
     for name in ("poll_now_action", "reset_cursors_action", "purge_items_action",
                  "replay_action", "choices_action"):
-        params = set(inspect.signature(getattr(DataDriver, name)).parameters) - {"self", "cls"}
+        params = set(inspect.signature(getattr(DataSource, name)).parameters) - {"self", "cls"}
         assert not params, (
-            f"DataDriver.{name} declares {sorted(params)}; the dispatcher must fill "
+            f"DataSource.{name} declares {sorted(params)}; the dispatcher must fill "
             "every declared parameter, and an annotated `request` only resolves when "
             "the annotation is the live class rather than a string"
         )
@@ -84,7 +84,7 @@ async def test_poll_now_is_the_only_unlatch_for_config_error():
 
     await src.poll_now_action()
 
-    refreshed = await DataDriver.get_one({"id": src.id})
+    refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.health != SourceHealth.CONFIG_ERROR.value
     assert refreshed.error_code is None and refreshed.error_detail is None
     assert refreshed.is_due(NOW) is True, "still parked — the latch has no exit"
@@ -122,7 +122,7 @@ async def test_poll_now_does_not_wake_a_disabled_source():
     """Disabled is a user decision; 'poll now' must not override it."""
     src = await _source(status=SourceStatus.DISABLED.value)
     await src.poll_now_action()
-    refreshed = await DataDriver.get_one({"id": src.id})
+    refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.is_due(NOW) is False
 
 
@@ -152,7 +152,7 @@ async def test_reset_cursors_clears_position_including_opaque_state():
     assert after.last_synced_at is not None, (
         "last_synced_at was cleared: a reset forgets the POSITION, not that the stream has run"
     )
-    assert (await DataDriver.get_one({"id": src.id})).is_due(NOW) is True
+    assert (await DataSource.get_one({"id": src.id})).is_due(NOW) is True
 
 
 @pytest.mark.asyncio
@@ -327,9 +327,9 @@ async def test_delete_by_id_cascades_too_because_http_never_builds_the_instance(
     await _item(src, external_id="a", occurred_at=None)
     await DataSourceCursor.ensure_for(src.id, "s")
 
-    await DataDriver.delete_by_id(src.id)
+    await DataSource.delete_by_id(src.id)
 
-    assert await DataDriver.get_one({"id": src.id}) is None
+    assert await DataSource.get_one({"id": src.id}) is None
     assert await SourceItem.get_all({"data_source_id": src.id}) == []
     assert await DataSourceCursor.get_all({"data_source_id": src.id}) == []
 
@@ -349,7 +349,7 @@ async def test_destroy_takes_the_cursors_and_records_with_it():
 
     await src.destroy()
 
-    assert await DataDriver.get_one({"id": src.id}) is None
+    assert await DataSource.get_one({"id": src.id}) is None
     assert await SourceItem.get_all({"data_source_id": src.id}) == []
     assert await DataSourceCursor.get_all({"data_source_id": src.id}) == []
 
@@ -389,7 +389,7 @@ async def test_poll_now_is_a_verb_and_the_route_is_thin():
                         next_poll_at=NOW - timedelta(hours=1))
     result = await src.poll_now()
     assert result["status"] == "due"
-    assert (await DataDriver.get_one({"id": src.id})).is_due(NOW) is True
+    assert (await DataSource.get_one({"id": src.id})).is_due(NOW) is True
     assert (await src.poll_now_action()).data == await src.poll_now()
 
 
@@ -402,7 +402,7 @@ async def test_reset_cursors_is_a_verb():
     await cursor.save()
     assert await src.reset_cursors() == 1
     assert (await DataSourceCursor.ensure_for(src.id, "https://a.test/feed")).state == {}
-    assert (await DataDriver.get_one({"id": src.id})).is_due(NOW) is True
+    assert (await DataSource.get_one({"id": src.id})).is_due(NOW) is True
 
 
 @pytest.mark.asyncio

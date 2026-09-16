@@ -7,7 +7,7 @@
  * empty is the "everything" case rather than a separate verb.
  */
 import { useEffect, useState } from 'react';
-import type { DataDriver } from '@sdk';
+import type { DataSource } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import {
@@ -29,7 +29,7 @@ export function ReplayDialog({
   onOpenChange,
 }: {
   /** Null while closed — the view owns one dialog, not one per card. */
-  source: DataDriver | null;
+  source: DataSource | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {

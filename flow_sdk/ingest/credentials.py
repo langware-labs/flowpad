@@ -1,8 +1,8 @@
-"""The one credential resolver: a manifest's ``auth`` and a ``DataDriver`` row → ``Credentials``.
+"""The one credential resolver: a manifest's ``auth`` and a ``DataSource`` row → ``Credentials``.
 
 A source never reads the environment, the secret store or the connection store itself; it declares
 in its manifest which of three shapes it reads with, and the application resolves that shape here.
-A row may BIND where it reads from (``DataDriver.set_secret_store`` / ``set_connection``); what is
+A row may BIND where it reads from (``DataSource.set_secret_store`` / ``set_connection``); what is
 bound is what it uses, and the binding is saved on the row so every background path sees it.
 
 * ``connector`` — the bound connection's provider, else the manifest's. Its APP token first when

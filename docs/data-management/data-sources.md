@@ -12,13 +12,13 @@ id: 44d26316-873d-49f6-95c2-e61d74dee7e6
 > system project). The result is a source that streams and a
 > `Dataset` bound to it — see [datasets.md](datasets.md#curating-a-source-into-a-dataset).
 >
-> `DataDriver.config` is coerced by the definition's field types on every save
+> `DataSource.config` is coerced by the definition's field types on every save
 > (`lines`/`csv` → list, `number` → number), so a value sent as the person typed
 > it never reaches a driver in the wrong shape.
 
 The filesystem indexer walks local roots. A **data source** walks something
 else — a feed, a mailbox, a channel, a repository — and lands what it finds in
-the same graph. One `DataDriver` owns the relationship with one remote account
+the same graph. One `DataSource` owns the relationship with one remote account
 or tree: which driver, what it needs to run, how often, and where its payload
 becomes locally present.
 
@@ -33,7 +33,7 @@ read-modify-write of the same row, and leave nowhere to record per-segment
 health. A `SourceItem` is one ingested record.
 
 ```
-DataDriver ──(one per segment)──> DataSourceCursor
+DataSource ──(one per segment)──> DataSourceCursor
      │  origin: FSOrigin  (WHERE the bytes come from — stamped by driver.origin_for)
      │
      └─ driver.fetch() ──> SourceItemSpec ──> ingest_items() ──> SourceItem   (record: DbSerializer resolves by natural key, gates on digest)
@@ -81,7 +81,7 @@ of requests on the segments that waited longest (`_round_robin` by
 `last_attempted_at`, never-attempted first); the cadence *is* the retry rate.
 
 Two things the cycle also does that are easy to miss. `sync_source` stamps
-`DataDriver.kind` and `DataDriver.channel` from the driver on every run, so a
+`DataSource.kind` and `DataSource.channel` from the driver on every run, so a
 row written before either field existed self-heals on its next poll. And a
 segment enumeration failure (`driver.segments()` raising) is classified and
 recorded as health exactly like a fetch failure — `_fail_source` defaults to
@@ -187,9 +187,9 @@ protocols the class implements. The registry is a `KindRegistry` keyed on `provi
 miss answers `None`, and `sync_source` records that as the `unknown_provider` config
 error rather than crashing the poller.
 
-Callers send through `DataDriver.send(MessageSpec)`, which validates the common
+Callers send through `DataSource.send(MessageSpec)`, which validates the common
 message shape before delegating to the driver's `send()` hook. For transports
-with reply headers, `DataDriver.expect_reply(outcome)` returns when a received
+with reply headers, `DataSource.expect_reply(outcome)` returns when a received
 item references the sent provider id; a driver may use its targeted lookup or
 session-level wait instead of a mailbox backfill. The caller owns the outer
 deadline.
@@ -217,7 +217,7 @@ driver raises that is not a `SourceError` classifies as transient: guessing
 Where that rule actually bites is the **source**, not the segment. A failing
 segment records its own health on its cursor, but `_round_robin` does not
 consult cursor health — the next cycle fetches it again. What stops polling is
-the roll-up: `_roll_up` sets `DataDriver.health` to the `worst_of` its cursors
+the roll-up: `_roll_up` sets `DataSource.health` to the `worst_of` its cursors
 (`config_error` > `transient_error` > `never_synced` > `ok`), copies the
 offender's `error_code`/`error_detail` onto the source, and `may_poll()` then
 refuses the whole source while its health is `config_error`. So one segment
@@ -229,7 +229,7 @@ roll-up, which is why a source that fails before enumerating reads 0.
 and not in `config_error`; otherwise the returned sentence says exactly why it
 cannot run. `is_due`, `request_poll` and the fast lane all ask it.
 
-**Lifecycle.** `NEW` is transient: `DataDriver.save` resolves it on the way
+**Lifecycle.** `NEW` is transient: `DataSource.save` resolves it on the way
 in — to `SETUP` (with a default `setup_detail`) when the source class is
 `Verifiable`, else straight to `ACTIVE`. An unknown provider also goes `ACTIVE`,
 deliberately, so the poller reaches `sync_source` and the card can show
@@ -241,7 +241,7 @@ moves the source to `ACTIVE` (due on the next tick) only when both pass.
 coerces `config` by the spec's field types, and re-derives `origin` via the
 type's `origin_for`.
 
-**Operator controls** (`core_action`s on `DataDriver`; all asynchronous — they
+**Operator controls** (`core_action`s on `DataSource`; all asynchronous — they
 make the source due, the heartbeat does the work within a minute):
 
 | Verb | Does | Note |
@@ -277,7 +277,7 @@ a second destination *beside* it rather than a branch inside it.
 
 The manifest declares which modes a source offers (`reflect: [...]`, head
 first as the default; `record` may not be listed beside a filesystem mode),
-and `DataDriver.reflect_into` names the directory `copy`/`symlink` land under
+and `DataSource.reflect_into` names the directory `copy`/`symlink` land under
 and a `GitOrigin` clones into — explicit on the row, because the heartbeat
 tick that polls it has no request context to resolve a project from. Note
 the row's own default is `record`: a `folder`/`git` source saved without a
@@ -285,7 +285,7 @@ the row's own default is `record`: a `folder`/`git` source saved without a
 cursor still advances and its health still reads `ok` (see *Known gaps*).
 
 WHERE the bytes come from is not a mode: it is the source's typed `origin`
-(`DataDriver.origin: OriginField`), stamped by the driver's `origin_for` on
+(`DataSource.origin: OriginField`), stamped by the driver's `origin_for` on
 every save — a `LocalOrigin` at the watched folder, the checkout, or the
 download cache. A `GitOrigin` (a repository that has to be obtained) is
 materialized once per page through the `FSOriginDriver` registry into

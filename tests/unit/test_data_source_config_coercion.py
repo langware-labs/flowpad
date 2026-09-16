@@ -1,4 +1,4 @@
-"""``DataDriver.save`` shapes ``config`` by the spec's field types — a URL sent
+"""``DataSource.save`` shapes ``config`` by the spec's field types — a URL sent
 as a string where the manifest declares ``lines`` becomes a one-element list,
 so the driver never iterates the characters of a URL."""
 from __future__ import annotations

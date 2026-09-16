@@ -1,6 +1,6 @@
 /**
- * DataDriver — a configured remote system of record we sync from
- * (flow_sdk/builtin/data_driver.py).
+ * DataSource — a configured remote system of record we sync from
+ * (flow_sdk/builtin/data_source.py).
  *
  * NOT to be confused with `FlowDataSource` in `ts_sdk/src/flow_processing/` —
  * that is the origin enum on a trace's FlowData (stream | history | …) and has
@@ -16,7 +16,7 @@ import { IEntity, EntityMerge } from '../IEntity';
 export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_error';
 
 /**
- * Mirror of flow_sdk/builtin/data_driver.py SourceStatus — the LIFECYCLE, which
+ * Mirror of flow_sdk/builtin/data_source.py SourceStatus — the LIFECYCLE, which
  * is a different question from `health`: status says whether this source should
  * be running, health says whether it works. The state that needed both is a
  * Slack source whose bot has not been invited yet — nobody paused it, and it
@@ -30,14 +30,14 @@ export type SourceStatus = 'new' | 'setup' | 'active' | 'disabled';
 
 /** What the channel confirmed about one sent message (data_source.py `_outcome_dict`).
  *  `recorded: false` on a sent message means the local copy is missing — never re-send to fix it. */
-export interface DataDriverSendOutcome {
+export interface DataSourceSendOutcome {
   external_id: string;
   status: 'sent' | 'drafted';
   recorded: boolean;
   artifact_id: string;
 }
 
-export interface IDataDriver extends IEntity {
+export interface IDataSource extends IEntity {
   owner?: string | null;
   name: string;
   kind?: string;
@@ -61,22 +61,22 @@ export interface IDataDriver extends IEntity {
   error_detail?: string | null;
 }
 
-// `implements IDataDriver` only checks the class; it contributes no members, so every
-// field declared solely on IDataDriver read as "does not exist". deepAssign populates
+// `implements IDataSource` only checks the class; it contributes no members, so every
+// field declared solely on IDataSource read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface DataDriver extends EntityMerge<IDataDriver> {}
+export interface DataSource extends EntityMerge<IDataSource> {}
 
 /** One thing a provider says can be picked. Mirrors `Choice` in `choice_spec.py`. */
-export interface DataDriverChoice {
+export interface DataSourceChoice {
   id: string;
   name: string;
   detail?: string;
 }
 
 /** One field's offer: what can be picked, or why nothing can. Mirrors `ChoiceSet`. */
-export interface DataDriverChoiceSet {
-  items: DataDriverChoice[];
+export interface DataSourceChoiceSet {
+  items: DataSourceChoice[];
   detail: string;
 }
 
@@ -85,8 +85,8 @@ export interface DataDriverChoiceSet {
 // constructor for `data_source`, so every list of sources renders empty with nothing
 // throwing. Keep declarations above this line.
 @registerEntity
-export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
-  static type: string = 'data_driver';
+export class DataSource extends APIEntity<DataSource> implements IDataSource {
+  static type: string = 'data_source';
 
   name: string = '';
   kind: string = '';
@@ -127,7 +127,7 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
   error_code: string | null = null;
   error_detail: string | null = null;
 
-  constructor(entity: Partial<IDataDriver> = {}) {
+  constructor(entity: Partial<IDataSource> = {}) {
     super(entity);
     this.name = entity.name ?? this.name;
     this.kind = entity.kind ?? this.kind;
@@ -169,13 +169,13 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
   }
 
   /** The scheduler will not poll it until a person acts: a setup step is owed, or
-   *  it is parked (`DataDriver.poll_refusal`). Resuming a paused source is not
+   *  it is parked (`DataSource.poll_refusal`). Resuming a paused source is not
    *  attention — it is the fix. */
   get needsAttention(): boolean {
     return this.needsSetup || this.isParked;
   }
 
-  /** Mirrors DataDriver.is_due — why a source that looks configured sits idle. */
+  /** Mirrors DataSource.is_due — why a source that looks configured sits idle. */
   get isDue(): boolean {
     if (!this.isActive) return false;
     if (this.health === 'config_error') return false;
@@ -199,10 +199,10 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
     provider: string,
     field: string,
     config: Record<string, unknown> = {},
-  ): Promise<DataDriverChoiceSet> {
-    const info = new ActionInfo('choices', DataDriver.type, null, 'POST');
+  ): Promise<DataSourceChoiceSet> {
+    const info = new ActionInfo('choices', DataSource.type, null, 'POST');
     info.bodyParameters = { provider, field, config };
-    return dataManager.callAction<unknown, DataDriverChoiceSet>(info);
+    return dataManager.callAction<unknown, DataSourceChoiceSet>(info);
   }
 
   /**
@@ -269,12 +269,12 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
 
   /** Send one message into the channel. `to` is what the channel addresses (a chat, a channel
    *  id, an address); the source class decides how it reads it. */
-  async send(message: { to: string; text: string; thread_key?: string; subject?: string; in_reply_to?: string }): Promise<DataDriverSendOutcome> {
+  async send(message: { to: string; text: string; thread_key?: string; subject?: string; in_reply_to?: string }): Promise<DataSourceSendOutcome> {
     return this.post('send', message);
   }
 
   /** Reply to one of this source's records; who it reaches is the channel's rule. */
-  async reply(itemId: string, text: string): Promise<DataDriverSendOutcome> {
+  async reply(itemId: string, text: string): Promise<DataSourceSendOutcome> {
     return this.post('reply', { item_id: itemId, text });
   }
 

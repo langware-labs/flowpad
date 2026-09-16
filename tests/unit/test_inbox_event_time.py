@@ -27,7 +27,7 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
@@ -38,18 +38,18 @@ from flow_sdk.utils.serialization import iso_to_utc
 YEAR_OLD = "2025-09-01T10:00:00+00:00"
 
 
-async def _source(**kw) -> DataDriver:
+async def _source(**kw) -> DataSource:
     base = dict(
         name="tg", provider="telegram", channel="telegram",
         account_key=f"@b-{uuid.uuid4().hex[:6]}",
     )
     base.update(kw)
-    src = DataDriver(**base)
+    src = DataSource(**base)
     await src.save()
     return src
 
 
-async def _item(src: DataDriver, *, occurred_at: str = YEAR_OLD, thread: str = "1") -> SourceItem:
+async def _item(src: DataSource, *, occurred_at: str = YEAR_OLD, thread: str = "1") -> SourceItem:
     item = SourceItem(
         kind="content.message.chat", provider=src.provider,
         data_source_id=str(src.id), segment_key="updates",

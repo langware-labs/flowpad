@@ -79,7 +79,7 @@ def _admits(source, author: str) -> bool:
     help desk), under which an EMPTY list admits everyone; a non-empty list
     restricts either way, and a paused source admits nobody either way.
     """
-    from flow_sdk.builtin.data_driver import SourceStatus  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
     from flow_sdk.builtin.email_inbox import sender_allowed  # noqa: PLC0415
     from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
@@ -180,12 +180,12 @@ async def handle_inbound(item) -> bool:
     already been ingested and projected either way — the owner can see it.
     """
     from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply, conversation_turn_lock  # noqa: PLC0415
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
     from flow_sdk.inbox.projection import display_name_of, owner_of  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
-    source = await DataDriver.get_one({"id": item.data_source_id})
+    source = await DataSource.get_one({"id": item.data_source_id})
     if source is None:
         return False
 

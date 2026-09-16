@@ -14,9 +14,9 @@ Every snippet below is run as written by `tests/unit/test_pipes_snippets.py`.
 health, not thrown. The cursor advances only after the write lands.
 
 ```python
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 
-source = DataDriver(name="Notes", provider="folder", config={"root": "/src"})
+source = DataSource(name="Notes", provider="folder", config={"root": "/src"})
 await source.save()
 await source.verify()  # is the setup finished?
 report = await source.sync()  # one cycle, now
@@ -34,7 +34,7 @@ inode]}` and so *observes* absence rather than guessing it.
 ```python
 from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 
-source = DataDriver(
+source = DataSource(
     name="Mirror notes",
     provider="folder",
     reflect=ReflectMode.COPY.value,     # record | none | copy | symlink

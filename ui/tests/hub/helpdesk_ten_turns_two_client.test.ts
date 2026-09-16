@@ -8,7 +8,7 @@
  * Every hop is the SDK call the product makes:
  *   - the requester opens the ticket with `startHelpdeskTicket` and follows
  *     up with `sendReply` — the composer on a hub-mirrored conversation;
- *   - the helper reads the ticket through a `helpdesk` DataDriver (the "+"
+ *   - the helper reads the ticket through a `helpdesk` DataSource (the "+"
  *     on the channels line) and answers with `sendToChannel` — the composer
  *     on a channel conversation, which picks the ticket up and posts;
  *   - the requester catches up with `fetchConversations`.
@@ -133,7 +133,7 @@ describe('a ten-turn support conversation', () => {
     // The create the "+" on the channels line does: no explicit owner, so the
     // backend files it under the local user — whose channels line then wears
     // the desk's mark.
-    source = new helper.sdk.DataDriver({
+    source = new helper.sdk.DataSource({
       name: 'desk (ten turns)',
       provider: 'helpdesk',
       config: { desk_project_id: deskId },
@@ -160,7 +160,7 @@ describe('a ten-turn support conversation', () => {
       // Helper: the line lands in the inbox — through the hub mirror once the
       // ticket is picked up, and the desk source's poll stamps the channel on
       // it (or projects it outright on the first turn). Wait for the stamp.
-      await postApi(helper.apiUrl, `/graph/data_driver/${source.id}/request_poll`, {});
+      await postApi(helper.apiUrl, `/graph/data_source/${source.id}/request_poll`, {});
       const inbound: any = await pollUntil(
         async () => (await rowsOf(helper, convId)).find((m) => m.text === ask && m.origin?.kind === 'helpdesk') ?? null,
         15_000,
@@ -198,7 +198,7 @@ describe('a ten-turn support conversation', () => {
     const hubIds = (await hubMessages(convId)).map((m) => m.id).sort();
     expect(hubIds).toHaveLength(TURNS * 2);
 
-    await postApi(helper.apiUrl, `/graph/data_driver/${source.id}/request_poll`, {});
+    await postApi(helper.apiUrl, `/graph/data_source/${source.id}/request_poll`, {});
     const helperRows: any[] = await pollUntil(
       async () => {
         const rows = await rowsOf(helper, convId);

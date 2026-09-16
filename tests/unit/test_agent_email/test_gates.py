@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_driver import DataDriver, SourceStatus
+from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.email_inbox import STATUS_ACTIVE, STATUS_DISABLED, EmailInbox
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.fs_store.type_id import TypeId
@@ -46,9 +46,9 @@ async def _agent(name: str, **kw) -> Agent:
     return agent
 
 
-async def _source(agent_id: str, allowed: list[str] | None = None) -> DataDriver:
+async def _source(agent_id: str, allowed: list[str] | None = None) -> DataSource:
     """The mailbox's local row. It carries the cached allowlist the gate reads."""
-    source = DataDriver(
+    source = DataSource(
         name="Ada's mailbox",
         provider="cloud_email",
         channel="email",
@@ -115,7 +115,7 @@ async def test_from_source_resolves_the_agent_from_owner_when_config_has_no_agen
     goes through it instead of re-spelling half the rule.
     """
     agent_id = "5be3d54a-3e27-4a92-bef9-cbb723e71871"
-    source = DataDriver(
+    source = DataSource(
         name="slack-q-agent",
         provider="slack",
         channel="slack",
@@ -195,7 +195,7 @@ async def test_a_listed_sender_passes_the_gate(mail_db):
 
 async def test_a_source_that_is_not_an_agents_mailbox_is_ignored(mail_db):
     """An ordinary mailbox belongs to a person; nothing should answer for them."""
-    source = DataDriver(name="my mail", provider="cloud_email", channel="email", config={})
+    source = DataSource(name="my mail", provider="cloud_email", channel="email", config={})
     await source.save()
 
     assert await handle_inbound(_item(source.id, "alice@example.com")) is False

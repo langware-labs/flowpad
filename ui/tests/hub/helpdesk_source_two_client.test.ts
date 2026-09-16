@@ -6,7 +6,7 @@
  *
  * The sibling `helpdesk_two_client.test.ts` proves the pool + pickup contract.
  * This one proves the inbox contract that replaced the Help Desk pill:
- *   1. Staff attach the desk as a `helpdesk` DataDriver (the "+" on the
+ *   1. Staff attach the desk as a `helpdesk` DataSource (the "+" on the
  *      channels line does the same create), owned by the staff user.
  *   2. The guest opens a ticket; after the staff source polls it, the ticket is
  *      an ORDINARY inbox conversation on the staff side — the hub conversation
@@ -78,7 +78,7 @@ describe('help desk as a message source', () => {
     const ts = Date.now();
 
     // 1. Staff attach the desk — the same create the "+" on the channels line does.
-    const source = new staff.sdk.DataDriver({
+    const source = new staff.sdk.DataSource({
       name: 'test desk',
       provider: 'helpdesk',
       config: { desk_project_id: deskId },
@@ -94,7 +94,7 @@ describe('help desk as a message source', () => {
       expect(convId).toBeTruthy();
 
       // The staff source polls it — `request_poll` is the attention lane (5s), `poll_now` only queues for the next heartbeat.
-      await postApi(staff.apiUrl, `/graph/data_driver/${source.id}/request_poll`, {});
+      await postApi(staff.apiUrl, `/graph/data_source/${source.id}/request_poll`, {});
       const conv: any = await pollUntil(
         () => staff.sdk.Conversation.getById(convId),
         15_000,
@@ -130,7 +130,7 @@ describe('help desk as a message source', () => {
       expect(pool.find((r) => r.conversation_id === convId)?.picked_up).toBe(true);
 
       // 4. The sent copy ingests onto the hub's id — no twin.
-      await postApi(staff.apiUrl, `/graph/data_driver/${source.id}/request_poll`, {});
+      await postApi(staff.apiUrl, `/graph/data_source/${source.id}/request_poll`, {});
       const rows: any[] = await pollUntil(
         async () => {
           const all: any[] = await messagesOf(convId);

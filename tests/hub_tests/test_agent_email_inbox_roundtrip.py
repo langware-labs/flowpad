@@ -10,7 +10,7 @@ import flow_sdk
 from flow_sdk import LoginRequired
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_driver import DataDriver, SourceStatus
+from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.email_inbox import EmailInbox
 from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
 from flow_sdk.cli.auth.hub_login import is_logged_in
@@ -48,7 +48,7 @@ async def test_agent_enables_email_once():
         assert inbox.is_active is True
         assert inbox.newly_allocated is True, "the first call allocates the address"
 
-        source = await DataDriver.find_for_account(
+        source = await DataSource.find_for_account(
             CloudEmailSource.provider,
             CloudEmailSource.identity_config_key,
             agent.id,
@@ -65,7 +65,7 @@ async def test_agent_enables_email_once():
         assert same_inbox.typeid == inbox.typeid
         assert same_inbox.provider_inbox_id == inbox.provider_inbox_id
         assert same_inbox.address == inbox.address
-        same_source = await DataDriver.find_for_account(
+        same_source = await DataSource.find_for_account(
             CloudEmailSource.provider,
             CloudEmailSource.identity_config_key,
             agent.id,
@@ -79,7 +79,7 @@ async def test_agent_enables_email_once():
         assert disabled_inbox.status == "disabled"
         assert agent.inbox is disabled_inbox
         assert disabled_inbox.is_active is False
-        paused_source = await DataDriver.find_for_account(
+        paused_source = await DataSource.find_for_account(
             CloudEmailSource.provider,
             CloudEmailSource.identity_config_key,
             agent.id,
@@ -93,7 +93,7 @@ async def test_agent_enables_email_once():
         assert resumed_inbox.typeid == inbox.typeid
         assert resumed_inbox.address == inbox.address
         assert resumed_inbox.status == "active"
-        resumed_source = await DataDriver.find_for_account(
+        resumed_source = await DataSource.find_for_account(
             CloudEmailSource.provider,
             CloudEmailSource.identity_config_key,
             agent.id,

@@ -2,7 +2,7 @@
 
 The Data Sources screen (`ViewType.DATA_SOURCES`, rail entry in
 `collapsed-sidebar.tsx`, mounted lazily by `content-panel.tsx`) lists the
-configured `DataDriver` entities, lets the user add/edit/pause/replay/delete
+configured `DataSource` entities, lets the user add/edit/pause/replay/delete
 one, and shows whether each is actually alive. Everything lives under
 `ui/src/components/data-sources/`. The backend model it renders is described in
 `data-sources.md`; this page covers only the frontend surface.
@@ -30,19 +30,19 @@ call is an entity query or an entity action.
 **Queries** (`useEntitiesQuery` over a `QueryRequest`, all `scope: []` because a
 source is a property of the instance, not of a project):
 
-- `data-sources:list` — `DataDriver.type` (in `use-source-specs.ts`, shared with the inbox's channel attribution).
+- `data-sources:list` — `DataSource.type` (in `use-source-specs.ts`, shared with the inbox's channel attribution).
 - `data-sources:specs` — `DataDriverSpec.type`, the installed definitions. This replaced a hardcoded provider catalog: a spec added as an asset appears with no frontend release.
 - `data-sources:cursors:<id>` — `DataSourceCursor.type` filtered by `data_source_id`, created per card but `enabled` only while the card is expanded, so a collapsed grid watches nothing.
 
-**Writes** are entity saves: `new DataDriver({...}).save()` (create, with
+**Writes** are entity saves: `new DataSource({...}).save()` (create, with
 `status: 'new'` so the backend resolves `setup` vs `active`), `editing.save()`
 followed by `markEdit()` when something changed, and `source.delete()` (the
 backend `delete_by_id` override cascades streams and items; the view then
 `refetch()`es because a delete is the one mutation the live query does not see).
 
-**Actions** are `DataDriver` methods in `ts_sdk/src/entities/data-source.ts`,
+**Actions** are `DataSource` methods in `ts_sdk/src/entities/data-source.ts`,
 each `this.post('<action>')` → `dataManager.callAction(ActionInfo)` →
-`POST /api/v1/graph/data_driver/<id>/<action>`, matching the
+`POST /api/v1/graph/data_source/<id>/<action>`, matching the
 `@core_action.post` handlers in `flow_sdk/builtin/data_source.py`:
 
 | TS method | Backend action | Called from |
@@ -80,5 +80,5 @@ Two axes, shown together because they disagree in the interesting cases:
 - The chip and the card's left border use `healthStyle(source.health)` when the source `isActive`, else `statusStyle(source.status)` — health on a source that is not running describes the last time it ran and is stale by construction.
 - `needsSetup` (`status === 'setup'`) opens the amber setup panel with `setup_detail`, a `WikiButton` to the spec's `setup_wiki`, and **Verify**; **Pull changes** is disabled until verified.
 - `parked` (`isActive && health === 'config_error'`) shows a red note: the scheduler skips a `config_error` source, and **Pull changes** clears the latch.
-- The card icon is the spec's `channel_icon_names[channel]`, else the spec's `icon_name` (both via `lucideByName`), else `iconForType(DataDriver.type)` from the registry. The view header and the `ViewType` tab chip use the registry glyph (`Antenna`, matching the backend `TypeInfo.icon`).
+- The card icon is the spec's `channel_icon_names[channel]`, else the spec's `icon_name` (both via `lucideByName`), else `iconForType(DataSource.type)` from the registry. The view header and the `ViewType` tab chip use the registry glyph (`Antenna`, matching the backend `TypeInfo.icon`).
 - Every verb reports through `notify` toasts; a not-ready `verify()` is an info toast, not an error.

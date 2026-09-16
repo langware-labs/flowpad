@@ -12,7 +12,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_driver import DataDriver, SourceStatus
+from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.email_inbox import EmailInbox
 from flow_sdk.ingest.driver_registry import asset_module
 
@@ -57,7 +57,7 @@ async def test_email_source_is_keyed_by_agent_and_created_once(mail_db):
     assert len(
         [
             source
-            for source in await DataDriver.get_all({"provider": "cloud_email"})
+            for source in await DataSource.get_all({"provider": "cloud_email"})
             if (source.config or {}).get("agent_id") == agent.id
         ]
     ) == 1

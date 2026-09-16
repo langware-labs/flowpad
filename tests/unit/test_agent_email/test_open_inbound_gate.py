@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.inbox.agent_runner import _admits
 
 pytestmark = [pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -12,7 +12,7 @@ pytestmark = [pytest.mark.timeout(30)]  # do not increase timeout without approv
 def _source(provider: str, *, status="active", allowed=()):
     """A desk source carries NO agent_id — the gate must not need one."""
     config = {"agent_id": "agent-1"} if provider == "cloud_email" else {"desk_project_id": "desk-1"}
-    return DataDriver(name="s", provider=provider, channel=provider, status=status, config=config,
+    return DataSource(name="s", provider=provider, channel=provider, status=status, config=config,
                       inbound_allowed_senders=list(allowed))
 
 

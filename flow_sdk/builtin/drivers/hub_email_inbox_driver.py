@@ -2,7 +2,7 @@
 
 The same relationship ``HubSecretDriver`` has to secrets: the provider credential
 lives on the hub, this side calls with the CALLER's own hub login, and nothing
-local ever holds a mail vendor's API key. A DataDriver pointed at one of these
+local ever holds a mail vendor's API key. A DataSource pointed at one of these
 mailboxes carries no secret at all — which is the whole difference between this
 and the ``agentmail`` ingest driver, where the key is pasted into the row and
 lands in its metadata shadow on disk.

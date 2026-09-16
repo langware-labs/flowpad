@@ -137,12 +137,12 @@ class TestConcurrentPlacement:
         import asyncio
         import uuid
 
-        from flow_sdk.builtin.data_driver import DataDriver
+        from flow_sdk.builtin.data_source import DataSource
         from flow_sdk.builtin.flow_message import FlowMessage
         from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.inbox.projection import project_source_item
 
-        source = DataDriver(
+        source = DataSource(
             name="race", provider="telegram", channel="telegram",
             account_key=f"@bot-{uuid.uuid4().hex[:8]}",
         )
@@ -175,11 +175,11 @@ class TestConcurrentPlacement:
         import asyncio
         import uuid
 
-        from flow_sdk.builtin.data_driver import DataDriver
+        from flow_sdk.builtin.data_source import DataSource
         from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.inbox.projection import project_source_item
 
-        source = DataDriver(
+        source = DataSource(
             name="race", provider="telegram", channel="telegram",
             account_key=f"@bot-{uuid.uuid4().hex[:8]}",
         )
@@ -340,14 +340,14 @@ class TestProjectedAnnounce:
         from types import SimpleNamespace
 
         import flow_sdk.inbox.inbox_on_tag as tags_mod
-        from flow_sdk.builtin.data_driver import DataDriver
+        from flow_sdk.builtin.data_source import DataSource
         from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.inbox.projection import _on_item, project_source_item
 
         announced: list[str] = []
         monkeypatch.setattr(tags_mod, "emit_projected_tag", lambda item: announced.append(item.id))
 
-        source = DataDriver(
+        source = DataSource(
             name="once", provider="telegram", channel="telegram",
             account_key=f"@bot-{uuid.uuid4().hex[:8]}",
         )

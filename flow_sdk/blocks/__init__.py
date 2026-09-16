@@ -5,7 +5,7 @@ script's own ``async for`` loop is the orchestration, and every value that
 moves between blocks is a DataSpec. A ``MessageBlock`` request is an ephemeral
 DataSpec whose source-owned correlation completes its sender. The rule
 throughout: **the SDK introduces vocabulary, never rows** — entity-backed
-blocks are views over entities that already exist (``DataDriver``, ``Agent``,
+blocks are views over entities that already exist (``DataSource``, ``Agent``,
 ``AgenticProcess``, the ingest and projection machinery), while
 ``MessageBlock`` owns only a transient queue. Nothing here persists state of
 its own.
@@ -363,7 +363,7 @@ def _cadence(poll_every, driver) -> float:
 class Inbox:
     """One watched mailbox: the conversation surface of a message source.
 
-    A view over the existing pair — the ``DataDriver`` that watches the
+    A view over the existing pair — the ``DataSource`` that watches the
     address (connected or reused here) and the projection that turns its
     items into conversations. No third "inbox" thing is created.
     """
@@ -382,7 +382,7 @@ class Inbox:
         address, a bot's @username); the provider decides what identifies the
         source (the driver's ``identity_config_key``). Provider-specific
         credentials pass as keyword config (``api_key=...``,
-        ``bot_token=...``) and land on the DataDriver verbatim.
+        ``bot_token=...``) and land on the DataSource verbatim.
 
         ``owner`` says whose inbox this is — a user or Agent ``TypeId``, or an
         ``Agent`` entity. Omitted, the block is the local user's. ``agent_id=``
@@ -400,7 +400,7 @@ class Inbox:
 
     def _owner(self):
         """The ``TypeId`` this block's source belongs to, or None for the local
-        user (the DataDriver stamps that itself on save)."""
+        user (the DataSource stamps that itself on save)."""
         from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
         from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
@@ -424,7 +424,7 @@ class Inbox:
         return key, str(self._config.get(key) or self.address).strip()
 
     async def ensure_source(self):
-        """The ``DataDriver`` behind this block — adopted if one already watches
+        """The ``DataSource`` behind this block — adopted if one already watches
         the address, else created. Public because binding a channel to an agent
         (``Agent.bind_channel``) needs exactly this adoption rule, gate included;
         a second copy of it is a second place for the connection check to be
@@ -432,7 +432,7 @@ class Inbox:
         """
         if self._source is not None:
             return self._source
-        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
         from flow_sdk.connections import require  # noqa: PLC0415
         from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
@@ -445,11 +445,11 @@ class Inbox:
 
         key, value = self._identity()
         owner = self._owner()
-        existing = await DataDriver.find_for_account(self.provider, key, value, owner=owner)
+        existing = await DataSource.find_for_account(self.provider, key, value, owner=owner)
         if existing is not None:
             self._source = existing
             return existing
-        source = DataDriver(
+        source = DataSource(
             name=f"Inbox {self.address}",
             provider=self.provider,
             config={key: value, **self._config},
@@ -536,7 +536,7 @@ class Inbox:
 
     async def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
         """The reply to ``item``, in this inbox's own channel shape — the rule
-        and the reason are ``DataDriver.reply_spec``'s."""
+        and the reason are ``DataSource.reply_spec``'s."""
         source = await self.ensure_source()
         return source.reply_spec(item, body=body, attachments=attachments)
 

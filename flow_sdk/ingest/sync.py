@@ -1,4 +1,4 @@
-"""One poll cycle for one DataDriver.
+"""One poll cycle for one DataSource.
 
 Reads cursors, asks the source type to traverse each due segment, hands what came back to the
 ingestor or to reflection, advances the cursor, rolls health up. It never touches provider APIs
@@ -25,7 +25,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.ingest.driver_registry import resolve_driver_type
 from flow_sdk.ingest.driver_types import DriverType, SegmentPass, SegmentPosition
@@ -48,7 +48,7 @@ BACKLOG_PER_PASS_WHILE_MOVING = 1
 
 
 async def sync_source(
-    source: DataDriver,
+    source: DataSource,
     *,
     now: Optional[datetime] = None,
     budget: int = DEFAULT_SEGMENT_BUDGET,
@@ -108,7 +108,7 @@ async def sync_source(
     return combined
 
 
-async def _place(source: DataDriver, found: SegmentPass) -> Optional[IngestReport]:
+async def _place(source: DataSource, found: SegmentPass) -> Optional[IngestReport]:
     """Put a traversal's payload where the SOURCE says it goes; the report, if any.
 
     A payload lands EITHER in the graph as a record or on disk as an asset, never both.
@@ -127,7 +127,7 @@ async def _place(source: DataDriver, found: SegmentPass) -> Optional[IngestRepor
     return report
 
 
-def _position_of(source: DataDriver, cursor: DataSourceCursor, now: datetime) -> SegmentPosition:
+def _position_of(source: DataSource, cursor: DataSourceCursor, now: datetime) -> SegmentPosition:
     """Where the segment's last traversal left off. A row an older build wrote carries its position
     in ``state`` instead; the source type lifts it once, and a good pass clears it."""
     lifted = not cursor.cursor and not cursor.manifest
@@ -224,7 +224,7 @@ def _round_robin(cursors: list[DataSourceCursor], budget: int, stamps: dict[str,
     return (moved + rest[:BACKLOG_PER_PASS_WHILE_MOVING])[:budget]
 
 
-async def _roll_up(source: DataDriver, cursors: list[DataSourceCursor], now: datetime) -> None:
+async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: datetime) -> None:
     # A parked segment stays parked on its own row; it must not park the SOURCE. The source is
     # `config_error` only when nothing is left that could run — `worst_of` over the live segments,
     # falling back to the full list only when every segment is parked.
@@ -251,7 +251,7 @@ async def _roll_up(source: DataDriver, cursors: list[DataSourceCursor], now: dat
 
 
 async def _fail_source(
-    source: DataDriver,
+    source: DataSource,
     code: str,
     detail: str,
     now: datetime,
@@ -267,7 +267,7 @@ async def _fail_source(
 
 
 def _stamp_source(
-    source: DataDriver,
+    source: DataSource,
     health: SourceHealth,
     code: Optional[str],
     detail: Optional[str],

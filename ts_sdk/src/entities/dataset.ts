@@ -1,6 +1,6 @@
 /**
  * Dataset — a folder of examples (flow_sdk/builtin/dataset.py). When bound to a
- * DataDriver (`source_id`) its rows are that source's items: `promote` turns
+ * DataSource (`source_id`) its rows are that source's items: `promote` turns
  * items into examples, `annotate` writes an example's gold label.
  */
 import { APIEntity, registerEntity } from '../APIEntity';

@@ -1,12 +1,12 @@
 import { useCallback, useMemo } from 'react';
-import { DataDriver, DataDriverSpec, QueryRequest } from '@sdk';
+import { DataSource, DataDriverSpec, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /** The configured sources — ONE named query, shared by DataSourcesView and the
  *  inbox's channel attribution, so the cached result and any future shape
  *  change stay in step between them. Global for the reason stated below. */
 export const sourcesQuery = new QueryRequest({
-  type: DataDriver.type,
+  type: DataSource.type,
   scope: [],
   name: 'data-sources:list',
 });
@@ -14,7 +14,7 @@ export const sourcesQuery = new QueryRequest({
 /**
  * The installed source definitions, and a lookup by name.
  *
- * Global by construction (`scope: []`) for the same reason `DataDriver` is: a
+ * Global by construction (`scope: []`) for the same reason `DataSource` is: a
  * definition is a property of the instance, not of a project, and switching
  * project must not change which sources exist.
  *

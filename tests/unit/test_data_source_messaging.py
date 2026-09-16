@@ -1,11 +1,11 @@
-"""Provider-agnostic send and reply-waiting behavior on ``DataDriver``."""
+"""Provider-agnostic send and reply-waiting behavior on ``DataSource``."""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SourceItem
 from flow_sdk.ingest.driver_types import SendOutcome
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
@@ -13,11 +13,11 @@ from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
-def _source() -> DataDriver:
-    return DataDriver(name="Mailbox", provider="mail-test")
+def _source() -> DataSource:
+    return DataSource(name="Mailbox", provider="mail-test")
 
 
-def _reply(source: DataDriver, *, reply_to: str) -> SourceItem:
+def _reply(source: DataSource, *, reply_to: str) -> SourceItem:
     return SourceItem(
         data_source_id=source.id,
         provider=source.provider,
@@ -204,7 +204,7 @@ class TestReplySpecAsksTheChannel:
 
         from flow_sdk.builtin.source_item import SlackMessageSpec
 
-        source = DataDriver(name="Slack", provider="slack-test")
+        source = DataSource(name="Slack", provider="slack-test")
         monkeypatch.setattr(
             "flow_sdk.ingest.driver_types.driver_type",
             lambda _p: SimpleNamespace(outbound_spec=lambda _s: SlackMessageSpec),

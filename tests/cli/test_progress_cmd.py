@@ -260,9 +260,9 @@ def test_an_explicit_subject_wins(monkeypatch):
         lambda: [{"type": "agentic_process", "id": "abc"}],
     )
 
-    run("report", "run", "inc-success", "--subject", "data_driver-xyz")
+    run("report", "run", "inc-success", "--subject", "data_source-xyz")
 
-    assert monitor.get("run", subject_entity="data_driver-xyz").done == 1
+    assert monitor.get("run", subject_entity="data_source-xyz").done == 1
 
 
 def test_a_plain_shell_reports_to_the_instance_address(monkeypatch):

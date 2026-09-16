@@ -43,7 +43,7 @@ import pytest
 
 import flow_sdk
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
 from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItem
 from flow_sdk.ingest.sync import sync_source
@@ -202,10 +202,10 @@ async def armed_agent_runner():
     yield
 
 
-async def _agent_mailbox(mailboxes, *, allow: list[str]) -> DataDriver:
+async def _agent_mailbox(mailboxes, *, allow: list[str]) -> DataSource:
     """A local Agent wired to the allocated mailbox; returns the source to poll.
 
-    Returns the DataDriver rather than the Agent because that is the only half
+    Returns the DataSource rather than the Agent because that is the only half
     either test uses — handing back the Agent meant stashing the source on a
     private attribute and reaching through it at every call site.
     """
@@ -218,7 +218,7 @@ async def _agent_mailbox(mailboxes, *, allow: list[str]) -> DataDriver:
     )
     await agent.save()
 
-    source = DataDriver(
+    source = DataSource(
         name="agent mailbox",
         provider="cloud_email",
         channel="email",
@@ -329,7 +329,7 @@ async def test_an_unlisted_sender_is_ignored(mailboxes):
 
 
 async def _sync_until_message(
-    source: DataDriver,
+    source: DataSource,
     *,
     from_address: str,
     body_fragment: str,
@@ -355,7 +355,7 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
         pytest.skip("set GMAIL_ADDRESS and GMAIL_APP_PASSWORD in .env.local")
 
     await flow_sdk.auth.logout()
-    gmail = DataDriver(
+    gmail = DataSource(
         name=f"gmail-{uuid.uuid4().hex[:8]}",
         provider="gmail",
         config={"address": gmail_address},
@@ -383,7 +383,7 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
                 "EMAIL_INBOX_PROVIDER=agentmail"
             )
 
-        agent_source = await DataDriver.find_for_account("cloud_email", "agent_id", pirate.id)
+        agent_source = await DataSource.find_for_account("cloud_email", "agent_id", pirate.id)
         assert agent_source is not None, "allocate_inbox() did not create the polling source"
         # Establish an empty committed cursor before the public message arrives.
         await sync_source(agent_source)

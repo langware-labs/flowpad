@@ -691,7 +691,7 @@ class DriverType:
 
     async def choices(self, row: Any, field: str) -> list:
         """What the credential can see for one config field. Raises like a fetch; the one caller
-        (``DataDriver.choices_for``) turns a refusal into a sentence. A field whose offer is
+        (``DataSource.choices_for``) turns a refusal into a sentence. A field whose offer is
         APPLICATION state (the desks this instance adopted) the class answers from that state."""
         if callable(getattr(self.cls, "choices_for", None)):
             return list(await self.cls.choices_for(row, field))  # type: ignore[attr-defined]

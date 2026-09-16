@@ -486,7 +486,7 @@ class FlowMessage(Entity):
         nothing repairs one that has fallen out of it. The values are still in
         the stored dict; this just moves them to the field that now owns them.
 
-        Same shape as ``DataDriver._adopt_legacy_enabled``: read-side only, no
+        Same shape as ``DataSource._adopt_legacy_enabled``: read-side only, no
         migration pass, and a no-op once the row is next saved.
         """
         if not isinstance(data, dict) or data.get("origin_local"):

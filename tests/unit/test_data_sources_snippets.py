@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
 from tests.unit._ingest_helpers import fixture_bytes, local_http_server
 from tests.utils.snippets import doc, fence_under, run_fence
@@ -59,10 +59,10 @@ async def test_1_connect_a_feed_and_sync_it_once(feed_server):
 
 
 async def test_2_reuse_instead_of_duplicate():
-    # §2 assumes §1 is in scope, so DataDriver is already imported.
-    ns = await _section("2.", {"KEY": "not-a-real-key", "DataDriver": DataDriver})
+    # §2 assumes §1 is in scope, so DataSource is already imported.
+    ns = await _section("2.", {"KEY": "not-a-real-key", "DataSource": DataSource})
     first = ns["src"]
-    ns = await _section("2.", {"KEY": "not-a-real-key", "DataDriver": DataDriver})
+    ns = await _section("2.", {"KEY": "not-a-real-key", "DataSource": DataSource})
     assert ns["src"].id == first.id, "the second run must find the row, not mint a twin"
 
 
@@ -93,9 +93,9 @@ async def test_7_operate_a_source(tmp_path):
     watched, dest = tmp_path / "w", tmp_path / "d"
     watched.mkdir()
     ns = await _section("4.", {"WATCHED": str(watched), "DESTINATION": str(dest)})
-    src: DataDriver = ns["src"]
+    src: DataSource = ns["src"]
     await _section("7.", ns)                  # verify, poll_now, replay, reset_cursors, purge_items, delete
-    assert await DataDriver.get_one({"id": src.id}) is None, "delete() cascades"
+    assert await DataSource.get_one({"id": src.id}) is None, "delete() cascades"
 
 
 async def test_7_read_the_row_first(tmp_path):
@@ -168,10 +168,10 @@ async def test_9_a_refusal_is_a_sentence_not_an_exception():
     """The claim the section makes in prose, executed: no project, no exception."""
     await _gcs_spec()
 
-    picks = await DataDriver.choices_for("gcs", "bucket", {})
+    picks = await DataSource.choices_for("gcs", "bucket", {})
     assert picks.items == [] and "GCP project" in picks.detail
 
-    assert await DataDriver.choices_for("gcs", "cache_root") is None, (
+    assert await DataSource.choices_for("gcs", "cache_root") is None, (
         "a field the manifest never marked is a caller bug, not a refusal"
     )
 
