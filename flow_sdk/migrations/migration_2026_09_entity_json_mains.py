@@ -37,8 +37,9 @@ logger = logging.getLogger("migrate.entity_json_mains")
 @dataclass
 class Report:
     scanned: int = 0
-    #: type -> retired folders (dry-run: what --apply would convert)
-    pending: Counter = field(default_factory=Counter)
+    #: True when nothing was written — ``converted`` is then what ``--apply`` would convert
+    dry_run: bool = True
+    #: type -> folders converted (in a dry run: what ``--apply`` would convert)
     converted: Counter = field(default_factory=Counter)
     #: "type:reason" -> folders left in the retired form
     unconverted: Counter = field(default_factory=Counter)
@@ -49,7 +50,7 @@ class Report:
 
     @property
     def changed(self) -> bool:
-        return bool(self.converted)
+        return bool(self.converted) and not self.dry_run
 
 
 def retired_folders(root: Path) -> list[tuple[Any, Path, str]]:
@@ -94,9 +95,9 @@ def convert(info: Any, folder: Path, retired: str) -> tuple[str, list[str]]:
     spec, lay = info.asset_spec, spec_layout(info.asset_spec)
     dropped = sorted(key for key in fields if key not in spec.model_fields)
     # Rendered by the LIVE writer, so a converted file is byte-identical to what the next save writes.
-    authored = spec.model_validate({**fields, **({"name": name} if "name" in spec.model_fields else {}),
-                                    **({lay.body: document.body.strip()} if lay.body else {})})
     body = document.body.strip()
+    authored = spec.model_validate({**fields, **({"name": name} if "name" in spec.model_fields else {}),
+                                    **({lay.body: body} if lay.body else {})})
     written = [main, *([entity_body_path(folder, lay.body)] if lay.body else [])]
     _atomic_write_text(main, render_entity_json(authored, info, entity_id=entity_id, name=name, version=version))
     write_entity_bodies(authored, info, folder)
@@ -131,7 +132,7 @@ def migrate(*, dry_run: bool = True, roots: list[Path] | None = None) -> Report:
     from flow_sdk.schema.type_info import register_all
 
     register_all()
-    report = Report()
+    report = Report(dry_run=dry_run)
     seen: set[str] = set()
     for root in roots if roots is not None else _default_roots():
         for info, folder, retired in retired_folders(Path(root)):
@@ -141,7 +142,7 @@ def migrate(*, dry_run: bool = True, roots: list[Path] | None = None) -> Report:
             seen.add(key)
             report.scanned += 1
             if dry_run:
-                report.pending[info.type_name] += 1
+                report.converted[info.type_name] += 1
                 continue
             try:
                 status, dropped = convert(info, Path(folder), retired)
@@ -155,7 +156,7 @@ def migrate(*, dry_run: bool = True, roots: list[Path] | None = None) -> Report:
                 report.conflicts.append(key)
             else:
                 report.unconverted[f"{info.type_name}:{status.split(':', 1)[1]}"] += 1
-    if report.converted:
+    if report.changed:
         from flow_sdk.fs_store.fs_record import FSRecord
 
         for type_name in report.converted:
@@ -173,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     dry_run = not args.apply
     report = migrate(dry_run=dry_run, roots=[Path(r) for r in args.root] if args.root else None)
     logger.info("%s: scanned %d retired folder(s)", "DRY-RUN" if dry_run else "APPLY", report.scanned)
-    logger.info("%s: %s", "convertible" if dry_run else "converted", dict(report.pending if dry_run else report.converted))
+    logger.info("%s: %s", "convertible" if dry_run else "converted", dict(report.converted))
     if report.unconverted:
         logger.info("left in the retired form: %s", dict(report.unconverted))
     if report.conflicts:

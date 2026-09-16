@@ -47,7 +47,7 @@ def test_the_scan_reports_a_retired_agent_and_names_the_migration(repo):
 def test_dry_run_reports_and_writes_nothing(repo):
     folder = _retired(repo)
     report = migrate(dry_run=True, roots=[repo])
-    assert dict(report.pending) == {"agent": 1} and not report.changed
+    assert dict(report.converted) == {"agent": 1} and not report.changed
     assert sorted(p.name for p in folder.iterdir()) == ["agent.md"]
 
 
