@@ -274,7 +274,7 @@ async def reflect_to_hub(
     # sub-path (``members/link``) is a different hub endpoint with its own shape.
     is_roster = a.action_name == "members" and not sub_path
     if verb == "get":
-        hub_resp = await hub_get(et, hub_id, action=a.action_name, sub_path=sub_path, params=_query_params(body))
+        hub_resp = await hub_get(et, hub_id, action=a.action_name, sub_path=sub_path)
         # hub_get returns None on transport/HTTP failure (does not raise);
         # treat that as "fall through to local" via HubError.
         if hub_resp is None:
@@ -325,15 +325,6 @@ async def reflect_to_hub(
     normalized = _normalize_hub_response(a.action_name, hub_resp)
     await mirror_hub_response_into_local(entity, a.action_name, normalized)
     return normalized
-
-
-def _query_params(params: dict[str, Any] | None) -> dict[str, str]:
-    """Re-flatten parsed query parameters for the hub GET (lists → comma-joined)."""
-    return {
-        k: ",".join(map(str, v)) if isinstance(v, (list, tuple)) else str(v)
-        for k, v in (params or {}).items()
-        if v is not None
-    }
 
 
 def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
