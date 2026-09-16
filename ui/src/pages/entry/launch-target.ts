@@ -95,8 +95,7 @@ const NOTHING_READ: AnonymousAgentRead = { agent: null, problem: null, error: nu
  *
  * A public agent (the hub's visibility action stamps it readable by anyone) answers this read,
  * which lets the sign-in card name it. A 401 is the EXPECTED answer for a private agent and a
- * truly anonymous caller: logged to the console, never shown, and never the SDK's blocking 401
- * alert (`expectUnauthorized`).
+ * truly anonymous caller: logged to the console and never shown.
  *
  * A 403/404 is different. The hub only answers `target_not_found` to a caller it has identified —
  * the browser is signed in to the hub even if the app has not caught up — so the agent really is
@@ -110,7 +109,7 @@ function useAnonymousAgent(agentId: string | null): AnonymousAgentRead {
     if (!agentId) return;
     let cancelled = false;
     apiClient
-      .get<Partial<Agent> | null>(`/api/v1/graph/${Agent.type}/${agentId}`, { expectUnauthorized: true })
+      .get<Partial<Agent> | null>(`/api/v1/graph/${Agent.type}/${agentId}`)
       .then((data) => {
         if (!cancelled && data) setLoaded({ id: agentId, read: { agent: new Agent(data), problem: null, error: null } });
       })
