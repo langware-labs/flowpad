@@ -245,7 +245,12 @@ async def _pull(source: Source, wanted: list) -> None:
 def binding_of(row: Any, *, credentials: Optional[Credentials] = None, persona: Optional[Persona] = None) -> SourceBinding:
     credentials = credentials or Credentials()
     # A secret the resolver lifted out of the row never also rides in ``config``.
-    config = {k: v for k, v in (getattr(row, "config", None) or {}).items() if k not in credentials.values}
+    raw = getattr(row, "config", None) or {}
+    driver = DRIVERS.get_or_none(str(getattr(row, "provider", "") or ""))
+    config_cls = getattr(driver.cls, "Config", None) if driver is not None else None
+    # A driver with a ``Config`` reads its stored config as well as it still validates.
+    typed = config_cls.best_match(raw) if config_cls is not None else raw
+    config = {k: v for k, v in typed.items() if k not in credentials.values}
     return SourceBinding(
         source_id=str(getattr(row, "id", "") or ""),
         name=str(getattr(row, "provider", "") or ""),

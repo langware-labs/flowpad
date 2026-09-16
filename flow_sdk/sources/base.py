@@ -23,6 +23,7 @@ from typing import Any, AsyncGenerator, Callable, ClassVar, Mapping, Optional, S
 from flow_sdk._compat import StrEnum
 from flow_sdk.sources import _paging
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import Credentials
 from flow_sdk.sources.errors import AccessDenied, NotFound, SourceError, SourceUnavailable, Unsupported
 from flow_sdk.sources.values.event import ChangeHandler, DataSourceEvent
@@ -77,6 +78,9 @@ class Source:
     #: The config key naming the local tree a reflecting source reads in place (``root``,
     #: ``repo``). Empty on a reflecting source: its bytes are remote, pulled into a cache.
     local_tree_key: ClassVar[str] = ""
+    #: The typed config this driver takes (``flow_sdk.sources.config.SourceConfig``). The manifest's
+    #: ``config`` catalog holds only the form hints for these fields; the loader checks they agree.
+    Config: ClassVar[Optional[type["SourceConfig"]]] = None
 
     # ── what the application asks the class ─────────────────────────────────
     # Everything the application needs to know about ONE source, the source says itself — so no
