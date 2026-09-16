@@ -7,6 +7,7 @@ export type AgentDocumentPatch = Partial<
     | 'title'
     | 'description'
     | 'avatar'
+    | 'color'
     | 'worker_type'
     | 'model'
     | 'permission_mode'
