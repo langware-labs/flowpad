@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 67
+version: 68
 ---
 # Secret stores
 
@@ -69,10 +69,10 @@ config, or the default.
 
 Three ship out of the box:
 
-| type                 | config                                   | where a value lives                                                                       |
-| -------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `env_file`           | `env_file_path` — the file to read/write | that file, one `NAME=value` line per variable                                             |
-| `vault`              | `prefix`, `entries` — the entry names    | the per-instance encrypted store, `<prefix><NAME>` or `entries`                           |
+| type                 | config                                   | where a value lives                                                                                                                                           |
+| -------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `env_file`           | `env_file_path` — the file to read/write | that file, one `NAME=value` line per variable                                                                                                                 |
+| `vault`              | `prefix`, `entries` — the entry names    | the per-instance encrypted store, `<prefix><NAME>` or `entries`                                                                                               |
 | `gcp_secret_manager` | `gcp_project`, `prefix`                  | the secret `<prefix><NAME>` in that GCP project, latest version — read with a bound `google` connection ([§6](#6-connections--the-same-pattern-for-accounts)) |
 
 `SecretStore.get()` with no arguments is `env_file` on
