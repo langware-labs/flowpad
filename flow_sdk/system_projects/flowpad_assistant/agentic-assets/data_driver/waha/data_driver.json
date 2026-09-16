@@ -40,6 +40,7 @@
       "required": false,
       "label": "Allowed senders",
       "placeholder": "972501234567",
+      "pattern": "^([0-9]+|[^@\\s]+@lid)$",
       "hint": "Who may drive the owning agent from this number — phone numbers with country code, digits only, one per line. Empty allows nobody."
     }
   }

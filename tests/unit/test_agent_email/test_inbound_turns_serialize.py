@@ -36,7 +36,7 @@ class _Worker:
 
 async def test_messages_arriving_together_each_get_their_own_turn(monkeypatch):
     worker, sent = _Worker(), []
-    source = SimpleNamespace(id="ds-1")
+    source = SimpleNamespace(id="ds-1", channel="whatsapp", provider="waha")
 
     async def dispatch(conversation_id, *, text, source_id, item, source=None):
         sent.append(f"{text} (quoting {item.body})")
@@ -56,7 +56,7 @@ async def test_messages_arriving_together_each_get_their_own_turn(monkeypatch):
     monkeypatch.setattr("flow_sdk.app.actions.execute_prompt._capture_assistant_reply", lambda _ap: worker.finish())
     monkeypatch.setattr("flow_sdk.inbox.outbound.dispatch_channel_reply", dispatch)
 
-    items = [SimpleNamespace(id=str(n), data_source_id="ds-1", author_external_id="972500000000", body=f"burst {n}") for n in range(1, 4)]
+    items = [SimpleNamespace(id=str(n), data_source_id="ds-1", author_external_id="972500000000", author_display="Dana", body=f"burst {n}") for n in range(1, 4)]
     results = await asyncio.gather(*(runner.handle_inbound(item) for item in items))
 
     assert results == [True, True, True]

@@ -36,7 +36,8 @@ const hn = {
 } as never;
 
 const draft = (provider: string, fields: Record<string, string>, picked = {}) => ({
-  ...emptyDraft(provider),
+  ...emptyDraft(),
+  provider,
   name: 'a source',
   fields,
   picked,
@@ -49,6 +50,23 @@ const pickable = {
 const bucket = {
   config: { bucket: { type: 'text', required: true, choices: true, account_key: true } },
 } as never;
+
+describe('emptyDraft starts from the manifest defaults', () => {
+  it('prefills a field that declares a default and leaves the rest empty', () => {
+    const waha = {
+      name: 'waha',
+      config: {
+        base_url: { type: 'text', required: true, label: 'WAHA URL' },
+        session: { type: 'text', required: true, default: 'default', label: 'Session' },
+        types: { type: 'csv', default: ['story', 'job'], label: 'Types' },
+      },
+    } as never;
+    const draft = emptyDraft(waha);
+    // A list default is joined the way an edited source's stored list is shown (csv → ", ").
+    expect([draft.provider, draft.fields]).toEqual(['waha', { session: 'default', types: 'story, job' }]);
+    expect(emptyDraft().fields).toEqual({});
+  });
+});
 
 describe('buildConfig types values from the manifest', () => {
   it('splits lines and csv, coerces numbers, omits empties', () => {

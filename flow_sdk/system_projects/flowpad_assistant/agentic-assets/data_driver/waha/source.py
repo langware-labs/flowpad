@@ -167,7 +167,7 @@ class WahaSource(Source):
         data = WahaMessageData(
             text=text,
             conversation=self.conversation_origin(chat),
-            sender=UserProfile(origin=self.origin(sender_key(phone_chat(message, chat))), name=str(extra.get("notifyName") or extra.get("pushName") or "") or None),
+            sender=UserProfile(origin=self.origin(sender_key(phone_chat(extra, chat))), name=str(extra.get("notifyName") or extra.get("pushName") or "") or None),
             sent_at=_when(message.get("timestamp")),
             in_reply_to=self.message_origin(quoted, chat) if quoted else None,
             raw=message,
@@ -334,18 +334,16 @@ def sender_key(chat: str) -> str:
     return digits(chat.split("@", 1)[0]) if chat.endswith(PHONE_SUFFIXES) else chat
 
 
-def phone_chat(message: dict, chat: str) -> str:
+def phone_chat(extra: dict, chat: str) -> str:
     """The chat id that names the sender's PHONE. WhatsApp increasingly addresses a person by an opaque
-    ``<id>@lid``; NOWEB carries the phone JID beside it in the message key, so an allowlist of numbers
-    still matches. Without one the lid stands — it can be allowlisted as it is. Replies keep the raw chat."""
+    ``<id>@lid``; NOWEB carries the phone JID beside it in the message key (``_data.key``), so an
+    allowlist of numbers still matches. Without one the lid stands — it can be allowlisted as it is.
+    Replies keep the raw chat."""
     if not chat.endswith("@lid"):
         return chat
-    data = message.get("_data")
-    key = data.get("key") if isinstance(data, dict) else None
-    for alt in ((key.get("remoteJidAlt"), key.get("senderPn"), key.get("participantPn")) if isinstance(key, dict) else ()):
-        if isinstance(alt, str) and alt.endswith(PHONE_SUFFIXES):
-            return alt
-    return chat
+    key = extra.get("key") if isinstance(extra.get("key"), dict) else {}
+    alts = (key.get("remoteJidAlt"), key.get("senderPn"), key.get("participantPn"))
+    return next((alt for alt in alts if isinstance(alt, str) and alt.endswith(PHONE_SUFFIXES)), chat)
 
 
 def _id_of(body: dict) -> str:
