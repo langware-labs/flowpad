@@ -4,13 +4,15 @@ name: toplog
 description: >-
   toplog — tag-tracing assistant for debugging. `run` activates the right
   trace tags for a given issue (in code or tests) so RCA has better
-  traceability; `scan` reconciles the tags referenced in code against the
+  traceability; `on`/`off`/`status` start, stop or show tag logging directly;
+  `scan` reconciles the tags referenced in code against the
   tag catalog; `learn` consolidates post-RCA findings (enrich a tag, add a
   new one with its trace points, or retire a stale one). Use when debugging a
   hard failure and you want richer logs before or alongside RCA, when adding or
   auditing toplog tags, or after proving a root cause to capture the
-  traceability that helped. Also triggers on "turn on tracing for X", "what
-  tags cover Y", "add a toplog tag", or "audit toplog tags".
+  traceability that helped. Also triggers on "turn on tracing for X", "toplog
+  pty on/off", "stop X logging", "turn off all tracing", "what toplog tags are
+  on", "what tags cover Y", "add a toplog tag", or "audit toplog tags".
 tags: ''
 eval: 'false'
 version: 1
@@ -29,6 +31,7 @@ This file routes — load the row that matches the task at hand.
 | Skill arg            | Load              | What it does                                            |
 | -------------------- | ----------------- | ------------------------------------------------------ |
 | `run <issue>` (default when an issue is given) | `modes/run.md`   | Activate tags to trace an issue; feed RCA |
+| `on <tags>` / `off [tags]` / `status` | `modes/switch.md` | Start, stop or show tag logging on an instance |
 | `scan`               | `modes/scan.md`   | Reconcile code tags with the catalog                 |
 | `learn` (usually after RCA) | `modes/learn.md` | Consolidate findings into the catalog + code       |
 

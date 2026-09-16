@@ -58,7 +58,7 @@ illuminate the suspect path, reproduce, and feed the richer log into `/rca`.
    (arrive in the log within ~1s — they are batched).
 7. **Hand to `/rca`** with that trail — toplog surfaces the evidence; RCA proves
    the on/off switch.
-8. **Turn it back off** once captured, so the system returns to quiet:
+8. **Turn it back off** once captured (the `off` row of `switch.md`), so the system returns to quiet:
    `POST /api/v1/toplog/off {"tags":[...]}` (and `POST /persist {"persist":false}`
    if you persisted). Off is non-destructive — the tags stay in the catalog and
    code for next time.
