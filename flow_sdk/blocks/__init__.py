@@ -449,8 +449,10 @@ class Inbox:
         if existing is not None:
             self._source = existing
             return existing
+        # The name is the asset folder, and the user and an agent may each watch one account.
+        whose = getattr(self._owner_arg, "name", "") or (owner.id[:8] if owner is not None else "")
         source = DataSource(
-            name=f"Inbox {self.address}",
+            name=f"Inbox {self.address} for {whose}" if whose else f"Inbox {self.address}",
             provider=self.provider,
             config={key: value, **self._config},
             owner=owner,

@@ -17,9 +17,9 @@ import pytest
 
 from flow_sdk.builtin.source_item import HelpdeskMessageSpec
 from flow_sdk.cloud_client.shared.errors import HubError
-from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import position
 from flow_sdk.schema.data_spec.choice_spec import Choice
 from flow_sdk.sources import UserProfile
@@ -167,7 +167,7 @@ class TestSend:
             saved.append(True)
 
         row = _row()
-        row.save = save
+        row.save_runtime = save
         await driver_type("helpdesk").send(row, thread_key="", to=TICKET, text="on it")
         assert row.account_identities == [ME] and saved
 

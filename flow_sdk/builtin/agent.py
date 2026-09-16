@@ -687,7 +687,7 @@ class Agent(Entity):
         # `DataSource.save` is a spec read plus a write.
         if list(source.inbound_allowed_senders or []) != senders:
             source.inbound_allowed_senders = senders
-            await source.save()
+            await source.save_runtime()
         return source
 
     @action.post(action_name="bind_channel")

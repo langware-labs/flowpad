@@ -26,7 +26,7 @@ async def _projected_pair(tmp_path, monkeypatch):
         lambda: tmp_path,
     )
     src = DataSource(
-        provider="agent", channel="gmail", name="Mail",
+        provider="agent", channel="gmail", name=f"Mail {uuid.uuid4().hex[:8]}",
         account_key=f"acct-{uuid.uuid4().hex[:8]}",
     )
     await src.save()

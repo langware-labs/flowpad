@@ -4,8 +4,11 @@ version: 2
 ---
 # Data sources — snippets
 
-A data source is one remote account or tree Flowpad syncs from. The row is a
-`DataSource`; every item it produces is a `SourceItem`; one cycle is one verb,
+A data source is one remote account or tree Flowpad syncs from, configured on
+a driver. It is a `DataSource`, and an asset: `save()` writes
+`agentic-assets/data_source/<name>/data_source.json` into the current project
+(the user scope outside one), and nothing is on disk before that. Every item it
+produces is a `SourceItem`; one cycle is one verb,
 `source.sync()` (the heartbeat calls the same code through `sync_source`).
 Everything below runs in-process against the session DB, and every `python`
 fence is run as written by `tests/unit/test_data_sources_snippets.py`. Deeper
@@ -27,7 +30,7 @@ src = DataSource(
     provider="rss",
     config={"feed_urls": [FEED_URL]},
 )
-await src.save()  # NEW → ACTIVE; channel and origin stamped
+await src.save()  # writes data_source.json; NEW → ACTIVE; channel and origin stamped
 
 outcome = await src.sync()
 outcome.created, outcome.updated, outcome.unchanged  # what this cycle did

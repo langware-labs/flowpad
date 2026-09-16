@@ -14,6 +14,7 @@ import type { TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useAllocateAgentInbox } from '@src/hooks/use-allocate-agent-inbox';
+import { useContext as useDataContext } from '@src/hooks/useContext';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import {
@@ -113,6 +114,8 @@ export function DataSourceDialog({
   // shows up here with no frontend release.
   const { specs: installed, specFor } = useSourceSpecs();
   const allocateInbox = useAllocateAgentInbox();
+  // A source is an asset: it is saved into the project open here (an agent's into the agent's project).
+  const { project } = useDataContext();
   const ownerAgentId = owner?.type === Agent.type ? owner.id : null;
   // An unlisted provider is never offered (a vendor the cloud stands in front of), and one
   // the cloud provisions is an agent's own account — offered only when adding for an agent.
@@ -212,7 +215,7 @@ export function DataSourceDialog({
           owner: owner ? owner.toString() : null,
           inbound_allowed_senders: allowedSenders,
         });
-        await source.save();
+        await source.save(project?.typeId && !ownerAgentId ? [project.typeId] : []);
         notify.success({ title: t`Added ${source.name}` });
       }
       onOpenChange(false);

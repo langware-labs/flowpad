@@ -8,6 +8,8 @@ way it does in production.
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
@@ -29,7 +31,7 @@ def _name() -> str:
 
 async def _inbox(addr: str) -> tuple[Inbox, DataSource]:
     """A source that knows its own address, so a sent copy is recognised as ours."""
-    src = DataSource(name="pre", provider="scripted", config={"inbox": addr}, account_key=ME)
+    src = DataSource(name=f"pre {uuid.uuid4().hex[:8]}", provider="scripted", config={"inbox": addr}, account_key=ME)
     await src.save()
     return Inbox(addr, provider="scripted"), src
 

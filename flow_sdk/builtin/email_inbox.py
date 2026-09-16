@@ -461,7 +461,7 @@ class EmailInbox(Entity):
         source = await self.source()
         if source is not None and source.status != SourceStatus.DISABLED.value:
             source.status = SourceStatus.DISABLED.value
-            await source.save()
+            await source.save_runtime()
         return self
 
     async def release(self) -> bool:
@@ -482,7 +482,7 @@ class EmailInbox(Entity):
                 # The allowlist described a mailbox that no longer exists.
                 source.inbound_allowed_senders = []
                 source.status = SourceStatus.DISABLED.value
-                await source.save()
+                await source.save_runtime()
         owner = self._owner
         if owner is not None:
             owner._inbox = None
@@ -652,7 +652,7 @@ class EmailInbox(Entity):
             source = await email_source_for_agent(agent.id)
             if source is not None and source.status != SourceStatus.DISABLED.value:
                 source.status = SourceStatus.DISABLED.value
-                await source.save()
+                await source.save_runtime()
         return await _state_payload(agent.id, inbox, source)
 
     # ── messages ──────────────────────────────────────────────────────────
@@ -733,7 +733,7 @@ class EmailInbox(Entity):
         cached = list(self.allowed_senders)
         if list(source.inbound_allowed_senders or []) != cached:
             source.inbound_allowed_senders = cached
-            await source.save()
+            await source.save_runtime()
 
 
 def _source_summary(source) -> dict:

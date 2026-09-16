@@ -1,3 +1,5 @@
+import uuid
+
 """Shared setup for the folder-source matrix.
 
 Two things this package cannot run without, both lifted from
@@ -97,7 +99,7 @@ def make_source(watched, project, in_workspace):
         await proj.save()
 
         src = DataSource(
-            name="watched-folder",
+            name=f"watched-folder {uuid.uuid4().hex[:8]}",
             provider="folder",
             config={"root": str(watched)},
             reflect=mode,

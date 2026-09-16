@@ -23,7 +23,7 @@ async def _source(**kw) -> DataSource:
     fields = {
         "provider": "faketest",
         "account_key": account,
-        "name": "poll fixture",
+        "name": f"poll fixture {account}",
         # Far future by default so unrelated rows from other tests never make a
         # given assertion flaky.
         "next_poll_at": NOW + timedelta(days=365),

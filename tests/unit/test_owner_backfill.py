@@ -35,8 +35,8 @@ async def test_backfill_counts_then_stamps_then_finds_nothing():
 
     # Rows shaped as they were before `owner` existed. `save` would stamp them, so
     # write the blob directly the way a pre-owner build would have left it.
-    legacy_agent_source = DataSource(name="a", provider="cloud_email", config={"agent_id": agent_id})
-    legacy_user_source = DataSource(name="u", provider="rss")
+    legacy_agent_source = DataSource(name=f"a {uuid.uuid4().hex[:8]}", provider="cloud_email", config={"agent_id": agent_id})
+    legacy_user_source = DataSource(name=f"u {uuid.uuid4().hex[:8]}", provider="rss")
     for row in (legacy_agent_source, legacy_user_source):
         await row.save(notify=False)  # `save` stamps these; the thread/conversation below stay unowned
     conv_id = str(uuid.uuid4())

@@ -40,7 +40,7 @@ def sources():
 
 
 async def _source(**kw) -> DataSource:
-    base = dict(name="lifecycle", account_key=f"a-{uuid.uuid4().hex[:6]}")
+    base = dict(name=f"lifecycle {uuid.uuid4().hex[:8]}", account_key=f"a-{uuid.uuid4().hex[:6]}")
     base.update(kw)
     src = DataSource(**base)
     await src.save()

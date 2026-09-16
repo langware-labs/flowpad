@@ -6,6 +6,8 @@ code to pin — when one of them is built, its snippet moves up and gets a test 
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
@@ -13,7 +15,8 @@ from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 from flow_sdk.tags import on_tag
 from tests.utils.snippets import doc
 
-pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+# Doc snippets name their sources for a reader, so each runs in its own user scope.
+pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope")]  # do not increase timeout without approval
 
 
 @pytest.fixture
@@ -31,7 +34,7 @@ def _placed(dst):
 
 async def test_snippet_1_one_source_one_cycle(tree):
     src, _ = tree
-    source = DataSource(name="Notes", provider="folder", config={"root": str(src)})
+    source = DataSource(name=f"Notes {uuid.uuid4().hex[:8]}", provider="folder", config={"root": str(src)})
     await source.save()
     assert (await source.verify())["ready"] is True
     await source.sync()  # never raises; failure is health, not an exception
@@ -40,7 +43,7 @@ async def test_snippet_1_one_source_one_cycle(tree):
 async def test_snippet_2_mirror_one_folder_into_another(tree):
     src, dst = tree
     source = DataSource(
-        name="Mirror notes",
+        name=f"Mirror notes {uuid.uuid4().hex[:8]}",
         provider="folder",
         reflect=ReflectMode.COPY.value,
         reflect_into=str(dst),

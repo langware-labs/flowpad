@@ -21,10 +21,12 @@ def fresh_timestamps(body: bytes) -> bytes:
 
 
 def make_data_source(provider: str = "rss", **fields):
-    """A ``DataSource`` row (unsaved) with a unique account key."""
+    """A ``DataSource`` row (unsaved) with a unique account key and name — a source is an asset, and two
+    sources of one name in one scope would claim the same ``agentic-assets/data_source/<name>`` folder."""
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
-    resolved = {"provider": provider, "account_key": f"acct-{uuid.uuid4().hex[:8]}", "name": "test source"}
+    tag = uuid.uuid4().hex[:8]
+    resolved = {"provider": provider, "account_key": f"acct-{tag}", "name": f"test source {tag}"}
     resolved.update(fields)
     return DataSource(**resolved)
 

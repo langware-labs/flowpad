@@ -128,7 +128,10 @@ def cmd_create(args) -> dict:
     payload = json_arg(args.json)
     payload.setdefault("status", "new")
     keys = tuple(k for k in payload if k != "status")
-    source_id, row, dropped = create_and_verify("/graph/data_source", payload, keys)
+    from flow_sdk.cli.commands._common import data_source_create_path, discover_port  # noqa: PLC0415
+
+    path = f"/graph/{data_source_create_path(discover_port())}"
+    source_id, row, dropped = create_and_verify(path, payload, keys, read_path="/graph/data_source")
     return {
         "id": source_id,
         "typeid": f"data_source-{source_id}",

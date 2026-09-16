@@ -9,14 +9,15 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import uuid
 
 import pytest
 from pydantic import SecretStr
 
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
@@ -41,7 +42,7 @@ def sign(body: bytes, secret: str = APP_SECRET) -> str:
 
 
 def _source(**config) -> DataSource:
-    return DataSource(provider="whatsapp", name="WhatsApp test", config={"phone_number_id": PHONE_ID, "access_token": "EAAG-test", "app_secret": APP_SECRET, **config})
+    return DataSource(provider="whatsapp", name=f"WhatsApp test {uuid.uuid4().hex[:8]}", config={"phone_number_id": PHONE_ID, "access_token": "EAAG-test", "app_secret": APP_SECRET, **config})
 
 
 def _binding() -> SourceBinding:

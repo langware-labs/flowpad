@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import uuid
 from pathlib import Path
 
 import pytest
@@ -166,7 +167,7 @@ async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
     local = await agent.local_deployment()
     cloud = await _cloud_place(agent)
     source = DataSource(
-        name="Inbox", provider=CloudEmailDriver.provider, kind=CloudEmailDriver.kind,
+        name=f"Inbox {uuid.uuid4().hex[:8]}", provider=CloudEmailDriver.provider, kind=CloudEmailDriver.kind,
         config={CloudEmailDriver.identity_config_key: agent.id}, account_key="a@x.io",
         owner=agent.typeid, status=SourceStatus.ACTIVE.value,
     )

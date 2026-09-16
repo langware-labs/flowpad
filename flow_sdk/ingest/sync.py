@@ -247,7 +247,7 @@ async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: dat
         now,
         segment_count=len(cursors),
     )
-    await source.save()
+    await source.save_runtime()
 
 
 async def _fail_source(
@@ -263,7 +263,7 @@ async def _fail_source(
     transient reason, and parking a source over one network blip is the mistake to prevent."""
     _stamp_source(source, health, code, detail, now)
     emit_sync_tag(source.provider, source.id, "failed", error_code=code, error_detail=detail)
-    await source.save()
+    await source.save_runtime()
 
 
 def _stamp_source(

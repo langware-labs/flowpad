@@ -4,6 +4,7 @@ through the ``FSOriginDriver`` registry."""
 from __future__ import annotations
 
 import subprocess
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -43,7 +44,7 @@ async def test_local_root_reads_the_origin_not_a_config_key(tmp_path):
 async def test_save_stamps_the_origin_from_config(git_db, tmp_path):  # noqa: F811
     root = tmp_path / "w"
     root.mkdir()
-    src = DataSource(name="w", provider="folder", config={"root": str(root)})
+    src = DataSource(name=f"w {uuid.uuid4().hex[:8]}", provider="folder", config={"root": str(root)})
     await src.save()
     assert src.origin == local_origin_for_path(root.resolve())
     moved = tmp_path / "w2"

@@ -30,7 +30,7 @@ NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 
 async def _source(**kw) -> DataSource:
-    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name="Feed")
+    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"Feed {uuid.uuid4().hex[:8]}")
     base.update(kw)
     src = DataSource(**base)
     await src.save()
@@ -133,7 +133,7 @@ class TestAttentionFastLane:
             poller._inflight.discard(str(source.id))
 
         monkeypatch.setattr(poller, "_run_poll", _no_poll)  # no network in a unit test
-        src = await _source(provider="telegram", config={"bot_token": "t"})
+        src = await _source(provider="telegram", config={"bot_token": f"t-{uuid.uuid4().hex[:8]}"})
         out = await src.request_poll_action()
         assert out.data["attention_seconds"] == 5
         assert str(src.id) in poller._attention
@@ -157,7 +157,7 @@ class TestAttentionFastLane:
 
         from flow_sdk.ingest import poller
 
-        src = await _source(provider="telegram", config={"bot_token": "t"})
+        src = await _source(provider="telegram", config={"bot_token": f"t-{uuid.uuid4().hex[:8]}"})
         polled: list[str] = []
 
         async def _fake_run_poll(source, now):
@@ -196,7 +196,7 @@ class TestAttentionFastLane:
             poller._inflight.discard(str(source.id))
 
         monkeypatch.setattr(poller, "_run_poll", _no_poll)  # no network in a unit test
-        src = await _source(provider="telegram", config={"bot_token": "t"})
+        src = await _source(provider="telegram", config={"bot_token": f"t-{uuid.uuid4().hex[:8]}"})
         await src.request_poll_action()
         assert str(src.id) in poller._attention
         src.health = SourceHealth.CONFIG_ERROR.value
@@ -244,14 +244,14 @@ class TestAttentionFastLane:
             poller._inflight.discard(str(source.id))
 
         monkeypatch.setattr(poller, "_run_poll", _fake_run_poll)
-        first = await _source(provider="telegram", config={"bot_token": "t"})
+        first = await _source(provider="telegram", config={"bot_token": f"t-{uuid.uuid4().hex[:8]}"})
         await first.request_poll_action()
         # The loop has now read the schedule and is waiting on it: the only
         # edge it knows is `first`'s next round, a full cadence away.
         await asyncio.sleep(0.2)
         assert polled == [str(first.id)], "the armed source is polled once up front"
 
-        second = await _source(provider="telegram", config={"bot_token": "t"})
+        second = await _source(provider="telegram", config={"bot_token": f"t-{uuid.uuid4().hex[:8]}"})
         t0 = _time.monotonic()
         await second.request_poll_action()
         while str(second.id) not in polled and _time.monotonic() - t0 < 5:
@@ -269,7 +269,7 @@ class TestTickGridSchedule:
     def test_the_stamp_lands_on_the_minute_grid(self):
         # The RCA's switch: a stamp of :00.031 vs a tick firing :00.019 —
         # 12ms apart — cost a full minute. Flooring removes the coin flip.
-        src = DataSource(provider="rss", name="f", poll_interval_seconds=60)
+        src = DataSource(provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=60)
         jittered_now = NOW + timedelta(milliseconds=31)  # a real dispatch time
         due = src.schedule_next(jittered_now)
         assert due == NOW + timedelta(seconds=60)
@@ -279,7 +279,7 @@ class TestTickGridSchedule:
         # The next tick fires at :00 plus SMALLER jitter than the stamp's —
         # the exact losing coin flip. On the grid, it is always due.
         src = DataSource(
-            provider="rss", name="f", poll_interval_seconds=60,
+            provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=60,
             status=SourceStatus.ACTIVE.value,  # is_due gates on lifecycle first
         )
         src.schedule_next(NOW + timedelta(milliseconds=31))
@@ -287,6 +287,6 @@ class TestTickGridSchedule:
         assert src.is_due(next_tick) is True
 
     def test_longer_intervals_keep_their_cadence(self):
-        src = DataSource(provider="rss", name="f", poll_interval_seconds=300)
+        src = DataSource(provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=300)
         due = src.schedule_next(NOW + timedelta(seconds=3, milliseconds=200))
         assert due == NOW + timedelta(seconds=300), "mid-minute drift floors back to the grid"

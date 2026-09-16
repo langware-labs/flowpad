@@ -91,7 +91,7 @@ async def test_a_graph_workflow_receives_ingested_records(feed_server, tmp_path)
         provider="rss",
         kind="datasource.feed.rss",
         account_key=account,
-        name="Demo feed",
+        name=f"Demo feed {uuid.uuid4().hex[:8]}",
         config={"feed_urls": [url]},
     )
     await src.save()

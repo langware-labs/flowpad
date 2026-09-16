@@ -6,6 +6,8 @@ acked one never does; and outside a named workflow the loop behaves exactly as b
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
@@ -125,7 +127,7 @@ async def test_our_own_sent_copy_is_filtered_and_acked():
     addr, name = _addr(), _name()
     with scripted_provider("scripted") as driver:
         src = DataSource(
-            name="pre", provider="scripted", config={"inbox": addr}, account_key="me@scripted.test"
+            name=f"pre {uuid.uuid4().hex[:8]}", provider="scripted", config={"inbox": addr}, account_key="me@scripted.test"
         )
         await src.save()
         inbox = Inbox(addr, provider="scripted")

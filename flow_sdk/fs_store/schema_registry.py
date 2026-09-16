@@ -242,6 +242,10 @@ class TypeInfo:
     # Main documents this type USED to carry (``agent.md``). A folder holding one and not the current
     # main is a RETIRED form: reported with the migration that converts it, never indexed or written.
     retired_mains: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # What an orphan row of this type takes with it, awaited with the row's id before the row is dropped
+    # (``fs_store.orphan_removal``). ``None``: the row alone. A data source's records and cursors hang off
+    # its id, so removing the row without them leaves orphans no sweep reaches.
+    orphan_cascade_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # ``(file, how to port it)``: a folder holding one is a retired form NO migration converts — it is
     # code to rewrite (a retired runtime's ``fetch.py``). Reported with the port, never indexed.
     retired_files: tuple[tuple[str, str], ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)

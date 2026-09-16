@@ -58,10 +58,11 @@ def _value(credentials, name: str) -> str:
     return credentials.values[name].get_secret_value()
 
 
-async def test_get_answers_one_instance_by_name(home, source_types):
+async def test_get_answers_one_instance_by_name(project, source_types):
     work = await _saved(_DriveSource.provider, "work drive")
+    # A name is a folder, unique within a scope, so a twin lives in another scope.
     await _saved(_DriveSource.provider, "shared")
-    await _saved(_DriveSource.provider, "shared")
+    await _saved(_DriveSource.provider, "shared", project_id=str(project.id))
 
     assert (await DataSource.get("work drive")).id == work.id
     with pytest.raises(DataSourceNotFound):

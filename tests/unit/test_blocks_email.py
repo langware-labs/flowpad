@@ -322,7 +322,7 @@ class TestInboxSend:
     def inbox(self, monkeypatch):
         ib = Inbox("me@agentmail.to", api_key="k")
         ib._source = DataSource(
-            name="Inbox me@agentmail.to",
+            name=f"Inbox me@agentmail.to {uuid.uuid4().hex[:8]}",
             provider="agentmail",
             config={"inbox": "me@agentmail.to"},
         )

@@ -6,6 +6,7 @@ survives a restart, and a drain from it is bounded and exact even when rows shar
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -24,7 +25,7 @@ def _name() -> str:
 
 
 async def _source() -> DataSource:
-    src = DataSource(name="feed", provider="rss", config={"feeds": ["http://x/feed"]})
+    src = DataSource(name=f"feed {uuid.uuid4().hex[:8]}", provider="rss", config={"feeds": ["http://x/feed"]})
     await src.save()
     return src
 

@@ -8,6 +8,7 @@ message bodies are HTML even when someone typed one bare sentence.
 from __future__ import annotations
 
 import json
+import uuid
 from urllib.parse import parse_qs, unquote
 
 import pytest
@@ -34,7 +35,7 @@ SEGMENT = f"{TEAM}/{CHANNEL}"
 
 
 def _source(**config) -> DataSource:
-    return DataSource(provider="teams", name="Teams test", config={"channels": [SEGMENT], **config})
+    return DataSource(provider="teams", name=f"Teams test {uuid.uuid4().hex[:8]}", config={"channels": [SEGMENT], **config})
 
 
 def _view(state: dict | None = None, window_start: str | None = None):

@@ -117,7 +117,7 @@ async def _poll(source: DataSource) -> None:
 
 
 async def _desk_source(desk_id: str) -> DataSource:
-    source = DataSource(name="test desk", provider="helpdesk", config={"desk_project_id": desk_id})
+    source = DataSource(name=f"test desk {uuid.uuid4().hex[:8]}", provider="helpdesk", config={"desk_project_id": desk_id})
     await source.save()
     return source
 
