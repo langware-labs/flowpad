@@ -18185,6 +18185,11 @@ msgstr "Show detail panel"
 msgid "Show harness-generated entries (SYS) hidden from the standard list"
 msgstr "Show harness-generated entries (SYS) hidden from the standard list"
 
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+msgid "Show hidden files"
+msgstr "Show hidden files"
+
 #: src/components/top-nav-bar/AddressField.tsx
 msgid "Show hidden path segments"
 msgstr "Show hidden path segments"
