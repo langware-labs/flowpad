@@ -4624,6 +4624,10 @@ msgstr "העתק כיומן"
 msgid "Copy attachment id"
 msgstr ""
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Copy branch name"
+msgstr "העתקת שם הענף"
+
 #: src/components/markdown-view.tsx
 msgid "Copy code"
 msgstr "העתק קוד"
@@ -4698,6 +4702,10 @@ msgstr "העתק פרומפט"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Provider ID"
 msgstr "העתק מזהה ספק"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Copy remote URL"
+msgstr "העתקת כתובת ה-remote"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Copy the full error"
@@ -5343,7 +5351,7 @@ msgid "Could not use {0}"
 msgstr ""
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/use-source-verify.ts
 msgid "Could not verify {0}"
 msgstr "לא ניתן לאמת את {0}"
 
@@ -5462,6 +5470,10 @@ msgstr "ספירה"
 #: src/components/hooks-manager/index.tsx
 msgid "Count: {counter}"
 msgstr "ספירה: {counter}"
+
+#: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
+msgid "Country code"
+msgstr "קידומת מדינה"
 
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -13281,7 +13293,7 @@ msgstr ""
 msgid "not reachable"
 msgstr "לא נגיש"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/use-source-verify.ts
 msgid "Not ready yet"
 msgstr "עדיין לא מוכן"
 
@@ -13648,6 +13660,10 @@ msgstr "פתח את {0}"
 msgid "Open {0} in editor"
 msgstr ""
 
+#: src/components/conversation/MessageBubble.tsx
+msgid "Open {displayName}"
+msgstr "פתיחת {displayName}"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
 msgstr "פתח {label}"
@@ -13825,6 +13841,7 @@ msgstr "פתיחה בכרטיסיית דפדפן חדשה"
 msgid "Open in a new tab"
 msgstr "פתיחה בכרטיסייה חדשה"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
@@ -14612,6 +14629,14 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Personal note, actionable item"
 msgstr "הערה אישית, פריט שניתן לביצוע"
+
+#: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
+msgid "Phone number"
+msgstr "מספר טלפון"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Phone number — recorded on the agent's card, not yet used to route messages"
+msgstr "מספר טלפון — נשמר בכרטיס הסוכן, עדיין לא משמש לניתוב הודעות"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -19605,7 +19630,7 @@ msgstr "ייתכן שהשרת הופעל מחדש. לחצו כדי להתחבר 
 msgid "The change was not saved."
 msgstr "השינוי לא נשמר."
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/use-source-verify.ts
 msgid "The check did not run."
 msgstr "הבדיקה לא בוצעה."
 
@@ -21530,6 +21555,11 @@ msgstr "אימות"
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Verify the setup first."
 msgstr "יש לאמת את ההגדרה תחילה."
+
+#. placeholder {0}: source.setup_detail
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Verify: {0}"
+msgstr "אימות: {0}"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Version-bump + commit the asset"
