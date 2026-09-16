@@ -29,9 +29,9 @@ pinned by a test so it cannot drift silently.
   connection operations lease the selected standard service for their normal
   HTTP actions and restore its initial up/down state. Long tests that pin live
   legs run under the standard 30s cap and skip without credentials.
-* **The shipped sources load on first ask.** The first `source_type(provider)`
+* **The shipped sources load on first ask.** The first `driver_type(provider)`
   loads every shipped data source asset folder
-  (`agentic-assets/data_source/<name>/source.py`), so a snippet imports nothing to
+  (`agentic-assets/data_driver/<name>/source.py`), so a snippet imports nothing to
   make `rss` or `slack` resolve, and an override it registers before or after that
   first lookup is kept.
 * **Values travel as `DataSpec`.** What a driver emits is a

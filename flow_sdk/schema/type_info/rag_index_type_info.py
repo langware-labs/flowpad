@@ -1,6 +1,6 @@
 """Type metadata for RAG_INDEX.
 
-**Tier B**, like ``DataSource``: no placement fields, so the indexer can never walk it, but not
+**Tier B**, like ``DataDriver``: no placement fields, so the indexer can never walk it, but not
 ``db_only`` either — a configured index should be findable in search, and its shadow is a
 forensic trail of what was covered and with which model.
 

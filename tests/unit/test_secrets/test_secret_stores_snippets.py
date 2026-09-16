@@ -12,9 +12,9 @@ import pytest
 
 from flow_sdk import connections
 from flow_sdk.builtin.credential_service import save_credential
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.cli.auth.secrets import read_secret
-from flow_sdk.ingest.source_registry import resolve_source_type
+from flow_sdk.ingest.driver_registry import resolve_driver_type
 from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.connection_spec import ConnectionResult, ConnectionSpec, ConnectionTestResult
 from flow_sdk.secrets import SecretStore
@@ -49,7 +49,7 @@ async def database(in_project):
 
 async def _session_free(provider: str, monkeypatch) -> None:
     """The page opens real source classes; their network session is the one thing not run."""
-    cls = (await resolve_source_type(provider)).cls
+    cls = (await resolve_driver_type(provider)).cls
 
     async def nothing(self):
         return None
@@ -58,7 +58,7 @@ async def _session_free(provider: str, monkeypatch) -> None:
     monkeypatch.setattr(cls, "_close", nothing)
 
 
-async def _saved(provider: str, name: str, **fields) -> DataSource:
+async def _saved(provider: str, name: str, **fields) -> DataDriver:
     row = make_data_source(provider, name=name, **fields)
     await row.save()
     return row
@@ -153,7 +153,7 @@ async def test_5_a_data_source_binds_the_default_store(in_project, monkeypatch):
     ns = await _run("5. Data sources")
 
     assert ns["names"] == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
-    assert (await DataSource.get("work gmail")).secret_store == ns["store"].ref
+    assert (await DataDriver.get("work gmail")).secret_store == ns["store"].ref
     assert ns["live"].credentials.values["GMAIL_APP_PASSWORD"].get_secret_value() == "app-pass"
 
 
@@ -163,7 +163,7 @@ async def test_5_two_instances_keep_their_own_bindings(in_project):
 
     await _run("Two instances of one source")
 
-    work, home = await DataSource.get("work gmail"), await DataSource.get("home gmail")
+    work, home = await DataDriver.get("work gmail"), await DataDriver.get("home gmail")
     assert (work.secret_store.config, work.config["address"]) == ({"prefix": "gmail.work."}, "me@work.example")
     assert (home.secret_store.config, home.config["address"]) == ({"prefix": "gmail.home."}, "me@home.example")
 
@@ -189,7 +189,7 @@ async def test_6_a_data_source_binds_a_connection(in_project, monkeypatch, conne
 
     assert asked == reauthorized
     assert ns["providers"] == ["google"]
-    assert (await DataSource.get("work drive")).connection == "google"
+    assert (await DataDriver.get("work drive")).connection == "google"
     assert ns["live"].credentials.token.get_secret_value() == "token-for-google"
 
 
@@ -205,7 +205,7 @@ async def test_6_an_external_store_is_a_consumer_of_both_kinds(in_project, monke
         ns = await _run("6. Connections", nth=1)
 
         assert ns["remote"].connection == "google"
-        bound = (await DataSource.get("agent inbox")).secret_store
+        bound = (await DataDriver.get("agent inbox")).secret_store
         assert (bound.type, bound.config["gcp_project"], bound.connection) == ("gcp_secret_manager", "acme-prod", "google")
-        live = await (await DataSource.get("agent inbox")).open()  # the row alone: what the heartbeat's sync has
+        live = await (await DataDriver.get("agent inbox")).open()  # the row alone: what the heartbeat's sync has
         assert live.credentials.values["api_key"].get_secret_value() == "am-key"

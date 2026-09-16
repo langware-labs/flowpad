@@ -12,13 +12,13 @@ id: 44d26316-873d-49f6-95c2-e61d74dee7e6
 > system project). The result is a source that streams and a
 > `Dataset` bound to it — see [datasets.md](datasets.md#curating-a-source-into-a-dataset).
 >
-> `DataSource.config` is coerced by the definition's field types on every save
+> `DataDriver.config` is coerced by the definition's field types on every save
 > (`lines`/`csv` → list, `number` → number), so a value sent as the person typed
 > it never reaches a driver in the wrong shape.
 
 The filesystem indexer walks local roots. A **data source** walks something
 else — a feed, a mailbox, a channel, a repository — and lands what it finds in
-the same graph. One `DataSource` owns the relationship with one remote account
+the same graph. One `DataDriver` owns the relationship with one remote account
 or tree: which driver, what it needs to run, how often, and where its payload
 becomes locally present.
 
@@ -33,7 +33,7 @@ read-modify-write of the same row, and leave nowhere to record per-segment
 health. A `SourceItem` is one ingested record.
 
 ```
-DataSource ──(one per segment)──> DataSourceCursor
+DataDriver ──(one per segment)──> DataSourceCursor
      │  origin: FSOrigin  (WHERE the bytes come from — stamped by driver.origin_for)
      │
      └─ driver.fetch() ──> SourceItemSpec ──> ingest_items() ──> SourceItem   (record: DbSerializer resolves by natural key, gates on digest)
@@ -81,7 +81,7 @@ of requests on the segments that waited longest (`_round_robin` by
 `last_attempted_at`, never-attempted first); the cadence *is* the retry rate.
 
 Two things the cycle also does that are easy to miss. `sync_source` stamps
-`DataSource.kind` and `DataSource.channel` from the driver on every run, so a
+`DataDriver.kind` and `DataDriver.channel` from the driver on every run, so a
 row written before either field existed self-heals on its next poll. And a
 segment enumeration failure (`driver.segments()` raising) is classified and
 recorded as health exactly like a fetch failure — `_fail_source` defaults to
@@ -125,8 +125,8 @@ field is an error, not a row with an empty name.
 ## The source contract
 
 Every data source is a **self-contained asset folder**,
-`agentic-assets/data_source/<name>/` (the shipped ones under
-`flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/`): the manifest,
+`agentic-assets/data_driver/<name>/` (the shipped ones under
+`flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/`): the manifest,
 a `source.py` holding one `Source` class, any helper modules beside it (`transport.py`),
 its `tests/` and its editor. The class implements the access protocols it can honour
 (`Listable`, `Readable`, `Messaging`, `Segmented`, `Verifiable`, `Choosing`,
@@ -136,7 +136,7 @@ writes an entity, emits an event, or advances a cursor. It imports the public SD
 another asset.
 
 The loader (`flow_sdk/ingest/source_registry.py`) builds each folder into a **source
-type** (`flow_sdk/ingest/sources.py`, `SourceType`) from the manifest and the class. What
+type** (`flow_sdk/ingest/sources.py`, `DriverType`) from the manifest and the class. What
 differs between sources, the source says itself: the credential shape is the manifest's
 `auth` (one resolver, `flow_sdk/ingest/credentials.py`); `build` constructs it over an
 application transport; `message_for` reads a send's arguments; `lift_cursor` adopts an
@@ -145,11 +145,11 @@ older cursor; `local_tree_key` / `origin_id_for` place and name reflected files;
 `events_from_webhook` take push delivery through the one generic route,
 `/api/v1/data_source/webhook/<name>`, and `webhook_authentic` — when a class declares it —
 must accept the delivery's raw body and headers before anything is ingested. The check is
-`SourceType.ingest_pushed`'s, so no caller can skip it, and the route answers a refusal
+`DriverType.ingest_pushed`'s, so no caller can skip it, and the route answers a refusal
 with 401 (the URL is public; WhatsApp checks Meta's `X-Hub-Signature-256` against the app
 secret). The shipped folders load on the first
-`source_type(provider)` call; an authored folder loads on first use
-(`resolve_source_type`). `tests/unit/test_data_sources_are_self_contained.py` fails on
+`driver_type(provider)` call; an authored folder loads on first use
+(`resolve_driver_type`). `tests/unit/test_data_sources_are_self_contained.py` fails on
 any provider knowledge outside an asset folder.
 
 **The cursor is the source's own.** `DataSourceCursor.cursor` is an opaque string the
@@ -163,7 +163,7 @@ never read back as a floor.
 
 ### Traits
 
-Traits are class variables on the `Source`; `SourceType` exposes the ones the
+Traits are class variables on the `Source`; `DriverType` exposes the ones the
 application reads, so the engine asks the type rather than probing.
 
 | Trait | Default | Meaning |
@@ -187,9 +187,9 @@ protocols the class implements. The registry is a `KindRegistry` keyed on `provi
 miss answers `None`, and `sync_source` records that as the `unknown_provider` config
 error rather than crashing the poller.
 
-Callers send through `DataSource.send(MessageSpec)`, which validates the common
+Callers send through `DataDriver.send(MessageSpec)`, which validates the common
 message shape before delegating to the driver's `send()` hook. For transports
-with reply headers, `DataSource.expect_reply(outcome)` returns when a received
+with reply headers, `DataDriver.expect_reply(outcome)` returns when a received
 item references the sent provider id; a driver may use its targeted lookup or
 session-level wait instead of a mailbox backfill. The caller owns the outer
 deadline.
@@ -197,7 +197,7 @@ deadline.
 **What a driver is, and what it is not.** The driver is Python and ships with the
 SDK. Everything a *person* sees about a source — its title, its glyph, the fields
 the create form renders — comes from a `data_source_spec` **asset**, one folder
-per source under `agentic-assets/data_source/`. That split is what lets a source
+per source under `agentic-assets/data_driver/`. That split is what lets a source
 be added without a frontend release; see [the data-source asset](data-source-asset.md).
 
 ## Status, health, and what stops a poll
@@ -217,7 +217,7 @@ driver raises that is not a `SourceError` classifies as transient: guessing
 Where that rule actually bites is the **source**, not the segment. A failing
 segment records its own health on its cursor, but `_round_robin` does not
 consult cursor health — the next cycle fetches it again. What stops polling is
-the roll-up: `_roll_up` sets `DataSource.health` to the `worst_of` its cursors
+the roll-up: `_roll_up` sets `DataDriver.health` to the `worst_of` its cursors
 (`config_error` > `transient_error` > `never_synced` > `ok`), copies the
 offender's `error_code`/`error_detail` onto the source, and `may_poll()` then
 refuses the whole source while its health is `config_error`. So one segment
@@ -229,7 +229,7 @@ roll-up, which is why a source that fails before enumerating reads 0.
 and not in `config_error`; otherwise the returned sentence says exactly why it
 cannot run. `is_due`, `request_poll` and the fast lane all ask it.
 
-**Lifecycle.** `NEW` is transient: `DataSource.save` resolves it on the way
+**Lifecycle.** `NEW` is transient: `DataDriver.save` resolves it on the way
 in — to `SETUP` (with a default `setup_detail`) when the source class is
 `Verifiable`, else straight to `ACTIVE`. An unknown provider also goes `ACTIVE`,
 deliberately, so the poller reaches `sync_source` and the card can show
@@ -241,7 +241,7 @@ moves the source to `ACTIVE` (due on the next tick) only when both pass.
 coerces `config` by the spec's field types, and re-derives `origin` via the
 type's `origin_for`.
 
-**Operator controls** (`core_action`s on `DataSource`; all asynchronous — they
+**Operator controls** (`core_action`s on `DataDriver`; all asynchronous — they
 make the source due, the heartbeat does the work within a minute):
 
 | Verb | Does | Note |
@@ -277,7 +277,7 @@ a second destination *beside* it rather than a branch inside it.
 
 The manifest declares which modes a source offers (`reflect: [...]`, head
 first as the default; `record` may not be listed beside a filesystem mode),
-and `DataSource.reflect_into` names the directory `copy`/`symlink` land under
+and `DataDriver.reflect_into` names the directory `copy`/`symlink` land under
 and a `GitOrigin` clones into — explicit on the row, because the heartbeat
 tick that polls it has no request context to resolve a project from. Note
 the row's own default is `record`: a `folder`/`git` source saved without a
@@ -285,7 +285,7 @@ the row's own default is `record`: a `folder`/`git` source saved without a
 cursor still advances and its health still reads `ok` (see *Known gaps*).
 
 WHERE the bytes come from is not a mode: it is the source's typed `origin`
-(`DataSource.origin: OriginField`), stamped by the driver's `origin_for` on
+(`DataDriver.origin: OriginField`), stamped by the driver's `origin_for` on
 every save — a `LocalOrigin` at the watched folder, the checkout, or the
 download cache. A `GitOrigin` (a repository that has to be obtained) is
 materialized once per page through the `FSOriginDriver` registry into
@@ -379,7 +379,7 @@ can overlap (see *Known gaps*).
 
 ## Adding a source
 
-1. Make the folder `agentic-assets/data_source/<name>/` and write the class in its
+1. Make the folder `agentic-assets/data_driver/<name>/` and write the class in its
    `source.py` — one `Source` subclass whose `provider` is the manifest's `name`. It
    imports the SDK; implement the protocols the provider can honour —
    `fetch`/`iterate` for a listing, `send`/`reply` (and `message_for`) for a channel,
@@ -394,7 +394,7 @@ can overlap (see *Known gaps*).
    source yields `FileItem`s and never produces a `SourceItem`.
 6. If the bytes are not yours to write, set `stamps_identity = False` and give the class
    an `origin_id_for` classmethod.
-7. Write the manifest beside it, `data_source.json` — `kind`, `auth`, `config`,
+7. Write the manifest beside it, `data_driver.json` — `kind`, `auth`, `config`,
    `reflect`. The create form is generated from its `config` block; nothing in `ui/` is
    edited, and nothing is registered anywhere else.
 8. Add `tests/test_<name>_source.py` in the folder: the conformance kit

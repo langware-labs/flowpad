@@ -32,7 +32,7 @@ class SourceHealth(StrEnum):
     TRANSIENT_ERROR = "transient_error"
 
 
-#: Worst-of precedence for rolling child cursor health up onto a DataSource.
+#: Worst-of precedence for rolling child cursor health up onto a DataDriver.
 #: A source with one broken feed is not "ok", and a config error outranks a
 #: transient one because it is the state that needs a person.
 _PRECEDENCE = {

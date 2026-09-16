@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "name": "waha",
+  "title": "WhatsApp (WAHA)",
+  "icon_name": "WhatsApp",
+  "description": "A WhatsApp number linked to WAHA, the self-hosted WhatsApp HTTP API — people message the number, an agent answers. WAHA runs as a container next to this instance and posts each message to it.",
+  "kind": "datasource.api.whatsapp.waha",
+  "auth": {
+    "credential": "waha",
+    "vars": {
+      "api_key": "WAHA_API_KEY",
+      "webhook_hmac": "WAHA_WEBHOOK_HMAC"
+    }
+  },
+  "setup_wiki": "WhatsApp through WAHA",
+  "config": {
+    "base_url": {
+      "type": "text",
+      "required": true,
+      "label": "WAHA URL",
+      "placeholder": "http://localhost:3010",
+      "hint": "Where the WAHA container answers, from this machine."
+    },
+    "session": {
+      "type": "text",
+      "required": true,
+      "default": "default",
+      "label": "Session",
+      "hint": "The WAHA session this source owns. WAHA Core allows one session, named default."
+    },
+    "webhook_url": {
+      "type": "text",
+      "required": true,
+      "label": "Webhook URL (as WAHA sees this instance)",
+      "placeholder": "http://host.docker.internal:6001/api/v1/data_source/webhook/waha",
+      "hint": "Verify registers it on the session together with the signing key, so WAHA's deliveries reach this instance signed."
+    },
+    "allowed_senders": {
+      "type": "lines",
+      "required": false,
+      "label": "Allowed senders",
+      "placeholder": "972501234567",
+      "hint": "Who may drive the owning agent from this number — phone numbers with country code, digits only, one per line. Empty allows nobody."
+    }
+  }
+}

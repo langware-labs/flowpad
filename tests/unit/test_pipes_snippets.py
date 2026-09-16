@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 from flow_sdk.tags import on_tag
 from tests.utils.snippets import doc
@@ -31,7 +31,7 @@ def _placed(dst):
 
 async def test_snippet_1_one_source_one_cycle(tree):
     src, _ = tree
-    source = DataSource(name="Notes", provider="folder", config={"root": str(src)})
+    source = DataDriver(name="Notes", provider="folder", config={"root": str(src)})
     await source.save()
     assert (await source.verify())["ready"] is True
     await source.sync()  # never raises; failure is health, not an exception
@@ -39,7 +39,7 @@ async def test_snippet_1_one_source_one_cycle(tree):
 
 async def test_snippet_2_mirror_one_folder_into_another(tree):
     src, dst = tree
-    source = DataSource(
+    source = DataDriver(
         name="Mirror notes",
         provider="folder",
         reflect=ReflectMode.COPY.value,

@@ -68,9 +68,9 @@ def test_editor_is_discovered_as_a_child_of_the_asset_it_edits(tmp_path):
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions
     from flow_sdk.schema.types import EntityType
 
-    spec = tmp_path / AA / "data_source" / "rss"
+    spec = tmp_path / AA / "data_driver" / "rss"
     spec.mkdir(parents=True)
-    (spec / "data_source.json").write_text(json.dumps({"schema": 1, "name": "rss"}))
+    (spec / "data_driver.json").write_text(json.dumps({"schema": 1, "name": "rss"}))
     editor = _webapp(spec / AA / "webapp" / "editor", kind="application.web.editor")
 
     refs = repo_assets_fn([FSRef(tmp_path)], IndexerOptions())

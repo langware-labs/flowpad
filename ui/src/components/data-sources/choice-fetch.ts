@@ -1,4 +1,4 @@
-import type { DataSourceChoice, DataSourceChoiceSet } from '@sdk';
+import type { DataDriverChoice, DataDriverChoiceSet } from '@sdk';
 
 /**
  * What the picker knows about a field's options right now.
@@ -13,7 +13,7 @@ import type { DataSourceChoice, DataSourceChoiceSet } from '@sdk';
 export type ChoiceFetch =
   | { status: 'unfetched' }
   | { status: 'loading' }
-  | { status: 'ready'; choices: DataSourceChoice[] }
+  | { status: 'ready'; choices: DataDriverChoice[] }
   /** Nothing to pick, and one sentence saying why. ONE state, not a `refused`/`error`
    *  pair: no reader ever needed to tell a provider's polite no from a failed request —
    *  both hand the field back to typing and print `detail` — and keeping them apart
@@ -22,7 +22,7 @@ export type ChoiceFetch =
   | { status: 'unpickable'; detail: string };
 
 /** The provider's answer → what the field should draw. */
-export function nextFetch(answer: DataSourceChoiceSet | null | undefined): ChoiceFetch {
+export function nextFetch(answer: DataDriverChoiceSet | null | undefined): ChoiceFetch {
   const choices = answer?.items ?? [];
   if (choices.length) return { status: 'ready', choices };
   // Nothing to pick. A sentence says why; without one there is genuinely nothing there —
@@ -56,9 +56,9 @@ export const fallsBackToTyping = (
  * saved config on the next edit — a silent unsubscribe nobody asked for.
  */
 export function mergeChoices(
-  picked: DataSourceChoice[],
-  offered: DataSourceChoice[],
-): DataSourceChoice[] {
+  picked: DataDriverChoice[],
+  offered: DataDriverChoice[],
+): DataDriverChoice[] {
   const seen = new Set(offered.map((c) => c.id));
   return [...offered, ...picked.filter((c) => !seen.has(c.id))];
 }

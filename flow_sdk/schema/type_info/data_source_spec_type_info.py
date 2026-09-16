@@ -4,10 +4,12 @@ A REPO folder asset, so the existing `repo_assets_fn` walker finds it with no
 new discovery code: it scans `<container>/agentic-assets/<family>/` recursively
 in any walked container, which includes the shipped assistant project.
 
-``family="data_source"`` rather than the type name, because ``data_source`` is
-already the CONFIGURED instance's type. The folder a human reads should be named
-for the thing, not for the distinction — so the asset lives at
-`agentic-assets/data_source/<name>/data_source.json`.
+``family="data_driver"`` rather than the type name: the folder a human reads is
+named for the thing they author — a driver — so the asset lives at
+`agentic-assets/data_driver/<name>/data_driver.json`. A family is a folder name,
+not a type, so it never collides with the configured instance's type string.
+Folders written before the rename (``data_source/``, ``data_source.json``) are
+the type's retired forms: the scan reports them until the migration moves them.
 
 The metadata model is derived from the type's ``asset_spec`` (``ManifestSpec``)
 ∪ the ``Persist.TRUE`` ``runtime`` the extractor derives from the folder.
@@ -27,12 +29,15 @@ DATA_SOURCE_SPEC = TypeInfo(
     # Authored in a folder, not from a New button: the wizard writes the file.
     creatable=False,
     asset_class="repo",
-    family="data_source",
-    shape=Folder(main="data_source.json"),
+    family="data_driver",
+    shape=Folder(main="data_driver.json"),
+    # Written before the driver rename: reported by the scan until the migration moves them.
+    retired_families=("data_source",),
+    retired_mains=("data_source.json",),
     asset_spec=ManifestSpec,
     fts_content=("name", "description"),
     derive_fields_fn=derive_data_source_spec,
-    # DERIVED, not a capsule: `data_source.json` deliberately carries no id —
+    # DERIVED, not a capsule: `data_driver.json` deliberately carries no id —
     # stamping one in would make a shared source arrive carrying the sender's id.
     # A derived carrier has nowhere to write an id back, so identity must be a
     # pure function of the source, and `identity_key_fn` is what supplies it. It

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { DataSource } from '@sdk';
+import { DataDriver } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 
@@ -47,8 +47,8 @@ function isSelectedSourceView(conversationId?: string, agentId?: string): boolea
 
 async function requestPoll(sourceId: string): Promise<void> {
   const ds =
-    DataSource.getByIdFromCache<DataSource>(sourceId) ??
-    (await DataSource.getById<DataSource>(sourceId));
+    DataDriver.getByIdFromCache<DataDriver>(sourceId) ??
+    (await DataDriver.getById<DataDriver>(sourceId));
   await ds?.requestPoll();
 }
 

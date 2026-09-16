@@ -14,23 +14,23 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.inbox.agent_scope import is_message_source, resolve_agent_inbox_scope
+from flow_sdk.inbox.agent_scope import is_message_driver, resolve_agent_inbox_scope
 from flow_sdk.schema.types import EntityType
 
 pytestmark = pytest.mark.asyncio
 
 
-async def _source(provider: str, channel: str, **config) -> DataSource:
-    source = DataSource(name=f"{provider} src", provider=provider, channel=channel, config=config)
+async def _source(provider: str, channel: str, **config) -> DataDriver:
+    source = DataDriver(name=f"{provider} src", provider=provider, channel=channel, config=config)
     await source.save()
     return source
 
 
-async def _message(source: DataSource) -> FlowMessage:
+async def _message(source: DataDriver) -> FlowMessage:
     item = SourceItem(
         name="m", provider=source.provider, kind="content.message.email",
         data_source_id=source.id, segment_key="inbox", external_id=mint_uuid(),
@@ -73,8 +73,8 @@ async def test_only_message_sources_count_toward_the_scope(mail_db, monkeypatch)
     monkeypatch.setattr(Agent, "get_one", AsyncMock(return_value=Agent(id=agent_id, name="Ada")))
     agent_tid = TypeId(type=EntityType.AGENT.value, id=agent_id)
 
-    feed = DataSource(name="rss", provider="rss", channel="", owner=agent_tid)
+    feed = DataDriver(name="rss", provider="rss", channel="", owner=agent_tid)
     await feed.save()
-    assert not is_message_source(feed), "no channel → not a message source"
+    assert not is_message_driver(feed), "no channel → not a message source"
     scope = await resolve_agent_inbox_scope(agent_id)
     assert scope.source_id is None and scope.source_ids == frozenset()

@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { MessageSquare } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { DataSource } from '@sdk';
+import { DataDriver } from '@sdk';
 import type { ICloudOrigin, ICloudOriginLocal } from '@sdk';
 import { Badge } from '@src/components/ui/badge';
 import { sourceIconName } from '@src/components/data-sources/source-icon';
@@ -42,7 +42,7 @@ export function channelLabel(kind: string | undefined | null): string {
 }
 
 /**
- * THE resolution rule from a message's origin to its DataSource — the exact
+ * THE resolution rule from a message's origin to its DataDriver — the exact
  * pointer (`origin_local.data_source_id`) first, else the source whose
  * `channel` matches `origin.kind`. One copy, shared by the attribution chip
  * and the attention-polling hook: two hand-rolled versions of "which source
@@ -50,10 +50,10 @@ export function channelLabel(kind: string | undefined | null): string {
  * attribute one source while attention polls a different one.
  */
 export function sourceForOrigin(
-  sources: DataSource[],
+  sources: DataDriver[],
   origin: ICloudOrigin | null | undefined,
   originLocal?: ICloudOriginLocal | null,
-): DataSource | undefined {
+): DataDriver | undefined {
   if (!origin?.kind) return undefined;
   const kind = origin.kind.trim().toLowerCase();
   return (
@@ -65,7 +65,7 @@ export function sourceForOrigin(
 
 export function useChannelAttribution() {
   const { specFor } = useSourceSpecs();
-  const { data: sources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
+  const { data: sources = [] } = useEntitiesQuery<DataDriver>(sourcesQuery);
 
   const attributionFor = useCallback(
     (

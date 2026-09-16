@@ -1,4 +1,4 @@
-"""DataSource + DataSourceCursor: due-selection, the window floor, health rollup.
+"""DataDriver + DataSourceCursor: due-selection, the window floor, health rollup.
 
 These are the pieces the poller depends on being correct before it does any
 network I/O at all, so they are tested with an injected clock and no sleeping.
@@ -10,17 +10,17 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource, SourceStatus
+from flow_sdk.builtin.data_driver import DataDriver, SourceStatus
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.ingest.health import SourceError, SourceHealth, classify, worst_of
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 
-def _source(**kw) -> DataSource:
+def _source(**kw) -> DataDriver:
     base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name="Test feed")
     base.update(kw)
-    return DataSource(**base)
+    return DataDriver(**base)
 
 
 @pytest.mark.asyncio
@@ -40,11 +40,11 @@ async def test_two_sources_may_serve_one_account():
     await second.save()
 
     assert first.id != second.id
-    both = await DataSource.get_all({"account_key": account})
+    both = await DataDriver.get_all({"account_key": account})
     assert {s.id for s in both} == {first.id, second.id}
 
 
-def _active(**kw) -> DataSource:
+def _active(**kw) -> DataDriver:
     return _source(status=SourceStatus.ACTIVE.value, **kw)
 
 

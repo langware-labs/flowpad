@@ -30,7 +30,7 @@
       "name": "data-source-asset.md",
       "rel_path": "data-source-asset.md",
       "title": "Data source assets",
-      "summary": "The data_source.json manifest a source ships as a folder asset: schema, name, auth, reflect modes, config form fields, traits, and runtime discovered from file presence.",
+      "summary": "The data_driver.json manifest a source ships as a folder asset: schema, name, auth, reflect modes, config form fields, traits, and runtime discovered from file presence.",
       "content_hash": "3c83de4fe346c95f88ce0e810f584ea57ce5ed5d36c1903ee5f5d83796592302",
       "size_bytes": 11003
     },

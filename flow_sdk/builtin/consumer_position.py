@@ -5,7 +5,7 @@ by ``sync``; this row answers "what has *this workflow* dealt with" and is owned
 Same source, N workflows, N positions, one ingest. Collapsing them is how a consumer's crash
 would rewind the source, or a poll would mark a consumer's work done.
 
-**Per row, never a dict on the DataSource** — the rule ``DataSourceCursor`` states, for the
+**Per row, never a dict on the DataDriver** — the rule ``DataSourceCursor`` states, for the
 same reason: concurrent advances of one row lose each other.
 
 **The position is an offset, not a set.** ``advance_to(item)`` commits everything at or

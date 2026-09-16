@@ -6,7 +6,7 @@ import { Inbox, Plus } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
-import { isMessageSourceSpec } from '@src/components/data-sources/use-source-specs';
+import { isMessageDriverSpec } from '@src/components/data-sources/use-source-specs';
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { ChannelList, useAttachedChannels } from '@src/components/inbox-view/AttachedChannelsBar';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -43,7 +43,7 @@ export function AgentPlaceChannels({ agent }: { agent: Agent }) {
           <Trans>Inbox</Trans>
         </Button>
       </div>
-      {addOpen && <DataSourceDialog open onOpenChange={setAddOpen} owner={owner} only={isMessageSourceSpec} />}
+      {addOpen && <DataSourceDialog open onOpenChange={setAddOpen} owner={owner} only={isMessageDriverSpec} />}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(next) => !next && setDeleting(null)}

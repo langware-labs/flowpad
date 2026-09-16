@@ -6,7 +6,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Agent, DataSourceSpec, TypeId, User } from '@sdk';
+import { Agent, DataDriverSpec, TypeId, User } from '@sdk';
 
 const hoisted = vi.hoisted(() => ({ specs: [] as unknown[] }));
 vi.mock('@src/components/data-sources/use-source-specs', () => ({
@@ -34,8 +34,8 @@ import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const AGENT_ID = '33333333-3333-4333-8333-333333333333';
 
-function spec(fields: Partial<DataSourceSpec> & { name: string }) {
-  return new DataSourceSpec({ title: fields.name, sends: true, ...fields } as never);
+function spec(fields: Partial<DataDriverSpec> & { name: string }) {
+  return new DataDriverSpec({ title: fields.name, sends: true, ...fields } as never);
 }
 
 afterEach(() => {

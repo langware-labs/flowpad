@@ -53,7 +53,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.builtin.data_driver import DataDriver
 
 #: The Hub's lifecycle vocabulary. ACTIVE and DISABLED are two states of one
 #: allocated address; DELETED is the only retired one.
@@ -66,19 +66,19 @@ STATUS_DELETED = "deleted"
 _HUB_FIELDS = ("address", "display_name", "provider", "provider_inbox_id", "status")
 
 
-async def email_source_for_agent(agent_id: str) -> "Optional[DataSource]":
+async def email_source_for_agent(agent_id: str) -> "Optional[DataDriver]":
     """The local ``cloud_email`` source for an agent, inbox or no inbox.
 
     A module function rather than a method because the two callers that need it
     most — reporting state, and disabling — have to work when there is no
     mailbox at all and therefore no projection to hang it off.
     """
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
-    CloudEmailDriver = source_type("cloud_email")  # noqa: N806 — the registered source
+    CloudEmailDriver = driver_type("cloud_email")  # noqa: N806 — the registered source
 
-    return await DataSource.find_for_account(
+    return await DataDriver.find_for_account(
         CloudEmailDriver.provider,
         CloudEmailDriver.identity_config_key,
         str(agent_id or ""),
@@ -243,10 +243,10 @@ class EmailInbox(Entity):
         )
 
     @classmethod
-    def from_source(cls, source: "DataSource") -> "EmailInbox":
+    def from_source(cls, source: "DataDriver") -> "EmailInbox":
         """The mailbox as the INBOUND path sees it — no Hub call, no DB read.
 
-        ``handle_inbound`` already holds the DataSource and runs per message, so
+        ``handle_inbound`` already holds the DataDriver and runs per message, so
         the gate has to be answerable from what is in hand. The source carries
         everything needed: the Hub identity that :meth:`ensure_source` stamped
         into its config, the cached allowlist, and its own status — which is what
@@ -264,7 +264,7 @@ class EmailInbox(Entity):
         ``config.get`` left it empty for every such source, and constructing
         ``TypeId(..., id="")`` below raised on every single one of them.
         """
-        from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import SourceStatus  # noqa: PLC0415
         from flow_sdk.inbox.projection import agent_id_of  # noqa: PLC0415
 
         config = getattr(source, "config", None) or {}
@@ -454,7 +454,7 @@ class EmailInbox(Entity):
         A later :meth:`allocate` resumes from the last committed position, so a
         pause costs no mail.
         """
-        from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import SourceStatus  # noqa: PLC0415
         from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
 
         self._adopt(await get_email_inbox_driver().disable_inbox(self.agent_id))
@@ -471,7 +471,7 @@ class EmailInbox(Entity):
         the mailbox's public identity, and dropping it has consequences off this
         machine — mail to it starts bouncing. It stays an explicit verb.
         """
-        from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import SourceStatus  # noqa: PLC0415
         from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
 
         released = await get_email_inbox_driver().delete_inbox(self.agent_id)
@@ -503,7 +503,7 @@ class EmailInbox(Entity):
         Returns the same shape as :meth:`state`, so a caller that configures and
         re-renders makes one round trip.
         """
-        from flow_sdk.builtin.data_source import MIN_POLL_INTERVAL_SECONDS  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import MIN_POLL_INTERVAL_SECONDS  # noqa: PLC0415
 
         await self.set_policy(allowed_senders=allowed_senders, filters=filters)
 
@@ -546,11 +546,11 @@ class EmailInbox(Entity):
 
     # ── the paired local source ───────────────────────────────────────────
 
-    async def source(self) -> "Optional[DataSource]":
+    async def source(self) -> "Optional[DataDriver]":
         """The one local ``cloud_email`` source polling this mailbox, if any."""
         return await email_source_for_agent(self.agent_id)
 
-    async def ensure_source(self) -> "DataSource":
+    async def ensure_source(self) -> "DataDriver":
         """Find or create the source that polls this mailbox, and activate it.
 
         ``agent_id`` is the natural key because the Hub still addresses a mailbox
@@ -560,10 +560,10 @@ class EmailInbox(Entity):
         Writes only when something actually changed — this runs on every read of
         the inbox state, and an unconditional save put a row write on a poll.
         """
-        from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
-        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver, SourceStatus  # noqa: PLC0415
+        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
-        CloudEmailDriver = source_type("cloud_email")  # noqa: N806 — the registered source
+        CloudEmailDriver = driver_type("cloud_email")  # noqa: N806 — the registered source
 
         config = {
             CloudEmailDriver.identity_config_key: self.agent_id,
@@ -578,7 +578,7 @@ class EmailInbox(Entity):
         wanted_status = SourceStatus.ACTIVE.value if await email_answers_here(self.agent_id) else SourceStatus.DISABLED.value
         source = await self.source()
         if source is None:
-            source = DataSource(
+            source = DataDriver(
                 name=f"Inbox {self.address}",
                 status=wanted_status,
                 provider=CloudEmailDriver.provider,
@@ -638,7 +638,7 @@ class EmailInbox(Entity):
         polling.
         """
         from flow_sdk.auth import LoginRequired  # noqa: PLC0415
-        from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import SourceStatus  # noqa: PLC0415
         from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
 
         if not hub_auth_available():
@@ -723,7 +723,7 @@ class EmailInbox(Entity):
         machine, and it is never read to answer "what is the policy" — only to
         apply it.
 
-        It lives on the mailbox's own ``DataSource`` rather than on the Agent so
+        It lives on the mailbox's own ``DataDriver`` rather than on the Agent so
         that it is scoped, and invalidated, with the thing it describes: releasing
         the mailbox drops the row and the cache with it.
         """
@@ -737,7 +737,7 @@ class EmailInbox(Entity):
 
 
 def _source_summary(source) -> dict:
-    """The compact row the inbox state carries for one DataSource."""
+    """The compact row the inbox state carries for one DataDriver."""
     return {
         "id": source.id,
         "typeid": str(source.typeid),
@@ -763,11 +763,11 @@ async def _state_payload(agent_id: str, inbox: "Optional[EmailInbox]", source) -
     them, and today usually the only one. ``source`` stays as the mailbox's
     row for the readers that predate an agent holding more than one channel.
     """
-    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
-    from flow_sdk.inbox.agent_scope import is_message_source  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver, SourceStatus  # noqa: PLC0415
+    from flow_sdk.inbox.agent_scope import is_message_driver  # noqa: PLC0415
 
-    owned = await DataSource.find_owned(TypeId(type=EntityType.AGENT.value, id=str(agent_id)))
-    sources_data = [_source_summary(s) for s in sorted(owned, key=lambda s: str(s.id)) if is_message_source(s)]
+    owned = await DataDriver.find_owned(TypeId(type=EntityType.AGENT.value, id=str(agent_id)))
+    sources_data = [_source_summary(s) for s in sorted(owned, key=lambda s: str(s.id)) if is_message_driver(s)]
 
     source_data = None
     if source is not None:

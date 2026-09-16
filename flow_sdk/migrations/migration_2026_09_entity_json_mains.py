@@ -67,7 +67,10 @@ def retired_folders(root: Path) -> list[tuple[Any, Path, str]]:
         for retired in (info.retired_mains if info is not None else ()):
             if (candidate.path / retired).is_file():
                 found.append((info, candidate.path, retired))
-    return found
+    # Only a markdown main that becomes an entity document; another type's retired main is a plain rename
+    # (``migration_2026_09_retired_asset_forms``).
+    return [(info, folder, retired) for info, folder, retired in found
+            if info is not None and info.retired_migration.endswith("entity_json_mains")]
 
 
 def convert(info: Any, folder: Path, retired: str) -> tuple[str, list[str]]:

@@ -1,4 +1,4 @@
-"""One poll cycle for one DataSource.
+"""One poll cycle for one DataDriver.
 
 Reads cursors, asks the source type to traverse each due segment, hands what came back to the
 ingestor or to reflection, advances the cursor, rolls health up. It never touches provider APIs
@@ -25,15 +25,15 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
+from flow_sdk.ingest.driver_registry import resolve_driver_type
+from flow_sdk.ingest.driver_types import DriverType, SegmentPass, SegmentPosition
 from flow_sdk.ingest.health import ERROR_DETAIL_MAX, SourceHealth, classify, worst_of
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode, IngestReport
 from flow_sdk.ingest.reflect import get_reflector, reflect_refs
-from flow_sdk.ingest.source_registry import resolve_source_type
-from flow_sdk.ingest.sources import SegmentPass, SegmentPosition, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ BACKLOG_PER_PASS_WHILE_MOVING = 1
 
 
 async def sync_source(
-    source: DataSource,
+    source: DataDriver,
     *,
     now: Optional[datetime] = None,
     budget: int = DEFAULT_SEGMENT_BUDGET,
@@ -57,7 +57,7 @@ async def sync_source(
     now = now or datetime.now(timezone.utc)
     combined = IngestReport()
 
-    stype = await resolve_source_type(source.provider)
+    stype = await resolve_driver_type(source.provider)
     if stype is None:
         await _fail_source(source, "unknown_provider", f"no source type registered for {source.provider!r}", now)
         return combined
@@ -108,7 +108,7 @@ async def sync_source(
     return combined
 
 
-async def _place(source: DataSource, found: SegmentPass) -> Optional[IngestReport]:
+async def _place(source: DataDriver, found: SegmentPass) -> Optional[IngestReport]:
     """Put a traversal's payload where the SOURCE says it goes; the report, if any.
 
     A payload lands EITHER in the graph as a record or on disk as an asset, never both.
@@ -127,7 +127,7 @@ async def _place(source: DataSource, found: SegmentPass) -> Optional[IngestRepor
     return report
 
 
-def _position_of(source: DataSource, cursor: DataSourceCursor, now: datetime) -> SegmentPosition:
+def _position_of(source: DataDriver, cursor: DataSourceCursor, now: datetime) -> SegmentPosition:
     """Where the segment's last traversal left off. A row an older build wrote carries its position
     in ``state`` instead; the source type lifts it once, and a good pass clears it."""
     lifted = not cursor.cursor and not cursor.manifest
@@ -140,7 +140,7 @@ def _position_of(source: DataSource, cursor: DataSourceCursor, now: datetime) ->
     )
 
 
-async def _sync_stream(source, stype: SourceType, cursor: DataSourceCursor, now: datetime, *, stamp: str = "") -> IngestReport:
+async def _sync_stream(source, stype: DriverType, cursor: DataSourceCursor, now: datetime, *, stamp: str = "") -> IngestReport:
     report = IngestReport()
     cursor.last_attempted_at = now
 
@@ -224,7 +224,7 @@ def _round_robin(cursors: list[DataSourceCursor], budget: int, stamps: dict[str,
     return (moved + rest[:BACKLOG_PER_PASS_WHILE_MOVING])[:budget]
 
 
-async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: datetime) -> None:
+async def _roll_up(source: DataDriver, cursors: list[DataSourceCursor], now: datetime) -> None:
     # A parked segment stays parked on its own row; it must not park the SOURCE. The source is
     # `config_error` only when nothing is left that could run — `worst_of` over the live segments,
     # falling back to the full list only when every segment is parked.
@@ -251,7 +251,7 @@ async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: dat
 
 
 async def _fail_source(
-    source: DataSource,
+    source: DataDriver,
     code: str,
     detail: str,
     now: datetime,
@@ -267,7 +267,7 @@ async def _fail_source(
 
 
 def _stamp_source(
-    source: DataSource,
+    source: DataDriver,
     health: SourceHealth,
     code: Optional[str],
     detail: Optional[str],

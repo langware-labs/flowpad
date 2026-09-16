@@ -239,13 +239,13 @@ class EntityType(StrEnum):
     # A content-panel tab — DB-only placement record keyed by a DockPointer
     # hash (docs/tab-management.md). Minted on demand (Tab.ensure_for).
     TAB = "tab"
-    # One record ingested from a cloud DataSource (a feed entry, a chat
+    # One record ingested from a cloud DataDriver (a feed entry, a chat
     # message). Generic and discriminated by `kind`, NOT one type per provider
     # — the inbox projection has to be one queryable table.
     SOURCE_ITEM = "source_item"
     # A configured remote system of record we sync from (flow_sdk/ingest).
-    DATA_SOURCE = "data_source"
-    # One independently-checkpointed stream within a DataSource — a feed URL, a
+    DATA_DRIVER = "data_driver"
+    # One independently-checkpointed stream within a DataDriver — a feed URL, a
     # channel. DB-only: written every poll, so it must never touch disk.
     DATA_SOURCE_CURSOR = "data_source_cursor"
     # How far one consumer (a workflow) has got through one source. See builtin/consumer_position.py.
@@ -253,7 +253,7 @@ class EntityType(StrEnum):
     # One reflected page of an object-shaped source — the log a folder consumer pages. See builtin/source_change.py.
     SOURCE_CHANGE = "source_change"
     #: The AUTHORED half of a source — a folder asset describing what a source
-    #: is. ``DATA_SOURCE`` is the configured instance; this is its definition.
+    #: is. ``DATA_DRIVER`` is the configured instance; this is its definition.
     DATA_SOURCE_SPEC = "data_source_spec"
     #: The authored definition of a NAMED SET OF ENV VARS a provider needs
     #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD) — the only way secrets are

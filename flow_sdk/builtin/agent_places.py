@@ -251,7 +251,7 @@ async def set_email_place(agent: "Agent", deployment_id: str) -> "Agent":
     Stops this machine's poller first when the answer moves elsewhere, so the
     hand-over never has two machines answering.
     """
-    from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import SourceStatus  # noqa: PLC0415
     from flow_sdk.builtin.email_inbox import email_source_for_agent  # noqa: PLC0415
 
     deployment = await _require_place(agent, deployment_id)

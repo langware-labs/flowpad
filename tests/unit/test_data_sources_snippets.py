@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.source_item import SourceItem
 from tests.unit._ingest_helpers import fixture_bytes, local_http_server
 from tests.utils.snippets import doc, fence_under, run_fence
@@ -59,10 +59,10 @@ async def test_1_connect_a_feed_and_sync_it_once(feed_server):
 
 
 async def test_2_reuse_instead_of_duplicate():
-    # §2 assumes §1 is in scope, so DataSource is already imported.
-    ns = await _section("2.", {"KEY": "not-a-real-key", "DataSource": DataSource})
+    # §2 assumes §1 is in scope, so DataDriver is already imported.
+    ns = await _section("2.", {"KEY": "not-a-real-key", "DataDriver": DataDriver})
     first = ns["src"]
-    ns = await _section("2.", {"KEY": "not-a-real-key", "DataSource": DataSource})
+    ns = await _section("2.", {"KEY": "not-a-real-key", "DataDriver": DataDriver})
     assert ns["src"].id == first.id, "the second run must find the row, not mint a twin"
 
 
@@ -93,9 +93,9 @@ async def test_7_operate_a_source(tmp_path):
     watched, dest = tmp_path / "w", tmp_path / "d"
     watched.mkdir()
     ns = await _section("4.", {"WATCHED": str(watched), "DESTINATION": str(dest)})
-    src: DataSource = ns["src"]
+    src: DataDriver = ns["src"]
     await _section("7.", ns)                  # verify, poll_now, replay, reset_cursors, purge_items, delete
-    assert await DataSource.get_one({"id": src.id}) is None, "delete() cascades"
+    assert await DataDriver.get_one({"id": src.id}) is None, "delete() cascades"
 
 
 async def test_7_read_the_row_first(tmp_path):
@@ -116,16 +116,16 @@ async def _gcs_spec():
     """
     import json
 
-    from flow_sdk.builtin.data_source_spec import DataSourceSpec
+    from flow_sdk.builtin.data_driver_spec import DataDriverSpec
     from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 
-    path = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/gcs/data_source.json"
+    path = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/gcs/data_driver.json"
     manifest = ManifestSpec.model_validate(json.loads(path.read_text()))
     assert manifest.config["bucket"].choices is True, "the shipped manifest is what the form reads"
-    existing = await DataSourceSpec.get_all({"name": manifest.name})
+    existing = await DataDriverSpec.get_all({"name": manifest.name})
     if existing:
         return existing[0]
-    row = DataSourceSpec(name=manifest.name, title=manifest.title, config=manifest.config)
+    row = DataDriverSpec(name=manifest.name, title=manifest.title, config=manifest.config)
     await row.save()
     return row
 
@@ -141,7 +141,7 @@ async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
 
     from pydantic import SecretStr
 
-    from flow_sdk.ingest.sources import source_type
+    from flow_sdk.ingest.driver_types import driver_type
     from flow_sdk.sources.credentials import AuthShape, Credentials
 
     await _gcs_spec()
@@ -151,7 +151,7 @@ async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
     async def _token(_row):
         return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
 
-    monkeypatch.setattr(source_type("gcs"), "credentials_for", _token)
+    monkeypatch.setattr(driver_type("gcs"), "credentials_for", _token)
 
     def storage(_path, _headers):
         body = {"items": [{"name": "acme-docs", "location": "US"}, {"name": "acme-logs", "location": "EU"}]}
@@ -168,10 +168,10 @@ async def test_9_a_refusal_is_a_sentence_not_an_exception():
     """The claim the section makes in prose, executed: no project, no exception."""
     await _gcs_spec()
 
-    picks = await DataSource.choices_for("gcs", "bucket", {})
+    picks = await DataDriver.choices_for("gcs", "bucket", {})
     assert picks.items == [] and "GCP project" in picks.detail
 
-    assert await DataSource.choices_for("gcs", "cache_root") is None, (
+    assert await DataDriver.choices_for("gcs", "cache_root") is None, (
         "a field the manifest never marked is a caller bug, not a refusal"
     )
 
@@ -182,8 +182,8 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
     no connection `verify()` says so, parks the row and fetches nothing; with
     one, the first `sync()` lands the drive in `cache_root` and the mirror.
     """
-    from flow_sdk.ingest.source_registry import SHIPPED_ROOT, load_module
-    from flow_sdk.ingest.sources import source_type
+    from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
+    from flow_sdk.ingest.driver_types import driver_type
     from flow_sdk.sources.credentials import Credentials
 
     drive = load_module(SHIPPED_ROOT / "gdrive" / "tests", "test_gdrive_source")
@@ -195,7 +195,7 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
     with local_http_server(drive._Drive(drive.SEEDED)) as base:
         env = {"CACHE_ROOT": str(cache), "BASE_URL": base, "DESTINATION": str(dest)}
 
-        monkeypatch.setattr(source_type("gdrive"), "credentials_for", drive._credentials(Credentials()))
+        monkeypatch.setattr(driver_type("gdrive"), "credentials_for", drive._credentials(Credentials()))
         ns = await _section("10.", dict(env))
         assert ns["verdict"]["ready"] is False
         assert "Google" in ns["verdict"]["detail"]
@@ -203,7 +203,7 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
         assert names(cache) == [], "nothing is fetched without a connection"
         await ns["src"].delete()
 
-        monkeypatch.setattr(source_type("gdrive"), "credentials_for", drive._credentials(drive.TOKEN))
+        monkeypatch.setattr(driver_type("gdrive"), "credentials_for", drive._credentials(drive.TOKEN))
         ns = await _section("10.", dict(env))
         assert ns["verdict"]["ready"] is True
         assert ns["src"].status == "active"

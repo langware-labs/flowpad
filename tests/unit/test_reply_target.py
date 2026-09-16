@@ -70,14 +70,14 @@ def wire(monkeypatch):
 
     monkeypatch.setattr("flow_sdk.builtin.flow_message.FlowMessage.get_all", _get_all)
     monkeypatch.setattr("flow_sdk.builtin.user.User.get_local", _get_local)
-    monkeypatch.setattr("flow_sdk.builtin.data_source.DataSource.get_one", _source_one)
+    monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.get_one", _source_one)
     monkeypatch.setattr("flow_sdk.builtin.source_item.SourceItem.get_one", _item_one)
     # A real driver answers `outbound_spec()`; the default is the email rule.
     # A test flips `state["spec"]` to model a channel-addressed provider.
     state["spec"] = EmailMessageSpec
 
     monkeypatch.setattr(
-        "flow_sdk.ingest.sources.source_type",
+        "flow_sdk.ingest.driver_types.driver_type",
         lambda _p: SimpleNamespace(sends=state["sends"], outbound_spec=lambda _source: state["spec"]),
     )
     return state

@@ -3,7 +3,7 @@
 Named for what it yields (change pages), not for what it wraps: ``FolderSource`` is the
 contract-level filesystem source, a different object.
 
-A view over the ``folder`` ``DataSource`` for that directory (found or created by its root, the
+A view over the ``folder`` ``DataDriver`` for that directory (found or created by its root, the
 driver's natural key), exactly as ``Inbox`` is a view over a mailbox's source. NOT ``Folder``:
 that word is taken by the ``Folder`` ENTITY (``builtin/folder.py``) — which ``RagIndex.add_root``
 mints for the very directory this block watches, so one word for both would name two different
@@ -48,13 +48,13 @@ class FolderChanges:
     async def _ensure_source(self):
         if self._source is not None:
             return self._source
-        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        existing = await DataSource.find_for_account("folder", "root", self.root)
+        existing = await DataDriver.find_for_account("folder", "root", self.root)
         if existing is not None:
             self._source = existing
             return existing
-        source = DataSource(
+        source = DataDriver(
             name=self.name or f"Folder {Path(self.root).name}",
             provider="folder",
             config={"root": self.root},
@@ -85,12 +85,12 @@ class FolderChanges:
         from flow_sdk.blocks import _cadence, current_workflow  # noqa: PLC0415
         from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
         from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
+        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
-        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
         source = await self._ensure_source()
         position = await ConsumerPosition.ensure_for(current_workflow.get(), str(source.id), baseline=None)
-        cadence = _cadence(poll_every, source_type("folder"))
+        cadence = _cadence(poll_every, driver_type("folder"))
         last_seen = position.watermark()
         in_flight_at_start = position.in_flight_key()
 

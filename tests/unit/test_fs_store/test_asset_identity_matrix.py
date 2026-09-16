@@ -277,7 +277,7 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
     if type_name == "data_source_spec":
         folder = root / "rss"
         folder.mkdir()
-        (folder / "data_source.json").write_text(json.dumps({"schema": 1, "name": "rss"}), encoding="utf-8")
+        (folder / "data_driver.json").write_text(json.dumps({"schema": 1, "name": "rss"}), encoding="utf-8")
         return FSRef(folder), "data_source_spec:rss", namespace
     if type_name == "dynamic_workflow":
         path.write_text("export const meta = {name: 'W'};", encoding="utf-8")
@@ -367,7 +367,7 @@ SHIPPED_RELOCATABLE_TYPES = (
 )
 
 _SHIPPED_MANIFEST = {
-    "data_source_spec": ("data_source", "data_source.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
+    "data_source_spec": ("data_driver", "data_driver.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
     "micro_app": ("webapp", "webapp.json", {"schema": 1, "name": "editor", "title": "Editor"}),
 }
 

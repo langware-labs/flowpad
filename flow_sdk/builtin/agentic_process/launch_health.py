@@ -94,7 +94,7 @@ class LaunchError(Exception):
     def as_source_error(self):
         """Convert at the ingestion seam, preserving the health verdict.
 
-        A missing harness parks a DataSource as ``config_error``; an overloaded
+        A missing harness parks a DataDriver as ``config_error``; an overloaded
         model retries on the next due tick. Two taxonomies, one contract.
         """
         from flow_sdk.ingest.health import SourceError, SourceHealth  # noqa: PLC0415

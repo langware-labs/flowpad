@@ -183,7 +183,7 @@ DATASET  = TypeInfo(..., shape=Folder(main="dataset.json"), asset_spec=DatasetMa
 ```
 
 What `TypeInfo` still declares is **naming and placement**, not structure:
-`shape` (a folder with no byte fields — `DataSourceSpec` — is a Claude
+`shape` (a folder with no byte fields — `DataDriverSpec` — is a Claude
 Code placement convention the spec cannot derive), `name_from_path`,
 `hub_main_file`, the identity carrier, and the DB medium's `natural_key` /
 `digest_fields`. `FrontMatter` is the one `DataSpec` variant for disk documents
@@ -297,11 +297,11 @@ type with no spec.
 | `Agent.input` / `Agent.output` | the agent's I/O contract as shape CLASSES — `input + template → output`. Declaration only: never in `to_agent_options` (md5'd into `last_started_hash`) |
 | `CapabilitySpec.value_spec` / `CapabilityValue.spec` | the shape of a capability's discovered value (`fs_ref`); `value_type` is the spec's kind |
 | `prepare_execution_io` / `_stamp_example` | the capture seam, writing through `FolderLayout` |
-| `AgentSpec`, `SubAgentSpec`, `DatasetManifestSpec`, `ManifestSpec`, `SourceItemSpec` | the `asset_spec` of Agent / SubAgent / Dataset / DataSourceSpec / SourceItem |
+| `AgentSpec`, `SubAgentSpec`, `DatasetManifestSpec`, `ManifestSpec`, `SourceItemSpec` | the `asset_spec` of Agent / SubAgent / Dataset / DataDriverSpec / SourceItem |
 | `SpecDocSpec`, `PromptSpec`, `SkillSpec`, `MarkdownSpec` / `ClaudeMdSpec`, `TaskSpec` | the `asset_spec` of the `.md`-backed types — `TaskSpec` is also the share whitelist |
 | `AgentTraceSpec`, `UsageReportSpec`, `AssetCleanupReportSpec` | flat JSON reports (`manifest_layout="flat"`, a `FreeSection` payload; `SectionedHeader` for `summary`/`data`) |
 | SOURCE_ITEM `asset_spec` = `SourceItemSpec` | the ingestion envelope a driver emits, lifted to `origin` + tagged `data` before it is stored; the DB medium resolves the row by `TypeInfo.natural_key` (`data_source_id` + the origin triple) and no-ops on `TypeInfo.digest_fields` |
-| DATA_SOURCE_SPEC `asset_spec` = `ManifestSpec` | `data_source.json` — a FLAT manifest (no `FreeSection`), every authoring rule a validator |
+| DATA_SOURCE_SPEC `asset_spec` = `ManifestSpec` | `data_driver.json` — a FLAT manifest (no `FreeSection`), every authoring rule a validator |
 
 ## Related
 

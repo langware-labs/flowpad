@@ -51,20 +51,20 @@ class AgentInboxScope:
             raise AgentInboxScopeError("Conversation is not in this Agent inbox")
 
 
-def is_message_source(source) -> bool:
-    """The domain predicate: a DataSource on a channel whose driver can send."""
-    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+def is_message_driver(source) -> bool:
+    """The domain predicate: a DataDriver on a channel whose driver can send."""
+    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
     if not (getattr(source, "channel", "") or "").strip():
         return False
-    driver = source_type(getattr(source, "provider", "") or "")
+    driver = driver_type(getattr(source, "provider", "") or "")
     return bool(driver is not None and getattr(driver, "sends", False))
 
 
 async def resolve_agent_inbox_scope(agent_id: str) -> AgentInboxScope:
     """The rows in an Agent's inbox — a filter on ``owner``, not a walk.
 
-    An Agent's message sources are the ones it OWNS (``DataSource.find_owned``,
+    An Agent's message sources are the ones it OWNS (``DataDriver.find_owned``,
     which also resolves rows written before ``owner`` existed). Its
     conversations and threads are the ones stamped with its owner, unioned
     with the ones its sources' messages point at — the second set is what the
@@ -77,7 +77,7 @@ async def resolve_agent_inbox_scope(agent_id: str) -> AgentInboxScope:
     """
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
@@ -93,7 +93,7 @@ async def resolve_agent_inbox_scope(agent_id: str) -> AgentInboxScope:
 
     owner = TypeId(type=EntityType.AGENT.value, id=agent_id)
     sources = sorted(
-        (s for s in await DataSource.find_owned(owner) if is_message_source(s)),
+        (s for s in await DataDriver.find_owned(owner) if is_message_driver(s)),
         key=lambda s: str(s.id),
     )
     source_ids = [str(s.id) for s in sources]

@@ -7,7 +7,7 @@ version: 67
 Every fence on this page runs in `tests/unit/test_secrets/test_secret_stores_snippets.py`; the
 verbs underneath are pinned in `tests/unit/test_secrets/` and `tests/unit/test_connection_access.py`.
 
-A **`SecretStore`** is a place secret values live, the way a `DataSource` is a
+A **`SecretStore`** is a place secret values live, the way a `DataDriver` is a
 place records come from. Like a data source, a store is **a type plus its
 config**. It exposes **`load`** and **`save`**, and it can prove it holds what a
 consumer needs (**`validate_keys`**).
@@ -48,7 +48,7 @@ connection's token as one of its secrets.
 | `store.ref`                                    | the store as a value (`{type, config}`) — what a binding saves           |
 | `await CredentialSpec.get(name, project=None)` | the credential with that name                                            |
 | `await spec.secret_store(environment)`         | the store `credential.json` names for that environment                   |
-| `await DataSource.get(name)`                   | the one data source instance with that name                              |
+| `await DataDriver.get(name)`                   | the one data source instance with that name                              |
 | `consumer.credentials.names()`                 | the names a data source or credential needs                              |
 | `await source.set_secret_store(store)`         | binds the store the source loads from, and saves it                      |
 | `await Connection.get(provider)`               | the held connection; raises `NotConnected` when there is none            |
@@ -96,18 +96,18 @@ a process, is a dict.
 ```python
 from flow_sdk.secrets import MissingSecrets, SecretStore
 
-store = await SecretStore.get()                                # current project's .env.local
+store = await SecretStore.get()  # current project's .env.local
 await store.save({"DATABASE_URL": "postgres://localhost:54322/dev"})
 
-values = await store.load(["DATABASE_URL", "SENTRY_DSN"])      # SENTRY_DSN was never saved: absent
+values = await store.load(["DATABASE_URL", "SENTRY_DSN"])  # SENTRY_DSN was never saved: absent
 values["DATABASE_URL"].get_secret_value()
 
-await store.names()                                            # ["DATABASE_URL"]
+await store.names()  # ["DATABASE_URL"]
 
 try:
     await store.validate_keys(["DATABASE_URL", "SENTRY_DSN"])
 except MissingSecrets as e:
-    e.missing                                                  # ["SENTRY_DSN"] — names only
+    e.missing  # ["SENTRY_DSN"] — names only
 ```
 
 The other store type, and a named environment — only the config differs:
@@ -118,8 +118,8 @@ from flow_sdk.secrets import SecretStore
 
 project = await context.current_project()
 
-vault = await SecretStore.get("vault", {"prefix": "credential.user."})                                   # credential.user.<NAME>
-prod = await SecretStore.get("env_file", {"env_file_path": str(project.env_file_path("production"))})    # <mount>/.env.production.local
+vault = await SecretStore.get("vault", {"prefix": "credential.user."})                                 # credential.user.<NAME>
+prod = await SecretStore.get("env_file", {"env_file_path": str(project.env_file_path("production"))})  # <mount>/.env.production.local
 ```
 
 `save` keeps every rule the stores had before: a value lands in an env file only
@@ -131,10 +131,10 @@ vault enabled; empty values are skipped, never cleared.
 ```python
 from flow_sdk.builtin.credential_spec import CredentialSpec
 
-spec = await CredentialSpec.get("database")                    # the current project's, else the user scope's
-names = spec.credentials.names()                               # ["DATABASE_URL"]
+spec = await CredentialSpec.get("database")  # the current project's, else the user scope's
+names = spec.credentials.names()             # ["DATABASE_URL"]
 
-prod = await spec.secret_store("production")                   # the store credential.json names for production
+prod = await spec.secret_store("production")  # the store credential.json names for production
 await prod.save({"DATABASE_URL": "postgres://pooler.hosted.example/prod"})
 await prod.validate_keys(names)
 ```
@@ -160,20 +160,20 @@ are never returned. Two failures, both raised rather than guessed:
 ```python
 from flow_sdk.builtin.credential_spec import CredentialAmbiguous, CredentialNotFound, CredentialSpec
 
-spec = await CredentialSpec.get("database", project=other_project)   # a specific project instead of the working directory
+spec = await CredentialSpec.get("database", project=other_project)  # a specific project instead of the working directory
 try:
     spec = await CredentialSpec.get("stripe")
-except CredentialAmbiguous as e:     # more than one credential named "stripe" in the scope that answered
-    e.candidates                     # their typeids — pick one with CredentialSpec.get_by_id(...)
-except CredentialNotFound:           # neither the project nor the user scope declares it
+except CredentialAmbiguous as e:  # more than one credential named "stripe" in the scope that answered
+    e.candidates                  # their typeids — pick one with CredentialSpec.get_by_id(...)
+except CredentialNotFound:        # neither the project nor the user scope declares it
     ...
 ```
 
 With no current project (a script outside any project folder), only step 3 runs.
 
-`DataSource.get(name)` is simpler: a data source is not project-scoped, so the
-name is looked up across the instance — `DataSourceNotFound` when no instance has
-it, `DataSourceAmbiguous` (with `candidates`) when several do.
+`DataDriver.get(name)` is simpler: a data source is not project-scoped, so the
+name is looked up across the instance — `DataDriverNotFound` when no instance has
+it, `DataDriverAmbiguous` (with `candidates`) when several do.
 
 ### Where a credential's store points
 
@@ -208,9 +208,9 @@ from flow_sdk.builtin.credential_resolver import resolve_attached_secrets
 
 project = await context.current_project()
 env = dict(os.environ)
-secrets = await resolve_attached_secrets(project, environment="production")   # each credential → its store → load
+secrets = await resolve_attached_secrets(project, environment="production")  # each credential → its store → load
 for name, value in secrets.items():
-    env.setdefault(name, value.get_secret_value())                             # an explicitly set variable still wins
+    env.setdefault(name, value.get_secret_value())  # an explicitly set variable still wins
 ```
 
 `resolve_attached_secrets` stays the one entry point for a spawn (worker,
@@ -229,13 +229,13 @@ project = await context.current_project()
 spec = await CredentialSpec.get("database")
 names = spec.credentials.names()
 
-dev_file = await SecretStore.get()                                                    # current project's .env.local
+dev_file = await SecretStore.get()  # current project's .env.local
 dev_vault = await SecretStore.get("vault", {"prefix": f"credential.project.{project.id}."})
 await dev_file.validate_keys(names)
-await dev_vault.save(await dev_file.load(names))                                      # development: env file → vault
+await dev_vault.save(await dev_file.load(names))  # development: env file → vault
 
 prod_file = await SecretStore.get("env_file", {"env_file_path": str(project.env_file_path("production"))})
-await prod_file.save(await remote.load(names))                                        # later: fetch → env file (`remote`: §6)
+await prod_file.save(await remote.load(names))  # later: fetch → env file (`remote`: §6)
 ```
 
 `save` takes what `load` returns — `SecretStr` values are unwrapped, never
@@ -253,17 +253,17 @@ A data source names the variables it needs in its manifest:
 ```
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.secrets import SecretStore
 
-source = await DataSource.get("work gmail")      # the one instance with that name
-names = source.credentials.names()               # ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"] — from the manifest's auth
+source = await DataDriver.get("work gmail")  # the one instance with that name
+names = source.credentials.names()           # ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"] — from the manifest's auth
 
-store = await SecretStore.get()                  # default: the current project's .env.local
-await store.validate_keys(names)                 # MissingSecrets if the file lacks any
-await source.set_secret_store(store)             # saved on the row: every sync reads this store
+store = await SecretStore.get()       # default: the current project's .env.local
+await store.validate_keys(names)      # MissingSecrets if the file lacks any
+await source.set_secret_store(store)  # saved on the row: every sync reads this store
 
-async with await source.open() as live:          # open() loads `names` from the bound store into the binding
+async with await source.open() as live:  # open() loads `names` from the bound store into the binding
     ...
 ```
 
@@ -290,11 +290,11 @@ bindings. Two Gmail inboxes — or two Drives with different folders — are two
 and each keeps its own:
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.secrets import SecretStore
 
-work = await DataSource.get("work gmail")
-home = await DataSource.get("home gmail")                                      # same source type, its own config
+work = await DataDriver.get("work gmail")
+home = await DataDriver.get("home gmail")  # same source type, its own config
 await work.set_secret_store(await SecretStore.get("vault", {"prefix": "gmail.work."}))
 await home.set_secret_store(await SecretStore.get("vault", {"prefix": "gmail.home."}))
 ```
@@ -309,23 +309,23 @@ variable names:
 ```
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.connections import Connection, MissingScopes, NotConnected
 
-source = await DataSource.get("work drive")
-providers = source.connections.names()             # ["google"] — from the manifest's auth.connector
+source = await DataDriver.get("work drive")
+providers = source.connections.names()  # ["google"] — from the manifest's auth.connector
 
 try:
-    google = await Connection.get("google")         # the held grant for this user
+    google = await Connection.get("google")  # the held grant for this user
     await google.validate_scopes(source.connections.scopes("google"))
 except NotConnected as e:
-    google = await e.connection.connect()           # the unconnected row rides on the error; browser or device flow
+    google = await e.connection.connect()  # the unconnected row rides on the error; browser or device flow
 except MissingScopes as e:
-    google = await google.connect(reauthorize=True) # e.missing names the scopes; consent runs again
+    google = await google.connect(reauthorize=True)  # e.missing names the scopes; consent runs again
 
 await source.set_connection(google)
 
-async with await source.open() as live:            # open() asks the bound connection for a token
+async with await source.open() as live:  # open() asks the bound connection for a token
     ...
 ```
 
@@ -339,19 +339,19 @@ An external store is a consumer of both kinds — it acts as an account and hold
 named values. `gcp_secret_manager` ships as one; another registers with `register_store`:
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.connections import Connection
 from flow_sdk.secrets import SecretStore
 
-agentmail = await DataSource.get("agent inbox")
+agentmail = await DataDriver.get("agent inbox")
 remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "agentmail-production-"})
 
-google = await Connection.get("google")                                 # remote.connections.names() → ["google"]
+google = await Connection.get("google")  # remote.connections.names() → ["google"]
 await google.validate_scopes(remote.connections.scopes("google"))
-await remote.set_connection(google)                                     # the account comes from the connection, never from config
+await remote.set_connection(google)  # the account comes from the connection, never from config
 
 await remote.validate_keys(agentmail.credentials.names())
-await agentmail.set_secret_store(remote)                                # the agentmail source now loads its key from GCP
+await agentmail.set_secret_store(remote)  # the agentmail source now loads its key from GCP
 ```
 
 ## What each call replaced
@@ -362,7 +362,7 @@ await agentmail.set_secret_store(remote)                                # the ag
 | `SecretStore.get("vault", …)`                         | `credential_store._load_vault`, `cli.auth.secrets.write_secret`, `get_secrets`                           |
 | `CredentialSpec.get(name, project=None)`              | `credential_resolver.credentials_in_scope(project)` filtered by hand                                     |
 | `spec.secret_store(environment)`                      | `credential_store.location_name` + `CredentialSpec.store_for(env)` spread over read, write and forget    |
-| `DataSource.get(name)`                                | `DataSource.get_all({"name": ...})`                                                                      |
+| `DataDriver.get(name)`                                | `DataDriver.get_all({"name": ...})`                                                                      |
 | `source.set_secret_store` / `set_connection` + `open` | `resolve_credentials` reading `os.environ`, a named vault entry and `token_for(auth.connector)` directly |
 | `Connection.get(provider)`                            | `flow_sdk.connections.require(provider)` (kept)                                                          |
 | `connection.validate_scopes(scopes)`                  | comparing `Connection.scopes` by hand; a missing scope failed at the provider call                       |

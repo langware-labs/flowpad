@@ -87,7 +87,7 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
     indistinguishable once stored. An empty ``SourceItem.thread_key`` is the
     only honest signal that we have no addressable thread.
     """
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.builtin.user import User  # noqa: PLC0415
@@ -137,7 +137,7 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
         raise ChannelSendUnavailable("this message was shared from another machine")
 
     source, item = await asyncio.gather(
-        DataSource.get_one({"id": local.data_source_id}),
+        DataDriver.get_one({"id": local.data_source_id}),
         SourceItem.get_one({"id": local.source_item_id}),
     )
     if source is None:
@@ -156,23 +156,23 @@ async def _target_for_item(item, source=None) -> ReplyTarget:
     arrived last (a burst of messages each got a reply quoting the final one). ``source`` is the
     row ``item`` arrived through when the caller already holds it; otherwise it is read."""
     if source is None:
-        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        source = await DataSource.get_one({"id": item.data_source_id})
+        source = await DataDriver.get_one({"id": item.data_source_id})
     if source is None:
         raise ChannelSendUnavailable("the data source this arrived through is gone")
     return _reply_target(source, item, str(getattr(source, "channel", "") or source.provider))
 
 
 def _reply_target(source, item, channel: str) -> ReplyTarget:
-    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
-    driver = source_type(source.provider)
+    driver = driver_type(source.provider)
     if driver is None or not driver.sends:
         raise ChannelSendUnavailable(f"the {channel} transport cannot send")
 
     # ASK the channel who a reply is addressed to; do not assume. `outbound_spec`
-    # is the one seam that answers it — `DataSource.reply_spec` is the same
+    # is the one seam that answers it — `DataDriver.reply_spec` is the same
     # question asked from the SDK side — and each spec's `reply_to` implements
     # its own rule as a pure constructor. The driver is already in hand here, so
     # this asks it directly rather than round-tripping through the entity.

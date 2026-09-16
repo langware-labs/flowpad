@@ -10,7 +10,7 @@ vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(
 
 import { notify } from '@src/notifications';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
-import type { DataSource } from '@sdk';
+import type { DataDriver } from '@sdk';
 
 function fakeSource(status: string, save = vi.fn(async () => undefined)) {
   return {
@@ -25,7 +25,7 @@ function fakeSource(status: string, save = vi.fn(async () => undefined)) {
     },
     save,
     markEdit: vi.fn(),
-  } as unknown as DataSource & { save: typeof save; markEdit: ReturnType<typeof vi.fn> };
+  } as unknown as DataDriver & { save: typeof save; markEdit: ReturnType<typeof vi.fn> };
 }
 
 describe('useSourceToggle', () => {

@@ -80,7 +80,7 @@ def json_arg(raw: str) -> Any:
 def sources() -> list[dict]:
     # Unfiltered on purpose: `one` needs the whole set to detect an ambiguous
     # name, and this table has one row per configured row of the type.
-    return list(get("/graph/data_source") or [])
+    return list(get("/graph/data_driver") or [])
 
 
 def one(path: str, ref: str, *, label: str, fields: tuple = ("name",)) -> dict:
@@ -105,7 +105,7 @@ def one(path: str, ref: str, *, label: str, fields: tuple = ("name",)) -> dict:
 
 def one_source(ref: str) -> dict:
     """A data source by id, name or provider."""
-    return one("/graph/data_source", ref, label="data source", fields=("name", "provider"))
+    return one("/graph/data_driver", ref, label="data source", fields=("name", "provider"))
 
 
 def create_and_verify(path: str, body: dict, keys: tuple, *, read_path: str = "") -> tuple[str, dict, list]:

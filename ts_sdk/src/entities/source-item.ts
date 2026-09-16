@@ -1,5 +1,5 @@
 /**
- * SourceItem — one ingested item of a DataSource
+ * SourceItem — one ingested item of a DataDriver
  * (flow_sdk/builtin/source_item.py). Read-mostly: the drivers write these;
  * the UI and editor apps list, star and mark them read.
  */

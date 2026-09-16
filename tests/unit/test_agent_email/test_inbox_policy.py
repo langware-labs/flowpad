@@ -120,7 +120,7 @@ async def test_the_local_copy_is_a_cache_the_gate_reads_without_a_network_call(
 ):
     """The cache is what makes `allowed()` pure, and it lives on the mailbox's own
     local row so it is scoped — and invalidated — with the thing it describes."""
-    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.builtin.data_driver import DataDriver
 
     agent = Agent(name=f"ada-cache-{mint_uuid()[:8]}", remote=True)
     await agent.save()
@@ -131,7 +131,7 @@ async def test_the_local_copy_is_a_cache_the_gate_reads_without_a_network_call(
     await inbox.ensure_source()
     await inbox.configure(allowed_senders=["boss@corp.com"])
 
-    source = await DataSource.find_for_account("cloud_email", "agent_id", agent.id)
+    source = await DataDriver.find_for_account("cloud_email", "agent_id", agent.id)
     assert source.inbound_allowed_senders == ["boss@corp.com"], "the cache follows the Hub"
     # And the gate reads it back with no agent and no network.
     assert EmailInbox.from_source(source).allowed("boss@corp.com") is True

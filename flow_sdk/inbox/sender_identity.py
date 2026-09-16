@@ -11,7 +11,7 @@ shows one identity for an agent, not one in Flowpad and another in Slack.
 is why nothing here is threaded through ``IngestDriver.send``: that signature is
 keyword-only with six implementations and no ``**kwargs``, so a new parameter
 would touch every mail driver to serve one chat one. Resolving from the source
-also covers ``DataSource.send`` — the SDK / ``blocks.Inbox`` path — which a value
+also covers ``DataDriver.send`` — the SDK / ``blocks.Inbox`` path — which a value
 carried on the reply target would have missed.
 """
 

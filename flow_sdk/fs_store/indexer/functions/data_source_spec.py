@@ -1,4 +1,4 @@
-"""Extractor for DATA_SOURCE_SPEC — `agentic-assets/data_source/<name>/data_source.json`.
+"""Extractor for DATA_SOURCE_SPEC — `agentic-assets/data_driver/<name>/data_driver.json`.
 
 Thin by design: the manifest's shape and every rule about what it may say are
 ``ManifestSpec`` (``flow_sdk/builtin/data_source_spec.py``), loaded through the

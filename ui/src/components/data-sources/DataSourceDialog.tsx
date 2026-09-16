@@ -9,7 +9,7 @@
  * which the form does set — through the field that owns it.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Agent, DataSource, type SourceStatus } from '@sdk';
+import { Agent, DataDriver, type SourceStatus } from '@sdk';
 import type { TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -44,7 +44,7 @@ import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 import { useSourceSpecs } from './use-source-specs';
-import { FieldType, type DataSourceChoice, type DataSourceSpec, type SpecConfigField } from '@sdk';
+import { FieldType, type DataDriverChoice, type DataDriverSpec, type SpecConfigField } from '@sdk';
 
 /**
  * The switch's boolean → a lifecycle status.
@@ -88,9 +88,9 @@ function fieldValue(key: string, field: SpecConfigField, config: Record<string, 
  *  submit-time extraction and the pre-fill all agree on the reserved key. */
 const ALLOWED_SENDERS_KEY = 'allowed_senders';
 
-function draftFrom(source: DataSource, spec?: DataSourceSpec): SourceDraft {
+function draftFrom(source: DataDriver, spec?: DataDriverSpec): SourceDraft {
   const fields: Record<string, string> = {};
-  const picked: Record<string, DataSourceChoice[]> = {};
+  const picked: Record<string, DataDriverChoice[]> = {};
   for (const [key, field] of specFields(spec)) {
     // `allowed_senders` reads the real entity field, never `config` — it was
     // never written there (see `submit`'s extraction below).
@@ -124,13 +124,13 @@ export function DataSourceDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** When set, the form edits this source instead of creating one. */
-  editing?: DataSource | null;
+  editing?: DataDriver | null;
   /** Who the new source belongs to (a user or an agent). Omitted → the backend
    *  stamps the local user, so every existing caller is unchanged. */
   owner?: TypeId | null;
   /** Narrow the provider tiles — the channels line offers only specs that
    *  `sends`. An empty result renders as a sentence, not a blank picker. */
-  only?: (spec: DataSourceSpec) => boolean;
+  only?: (spec: DataDriverSpec) => boolean;
 }) {
   const { t } = useLingui();
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
@@ -147,7 +147,7 @@ export function DataSourceDialog({
   const [busy, setBusy] = useState(false);
 
   // Seed the form once per opening, keyed on WHAT is being edited. `specs` /
-  // `specFor` change identity on every live `DataSourceSpec` emission, and
+  // `specFor` change identity on every live `DataDriverSpec` emission, and
   // depending on them re-seeded the draft mid-typing — discarding whatever had
   // been entered. The spec is read through a ref so the seed still sees the
   // current one without subscribing the effect to it.
@@ -156,7 +156,7 @@ export function DataSourceDialog({
   useEffect(() => {
     if (!open) return;
     const { specFor: lookup, specs: available } = seedRef.current;
-    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft(available[0]?.name ?? ''));
+    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft(available[0]?.name ?? '', available[0]));
     setShowAdvanced(false);
   }, [open, editing]);
 
@@ -172,7 +172,7 @@ export function DataSourceDialog({
     // beat what the person just typed.
     setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value }, picked: { ...d.picked, [key]: [] } }));
 
-  const setPicked = (key: string, choices: DataSourceChoice[]) =>
+  const setPicked = (key: string, choices: DataDriverChoice[]) =>
     setDraft((d) => ({ ...d, picked: { ...d.picked, [key]: choices } }));
 
   const submit = async () => {
@@ -222,7 +222,7 @@ export function DataSourceDialog({
         if (changed) editing.markEdit();
         notify.success({ title: t`Updated ${editing.name}` });
       } else {
-        const source = new DataSource({
+        const source = new DataDriver({
           name: draft.name.trim(),
           provider: draft.provider,
           account_key: account,
@@ -329,7 +329,7 @@ export function DataSourceDialog({
                         data-testid={`provider-${p.name}`}
                         Icon={Glyph}
                         label={label}
-                        onClick={() => setDraft(emptyDraft(p.name ?? ''))}
+                        onClick={() => setDraft(emptyDraft(p.name ?? '', p))}
                         className={cn(
                           draft.provider === p.name && 'border-primary bg-accent text-foreground ring-1 ring-primary',
                         )}

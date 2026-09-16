@@ -11,14 +11,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource, SourceStatus
+from flow_sdk.builtin.data_driver import DataDriver, SourceStatus
 from flow_sdk.ingest import poller
 from flow_sdk.ingest.health import SourceHealth
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 
-async def _source(**kw) -> DataSource:
+async def _source(**kw) -> DataDriver:
     account = f"acct-{uuid.uuid4().hex[:8]}"
     fields = {
         "provider": "faketest",
@@ -29,7 +29,7 @@ async def _source(**kw) -> DataSource:
         "next_poll_at": NOW + timedelta(days=365),
     }
     fields.update(kw)
-    src = DataSource(
+    src = DataDriver(
         **fields,
     )
     await src.save()
@@ -115,7 +115,7 @@ async def test_next_poll_is_pushed_out_before_any_io():
     # unregistered provider; what matters is the pre-schedule already landed.
     await poller._run_poll(src, NOW)
 
-    refreshed = await DataSource.get_one({"id": src.id})
+    refreshed = await DataDriver.get_one({"id": src.id})
     assert refreshed.next_poll_at is not None
     assert refreshed.is_due(NOW) is False, "the source is still immediately due — hot loop"
 
@@ -172,10 +172,10 @@ async def test_a_change_event_does_not_wake_a_disabled_source(monkeypatch):
     """Disabled is a person's decision, and a provider nudge must not override
     it. The gate is deliberately narrower than `poll_refusal`: a source still in
     SETUP does reconcile from a bare event (a git watch is exactly that)."""
-    import flow_sdk.ingest.sync as sync_mod
     from types import SimpleNamespace
 
-    from flow_sdk.builtin.data_source import SourceStatus
+    import flow_sdk.ingest.sync as sync_mod
+    from flow_sdk.builtin.data_driver import SourceStatus
     from flow_sdk.ingest.change_event import handle_change
 
     calls: list[str] = []

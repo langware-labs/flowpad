@@ -1,12 +1,12 @@
 """The whole spine, end to end, with no mocks.
 
-Real HTTP server, real DataSource + cursor rows, real driver, real ingestor,
+Real HTTP server, real DataDriver + cursor rows, real driver, real ingestor,
 real entity writes, real FTS, real event bus. The only thing not exercised is
 the public internet.
 
 The second half is the one that matters operationally: **a repeat poll must
 produce nothing.** No writes, no events, no re-index. If that ever regresses,
-every DataSource becomes a machine for re-firing triggers.
+every DataDriver becomes a machine for re-firing triggers.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.health import SourceHealth
@@ -37,7 +37,7 @@ def feed_server():
 async def test_fetch_copy_index_emit_then_a_silent_repeat(feed_server):
     url = f"{feed_server}/atom"
     account = f"acct-{uuid.uuid4().hex[:8]}"
-    src = DataSource(
+    src = DataDriver(
         provider="rss",
         kind="datasource.feed.rss",
         account_key=account,
@@ -67,7 +67,7 @@ async def test_fetch_copy_index_emit_then_a_silent_repeat(feed_server):
         assert cursor.health == SourceHealth.OK.value
         assert cursor.high_water.startswith("2026-07-30T11:00:00")
 
-        refreshed = await DataSource.get_one({"id": src.id})
+        refreshed = await DataDriver.get_one({"id": src.id})
         assert refreshed.health == SourceHealth.OK.value
         assert refreshed.next_poll_at is not None
 

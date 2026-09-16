@@ -13,21 +13,21 @@ import json
 
 from typer.testing import CliRunner
 
-from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.data_source_spec import DataSourceSpec
+from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_driver_spec import DataDriverSpec
 from flow_sdk.cli.commands import _common, source_cmd
-from flow_sdk.ingest.source_registry import SHIPPED_ROOT, load_module, read_manifest
-from flow_sdk.ingest.sources import source_type
+from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module, read_manifest
+from flow_sdk.ingest.driver_types import driver_type
 
-NAMES = sorted(p.name for p in SHIPPED_ROOT.iterdir() if (p / "data_source.json").is_file())
+NAMES = sorted(p.name for p in SHIPPED_ROOT.iterdir() if (p / "data_driver.json").is_file())
 
 
 async def spec_row(name: str) -> None:
     """The manifest as its spec row — what the indexer writes on an instance — so config coercion
     and the reflect-mode rule run as they do there."""
-    if await DataSourceSpec.get_one({"name": name}) is None:
+    if await DataDriverSpec.get_one({"name": name}) is None:
         manifest = read_manifest(SHIPPED_ROOT / name)
-        await DataSourceSpec(**manifest.model_dump(by_alias=False, exclude={"manifest_schema"})).save(notify=False)
+        await DataDriverSpec(**manifest.model_dump(by_alias=False, exclude={"manifest_schema"})).save(notify=False)
 
 
 def _data(response) -> dict:
@@ -41,10 +41,10 @@ class RestDriver:
         self.client = client
 
     async def _action(self, source_id: str, verb: str, payload: dict | None = None) -> dict:
-        return _data(await self.client.post(f"/api/v1/graph/data_source/{source_id}/{verb}", json=payload or {}))
+        return _data(await self.client.post(f"/api/v1/graph/data_driver/{source_id}/{verb}", json=payload or {}))
 
     async def create(self, name: str, config: dict, fields: dict) -> str:
-        return _data(await self.client.post("/api/v1/graph/data_source", json={"name": f"matrix {name}", "provider": name, "config": config, **fields}))["id"]
+        return _data(await self.client.post("/api/v1/graph/data_driver", json={"name": f"matrix {name}", "provider": name, "config": config, **fields}))["id"]
 
     async def verify(self, source_id: str) -> dict:
         return await self._action(source_id, "verify")
@@ -65,7 +65,7 @@ class RestDriver:
         return (await self._action(source_id, "set_enabled", {"enabled": enabled}))["status"]
 
     async def delete(self, source_id: str) -> None:
-        _data(await self.client.delete(f"/api/v1/graph/data_source/{source_id}"))
+        _data(await self.client.delete(f"/api/v1/graph/data_driver/{source_id}"))
 
 
 class CliDriver:
@@ -118,7 +118,7 @@ class CliDriver:
 
 
 async def run_case(name: str, driver, client, monkeypatch, tmp_path) -> None:
-    stype = source_type(name)
+    stype = driver_type(name)
     assert stype is not None and stype.manifest is not None, f"{name} did not load"
     await spec_row(name)
     cases = load_module(SHIPPED_ROOT / name / "tests", "matrix")
@@ -154,4 +154,4 @@ async def run_case(name: str, driver, client, monkeypatch, tmp_path) -> None:
         assert await driver.set_enabled(source_id, False) == "disabled"
         assert await driver.set_enabled(source_id, True) == "active"
         await driver.delete(source_id)
-        assert await DataSource.get_one({"id": source_id}) is None
+        assert await DataDriver.get_one({"id": source_id}) is None

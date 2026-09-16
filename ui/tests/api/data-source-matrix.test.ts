@@ -1,5 +1,5 @@
 /**
- * The data source matrix, TS SDK surface: shipped data sources × verbs, through `DataSource`.
+ * The data source matrix, TS SDK surface: shipped data sources × verbs, through `DataDriver`.
  *
  * The same verbs the REST and CLI matrices drive (`tests/api/test_source_matrix.py`), called the way
  * the Data Sources screen calls them: create, verify, syncNow, items, send, reply, setEnabled,
@@ -15,11 +15,11 @@ import { promises as fs, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { DataSource } from '@sdk';
+import { DataDriver } from '@sdk';
 import { apiTestSetup } from '../utils/test-utils';
 import { testEntityName } from '../_cleanup';
 
-const ASSETS = path.resolve(__dirname, '../../../flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source');
+const ASSETS = path.resolve(__dirname, '../../../flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver');
 const NOW_ISO = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 type Handler = (req: IncomingMessage, body: string) => { status?: number; json?: unknown; text?: string; type?: string };
@@ -150,7 +150,7 @@ describe('data source matrix — TS SDK', () => {
   for (const c of CASES) {
     it(`${c.provider}: create, verify, sync, items, send, reply, disable, delete`, async () => {
       handler = c.serve ?? (() => ({ status: 404, json: {} }));
-      const created = await new DataSource({
+      const created = await new DataDriver({
         name: testEntityName(`data-source-${c.provider}`),
         provider: c.provider,
         config: await c.config(),

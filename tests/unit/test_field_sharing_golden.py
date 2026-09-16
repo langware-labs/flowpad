@@ -270,7 +270,7 @@ def test_the_two_egress_seams_now_agree():
             "flow_sdk.builtin.flow_message",
             "FlowMessage",
             {"text": "t"},
-            # `origin_local` holds the DataSource/SourceItem row ids behind a
+            # `origin_local` holds the DataDriver/SourceItem row ids behind a
             # cached cloud record. PRIVATE, while its sibling `origin` (channel +
             # permalink) stays SHARED so a received message keeps its badge.
             # `source_item_id` is its queryable twin — same row-id reasoning.
@@ -357,7 +357,7 @@ def test_the_two_egress_seams_now_agree():
             # of the pointer log, rebuilt locally and never accepted from the hub.
             # `owner`: whose inbox lists it — a fact about this machine's partition,
             # never the hub's (that is the roster's `owner` role).
-            # `channel_source_id`: the local DataSource behind a source-backed
+            # `channel_source_id`: the local DataDriver behind a source-backed
             # conversation — a row id in OUR database.
             ["hub_updated_date", "message_ids", "owner", "channel_source_id"],
             BASE_LOCAL_ONLY,

@@ -19,8 +19,8 @@ over the same backend actions.
 ## What you are writing
 
 ```
-<project>/agentic-assets/data_source/<name>/
-    data_source.json          the manifest (DataSourceSpec): presentation, kind, auth, the config form
+<project>/agentic-assets/data_driver/<name>/
+    data_driver.json          the manifest (DataDriverSpec): presentation, kind, auth, the config form
     source.py                 exactly ONE flow_sdk.sources.Source subclass — the source
     transport.py …            optional helper modules, imported relatively (`from .transport import …`)
     tests/test_<name>_source.py   the conformance kit + wire cases against a loopback double

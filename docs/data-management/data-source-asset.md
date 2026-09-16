@@ -4,14 +4,14 @@ id: f2a0bbff-0654-4416-b5c6-be1415a08f4d
 
 # Data source assets
 
-A data source is a **folder asset**. `data_source.json` is the manifest (the
-`DataSourceSpec`); `source.py` is the source itself; everything else in the folder
+A data source is a **folder asset**. `data_driver.json` is the manifest (the
+`DataDriverSpec`); `source.py` is the source itself; everything else in the folder
 is discovered by convention. The loader reads the folder — nothing is registered in
 `flow_sdk` per source, and a shipped source is laid out exactly like an authored one.
 
 ```
-agentic-assets/data_source/my-source/
-  data_source.json # the folder's main document: the manifest
+agentic-assets/data_driver/my-source/
+  data_driver.json # the folder's main document: the manifest
   source.py        # REQUIRED — exactly one flow_sdk.sources.Source subclass
   transport.py     # optional helper modules, imported relatively
   tests/           # its own tests and its matrix case
@@ -31,8 +31,8 @@ Everything one source needs lives in its folder, shipped or authored alike — t
 `CLAUDE.md` ("Data sources are self-contained assets"):
 
 ```
-agentic-assets/data_source/<name>/
-  data_source.json          # the DataSourceSpec
+agentic-assets/data_driver/<name>/
+  data_driver.json          # the DataDriverSpec
   source.py                 # exactly one flow_sdk.sources.Source subclass — the source
   transport.py …            # optional helper modules, imported relatively (`from .transport import …`)
   tests/test_<name>_source.py   # conformance kit + wire cases, against flow_sdk.sources.testing doubles
@@ -57,7 +57,7 @@ runtime cannot work out for itself. Two rules keep it that way:
   class; a manifest copy would be "authoritative-looking, owned by nobody, and
   silently corrected later". A `traits` key in a manifest is a **load error**.
 * **Presence beats declaration.** A capability is a protocol the class implements,
-  discovered by `isinstance` — `DataSource.save()` decides SETUP vs ACTIVE from
+  discovered by `isinstance` — `DataDriver.save()` decides SETUP vs ACTIVE from
   whether the class is `Verifiable`. Presence of a verb cannot lie; a boolean can,
   and a wrong one parks a source no button releases.
 
@@ -90,7 +90,7 @@ The shape is `ManifestSpec` (`flow_sdk/schema/data_spec/data_source_manifest_spe
 a `DataSpec` with `extra="forbid"`: an unknown top-level key, an unknown `config` field
 key or an unknown `auth` key is a **load error**, and a rejected manifest yields no
 record at all (`spec_extractor` logs the rule and emits `[]`). The row is
-`DataSourceSpec`; the file says `schema`, the row says `manifest_schema` (the base
+`DataDriverSpec`; the file says `schema`, the row says `manifest_schema` (the base
 entity already owns `schema_version`). The row also carries two computed facts from
 the loaded class: `sends` and `load_error`.
 
@@ -132,7 +132,7 @@ mean no bug report could ever say which source ran.
 
 ### `kind`
 
-The record kind a `DataSource` row of this source carries (`datasource.api.slack`).
+The record kind a `DataDriver` row of this source carries (`datasource.api.slack`).
 Omitted, it is `datasource.<name>`.
 
 ### `auth`
@@ -200,10 +200,10 @@ provider catalog.
 | `choices` | the source can list this field's legal values (the class is `Choosing`, or defines `choices_for`) |
 
 Each field is a `ConfigFieldSpec`, and its `type` is also a **coercion rule**:
-`DataSource.save()` runs `ConfigFieldSpec.coerce` over any string-valued config
+`DataDriver.save()` runs `ConfigFieldSpec.coerce` over any string-valued config
 (`lines` splits on newlines, `csv` on commas, `number` parses), so a URL an agent
 sent as a string where `lines` is declared becomes a one-element list. On create,
-`required` and `pattern` are enforced by `DataSource.save()` too, so the CLI, the API
+`required` and `pattern` are enforced by `DataDriver.save()` too, so the CLI, the API
 and an agent meet the same rules as the form.
 
 ### `setup_wiki` and `channel_icon_names`
@@ -229,9 +229,9 @@ never a frontend table.
 | `sends` | the class implements `Messaging` and `message_for`; the row computes it |
 | `needs_setup` | the class is `Verifiable` |
 | `segment_budget` | a consequence of the fetch code, not a preference |
-| `account_key` VALUE | lives on the `DataSource` row; the manifest only marks WHICH form field supplies it |
+| `account_key` VALUE | lives on the `DataDriver` row; the manifest only marks WHICH form field supplies it |
 | `id` | carried by the asset's identity carrier, never written into the manifest |
-| poll cadence | per-instance on `DataSource` — a big site wants six hours, a small one five minutes |
+| poll cadence | per-instance on `DataDriver` — a big site wants six hours, a small one five minutes |
 | cursor shape | `cursor` is the source's opaque string, and a test greps the engine for leaks |
 
 ## Runtime
@@ -245,8 +245,8 @@ subclass, a class whose `provider` is not the manifest's `name`, an import error
 name a shipped source owns.
 
 The shipped folders load on the registry's first lookup. An authored folder in a
-project loads on first use — its `DataSource` is saved or synced — through its
-`DataSourceSpec` row.
+project loads on first use — its `DataDriver` is saved or synced — through its
+`DataDriverSpec` row.
 
 The extractor (`derive_data_source_spec`) stamps `runtime: source` on the row. A folder
 still carrying the retired `fetch.py` or `FETCH.md` is refused with the upgrade — write a

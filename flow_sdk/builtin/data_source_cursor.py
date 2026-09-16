@@ -1,6 +1,6 @@
 """DataSourceCursor — "since last pull", one row per stream.
 
-**Per stream, never a dict on the DataSource.** Cursors advance on every poll.
+**Per stream, never a dict on the DataDriver.** Cursors advance on every poll.
 A dict field would make every stream's advance a read-modify-write of the same
 row (concurrent advances lose each other) and would leave nowhere to record
 per-stream health. A row per stream gives failure isolation for free: one feed
@@ -71,7 +71,7 @@ class DataSourceCursor(Entity):
         Without this they load with an empty ``segment_key``, so a pre-rename
         cursor reads as a segment that was never polled and the next fetch
         re-walks it from the start. Same shape as
-        ``DataSource._adopt_legacy_enabled``.
+        ``DataDriver._adopt_legacy_enabled``.
         """
         return adopt_renamed(
             data, {"stream_key": "segment_key", "stream_label": "segment_label"}

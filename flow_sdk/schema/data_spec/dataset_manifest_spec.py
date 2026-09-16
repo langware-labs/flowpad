@@ -41,7 +41,7 @@ class DatasetManifestSpec(FrontMatter):
 
     title: Optional[str] = None
     description: Optional[str] = None
-    #: The DataSource whose items this dataset curates (empty when hand-authored).
+    #: The DataDriver whose items this dataset curates (empty when hand-authored).
     source_id: Optional[str] = None
     data_layout: Optional[str] = None
     field_spec: Optional[Dict[str, str]] = None

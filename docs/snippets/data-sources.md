@@ -5,7 +5,7 @@ version: 2
 # Data sources — snippets
 
 A data source is one remote account or tree Flowpad syncs from. The row is a
-`DataSource`; every item it produces is a `SourceItem`; one cycle is one verb,
+`DataDriver`; every item it produces is a `SourceItem`; one cycle is one verb,
 `source.sync()` (the heartbeat calls the same code through `sync_source`).
 Everything below runs in-process against the session DB, and every `python`
 fence is run as written by `tests/unit/test_data_sources_snippets.py`. Deeper
@@ -19,18 +19,18 @@ reading: [docs/data-management/data-sources.md](../data-management/data-sources.
 Pinned by `tests/unit/test_data_sources_snippets.py`.
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.source_item import SourceItem
 
-src = DataSource(
+src = DataDriver(
     name="Hacker News front page",
     provider="rss",
     config={"feed_urls": [FEED_URL]},
 )
-await src.save()                       # NEW → ACTIVE; channel and origin stamped
+await src.save()  # NEW → ACTIVE; channel and origin stamped
 
 outcome = await src.sync()
-outcome.created, outcome.updated, outcome.unchanged   # what this cycle did
+outcome.created, outcome.updated, outcome.unchanged  # what this cycle did
 
 rows = await SourceItem.get_all({"data_source_id": src.id})
 for item in rows:
@@ -69,8 +69,8 @@ when you build a row in code.
 A second source for the same account is a lookup, never a fresh row.
 
 ```python
-existing = await DataSource.find_for_account("agentmail", "inbox", "me@agentmail.to")
-src = existing or DataSource(
+existing = await DataDriver.find_for_account("agentmail", "inbox", "me@agentmail.to")
+src = existing or DataDriver(
     name="Inbox me@agentmail.to",
     provider="agentmail",
     config={"inbox": "me@agentmail.to", "api_key": KEY},
@@ -101,19 +101,19 @@ Pinned by `tests/unit/test_data_sources_snippets.py` (the CRUD matrix is
 `tests/unit/test_folder_source/test_crud_matrix.py`).
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.reflect import ReflectMode
 
-src = DataSource(
+src = DataDriver(
     name="Shared drive notes",
     provider="folder",
-    config={"root": WATCHED},                # the tree to watch
-    reflect=ReflectMode.COPY.value,          # none | copy | symlink
-    reflect_into=DESTINATION,                # absolute, the destination tree
+    config={"root": WATCHED},  # the tree to watch
+    reflect=ReflectMode.COPY.value,  # none | copy | symlink
+    reflect_into=DESTINATION,  # absolute, the destination tree
 )
 await src.save()
 
-await src.sync()   # enumerate → reflect bytes → reindex the destination
+await src.sync()  # enumerate → reflect bytes → reindex the destination
 ```
 
 `reflect` is the one axis that decides where a payload lands: `record` (the
@@ -200,7 +200,7 @@ Read the row before poking it. `poll_now` clears `health`, `error_code` and
 `error_detail` together, so snapshot them first or the evidence is gone.
 
 ```python
-src = await DataSource.get_one({"id": src.id})
+src = await DataDriver.get_one({"id": src.id})
 src.status, src.health, src.error_code, src.last_synced_at, src.next_poll_at
 ```
 
@@ -242,12 +242,12 @@ Three providers ask for values nobody can produce from memory — a shared drive
 Pinned by `tests/unit/test_data_sources_snippets.py`.
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 
-picks = await DataSource.choices_for("gcs", "bucket", {"project": PROJECT, "base_url": BASE_URL})
+picks = await DataDriver.choices_for("gcs", "bucket", {"project": PROJECT, "base_url": BASE_URL})
 
-[(c.id, c.name) for c in picks.items]   # what this credential can actually see
-picks.detail                            # why the list is empty, when it is
+[(c.id, c.name) for c in picks.items]  # what this credential can actually see
+picks.detail  # why the list is empty, when it is
 ```
 
 A refusal is an **empty** **`items`** **and a sentence**, never an exception: no connection, a
@@ -269,7 +269,7 @@ one, `lines` picks many.
 ## 10. A source behind a connection: Google Drive
 
 Pinned by `tests/unit/test_data_sources_snippets.py` (the source itself by
-`flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/gdrive/tests/`).
+`flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/gdrive/tests/`).
 
 A Drive source carries no secret in its `config`. Its manifest declares
 `auth.connector: google`, and the token comes from the machine's **Google
@@ -279,22 +279,22 @@ connection**, made on the Connections screen. The scopes it grants,
 ```python
 from pathlib import Path
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.reflect import ReflectMode
 
-src = DataSource(
+src = DataDriver(
     name="My Drive",
     provider="gdrive",
-    config={"cache_root": CACHE_ROOT, "base_url": BASE_URL},   # `drives: [...]` for shared drives; empty = My Drive
+    config={"cache_root": CACHE_ROOT, "base_url": BASE_URL},  # `drives: [...]` for shared drives; empty = My Drive
     reflect=ReflectMode.COPY.value,
     reflect_into=DESTINATION,
 )
 await src.save()
 
-verdict = await src.verify()        # layer 1: the `google` connection; layer 2: Drive answers /about
+verdict = await src.verify()  # layer 1: the `google` connection; layer 2: Drive answers /about
 verdict["ready"], verdict["layer"], verdict["detail"]
 
-outcome = await src.sync()          # first pass enumerates the drive and takes a change token
+outcome = await src.sync()  # first pass enumerates the drive and takes a change token
 sorted(p.name for p in Path(DESTINATION).rglob("*") if p.is_file())
 ```
 

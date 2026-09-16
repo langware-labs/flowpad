@@ -26,7 +26,7 @@ class CloudOriginLocal(BaseModel):
     that it is *foreign*.
     """
 
-    # The configured DataSource this arrived through — the way back to
+    # The configured DataDriver this arrived through — the way back to
     # credentials, account identity and the send verb.
     data_source_id: str = ""
     # The local cache row, 1:1. `source_item-<id>`'s bare uuid.

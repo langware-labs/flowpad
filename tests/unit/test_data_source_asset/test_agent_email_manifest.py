@@ -5,7 +5,7 @@
 ``agentmail`` is that vendor reached directly: still a loadable source (its rows poll,
 scripts name it), but ``listed: false`` keeps it out of the add-source picker.
 """
-from flow_sdk.ingest.source_registry import SHIPPED_ROOT, read_manifest
+from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, read_manifest
 
 
 def test_agent_email_is_provisioned_and_names_no_vendor():

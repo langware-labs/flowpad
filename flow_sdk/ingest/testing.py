@@ -21,18 +21,18 @@ def fresh_timestamps(body: bytes) -> bytes:
 
 
 def make_data_source(provider: str = "rss", **fields):
-    """A ``DataSource`` row (unsaved) with a unique account key."""
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    """A ``DataDriver`` row (unsaved) with a unique account key."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
     resolved = {"provider": provider, "account_key": f"acct-{uuid.uuid4().hex[:8]}", "name": "test source"}
     resolved.update(fields)
-    return DataSource(**resolved)
+    return DataDriver(**resolved)
 
 
 def position(segment_key: str = "", prior=None, window_start=None, **_ignored):
     """Where a segment's traversal resumes: a prior pass's cursor and manifest, or the dict an older
     build left on the cursor row (lifted by the source class)."""
-    from flow_sdk.ingest.sources import SegmentPass, SegmentPosition  # noqa: PLC0415
+    from flow_sdk.ingest.driver_types import SegmentPass, SegmentPosition  # noqa: PLC0415
 
     if isinstance(prior, SegmentPass):
         return SegmentPosition(segment_key=segment_key, cursor=prior.cursor, manifest=dict(prior.manifest), window_start=window_start)

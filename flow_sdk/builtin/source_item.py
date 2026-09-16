@@ -1,4 +1,4 @@
-"""SourceItem — one record ingested from a cloud DataSource.
+"""SourceItem — one record ingested from a cloud DataDriver.
 
 Generic and discriminated by ``kind`` (``content.feed.item``, later
 ``content.message.chat``) rather than one entity type per provider: providers
@@ -278,7 +278,7 @@ class SourceItem(Entity):
         Without this they load with an empty ``segment_key`` — and for
         ``SourceItem`` that is part of the natural key, so every pre-rename
         record would fail to resolve and the next poll would mint a duplicate
-        of it. Same shape as ``DataSource._adopt_legacy_enabled``.
+        of it. Same shape as ``DataDriver._adopt_legacy_enabled``.
         """
         return adopt_renamed(data, {"stream_key": "segment_key", "stream_label": "segment_label"})
 

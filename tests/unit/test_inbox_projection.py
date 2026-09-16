@@ -137,12 +137,12 @@ class TestConcurrentPlacement:
         import asyncio
         import uuid
 
-        from flow_sdk.builtin.data_source import DataSource
+        from flow_sdk.builtin.data_driver import DataDriver
         from flow_sdk.builtin.flow_message import FlowMessage
         from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.inbox.projection import project_source_item
 
-        source = DataSource(
+        source = DataDriver(
             name="race", provider="telegram", channel="telegram",
             account_key=f"@bot-{uuid.uuid4().hex[:8]}",
         )
@@ -175,11 +175,11 @@ class TestConcurrentPlacement:
         import asyncio
         import uuid
 
-        from flow_sdk.builtin.data_source import DataSource
+        from flow_sdk.builtin.data_driver import DataDriver
         from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.inbox.projection import project_source_item
 
-        source = DataSource(
+        source = DataDriver(
             name="race", provider="telegram", channel="telegram",
             account_key=f"@bot-{uuid.uuid4().hex[:8]}",
         )
@@ -268,9 +268,9 @@ class TestPermalinkDerivation:
 
     @staticmethod
     def _permalink(channel: str, external_id: str, thread_key: str) -> str:
-        from flow_sdk.ingest.sources import source_type
+        from flow_sdk.ingest.driver_types import driver_type
 
-        channel_type = source_type(channel)
+        channel_type = driver_type(channel)
         return channel_type.cls.permalink(external_id, thread_key) if channel_type else ""
 
     def test_gmail_addresses_by_thread(self):
@@ -340,14 +340,14 @@ class TestProjectedAnnounce:
         from types import SimpleNamespace
 
         import flow_sdk.inbox.inbox_on_tag as tags_mod
-        from flow_sdk.builtin.data_source import DataSource
+        from flow_sdk.builtin.data_driver import DataDriver
         from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.inbox.projection import _on_item, project_source_item
 
         announced: list[str] = []
         monkeypatch.setattr(tags_mod, "emit_projected_tag", lambda item: announced.append(item.id))
 
-        source = DataSource(
+        source = DataDriver(
             name="once", provider="telegram", channel="telegram",
             account_key=f"@bot-{uuid.uuid4().hex[:8]}",
         )

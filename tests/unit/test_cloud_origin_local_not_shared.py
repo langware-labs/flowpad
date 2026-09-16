@@ -2,7 +2,7 @@
 is the origin triple.
 
 ``FlowMessage.origin`` carries the transportable half — ``CloudOrigin(kind, namespace, key,
-url)``, meaningful on any machine — and ``origin_local`` carries the DataSource / SourceItem
+url)``, meaningful on any machine — and ``origin_local`` carries the DataDriver / SourceItem
 row ids under ``PRIVATE``, which a bundle strips. Rows written before the triple (an
 ``external_id``, a ``provider``) and before the local/shared split (row ids inside
 ``origin``) still load: the message lifts the row ids into ``origin_local``, and the origin

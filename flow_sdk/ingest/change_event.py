@@ -72,7 +72,7 @@ def emit_change(
 
     return emit_tag(
         change_tag(provider),
-        target_of("data_source", str(source_id)),
+        target_of("data_driver", str(source_id)),
         _payload(source_id, provider, scope=scope, refs=refs, tombstones=tombstones,
                  origin=origin, from_sha=from_sha, to_sha=to_sha, reason=reason),
     )
@@ -107,7 +107,7 @@ def emit_applied(
     payload = _payload(source_id, provider, scope="", refs=refs, tombstones=tombstones,
                        origin=None, from_sha="", to_sha="", reason="applied")
     payload["renames"] = dict(renames or {})
-    return emit_tag(applied_tag(provider), target_of("data_source", str(source_id)), payload)
+    return emit_tag(applied_tag(provider), target_of("data_driver", str(source_id)), payload)
 
 
 async def handle_change(event: Any) -> bool:
@@ -122,7 +122,7 @@ async def handle_change(event: Any) -> bool:
     Never raises: an event handler that throws takes down nothing, because the
     bus deliberately does not await consumers and would only log the failure.
     """
-    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver, SourceStatus  # noqa: PLC0415
     from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
     data = getattr(event, "data", None) or {}
@@ -131,7 +131,7 @@ async def handle_change(event: Any) -> bool:
         logger.debug("[ingest] change event with no source_id")
         return False
     try:
-        source = await DataSource.get_by_id(source_id)
+        source = await DataDriver.get_by_id(source_id)
     except Exception:  # noqa: BLE001
         logger.warning("[ingest] could not load source %s", source_id, exc_info=True)
         return False

@@ -90,7 +90,7 @@ async def test_persona_connects_samples_and_defines(tmp_path):
                               timeout=httpx.Timeout(10.0, read=540.0))
 
             async def source():
-                rows = await _data(client, "GET", "/api/v1/graph/data_source")
+                rows = await _data(client, "GET", "/api/v1/graph/data_driver")
                 return next((r for r in rows if feed in json.dumps(r.get("config") or {})), None)
 
             src = await _until(source, budget_s=240)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from tests.utils.snippets import compile_fence, doc, fences, run_fence
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -28,7 +28,7 @@ async def test_the_agent_helpdesk_program_runs_verbatim(monkeypatch):
     compile_fence(source, "agent-helpdesk.md")
     ns = await run_fence(source, {"DESK_PROJECT_ID": DESK}, filename="agent-helpdesk.md")
 
-    desk: DataSource = ns["desk"]
+    desk: DataDriver = ns["desk"]
     assert desk.provider == "helpdesk" and desk.channel == "helpdesk"
     assert str(desk.owner) == str(ns["support"].typeid)
     assert desk.inbound_allowed_senders in ([], None), "a desk is open unless someone is listed"

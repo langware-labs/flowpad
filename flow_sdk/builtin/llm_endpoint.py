@@ -44,7 +44,7 @@ class LLMEndpointKind(StrEnum):
 
     Not a ``remote``/``local`` boolean: a boolean can say two of these three things, and the
     interesting question is never "is it remote" but "who is being billed and who holds the
-    credential". Same lesson as ``DataSource.status``, which stopped being a boolean for the
+    credential". Same lesson as ``DataDriver.status``, which stopped being a boolean for the
     same reason.
     """
 

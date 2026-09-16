@@ -11,7 +11,7 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.blocks import Delivered, EmailMessageSpec, Inbox, workflow
 from flow_sdk.builtin.consumer_position import ConsumerPosition
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from tests.utils.fake_source import scripted_provider
@@ -124,7 +124,7 @@ async def test_outside_a_workflow_the_position_is_ephemeral():
 async def test_our_own_sent_copy_is_filtered_and_acked():
     addr, name = _addr(), _name()
     with scripted_provider("scripted") as driver:
-        src = DataSource(
+        src = DataDriver(
             name="pre", provider="scripted", config={"inbox": addr}, account_key="me@scripted.test"
         )
         await src.save()

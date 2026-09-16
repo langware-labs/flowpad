@@ -165,7 +165,7 @@ async def _await_declared_source(assistant) -> str | None:
     while time.monotonic() < deadline:
         produced = await Artifact.get_all({"generated_by": str(assistant.typeid)})
         for artifact in produced:
-            if (artifact.target_type_id or "").startswith("data_source-"):
+            if (artifact.target_type_id or "").startswith("data_driver-"):
                 return artifact.target_type_id
         await asyncio.sleep(5.0)
     return None

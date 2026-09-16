@@ -242,6 +242,9 @@ class TypeInfo:
     # Main documents this type USED to carry (``agent.md``). A folder holding one and not the current
     # main is a RETIRED form: reported with the migration that converts it, never indexed or written.
     retired_mains: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # ``agentic-assets/<family>`` directories this type USED to live under (``data_source``). A folder
+    # found there is a RETIRED form too: reported with its migration, never indexed or written.
+    retired_families: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
     # Facts the DISK carries that the header cannot say: counts over rows,
     # links scraped from a body, a name from the path. ``(data, root, header_raw)``
     # mutates the entity kwargs after the main doc and fields are read, before
@@ -416,6 +419,14 @@ class TypeInfo:
         """The path-derived v5 — the one deterministic answer for a KEYLESS
         type whose mint cannot be written (read-only source, failed write)."""
         return mint_uuid(str(Path(layout.root or where).resolve()), namespace=self.id_namespace)
+
+    @property
+    def retired_migration(self) -> str:
+        """The migration that converts this type's retired forms. An entity document's retired main is a
+        different FORMAT (markdown → ``<type>.json``); any other retired form is only a move or a rename."""
+        if self.manifest_layout == ENTITY_LAYOUT:
+            return "flow_sdk.migrations.migration_2026_09_entity_json_mains"
+        return "flow_sdk.migrations.migration_2026_09_retired_asset_forms"
 
     # --- SCAN declarations ---
 

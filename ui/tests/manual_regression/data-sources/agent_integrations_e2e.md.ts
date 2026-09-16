@@ -47,7 +47,7 @@ test.beforeAll(async ({ request }) => {
 
 test.afterAll(async ({ request }) => {
   const api = await apiContext();
-  if (sourceId) await api.delete(`/api/v1/graph/data_source/${sourceId}`).catch(() => undefined);
+  if (sourceId) await api.delete(`/api/v1/graph/data_driver/${sourceId}`).catch(() => undefined);
   if (datasetId) await api.delete(`/api/v1/graph/dataset/${datasetId}`).catch(() => undefined);
   await api.dispose();
   if (datasetFolder && existsSync(datasetFolder)) rmSync(datasetFolder, { recursive: true, force: true });
@@ -92,7 +92,7 @@ test('2. connect: an rss source over the dialog, pointed at the loopback feed', 
   await expect(card).toBeVisible();
 
   const api = await apiContext();
-  const rows = ((await (await api.get('/api/v1/graph/data_source')).json()).data ?? []) as { id: string; name: string }[];
+  const rows = ((await (await api.get('/api/v1/graph/data_driver')).json()).data ?? []) as { id: string; name: string }[];
   sourceId = rows.find((r) => r.name === SOURCE_NAME)?.id ?? '';
   expect(sourceId, 'the source row exists').toBeTruthy();
   const specs = ((await (await api.get('/api/v1/graph/data_source_spec')).json()).data ?? []) as { id: string; name: string }[];
@@ -105,7 +105,7 @@ test('2. connect: an rss source over the dialog, pointed at the loopback feed', 
   )).json()).data ?? []) as { id: string; kind?: string }[];
   editorTypeId = `micro_app-${apps.find((a) => a.kind === 'application.web.editor')?.id ?? ''}`;
   expect(editorTypeId, "the definition's editor is indexed as its child").not.toBe('micro_app-');
-  const polled = await (await api.post(`/api/v1/graph/data_source/${sourceId}/poll_now`)).json();
+  const polled = await (await api.post(`/api/v1/graph/data_driver/${sourceId}/poll_now`)).json();
   expect(polled.data?.status).toBe('due');
   await api.dispose();
 });

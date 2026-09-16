@@ -10,12 +10,12 @@ import pytest
 
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.ingest import reflect
+from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.reflect import (
     ReflectMode,
     get_reflector,
     reflect_refs,
 )
-from flow_sdk.ingest.sources import source_type
 from flow_sdk.sources import FileItem
 
 from ._harness import poll, write_doc
@@ -63,7 +63,7 @@ async def test_the_driver_produces_refs_and_never_items(folder_db, watched, make
 
     write_doc(watched)
     source, _project = await make_source(ReflectMode.NONE.value)
-    driver = source_type("folder")
+    driver = driver_type("folder")
 
     result = await driver.traverse(source, position(segment_key="root", prior={}))
 
@@ -107,7 +107,7 @@ async def test_polling_converges_to_quiet(folder_db, watched, make_source):
     from flow_sdk.builtin.data_source_cursor import DataSourceCursor
     from tests.unit._ingest_helpers import position
 
-    driver = source_type("folder")
+    driver = driver_type("folder")
 
     async def probe_is_quiet() -> bool:
         cursor = await DataSourceCursor.get_one(
@@ -130,11 +130,11 @@ async def test_polling_converges_to_quiet(folder_db, watched, make_source):
 
 @pytest.mark.parametrize("mode", [ReflectMode.COPY, ReflectMode.SYMLINK])
 async def test_reflection_refuses_overlapping_source_without_deleting_it(tmp_path, mode):
-    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.builtin.data_driver import DataDriver
 
     source_path = tmp_path / "source.md"
     source_path.write_text("original")
-    source = DataSource(reflect_into=str(tmp_path))
+    source = DataDriver(reflect_into=str(tmp_path))
     with pytest.raises(ValueError, match="overlap"):
         get_reflector(mode).place(source, str(source_path), tmp_path)
     assert source_path.read_text() == "original"

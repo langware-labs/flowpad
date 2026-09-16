@@ -37,7 +37,7 @@ prefix compare). The reconcile sweep pushes the same gate into its query as
 a `LIKE 'content.message.%'` so a mixed source cannot burn its batch on rows
 it would drop.
 
-**The keys.** `channel` is `DataSource.channel`, falling back to `provider`
+**The keys.** `channel` is `DataDriver.channel`, falling back to `provider`
 for rows written before the field existed. `thread_key` is the driver's
 native handle (`SourceItem.thread_key` — Gmail `threadId`, Slack `thread_ts`)
 or, only when the driver gave none, `normalize_subject(name)` — a
@@ -133,7 +133,7 @@ created or re-found the row, so if the sweep places an item before its
 
 ## What a purge does
 
-`DataSource.purge_records_of` (behind `purge_items`, `replay` and every
+`DataDriver.purge_records_of` (behind `purge_items`, `replay` and every
 source-delete path) calls `remove_projection_for_items`: the reference rows
 for the doomed items are destroyed, their conversation pointers pruned, each
 touched thread recounted or destroyed when empty, and a conversation with no
