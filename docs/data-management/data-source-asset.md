@@ -249,8 +249,26 @@ project loads on first use — its `DataDriver` is saved or synced — through i
 `DataDriverSpec` row.
 
 The extractor (`derive_data_source_spec`) stamps `runtime: source` on the row. A folder
-still carrying the retired `fetch.py` or `FETCH.md` is refused with the upgrade — write a
-`source.py`.
+still carrying the retired `fetch.py` or `FETCH.md` is reported by the scan (never indexed) with
+the upgrade — write a `source.py`. See "Porting a retired runtime" below.
+
+### Porting a retired runtime
+
+`migration_2026_09_retired_asset_forms` moves an old folder into `data_driver/` and renames its
+manifest, but a `fetch.py` is code no migration can rewrite: the migration lists the folder under
+`needs_port`. The port is mechanical:
+
+| `fetch.py` (retired) | `source.py` (current) |
+|---|---|
+| `verb == "segments"` → `{"segments": [...]}` | omit for one stream (the runtime supplies a root segment); else `async def segments()` |
+| `req["source"]["config"]` | `self.config` |
+| the printed `items` list | `_scan(query)` → sorted `[(key, raw), ...]`, and `_item(key, raw)` → `SourceItemSpec` |
+| `external_id` | the key; `self.origin(key)` builds the identity |
+| `state` / `high_water` cursor | nothing, for a listing: re-seeing an unchanged item is free |
+| `traits` in the manifest | ClassVars on the class (`traits` is refused in the manifest) |
+
+A minimal `CollectionSource` also implements `_lookup(key)` (`dict(await self._scan(None)).get(key)`),
+and sets `provider` to the manifest's `name`.
 
 A definition's **editor** is not declared in the manifest either: a webapp asset
 at `<name>/agentic-assets/webapp/editor/` is found by the same walker and becomes

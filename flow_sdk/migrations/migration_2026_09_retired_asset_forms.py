@@ -14,7 +14,10 @@ and a retired main is renamed to the current main only when the current main is 
 present is a conflict and is never touched; an unwritable folder (an install tree) is reported. A retired
 family left empty is removed. Nested assets ride inside the folder they live in.
 
-Idempotent: a second run finds no retired form.
+A retired FILE (``TypeInfo.retired_files``, a retired runtime's ``fetch.py``) is code, not a layout:
+the folder is still moved and renamed, and listed in ``needs_port`` so the result never reads as done.
+
+Idempotent: a second run finds no retired form (a folder that still needs its port is listed again).
 
 Usage (dry-run is the default; ``--apply`` writes):
 
@@ -46,6 +49,8 @@ class Report:
     conflicts: list[str] = field(default_factory=list)
     #: folders left because they cannot be written (an install tree)
     read_only: list[str] = field(default_factory=list)
+    #: folders (converted or not) that still hold a retired file no migration can convert — port by hand
+    needs_port: list[str] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
@@ -54,11 +59,12 @@ class Report:
     def summary(self) -> str:
         verb = "would move" if self.dry_run else "moved"
         return (f"retired asset forms: {verb} {self.moved} folder(s), renamed {self.renamed} main(s), "
-                f"{len(self.conflicts)} conflict(s), {len(self.read_only)} read-only.")
+                f"{len(self.conflicts)} conflict(s), {len(self.read_only)} read-only"
+                + (f"; {len(self.needs_port)} need a manual port: {', '.join(self.needs_port)}." if self.needs_port else "."))
 
 
 def _owned(info: Any) -> bool:
-    return bool(info is not None and (info.retired_families or info.retired_mains)
+    return bool(info is not None and (info.retired_families or info.retired_mains or info.retired_files)
                 and info.retired_migration.endswith(MIGRATION))
 
 
@@ -97,6 +103,8 @@ def convert(info: Any, folder: Path, *, dry_run: bool, report: Report) -> None:
                 pass
         report.moved += 1
     here = folder if dry_run else target
+    if any((here / name).is_file() for name, _ in info.retired_files):
+        report.needs_port.append(str(here))
     retired = next((here / name for name in info.retired_mains if (here / name).is_file()), None)
     if retired is None:
         return

@@ -245,6 +245,9 @@ class TypeInfo:
     # ``agentic-assets/<family>`` directories this type USED to live under (``data_source``). A folder
     # found there is a RETIRED form too: reported with its migration, never indexed or written.
     retired_families: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # ``(file, how to port it)``: a folder holding one is a retired form NO migration converts — it is
+    # code to rewrite (a retired runtime's ``fetch.py``). Reported with the port, never indexed.
+    retired_files: tuple[tuple[str, str], ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
     # Facts the DISK carries that the header cannot say: counts over rows,
     # links scraped from a body, a name from the path. ``(data, root, header_raw)``
     # mutates the entity kwargs after the main doc and fields are read, before
