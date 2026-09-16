@@ -1,13 +1,16 @@
 import {
   FeedEntry,
+  IdentifierType,
   MessageSuggest,
   QueryRequest,
   UserNote,
   forwardDiagnosis,
   sendDiagnosisEmailReport,
+  type APIEntity,
   type EntityFeedData,
 } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { getFeedEntryTypeId } from './feed-utils';
 import { useFeedMutations } from '@src/hooks/use-feed-mutations';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -23,6 +26,26 @@ import { Textarea } from '@src/components/ui/textarea';
 /** Bulk clear only earns its header space once the list is long enough to be a chore. */
 const DISMISS_ALL_MIN_ENTRIES = 5;
 
+/**
+ * Invisible cache-warmer: issues ONE ``$IN`` query for all of a single type's
+ * feed-target ids so the matching ``FeedEntryCard``s resolve from cache instead
+ * of one GET (+ ``/watch``) each. Rendered once per distinct target type so its
+ * hooks stay stable even as the set of types changes. Renders nothing.
+ */
+function FeedTargetHydrator({ type, ids }: { type: string; ids: string[] }) {
+  const request = useMemo(
+    () =>
+      new QueryRequest({
+        type,
+        query: { match: { op: '$IN', operands: ['id', ids] } },
+        name: `feed ${type} hydration`,
+      }),
+    [type, ids],
+  );
+  useEntitiesQuery<APIEntity<any>>(request, { enabled: ids.length > 0 });
+  return null;
+}
+
 export function HomeFeedColumn() {
   const { t } = useLingui();
   const request = useMemo(() => new QueryRequest({ type: FeedEntry.type }), []);
@@ -34,6 +57,28 @@ export function HomeFeedColumn() {
         .sort((a, b) => new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime()),
     [entries],
   );
+  // ── Batch-hydrate every card's target entity (X2) ──────────────────────────
+  // Each ``FeedEntryCard`` points at a target entity (the suggest / note /
+  // trace / usage-report / wiki page it renders). Left alone, every card would
+  // fire its own ``getByTypeId`` GET (+ a ``/watch`` POST) — N+1 across the
+  // feed. We instead group the targets by type and warm the cache with ONE
+  // ``$IN`` query per type (a small fixed set), so the cards' ``useEntity``
+  // calls resolve from cache with no per-card network. Only UUID-keyed ids go
+  // into the ``$IN`` (the id column); any uname-keyed target (rare) simply
+  // falls back to its own cached/per-card resolve. Dead targets are skipped
+  // here and render the "Unavailable" card — the 404-prune is fix/x9b.
+  const targetsByType = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const entry of newEntries) {
+      const tid = getFeedEntryTypeId(entry);
+      if (!tid?.id || tid.identifierType !== IdentifierType.UUID) continue;
+      const set = map.get(tid.type) ?? new Set<string>();
+      set.add(tid.id);
+      map.set(tid.type, set);
+    }
+    return [...map.entries()].map(([type, ids]) => ({ type, ids: [...ids] }));
+  }, [newEntries]);
+
   const refetchVoid = useCallback(async () => {
     await refetch();
   }, [refetch]);
@@ -155,6 +200,11 @@ export function HomeFeedColumn() {
 
   return (
     <div className="flex h-full min-h-0 w-72 shrink-0 flex-col gap-2">
+      {/* Batch cache-warmers — one ``$IN`` query per target type. Render
+          nothing; they exist so the cards below read from cache. */}
+      {targetsByType.map(({ type, ids }) => (
+        <FeedTargetHydrator key={type} type={type} ids={ids} />
+      ))}
       <div aria-hidden className="h-9 shrink-0" />
       <div
         className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card"

@@ -5,6 +5,7 @@ Ported from FlowPad: flowpad/hub/app/actions/fs/fs_actions.py
 Implements individual filesystem operations (browse, upload, download, delete, etc.)
 """
 
+import asyncio
 import errno
 import json
 import logging
@@ -19,12 +20,12 @@ from starlette.datastructures import UploadFile
 from starlette.responses import Response, StreamingResponse
 
 from flow_sdk.api.fs.fs_api import EntityFSReqInfo, VFSPath
+from flow_sdk.assets.layout import File
 from flow_sdk.builtin.faas.serve_static import AppNotBuilt, serve_app_bytes
 from flow_sdk.config import default_service_config
 from flow_sdk.models import FSEntry
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses import ApiFailResponse, ApiResponse, ApiSuccessResponse
-from flow_sdk.schema.layout import File
 from flow_sdk.storage import LocalStorageDriver, StoragePermissionError, get_entity_storage
 
 logger = logging.getLogger(__name__)
@@ -317,7 +318,6 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
     if typeid is None or not getattr(typeid, "id", None) or not getattr(typeid, "type", None):
         return False
     try:
-        from pathlib import Path
 
         from flow_sdk.builtin.flow_message import BODY_FILENAME
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -349,9 +349,7 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
     bytes_ = await hub_get(et, str(typeid.id), "fs", f"download/{vfs_path}", raw=True)
     if not bytes_:
         return False
-    target = Path(storage.get_storage_path(vfs_path))
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(bytes_)
+    await storage.upload(BytesIO(bytes_), vfs_path)
     return True
 
 
@@ -736,6 +734,58 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         return ApiFailResponse(message=f"Failed to write file: {str(e)}")
 
 
+async def document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
+    """Read or patch the exact addressed document through authorized storage."""
+    from pydantic import ValidationError
+
+    from flow_sdk.actions.fs.asset_versioning import _real_path, finish_document_version, prepare_document_version
+    from flow_sdk.assets.document import DocumentConflict, DocumentPatch, read_document_bytes, update_document
+
+    if request_info.method not in ("get", "post") or not fs_info.vpath.typeid:
+        return ApiFailResponse(message="Document requires GET or POST and a target", status_code=400)
+    try:
+        storage = await _get_storage_for_entity(request_info)
+        path = fs_info.vpath.abs_vfspath
+        if request_info.method == "get":
+            raw = b"".join([chunk async for chunk in storage.stream(path)])
+            result = read_document_bytes(raw)
+        else:
+            payload = await request_info.get_post_data()
+            if not isinstance(payload, dict) or not isinstance(payload.get("expected_revision"), str):
+                return ApiFailResponse(message="expected_revision is required", status_code=400)
+            values = dict(payload)
+            expected = values.pop("expected_revision")
+            patch = DocumentPatch.model_validate(values)
+            real_path = _real_path(storage, path)
+            if real_path is None:
+                return ApiFailResponse(message="Storage does not support conditional document writes", status_code=501,
+                                       data={"code": "conditional_write_unsupported"})
+            version_context = await prepare_document_version(real_path)
+            version_base = (version_context[4] if version_context is not None and
+                            Path(version_context[3]).resolve() == Path(real_path).resolve() else None)
+            result = await asyncio.to_thread(update_document, real_path, patch,
+                                             expected_revision=expected, version_base=version_base)
+            if result.revision != expected:
+                await finish_document_version(real_path, result, version_context)
+                await _resync_entity_from_disk(real_path)
+        data = result.model_dump(mode="json")
+        data["body_ref"] = {"path": fs_info.vpath.entity_sub_path, "type_id": str(fs_info.vpath.typeid),
+                            "ref_type": "text", "read_only": False}
+        return ApiSuccessResponse(data=data)
+    except DocumentConflict as exc:
+        return ApiFailResponse(message=str(exc), status_code=409,
+                               data={"code": "stale_document", "current_revision": exc.current_revision})
+    except FileNotFoundError:
+        return ApiFailResponse(message="Document not found", status_code=404)
+    except (ValidationError, ValueError, UnicodeError) as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+    except Exception as exc:
+        if _is_permission_denied_error(exc):
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        logger.exception("Document operation failed")
+        return ApiFailResponse(message=str(exc))
+
+
 async def _resync_entity_from_disk(real_path: str | None) -> None:
     """Re-extract whatever entity the just-written local file backs. Best-effort.
 
@@ -931,3 +981,39 @@ async def download_zip(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> A
 async def upload_zip(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
     """Upload zip file (not implemented in this version)"""
     return ApiFailResponse(message="Zip upload not available in this version")
+
+
+async def ensure_document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
+    """Explicitly repair a missing main document at the authorized occurrence."""
+    from flow_sdk.actions.fs.asset_versioning import _real_path
+    from flow_sdk.assets.creation import AssetPathCollisionError, ensure_asset_document
+    from flow_sdk.fs_store.type_id import TypeId
+
+    if request_info.method != "post" or not fs_info.vpath.typeid:
+        return ApiFailResponse(message="Document repair requires POST and a target", status_code=400)
+    try:
+        payload = await request_info.get_post_data()
+        if not isinstance(payload, dict) or not isinstance(payload.get("spec"), dict):
+            return ApiFailResponse(message="typeid and an explicit scaffold spec are required", status_code=400)
+        identity = TypeId(payload.get("typeid", ""))
+        storage = await _get_storage_for_entity(request_info)
+        real_path = _real_path(storage, fs_info.vpath.abs_vfspath)
+        if real_path is None:
+            return ApiFailResponse(message="Storage does not support local document repair", status_code=501)
+        target = Path(real_path)
+        if not target.resolve().is_relative_to(Path(storage.mount_path).resolve()):
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        await asyncio.to_thread(ensure_asset_document, target, identity, payload["spec"])
+        await _resync_entity_from_disk(real_path)
+        return ApiSuccessResponse(data={"path": fs_info.vpath.entity_sub_path})
+    except AssetPathCollisionError as exc:
+        return ApiFailResponse(message=str(exc), status_code=409)
+    except FileNotFoundError:
+        return ApiFailResponse(message="Asset folder not found", status_code=404)
+    except (ValueError, UnicodeError) as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+    except Exception as exc:
+        if _is_permission_denied_error(exc):
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        logger.exception("Document repair failed")
+        return ApiFailResponse(message=str(exc))

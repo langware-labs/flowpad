@@ -24,6 +24,7 @@ function bucket(name: string, path: string | null): TabProjectBucket {
     state: path == null ? 'loading' : 'live',
     tabCount: 1,
     recover: () => Promise.resolve(null),
+    closeAll: () => Promise.resolve(),
   };
 }
 

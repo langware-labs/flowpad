@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import webbrowser
 
-from flow_sdk.core.connections.types import Authorization, BrowserAuthorization
+from flow_sdk.schema.data_spec.connection_spec import Authorization, BrowserAuthorization
 
 
 def open_authorization_in_system_browser(authorization: Authorization) -> bool:

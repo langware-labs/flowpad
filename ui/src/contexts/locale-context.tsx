@@ -204,7 +204,7 @@ function pushRecent(code: string): void {
  * the current project — so the language a project is read in follows the project.
  * The equality guard breaks the apply→record feedback loop: `applyProjectLocale`
  * → `setLocale(project.locale)` lands here with an already-matching value and
- * no-ops. Mirrors `stampProjectViewMode` in view-mode-context.
+ * no-ops.
  */
 function stampProjectLocale(project: Project | null | undefined, code: string): void {
   if (!project || project.locale === code) return;
@@ -235,6 +235,42 @@ export async function setLocale(code: string): Promise<void> {
   const next = isSupported(code) ? code : DEFAULT_LOCALE;
   stampProjectLocale(dataContext.project, next);
   await activateLocale(next);
+}
+
+/**
+ * The language a project CREATED here is born with: whatever the app is showing
+ * right now.
+ *
+ * `applyProjectLocale` below treats an unset `locale` as "no answer" and opens
+ * in English rather than inheriting the last project's language — that rule is
+ * about ENTERING a project someone else's answer may be missing from. A project
+ * you just made in a Hebrew app is not an unanswered project: making it in
+ * Hebrew *is* the answer, and English is a wrong one. Changing it later is the
+ * footer chip / Language card, exactly as for any other project.
+ *
+ * LOCAL creation only. A project that arrives from the hub — shared or remote —
+ * carries its own answer on the row and that one wins: `stampNewProjectLocale`
+ * never overwrites a set locale, and both helpers stand down on the hub itself
+ * (its project schema has no `locale`; see `stampProjectLocale`).
+ */
+export function newProjectLocale(): string | null {
+  return isHubOnly() ? null : getLocale();
+}
+
+/**
+ * `newProjectLocale` for the creation path that does NOT own the constructor:
+ * a git clone, where the backend mints the row and hands it back. Same rule,
+ * applied after the fact — and awaited, because the caller navigates into the
+ * project next and `applyProjectLocale` must read the seeded value rather than
+ * the empty one it would race.
+ */
+export async function stampNewProjectLocale(project: Project): Promise<void> {
+  const code = newProjectLocale();
+  if (!code || project.locale) return;
+  project.locale = code;
+  await project.save().catch((err) => {
+    console.warn('[locale] failed to seed locale on new project', err);
+  });
 }
 
 /**

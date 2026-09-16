@@ -1,6 +1,7 @@
 import { DockPointerData, type ViewType } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { notify } from './notify';
+import { APP_NAME } from '@src/constants/app';
 
 /**
  * Layer-1 notification renderer — GENERIC by contract.
@@ -46,7 +47,7 @@ export function dockPointerForClickTarget(target?: NotificationClickTarget): Doc
 }
 
 export function renderDesktopNotification(payload: NotificationPayload): void {
-  const title = payload.title || 'Flowpad';
+  const title = payload.title || APP_NAME;
   const body = payload.body || '';
 
   const bridge = (window as unknown as { electronAPI?: NotifyBridge }).electronAPI;

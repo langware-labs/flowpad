@@ -220,6 +220,30 @@ export class WatchQueryMap<T> {
   }
 
   /**
+   * Insert a newly-created entity into every matching query's results and notify.
+   *
+   * Mirror of {@link removeEntityFromResults} for the `create` data-op: the WS
+   * data-op already delivered (and materialized) the full entity, so there is no
+   * need to re-run the LIST query over the network — splice it in locally.
+   *
+   * Gated by the same `query.validate(data)` scope check the data-op path uses
+   * elsewhere, so scope-filtered queries only gain rows they would actually
+   * match. Queries that have not been fetched yet (`results` undefined) are
+   * skipped — their initial fetch will already include the entity. Ids already
+   * present are not duplicated.
+   */
+  public insertEntityIntoResults(type: string, entityTypeId: TypeId, entity: T, data: any): void {
+    for (const watchedQuery of this.watchedQueries.values()) {
+      if (watchedQuery.request.type !== type || !watchedQuery.results) continue;
+      if (watchedQuery.request.query && !watchedQuery.request.query.validate(data)) continue;
+      const exists = watchedQuery.results.some((e: any) => e.typeId.equals(entityTypeId));
+      if (exists) continue;
+      watchedQuery.results.push(entity);
+      watchedQuery.notifyCallbacks();
+    }
+  }
+
+  /**
    * Get all watched queries for debugging
    */
   public getAllWatchedQueries(): WatchedQuery<T>[] {

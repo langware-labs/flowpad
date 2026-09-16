@@ -8,18 +8,20 @@ import asyncio
 import inspect
 import logging
 import os
-import signal
 import stat
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from flow_sdk._compat import StrEnum
 from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.builtin.change_event import ChangeEvent
+from flow_sdk.claude_hook_events.hook_event_data import HookEventData as HookEventData
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
+from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
 _log = logging.getLogger(__name__)
 
@@ -35,29 +37,16 @@ _SCRIPT_OUTPUT_CAP = 8192
 # which solves the same failure mode for CLI workers: that one is keyed on a
 # per-launch run_id marker and knows about npm wrapper processes, neither of
 # which a one-shot trigger script has, and it sits a layer above this module.
-_CAN_KILLPG = hasattr(os, "killpg")
 
 
 def _kill_script_tree(proc) -> None:
     """SIGKILL the timed-out script AND everything it forked.
 
-    ``proc.kill()`` alone reaps the script's own process only. Its children
-    inherit the stdout/stderr pipes, so they keep the write end open and the
-    follow-up ``communicate()`` blocks for as long as they run — a 1s timeout
-    on a script that forks a 10s ``sleep`` returned after 10s. Killing the
-    whole group is what makes ``timeout_seconds`` a real bound.
+    The rule and the reason it exists now live in one place — see
+    ``flow_sdk/utils/process_tree``; the wizard runner needs the same discipline
+    and cannot import this module (it holds entities).
     """
-    if _CAN_KILLPG:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            return
-        except OSError:
-            # Group already gone, or we never got one — fall through.
-            pass
-    try:
-        proc.kill()
-    except ProcessLookupError:
-        pass
+    kill_process_tree(proc)
 
 
 @dataclass
@@ -72,13 +61,7 @@ class RunResult:
     script_path: Optional[str] = None  # which path actually ran (after resolution)
 
 
-class ActionType(StrEnum):
-    """Types of actions that can be triggered."""
 
-    NOP = "nop"
-    NOTIFY_ENTITY = "notify_entity"
-    RUN_SCRIPT = "run_script"
-    CALLBACK = "callback"
 
 
 class RelationshipSubAction(StrEnum):
@@ -110,18 +93,7 @@ class SuccessMessage(StrEnum):
     TRIGGER_DISCONNECTED = "Trigger disconnected successfully"
 
 
-class TriggerAction(BaseModel):
-    """Action to be executed when a trigger matches."""
 
-    action_type: ActionType
-    # RUN_SCRIPT delivery: external script path on disk (preferred if it exists).
-    script_path: Optional[str] = None
-    # RUN_SCRIPT delivery: filename inside the trigger record's data folder
-    # (`record.data_dir / script_filename`). Used when `script_path` is None or
-    # the file doesn't exist on disk. Editable via flowpad's file editor.
-    script_filename: Optional[str] = None
-    # CALLBACK delivery: name registered via `@trigger_callbacks.register("name")`.
-    callback_name: Optional[str] = None
 
 
 class ExecutedAction(BaseModel):
@@ -133,8 +105,6 @@ class ExecutedAction(BaseModel):
     counter: int
 
 
-# Re-export canonical HookEventData from shared module
-from flow_sdk.claude_hook_events.hook_event_data import HookEventData
 
 
 class WebhookHandleResult(BaseModel):
@@ -286,7 +256,7 @@ async def _exec_script(
             cwd=str(Path(script_path).parent),
             # Own process GROUP so a timeout can kill the whole tree — see
             # _kill_script_tree() for why the child alone is not enough.
-            start_new_session=_CAN_KILLPG,
+            start_new_session=CAN_KILLPG,
         )
         t0 = time.monotonic()
         timed_out = False
@@ -376,11 +346,108 @@ class RunScriptActionHandler(TriggerActionHandler):
         return None
 
 
+class RunAgentActionHandler(TriggerActionHandler):
+    """Handler for RUN_AGENT — run an Agent headlessly with the action's prompt.
+
+    The agent comes from the action's ``target_type_id``, else the trigger's
+    own parent: a trigger nested inside an agent folder runs that agent, the
+    same containment rule ``run_wizard`` uses. The run goes through
+    ``Agent.launch``, so the agent's worker, model, system prompt and MCP
+    servers all apply, and it is born headless and tab-less.
+
+    Deliberately no unattended trust gate (``_run_wizard_trigger`` has one): an
+    enabled trigger on an indexed agent runs, on whichever machine indexed it.
+
+    Returns the started ``AgenticProcess`` so the fire can log its id.
+    """
+
+    async def execute(
+        self,
+        trigger: Any,
+        action: Optional["TriggerAction"] = None,
+        changes: Optional[list["ChangeEvent"]] = None,
+    ) -> Any:
+        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415 — entity layer imports this module
+        from flow_sdk.inbox.agent_runner import _workdir_for  # noqa: PLC0415
+
+        prompt = str(getattr(action, "prompt", "") or "").strip()
+        if not prompt:
+            raise ValueError(f"RUN_AGENT on {getattr(trigger, 'name', '?')!r} has no prompt")
+
+        agent = None
+        for candidate in (getattr(action, "target_type_id", None), getattr(trigger, "parent_type_id", None)):
+            ref = str(candidate or "")
+            if ref.startswith("agent-"):
+                agent = await Agent.get_by_id(ref.split("-", 1)[1])
+                if agent is not None:
+                    break
+        if agent is None:
+            raise LookupError(f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: no agent to run")
+
+        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+        runs_on = str(getattr(trigger, "runs_on", "") or "")
+        if runs_on:
+            from flow_sdk.builtin.agent_places import place_of  # noqa: PLC0415
+
+            deployment = await place_of(agent, runs_on, local=True)
+            if deployment is None:
+                _log.info("RUN_AGENT on %s: place %s is not this agent's place on this machine; not running",
+                          getattr(trigger, "name", "?"), runs_on)
+                return None
+        else:
+            # Resolved once here and handed to `launch`, which would otherwise resolve it again.
+            deployment = await agent.local_deployment()
+        # A place can be switched off on its own; a schedule on it is then a quiet no-op, not an error.
+        if not agent.enabled_on(deployment.id):
+            _log.info("RUN_AGENT on %s: agent %r is disabled on place %s; not running",
+                      getattr(trigger, "name", "?"), agent.name, deployment.id)
+            return None
+        process = await agent.launch(
+            prompt,
+            deployment=deployment,
+            name=f"{getattr(trigger, 'name', '') or agent.name} · scheduled",
+            workdir=await _workdir_for(agent),
+            context_data={"trigger_id": str(getattr(trigger, "id", "") or "")},
+        )
+        # A launched run is never finished by anyone: `launch` returns at
+        # scheduling time and the lifecycle stays RUNNING forever, so the run
+        # history showed every scheduled run as still running. Supervise it to
+        # its end — detached, because a "Run now" fires inside a request whose
+        # transaction is gone by the time the turn ends.
+        create_detached_task(_finish_agent_run(process), name=f"run-agent-finish-{str(process.id)[:8]}")
+        return process
+
+
+async def _finish_agent_run(process: Any) -> None:
+    """Wait for the run's turn to reach a terminal state, then end its lifecycle:
+    STOPPED when the worker completed, FAILED when it errored. The same one-shot
+    shape as the ingest agent driver (``wait`` then ``exit``)."""
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus  # noqa: PLC0415
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus  # noqa: PLC0415
+
+    try:
+        await process.wait()
+        if process.status == ProcessStatus.FAILED.value:
+            return
+        errored = process.fetch_worker_status() == WorkerStatus.ERROR
+        await process.exit()
+        # `exit` settles a headless process STOPPED; a run whose worker ended in
+        # ERROR is re-settled FAILED here.
+        final = ProcessStatus.FAILED.value if errored else ProcessStatus.STOPPED.value
+        if process.status != final:
+            process.status = final
+            await process.save()
+    except Exception:
+        _log.exception("RUN_AGENT: could not finish run %s", getattr(process, "id", "?"))
+
+
 _ACTION_HANDLERS: dict[ActionType, TriggerActionHandler] = {
     ActionType.NOP: NopActionHandler(),
     ActionType.NOTIFY_ENTITY: NotifyEntityActionHandler(),
     ActionType.RUN_SCRIPT: RunScriptActionHandler(),
     ActionType.CALLBACK: CallbackActionHandler(),
+    ActionType.RUN_AGENT: RunAgentActionHandler(),
 }
 
 

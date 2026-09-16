@@ -323,12 +323,26 @@ async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:
             row = await Capability.get_by_kind(kind)
             if row is None:
                 continue
-            check = await registry.test(kind)
-            last_check = check.result.model_dump(mode="json")
-            # Passive sweep (attempted=False): may flip a row to AVAILABLE or
-            # back off a stale AVAILABLE, but never promotes NONE ("never
-            # tried") to NOT_AVAILABLE — that takes an explicit user verb.
-            state = row.derive_state(check.result)
+            # A passive sweep refreshes badges; it does not run work. A
+            # capability whose test() spawns a vendor CLI or drives an agent
+            # (``sweepable_test=False``) keeps whatever ``last_check`` an
+            # explicit verb last wrote, and the sweep still mirrors its VALUE
+            # below. Without this the sweep launched a real Claude agent per
+            # capabilities/summary request and waited on it — a badge refresh
+            # costing a live agent run, and the reason
+            # test_capabilities_summary_groups_by_intent blew its 30s cap once
+            # the caller actually waited for the worker it had started.
+            if not registry.get(kind).spec.sweepable_test:
+                last_check = row.last_check
+                state = row.state
+            else:
+                check = await registry.test(kind)
+                last_check = check.result.model_dump(mode="json")
+                # Passive sweep (attempted=False): may flip a row to AVAILABLE
+                # or back off a stale AVAILABLE, but never promotes NONE
+                # ("never tried") to NOT_AVAILABLE — that takes an explicit
+                # user verb.
+                state = row.derive_state(check.result)
             unchanged = (
                 row.value == value.value
                 and row.value_type == value.value_type

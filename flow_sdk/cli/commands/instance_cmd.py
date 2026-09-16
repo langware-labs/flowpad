@@ -300,7 +300,7 @@ def _relaunch_backend_only(name: str) -> int:
             ["uv", "run", "-m", "flow_sdk.server.run"],
             env=env,
             stderr=fh,
-        )
+        ).pid
 
 
 def _record_backend_pid(name: str, backend_pid: int) -> None:

@@ -15,8 +15,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataContext } from '@sdk';
 import { ViewMode } from '@src/contexts/view-mode-context';
 
-const toastCustom = vi.fn();
-const toastDismiss = vi.fn();
+const { toastCustom, toastDismiss } = vi.hoisted(() => ({
+  toastCustom: vi.fn(),
+  toastDismiss: vi.fn(),
+}));
 vi.mock('sonner', () => ({
   toast: { custom: toastCustom, dismiss: toastDismiss },
   Toaster: () => null,

@@ -14,20 +14,6 @@ import type { WorkerCliVendor } from './process-cli-presentation';
 
 export const FONT_FAMILY = '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace';
 
-/**
- * Click handler for the xterm WebLinksAddon.
- *
- * The addon's default handler opens a blank window first and then assigns
- * location.href. In Electron, setWindowOpenHandler sees `about:blank`
- * (not http/https), denies it, window.open() returns null and the click
- * silently does nothing. Passing the real URL to window.open() lets the
- * Electron handler route it to shell.openExternal, and keeps the same
- * new-tab behavior in a regular browser.
- */
-export function openTerminalLink(_event: MouseEvent, uri: string): void {
-  window.open(uri, '_blank', 'noopener');
-}
-
 export const FONT_SIZE_PX = 14;
 
 /**

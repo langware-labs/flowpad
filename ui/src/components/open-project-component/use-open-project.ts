@@ -1,11 +1,12 @@
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { canonicalPath, selectProjectContext } from '@src/components/project-selector';
+import { canonicalPath, isOpenableProjectPath, selectProjectContext } from '@src/components/project-selector';
 import { projectScope } from '@src/lib/scope-filter';
 import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
+import { newProjectLocale } from '@src/contexts/locale-context';
 import { notify } from '@src/notifications';
 import { ContextEntitiesEnum, dataContext, isHubOnly, PageId, Project } from '@sdk';
 import { useCallback } from 'react';
@@ -90,6 +91,19 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
               return;
             }
           }
+          // `vibeNoProcess` OFF on home, ON when leaving a workspace.
+          //
+          // The flag's only effect is which surface `flow-page` renders for a
+          // HOME dock: set, it picks `VibeNoProcessWorkspace` (the "Start new
+          // chat" pane + the project's past builds) over the `VibeNewChat`
+          // hero. That pane is the right landing for the branch above — you
+          // left a workspace for a project that has no process, and its earlier
+          // builds are what you came for. It is the WRONG one here: opening a
+          // project ON home stays home, and home is the hero. A freshly cloned
+          // project has no past builds at all, so the flag turned "open this
+          // template" into an empty pane with the agents the repo brought along
+          // (its whole point) nowhere in sight.
+          //
           // URL-first, exactly as the non-vibe home branch below: the
           // scope-carrying HOME dock's loader (adoptScopeProject → loadProject)
           // is the single writer of project context.
@@ -105,7 +119,7 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
           await dataContext.setActiveEntityTypeId(null);
           await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
           navigation.openDock(
-            DockPointer.forHome(undefined, undefined, { vibeNoProcess: true })
+            DockPointer.forHome(undefined, undefined, isHome ? undefined : { vibeNoProcess: true })
               .withScopeFilter(projectScope(project.id))
               .withViewMode(ViewMode.Vibe),
           );
@@ -135,16 +149,19 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
       if (!dataContext.someone) throw new Error(t`You must be logged in`);
 
       const normalizedPath = normalizePath(path);
-      if (!normalizedPath) throw new Error(t`Please provide a valid project path`);
+      if (!normalizedPath || !isOpenableProjectPath(normalizedPath)) {
+        throw new Error(t`Please provide a valid project path`);
+      }
 
       const pathKey = canonicalPath(normalizedPath);
       const freshProjects = await lazyAssets.refresh(LazyAsset.Projects);
+      // Dedup on the mount path alone — a name is not a location.
       let targetProject =
-        freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path || p.name || '') === pathKey) || null;
+        freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path || '') === pathKey) || null;
       const openedExisting = !!targetProject;
 
       if (!targetProject) {
-        targetProject = new Project({ name: normalizedPath });
+        targetProject = new Project({ name: normalizedPath, locale: newProjectLocale() });
         targetProject = await targetProject.save([dataContext.someone]);
       }
 

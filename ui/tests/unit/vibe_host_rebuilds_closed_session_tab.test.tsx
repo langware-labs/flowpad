@@ -96,7 +96,7 @@ beforeEach(() => {
   // THE OBSERVATION POINT — this round trip is what re-shows the closed row.
   ensureDockSpy = vi
     .spyOn(Tab, 'getFromDockPointer')
-    .mockImplementation(() => Promise.resolve([...tabManager.getSnapshot()]));
+    .mockImplementation(() => Promise.resolve({ tabs: [...tabManager.getSnapshot()], created: false }));
 });
 
 afterEach(() => {

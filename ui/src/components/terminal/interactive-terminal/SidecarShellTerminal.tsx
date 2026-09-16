@@ -1,9 +1,10 @@
+import { registerTerminalLinks } from './terminal-links';
+import { useTerminalLinks } from './TerminalLinkMenu';
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { dataContext, Shell } from '@sdk';
+import { Shell } from '@sdk';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -11,7 +12,6 @@ import {
   FONT_FAMILY,
   FONT_SIZE_PX,
   applyRtlGridContract,
-  openTerminalLink,
   registerOsc52ClipboardWrite,
 } from './terminalConfig';
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
@@ -28,9 +28,9 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const shellRef = useRef<Shell | null>(null);
+  const terminalLinks = useTerminalLinks(shellRef);
   const [terminalReady, setTerminalReady] = useState(false);
-  const reattachBufferRef = useRef<string[] | null>([]);
-  const ptyOwnedRef = useRef(false);
+  const [shell, setShell] = useState<Shell | null>(null);
 
   // Theme updates
   useEffect(() => {
@@ -39,15 +39,17 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
     term.options.theme = resolvedTheme === 'dark' ? DARK_THEME : LIGHT_THEME;
   }, [resolvedTheme]);
 
-  // Load shell entity
+  // React to entity readiness instead of retrying a ref that cannot trigger effects.
   useEffect(() => {
-    Shell.getById(shellId)
-      .then((s) => {
-        shellRef.current = s ?? null;
-      })
-      .catch(() => {
-        shellRef.current = null;
-      });
+    let disposed = false;
+    setShell(null);
+    shellRef.current = null;
+    void Shell.getById(shellId).then((loaded) => {
+      if (disposed) return;
+      shellRef.current = loaded ?? null;
+      setShell(loaded ?? null);
+    }).catch((error) => console.error('[SidecarShellTerminal] Failed to load shell:', error));
+    return () => { disposed = true; };
   }, [shellId]);
 
   // Terminal init/dispose
@@ -74,13 +76,12 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
       allowProposedApi: true,
     });
 
-    term.loadAddon(new WebLinksAddon(openTerminalLink));
-
     const fit = new FitAddon();
     term.loadAddon(fit);
 
     try {
       term.open(container);
+      registerTerminalLinks(term, terminalLinks.handlers);
       // A plain shell emits logical order on every platform — no CLI here that
       // pre-reverses, so this terminal always takes the browser-bidi contract.
       applyRtlGridContract(container, 'unknown');
@@ -127,34 +128,23 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shellId]);
 
-  // Connect to PTY when terminal is ready
+  // Shell owns replay and live output. Subscribe after attach, when onOutput is available.
   useEffect(() => {
-    if (!terminalReady || !shellId) return;
-
-    let retryCount = 0;
-    const maxRetries = 5;
-
-    const connect = async () => {
-      const shell = shellRef.current;
-      if (!shell) {
-        if (retryCount < maxRetries) {
-          retryCount++;
-          setTimeout(() => void connect(), 500);
-        }
-        return;
+    const term = terminalRef.current;
+    if (!terminalReady || !shell || !term) return;
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+    void (async () => {
+      if (!shell.connected) {
+        await shell.start({ cols: term.cols, rows: term.rows, workdir: shell.workdir ?? undefined });
       }
-
-      if (ptyOwnedRef.current) return;
-      ptyOwnedRef.current = true;
-
-      const cols = terminalRef.current?.cols || 80;
-      const rows = terminalRef.current?.rows || 24;
-      const workingDir = shell.workdir || dataContext.project?.fs_storage_mount_path || undefined;
-      await shell.start({ cols, rows, workdir: workingDir });
-    };
-
-    void connect();
-  }, [terminalReady, shellId]);
+      if (disposed) return;
+      term.reset();
+      for (const chunk of shell.getPtyChunks()) term.write(chunk.data);
+      unsubscribe = shell.onOutput((data) => term.write(data));
+    })().catch((error) => console.error('[SidecarShellTerminal] Failed to attach shell:', error));
+    return () => { disposed = true; unsubscribe?.(); };
+  }, [shell, terminalReady]);
 
   // Input handler
   useEffect(() => {
@@ -166,32 +156,6 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
     });
     return () => disp.dispose();
   }, [terminalReady]);
-
-  // Output handler
-  useEffect(() => {
-    if (!shellId) return;
-    const shell = shellRef.current;
-
-    const handleData = (data: string) => {
-      if (reattachBufferRef.current !== null) {
-        reattachBufferRef.current.push(data);
-        return;
-      }
-      const term = terminalRef.current;
-      if (term) {
-        try {
-          term.write(data);
-        } catch {
-          /* ignore */
-        }
-      }
-    };
-
-    const unsub = shell?.onOutput(handleData);
-    return () => {
-      unsub?.();
-    };
-  }, [shellId, terminalReady]);
 
   // ResizeObserver
   useEffect(() => {
@@ -241,11 +205,14 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
   }, [active, terminalReady]);
 
   return (
-    <div
-      ref={containerRef}
-      className={`min-h-0 flex-1 ${className}`}
-      onClick={() => terminalRef.current?.focus()}
-      tabIndex={0}
-    />
+    <>
+      <div
+        ref={containerRef}
+        className={`min-h-0 flex-1 ${className}`}
+        onClick={() => terminalRef.current?.focus()}
+        tabIndex={0}
+      />
+      {terminalLinks.menu}
+    </>
   );
 };

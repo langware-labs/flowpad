@@ -99,6 +99,38 @@ async def test_listed_sender_is_admitted_case_and_space_insensitively():
     assert _mailbox(allowed=["Alice@Example.com"]).allowed("  alice@example.com ") is True
 
 
+# ── from_source on a bind_channel-bound source (owner, no config.agent_id) ────
+
+
+async def test_from_source_resolves_the_agent_from_owner_when_config_has_no_agent_id():
+    """A channel `Agent.bind_channel` bound (Slack, Teams, …) carries no
+    `config.agent_id` at all — that key belongs to the cloud-mailbox
+    (`allocate_inbox`) driver only. Its agent is the `owner`.
+
+    Before the fix, `from_source` read only `config.get("agent_id")`, got
+    `""`, and `TypeId(type="agent", id="")` raised — crashing
+    `handle_inbound` for every single bind_channel-bound source, always,
+    silently (swallowed by `_on_item`'s catch-all). `agent_id_of` is the
+    already-existing reader that falls back to `owner`; `from_source` now
+    goes through it instead of re-spelling half the rule.
+    """
+    agent_id = "5be3d54a-3e27-4a92-bef9-cbb723e71871"
+    source = DataSource(
+        name="slack-q-agent",
+        provider="slack",
+        channel="slack",
+        config={"channels": [{"id": "C0123456789", "name": "test"}]},  # no agent_id key
+        owner=TypeId(type="agent", id=agent_id),
+        status=SourceStatus.ACTIVE.value,
+        inbound_allowed_senders=["U0BP53L7Z5G"],
+    )
+
+    inbox = EmailInbox.from_source(source)  # must not raise
+
+    assert inbox.agent_typeid == TypeId(type="agent", id=agent_id)
+    assert inbox.allowed("U0BP53L7Z5G") is True
+
+
 async def test_a_disabled_mailbox_overrides_the_list():
     """The switch is a kill switch — it must beat a populated allowlist."""
     inbox = _mailbox(status=STATUS_DISABLED, allowed=["alice@example.com"])

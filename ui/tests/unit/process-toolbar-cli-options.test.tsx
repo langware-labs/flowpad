@@ -12,9 +12,9 @@
  * knowledge itself lives in process-cli-presentation.ts and is consumed here
  * through the real gating in ProcessToolbar.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ProcessStatus, type AgenticProcess, type Shell } from '@sdk';
+import { dataManager, ProcessStatus, type AgenticProcess, type Shell } from '@sdk';
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -95,15 +95,15 @@ const TRACE_FILTERS = {
 };
 const COL_VIS = { trace: true, time: true, annotations: true };
 
-function renderToolbar(workerType: string) {
+function renderToolbar(workerType: string, process = makeProcess(workerType), embedded = true) {
   return render(
     <ProcessToolbar
-      process={makeProcess(workerType)}
+      process={process}
       traceFilters={TRACE_FILTERS}
       onTraceFiltersChange={() => {}}
       colVis={COL_VIS}
       onColVisChange={() => {}}
-      embedded
+      embedded={embedded}
       shell={null as unknown as Shell}
     />,
   );
@@ -177,4 +177,25 @@ describe('ProcessToolbar — vendor-gated Session Info popover', () => {
       screen.getByText(`cd '/tmp/proj' && claude --dangerously-skip-permissions --resume ${SESSION_ID}`),
     ).toBeTruthy();
   });
+});
+
+it('updates the header for a name-only entity notification after status settles', () => {
+  const process = makeProcess('claude');
+  let notify = () => {};
+  const subscription = vi.spyOn(dataManager, 'subscribe').mockImplementation((_id, callback) => {
+    notify = () => callback(process as never);
+    return () => {};
+  });
+  try {
+    renderToolbar('claude', process, false);
+    expect(screen.getByTestId('process-header-name').textContent).toBe('Toolbar test process');
+    act(() => {
+      process.name = 'Native title after the answer';
+      notify();
+    });
+    expect(screen.getByTestId('process-header-name').textContent).toBe('Native title after the answer');
+  } finally {
+    cleanup();
+    subscription.mockRestore();
+  }
 });

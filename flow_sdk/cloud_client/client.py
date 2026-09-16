@@ -201,8 +201,12 @@ class FlowpadClient:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         timeout: float | httpx.Timeout | None = None,
+        json: Any = None,
     ):
         """Return an httpx streaming-response context manager.
+
+        ``json`` is the request body for a POST whose RESPONSE streams — a
+        relayed ``prompt`` — and is sent verbatim.
 
         For large downloads consumed chunk-by-chunk (``resp.aiter_bytes()``)
         instead of buffered whole into ``resp.content`` — lets a caller report
@@ -213,7 +217,7 @@ class FlowpadClient:
                     ...
         """
         client = await self._get_client()
-        return client.stream(method, path, params=params, headers=headers, timeout=timeout)
+        return client.stream(method, path, params=params, headers=headers, timeout=timeout, json=json)
 
     @staticmethod
     def _request_path(url_or_path: Any) -> str:
@@ -252,8 +256,15 @@ class FlowpadClient:
         *,
         files: Any = None,
         timeout: float | httpx.Timeout | None = None,
+        idempotent: bool = False,
     ) -> Any:
-        """Make a POST request and return the unwrapped response data."""
+        """Make a POST request and return the unwrapped response data.
+
+        ``idempotent=True`` treats a 409 ("already exist") as success and
+        returns ``None`` instead of raising — for create-or-no-op paths where
+        the post-condition (the row exists on the hub) is already satisfied,
+        e.g. re-sharing an already-shared entity to invite another member.
+        """
         response = await self.request(
             "POST",
             path,
@@ -261,6 +272,8 @@ class FlowpadClient:
             files=files,
             timeout=timeout,
         )
+        if idempotent and response.status_code == 409:
+            return None
         return self._unwrap(response)
 
     async def put(

@@ -1,5 +1,7 @@
-import { EntityEnv, TypeId, EntityEnvVars } from '@sdk';
+import { dataManager, EntityEnv, TypeId, EntityEnvVars, type OAuthMessage } from '@sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { OAuthEventType, OAuthStatus } from '../../services/oauth/oauth-service';
 
 export interface UseEntityEnvOptions {
   /**
@@ -117,6 +119,23 @@ export const fetchEntityEnvTable = async (entityTypeId?: TypeId): Promise<Entity
 export const useEntityEnv = (options: UseEntityEnvOptions = {}): UseEntityEnvReturn => {
   const { entityTypeId, enabled = true, refetchInterval } = options;
   const queryClient = useQueryClient();
+  const entityKey = entityTypeId?.toString();
+
+  // The hub broadcasts grants to every connection belonging to the user.
+  // A different tab can complete the flow, so cache freshness cannot depend
+  // on this tab owning an OAuthService flow or mounting ConnectionsManager.
+  useEffect(() => {
+    if (!entityKey) return;
+    const onOAuthMessage = (message: OAuthMessage) => {
+      if (message.status === OAuthStatus.SUCCESS) {
+        void queryClient.invalidateQueries({ queryKey: entityEnvQueryKey(new TypeId(entityKey)) });
+      }
+    };
+    dataManager.on(OAuthEventType.OAUTH_MSG, onOAuthMessage);
+    return () => {
+      dataManager.off(OAuthEventType.OAUTH_MSG, onOAuthMessage);
+    };
+  }, [entityKey, queryClient]);
 
   const query = useQuery<EntityEnvVars>({
     queryKey: entityEnvQueryKey(entityTypeId),

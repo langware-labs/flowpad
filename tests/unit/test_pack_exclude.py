@@ -15,7 +15,7 @@ from flow_sdk.schema.type_info import register_all
 
 register_all()
 
-from flow_sdk.builtin.flow_message_bundle import _pack_ignore  # noqa: E402
+from flow_sdk.assets.transfer import _pack_ignore  # noqa: E402
 from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: E402
 
 FOLDER = ["task.md", "spec.md", "references", "__pycache__", "notes.md"]

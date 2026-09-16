@@ -26,7 +26,9 @@ The process has two independent axes, and it is important not to conflate them:
 | **Visibility** | `visible` | Is this process shown as a terminal tab? | tab-strip membership, footer worker chip, restart-recovery, the transcript-vs-terminal open path |
 
 These were historically the same flag (`headless == !visible`), and the
-chat⇄terminal toggle (`switch-mode`) still flips them **together** so the
+chat⇄terminal toggle drives both directions since FLOWPAD-2105 — though not
+through one endpoint: `→cli` is the `switch-mode` action, `→interactive` is
+`start()` / `open` — and either way it still flips them **together**, so the
 shorthand usually holds. But they are now separate `APIField`s with separate
 setters (`set-visible` vs the transport-carrying open/prompt paths), so code
 must route on the correct axis:
@@ -111,7 +113,7 @@ The backend entity stores the durable state:
 | `worker_status` | Computed field exposed on serialization from worker transcript/history. |
 | `ready_for_input` | Computed send-prompt predicate. |
 | `visible` | Tab visibility only — whether the process is shown as a terminal tab. **Not** the transport selector (that is `pty_mode`). Set on open (`true`) / close (`false`); also settable in isolation via `set-visible`. |
-| `pty_mode` | Durable transport intent: `true` → interactive PTY, `false` → headless JSON-stream. This is the routing key for `prompt`, queue cold-start, and the loader's PTY attach. Seeds `visible` at launch; the chat⇄terminal toggle keeps the two in lock-step. |
+| `pty_mode` | Durable transport intent: `true` → interactive PTY, `false` → headless JSON-stream. This is the routing key for `prompt`, queue cold-start, and the loader's PTY attach. Seeds `visible` at launch; the chat⇄terminal toggle keeps the two in lock-step in both directions. Only `_perform_open(visible=True)` sets it back to `True`; only `_enter_cli_mode` sets it to `False`. |
 | `shell_id` | Linked `Shell` entity when a terminal runtime exists. |
 | `cli_config` | Serialized CLI options, including model, permissions, chrome/debug/worktree, resume/fork metadata, add-dir, and agents. |
 | `workdir` | Worker working directory. |

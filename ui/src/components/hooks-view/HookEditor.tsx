@@ -1,6 +1,4 @@
-import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import type { MessageDescriptor } from '@lingui/core';
 import { Button } from '@src/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@src/components/ui/card';
 import { Input } from '@src/components/ui/input';
@@ -8,6 +6,7 @@ import { Label } from '@src/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Separator } from '@src/components/ui/separator';
 import { Textarea } from '@src/components/ui/textarea';
+import { useMemo } from 'react';
 import { Save, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -24,10 +23,6 @@ const HOOK_EVENTS = {
   PreCompact: { title: msg`Pre Compact`, supportsMatchers: true, icon: '📦' },
 } as const;
 
-const HOOK_EVENT_OPTIONS = Object.entries(HOOK_EVENTS).map(([key, meta]) => ({
-  value: key,
-  label: `${meta.icon} ${i18n._(meta.title)}`,
-}));
 
 interface HookEditorProps {
   isEditing: boolean;
@@ -69,6 +64,18 @@ export function HookEditor({
   onCancel,
 }: HookEditorProps) {
   const { t } = useLingui();
+  // Resolved HERE, not at module scope. `i18n._()` at import runs before the
+  // catalog is activated, so it logged "Uncompiled message detected" and froze
+  // these labels at import — a later locale switch could never update them.
+  // Same shape as HooksTable, which resolves its copy of HOOK_EVENTS at render.
+  const hookEventOptions = useMemo(
+    () =>
+      Object.entries(HOOK_EVENTS).map(([key, meta]) => ({
+        value: key,
+        label: `${meta.icon} ${t(meta.title)}`,
+      })),
+    [t],
+  );
   const supportsMatchers = HOOK_EVENTS[eventName as keyof typeof HOOK_EVENTS]?.supportsMatchers ?? false;
   const isSaveDisabled = !eventName || !hookName.trim() || (hookType === 'command' ? !command.trim() : !prompt.trim());
 
@@ -118,7 +125,7 @@ export function HookEditor({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {HOOK_EVENT_OPTIONS.map((option) => (
+              {hookEventOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>

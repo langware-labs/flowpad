@@ -1,3 +1,6 @@
+---
+id: 8b46e44c-566c-4867-8611-b25acf83c86a
+---
 # Workflows — snippets
 
 `flow_sdk.blocks` is the plain-Python workflow surface. No engine, no hidden
@@ -17,7 +20,6 @@ The canonical program. Pinned by `tests/unit/test_workflows_snippets.py`
 typed reply → delivery verified at the counterpart inbox, 17–18s end to end).
 
 ```python
-import flow_sdk.ingest.drivers  # noqa: F401
 from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
 from flow_sdk.builtin.agent_registry import get_agent
 
@@ -114,7 +116,7 @@ everyone is reading.
 Slack differs from both: the reply targets the channel, inside the message's
 thread, and Slack echoes the bot's own post back through history, so the
 driver records nothing itself. Pinned by `tests/unit/test_workflows_snippets.py`,
-and by `tests/unit/test_slack_driver.py` (send, identity stamp, channel reuse)
+and by `flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/slack/tests/test_slack_source.py` (send, identity stamp, channel reuse)
 against a loopback Slack.
 
 ```python

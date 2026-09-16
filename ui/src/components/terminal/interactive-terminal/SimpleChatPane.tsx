@@ -6,6 +6,8 @@ import { useObservedTurn } from '@src/components/entity-execution-panel/hooks/us
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
 import { useTurnGroups } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
+import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
+import { AgentIntroMessage, useAgentIntro } from '@src/components/agents/AgentIntroMessage';
 import { useViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { cn } from '@src/lib/utils';
 import { Trans } from '@lingui/react/macro';
@@ -63,6 +65,11 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   // does NOT imply Standard. The per-turn file chips are a Standard affordance,
   // so the mode is read explicitly.
   const viewMode = useViewMode();
+  // The Agent this process runs AS — signs assistant turns and owns the intro
+  // row (skin-gated inside `useAgentIntro`, same rule as the file chips).
+  const launchingAgent = useLaunchingAgent(process.deployment_id);
+  const intro = useAgentIntro(launchingAgent);
+  const hasRows = turnGroups.length > 0 || !!intro;
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
@@ -72,7 +79,7 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   return (
     <div className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="simple-chat-pane">
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
-        {turnGroups.length === 0 ? (
+        {!hasRows ? (
           // A turn can be in flight with nothing rendered yet — the pane mounted
           // mid-turn, before any row landed. The empty state must still carry
           // the activity line, or a working agent reads as an idle session
@@ -92,9 +99,11 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
           </div>
         ) : (
           <div className="w-full px-4 py-3">
+            <AgentIntroMessage agent={launchingAgent} />
             <TurnGroupsList
               groups={turnGroups}
               worker={process.worker_type ?? undefined}
+              agent={launchingAgent}
               showTurnFiles={viewMode === ViewMode.Standard}
               process={process}
               turnActive={activity.active}

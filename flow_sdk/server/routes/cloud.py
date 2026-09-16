@@ -438,16 +438,17 @@ async def correlated_login_cancel(oauth_request_id: str = Query(...)):
 
 @router.post("/logout")
 async def logout():
-    """Clear local credentials and return the cloud logout URL.
+    """Clear local credentials + the hub-derived local data, and return the
+    cloud logout URL.
 
     The UI is expected to navigate the user to the returned URL (or open it in
     the system browser) so the cloud-side session is also invalidated.
     """
-    from flow_sdk.cli.auth.cloud_login import clear_cloud_credentials
+    from flow_sdk.cli.auth.cloud_login import clear_user_data
     from flow_sdk.cli.auth.cloud_urls import get_logout_url
     from flow_sdk.instance_settings import get_instance_settings
 
-    await clear_cloud_credentials()
+    await clear_user_data()
     port = get_instance_settings().port
     callback_url = f"http://127.0.0.1:{port}/api/v1/cloud/logout_callback"
     return ApiSuccessResponse(data={"cloud_logout_url": get_logout_url(callback_url)})

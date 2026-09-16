@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from flow_sdk.builtin.source_change import SourceChange
-from flow_sdk.ingest.reflect import ReflectMode
+from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 from flow_sdk.tags import on_tag
 
 from ._harness import DOC, poll, write_doc

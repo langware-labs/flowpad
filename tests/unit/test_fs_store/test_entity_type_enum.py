@@ -42,6 +42,7 @@ EXPECTED = {
     "COMMAND": "command",
     "MCP": "mcp",
     "MCP_SERVER": "mcp_server",
+    "PROJECT_MANIFEST": "project_manifest",
     "MCP_SERVER_SOURCE": "mcp_server_source",
     "PLUGIN": "plugin",
     "CLAUDE_MD": "claude_md",
@@ -98,7 +99,6 @@ EXPECTED = {
     "CONVERSATION": "conversation",
     "WHITEBOARD": "whiteboard",
     "DATASET": "dataset",
-    "SECRET_ORIGIN": "secret_origin",
     "COLLABORATION_ROOM": "collaboration_room",
     "USER_HOME_FOLDER": "user_home_folder",
     "REAL_PROJECT_CWD": "real_project_cwd",
@@ -194,6 +194,9 @@ EXPECTED = {
     # DB-only journal — additive members, no existing value changed.
     "JOURNEY": "journey",
     "JOURNEY_JOURNAL": "journey_journal",
+    # Wizard — the autonomous counterpart of JOURNEY. Additive member; every
+    # existing value stays frozen.
+    "WIZARD": "wizard",
     # Help desk (0.2.114): folder-backed support portal discovered by indexing a
     # cloned repo that ships agentic-assets/helpdesk/<name>/helpdesk.json —
     # additive member, no existing value changed.

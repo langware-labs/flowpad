@@ -49,24 +49,6 @@ MCP_DEFAULT_ENTRYPOINT = "server.py"
 #: creation — the point of the shape is that Test passes before you have typed
 #: anything. ``fastmcp`` ships in the backend venv, whose bin dir
 #: ``flow_cli_env_path`` already prepends to every worker's PATH.
-SERVER_TEMPLATE = '''"""MCP server for {name}.
-
-Every function decorated with ``@mcp.tool`` becomes a tool the agent can call;
-the docstring is what it reads to decide when to call it. Edit freely — this
-file IS the server, and it ships inside this asset.
-"""
-
-from fastmcp import FastMCP
-
-mcp = FastMCP({name!r})
-
-
-@mcp.tool
-def hello(who: str = "world") -> str:
-    """Say hello. Replace this with a tool of your own."""
-    return f"hello {{who}}"
-'''
-
 
 async def probe_mcp(spec: McpSpec) -> dict:
     """Connect to one MCP server and list its tools. Never raises.
@@ -116,28 +98,6 @@ async def probe_mcp(spec: McpSpec) -> dict:
     }
 
 
-def scaffold_mcp_folder(entity: "Mcp") -> None:
-    """Write a bundled server's starter file, once.
-
-    Runs from ``Mcp.save`` rather than the create dialog because the asset-list
-    ``+``, the CLI and an agent-authored create all reach ``save`` and none of
-    them sees a dialog — scaffolding client-side would quietly skip them.
-
-    Idempotent by existence check, mirroring ``scaffold_graph_workflow_folder``:
-    a later save must never clobber the code the user has since written.
-    """
-    if not entity.entrypoint or entity.folder is None:
-        return
-    target = entity.folder / entity.entrypoint
-    if target.exists():
-        return
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(SERVER_TEMPLATE.format(name=entity.name or "mcp"), encoding="utf-8")
-    except OSError:
-        logger.debug("mcp: could not scaffold %s", target, exc_info=True)
-
-
 class Mcp(Entity):
     """The ROW. Its shape on disk is ``McpSpec`` (``TypeInfo.asset_spec``)."""
 
@@ -162,23 +122,21 @@ class Mcp(Entity):
         the row carries entity columns (``asset_ref``, timestamps, …) that
         ``McpSpec``'s ``extra="forbid"`` would reject.
 
-        A BUNDLED server's ``entrypoint`` is resolved here, and only here — this
-        is the one place holding both the spec fields and ``asset_ref``. The file
+        A BUNDLED server's ``entrypoint`` is resolved by the shared filesystem
+        utility against this row's asset folder. The file
         keeps the relative path (portable); the launch payload gets the absolute
         one, so ``mcp_projection`` and all four harnesses stay unchanged.
         """
-        args = [*(self.args or [])]
-        if self.entrypoint and self.folder is not None:
-            args.append(str(self.folder / self.entrypoint))
-        return McpSpec(
+        from flow_sdk.assets.types.mcp import resolve_mcp_spec
+        return resolve_mcp_spec(McpSpec(
             name=self.name or self.id,
             transport=self.transport or "stdio",
             command=self.command or "",
-            args=args,
+            args=list(self.args or []),
             env=dict(self.env or {}),
             url=self.url or "",
             entrypoint=self.entrypoint or "",
-        )
+        ), self.folder)
 
     @action.post(action_name="test")
     async def test_action(self) -> "ApiSuccessResponse":
@@ -209,7 +167,14 @@ class Mcp(Entity):
         folder is not known before it.
         """
         result = await super().save(*args, **kwargs)
-        scaffold_mcp_folder(self)
+        from flow_sdk.assets.creation import ensure_asset_scaffold
+
+        if self.folder is not None:
+            ensure_asset_scaffold(self.folder, self.typeid, McpSpec(
+                name=self.name or "mcp", transport=self.transport, command=self.command,
+                args=list(self.args or []), env=dict(self.env or {}), url=self.url,
+                entrypoint=self.entrypoint,
+            ))
         return result
 
     @property

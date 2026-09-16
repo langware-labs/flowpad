@@ -51,7 +51,7 @@ def cmd_create(args) -> dict:
     The dataset's spec is ALWAYS `input: ingest.source_item` — the item envelope —
     so `output` is the only shape the person authors.
     """
-    from flow_sdk.builtin.source_item import SourceItemSpec  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
     payload = _json_arg(args.json)
     source = _source(str(payload.pop("source")))

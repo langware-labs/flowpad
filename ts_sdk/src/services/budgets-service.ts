@@ -117,9 +117,27 @@ export interface MemberBudget {
   can_configure: boolean;
 }
 
+/**
+ * Someone who belongs to the ORGANIZATION itself and to none of its teams.
+ *
+ * Visibility, not money: the page lists people through their team, so anyone holding the org
+ * directly — an admin invited to the organization, an owner who never joined a class — appeared
+ * nowhere on it. These rows carry who they are and what they hold on the org, and stop there;
+ * their spend shows on the pool they draw from, where it already does.
+ */
+export interface OrgPerson {
+  user_id: string;
+  name: string;
+  email: string | null;
+  /** Their highest role on the organization — `owner` / `admin` / `member` / … */
+  role: string | null;
+}
+
 export interface OrgBudgets {
   org: OrgScopeBudget;
   teams: ScopeBudget[];
+  /** The org's own people — those in none of its teams. Empty in an org run entirely through teams. */
+  people: OrgPerson[];
 }
 
 export interface TeamBudgets {

@@ -16,9 +16,11 @@ import uuid
 
 import pytest
 
-from flow_sdk.builtin.source_item import SourceItem, SourceItemSpec
+from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.ingestor import ingest_items
+from flow_sdk.ingest.legacy_lift import origin_of
 from flow_sdk.ingest.models import IngestMode
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.server.routes.ingest import MAX_ITEMS_PER_REQUEST, _to_item
 
 
@@ -81,9 +83,9 @@ async def test_creating_the_same_item_twice_is_an_upsert_not_a_duplicate():
 
     rows = await SourceItem.get_all({"data_source_id": item.data_source_id})
     assert len(rows) == 1, f"{len(rows)} rows for one email — the natural key did not resolve"
-    found = await SourceItem.find_existing(item.data_source_id, item.segment_key, item.external_id)
+    found = await SourceItem.find_existing(item.data_source_id, origin_of(None, item))
     assert found is not None and found.id == rows[0].id, (
-        "the row must be reachable by (source, stream, external_id) — that lookup "
+        "the row must be reachable by (source, origin) — that lookup "
         "is what makes a re-delivery an upsert instead of a duplicate"
     )
 

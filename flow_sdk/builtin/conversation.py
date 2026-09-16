@@ -209,6 +209,13 @@ class Conversation(ProjectedFields, Entity):
     # `None` on rows written before the field existed; `inbox.projection.owner_of`
     # resolves those to the local user. PRIVATE — never travels.
     owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # The channel a source-backed conversation replies through (``gmail``, ``slack``)
+    # and the local DataSource feeding it, stamped by the inbox projection when it
+    # places the first message. ``channel`` travels so a peer renders the badge —
+    # HUB_WRITE, so a hub refresh that lacks it never blanks it; ``channel_source_id``
+    # is a row id in OUR database, so it is PRIVATE.
+    channel: Optional[str] = APIField(default=None, sharing=Sharing.HUB_WRITE)
+    channel_source_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)

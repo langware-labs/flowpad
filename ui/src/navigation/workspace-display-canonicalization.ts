@@ -18,9 +18,9 @@ import { ViewMode } from '@src/contexts/view-mode-context';
  * being restated as regex text that a renamed constant would silently break.
  *
  * Deliberately keyed on an explicit `?viewMode=vibe` rather than the effective
- * mode. The effective mode is not stable at loader time — a project's own
- * `last_mode` is applied later by `applyProjectViewMode`, so an early read is
- * wrong for exactly the projects that default to vibe. That is safe because
+ * mode. The effective mode is not stable at loader time — the dock's override is
+ * only settled once it mounts, so an early read can be wrong for a dock whose
+ * own mode differs from the ambient one. That is safe because
  * `openDock` stamps `?viewMode` on essentially every navigation that can produce
  * a host-bearing URL.
  *

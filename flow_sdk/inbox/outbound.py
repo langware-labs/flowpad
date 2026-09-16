@@ -87,15 +87,10 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
     indistinguishable once stored. An empty ``SourceItem.thread_key`` is the
     only honest signal that we have no addressable thread.
     """
-    # Side-effect import: `drivers/__init__` is what populates the registry, and
-    # `get_driver` alone does not pull it in. Without this the resolver races
-    # server startup and reports "cannot send" for a driver that can.
-    import flow_sdk.ingest.drivers  # noqa: F401,PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.builtin.user import User  # noqa: PLC0415
-    from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
 
     # Newest-first and bounded: the DB does the ordering, and one page is
     # always enough because every message here shares a channel.
@@ -153,10 +148,28 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
         # Distinct from "no sender address" below — collapsing the two made a
         # missing record report as a missing address.
         raise ChannelSendUnavailable("the record this arrived through is gone")
+    return _reply_target(source, item, origin.kind)
 
-    driver = get_driver(source.provider)
+
+async def _target_for_item(item, source=None) -> ReplyTarget:
+    """The reply to one known inbound record — the turn that answers it quotes IT, not whatever
+    arrived last (a burst of messages each got a reply quoting the final one). ``source`` is the
+    row ``item`` arrived through when the caller already holds it; otherwise it is read."""
+    if source is None:
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        source = await DataSource.get_one({"id": item.data_source_id})
+    if source is None:
+        raise ChannelSendUnavailable("the data source this arrived through is gone")
+    return _reply_target(source, item, str(getattr(source, "channel", "") or source.provider))
+
+
+def _reply_target(source, item, channel: str) -> ReplyTarget:
+    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+
+    driver = source_type(source.provider)
     if driver is None or not driver.sends:
-        raise ChannelSendUnavailable(f"the {origin.kind} transport cannot send")
+        raise ChannelSendUnavailable(f"the {channel} transport cannot send")
 
     # ASK the channel who a reply is addressed to; do not assume. `outbound_spec`
     # is the one seam that answers it — `DataSource.reply_spec` is the same
@@ -176,7 +189,7 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
     return ReplyTarget(
         driver=driver,
         source=source,
-        channel=origin.kind,
+        channel=channel,
         to=to,
         thread_key=spec.thread_key,
         subject=item.name or "",
@@ -189,12 +202,20 @@ async def dispatch_channel_reply(
     *,
     text: str,
     source_id: str | None = None,
+    item=None,
+    source=None,
 ):
-    """Accept a reply and start it. Returns once DISPATCHED."""
+    """Accept a reply and start it. Returns once DISPATCHED. ``item`` is the message this answers;
+    without it the reply answers the newest message someone else wrote. ``source`` is ``item``'s
+    already-loaded row, when the caller holds one."""
     from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
     try:
-        target = await resolve_reply_target(conversation_id, source_id=source_id)
+        target = await (
+            _target_for_item(item, source)
+            if item is not None
+            else resolve_reply_target(conversation_id, source_id=source_id)
+        )
     except ChannelSendUnavailable as exc:
         return ApiFailResponse(message=str(exc))
 

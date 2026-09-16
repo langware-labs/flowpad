@@ -42,7 +42,7 @@ export function ChannelBadge({ origin }: { origin: ICloudOrigin | null | undefin
   }
   return (
     <a
-      href={origin.url}
+      href={origin.url ?? undefined}
       target="_blank"
       rel="noreferrer noopener"
       data-testid="channel-badge"

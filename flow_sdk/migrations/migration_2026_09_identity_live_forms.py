@@ -153,7 +153,7 @@ def _valid(value: Any) -> str | None:
 
 def _flow_id(folder: Path) -> str | None:
     """The retired ``<folder>/.flow/id`` line, through the carrier's own reader."""
-    from flow_sdk.fs_store.identity_carrier import retired_flow_id
+    from flow_sdk.assets.identity_carrier import retired_flow_id
 
     found = retired_flow_id(folder)
     return _valid(found.raw) if found is not None else None
@@ -163,7 +163,7 @@ def _folder_json_id(folder: Path) -> str | None:
     """The folder's identity capsule, read through the LIVE carrier so it is
     held to the same validation (version 1, exactly the ``id`` key): a corrupt
     capsule raises ``MalformedCarrier`` and is reported, never adopted."""
-    from flow_sdk.fs_store.identity_carrier import Found, Sidecar
+    from flow_sdk.assets.identity_carrier import Found, Sidecar
 
     found = Sidecar().read(folder)
     return found.id if isinstance(found, Found) else None
@@ -200,7 +200,7 @@ _RETIRED_FORMS: dict[str, tuple[str, Any]] = {
 
 
 def _read_frontmatter(doc: Path) -> dict:
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+    from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
 
     try:
         header = _extract_frontmatter(doc.read_text(encoding="utf-8"))
@@ -216,7 +216,7 @@ def _retired_read(info: Any, ref: Any) -> tuple[str, str] | None:
     so this only maps that verdict to a reader. The two forms it does not look
     at — a folder capsule beside a markdown main document, a manifest id — are
     asked afterwards, when the carrier came back empty."""
-    from flow_sdk.fs_store.identity_carrier import RETIRED, Foreign, Found, Frontmatter, Sidecar
+    from flow_sdk.assets.identity_carrier import RETIRED, Foreign, Found, Frontmatter, Sidecar
 
     carrier = info.carrier
     where = carrier.locate(info.layout_for(ref))
@@ -239,10 +239,10 @@ def _retired_read(info: Any, ref: Any) -> tuple[str, str] | None:
 def _convert(info: Any, ref: Any, form: str, entity_id: str) -> None:
     """Move ``entity_id`` into the live carrier — same id, retired bytes gone.
     A manifest keeps its ``id`` key: it is the asset's document, not a carrier."""
+    from flow_sdk.assets.frontmatter import _atomic_write_text, merge_frontmatter
+    from flow_sdk.assets.identity_carrier import Frontmatter
     from flow_sdk.capsules import CapsuleData, strip_capsule_blocks
     from flow_sdk.capsules.folder import FolderCapsule
-    from flow_sdk.fs_store.identity_carrier import Frontmatter
-    from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, merge_frontmatter
 
     carrier = info.carrier
     where = carrier.locate(info.layout_for(ref))
@@ -274,7 +274,7 @@ async def _scan(roots: list[Any]) -> list[Any]:
 
 
 def _convert_sources(refs: list[Any], report: Report, *, dry_run: bool) -> None:
-    from flow_sdk.fs_store.identity_carrier import UnclaimedPath
+    from flow_sdk.assets.identity_carrier import UnclaimedPath
     from flow_sdk.fs_store.indexer.index_log import MALFORMED_CARRIER, ScanIssue, append_scan_issue
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -315,8 +315,8 @@ def _convert_sources(refs: list[Any], report: Report, *, dry_run: bool) -> None:
 
 def plan_rows(conn) -> list[RowMove]:
     """Every folder-type row whose ``asset_ref`` names the inner main file."""
+    from flow_sdk.assets.layout import Folder
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    from flow_sdk.schema.layout import Folder
 
     moves: list[RowMove] = []
     for name in SchemaRegistry.get_all_types():

@@ -140,7 +140,7 @@ def test_introspection_reports_exactly_what_was_issued():
 
         report = httpx.get(f"{server.base_url}/_introspect").json()
         assert report["latest_token"] == token
-        assert report["counts"] == {"authorize": 1, "token": 1, "userinfo": 0}
+        assert report["counts"] == {"authorize": 1, "token": 1, "userinfo": 0, "device": 0}
         assert report["codes_outstanding"] == [], "an exchanged code must not stay outstanding"
 
         issued = report["issuances"][0]
@@ -181,4 +181,4 @@ def test_reset_clears_the_log_for_a_reused_server():
 
         httpx.post(f"{server.base_url}/_reset")
         assert server.latest_token is None
-        assert server.counts == {"authorize": 0, "token": 0, "userinfo": 0}
+        assert server.counts == {"authorize": 0, "token": 0, "userinfo": 0, "device": 0}

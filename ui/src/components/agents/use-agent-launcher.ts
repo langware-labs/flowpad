@@ -29,6 +29,24 @@ import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
  * controller for the whole list rather than a hook per row, so `busy` is the
  * id of the agent being launched (the shape `VibeAgentsCard` already uses).
  */
+/**
+ * Resolve a freshly `use()`d process and make it ready for turn 1: watch it
+ * (watcher-scoped events reach the pane only for a watched process) and embed
+ * the vibe persona UNDER the agent. Shared by the launcher hook and the
+ * project auto-launch redirect so both open a session with the same stack.
+ * Null when the process is not readable — the caller opens it anyway.
+ */
+export async function prepareAgentSession(processId: string): Promise<AgenticProcess | null> {
+  const proc = await AgenticProcess.getById<AgenticProcess>(processId);
+  if (!proc) {
+    console.warn('[agent-launcher] process not readable after use(); vibe persona not embedded', processId);
+    return null;
+  }
+  void proc.watch().catch((e) => console.warn('[agent-launcher] watch failed; live updates degraded', e));
+  await embedVibeSubagent(proc);
+  return proc;
+}
+
 export function useAgentLauncher(): {
   launch: (agent: Agent, projectId?: string | null) => Promise<void>;
   busyId: string | null;
@@ -42,18 +60,7 @@ export function useAgentLauncher(): {
       setBusyId(agent.id);
       try {
         const result = await agent.use(projectId ?? null);
-        const proc = await AgenticProcess.getById<AgenticProcess>(result.process_id);
-        if (proc) {
-          // Watcher-scoped events (status, turns) reach the pane only for a
-          // watched process — same as every other vibe start path.
-          void proc.watch().catch((e) => console.warn('[agent-launcher] watch failed; live updates degraded', e));
-          await embedVibeSubagent(proc);
-        } else {
-          console.warn(
-            '[agent-launcher] process not readable after use(); vibe persona not embedded',
-            result.process_id,
-          );
-        }
+        await prepareAgentSession(result.process_id);
         await navigation.openShellProcess(result.process_id, { viewMode: ViewMode.Vibe });
       } catch (e) {
         notify.error({

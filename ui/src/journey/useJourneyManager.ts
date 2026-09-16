@@ -181,10 +181,11 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   const journeyRoot = journey?.projectRoot ?? null;
 
   const openTerminal = useCallback(async () => {
+    if (!journeyRoot) return null;
     // openNewShell already navigates to the new shell when we don't opt out.
     const result = await navigation.openNewShell({
       viewMode: ViewMode.Vibe,
-      ...(journeyRoot ? { cwd: journeyRoot } : {}),
+      cwd: journeyRoot,
     });
     return result?.shellId ?? null;
   }, [navigation, journeyRoot]);

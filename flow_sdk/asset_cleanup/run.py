@@ -119,7 +119,7 @@ async def run_asset_cleanup(
     """
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
-    from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
+    from flow_sdk.builtin.subagent_loading import load_subagent  # noqa: PLC0415
 
     deployment = await get_agent_local_deployment("asset-cleanup")
     task = load_subagent("asset_cleanup")
@@ -145,7 +145,7 @@ async def run_asset_cleanup(
     if not root_strs:
         raise RuntimeError("no scan roots to inspect")
 
-    from .scan import collect_asset_inventory  # noqa: PLC0415
+    from flow_sdk.assets.cleanup import collect_asset_inventory  # noqa: PLC0415
 
     asset_inventory = await asyncio.to_thread(collect_asset_inventory, root_strs)
 
@@ -162,7 +162,9 @@ async def run_asset_cleanup(
         "entries from their supplied content. Do not call filesystem tools, "
         "inspect other paths, or write a report file.\n\n"
         "## Scan roots\n\n" + "\n".join(root_strs) + "\n\n"
-        "## Asset inventory\n\n" + json.dumps(asset_inventory, indent=2) + "\n"
+        "## Asset inventory\n\n"
+        + json.dumps([item.model_dump(mode="json", exclude_none=True) for item in asset_inventory], indent=2)
+        + "\n"
     )
     if projects:
         instruction += "\n## Projects\n\n" + json.dumps(projects, indent=2) + "\n"

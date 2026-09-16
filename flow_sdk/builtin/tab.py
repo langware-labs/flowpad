@@ -27,6 +27,7 @@ import contextlib
 import json as _json
 import logging
 import uuid
+from typing import Any
 
 from flow_sdk.actions.action_registry import action as _action_registry
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist
@@ -329,30 +330,41 @@ class Tab(Entity):
         if target is not None and callable(teardown):
             await teardown()
 
-    async def set_label(self, name: str) -> None:
-        """Set ONLY the Tab label — no target reflect, no ``auto_rename`` change.
+    @classmethod
+    def preserved_fields_on_save(cls, current_data: dict) -> tuple[str, ...]:
+        from flow_sdk.schema.types import EntityType
 
-        The PTY auto-title mirror: the active panel already saved the live name onto
-        its Shell/AgenticProcess; this keeps the durable ``Tab.name`` in step so the
-        chip stays right once inactive. Unlike :meth:`rename`, it must NOT touch the
-        target (which would pin ``auto_rename=False`` and stop future auto-titles)."""
+        return ("name",) if current_data.get("target_type") == EntityType.AGENTIC_PROCESS else ()
+
+    async def reconcile_target_name(self, target=None) -> None:
+        """Process tab names project durable naming state, even on reopen."""
+        if target is None:
+            target = await self._target_entity()
+        reconcile = getattr(target, "reconcile_name", None)
+        if callable(reconcile):
+            current = await reconcile()
+            if current is not None:
+                self.name = current.name
+
+    async def set_label(self, name: str) -> None:
+        """Set an ordinary label; worker labels always project their target."""
+        target = await self._target_entity()
+        if callable(getattr(target, "reconcile_name", None)):
+            await self.reconcile_target_name(target)
+            return
         if name and self.name != name:
             self.name = name
             await self.save()
 
     async def rename(self, name: str) -> None:
-        """``Tab.name`` is the generic source of truth for the tab label. Set it,
-        then reflect onto the backing entity by calling its generic ``rename`` —
-        base ``Entity.rename`` adopts the name onto ANY target (conversation,
-        agentic_process, shell, markdown, …); shell/agentic_process override it
-        to also pin ``auto_rename=False`` (and the FE sends the PTY ``/rename``).
-        Dispatch is by method, not by ``if target_type==`` (slick P6) — exactly
-        like ``close`` → ``teardown_for_tab``. A target-less tab keeps the label
-        on the Tab alone.
-        """
+        """A process target owns the transaction that names it and its tabs."""
+        target = await self._target_entity()
+        if callable(getattr(target, "reconcile_name", None)):
+            await target.rename(name)
+            self.name = target.name
+            return
         self.name = name
         await self.save()
-        target = await self._target_entity()
         if target is not None:
             await target.rename(name)
 
@@ -385,12 +397,17 @@ async def _visible_tabs_sorted() -> list[Tab]:
 async def _project_exists(project_id: str | None) -> bool:
     if not project_id:
         return True
-    try:
-        uuid.UUID(str(project_id))
-    except (TypeError, ValueError):
-        # Legacy/test project identifiers are not reliable Project primary keys;
-        # only UUID-shaped project refs are eligible for stale-row deletion.
-        return True
+    # NO shape gate. A ``project_id`` that is not UUID-shaped cannot ever name a
+    # Project: every Project id is allocated as a uuid (``allocate_id``), and even
+    # a path-recovered one is an "opaque uuid4" (``Project.recover_by_path``). The
+    # old gate exempted non-UUID ids as "legacy/test identifiers" — which made a
+    # TEST id the one thing the reaper could never collect, so a UI fixture that
+    # reached a real backend (``project_id="proj-123"``) pinned an undeletable
+    # phantom project in the projects chip forever: unrecoverable (the recover
+    # endpoint reads a ``workdir`` off shell/agentic_process dependents, and a
+    # conversation tab has none) and unreachable (the chip's row routes to recover,
+    # never to navigation). Absence is decided by the lookup below, for every id
+    # shape alike; the ``except`` remains the only fail-open.
     try:
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
@@ -478,8 +495,20 @@ async def _load_status_targets(
 def _pointer_project_id(pointer: str | None) -> str | None:
     """The project id NAMED by a project-scoped dock pointer — pure parse, no
     existence check (``viewType:"project"`` → leading ``<project_id>/`` segment).
-    Returns the id only when UUID-shaped (same reap-eligibility rule as
-    ``_existing_project_ids``); any other pointer shape → ``None``."""
+
+    The UUID check here is a PARSE guard, deliberately NOT the reap-eligibility
+    rule ``_existing_project_ids`` uses — those two once agreed, and no longer do.
+    This one asks "does this pointer segment name an id at all", the address
+    question every URL/VFS matcher asks, which is why it goes through the
+    version-agnostic ``is_valid_uuid`` (CLAUDE.md forbids tightening it).
+    ``_existing_project_ids`` asks the different question "is this ref dangling",
+    and answers it from the DB for every id shape.
+
+    Consequence worth knowing: a pointer naming a NON-id (``proj-123``) parses to
+    ``None`` and so escapes the pointer-orphan reap, even though its ``project_id``
+    twin is now collected. Such a tab navigates to ``/dock/project/<junk>`` →
+    "Project not found" forever (RCA 2026-07-08). Closing that gap means reaping
+    on un-parseable pointers too, which is a separate behaviour change."""
     if not pointer:
         return None
     try:
@@ -503,17 +532,16 @@ async def _existing_project_ids(
     pointer-orphan reap so each pointer is parsed a single time per list call.
 
     Returns ``(existing_ids, candidate_ids, ok)`` where ``candidate_ids`` is the
-    set of distinct UUID-shaped ``project_id``s (the only ones eligible for
-    reaping — legacy/non-UUID ids aren't reliable Project keys, same rule as
-    ``_project_exists``) and ``existing_ids`` is the subset of those that exist.
+    set of distinct non-empty ``project_id``s — EVERY shape, matching
+    ``_project_exists``: a non-UUID id can never be a Project key, so it is the
+    most certainly-dangling ref there is, not an exempt one — and ``existing_ids``
+    is the subset of those that exist.
     The caller reaps ``candidate_ids - existing_ids`` without re-validating shape.
     ``ok`` is ``False`` if the lookup raised, so the caller fails open and reaps
     nothing.
     """
     candidates = {
-        str(t.project_id)
-        for t in tabs
-        if getattr(t, "project_id", None) and is_valid_uuid(str(t.project_id))
+        str(t.project_id) for t in tabs if getattr(t, "project_id", None)
     }
     # Also validate the project id NAMED BY a project-scoped dock pointer: a tab
     # can carry a live (target-healed) ``project_id`` while its URL still names a
@@ -563,7 +591,7 @@ async def _reap_orphans(
     The reaped target types are exactly ``_DB_BACKED_TARGET_TYPES`` (shell +
     agentic_process): those rows are always DB-backed, so absence == orphan,
     whereas a missing ``markdown``/asset target is a valid unindexed-but-on-disk
-    row (see ``_backfill_tab_projects``) and is left alone.
+    row (see ``_resolve_tab_projects``) and is left alone.
     """
     if not tabs:
         return tabs
@@ -586,7 +614,7 @@ async def _reap_orphans(
             )
 
     # Dead-URL POINTER: a project-scoped tab whose dock URL names a project that
-    # no longer exists. ``_backfill_tab_projects`` may still heal such a tab's
+    # no longer exists. ``_resolve_tab_projects`` may still heal such a tab's
     # ``project_id`` from its TARGET — so the projects chip advertises a live
     # project — but opening the tab, or entering that project via the chip
     # (``dockForProjectEntry`` resolves the tab's stored pointer VERBATIM), can
@@ -853,7 +881,13 @@ async def _load_target_entity(target_type: str | None, target_id: str | None):
     return await entity_cls.get_one({"id": str(target_id)})
 
 
-async def ensure_tab(
+async def ensure_tab(pointer: str, **options: Any) -> Tab:
+    """Deterministic get-or-create for a tab — ``ensure_tab_created`` without the flag."""
+    tab, _created = await ensure_tab_created(pointer, **options)
+    return tab
+
+
+async def ensure_tab_created(
     pointer: str,
     *,
     target_type: str | None = None,
@@ -864,8 +898,10 @@ async def ensure_tab(
     worktree: bool | None = None,
     after_tab_id: str | None = None,
     parent_tab_id: str | None = None,
-) -> Tab:
+) -> tuple[Tab, bool]:
     """Deterministic get-or-create for a tab, keyed by the canonical pointer.
+    Returns the tab and whether this call minted its row (a hidden row re-shown
+    is a reopen, not a create).
 
     On reopen (same pointer) the existing row is reused and re-shown
     (``visible=True``); the denormalized target/project/name hints are refreshed
@@ -895,7 +931,15 @@ async def ensure_tab(
     # though the target HAS a project. When the client didn't supply a usable
     # project, resolve it from the target entity server-side (``reconcile_tab_project``
     # keeps it fresh on later target-project changes).
-    if (project_id is _UNSET or not project_id) and target_type and target_id:
+    # A SCOPE-KEYED row is the exception: its project is its scope, never its
+    # target's (``_pointer_scope_project``), so the target derivation below must
+    # not run for one. Stamping it at rest — not only on the read path — is what
+    # keeps ``_reap_orphans`` and ``reconcile_tab_project``, which both read the
+    # PERSISTED value, from acting on a project the row never belonged to.
+    scope_keyed, scope_project = _pointer_scope_project(pointer)
+    if scope_keyed:
+        project_id = scope_project
+    elif (project_id is _UNSET or not project_id) and target_type and target_id:
         resolved = await _project_of_target(target_type, target_id)
         if resolved:
             project_id = resolved
@@ -906,6 +950,10 @@ async def ensure_tab(
     # *second* canonical row → two visible chips for one pointer. Query the pointer:
     # reuse the canonical (``id == tid``) row, and soft-hide any foreign-id strays
     # sharing that pointer so a pre-existing duplicate self-heals on next open.
+    # A loader label is presentation, never naming evidence for a worker.
+    # Initialize legacy authority before inserting a new tab with a UI hint.
+    if target_type == "agentic_process":
+        name = None
     same_pointer = await Tab.get_all({"pointer": pointer})
     existing = next((t for t in same_pointer if t.id == tid), None)
     for stray in same_pointer:
@@ -1001,7 +1049,8 @@ async def ensure_tab(
                 dirty = True
         if dirty:
             await existing.save()
-        return existing
+        await existing.reconcile_target_name()
+        return existing, False
     # Fresh create: place the new tab in the GLOBAL order — immediately after the
     # opener. ``after_tab_id`` is the explicit opener when given; otherwise the
     # opener defaults to the most-recently-active visible tab (browser-style: a
@@ -1041,7 +1090,8 @@ async def ensure_tab(
     tab.tab_order = new_order.index(tid)
     await _persist_global_order(new_order, {t.id: t for t in visible})
     await tab.save()
-    return tab
+    await tab.reconcile_target_name()
+    return tab, True
 
 
 async def _tabs_for_target(target_type: str, target_id: str) -> list["Tab"]:
@@ -1254,8 +1304,47 @@ async def _project_from_pointer(pointer: str | None) -> str | None:
     return candidate if await _project_exists(candidate) else None
 
 
-async def _backfill_tab_projects(tabs: list[Tab]) -> None:
-    """Backfill a null ``project_id`` server-side, so the chip renders
+def _pointer_scope_project(pointer: str | None) -> "tuple[bool, str | None]":
+    """``(is_scope_keyed, the project the SCOPE names)`` for a stored pointer.
+
+    A scope-keyed row (Assets, Explorer) is ONE tab per scope — its identity is
+    the scope filter, not whatever it currently shows — so its project is a
+    property of that scope: ``project:<id>`` owns a project, ``all`` / ``user`` /
+    ``filter:…`` are Global. Deriving it from the row's denormalized TARGET
+    instead pins the single ``assets|all`` row to whichever asset was opened in
+    it first, and the strip (which filters by the active project) then hides the
+    very chip the loader just activated — "no active tab" (RCA 2026-09-09).
+    Read by both writers of ``project_id``: ``ensure_tab`` (at rest) and
+    ``_resolve_tab_projects`` (the read path, for rows never re-minted).
+
+    Discriminated on the scope-key grammar (``scopeFilterKey``,
+    ts_sdk/src/utils/scope-filter.ts), not on "has a tabHash": the workspace's
+    active display carries an explicit hash too (``workspaceActive|<host>``) and
+    is NOT scope-keyed — its project legitimately follows its target. Reads the
+    hash through ``_pointer_to_hash`` (the one owner of the pointer-format
+    grammar), like ``_pointer_view_type``; the ``rsplit`` also tolerates the
+    non-desk ``page|vt|scope`` form.
+    """
+    # Cheap substring pre-filter before any parse: only a scope-keyed row stores
+    # an explicit ``tabHash``, so the steady state (shells, processes, editors)
+    # never pays a JSON parse on this read path. Same idiom, same reason, as the
+    # ``"display" in pointer`` guard in ``_reap_orphans``.
+    if pointer and pointer.startswith('{') and '"tabHash"' not in pointer:
+        return (False, None)
+    tab_hash = _pointer_to_hash(pointer or '')
+    if '|' not in tab_hash:
+        return (False, None)
+    scope = tab_hash.rsplit('|', 1)[1]
+    if scope in ('all', 'user') or scope.startswith('filter:'):
+        return (True, None)
+    if scope.startswith('project:'):
+        return (True, scope.removeprefix('project:') or None)
+    return (False, None)
+
+
+async def _resolve_tab_projects(tabs: list[Tab]) -> None:
+    """Resolve each chip's ``project_id`` server-side — a backfill for the null
+    case, and a correction for a scope-keyed row — so the chip renders
     project-colored even for a row the FE re-shows WITHOUT re-minting — an
     existing tab persisted projectless before its project was resolvable (an
     unindexed claude-session lens, an editor on an unindexed markdown), or minted
@@ -1270,10 +1359,20 @@ async def _backfill_tab_projects(tabs: list[Tab]) -> None:
     durable persistence of the heal moves to the next ``ensure_tab``/open of the
     same pointer.
 
-    Resolution order: the target entity's own project (authoritative — includes
+    Resolution order: for a SCOPE-KEYED row the scope itself (see
+    ``_pointer_scope_project``) — the one case that also CORRECTS a non-null
+    stamp, because a row the client reuses without re-minting (``materializeTab``
+    short-circuits) never reaches ``ensure_tab``'s matching arm; otherwise the
+    target entity's own project (authoritative — includes
     the claude-session on-disk recovery), else the project a project-scoped dock
     URL itself declares (``/dock/project/<id>/...``)."""
     for tab in tabs:
+        # Overrides, not just fills: the stamp it replaces was derived from a
+        # target this row no longer shows.
+        scope_keyed, scope_project = _pointer_scope_project(tab.pointer)
+        if scope_keyed:
+            tab.project_id = scope_project
+            continue
         if tab.project_id:
             continue
         resolved: str | None = None
@@ -1294,7 +1393,7 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     tabs, target_map = await _visible_tabs_sorted_with_targets()
     # Heal projectless chips BEFORE filtering, so a backfilled tab routes to its
     # real project's view rather than staying in the projectless bucket.
-    await _backfill_tab_projects(tabs)
+    await _resolve_tab_projects(tabs)
     order_ids = [t.id for t in tabs]
     project_of: dict[str, str | None] = {t.id: t.project_id for t in tabs}
     filtered = filter_for_project(order_ids, project_of, _normalize_project(project))
@@ -1357,11 +1456,11 @@ async def broadcast_tabs_changed() -> None:
         logger.debug(f"broadcast_tabs_changed failed: {e}")
 
 
-async def _list_response(project: str | None):
+async def _list_response(project: str | None, **extra: object):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs = await _build_tab_list(project)
-    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
+    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs], **extra})
 
 
 async def _http_new_tab(
@@ -1378,8 +1477,9 @@ async def _http_new_tab(
 ):
     """POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
     right after ``after_tab_id`` (the opener); reopen keeps its slot. Returns the
-    updated project-filtered list."""
-    await ensure_tab(
+    updated project-filtered list, and ``created`` — whether this call minted the
+    row, which the client's view-mode memory policy keys ``TabCreate`` on."""
+    _tab, created = await ensure_tab_created(
         pointer,
         target_type=target_type,
         target_id=target_id,
@@ -1391,7 +1491,7 @@ async def _http_new_tab(
         parent_tab_id=parent_tab_id,
     )
     await broadcast_tabs_changed()
-    return await _list_response(project_id)
+    return await _list_response(project_id, created=created)
 
 
 _action_registry.register(
@@ -1430,7 +1530,7 @@ async def _http_list_all(cls):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs, target_map = await _visible_tabs_sorted_with_targets()
-    await _backfill_tab_projects(tabs)
+    await _resolve_tab_projects(tabs)
     await _populate_tab_statuses(tabs, target_map)
     remote_target_map = await _load_remote_targets(tabs, target_map)
     _populate_tab_target_remote(tabs, remote_target_map)

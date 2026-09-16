@@ -111,7 +111,7 @@ def launcher_path(name: str) -> Path:
     return instance_dir(name) / "launcher.json"
 
 
-# The three backend-owned control files below take their names from
+# The backend- and monitor-owned control files below take their names from
 # BaseInstanceSettings rather than re-hardcoding them: reconcile deletes files by
 # these names, so a rename there must not silently make the sweep a no-op.
 def server_json_path(name: str) -> Path:
@@ -124,6 +124,14 @@ def server_lock_path(name: str) -> Path:
 
 def server_pid_path(name: str) -> Path:
     return instance_dir(name) / _SERVER_FILENAMES["pid"]
+
+
+def monitor_lock_path(name: str) -> Path:
+    return instance_dir(name) / _SERVER_FILENAMES["monitor_lock"]
+
+
+def monitor_pid_path(name: str) -> Path:
+    return instance_dir(name) / _SERVER_FILENAMES["monitor_pid"]
 
 
 def service_lease_lock_path(name: str) -> Path:
@@ -145,6 +153,8 @@ def _server_filenames() -> dict[str, str]:
         "json": s.server_json_path.name,
         "lock": s.server_lock_path.name,
         "pid": s.server_pid_path.name,
+        "monitor_lock": s.monitor_lock_path.name,
+        "monitor_pid": s.monitor_pid_path.name,
     }
 
 

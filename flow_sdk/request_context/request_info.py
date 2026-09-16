@@ -9,13 +9,13 @@ from starlette.requests import Request
 
 from flow_sdk.actions.action_registry import get_action_from_method
 from flow_sdk.api.api_request import APIRequest
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.config import default_service_config
 from flow_sdk.core.policy import PolicyResolver
 from flow_sdk.core.urls.service_urls import urls_service
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums import ExpansionType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.request_utils import align_request_typeids
 from flow_sdk.request_context.transaction_handler import TransactionHandler
 from flow_sdk.utils import starlett_query_brackets_to_dict
@@ -55,6 +55,10 @@ class RequestInfo:
         # the ``Hub-Reflect`` HTTP header, or from the ``hub_reflect`` field of a
         # ``rest_api_msg`` on the WS-REST path (see server/routes/ws_rest.py).
         self.hub_reflect: bool = False
+        # The browser tab (WebSocket connection id) that sent this request, when the
+        # client marked it as starting something the server must answer back to —
+        # an authorization flow confirms in the screen that asked. Empty otherwise.
+        self.initiator_connection_id: str = ""
         self.immediate_commit = False
         self.request: Request | None = None
         self.request_parameters: Dict[str, Any] = {}
@@ -194,6 +198,7 @@ class RequestInfo:
         # Per-call hub-reflection opt-in (default False). The header is a local
         # routing directive only — CloudProxy strips it before forwarding to the hub.
         self.hub_reflect = request.headers.get("Hub-Reflect", "").strip().lower() in ("true", "1", "yes")
+        self.initiator_connection_id = request.headers.get("X-Flow-Connection-Id", "").strip()
         visitor_id = request.cookies.get(default_service_config.visitor_cookie_name) or request.cookies.get(
             default_service_config.visitor_session_cookie_name
         )

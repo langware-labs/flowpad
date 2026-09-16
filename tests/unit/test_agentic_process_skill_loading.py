@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.process_assets import ProcessAssets
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
@@ -26,9 +27,9 @@ def test_skills_root_is_per_vendor_under_the_mounted_assets_dir():
     as trusted configuration"); pointing it at claude's ``.claude/skills``
     dropped every embedded skill somewhere copilot never looks."""
     assets = Path("/tmp/assets")
-    assert _proc(WorkerType.CLAUDE_CODE)._skills_root(assets) == assets / ".claude" / "skills"
-    assert _proc(WorkerType.COPILOT)._skills_root(assets) == assets / ".github" / "skills"
-    assert _proc(WorkerType.OPENCODE)._skills_root(assets) == assets / ".opencode" / "skills"
+    assert _proc(WorkerType.CLAUDE_CODE).asset_workspace._skills_root(assets) == assets / ".claude" / "skills"
+    assert _proc(WorkerType.COPILOT).asset_workspace._skills_root(assets) == assets / ".github" / "skills"
+    assert _proc(WorkerType.OPENCODE).asset_workspace._skills_root(assets) == assets / ".opencode" / "skills"
 
 
 def test_skills_root_codex_uses_codex_home(monkeypatch, tmp_path):
@@ -38,7 +39,7 @@ def test_skills_root_codex_uses_codex_home(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "flow_sdk.instance_settings.get_instance_settings", lambda: _Settings()
     )
-    root = _proc(WorkerType.CODEX)._skills_root(Path("/tmp/assets"))
+    root = _proc(WorkerType.CODEX).asset_workspace._skills_root(Path("/tmp/assets"))
     assert root == tmp_path / ".codex" / "skills"
 
 
@@ -47,7 +48,7 @@ def _patch_action(monkeypatch, captured: dict) -> None:
         captured["ref"] = asset_ref
         return None
 
-    monkeypatch.setattr(AgenticProcess, "load_embedded_skill_action", _fake)
+    monkeypatch.setattr(ProcessAssets, "load_embedded_skill_action", _fake)
 
 
 async def test_load_skill_resolves_str_path(monkeypatch):
@@ -135,7 +136,7 @@ async def test_load_embedded_skill_registers_the_ref(no_save, records_root, tmp_
     refs = [str(r) for r in proc.embedded_asset_refs]
     assert len(refs) == 1 and refs[0].startswith("skill-")
     # The whole point of the ref: the assets dir now reaches the worker.
-    assert str(proc._process_assets_path()) in proc.resolved_add_dirs
+    assert str(proc.asset_workspace._process_assets_path()) in proc.resolved_add_dirs
 
 
 async def test_load_embedded_skill_is_idempotent(no_save, records_root, tmp_path):
@@ -157,7 +158,7 @@ async def test_detach_removes_a_symlinked_skill(no_save, records_root, tmp_path)
     result = await proc.load_embedded_skill_action(asset_ref=str(folder))
     link = Path(result.data["link"])
 
-    await proc._unmaterialize_entity(proc.embedded_asset_refs[0], proc._process_assets_path())
+    await proc.asset_workspace._unmaterialize_entity(proc.embedded_asset_refs[0], proc.asset_workspace._process_assets_path())
 
     assert not link.is_symlink()
     assert (folder / "SKILL.md").exists(), "the source skill must survive a detach"
@@ -170,10 +171,10 @@ async def test_assets_are_prepared_without_any_instruction_text(no_save, records
     proc = _proc(WorkerType.OPENCODE)
     await proc.load_embedded_skill_action(asset_ref=str(_skill_folder(tmp_path)))
 
-    assets = await proc._prepare_system_instruction_assets()
+    assets = await proc.asset_workspace._prepare_system_instruction_assets()
 
     assert assets is not None, "assets with no instruction text must still be delivered"
-    assert assets.assets_dir == proc._process_assets_path()
+    assert assets.assets_dir == proc.asset_workspace._process_assets_path()
     assert assets.instructions == ""
     assert assets.claude_file is None
     assert not (assets.assets_dir / "CLAUDE.md").exists()
@@ -184,7 +185,7 @@ async def test_no_instruction_text_means_no_system_prompt_file(no_save, records_
     pointed at a file that was never written."""
     proc = _proc(WorkerType.CLAUDE_CODE)
     await proc.load_embedded_skill_action(asset_ref=str(_skill_folder(tmp_path)))
-    assets = await proc._prepare_system_instruction_assets()
+    assets = await proc.asset_workspace._prepare_system_instruction_assets()
 
     cmd = ClaudeAgentOptions()
     cmd.apply_instruction_assets(assets)
@@ -196,4 +197,4 @@ async def test_no_instruction_text_means_no_system_prompt_file(no_save, records_
 async def test_nothing_at_all_still_prepares_nothing(no_save, records_root):
     """The other early return stays: a process with no assets and no text has
     nothing to mount."""
-    assert await _proc(WorkerType.CLAUDE_CODE)._prepare_system_instruction_assets() is None
+    assert await _proc(WorkerType.CLAUDE_CODE).asset_workspace._prepare_system_instruction_assets() is None

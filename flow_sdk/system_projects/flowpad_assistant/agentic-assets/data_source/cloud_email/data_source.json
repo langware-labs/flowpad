@@ -1,15 +1,12 @@
 {
   "schema": 1,
   "name": "cloud_email",
-  "title": "Cloud mailbox",
-  "icon_name": "CloudMailbox",
-  "description": "A mailbox the hub allocates and holds the credential for. Nothing to paste.",
+  "title": "Agent Email",
+  "icon_name": "Mail",
+  "description": "An email address Flowpad creates for this agent. Nothing to paste.",
+  "kind": "datasource.cloud.email",
+  "provisioned": true,
   "config": {
-    "agent_id": {
-      "type": "text",
-      "required": true,
-      "label": "Agent"
-    },
     "address": {
       "type": "text",
       "advanced": true,

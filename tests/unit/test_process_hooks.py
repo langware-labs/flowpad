@@ -102,7 +102,7 @@ async def test_prepare_reconciles_removed_hook_without_creating_an_empty_root(no
         worker_type=WorkerType.CLAUDE_CODE,
         load_flowpad_assistant=False,
     )
-    fresh_root = fresh._process_assets_path()
+    fresh_root = fresh.asset_workspace._process_assets_path()
 
     prepared_empty = await fresh.prepare_process_assets()
 
@@ -117,8 +117,8 @@ async def test_prepare_reconciles_removed_hook_without_creating_an_empty_root(no
     await process.set_hook(HookEventType.USER_PROMPT_SUBMIT)
     prepared = await process.prepare_process_assets()
     plugin_dir = prepared.hook_runtime.plugin_dirs[0]
-    assert process._process_assets_path().exists()
-    assert str(process._process_assets_path()) in process.resolved_add_dirs
+    assert process.asset_workspace._process_assets_path().exists()
+    assert str(process.asset_workspace._process_assets_path()) in process.resolved_add_dirs
     assert Path(plugin_dir).exists()
 
     await process.remove_hook(HookEventType.USER_PROMPT_SUBMIT)
@@ -126,7 +126,7 @@ async def test_prepare_reconciles_removed_hook_without_creating_an_empty_root(no
 
     assert reconciled.hook_runtime.plugin_dirs == ()
     assert not Path(plugin_dir).exists()
-    assert str(process._process_assets_path()) not in process.resolved_add_dirs
+    assert str(process.asset_workspace._process_assets_path()) not in process.resolved_add_dirs
 
 
 @pytest.mark.asyncio
@@ -141,8 +141,8 @@ async def test_fileless_codex_hook_does_not_mount_or_create_process_assets(no_sa
     prepared = await process.prepare_process_assets()
 
     assert prepared.hook_runtime.plugin_dirs == ()
-    assert not process._process_assets_path().exists()
-    assert str(process._process_assets_path()) not in process.resolved_add_dirs
+    assert not process.asset_workspace._process_assets_path().exists()
+    assert str(process.asset_workspace._process_assets_path()) not in process.resolved_add_dirs
 
 
 @pytest.mark.asyncio
@@ -155,7 +155,7 @@ async def test_no_feature_serialization_snapshot_and_save_keep_assets_lazy(
         worker_type=WorkerType.CLAUDE_CODE,
         load_flowpad_assistant=False,
     )
-    assets_path = process._process_assets_path()
+    assets_path = process.asset_workspace._process_assets_path()
     assert not assets_path.exists()
 
     first = process.model_dump(mode="json")
@@ -208,7 +208,7 @@ async def test_hook_restart_snapshot_is_semantic_and_artifact_independent(
     assert process._restart_snapshot() == configured
     if plugin_relative_path is None:
         assert prepared.hook_runtime.plugin_dirs == ()
-        assert not process._process_assets_path().exists()
+        assert not process.asset_workspace._process_assets_path().exists()
     else:
         plugin_dir = Path(prepared.hook_runtime.plugin_dirs[0])
         process.ensure_process_assets().remove(plugin_relative_path)
@@ -225,7 +225,7 @@ async def test_hook_restart_snapshot_is_semantic_and_artifact_independent(
 def test_legacy_internal_asset_mount_is_filtered_without_touching_similar_user_dir(records_root):
     process_id = mint_uuid()
     seed = AgenticProcess(id=process_id, load_flowpad_assistant=False)
-    canonical = str(seed._process_assets_path())
+    canonical = str(seed.asset_workspace._process_assets_path())
     similar_user_dir = f"{canonical}-user"
 
     process = AgenticProcess(

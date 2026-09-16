@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.transfer import _ASSET_PACK_IGNORE
 from flow_sdk.builtin.flow_message_bundle import (
-    _ASSET_PACK_IGNORE,
     _extended_length_path,
     _pack_file_backed_attachment,
 )
@@ -210,7 +210,7 @@ async def test_pack_folder_asset_copies_capsule_verbatim(tmp_path, monkeypatch):
     assert not (base / "__pycache__").exists()
     assert not list(base.rglob("*.pyc"))
     # Existing source bytes are never rewritten during packing.
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+    from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
     fields = _yaml_load(_extract_frontmatter((base / "WHITE_BOARD.md").read_text(encoding="utf-8")))
     assert "id" not in fields
     assert fields["name"] == "my-board"  # other frontmatter preserved

@@ -451,3 +451,26 @@
   background-color: hsl(var(--primary) / 0.15);
   box-shadow: inset 2px 0 0 0 hsl(var(--primary) / 0.6);
 }
+
+/*
+ * Asset row tracks — see `AssetGridRow` in AssetManagerPopover.tsx for the
+ * column layout. The row's host div is the container, so the row adapts to
+ * whatever panel hosts it rather than the window. When narrow, the scope
+ * track shrinks to its icon (which carries the tooltip) and the asset name
+ * gets the width back. Raw @container because no
+ * @tailwindcss/container-queries plugin is installed.
+ */
+.asset-grid-row-host {
+  container: asset-row / inline-size;
+}
+.asset-grid-row {
+  grid-template-columns: minmax(0, 1fr) 6.25rem 1.5rem 1.5rem 1.5rem;
+}
+@container asset-row (max-width: 22rem) {
+  .asset-grid-row {
+    grid-template-columns: minmax(0, 1fr) 1.25rem 1.5rem 1.5rem 1.5rem;
+  }
+  .asset-grid-row .asset-scope-label {
+    display: none;
+  }
+}

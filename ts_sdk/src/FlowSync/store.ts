@@ -1,3 +1,5 @@
+import { webUrlFromPointer } from '../models/web-url-pointer';
+import { ViewType } from '../utils/ui/view-types';
 import { lazyAssets, LazyAsset } from '../lazy';
 import { bindAssetEditorRegistry } from '../models/asset-editor';
 import { EventEmitter } from 'events';
@@ -211,6 +213,13 @@ export interface Manageable {
   isExpanded(expansion: ExpansionType | ExpansionType[] | ExpansionRequest): boolean;
   isDbField(fieldName: string): boolean;
 }
+
+/**
+ * Types we have already reported as having no client entity constructor. Bounded
+ * by the number of backend types, and never reset: the answer cannot change
+ * within a session because the entity registry is populated at import.
+ */
+const loggedMissingCtorTypes = new Set<string>();
 
 export class DataManager<T extends Manageable> extends EventEmitter {
   entities: TypeIdMap<EntityRef<T>> = new TypeIdMap<EntityRef<T>>();
@@ -516,10 +525,20 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Backend sends content as 'flow_value', fallback to 'content' for compatibility
     const content = flowDataJson.flow_value ?? flowDataJson.content ?? '';
 
-    // Set timestamp if not present
-    if (!attributes['t']) {
+    // Prefer the ORIGINATING time when the emitter carried one. The WS layer
+    // stamps its own send-time `t` over the caller's attributes
+    // (`send_flow_data_to_entity`), so for a transcript-sourced row `t` is when
+    // the frame was broadcast, not when the agent did the thing — which would
+    // sort a pushed row after its own history twin. Same `created_time` → `t`
+    // mapping `FlowData.fromJSON` applies on the history path.
+    const originatedAt = (flowDataJson as { created_time?: unknown }).created_time;
+    if (typeof originatedAt === 'string' && originatedAt) {
+      attributes['t'] = originatedAt;
+    } else if (!attributes['t']) {
       attributes['t'] = new Date().toISOString();
     }
+    const wireIndex = (flowDataJson as { index?: unknown }).index;
+    if (wireIndex !== undefined && !attributes['i']) attributes['i'] = String(wireIndex);
 
     const flowData = new FlowData(elementType, content, attributes);
     // The FlowData constructor already reads `attributes['source']` and sets
@@ -570,7 +589,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const ctor = EntityFactory.getEntityConstructor(typeId.type);
     if (!ctor) {
-      console.warn(`Data op messages ignored, Entity constructor not found for type: ${typeId.type}`);
+      // Expected, not exceptional. The backend broadcasts ops for every
+      // api-visible type, and a dozen of those are deliberately not modelled as
+      // client entities — `helpdesk` reaches the UI as bare actions, and so
+      // on. `api_visible` is the
+      // only dial the backend has and it also gates the schema payload the UI
+      // needs for each type's label and icon, so these frames cannot simply be
+      // switched off.
+      //
+      // Debug, and once per type: an index sweep re-broadcasts every row, which
+      // turned this into a warn storm that buried real signal. The type name
+      // stays so a genuinely missing constructor is still findable.
+      if (!loggedMissingCtorTypes.has(typeId.type)) {
+        loggedMissingCtorTypes.add(typeId.type);
+        console.debug(`Data op ignored: no client entity for type '${typeId.type}' (expected for server-only types)`);
+      }
       return;
     }
     // Bus wake-up BEFORE the branchy cache handling below: several branches
@@ -579,9 +612,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Handle delete operation by removing from all query results
     if (op === 'delete') {
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
-    } else if (op === 'create' || this.dataOpQueryInvalidation) {
-      // For create operations, always update watched queries so new entities appear in lists.
-      // For other ops (update), only invalidate if dataOpQueryInvalidation is enabled.
+    } else if (op === 'update' && this.dataOpQueryInvalidation) {
+      // `update` ops only invalidate (full network refetch) when explicitly
+      // enabled. `create` no longer takes this path — the data-op already carries
+      // the full entity, so it is spliced into matching results locally below
+      // (see the `case 'create'` block) instead of re-running the LIST query over
+      // the network per data-op (X5a). `dataOpQueryInvalidation` is currently
+      // never enabled, so this branch is dormant in practice.
       const watchedQueries = this.watchedQueries.getWatchCallbacksByType(typeId.type);
 
       for (const watchedQuery of watchedQueries) {
@@ -636,10 +673,34 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           // Buffer instead; fetchByTypeId/save flush it via applyPendingUpdate
           // once the request resolves, so the create's fields win.
           this.bufferPendingUpdate(existingRef, data);
+          // ...but LIST MEMBERSHIP is not a field merge and must not wait for
+          // that flush. This is the self-created case — the client called
+          // save(), so its own ref is mid-flight — and it is the common one:
+          // skipping the splice here left an entity the caller had just created
+          // missing from its own live queries until something unrelated
+          // refetched. `find-or-create` then queried, did not see the row it had
+          // just written, and minted a SECOND project for the same work dir
+          // (tests/api/project_id_sync.test.ts).
+          //
+          // The pre-splice code did a full network LIST refetch from a branch
+          // ABOVE this switch, so it ran whatever the ref's state was; moving
+          // the work inside the switch is what put it behind this guard.
+          //
+          // Splices the ref's existing entity, not `data`: that object is the
+          // one the caller holds, and applyPendingUpdate merges the buffered
+          // create into it in place once the save resolves.
+          if (existingRef.entity) {
+            this.watchedQueries.insertEntityIntoResults(typeId.type, typeId, existingRef.entity, data);
+          }
           break;
         }
         const entity = this.castAndDeepAssign(data);
         this.register_new_entity(typeId, entity);
+        // X5a: splice the already-delivered entity into every matching live
+        // query locally (mirror of `removeEntityFromResults` for delete) instead
+        // of a full network LIST refetch per create data-op. Gated by the same
+        // `query.validate(data)` scope check inside the helper.
+        this.watchedQueries.insertEntityIntoResults(typeId.type, typeId, entity, data);
         this._notifyAllAliases(typeId, entity, entity);
         break;
       }
@@ -1021,11 +1082,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
     const pointer = dock?.pointer ?? '';
     if (!pointer) return null;
+    if (dock?.viewType === ViewType.WEB_APP) {
+      const url = webUrlFromPointer(pointer);
+      if (url) return new URL(url).host;
+    }
     if (dock?.viewType === 'diff' && pointer.startsWith('asset-compare/')) {
       return 'Asset compare';
     }
     const lastSegment = (path: string): string | null =>
       decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
+    if (dock?.viewType === ViewType.EDITOR) return lastSegment(pointer);
     // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a
     //    bare entity id whose type is carried by the dock's viewType.
     if (pointer.includes('/typeid/')) {
@@ -1106,8 +1172,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return p;
   }
 
-  private resolvePendingRequests() {
-    for (const ref of this.entities.values()) {
+  /**
+   * Settle every parked waiter whose ref has reached READY/ERROR. `ownRef` is
+   * the ref the finishing request holds: it may already be gone from the map
+   * (clearCache on a read-scope switch, invalidate, remove), and a waiter
+   * parked on a dropped ref is otherwise never settled — its promise hangs
+   * forever, as the project menu's "Loading…" rows did.
+   */
+  private resolvePendingRequests(ownRef?: EntityRef<T>) {
+    const refs = new Set(this.entities.values());
+    if (ownRef) refs.add(ownRef);
+    for (const ref of refs) {
       if (ref.status === EntityStatus.READY) {
         ref.entityPendingPromises.forEach((p) => {
           p.resolve(ref.entity);
@@ -1188,7 +1263,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
       throw error;
     } finally {
-      this.resolvePendingRequests();
+      this.resolvePendingRequests(ref);
     }
   }
 
@@ -1262,7 +1337,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       ref.status = EntityStatus.ERROR;
       throw error;
     } finally {
-      this.resolvePendingRequests();
+      this.resolvePendingRequests(ref);
     }
   }
 
@@ -1401,7 +1476,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       throw error;
     } finally {
       ref.saveInFlight = false;
-      this.resolvePendingRequests();
+      this.resolvePendingRequests(ref);
     }
   }
 
@@ -1474,6 +1549,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       requestConfig = {
         ...(requestConfig ?? {}),
         headers: { ...(requestConfig?.headers ?? {}), 'Hub-Reflect': 'true' },
+      };
+    }
+
+    // Name this tab as the initiator, so the server answers back to it alone
+    // (flow_sdk/core/oauth/flows.py). Scoped to the calls that ask for it: a
+    // custom header on every request would cost a CORS preflight each time.
+    if (actionInfo.carriesInitiator) {
+      requestConfig = {
+        ...(requestConfig ?? {}),
+        headers: { ...(requestConfig?.headers ?? {}), 'X-Flow-Connection-Id': ConnectionManager.getInstance().id },
       };
     }
 
@@ -1554,6 +1639,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
       hub_reflect: actionInfo.hubReflect && !isHubOnly(),
+      carries_initiator: actionInfo.carriesInitiator,
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);

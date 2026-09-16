@@ -269,9 +269,10 @@ function ChannelMark({
   );
 }
 
-/** The one list both panels show: a header, a `ChannelRow` per source, an
- *  optional footer. The hover card scopes it to one kind, the popover to all. */
-function ChannelList({
+/** The one list every channel panel shows: a header, a `ChannelRow` per source, an
+ *  optional footer. The hover card scopes it to one kind, the popover and the
+ *  agent page's Channels tab to all. */
+export function ChannelList({
   title,
   sources,
   specFor,

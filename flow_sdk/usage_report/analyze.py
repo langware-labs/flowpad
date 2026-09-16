@@ -11,11 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
 from flow_sdk.fs_store.indexer.functions.claude_sessions import (
     claude_session_start_time,
     discover_claude_session_paths_iter,
     ensure_claude_session_stats,
-    extract_claude_session_from_path,
 )
 from flow_sdk.transcript_analyzer import (
     AgentTranscriptFile,

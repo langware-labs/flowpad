@@ -62,15 +62,16 @@ from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
+    from flow_sdk.assets.directory import AssetDir
     from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
+    from flow_sdk.builtin.agentic_process.naming.providers import NamingAdapter
     from flow_sdk.builtin.hooks.types import AgentHookResponse, HookCapabilities, HookOutcome
-    from flow_sdk.builtin.worker_status import WorkerStatus
     from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
     from flow_sdk.responses.response import ApiResponse
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 # Per-line StreamReader limit shared by every JSONL CLI transport. Asyncio's
@@ -516,6 +517,11 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
             env[ENV_CLAUDE_CONFIG_DIR] = str(claude_home)
         else:
             env.pop(ENV_CLAUDE_CONFIG_DIR, None)
+    for key, configured_root in getattr(process.driver, "session_store_env", {}).items():
+        supplied = env.get(key)
+        if supplied and Path(supplied).expanduser().resolve() != Path(configured_root).resolve():
+            raise ValueError(f"Worker {key} must match Flowpad's configured session store")
+        env[key] = configured_root
     pinned = flow_cli_env_path(env.get("PATH"))
     if pinned:
         env["PATH"] = pinned
@@ -557,16 +563,14 @@ async def resolve_worker_language(process: "AgenticProcess") -> str | None:
 
 
 async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
-    """Resolve project SecretOrigin pointers into this transient worker env.
+    """Resolve declared credentials (user scope + the process's project) into
+    this transient worker env.
 
     This must only be called on spawn-time env dicts. It must not mutate
     AgentOptions.env_vars because those are persisted and rendered.
     """
+    from flow_sdk.builtin.credential_resolver import environment_for, resolve_attached_secrets  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_resolver import (  # noqa: PLC0415
-        attached_env_vars_for,
-        resolve_project_secrets,
-    )
 
     project = None
     project_id = getattr(process, "project_id", None)
@@ -577,15 +581,13 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
             project = await Project.get_ancestor(process.typeid)
         except Exception:
             project = None
-    if project is None:
-        return env
 
     # Node attachment gates the worker too, not only the connector's commands.
-    # None = nothing curated on this node, i.e. every declared secret, so an
-    # untouched setup behaves exactly as it did before attachment existed.
-    only = await attached_env_vars_for(project)
-    resolved = await resolve_project_secrets(project, only=only, process=process)
-    for env_var, value in resolved.items():
+    # None = nothing curated on this node, i.e. every declared variable. With no
+    # project, only user-scope credentials apply. Values come from the process's
+    # environment: its Deployment's, else this instance's default.
+    environment = await environment_for(process)
+    for env_var, value in (await resolve_attached_secrets(project, environment=environment)).items():
         # setdefault, not assignment: an explicitly-set env var wins.
         env.setdefault(env_var, value.get_secret_value())
 
@@ -1194,11 +1196,54 @@ def worker_path_env(worker_type: str) -> dict[str, str] | None:
 
 
 def prepend_path_dir(folder: str, path: str | None) -> str:
-    """*path* with *folder* prepended; idempotent when it is already first."""
+    """*path* with *folder* prepended; idempotent when it is already first.
+
+    Use this only where nothing ahead of *folder* needs protecting — i.e. a
+    PATH built from ``os.environ`` that carries no Flowpad pin (see
+    :func:`worker_path_env`). When the PATH may already begin with this
+    backend's venv bin dir, use :func:`insert_capability_path_dir` instead.
+    """
     base = path or ""
     if base.split(os.pathsep, 1)[0] == folder:
         return base
     return f"{folder}{os.pathsep}{base}" if base else folder
+
+
+def insert_capability_path_dir(folder: str, path: str | None) -> str:
+    """*path* with *folder* ahead of everything EXCEPT this backend's venv pin.
+
+    The discovered capability folder has to outrank the service PATH, or spawn
+    fails with "codex not found despite discovery" (D02) — that is why it is
+    prepended at all. But prepending it unconditionally also puts it ahead of
+    the venv bin dir that :func:`flow_cli_env_path` pinned first, and vendor
+    bin folders are routinely shared directories (``~/.local/bin``) that carry
+    their own ``flow``. The version-skew guard then loses to whatever ``flow``
+    the vendor dir happens to ship — silently, and precisely for the worker
+    calls (``flow record/show/context``) the guard exists to protect.
+
+    ``apply_worker_env``'s docstring already names this ordering as the reason
+    ``FLOWPAD_PYTHON`` must be an absolute path; ``flow`` had no equivalent
+    escape, so the ordering is fixed here instead.
+
+    So: keep the venv dir first when it is first, and put *folder* immediately
+    behind it. Idempotent, and identical to ``prepend_path_dir`` when no pin is
+    present.
+    """
+    base = path or ""
+    if not base:
+        return folder
+    entries = base.split(os.pathsep)
+    if entries[0] == folder:
+        return base
+
+    venv_bin = str(Path(sys.executable).parent)
+    exe = "flow.exe" if sys.platform == "win32" else "flow"
+    pinned = entries[0] == venv_bin and (Path(venv_bin) / exe).exists()
+    if not pinned:
+        return f"{folder}{os.pathsep}{base}"
+    if len(entries) > 1 and entries[1] == folder:
+        return base  # already immediately behind the pin
+    return os.pathsep.join([entries[0], folder, *entries[1:]])
 
 
 def worker_executable(worker_type: str) -> str | None:
@@ -1320,7 +1365,7 @@ def build_worker_spawn_env(
         )
     env = dict(os.environ if base_env is None else base_env)
     env.update(env_from_opts)
-    env["PATH"] = prepend_path_dir(folder, env.get("PATH"))
+    env["PATH"] = insert_capability_path_dir(folder, env.get("PATH"))
     return env
 
 
@@ -1386,6 +1431,32 @@ def factory(cli_json: dict, worker_type: str) -> AgentOptions:
     if vendor is None:
         raise ValueError(f"Unknown worker_type: {worker_type!r}")
     return _vendor_module(vendor, "cli").AGENT_OPTIONS.from_json(cli_json)
+
+
+def interactive_launch_command(worker_type: str, workdir: str | None = None) -> str:
+    """The shell line this machine WOULD run to start ``worker_type``'s
+    interactive TUI in ``workdir``.
+
+    Derived, not described: it builds the vendor's real ``AgentOptions`` through
+    :func:`factory` and renders it with ``to_shell_string()`` — the same object
+    and the same renderer the PTY spawn path uses. A vendor that changes a flag
+    changes this line with it, which is the whole point: the caller is a *debug*
+    affordance whose only value is being the command we actually run.
+
+    ``json_stream``/``print_mode`` are the one thing forced. Three vendors
+    default to their HEADLESS shape and the spawn path flips them when
+    ``process.pty_mode``; there is no process here, so the interactive shape is
+    stated instead. Each key reaches only the vendors that serialize it — the
+    rest ignore it, as they ignore any key outside their ``SERIALIZED_FIELDS``.
+
+    What it deliberately does NOT carry is everything that only exists once a
+    process does: ``--add-dir``, ``--agents``, ``--mcp-config``, the session id,
+    and the spawn-time env (``FLOWPAD_EXECUTION_SCOPE``, secrets, the pinned
+    ``flow`` on PATH). A terminal launched from this line is a FRESH session in
+    that folder, not a rehydration of a Flowpad worker.
+    """
+    options = factory({"workdir": workdir or "", "json_stream": False, "print_mode": False}, worker_type)
+    return options.to_shell_string()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1554,6 +1625,10 @@ class WorkerDriver(Protocol):
         """Return a pure semantic snapshot for persisted process-hook intent."""
         ...
 
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        """Write this harness's instruction projection and return the prompt file."""
+        ...
+
     def prepare_process_hooks(
         self,
         assets: "AssetDir",
@@ -1649,6 +1724,16 @@ class WorkerDriver(Protocol):
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Native session-store environment pinned to instance configuration."""
+        ...
+
+    @property
+    def naming_adapter(self) -> "NamingAdapter":
+        """Provider observations; shared naming runtime owns state and watching."""
+        ...
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolved transcript path plus the native JSONL format metadata."""
         ...
@@ -1656,6 +1741,18 @@ class WorkerDriver(Protocol):
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         """Where this driver's worker writes its JSONL/event log for the
         given process — or None if no session id is yet assigned."""
+        ...
+
+    async def available_assets(self, process: "AgenticProcess"):
+        """File-backed executable assets reported by this harness's native resolver."""
+        ...
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        """Filesystem locations this worker loads, shared by PTY and headless.
+
+        Unlike the indexer catalog, this excludes other harnesses' formats
+        and directories merely accessible through filesystem tools.
+        """
         ...
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
@@ -1755,6 +1852,7 @@ __all__ = [
     "get_driver",
     "latch_spawn_failure",
     "prepend_path_dir",
+    "insert_capability_path_dir",
     "resolve_worker_argv0",
     "restart_payload_from_cli_options",
     "stamp_cli_run_id",

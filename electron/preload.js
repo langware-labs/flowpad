@@ -21,6 +21,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Open a URL in the system browser
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // OAuth consent in a window the app owns, so a confirmed grant can close it.
+  openAuthWindow: (url) => ipcRenderer.invoke('open-auth-window', url),
+  closeAuthWindow: (id) => ipcRenderer.invoke('close-auth-window', id),
+  onAuthWindowClosed: (callback) => {
+    const listener = (_event, id) => callback(id);
+    ipcRenderer.on('auth-window-closed', listener);
+    return () => ipcRenderer.removeListener('auth-window-closed', listener);
+  },
+
   // Capture a viewport-relative rectangle from the active BrowserWindow.
   captureRegion: (region) => ipcRenderer.invoke('capture-region', region),
 
@@ -65,7 +74,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopNotify: ({ title, body, clickTarget }) => ipcRenderer.invoke('notify-os', { title, body, clickTarget }),
   setBadge: (n) => ipcRenderer.invoke('set-badge', n),
   notifyAttention: () => ipcRenderer.invoke('notify-attention'),
-  onNotificationClick: (callback) => ipcRenderer.on('notification-click', (_event, data) => callback(data)),
+  // Returns a disposer. The renderer mounts this from a React effect, so without
+  // one every remount left another listener on the channel — and each listener
+  // navigates, so one banner click fired the navigation once per leak.
+  onNotificationClick: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('notification-click', handler);
+    return () => ipcRenderer.removeListener('notification-click', handler);
+  },
 
   // Show/hide the application menu. The renderer calls this with the current
   // "is advanced view mode" boolean; the menu is only shown in Advanced/Dev.

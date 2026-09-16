@@ -46,6 +46,8 @@ export enum RecordType {
   /** FlowPad's own authored MCP asset — see the `Mcp` entity for the MCP_SERVER distinction. */
   MCP = 'mcp',
   MCP_SERVER = 'mcp_server',
+  /** The per-project ledger of published assets (agentic-assets/project_manifest/). */
+  PROJECT_MANIFEST = 'project_manifest',
   SUBAGENT = 'subagent',
   /** The launchable agent (agentic-assets/agent/<name>/agent.md).
    *  Distinct from SUBAGENT, the provider-owned .claude/agents/<name>.md. */
@@ -70,6 +72,7 @@ export enum RecordType {
   USAGE_REPORT = 'usage_report',
   ASSET_CLEANUP_REPORT = 'asset_cleanup_report',
   JOURNEY = 'journey',
+  WIZARD = 'wizard',
   // A hub budget this box may spend. No file and no local row — the Assets
   // browser feeds it from the `llm-endpoint` box action (see
   // `flow_sdk/builtin/llm_endpoint.py`), and its editor is read-only.

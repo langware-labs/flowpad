@@ -1,5 +1,5 @@
-import { ActionInfo, AgenticProcess } from '@sdk';
-import { useMemo } from 'react';
+import { ActionInfo, AgenticProcess, connectionManager, type BroadcastMessage } from '@sdk';
+import { useEffect, useMemo } from 'react';
 import { useAction } from './use-action';
 import { useContext } from './useContext';
 
@@ -86,6 +86,18 @@ export function useWorkerHistory(
     enabled: enabled && !!computeNode?.typeId?.id,
   });
 
+  useEffect(() => {
+    if (!enabled || !actionInfo) return;
+    // The backend emits only committed title/session-binding changes. A new
+    // native session can join history in any window without making every
+    // status or transcript update trigger another directory scan.
+    const onHistoryChanged = (message: BroadcastMessage) => {
+      if (message.broadcast_type === 'worker_history_changed') void refetch();
+    };
+    connectionManager.on('on_broadcast', onHistoryChanged);
+    return () => { connectionManager.off('on_broadcast', onHistoryChanged); };
+  }, [enabled, actionInfo, refetch]);
+
   // Filtered here, the one place history is loaded, so every surface inherits it.
   const entries = useMemo<WorkerHistoryEntry[]>(() => {
     if (!data || !Array.isArray(data)) return [];
@@ -99,10 +111,7 @@ export function useWorkerHistory(
   // compare THIS against the page limit, never `entries.length`.
   const fetchedCount = Array.isArray(data) ? data.length : 0;
 
-  // `worker-history` is fetched ONCE on load (a plain `useAction` query keyed by
-  // compute node + limit + project scope). It intentionally does NOT auto-refetch
-  // on AgenticProcess data_ops — a running agent emits a stream of status/
-  // transcript update ops, and refetching per op turned into a request storm.
-  // Callers that need a fresh list drive it explicitly via the returned `refetch`.
+  // Fetch on load, semantic history changes, or an explicit caller refresh.
+  // AgenticProcess status/transcript data_ops do not invalidate this query.
   return { entries, fetchedCount, isLoading, refetch };
 }

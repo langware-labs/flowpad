@@ -26,6 +26,19 @@ runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
+def _no_ambient_process(monkeypatch):
+    """No calling process unless a test says so.
+
+    `flow progress` attributes a report to the AgenticProcess it runs inside, read from
+    `FLOWPAD_EXECUTION_SCOPE`. That variable is SET in a Flowpad desktop terminal — which
+    is where this repo is developed — so without this the "instance-wide" assertions
+    silently address a real process id and every one of them fails on the maintainer's
+    machine and passes in CI. The tests about attribution override it themselves.
+    """
+    monkeypatch.setattr("flow_sdk.utils.environment.get_execution_scope", lambda: [])
+
+
+@pytest.fixture(autouse=True)
 def _clean_monitor():
     monitor.clear()
     yield
@@ -225,10 +238,10 @@ def test_a_missing_verb_is_refused_before_any_request():
     assert monitor.count() == 0, "a malformed command must not mint a phantom row"
 
 
-# ---------------------------------------------------------------- scope
+# ---------------------------------------------------------------- subject_entity
 
 
-def test_scope_defaults_to_the_calling_agentic_process(monkeypatch):
+def test_the_subject_defaults_to_the_calling_agentic_process(monkeypatch):
     """An agent reporting its own progress should not have to know its own id."""
     monkeypatch.setattr(
         "flow_sdk.utils.environment.get_execution_scope",
@@ -238,21 +251,21 @@ def test_scope_defaults_to_the_calling_agentic_process(monkeypatch):
     run("report", "run", "inc-success")
 
     assert monitor.get("run") is None, "it did not land on the instance-wide address"
-    assert monitor.get("run", scope="agentic_process-abc").done == 1
+    assert monitor.get("run", subject_entity="agentic_process-abc").done == 1
 
 
-def test_an_explicit_scope_wins(monkeypatch):
+def test_an_explicit_subject_wins(monkeypatch):
     monkeypatch.setattr(
         "flow_sdk.utils.environment.get_execution_scope",
         lambda: [{"type": "agentic_process", "id": "abc"}],
     )
 
-    run("report", "run", "inc-success", "--scope", "data_source-xyz")
+    run("report", "run", "inc-success", "--subject", "data_source-xyz")
 
-    assert monitor.get("run", scope="data_source-xyz").done == 1
+    assert monitor.get("run", subject_entity="data_source-xyz").done == 1
 
 
-def test_a_plain_shell_reports_to_the_instance_scope(monkeypatch):
+def test_a_plain_shell_reports_to_the_instance_address(monkeypatch):
     monkeypatch.setattr("flow_sdk.utils.environment.get_execution_scope", lambda: [])
 
     run("report", "index", "inc-success")

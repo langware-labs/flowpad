@@ -3,7 +3,7 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { launchWizard, type Project, type ProjectListItem } from '@sdk';
 import { AddContextFolderDialog } from '@src/components/assets/AddContextFolderDialog';
-import { AddGitFolderDialog, type GitFolderInput } from '@src/components/assets/AddGitFolderDialog';
+import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDialog';
 import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
 import type { ContextFolderSource } from '@src/components/assets/context-folder-sources';
 import { useProjectContextFolders, type ContextFolderScope } from '@src/hooks/use-project-context-folders';
@@ -36,15 +36,16 @@ export function useAddContextFolder({ project, onAdded }: UseAddContextFolderOpt
   const projectId = project?.id ?? null;
   const projectTypeId = project?.typeId ?? null;
 
-  // "Add Git folder" source, two steps: the tile opens a small form (existing
-  // repo URL vs. new repo name — AddGitFolderDialog); only its submit launches
+  // "Add Git folder" source, two steps: the tile opens a small form (an
+  // existing repo — browsed or pasted, with its branch — vs. a new repo name,
+  // GitTargetDialog); only its submit launches
   // the git-context-folder wizard agent, seeded with that input, which does
   // the clone/init + remote work in the Flowpad workspace as its own project
   // and calls add-context-dir itself — the watched project entity then
   // re-renders the rows. `done`/`cancel` need no follow-up; a wizard-level
   // error surfaces here.
   const handleGitSubmit = useCallback(
-    async (input: GitFolderInput) => {
+    async (input: GitTarget) => {
       // Scope is null only when the dialog is closed, which is when this can't
       // fire — bail rather than invent a default that would quietly file a
       // shared folder as private.
@@ -58,7 +59,9 @@ export function useAddContextFolder({ project, onAdded }: UseAddContextFolderOpt
           payload: { projectId, scope, ...input },
           prompt:
             input.mode === 'existing'
-              ? `Set up the existing git repository ${input.url} as a context folder on this project.`
+              ? `Set up the existing git repository ${input.url}${
+                  input.branch ? ` on branch ${input.branch}` : ''
+                } as a context folder on this project.`
               : `Create a new git repository named "${input.name}" and set it up as a context folder on this project.`,
         });
         if (result.status === 'error') {
@@ -114,9 +117,13 @@ export function useAddContextFolder({ project, onAdded }: UseAddContextFolderOpt
         onConfirm={handleProjectsConfirm}
         description={<Trans>Each selected project's folder is added as a context folder.</Trans>}
       />
-      <AddGitFolderDialog
+      <GitTargetDialog
         open={gitScope !== null}
         onOpenChange={(next) => !next && setGitScope(null)}
+        title={<Trans>Add Git folder</Trans>}
+        description={<Trans>Set up a git-backed context folder for this project.</Trans>}
+        submitLabel={<Trans>Add</Trans>}
+        testIdPrefix="add-git-folder"
         onSubmit={handleGitSubmit}
       />
     </>

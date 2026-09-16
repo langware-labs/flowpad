@@ -19,7 +19,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from flow_sdk.schema.layout import File
+from flow_sdk.assets.layout import File
 
 router = APIRouter()
 
@@ -168,7 +168,7 @@ async def list_schema_views():
         {
           ok: true,
           views: [ { view_type, label, aliases, page, pointer: none|optional|required,
-                     folds_pointer, scope_keyed, can_be_tab } ]
+                     folds_pointer, scope_keyed, folds_sub_pointer, can_be_tab } ]
         }
     """
     from flow_sdk.core import dock_address as da  # noqa: PLC0415
@@ -182,6 +182,7 @@ async def list_schema_views():
             "pointer": meta.pointer.value,
             "folds_pointer": meta.folds_pointer,
             "scope_keyed": meta.scope_keyed,
+            "folds_sub_pointer": meta.folds_sub_pointer,
             # Pointer-bearing views are asked with a placeholder so the answer
             # reflects the addressable form, not the bare-viewType form.
             "can_be_tab": da.can_be_tab(view, "x"),

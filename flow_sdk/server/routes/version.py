@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
+from importlib.metadata import PackageNotFoundError, distribution
 from typing import Any, Optional
 
 import httpx
@@ -17,6 +19,7 @@ from flow_sdk.server import self_update
 from flow_sdk.server.launch import get_status
 from flow_sdk.utils import hub
 from flow_sdk.utils.semver import _cmp_key, is_newer, string2semver
+from flow_sdk.utils.serialization import epoch_to_iso_utc
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,11 @@ class VersionCheckResponse(BaseModel):
     releases: list[ReleaseInfo] = []
     github_error: Optional[str] = None
     hub: Optional[HubInfo] = None
+    #: When THIS machine installed the running flow SDK (not when it was
+    #: published). A LOCAL fact, so it sits beside ``hub`` rather than inside
+    #: ``pypi``: it holds whether or not the PyPI fetch succeeded, and says
+    #: nothing about the registry. ``None`` for a source checkout.
+    installed_at: Optional[str] = None
 
 
 class InstallVersionRequest(BaseModel):
@@ -107,6 +115,28 @@ def _hub_info_from_raw(hub_raw: dict[str, Any] | None) -> Optional[HubInfo]:
         deployed_at=_optional_str(hub_raw.get("deployed_at")),
         generated_at=_optional_str(hub_raw.get("generated_at")),
     )
+
+
+def _installed_at() -> Optional[str]:
+    """UTC ISO time this machine installed the running flowpad, or ``None``.
+
+    The installer writes ``flowpad-<version>.dist-info`` when it unpacks the
+    wheel, so that directory's mtime IS the install event — there is no
+    recorded field for it in package metadata. A source checkout resolves to
+    an ``.egg-info`` instead, whose mtime is whenever the metadata was last
+    regenerated rather than an install; report nothing there rather than a
+    number that looks authoritative and isn't.
+    """
+    try:
+        # ``_path`` is private, but importlib.metadata exposes no public way to
+        # reach a distribution's own metadata directory (``locate_file`` resolves
+        # paths relative to the install root, not to the dist-info itself).
+        path = getattr(distribution(self_update.PACKAGE), "_path", None)
+        if path is None or not str(path).endswith(".dist-info"):
+            return None
+        return epoch_to_iso_utc(os.path.getmtime(path))
+    except (PackageNotFoundError, OSError):
+        return None
 
 
 def _pypi_releases(releases_raw: Any) -> list[PypiRelease]:
@@ -222,6 +252,7 @@ async def check_version() -> ApiSuccessResponse[VersionCheckResponse]:
         releases=releases,
         github_error=github_error,
         hub=hub_info,
+        installed_at=_installed_at(),
     )
     # Only cache when both upstreams succeeded — keeps a transient outage from
     # pinning a broken response for 5 minutes.
@@ -255,7 +286,7 @@ async def _install_version(req: InstallVersionRequest) -> InstallVersionResponse
             reason="editable",
             error="This is an editable/dev install — reinstall is disabled.",
         )
-    if not get_status().get("monitor_alive"):
+    if not (await asyncio.to_thread(get_status)).get("monitor_alive"):
         return InstallVersionResponse(
             success=False,
             reason="no_monitor",

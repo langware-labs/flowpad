@@ -141,7 +141,12 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
      "One beat of a run's internal stream (kind: run_start | event | run_end)"),
     ("graph_workflow.node.status", "Graph workflow node status",
      "A scheduler transition for one node (queued | merged | started | finished | failed | waiting)"),
-    ("app", "App events", "Frontend-emitted events (app tier)"),
+    ("app", "App events",
+     "App-tier events — frontend-emitted, plus the backend lifecycle signals addressed to the app"),
+    ("app.ready", "App ready",
+     "The backend finished starting, the first bootstrap was served, and the system content "
+     "index has landed. Emitted once per boot; a subscriber that wants it only the first time "
+     "ever says so with a fire_once trigger."),
     ("app.ui", "UI interactions", "Clicks on tag-tagged UI elements"),
     ("app.route.loaded", "Route loaded", "A dock navigation completed"),
     ("app.page.signal", "Page signal", "A sandboxed page posted a journey signal"),

@@ -108,6 +108,31 @@ class PtyState(BaseModel):
         return len(self.attached_connections) > 0
 
 
+def _signal_session_queues(session: "PtyState") -> None:
+    """Put the ``None`` close sentinel on every queue this session feeds.
+
+    Both lists, deliberately: ``output()`` iterators read ``output_queues``
+    while ``wait_for_composer_ready`` registers on ``sequenced_output_queues``,
+    and a waiter on either one hangs if only the other is signalled.
+
+    Mirrors ``PtyState._signal_output_queues`` but takes the session directly,
+    because the caller has already popped it out of ``states``.
+    """
+    if not (session.output_queues or session.sequenced_output_queues):
+        return
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        return
+    if loop.is_closed():
+        return
+    for q in list(session.output_queues) + list(session.sequenced_output_queues):
+        try:
+            asyncio.run_coroutine_threadsafe(q.put(None), loop)
+        except Exception:  # noqa: BLE001 - a doomed queue must not block teardown
+            logger.debug("[PtyRegistry] close sentinel not delivered to a queue", exc_info=True)
+
+
 class PtyRegistry:
     """Singleton manager for PTY sessions with persistence and cleanup.
 
@@ -330,6 +355,20 @@ class PtyRegistry:
         if not session:
             logger.warning(f"PTY session not found for close: pty_key={pty_key}")
             return
+
+        # Release every waiter BEFORE the teardown below, or a consumer blocked
+        # on ``q.get()`` never wakes: the session is already out of ``states``,
+        # so nothing will ever put to those queues again. ``wait_for_composer_ready``
+        # is the one that bites — its documented "returns False when the PTY
+        # closes" contract silently became "hangs forever", and a gated first
+        # prompt stalled instead of falling through to blind delivery.
+        #
+        # It belongs HERE rather than in ``PtyState.close()`` because close() is
+        # only one of the ways a session dies. ``close_for_connection`` (last
+        # connection drops), ``close_all_sessions`` (factory reset), the TTL
+        # reaper and ``pty_actions``' evict path all reach this method directly
+        # and bypassed the signalling entirely.
+        _signal_session_queues(session)
 
         compute_node_id, provider_node_id, shell_id = pty_key
 

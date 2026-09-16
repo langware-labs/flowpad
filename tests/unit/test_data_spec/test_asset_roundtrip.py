@@ -118,9 +118,9 @@ COMPARE[Dataset] = {"examples": lambda rows: [r.model_dump(mode="json", exclude=
 
 
 def _register_probe_types() -> None:
-    from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
+    from flow_sdk.assets.identity import frontmatter_identity
+    from flow_sdk.assets.layout import File, Folder
     from flow_sdk.fs_store.schema_registry import TypeInfo
-    from flow_sdk.schema.layout import File, Folder
 
     for cls, spec, shape in (
         (_Leaf, _LeafSpec, File(ext=".md")),

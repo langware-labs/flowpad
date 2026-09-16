@@ -1,5 +1,5 @@
 ---
-id: 8a19d678-e7d2-58b6-88d9-d3369e22af96
+id: 030e14ca-e5fb-4830-8a41-839d4c2a7c39
 name: csv-analysis
 description: Parse and analyze CSV files. Use for data analysis tasks.
 ---

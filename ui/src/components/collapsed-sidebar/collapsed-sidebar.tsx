@@ -3,6 +3,7 @@ import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useIsDev, useViewMode, ViewMode } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
+import { OrgTeamsButton } from './OrgTeamsButton';
 import { resolveRail, type RailGate, type RailItemId, type RailSpec } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
@@ -17,8 +18,9 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { AgenticProcess, DataSource, PageId, RagIndex } from '@sdk';
+import { AgenticProcess, DataSource, PageId, RagIndex, dataContext } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { TAB_LINE_HEIGHT_CLASS } from '@src/components/tabs/TabStrip';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
@@ -202,8 +204,9 @@ export function CollapsedSidebar() {
   const handleRailClick = (id: RailItemId) => {
     switch (id) {
       case 'discover':
-        // Full-page marketplace: a top-level route, not a dock tab.
-        void navigate('/discover');
+        // Full-page marketplace: a top-level route, not a dock tab — but still
+        // through `navigation`, so every entry point builds the same URL.
+        navigation.openDiscover(dataContext.project?.id ?? null);
         return;
       case 'chats':
         // Vibe has no chats list — resume the last real UI chat in the project.
@@ -224,8 +227,10 @@ export function CollapsedSidebar() {
     }
   };
 
-  /** One desk rail entry, wrapped in its menu item. */
-  const renderRailItem = (spec: RailSpec) => {
+  /** One desk rail entry, wrapped in its menu item. The entry at index 0 sits
+   *  on the tab strip's line, so it carries the strip's own height — rail and
+   *  tabs start AND end together under the nav bar. */
+  const renderRailItem = (spec: RailSpec, index = 1) => {
     const meta = navMeta[spec.id];
     if (!meta) return null;
     const Icon = meta.icon;
@@ -237,7 +242,7 @@ export function CollapsedSidebar() {
           {...tagAttrs(railTag(spec.id), 'button')}
           isActive={isActiveId(spec.id)}
           onClick={() => handleRailClick(spec.id)}
-          className="relative w-full justify-center px-2"
+          className={`relative w-full justify-center px-2 ${index === 0 ? TAB_LINE_HEIGHT_CLASS : ''}`}
         >
           <Icon className="h-5 w-5" />
           <NavBadge count={badgeForId(spec.id)} />
@@ -247,7 +252,7 @@ export function CollapsedSidebar() {
   };
 
   /** One hub rail entry. The hub rail is a fixed list with its own active rule. */
-  const renderHubItem = (item: HubItem) => {
+  const renderHubItem = (item: HubItem, index = 1) => {
     const Icon = item.icon;
     return (
       <SidebarMenuItem key={`${item.id}:${item.pointer ?? ''}`}>
@@ -256,7 +261,7 @@ export function CollapsedSidebar() {
           isActive={hubActive(item)}
           onClick={() => handleClick(item.viewType, item.pointer)}
           data-rail-item={item.id}
-          className="relative w-full justify-center px-2"
+          className={`relative w-full justify-center px-2 ${index === 0 ? TAB_LINE_HEIGHT_CLASS : ''}`}
         >
           <Icon className="h-5 w-5" />
         </SidebarMenuButton>
@@ -272,7 +277,7 @@ export function CollapsedSidebar() {
           deliberately (z-[60]), since it opens on the far side of the window. */}
       <Sidebar collapsible="none" className={`relative z-50 flex ${RAIL_WIDTH_CLASS} flex-col border-e`}>
         <SidebarContent className="flex-1">
-          <SidebarGroup className="px-0 py-2">
+          <SidebarGroup className="px-0 pb-2 pt-0">
             <SidebarMenu>
               {hubMode ? hubItems.map(renderHubItem) : topItems.map(renderRailItem)}
 
@@ -321,6 +326,9 @@ export function CollapsedSidebar() {
             </Button>
           )}
           {AMBIENT_JOURNEYS_ENABLED && <JourneyBadge />}
+          {/* Desk only: the hub rail already carries an `organization` entry to the
+              same ViewType, and two buttons for one destination lights both. */}
+          {!hubMode && <OrgTeamsButton />}
           <FlowpadAssistantButton />
           <ThemeToggle />
           <UserDropdown />

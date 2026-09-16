@@ -24,6 +24,7 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
 )
 from flow_sdk.transcript_analyzer import AgentTranscriptFile
 from flow_sdk.transcript_analyzer._helpers import extract_text
+from flow_sdk.transcript_analyzer.entries import AssistantMessageEntry
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 from flow_sdk.transcript_analyzer.resolver import (
     TranscriptNotFoundError,
@@ -106,7 +107,7 @@ def load_session_history(session_id: str) -> list[FlowData]:
     except Exception:
         logger.exception("load_session_history: parse failed for %s", path)
         return []
-    return [entry_to_flowdata(e) for e in transcript.entries]
+    return [fd for e in transcript.entries for fd in entry_to_flowdata(e)]
 
 
 def _stamp_entry_id(attributes: dict, entry) -> None:
@@ -127,12 +128,16 @@ def _stamp_entry_id(attributes: dict, entry) -> None:
         attributes.setdefault("transcript-entry-id", str(entry_id))
 
 
-def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
-    """Convert one parsed ``TranscriptEntry`` to a UI-renderable FlowData.
+def entry_to_flowdata(entry, observation_kind: str = "replay") -> list[FlowData]:
+    """Convert one parsed ``TranscriptEntry`` to its UI-renderable FlowData.
 
     ``observation_kind='replay'`` is the history path; the experimental
     PTY-transcript live stream passes ``'live'`` so consumers can tell the
     two apart while reusing the exact same shape.
+
+    Returns a LIST — usually one item, but an ``assistant_message`` entry
+    carrying both non-empty ``text`` and non-empty ``thinking`` (see below)
+    yields two: a REASONING frame followed by the CHAT frame it precedes.
     """
     pe = ProcessEntry(transcript_entry=entry, observation_kind=observation_kind)
     kind = entry.kind.value
@@ -148,40 +153,59 @@ def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
             fd.attributes.setdefault("data-type", FlowDataType.OBJECT)
             fd.attributes["subtype"] = kind
             fd.attributes["observation-kind"] = observation_kind
+            # ``entry.to_flow_data()`` mints its FlowData without a time, so the
+            # constructor defaults ``created_time`` to NOW — i.e. parse time, not
+            # when the agent did the thing. The message branch below carries the
+            # entry's own timestamp; carry it here too, or a replayed tool row
+            # sorts by when the transcript happened to be read.
+            if entry.timestamp:
+                fd.created_time = entry.timestamp
             if getattr(entry, "virtual", False):
                 fd.attributes["is-virtual"] = "true"
             _stamp_entry_id(fd.attributes, entry)
             fd.process_entry = pe.to_dict()
-            return fd
-    attributes = {
-        "element-type": _element_type_for_kind(kind),
-        "data-type": FlowDataType.OBJECT,
-        "subtype": kind,
-        "observation-kind": observation_kind,
-    }
-    _stamp_entry_id(attributes, entry)
-    flow_value: Any = {}
+            return [fd]
+
+    def _make(element_type: str, value: Any) -> FlowData:
+        attrs = {
+            "element-type": element_type,
+            "data-type": FlowDataType.OBJECT,
+            "subtype": kind,
+            "observation-kind": observation_kind,
+        }
+        _stamp_entry_id(attrs, entry)
+        if kind == "user_message":
+            attrs["role"] = getattr(entry, "role", "user")
+            if getattr(entry, "is_meta", False):
+                attrs["is-meta"] = "true"
+        elif kind == "assistant_message":
+            attrs["role"] = "assistant"
+        if isinstance(value, str):
+            attrs["data-type"] = FlowDataType.TEXT
+        return FlowData(
+            flow_value=value,
+            created_time=entry.timestamp or "",
+            attributes=attrs,
+            process_entry=pe.to_dict(),
+        )
+
     text = getattr(entry, "text", None)
     if kind == "user_message":
-        attributes["role"] = getattr(entry, "role", "user")
-        # Framework-injected (isMeta) user lines — skill bodies, command
-        # expansions, system reminders — collapse to a chip in the UI.
-        if getattr(entry, "is_meta", False):
-            attributes["is-meta"] = "true"
-        if isinstance(text, str):
-            flow_value = text
-            attributes["data-type"] = FlowDataType.TEXT
-    elif kind == "assistant_message":
-        attributes["role"] = "assistant"
-        if isinstance(text, str):
-            flow_value = text
-            attributes["data-type"] = FlowDataType.TEXT
-    return FlowData(
-        flow_value=flow_value,
-        created_time=entry.timestamp or "",
-        attributes=attributes,
-        process_entry=pe.to_dict(),
-    )
+        return [_make(_element_type_for_kind(kind), text if isinstance(text, str) else {})]
+
+    # kind == "assistant_message": text=="" used to win here, silently
+    # dropping thinking (FLOWPAD-2133). Folding often merges a thinking-line
+    # and a text-line into one entry, so emit both — REASONING before CHAT.
+    thinking = getattr(entry, "thinking", None)
+    out: list[FlowData] = []
+    if isinstance(thinking, str) and thinking:
+        out.append(_make(FlowElementType.REASONING, thinking))
+    if isinstance(text, str) and (text or not out):
+        # `text or not out`: a genuinely empty, thinking-less entry must still
+        # produce its one content-free TEXT/`chat` frame (unchanged
+        # long-standing behavior — dropping it here would leave `out` empty).
+        out.append(_make(_element_type_for_kind(kind), text))
+    return out
 
 
 def _element_type_for_kind(kind: str) -> str:

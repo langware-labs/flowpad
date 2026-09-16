@@ -1,3 +1,6 @@
+---
+id: 59c1ba69-974d-4fc4-aa6b-43f84e354f20
+---
 # Slick — codebase anchor index
 
 Exact paths and symbols to model after (or grep for) when applying each
@@ -93,10 +96,22 @@ Worked example: `pty_submits_on_paste` declared as a driver trait replaced a
 | Short unit test             | `tests/unit/test_entity.py`                                        | `TypeId` equality in \~6 lines                                                    |
 | Clean integration           | `tests/api/test_health_check.py`                                   | real HTTP, 17 LOC                                                                 |
 | Real-entity CRUD            | `tests/api/test_basic_crud.py`                                     | `Team(name=…)` → POST `/graph/team`                                               |
-| Test fixtures               | `tests/conftest.py`                                                | `_TestHome` sandbox, `_InMemoryKeyring`, per-run DB isolation                     |
+| Test fixtures               | `tests/pytest_plugin.py` (loaded by the root `conftest.py`)        | `_TestHome` sandbox, `_InMemoryKeyring`, per-run DB isolation                     |
 | Vitest config               | `ui/vitest.config.ts`, `ui/tests/unit/vitest.config.ts`            | unit tests <50 LOC                                                                |
 | Short vitest                | `ui/tests/unit/action_info.test.ts`                                | `actionUrl` in \~13 LOC                                                           |
 | CLI harness                 | `flow_sdk/cli/flow_cli.py`                                         | `flow record/navigate/context/schema`; exit codes encode semantics                |
 | Short fn exemplars          | `flow_sdk/fs_store/type_id.py`, `flow_sdk/utils/hashing.py`        | `type_id_str`, `file_hash`                                                        |
 | God-object counter-examples | `agentic_process.py`, `flow_message_action.py`, `sqlite_driver.py` | 3k–4k LOC; what NOT to grow                                                       |
+
+## 8. Path spelling
+
+| Anchor                                                             | File                                                                                                                                     | Symbol                                                                              |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| The carrier / native spelling                                       | `flow_sdk/fs_store/fs_ref/base.py`                                                                                                       | `FSRef.__init__` (`Path(path).resolve()`, L44), `FSRef.path` (L97)                 |
+| POSIX spelling — the DB's lex-range exception, not a general form   | `flow_sdk/fs_store/path_utils.py`                                                                                                        | `canonical_posix_path()` (L17)                                                      |
+| OS-flavour-safe key (don't use the host `Path` flavour)            | `flow_sdk/fs_store/path_utils.py`                                                                                                        | `_path_policy_key()` (L30, `ntpath` / `PureWindowsPath`)                           |
+| The lookup where spellings collide                                   | `flow_sdk/core/entity/entity_model.py`                                                                                                   | `Entity.get_by_asset_ref()` (L669)                                                  |
+| Live split: same lookup, two spellings in                           | `flow_sdk/builtin/agentic_process/agentic_process.py`                                                                                    | `_entity_for_transcript_read` canonicalizes (~L4739) vs. the raw-path call (~L6469) |
+| Windows-unsafe string-anchoring (the FLOWPAD-2063/2064 bug class)  | `flow_sdk/builtin/faas/fs_records_actions.py`                                                                                            | `_handle_fs_records_discover_by_path()` (~L1717–1719, `expanded = "/" + expanded`) |
+| Correct `as_posix()` use — relative paths only                      | `flow_sdk/builtin/git_origin.py` (L83), `flow_sdk/builtin/faas/compute_node.py` (L73), `flow_sdk/builtin/flow_message_bundle.py` (L507)  | git rel\_path, zip entry names, portable metadata layout                            |
 

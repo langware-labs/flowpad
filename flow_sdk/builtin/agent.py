@@ -20,8 +20,11 @@ NOT the same thing as a ``SubAgent``: that is the provider-owned
 may *reference* SubAgents through ``subagents`` — they render to that path
 verbatim and are never absorbed here.
 """
+import asyncio
+import collections
 import functools
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from pydantic import PrivateAttr
@@ -36,7 +39,8 @@ from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
-from flow_sdk.schema.data_spec import Body, FrontMatter, SpecType
+from flow_sdk.schema.data_spec import SpecType
+from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -70,37 +74,41 @@ def worker_type_value(worker: str | None) -> str:
     return _vendor(worker).worker_type
 
 
-class AgentSpec(FrontMatter):
-    """``agent.md`` — the shape of the document. ``name`` is deliberately NOT
-    here: it comes from the folder (``TypeInfo.name_from_path``), so a rename
-    can never desync the two. ``system_prompt`` is the markdown ``Body``.
+#: One lock per project so concurrent auto-launch calls (two tabs, a reload
+#: storm) select-and-mark exactly once.
+_AUTO_LAUNCH_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
-    ``input`` / ``output`` are the agent's I/O contract — shapes authored
-    in YAML. They are declaration only and never enter ``to_agent_options``:
-    that bundle is md5'd into ``last_started_hash``, and a new key there would
-    flip ``restart_required`` on every running process.
-    """
+#: Key in the project's device state (``flow_sdk.project_device_state``) holding
+#: the agent ids whose auto-launch already fired, or was cancelled, here.
+_AUTO_LAUNCHED_KEY = "agent_auto_launched"
 
-    title: Optional[str] = None
-    description: Optional[str] = None
-    avatar: Optional[str] = None
-    worker_type: Optional[str] = None
-    model: Optional[str] = None
-    permission_mode: Optional[str] = None
-    effort: Optional[str] = None
-    max_turns: Optional[int] = None
-    tools: Optional[list[str]] = None
-    disallowed_tools: Optional[list[str]] = None
-    skills: Optional[list[str]] = None
-    mcp_servers: Optional[list[str]] = None
-    subagents: Optional[list[str]] = None
-    additional_dirs: Optional[list[str]] = None
-    load_flowpad_assistant: Optional[bool] = None
-    cli_options: Optional[dict] = None
-    enabled: Optional[bool] = None
-    input: Optional[SpecType] = None
-    output: Optional[SpecType] = None
-    system_prompt: Body = ""
+
+@dataclass
+class AutoLaunchOutcome:
+    """What ``Agent.auto_launch_for`` did: the session it opened, and who lost."""
+
+    agent: "Agent"
+    process: "AgenticProcess"
+    cancelled: list["Agent"]
+    prompt_queued: bool
+
+    def to_payload(self) -> dict:
+        return {
+            "agent_id": self.agent.id,
+            "agent_title": self.agent.display_name,
+            "process_id": self.process.id,
+            "process_typeid": str(self.process.typeid),
+            "prompt_queued": self.prompt_queued,
+            "cancelled": [{"agent_id": agent.id, "title": agent.display_name} for agent in self.cancelled],
+        }
+
+    @staticmethod
+    def none_payload() -> dict:
+        """The same shape when nothing launched — one definition for both routes and tests."""
+        return {"agent_id": None, "process_id": None, "process_typeid": None, "prompt_queued": False, "cancelled": []}
+
+
+
 
 
 def _inbox_failures(verb: str):
@@ -154,6 +162,10 @@ class Agent(Entity):
     model: Optional[str] = APIField(default=None, description="Tier (sm/md/lg) or a concrete model id.")
     permission_mode: Optional[str] = APIField(default=None)
     effort: Optional[str] = APIField(default=None)
+    # Read by the HUB's deploy path, not by a launch: publish mirrors it onto the
+    # hub Agent's `machine_size`, which sizes the box `deploy` creates. A local
+    # launch has no box to size, so it is never projected into AgentOptions.
+    machine_size: Optional[str] = APIField(default=None, description="Cloud box size: sm | md | lg.")
     # ── DECLARED ONLY, not yet enforced ───────────────────────────────────
     # These round-trip through agent.md and are visible on the agent's card,
     # but `to_agent_options` cannot project them: no AgentOptions subclass has
@@ -214,7 +226,54 @@ class Agent(Entity):
     enabled: bool = APIField(default=True, description="Kill switch — a disabled agent refuses to launch.")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 
+    # ── presentation + project auto-launch ────────────────────────────────
+    # DECLARATION ONLY, like `input`/`output`: none of these enter
+    # `to_agent_options`, so setting them never flips `restart_required`.
+    intro: str = APIField(
+        default="",
+        description="Welcome text shown as the agent's first message in Vibe/Standard chat so a new "
+        "session is not empty. Presentation only: it never enters the transcript or the model.",
+    )
+    auto_launch: bool = APIField(
+        default=False,
+        description="Launch this agent once, the first time the project it lives in is opened. "
+        "Once per project, ever — a failed attempt is not retried. When several agents in a "
+        "project set this, the oldest (first indexed, then alphabetical by folder) launches and "
+        "the others are cancelled with a warning.",
+    )
+    auto_launch_prompt: str = APIField(
+        default="",
+        description="First prompt of the auto-launched session, delivered through the process "
+        "prompt queue. Empty = open the session with no first turn.",
+    )
+
+    # ── places ────────────────────────────────────────────────────────────
+    # Where this agent runs is a Deployment; how it runs THERE may differ from
+    # the definition. Both choices live in agent.md, keyed by Deployment id, so
+    # they travel with the agent — see ``flow_sdk/builtin/agent_places.py``.
+    places: Optional[list[AgentPlaceSpec]] = APIField(
+        default=None,
+        description="Per-place launch overrides (model, permissions, effort, worker, MCP servers), keyed by Deployment id.",
+    )
+    email_place: Optional[str] = APIField(
+        default=None,
+        description="Deployment id of the one place that answers this agent's email. Empty = every polling machine.",
+    )
+
     _api_visible: ClassVar[bool] = True
+
+    def place_for(self, deployment_id: str | None) -> "AgentPlaceSpec | None":
+        """This agent's overrides for one place, or None when it has none."""
+        if not deployment_id:
+            return None
+        return next((p for p in self.places or [] if p.deployment_id == deployment_id), None)
+
+    def enabled_on(self, deployment_id: str | None) -> bool:
+        """Whether this agent runs on one place: the place's own switch, else the definition's."""
+        place = self.place_for(deployment_id)
+        if place is not None and place.enabled is not None:
+            return place.enabled
+        return bool(self.enabled)
 
     # ── MCP servers ───────────────────────────────────────────────────────
 
@@ -369,11 +428,64 @@ class Agent(Entity):
         return await dispatch_agent_run(target, prompt, wait=wait, **options)
 
     async def use(
-        self, project_id: str | None = None, *, deployment: "Deployment | None" = None
+        self, project_id: str | None = None, *, deployment: "Deployment | None" = None, owner=None
     ) -> "AgenticProcess":
-        """Open a session AS this agent — saved, visible, no first turn."""
+        """Open a session AS this agent — saved, visible, no first turn.
+
+        ``owner`` is the human opening it, recorded on the process row; a
+        remote ``deployment`` opens through the hub (``Deployment.use``).
+        """
         target = deployment or await self.local_deployment()
-        return await target.use(project_id=project_id)
+        return await target.use(project_id=project_id, owner=owner)
+
+    @staticmethod
+    def auto_launched_ids(project_id: str) -> list[str]:
+        """The project's once-only marks, sorted — what a later open will skip."""
+        from flow_sdk.project_device_state import read_project_device_state  # noqa: PLC0415
+
+        return sorted(str(item) for item in read_project_device_state(project_id).get(_AUTO_LAUNCHED_KEY) or [])
+
+    @staticmethod
+    async def auto_launch_for(project_id: str) -> "AutoLaunchOutcome | None":
+        """The one agent to auto-launch when ``project_id`` is opened, launched — or None.
+
+        Candidates: agents rooted in the project or one of its direct context
+        folders (``assets_under_roots``, the same scoping journeys use), enabled,
+        ``auto_launch`` on, and not yet marked. Every candidate — winner and
+        cancelled — is marked before the session opens, under a per-project
+        lock, so it is ONCE per project (see the ``auto_launch`` field). The
+        prompt is enqueued, not sent: the caller kicks the queue (``drain-queue``)
+        after the vibe persona is embedded, the order ``useAgentLauncher`` uses.
+        """
+        from flow_sdk.builtin.project import Project, assets_under_roots  # noqa: PLC0415
+        from flow_sdk.project_device_state import update_project_device_state  # noqa: PLC0415
+
+        project = await Project.get_by_id(project_id)
+        if project is None:
+            return None
+        roots = project.direct_context_roots()
+
+        def age_key(agent: "Agent") -> tuple[str, str, str]:
+            created = agent.created_date.isoformat() if agent.created_date else ""
+            return (created, agent.asset_ref or "", agent.id)
+
+        async with _AUTO_LAUNCH_LOCKS[project_id]:
+            done = set(Agent.auto_launched_ids(project_id))
+            flagged = await Agent.get_all({"match": {"auto_launch": True, "enabled": True}})
+            candidates = assets_under_roots([agent for agent in flagged if agent.id not in done], roots)
+            if not candidates:
+                return None
+            candidates.sort(key=age_key)
+            winner, cancelled = candidates[0], candidates[1:]
+            update_project_device_state(
+                project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
+            )
+
+        process = await winner.use(project_id=project_id)
+        prompt = (winner.auto_launch_prompt or "").strip()
+        if prompt:
+            process.queue.enqueue(prompt, source="auto_launch")
+        return AutoLaunchOutcome(agent=winner, process=process, cancelled=cancelled, prompt_queued=bool(prompt))
 
     def process_messages(self):
         """Scope message processing so each thread reuses one AgenticProcess."""
@@ -450,7 +562,7 @@ class Agent(Entity):
 
     # ── publish ───────────────────────────────────────────────────────────
 
-    async def ensure_on_hub(self, actor: TypeId) -> bool:
+    async def ensure_on_hub(self, actor: TypeId, *, force: bool = False) -> bool:
         """Publish this repository-backed agent through the canonical Git path.
 
         An Agent is not a loose deployment payload. It is an asset inside its
@@ -463,11 +575,13 @@ class Agent(Entity):
         repairs the row rather than preserving a deployment that cannot load its
         files (notably ``avatar.png``).
         """
-        if self.remote and self.origin:
+        if self.remote and self.origin and not force:
             return False
 
-        from flow_sdk.assets._publish_service import owning_project  # noqa: PLC0415
-        from flow_sdk.assets.git_publish import publish_git_asset  # noqa: PLC0415
+        from flow_sdk.builtin.asset_publishing import (
+            owning_project,  # noqa: PLC0415
+            publish_git_asset,  # noqa: PLC0415
+        )
 
         project = await owning_project(self)
         if project is not None:
@@ -485,8 +599,12 @@ class Agent(Entity):
         actor = request_info.someone_typeid if request_info else None
         if not actor:
             return ApiFailResponse(message="publish requires an authenticated user", status_code=401)
+        body = await self._body()
         try:
-            published = await self.ensure_on_hub(actor)
+            # ``force``: publish the current definition even when already on the
+            # hub — the header's "Publish N changes". Without it this stays the
+            # idempotent first-publish deploy relies on.
+            published = await self.ensure_on_hub(actor, force=bool(body.get("force")))
         except Exception as exc:
             return ApiFailResponse(message=f"publish failed: {exc}")
         return ApiSuccessResponse(
@@ -540,14 +658,13 @@ class Agent(Entity):
         lands in ``SETUP`` and answers no one until it is verified — the same
         rule ``EmailInbox.allowed`` enforces for a mailbox.
         """
-        import flow_sdk.ingest.drivers  # noqa: F401, PLC0415 — register drivers
         from flow_sdk.blocks import Inbox  # noqa: PLC0415
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
         channel = str(channel or "").strip()
         if not channel:
             raise ValueError("a binding needs the channel's id")
-        driver = get_driver(provider)
+        driver = source_type(provider)
         if driver is None:
             raise ValueError(f"unknown provider {provider!r}")
         if not driver.sends:
@@ -703,7 +820,7 @@ class Agent(Entity):
 
     # ── deploy to the cloud ───────────────────────────────────────────────
 
-    async def deploy_to_cloud(self, actor: TypeId) -> dict:
+    async def deploy_to_cloud(self, actor: TypeId, environment: str | None = None) -> dict:
         """Give this agent a machine of its own on the hub.
 
         Publish is implicit: a deploy names an agent the hub has to already
@@ -711,10 +828,11 @@ class Agent(Entity):
         orderable by a caller.
 
         The hub does everything else — it mints the ComputeNode, provisions the
-        Identity, and logs the sandbox in AS the agent. Deliberately no
-        parameters: were the node or the principal passable from here they would
-        be passable from anywhere, which is the exact hole the hub's pentest
-        guards exist to keep shut. This call says only *which agent*.
+        Identity, and logs the sandbox in AS the agent. Deliberately no node or
+        principal parameter: were either passable from here they would be
+        passable from anywhere, which is the exact hole the hub's pentest guards
+        exist to keep shut. This call says only *which agent*, and which
+        credential ``environment`` the placement reads (``production`` by default).
 
         The credentials live in this process, so the browser never talks to the
         hub directly.
@@ -722,7 +840,7 @@ class Agent(Entity):
         from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
 
         await self.ensure_on_hub(actor)
-        return await deploy_entity_to_cloud(self)
+        return await deploy_entity_to_cloud(self, environment)
 
     @action.post(action_name="deploy")
     async def deploy_action(self):
@@ -743,9 +861,13 @@ class Agent(Entity):
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.credential_contract import is_valid_environment  # noqa: PLC0415
 
+        environment = str((await self._body()).get("environment") or "").strip() or None
+        if environment is not None and not is_valid_environment(environment):
+            return ApiFailResponse(message=f"{environment!r} is not a valid environment name", status_code=400)
         try:
-            data = await self.deploy_to_cloud(actor)
+            data = await self.deploy_to_cloud(actor, environment)
         except AssetPublishError as exc:
             # Deploy publishes the agent through git first, so every publish
             # precondition is a deploy precondition. These are the caller's
@@ -781,12 +903,12 @@ class Agent(Entity):
         prompt = str((body or {}).get("prompt") or "").strip()
         if not prompt:
             return ApiFailResponse(message="prompt is required")
-        if not self.enabled:
-            return ApiFailResponse(message=f"agent {self.name!r} is disabled")
 
         # Resolved here and passed in: the response payload names it, so letting
         # ``launch`` resolve its own would be a second get-or-create round trip.
         deployment = await self.local_deployment()
+        if not self.enabled_on(deployment.id):
+            return ApiFailResponse(message=f"agent {self.name!r} is disabled on this computer")
         try:
             process = await self.launch(prompt, deployment=deployment)
         except NotImplementedError as exc:
@@ -803,6 +925,176 @@ class Agent(Entity):
             }
         )
 
+    # ── places (HTTP) — see ``agent_places`` ──────────────────────────────
+
+    @staticmethod
+    async def _body() -> dict:
+        request_info = get_current_request_info()
+        return (await request_info.get_post_data() if request_info else None) or {}
+
+    @staticmethod
+    async def _place_answer(run) -> "ApiSuccessResponse | ApiFailResponse":
+        """One envelope for the place verbs: a caller error keeps its status code."""
+        from flow_sdk.builtin.agent_schedule import ScheduleError  # noqa: PLC0415
+
+        try:
+            return ApiSuccessResponse(data=await run())
+        except ScheduleError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+
+    @action.get(action_name="places")
+    async def places_action(self):
+        """`GET /agent/<id>/places` — this computer first, then every cloud place, with
+        each place's overrides, whether it is enabled, schedule count and whether it answers email."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        async def run():
+            rows = await agent_places.list_places(self)
+            return [{**row, "deployment": row["deployment"].model_dump(mode="json")} for row in rows]
+
+        return await self._place_answer(run)
+
+    @action.post(action_name="set_place_override")
+    async def set_place_override_action(self):
+        """`POST /agent/<id>/set_place_override {deployment_id, field, value}` — `value: null` resets."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(
+            lambda: agent_places.set_place_override(
+                self, str(body.get("deployment_id") or ""), str(body.get("field") or ""), body.get("value")
+            )
+        )
+
+    @action.post(action_name="set_place_enabled")
+    async def set_place_enabled_action(self):
+        """`POST /agent/<id>/set_place_enabled {deployment_id, enabled}` — `enabled: null` follows the definition."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(
+            lambda: agent_places.set_place_enabled(self, str(body.get("deployment_id") or ""), body.get("enabled"))
+        )
+
+    @action.post(action_name="set_email_place")
+    async def set_email_place_action(self):
+        """`POST /agent/<id>/set_email_place {deployment_id}` — the one place that answers email."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(
+            lambda: agent_places.set_email_place(self, str(body.get("deployment_id") or ""))
+        )
+
+    @action.post(action_name="place_action")
+    async def place_action(self):
+        """`POST /agent/<id>/place_action {deployment_id, op, trigger_id}` — `run_now` a schedule
+        on a CLOUD place, through the hub, which alone reaches the machine."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+        body = await self._body()
+
+        async def relay():
+            deployment = await agent_places._require_place(self, str(body.get("deployment_id") or ""))
+            if deployment.is_local:
+                raise agent_places.PlaceError(
+                    "this computer's place actions run here, not through the hub", status_code=409
+                )
+            payload = {
+                "deployment_id": deployment.id,
+                "op": str(body.get("op") or ""),
+                "trigger_id": str(body.get("trigger_id") or ""),
+            }
+            try:
+                data = await hub_http.hub_post(self.get_type(), payload, self.id, "place_action")
+            except HubError as exc:
+                raise agent_places.PlaceError(f"the hub refused: {exc}", status_code=502) from exc
+            if data is None:
+                raise agent_places.PlaceError("cloud login required to reach a cloud machine", status_code=401)
+            return data
+
+        return await self._place_answer(relay)
+
+    @action.post(action_name="adopt_placement")
+    async def adopt_placement_action(self):
+        """`POST /agent/<id>/adopt_placement {deployment_id}` — on a cloud machine, key this
+        machine's placement by the hub's id so the definition's place entries apply here."""
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        body = await self._body()
+
+        async def run():
+            adopted = await agent_places.adopt_placement(
+                self, str(body.get("deployment_id") or ""), body.get("environment")
+            )
+            return adopted.model_dump(mode="json")
+
+        return await self._place_answer(run)
+
+    @action.get(action_name="version")
+    async def version_action(self):
+        """`GET /agent/<id>/version` — published commit and pending changes on this computer."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin import agent_places  # noqa: PLC0415
+
+        return await self._place_answer(lambda: asyncio.to_thread(agent_places.version_state, self))
+
+    # ── schedules: child trigger assets (HTTP) ────────────────────────────
+
+    @action.post(action_name="add_schedule")
+    async def add_schedule_action(self):
+        """`POST /agent/<id>/add_schedule {name, every, expr, timezone, prompt, enabled}`
+        — write a schedule under this agent; indexed and armed before returning."""
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+
+        body = await self._body()
+        return await self._place_answer(lambda: agent_schedule.add_schedule(self, body))
+
+    @action.post(action_name="update_schedule")
+    async def update_schedule_action(self):
+        """`POST /agent/<id>/update_schedule {trigger_id, ...fields}` — only the
+        fields present change; hand-authored parts of the document survive."""
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+
+        body = await self._body()
+        trigger_id = str(body.get("trigger_id") or "")
+        return await self._place_answer(lambda: agent_schedule.update_schedule(self, trigger_id, body))
+
+    @action.post(action_name="remove_schedule")
+    async def remove_schedule_action(self):
+        """`POST /agent/<id>/remove_schedule {trigger_id}` — disarm, delete folder and row."""
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+
+        trigger_id = str((await self._body()).get("trigger_id") or "")
+
+        async def remove():
+            await agent_schedule.remove_schedule(self, trigger_id)
+            return {"deleted": True, "trigger_id": trigger_id}
+
+        return await self._place_answer(remove)
+
+    @action.post(action_name="run_schedule")
+    async def run_schedule_action(self):
+        """`POST /agent/<id>/run_schedule {trigger_id}` — fire one of THIS agent's schedules now.
+
+        The ownership check and the fire are one call, made where the trigger lives:
+        the hub's ``place_action`` uses it to "Run now" a cloud place's schedule on its machine.
+        """
+        from flow_sdk.builtin import agent_schedule  # noqa: PLC0415
+        from flow_sdk.builtin.trigger import _fire_schedule_job  # noqa: PLC0415
+
+        body = await self._body()
+
+        async def run():
+            trigger = await agent_schedule._owned(self, str(body.get("trigger_id") or ""))
+            await _fire_schedule_job(trigger.id)
+            return {"status": "fired", "trigger_id": trigger.id}
+
+        return await self._place_answer(run)
+
     # ── the use verb (HTTP) ───────────────────────────────────────────────
 
     @action.post(action_name="use")
@@ -815,17 +1107,34 @@ class Agent(Entity):
         The optional body ``project_id`` names the project the session ACTS IN,
         which is not always the project the agent lives in — see ``Agent.use``
         in the TS SDK for why. Omitted, it falls back to the agent's own project.
+
+        The optional body ``deployment_id`` names ONE exact placement of this
+        agent (``Agent.useDeployment`` in the TS SDK). Validated the way the hub
+        validates it — this agent's, an agent placement, node-backed — and
+        opened through the hub when it is not on this machine. Omitted, the
+        local placement is used, as before.
         """
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         project_id = str((body or {}).get("project_id") or "").strip() or None
+        deployment_id = str((body or {}).get("deployment_id") or "").strip()
 
-        deployment = await self.local_deployment()
+        if deployment_id:
+            if not is_valid_entity_id(deployment_id):
+                return ApiFailResponse(message="deployment_id must be a UUID v4 or v5", status_code=400)
+            deployment = await Deployment.get_by_id(deployment_id)
+            if deployment is None or not deployment.is_agent_placement_of(self):
+                return ApiFailResponse(message="agent deployment not found", status_code=404)
+            deployment = deployment.with_element(self)
+        else:
+            deployment = await self.local_deployment()
+        owner = request_info.someone_typeid if request_info else None
         try:
-            process = await self.use(project_id=project_id, deployment=deployment)
+            process = await self.use(project_id=project_id, deployment=deployment, owner=owner)
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc))
         except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from create_process()

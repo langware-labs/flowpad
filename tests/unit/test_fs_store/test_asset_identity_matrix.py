@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import (
+from flow_sdk.assets.identity_carrier import (
     Derived,
     Frontmatter,
     JsonRoot,
     NotWritable,
     Sidecar,
 )
+from flow_sdk.assets.layout import Folder
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from tests.fixtures.identity import frontmatter_id, resolve_id
 
@@ -32,8 +32,8 @@ INDEXED_TYPES = {
     "credential_spec", "data_source_spec",
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
-    "project", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
-    "task", "todo_file", "usage_report", "whiteboard", "workflow_run",
+    "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
+    "task", "todo_file", "trigger", "usage_report", "whiteboard", "wizard", "workflow_run",
 }
 
 FRONTMATTER_PORTABLE = ("subagent", "agent", "claude_md", "markdown")
@@ -41,11 +41,12 @@ FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (
     "graph_workflow", "dataset", "deck", "deck_template", "journey", "skill", "task",
-    "whiteboard",
+    "whiteboard", "wizard",
 )
 #: Folder-capsule types introduced after the json capsule; they mint +
-#: persist + adopt like the rest.
-FOLDER_NO_LEGACY = ("mcp",)
+#: persist + adopt like the rest. ``project_manifest`` is the per-project
+#: published-asset ledger: a singleton folder whose main is JSON.
+FOLDER_NO_LEGACY = ("credential_spec", "mcp", "project_manifest", "trigger")
 #: Folder types whose main document is markdown: the id lives in that
 #: document's frontmatter (``Frontmatter``).
 FOLDER_MARKDOWN = ("skill", "task", "whiteboard")
@@ -99,16 +100,14 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_CAPSULE)
     native_types = set(JSON_STABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    # 19 capsule: base's 17 + `agent` + `mcp` (an MCP we AUTHOR carries its own
-    # v4; the sibling `mcp_server` SCAN is derived, because its source is a
-    # vendor config file we cannot write an id into). 17 derived: + `micro_app`,
-    # whose webapp.json carries no id, and + `credential_spec`, whose
-    # credential.json deliberately carries none either so a shipped definition
-    # has the same id on every machine. Both are only half an answer: a derived
-    # carrier says the id is NOT in the file, so the type still owes an
-    # install-independent key. See
-    # `test_shipped_asset_declares_an_install_independent_key`.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (19, 3, 17)
+    # Capsule: base's 17 + `agent` + `mcp` + `wizard` + `project_manifest` +
+    # `credential_spec` (an asset we AUTHOR carries its own v4; the shipped
+    # credential templates commit theirs, so every install indexes one row).
+    # The sibling `mcp_server` SCAN is derived, because its source is a vendor
+    # config file we cannot write an id into. 15 derived, including `micro_app`,
+    # whose webapp.json carries no id — so it still owes an install-independent
+    # key. See `test_shipped_asset_declares_an_install_independent_key`.
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (23, 3, 15)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
@@ -262,23 +261,6 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
         return ref, "plugin:demo@market", uuid.NAMESPACE_DNS
     if type_name == "project":
         return FSRef(path), f"project-fsref:{path}", uuid.NAMESPACE_DNS
-    if type_name == "secret_origin":
-        # Identity is (project_id, env_var) — NOT the locator. The declaration
-        # must keep its id when its provider changes, which is what lets a value
-        # move between stores.
-        project_id = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
-        path.write_text(
-            json.dumps(
-                {
-                    "data": {
-                        "project_id": project_id,
-                        "env_var": "DEMO_TOKEN",
-                        "locator": {"kind": "local", "sod_name": "demo"},
-                    }
-                }
-            )
-        )
-        return FSRef(path), f"secret-origin:{project_id}:DEMO_TOKEN", namespace
     if type_name == "spreadsheet":
         return FSRef(path), str(path.resolve()), namespace
     if type_name == "todo_file":
@@ -292,7 +274,7 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
 DETERMINISTIC_TYPES = (
     "claude_hook", "claude_session", "codex_session", "copilot_session",
     "data_source_spec", "dynamic_workflow", "markdown_index", "mcp_server",
-    "plugin", "project", "secret_origin", "spreadsheet", "todo_file",
+    "plugin", "project", "spreadsheet", "todo_file",
     "workflow_run",
 )
 
@@ -306,7 +288,7 @@ def test_deterministic_provider_exact_v5_matrix(tmp_path: Path, type_name: str) 
     assert resolve_id(info, ref) == str(uuid.uuid5(namespace, stable_key))
 
 
-@pytest.mark.parametrize("type_name", ("claude_session", "codex_session", "copilot_session", "dynamic_workflow", "secret_origin"))
+@pytest.mark.parametrize("type_name", ("claude_session", "codex_session", "copilot_session", "dynamic_workflow"))
 def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -> None:
     path = tmp_path / "asset"
     if type_name == "claude_session":
@@ -349,16 +331,11 @@ def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -
 #: needs a key that carries its owner (e.g. `<owner>/<app>`), which is a separate
 #: change from FLOWPAD-2070; xfail keeps the defect visible until then.
 SHIPPED_RELOCATABLE_TYPES = (
-    "credential_spec", "data_source_spec",
+    "data_source_spec",
     pytest.param("micro_app", marks=pytest.mark.xfail(strict=True, reason="needs an owner-scoped key; nine assets are named 'editor'")),
 )
 
 _SHIPPED_MANIFEST = {
-    "credential_spec": (
-        "credential",
-        "credential.json",
-        {"schema": 1, "name": "gmail", "title": "Gmail", "vars": {"GMAIL_ADDRESS": {}}},
-    ),
     "data_source_spec": ("data_source", "data_source.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
     "micro_app": ("webapp", "webapp.json", {"schema": 1, "name": "editor", "title": "Editor"}),
 }

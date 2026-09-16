@@ -56,7 +56,7 @@ export const ActivityRow = memo(function ActivityRow({
   // call a hook per row. Only the top level shows it — elapsed on every child is noise.
   const elapsedMs = useElapsedMs(depth === 0 ? spec : null);
   // Resolving a glyph walks the registry; without this it would re-run on every clock tick.
-  const Icon = useMemo(() => iconForActivity(spec), [spec.icon, spec.scope]);
+  const Icon = useMemo(() => iconForActivity(spec), [spec.icon, spec.subject_entity]);
   const pct = fraction(spec);
   const hasChildren = spec.children.length > 0;
 

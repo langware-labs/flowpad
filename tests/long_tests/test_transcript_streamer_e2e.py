@@ -28,12 +28,13 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.builtin.claude_memory_entities import ClaudePlan
-from flow_sdk.builtin.worker_status import ApiErrorTimeoutError
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.responses import ApiResponse, ApiSuccessResponse
 from flow_sdk.server.fsop_watcher import fsop_watcher
+from flow_sdk.transcript_analyzer.worker_status import ApiErrorTimeoutError
 from flow_sdk.transcript_streamer import transcript_streamer_registry
+from tests.long_tests._transcript_helpers import fail_worker_timeout
 from tests.test_settings import test_service_config
 
 _log = logging.getLogger(__name__)
@@ -54,12 +55,14 @@ def _resolve_claude_plans_dir() -> Path:
 
 
 async def _prompt_or_skip(ap: AgenticProcess, text: str) -> ApiResponse:
-    """Drop the test on Anthropic-API timeouts so external infra issues don't
-    surface as test failures."""
+    """Drive a turn. A timeout FAILS — it is a result, not an excuse.
+
+    A timeout is a RESULT, not an infra excuse: the deterministic start_pty staleness bug (fixed 2026-09-07) presented for three months as exactly this signature. Downgrading it to a skip is how it survived. If a budget is genuinely too tight, MEASURE it and raise it deliberately — do not relabel the outcome.
+    """
     try:
         return await ap.prompt(text)
-    except (ApiErrorTimeoutError, TimeoutError):
-        pytest.skip("Claude API timeout — external infra issue")
+    except (ApiErrorTimeoutError, TimeoutError) as exc:
+        fail_worker_timeout(exc)
 
 
 @pytest.fixture

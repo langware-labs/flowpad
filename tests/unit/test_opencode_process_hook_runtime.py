@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.assets.directory import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessHookRuntime
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.config_gen import config_for_assets_dir
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode.driver import OpenCodeDriver

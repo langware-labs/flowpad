@@ -4,7 +4,7 @@ id: c107bc99-a521-595d-98f3-4fd5353da021
 
 # Interactive tabs / project filtering — regression matrix
 
-Users have reported tab close, restore, and project-filter regressions. This file holds 51 active scenarios across 9 areas (historical test numbering is retained): refresh & browse, open by id / from history, close-all, project-counter chip, footer selections, restart & CLI, Codex/Claude/terminal mix, navigation in/out of dock, and the kind-agnostic project chip (content tabs count + select-switches-project).
+Users have reported tab close, restore, and project-filter regressions. This file holds 51 active scenarios across 9 areas (historical test numbering is retained): refresh & browse, open by id / from history, close-all, the nav-bar project chip, footer selections, restart & CLI, Codex/Claude/terminal mix, navigation in/out of dock, and the kind-agnostic project chip (content tabs count + select-switches-project).
 
 ## Selectors
 
@@ -14,8 +14,8 @@ Users have reported tab close, restore, and project-filter regressions. This fil
 | Tab strip row | `[data-testid="terminal-tabs-row"]` |
 | Single tab | `[data-testid^="tab-shell-"]` (id form: `tab-shell-shell-<uuid>` or `tab-shell-agentic_process-<uuid>`) |
 | Close-all button | `[data-testid="close-all-tabs-button"]` |
-| Projects chip | `[data-testid="projects-counter-chip"]` |
-| Projects popover | `[data-testid="projects-counter-popover"]` |
+| Projects chip (top nav bar) | `[data-testid="top-nav-project-list"]` |
+| Projects popover | `[data-testid="top-nav-project-popover"]` |
 | Active terminal panel | `[data-testid="terminal-panel"]` |
 | All panels container | `[data-testid="terminal-panels"]` |
 | Footer | `[data-testid="footer"]` (StatusBar inside) |
@@ -35,7 +35,7 @@ After scenario-specific steps, verify ALL FIVE:
 
 1. **Tabs alive** — every tab in the tab bar is clickable; the active tab has a mounted `terminal-panel`. No `CLOSING` zombies. xterm cursor blinks (plain shell) or process status badge shows ready/running (Claude/Codex).
 2. **Expected content** — active panel shows only the content this scenario produced. Switching tabs never shows another tab's scrollback.
-3. **Counts correct** — `close-all-tabs-button` badge equals visible-tab count for the current project (and the button is hidden when count < 2). `projects-counter-chip` button shows the distinct project count (one per project with ≥1 open tab of ANY kind — terminal AND content); the `aria-label` reads `"<scope> — <N> open project[s], <M> open tab[s]"` (note the `chip` correctly singularizes per `projectTotal === 1 ? '' : 's'`).
+3. **Counts correct** — `close-all-tabs-button` badge equals visible-tab count for the current project (and the button is hidden when count < 2). `top-nav-project-list` button shows the distinct project count in its `project-count-badge` (one per project with ≥1 open tab of ANY kind — terminal AND content); the badge's `aria-label` reads `"<N> open project[s]"` (singularized per `projectTotal === 1 ? '' : 's'`).
 4. **Project + workdir correct** — footer (`[data-testid="footer"]`) shows the active tab's project displayName/workdir; this matches `dataContext.project.id` for the active tab.
 5. **URL correct** — URL ends with `/dock/shell/<targetTypeId>`; agent segment if present matches the local agent.
 
@@ -173,7 +173,7 @@ test 8: Open shell tab by direct URL
 - click sidebar Home; validate URL is `/`
 - paste the copied URL into the address bar and press Enter
 - validate the 2nd tab is active in the strip without spawning a new one
-- validate `projects-counter-chip` count is unchanged
+- validate `top-nav-project-list` count is unchanged
 - run common validation block
 
 test 9: Open process tab by direct URL
@@ -196,7 +196,7 @@ test 11: Open the current session-history modal from the opener menu
 
 test 12: Open shell-by-id whose project differs from current
 - via REST: create `Proj-A` and `Proj-B`. Create a shell in `Proj-B` and record its id.
-- navigate so that current project = `Proj-A` (open `projects-counter-chip` and select it)
+- navigate so that current project = `Proj-A` (open `top-nav-project-list` and select it)
 - copy the URL `{APP_URL}/dock/shell/shell-<proj-b-shell-id>` and navigate to it
 - validate `dataContext.project` auto-switches to `Proj-B` (chip current row, footer label, tab strip)
 - validate URL is preserved (the `Proj-B` shell id stays)
@@ -207,7 +207,7 @@ test 13: Re-open closed tab via stale URL
 - navigate to `{APP_URL}/dock/shell`; note the URL of the 2nd tab; click X on the 2nd tab
 - validate the 2nd tab is removed from the strip
 - paste the noted URL; validate sensible state (default-tab redirect OR explicit "session closed" empty state) and no zombie tab
-- validate `projects-counter-chip` count is unaffected
+- validate `top-nav-project-list` count is unaffected
 - run common validation block
 
 ## C. Close all
@@ -262,11 +262,11 @@ test 20: Close-all button hides at < 2 tabs
 - click X on the 2nd; validate it hides again
 - run common validation block
 
-## D. Projects count chips selection
+## D. Project chip selection (top nav bar)
 
 test 21: Chip selects project, swaps tab strip, and lands on the project home
 - via REST: create `Proj-A` (2 shells) and `Proj-B` (3 shells)
-- navigate to `{APP_URL}/dock/shell` (lands in one of them); click `projects-counter-chip` and select the OTHER one
+- navigate to `{APP_URL}/dock/shell` (lands in one of them); click `top-nav-project-list` and select the OTHER one
 - validate strip switches; URL lands on `/dock/project/<project-id>` because
   direct REST tabs have no known recency; footer/workdir match
 - validate no terminal panel is active until a tab is selected
@@ -522,14 +522,14 @@ chip's source is the `visible=true` Tab query, target-type-agnostic.
 test 51: Chip counts a project whose ONLY open tab is a content (markdown) tab
 - via REST: create `Proj-A` (2 shells). Create `Proj-C` (NO shells).
 - via REST: `POST $API/api/v1/graph/tab` `{pointer, target_type: 'markdown', target_id: <uuid>, project_id: Proj-C, visible: true}`
-- navigate to `{APP_URL}/dock/shell` (lands in `Proj-A`); click `projects-counter-chip`
+- navigate to `{APP_URL}/dock/shell` (lands in `Proj-A`); click `top-nav-project-list`
 - validate the chip count is **2** (both `Proj-A` and `Proj-C` listed) — `Proj-C` appears even though it has zero terminal tabs and is NOT in the terminal strip
 - validate the `Proj-C` row badge shows `1` (its single content tab)
 - run common validation block (on `Proj-A`)
 
 test 52: Selecting a content-only project switches the current project (footer parity)
 - same setup as test 51 (`Proj-A` with 2 shells, `Proj-C` with 1 content tab)
-- navigate to `{APP_URL}/dock/shell` (lands in `Proj-A`); click `projects-counter-chip`; click the `Proj-C` row
+- navigate to `{APP_URL}/dock/shell` (lands in `Proj-A`); click `top-nav-project-list`; click the `Proj-C` row
 - validate URL lands on Proj-C's project home because its content tab has no
   known recency
 - validate the footer updates to Proj-C and no terminal panel is active

@@ -1,14 +1,16 @@
 """Test that heartbeat job registration doesn't race and create duplicates."""
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 
 @pytest.mark.timeout(30)
 async def test_concurrent_register_schedule_job_uses_lock():
     """Verify that concurrent calls to _register_schedule_job are serialized by the lock."""
-    from flow_sdk.builtin.trigger import Trigger, TriggerType
+    from flow_sdk.builtin.trigger import Trigger
+    from flow_sdk.schema.data_spec.trigger_types import TriggerType
     from flow_sdk.server.scheduler import _job_registration_lock
 
     # Create a mock trigger
@@ -53,8 +55,9 @@ async def test_concurrent_register_schedule_job_uses_lock():
 @pytest.mark.timeout(30)
 async def test_lock_prevents_concurrent_add_job():
     """Verify the lock is actually acquired during registration."""
+    from flow_sdk.builtin.trigger import Trigger
+    from flow_sdk.schema.data_spec.trigger_types import TriggerType
     from flow_sdk.server.scheduler import _job_registration_lock
-    from flow_sdk.builtin.trigger import Trigger, TriggerType
 
     trigger = Trigger(
         uname="test_trigger",
@@ -92,8 +95,8 @@ async def test_lock_prevents_concurrent_add_job():
 @pytest.mark.timeout(30)
 async def test_heartbeat_trigger_registered_once():
     """Verify that set_service_triggers only results in one APScheduler job."""
-    from flow_sdk.server.builtin_triggers import set_service_triggers
     from flow_sdk.builtin.trigger import Trigger
+    from flow_sdk.server.builtin_triggers import set_service_triggers
 
     add_job_calls = []
 

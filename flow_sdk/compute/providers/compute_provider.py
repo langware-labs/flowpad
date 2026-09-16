@@ -452,6 +452,10 @@ class ComputeProvider(ABC):
         """Return True if the PTY session process is still running (cross-platform)."""
         return False
 
+    def get_pty_cwd(self, provider_node_id: str, session_id: str) -> str | None:
+        """Return the live working directory of the PTY session's shell, or None when unknown."""
+        return None
+
     async def close_pty_session(
         self,
         provider_node_id: str,

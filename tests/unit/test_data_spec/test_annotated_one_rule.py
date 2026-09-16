@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.indexer.functions.dataset import derive_dataset, iter_examples
+from flow_sdk.assets.types.dataset import derive_dataset, iter_examples
 from flow_sdk.schema.data_spec.dataset_spec import DataLayoutEnum, FileRef, FolderSpec, TextSpec
 from flow_sdk.schema.data_spec.layout import FolderLayout, layout_for
 

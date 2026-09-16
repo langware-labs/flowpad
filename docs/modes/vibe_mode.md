@@ -185,6 +185,17 @@ loads `/mcp-sandbox/sandbox_proxy.html` from the backend origin and receives the
 guest HTML through MCP Apps JSON-RPC. Submissions come back as `ui/message` and
 are delivered to the same `AgenticProcess` as a prompt once the process is idle.
 
+## Agent intro row
+
+A session opened AS an Agent (`useLaunchingAgent` resolves it from the
+process's deployment) shows the agent's `intro` as its first message, above the
+transcript, in Vibe and Standard only (`AgentIntroMessage`, mounted by
+`EntityExecutionPanel` and `SimpleChatPane`). It is presentation: nothing in
+the stream, nothing on disk, nothing the model reads. Advanced/Dev omit it so
+the raw transcript stays faithful. Project agent auto-launch (see
+`docs/agents-management.md`) lands here too, with the queued prompt as the first
+real user turn.
+
 ## Theme (hub palette)
 
 `[data-view='vibe']` in `ui/src/styles/index.css` re-skins every shadcn primitive

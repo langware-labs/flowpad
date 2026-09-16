@@ -51,7 +51,15 @@ logger = logging.getLogger(__name__)
 # batch exceeds the ingest storm cap. The UI needs this exact boundary: a sync
 # completion races the detached projection handler, while this event fires only
 # after the FlowMessage and its conversation pointer have both been written.
+#
+# `app.ready` is an exact tag, not a glob, and fires at most once per boot —
+# the cheapest possible entry on this list. It is forwarded because a client
+# that is up when the backend finishes starting should hear so directly rather
+# than infer it. Delivery is BEST-EFFORT by construction: the bus has no
+# durability, so a client connecting afterwards gets nothing, and the durable
+# record of what the event caused is the fired trigger's own row.
 FORWARDED_TAG_PATTERNS: list[str] = [
+    "app.ready",
     "graph_workflow.*",
     "ingest.*.sync.*",
     "inbox.*.message.projected",

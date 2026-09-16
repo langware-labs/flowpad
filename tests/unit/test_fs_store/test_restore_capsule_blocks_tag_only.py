@@ -1,15 +1,13 @@
-"""A save carries every non-identity capsule across (the ``tag`` block the
-tagit skill writes) and drops the ``identity`` block once the id is in the
-header — the header is the carrier, the block is a retired form."""
+"""Ordinary document saves preserve capsules; legacy pure carry remains explicit."""
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.frontmatter import carry_capsules
 from flow_sdk.capsules import AssetCapsule, CapsuleData, snapshot_capsule_blocks
 from flow_sdk.fs_store.fs_ref.frontmatter_ref import FrontMatterFsRef
-from flow_sdk.fs_store.indexer._frontmatter import carry_capsules
 
 pytestmark = pytest.mark.timeout(5)
 
@@ -28,11 +26,11 @@ def _names(text: str) -> list[str]:
     return [block.split()[2] for block in snapshot_capsule_blocks(text)]
 
 
-def test_tag_survives_and_identity_is_dropped_once_the_id_is_in_the_header(tmp_path: Path) -> None:
+def test_all_capsules_survive_even_when_the_header_has_an_id(tmp_path: Path) -> None:
     path = _doc(tmp_path, f"id: {ID}\ntitle: Note")
     FrontMatterFsRef(path).write_body("new body\n")
     text = path.read_text(encoding="utf-8")
-    assert _names(text) == ["tag"]
+    assert _names(text) == ["identity", "tag"]
     assert "new body" in text and f"id: {ID}" in text
     assert AssetCapsule.from_path(path).read("tag").data == {"tags": ["alpha"]}
 
@@ -46,7 +44,7 @@ def test_identity_block_is_carried_while_the_header_has_no_id(tmp_path: Path) ->
 def test_write_doc_applies_the_same_rule(tmp_path: Path) -> None:
     path = _doc(tmp_path, "title: Note")
     FrontMatterFsRef(path).write_doc("\nnew body\n", {"id": ID, "title": "Note"})
-    assert _names(path.read_text(encoding="utf-8")) == ["tag"]
+    assert _names(path.read_text(encoding="utf-8")) == ["identity", "tag"]
 
 
 def test_carry_capsules_is_a_pure_function_of_the_two_texts() -> None:

@@ -23,6 +23,11 @@ export interface ShowTarget {
   id?: string;
   /** entity (when shown by path) | vfs: the resolved absolute path. */
   path?: string;
+  /** url: an ordinary HTTP(S) page, independent of a process runtime. */
+  url?: string;
+  /** Source location carried through to the existing file/asset editors. */
+  line?: number;
+  column?: number;
   /** webapp: the dev-server port. */
   port?: number | string;
   /** app: the Artifact IS the address — the runtime below is derived from its

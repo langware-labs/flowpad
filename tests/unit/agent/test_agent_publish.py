@@ -29,7 +29,7 @@ async def test_publish_is_idempotent(monkeypatch):
             "rel_path": "agentic-assets/agent/joe",
         }
 
-    monkeypatch.setattr("flow_sdk.assets.git_publish.publish_git_asset", _publish)
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", _publish)
 
     agent = Agent(name="joe")
     actor = TypeId(type="user", id=mint_uuid())
@@ -50,7 +50,7 @@ async def test_legacy_remote_without_git_origin_is_republished(monkeypatch):
         entity.remote = True
         entity.origin = {"rel_path": "agentic-assets/agent/joe"}
 
-    monkeypatch.setattr("flow_sdk.assets.git_publish.publish_git_asset", _publish)
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", _publish)
     agent = Agent(name="joe", remote=True)
 
     assert await agent.ensure_on_hub(TypeId(type="user", id=mint_uuid())) is True
@@ -71,9 +71,9 @@ async def test_fresh_agent_publishes_owning_project_before_asset(monkeypatch):
     async def _publish_asset(_entity, _actor):
         events.append("agent")
 
-    monkeypatch.setattr("flow_sdk.assets._publish_service.owning_project", AsyncMock(return_value=project))
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.owning_project", AsyncMock(return_value=project))
     monkeypatch.setattr(Project, "ensure_on_hub", _ensure_project)
-    monkeypatch.setattr("flow_sdk.assets.git_publish.publish_git_asset", _publish_asset)
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", _publish_asset)
 
     assert await agent.ensure_on_hub(TypeId(type="user", id=mint_uuid())) is True
     assert events == ["project", "agent"]

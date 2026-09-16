@@ -453,7 +453,7 @@ Goal: prove FlowPad context can be delivered to the worker.
 - [ ] Determine whether process `add_dirs` are visible in headless mode.
 - [ ] Determine whether process `add_dirs` are visible in interactive mode.
 - [ ] Confirm generated process instruction assets are created under `<record_dir>/execution/assets`.
-- [ ] Confirm the worker consumes `CLAUDE.md` / `AGENTS.md` / `.agents` / custom-instruction files as expected.
+- [ ] Confirm the worker consumes its driver-projected prompt / discovery files as expected.
 - [ ] Confirm embedded sub-agent specs are delivered through instruction assets, not prompt inlining.
 - [ ] Confirm prompt composition preserves the original user instruction unchanged.
 - [ ] Confirm large embedded sub-agent specs fit the worker's instruction sink.

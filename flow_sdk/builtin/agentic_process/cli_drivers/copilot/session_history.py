@@ -7,19 +7,20 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from flow_sdk.assets.types.copilot_meta import _read_workspace_cwd
 from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
     load_transcript_history as shared_load_transcript_history,
 )
-from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
-from flow_sdk.transcript_analyzer import TranscriptFormat
-
-from .event_to_flowdata import _element_type_for_kind, flowpad_terminal_event_frames
 from flow_sdk.builtin.agentic_process.cli_drivers.session_paths import (
     LAUNCH_LOOKBACK,
     normalize_path,
     parse_iso_datetime,
     transcript_path_for_process,
 )
+from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+from flow_sdk.transcript_analyzer import TranscriptFormat
+
+from .event_to_flowdata import _element_type_for_kind, flowpad_terminal_event_frames
 
 logger = logging.getLogger(__name__)
 
@@ -83,35 +84,7 @@ def find_latest_copilot_session_jsonl(
     return matches[0][1]
 
 
-def read_copilot_session_meta(path: Path) -> dict:
-    """Best-effort metadata from Copilot workspace.yaml + first JSONL line."""
-    session_dir = path.parent
-    meta: dict = {"id": session_dir.name, "_path": str(path)}
-    cwd = _read_workspace_cwd(session_dir / "workspace.yaml")
-    if cwd:
-        meta["cwd"] = cwd
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                raw = json.loads(line)
-                timestamp = raw.get("timestamp")
-                if timestamp:
-                    meta["_timestamp"] = timestamp
-                result = raw.get("result")
-                if isinstance(result, dict) and result.get("sessionId"):
-                    meta["id"] = result["sessionId"]
-                data = raw.get("data")
-                if isinstance(data, dict):
-                    if data.get("sessionId"):
-                        meta["id"] = data["sessionId"]
-                    if data.get("cwd") and "cwd" not in meta:
-                        meta["cwd"] = data["cwd"]
-                break
-    except (OSError, json.JSONDecodeError):
-        pass
-    return meta
+
 
 
 def load_session_history(session_id: str, process_id: str | None = None) -> list[FlowData]:
@@ -160,20 +133,7 @@ def _format_for_path(path: Path) -> TranscriptFormat:
     return TranscriptFormat.COPILOT_STREAM
 
 
-def _read_workspace_cwd(path: Path) -> str | None:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("cwd:"):
-            continue
-        value = stripped.split(":", 1)[1].strip()
-        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-            value = value[1:-1]
-        return value or None
-    return None
+
 
 
 def user_turn_count(path: Path) -> int:

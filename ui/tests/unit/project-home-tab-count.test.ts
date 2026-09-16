@@ -1,5 +1,5 @@
 /**
- * Projects-counter chip vs. the project brief: the chip must count only REAL
+ * Nav-bar project chip vs. the project brief: the chip must count only REAL
  * open tabs (terminals/content), never the project-view "brief" host tab that
  * navigating to `DockPointer.forProject` materializes.
  *

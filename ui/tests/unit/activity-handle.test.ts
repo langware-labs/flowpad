@@ -64,13 +64,13 @@ describe('Activity handle (TypeScript)', () => {
     expect(posts[3].body).toMatchObject({ message: 'all good' });
   });
 
-  it('carries scope on every verb so a scoped activity stays scoped', async () => {
+  it('carries subject_entity on every verb so a scoped activity stays scoped', async () => {
     await Activity.get('run', 'agentic_process-abc').incSuccess();
 
-    expect(posts[0].body.scope).toBe('agentic_process-abc');
+    expect(posts[0].body.subject_entity).toBe('agentic_process-abc');
   });
 
-  it('omits an absent scope rather than sending an empty one', async () => {
+  it('omits an absent subject_entity rather than sending an empty one', async () => {
     await Activity.get('index').spec();
 
     expect(gets[0].params).toEqual({});

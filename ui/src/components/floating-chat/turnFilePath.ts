@@ -1,5 +1,7 @@
 import { isAbsoluteMachinePath, TypeId, VFSPath } from '@sdk';
 
+import { normalizePath } from '@src/components/asset-manager/asset-row-helpers';
+
 /**
  * Turn a transcript's raw file path into the VFS path a dock pointer can
  * address — or null when it cannot be resolved.
@@ -45,7 +47,7 @@ export function turnFileVfsPath(
     if (isAbsoluteMachinePath(workdir)) {
       // `fromMachinePath` normalizes the whole string, so a Windows workdir
       // joined with a POSIX-separated relative path is fine.
-      return VFSPath.fromMachinePath(`${trimTrailingSeparators(workdir)}/${relative}`, ctx.locator).rawPath;
+      return VFSPath.fromMachinePath(`${normalizePath(workdir)}/${relative}`, ctx.locator).rawPath;
     }
 
     return null;
@@ -57,12 +59,14 @@ export function turnFileVfsPath(
   }
 }
 
-function trimTrailingSeparators(path: string): string {
-  return path.replace(/[\\/]+$/, '');
-}
-
+/**
+ * Join two path fragments POSIX-style. Both sides go through the shared
+ * `normalizePath` (backslashes → `/`, collapse repeats, drop a trailing `/`)
+ * rather than a local copy of that rule, so this can't drift from the
+ * normalization the rest of the app does.
+ */
 function joinPosix(base: string, relative: string): string {
-  const left = trimTrailingSeparators(base).replace(/\\/g, '/');
-  const right = relative.replace(/\\/g, '/');
+  const left = normalizePath(base);
+  const right = normalizePath(relative);
   return left ? `${left}/${right}` : right;
 }

@@ -15,7 +15,6 @@ from flow_sdk.core.entity.cross_link import cross_link_entities
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.flowpad_types.enums import WorkerType
 
-
 pytestmark = pytest.mark.timeout(30)
 
 
@@ -41,9 +40,9 @@ async def test_resolve_returns_none_when_no_markdown_entity(initialize_test_db) 
 
 
 @pytest.mark.asyncio
-async def test_resolve_then_cross_link_succeeds(initialize_test_db) -> None:
+async def test_resolve_then_cross_link_succeeds(initialize_test_db, tmp_path) -> None:
     """Pre-existing Docs + live AP → resolve by asset_ref, bidirectional link."""
-    asset = "/tmp/cross_link_test_2.md"
+    asset = str(tmp_path / "cross_link_2.md")
     docs = await _save_docs(asset)
     ap = await _save_ap()
 
@@ -63,9 +62,9 @@ async def test_resolve_then_cross_link_succeeds(initialize_test_db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cross_link_idempotent(initialize_test_db) -> None:
+async def test_cross_link_idempotent(initialize_test_db, tmp_path) -> None:
     """Calling twice produces exactly one link in each direction."""
-    asset = "/tmp/cross_link_test_3.md"
+    asset = str(tmp_path / "cross_link_3.md")
     docs = await _save_docs(asset)
     ap = await _save_ap()
 

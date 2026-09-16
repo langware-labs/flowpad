@@ -10,11 +10,18 @@ import { useStickyActivity } from './hooks/useStickyActivity';
 import { useTurnActivity } from './hooks/useTurnActivity';
 
 /**
- * Worker statuses that describe a FINISHED turn. Seeing one while the activity
- * line is up means we are reading a stale value, not a live phase.
- * `PENDING_USER` belongs here too: the turn has yielded back to the user.
+ * Worker statuses that describe a FINISHED turn. Seeing one while a turn is
+ * actually active (see `useTurnActivity`'s `active`) means we are reading a
+ * stale value, not a live phase. `PENDING_USER` belongs here too: the turn has
+ * yielded back to the user.
+ *
+ * Exported so every surface that renders a live worker-status label — not just
+ * this one — collapses the same set of stale terminal values to "Working"
+ * instead of each reimplementing its own list (see `ChatComposerBar`'s status
+ * pill, FLOWPAD-2095: it used to gate this collapse on the server-confirmed
+ * `busy` alone, lagging this line by the websocket round trip).
  */
-const TERMINAL_STATUSES = new Set<WorkerStatus>([
+export const TERMINAL_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.COMPLETE,
   WorkerStatus.INTERRUPTED,
   WorkerStatus.INACTIVE,
@@ -30,7 +37,7 @@ const TERMINAL_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.API_TIMEOUT,
 ]);
 
-function isTerminalStatus(status: WorkerStatus | null | undefined): boolean {
+export function isTerminalStatus(status: WorkerStatus | null | undefined): boolean {
   return !!status && TERMINAL_STATUSES.has(status);
 }
 

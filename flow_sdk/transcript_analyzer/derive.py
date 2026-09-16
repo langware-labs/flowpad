@@ -39,6 +39,7 @@ _FLOW_VERBS = frozenset(
     {
         "app",
         "artifact",
+        "asset",
         "auth",
         "connect",
         "connections",
@@ -48,6 +49,7 @@ _FLOW_VERBS = frozenset(
         "diagnose",
         "hooks",
         "instance",
+        "llm",
         "log",
         "migrate",
         "navigate",
@@ -59,6 +61,7 @@ _FLOW_VERBS = frozenset(
         "schema",
         "setup",
         "show",
+        "source",
         "start",
         "status",
         "stop",

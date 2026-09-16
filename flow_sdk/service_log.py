@@ -49,8 +49,7 @@ from rich.text import Text
 
 # Try to import FlowPad config, fall back to defaults
 try:
-    from flow_sdk.config import default_service_config
-    from flow_sdk.config import DeployEnv
+    from flow_sdk.config import DeployEnv, default_service_config
     deploy_env = default_service_config.deploy_env
     is_local = deploy_env == DeployEnv.LOCAL
     is_development = default_service_config.development
@@ -152,7 +151,7 @@ def _on_first_log(level: int | None = None) -> None:
         getattr(__logger, logging.getLevelName(logging.INFO).lower())("\n")
 
 
-def _log_with_timer(level: int, msg: str, style: str) -> None:
+def _log_with_timer(level: int, msg: str, style: str, *, exc_info: bool = False) -> None:
     # Check if the message should be logged based on the current logging level
     # first log call on all levels
     from flow_sdk.request_context.methods import get_current_request_info
@@ -178,6 +177,13 @@ def _log_with_timer(level: int, msg: str, style: str) -> None:
 
         timer_info = f" [{elapsed:.2f}s / {overall_time:.2f}s]"
 
+        # ``exc_info`` mirrors ``logging``'s: the traceback of the exception being
+        # handled rides with the message, so a caller never has to pick between this
+        # facade and the module logger to keep it.
+        if exc_info:
+            import traceback  # noqa: PLC0415
+
+            msg = f"{msg}\n{traceback.format_exc().rstrip()}"
         # Use rich for local, regular logging elsewhere
         if console:
             text = Text()
@@ -201,8 +207,8 @@ def _log_with_timer(level: int, msg: str, style: str) -> None:
                 __logger.warning("Dev log mirror write skipped: %s", exc)
 
 
-def error(err: str) -> None:
-    _log_with_timer(logging.ERROR, err, "red")
+def error(err: str, *, exc_info: bool = False) -> None:
+    _log_with_timer(logging.ERROR, err, "red", exc_info=exc_info)
 
 
 def highlighted_error(err: str) -> None:
@@ -217,9 +223,9 @@ def debug(msg: str) -> None:
     _log_with_timer(logging.DEBUG, msg, "bright_black")
 
 
-def warning(msg: str) -> None:
-    _log_with_timer(logging.WARNING, msg, "black on bright_blue")
+def warning(msg: str, *, exc_info: bool = False) -> None:
+    _log_with_timer(logging.WARNING, msg, "black on bright_blue", exc_info=exc_info)
 
 
-def warn(msg: str) -> None:
-    warning(msg)
+def warn(msg: str, *, exc_info: bool = False) -> None:
+    warning(msg, exc_info=exc_info)

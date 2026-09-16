@@ -41,6 +41,19 @@ class ConnectionInfo:
     """
 
     ws: WebSocket
+    #: Whether this connection has identified itself as a browser TAB, by sending one of the
+    #: two messages only the UI sends (``presence`` / ``browser_context``). Everything that
+    #: targets "the tab the user is looking at" filters on this.
+    #:
+    #: It exists because a socket is not a tab. The CLI opens one to WAIT for backend frames,
+    #: and with ``visible``/``focused`` defaulting to true it instantly outranked every real
+    #: window: ``flow llm set auto`` connected, asked "is a tab open, send it to the chooser",
+    #: was handed ITS OWN socket, reported "Opened the LLM setup in Flowpad" and then blocked
+    #: forever on a window that had never been created.
+    #:
+    #: Safe to require: `use-presence-reporter.ts` sends `presence` forcibly from its `on_open`
+    #: handler, so a real tab sets this within a round-trip of connecting.
+    is_tab: bool = False
     visible: bool = True
     focused: bool = True
     last_presence_at: float = field(default_factory=time.monotonic)
@@ -112,6 +125,11 @@ def get_active_connection_info() -> Optional[tuple[str, "ConnectionInfo"]]:
         _cid, info = kv
         return (info.last_presence_at, _cid)
 
+    # Tabs only. A non-UI socket (the CLI's event listener) is not somewhere a user can be
+    # shown anything, and treating one as the active tab silently sends a navigation nowhere.
+    items = [kv for kv in items if kv[1].is_tab]
+    if not items:
+        return None
     visible_focused = [kv for kv in items if kv[1].visible and kv[1].focused]
     if visible_focused:
         return max(visible_focused, key=_rank)
@@ -315,6 +333,7 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
             # this via ``flow context list``.
             info = _active_connections.get(connection_id)
             if info is not None:
+                info.is_tab = True  # only the UI sends this
                 ctx = message_data.get("context")
                 if isinstance(ctx, dict):
                     info.browser_context = ctx
@@ -333,6 +352,7 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
             # use a follow-up `ping` (which echoes a `pong`).
             info = _active_connections.get(connection_id)
             if info is not None:
+                info.is_tab = True  # only the UI sends this
                 visible = message_data.get("visible")
                 focused = message_data.get("focused")
                 if isinstance(visible, bool):

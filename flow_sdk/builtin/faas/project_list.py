@@ -13,10 +13,7 @@ from typing import Any
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer
-from flow_sdk.fs_store.indexer.functions.claude_projects import (
-    _is_claude_encoded_ref,
-    claude_projects_fn,
-)
+from flow_sdk.fs_store.indexer.functions.claude_projects import _is_claude_encoded_ref, claude_projects_fn
 from flow_sdk.fs_store.indexer.functions.codex_projects import (
     _read_codex_projects_from_config,
     codex_projects_fn,
@@ -87,7 +84,7 @@ def _index_claude_dirs_by_cwd(claude_root: Path, *, include_temp: bool = False) 
     ground truth is each child's JSONL ``cwd`` field, which
     ``decode_claude_project_dir`` already exposes.
     """
-    from flow_sdk.fs_store.indexer.functions._claude_projects import decode_claude_project_dir
+    from flow_sdk.assets.types.claude_project_path import decode_claude_project_dir
 
     out: dict[str, Path] = {}
     if not claude_root.is_dir():
@@ -99,7 +96,7 @@ def _index_claude_dirs_by_cwd(claude_root: Path, *, include_temp: bool = False) 
         if real is None or not is_valid_project_cwd(real, include_temp=include_temp):
             continue
         try:
-            out[str(real.resolve())] = child
+            out[canonical_posix_path(real)] = child
         except OSError:
             continue
     return out

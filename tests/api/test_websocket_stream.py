@@ -16,6 +16,27 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 
+def receive_reply(ws):
+    """Entity broadcasts share the connection with request replies."""
+    while True:
+        message = ws.receive_json()
+        if message["message_type"] != "data_op_msg":
+            return message
+
+
+def test_receive_reply_preserves_reply_after_entity_broadcast():
+    messages = iter([
+        {"message_type": "data_op_msg", "data": {}},
+        {"message_type": "pong", "text": "after-binary"},
+    ])
+
+    class Socket:
+        def receive_json(self):
+            return next(messages)
+
+    assert receive_reply(Socket()) == {"message_type": "pong", "text": "after-binary"}
+
+
 @pytest.fixture
 def ws_url():
     """Generate a unique WebSocket URL."""
@@ -90,7 +111,7 @@ async def test_websocket_echo_message():
             ws.send_json(echo_msg)
 
             # Receive echo response
-            response = ws.receive_json()
+            response = receive_reply(ws)
             assert response["message_type"] == "echo"
             assert response["text"] == "Hello, world!"
 
@@ -123,7 +144,7 @@ async def test_websocket_ping_pong():
             ws.send_json(ping_msg)
 
             # Receive pong
-            response = ws.receive_json()
+            response = receive_reply(ws)
             assert response["message_type"] == "pong"
             assert response["text"] == "keepalive"
 
@@ -156,7 +177,7 @@ async def test_websocket_binary_message_accepted():
 
             # Send a ping after binary to verify connection is still alive
             ws.send_json({"message_type": "ping", "message_id": "after-binary"})
-            response = ws.receive_json()
+            response = receive_reply(ws)
             assert response["message_type"] == "pong", (
                 "Connection should still be alive after binary message"
             )
@@ -186,7 +207,7 @@ async def test_websocket_invalid_json():
             ws.send_text("this is not valid json")
 
             # Should receive error response
-            response = ws.receive_json()
+            response = receive_reply(ws)
             assert response["message_type"] == "response_msg"
             assert response["status"] == "error"
             assert "json" in response["error"].lower()
@@ -219,7 +240,7 @@ async def test_websocket_unknown_message_type():
             })
 
             # Should receive error response
-            response = ws.receive_json()
+            response = receive_reply(ws)
             assert response["message_type"] == "response_msg"
             assert response["status"] == "error"
             assert "unknown" in response["error"].lower()

@@ -1,5 +1,6 @@
 import { GitWorkdir } from '@sdk';
-import { extractBody } from '@sdk/fs/FrontMatterFsRef';
+import { parseFrontmatterDoc } from '@sdk/fs/frontmatter-parse';
+const extractBody = (raw: string) => parseFrontmatterDoc(raw).body;
 import { AssetDiffTabs } from './AssetDiffTabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import React, { useEffect, useState } from 'react';

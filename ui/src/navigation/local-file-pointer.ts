@@ -1,7 +1,9 @@
 import { isMarkdownDocumentPath } from '@src/lib/markdown-path';
 import { AssetDocPointer } from './AssetDocPointer';
-import { AssetEditor, editorForPath } from './asset-doc-types';
+import { AssetEditor, editorForPath, LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { DockPointer } from './DockPointer';
+import { isAbsoluteMachinePath } from '@sdk';
+import { normalizeAssetVfsPath } from './asset-doc-pointer-grammar';
 
 /**
  * THE pointer-level chokepoint for every generic "open this file" surface —
@@ -31,5 +33,8 @@ export function dockPointerForFile(
     const assetOptions = options?.line ? { initialLine: String(options.line) } : undefined;
     return AssetDocPointer.forVfs(editor, path, undefined, assetOptions).toDockPointer();
   }
-  return DockPointer.forFile(path, options);
+  // CodeEditor consumes a VFS address. A raw absolute path would otherwise be
+  // treated as project-relative, duplicating the project root during download.
+  const address = isAbsoluteMachinePath(path) ? normalizeAssetVfsPath(path, LOCAL_COMPUTE_NODE).absVfsPath : path;
+  return DockPointer.forFile(address, options);
 }

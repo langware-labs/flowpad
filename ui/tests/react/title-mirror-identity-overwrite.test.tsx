@@ -1,23 +1,9 @@
 /**
- * RCA capture: a restarting worker's startup OSC title (the bare program name
- * `claude`) must NOT overwrite a tag-derived session name.
- *
- * Real mechanism end-to-end:
- * - The real TabbedTerminal → TerminalPanel → InteractiveTerminal mount with a
- *   REAL xterm instance (plain MemoryRouter: the data-router's loader fetch is
- *   incompatible with this Node's undici AbortSignal, so tabs are seeded via
- *   the same `applyAllTabs` store the loader writes).
- * - PTY bytes are delivered through the SAME seam the WS uses in production
- *   (`shell.ptyConnection.routeOutput`, see FlowSync/store.ts pty_output_msg
- *   handling): real base64 chunk → real xterm OSC parse → real
- *   `term.onTitleChange` → real `handleTitleChange` gates → entity save.
- * - Only the backend boundary is faked (dataManager.callAction + apiClient),
- *   mirroring tests/react/new-agentic-tab-loader-regression.test.tsx.
- *
- * The bug manifests as a PUT of the AgenticProcess with name='claude'. The
- * control assertion (a tag title MUST still flow into a save) proves the
- * delivery pipeline is live, so the 'claude' assertion can't pass vacuously.
+ * Real xterm OSC parsing must report process titles to the backend policy,
+ * including startup frames. It must never PUT a process or label a tab itself.
+ * Backend FSM tests own acceptance/provenance; this test owns the PTY → action seam.
  */
+import '@testing-library/jest-dom/vitest';
 import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -96,21 +82,27 @@ function TerminalWorkspace() {
           TooltipProvider, and radix's Tooltip throws without it. */}
       <TooltipProvider>
         <div style={{ height: 320 }}>
-          <TabbedTerminal className="h-full" />
+          <TabbedTerminal className="h-full" scope="all" />
         </div>
       </TooltipProvider>
     </QueryClientProvider>
   );
 }
 
-describe('PTY title mirror vs program identity titles', () => {
+describe('PTY title observations are backend-owned', () => {
   let proc: AgenticProcess;
   let shell: Shell;
   /** Every AgenticProcess name that reached the backend (PUT saves + Tab set_name). */
   let savedProcessNames: string[];
   let savedTabNames: string[];
+  let observedTitles: { title: string; session_id: string | null }[];
 
   beforeEach(async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {},
+        addListener: () => {}, removeListener: () => {} }),
+    });
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
       configurable: true,
       value: () => ({
@@ -151,6 +143,7 @@ describe('PTY title mirror vs program identity titles', () => {
 
     savedProcessNames = [];
     savedTabNames = [];
+    observedTitles = [];
 
     // Seed the live entities the panel renders from. Constructing them
     // registers them in the dataManager cache (APIEntity self-registration);
@@ -164,6 +157,7 @@ describe('PTY title mirror vs program identity titles', () => {
       workdir: '/tmp/flowpad-project',
       shell_id: SHELL_ID,
       worker_type: 'claude',
+      session_id: 'worker-session',
       auto_rename: true,
       created_by: 'test',
     } as never);
@@ -239,6 +233,10 @@ describe('PTY title mirror vs program identity titles', () => {
       if (action.name === 'new_tab' && target === null) {
         return { tabs: [new Tab(tabRow())] } as never;
       }
+      if (action.name === 'observe-title' && target?.type === AgenticProcess.type) {
+        observedTitles.push(action.bodyParameters as { title: string; session_id: string | null });
+        return {} as never;
+      }
       if (action.name === 'set_name' && target?.type === Tab.type) {
         savedTabNames.push(String((action.bodyParameters as { name?: string })?.name ?? ''));
         return { tabs: [] } as never;
@@ -247,13 +245,13 @@ describe('PTY title mirror vs program identity titles', () => {
         return {
           shell_id: SHELL_ID,
           pty_id: SHELL_ID,
-          session_id: null,
+          session_id: 'worker-session',
           status: 'running',
         } as never;
       }
       if (action.name === 'activate') return {} as never;
       if (action.name === 'get-history' && target?.type === AgenticProcess.type) {
-        return { history: [], session_id: null, use_worker_history: false } as never;
+        return { history: [], session_id: 'worker-session', use_worker_history: false } as never;
       }
       if (action.name === 'input-dir' && target?.type === AgenticProcess.type) {
         return {
@@ -292,7 +290,7 @@ describe('PTY title mirror vs program identity titles', () => {
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   });
 
-  it("does not adopt the worker's startup title 'claude' over a tag-derived name", async () => {
+  it("reports raw OSC titles with session identity and leaves durable naming to the backend", async () => {
     // Seed the tab store with the session's tab (what the route loader's
     // setupTab would have materialized) and navigate straight to it.
     tabManager.adoptGlobal([new Tab(tabRow())]);
@@ -322,17 +320,12 @@ describe('PTY title mirror vs program identity titles', () => {
     // 2. A conversation later produces a tag title (the control signal).
     shell.ptyConnection.routeOutput(btoa(oscTitle(TAG_TITLE)), 2);
 
-    // The control MUST arrive: proves bytes flowed through xterm's parser into
-    // the title mirror. Without this, the 'claude' assertion could pass only
-    // because nothing was delivered at all. Waits on the Tab set_name mirror —
-    // it receives the cleaned title verbatim, so it's a stable signal in both
-    // the fixed and unfixed code paths.
-    await waitFor(() => expect(savedTabNames).toContain(TAG_TITLE), { timeout: 10000 });
-
-    // THE BUG: the identity title must never have been persisted. Pre-fix the
-    // mirror saves name='claude' (entity PUT + Tab set_name) the moment the
-    // startup title arrives.
-    expect(savedTabNames).not.toContain('claude');
-    expect(savedProcessNames).not.toContain('claude');
+    await waitFor(() => expect(observedTitles).toEqual([
+      { title: 'claude', session_id: 'worker-session' },
+      { title: TAG_TITLE, session_id: 'worker-session' },
+    ]), { timeout: 10000 });
+    expect(savedTabNames).toEqual([]);
+    expect(savedProcessNames).toEqual([]);
+    expect(proc.name).toBe(ORIGINAL_NAME);
   });
 });

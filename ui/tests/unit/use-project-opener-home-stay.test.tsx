@@ -2,7 +2,9 @@
  * useProjectOpener — the surface-derived project-switch decision matrix.
  *
  * "Open a project on home — ANY home, any view mode — stays home on the new
- * project." Pins the four navigation outcomes of setCurrentProjectContext
+ * project", and on the VIBE home "home" means the hero: the `vibeNoProcess`
+ * flag belongs to the branch you reach by LEAVING a workspace, never to this
+ * one. Pins the four navigation outcomes of setCurrentProjectContext
  * (reached through ensureProjectAndSetContext) plus the gate/map bypass, so
  * the home-stay invariant can't drift again per call site (the original bug:
  * a resurrected inline copy of this flow lost the home guard and vibe-home
@@ -79,7 +81,7 @@ describe('useProjectOpener — home stays home on the new project', () => {
     vi.spyOn(dataContext, 'setContextEntityTypeId').mockResolvedValue(undefined as never);
   });
 
-  it('home + vibe → fresh vibe home carrying the project scope, NO process resume', async () => {
+  it('home + vibe → the vibe HERO carrying the project scope, NO process resume', async () => {
     processIdMock.mockResolvedValue(PROC_ID); // a process exists — must be ignored on home
 
     await openViaHook();
@@ -88,7 +90,15 @@ describe('useProjectOpener — home stays home on the new project', () => {
     expect(openDock).toHaveBeenCalledTimes(1);
     const dock = openDock.mock.calls[0][0];
     expect(dock.viewType).toBe(ViewType.HOME);
-    expect(dock.options?.vibeNoProcess).toBe('true');
+    // NO `vibeNoProcess` on a home open. The flag's only effect is which
+    // surface `flow-page` renders for a HOME dock, and set it picks
+    // `VibeNoProcessWorkspace` — the "Start new chat" pane over the project's
+    // PAST BUILDS — instead of the `VibeNewChat` hero. That is the landing for
+    // the non-home branch below, not this one: home stays home, and home is the
+    // hero. A freshly cloned project has no past builds, so the flag landed
+    // "open this template" on an empty pane with the agents the repo brought
+    // along nowhere in sight.
+    expect(dock.options?.vibeNoProcess).toBeUndefined();
     expect(dock.viewMode).toBe('vibe');
     expect(dock.scopeFilter).toEqual(projectScope(PROJECT_ID));
     // URL-first, like every other home branch: the scope-carrying dock's loader

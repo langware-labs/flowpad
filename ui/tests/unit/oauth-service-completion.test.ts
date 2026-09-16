@@ -9,6 +9,7 @@ const TARGET = { type: 'project', id: '3f2504e0-4f89-41d3-9a0c-0305e82c3301' } a
 
 class TestWindow implements OAuthWindow {
   private openState = true;
+  private listeners = new Set<() => void>();
 
   open(): void {
     this.openState = true;
@@ -21,6 +22,17 @@ class TestWindow implements OAuthWindow {
   get isOpen(): boolean {
     return this.openState;
   }
+
+  onClosed(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /** The user closes the consent window themselves. */
+  userClosed(): void {
+    this.openState = false;
+    this.listeners.forEach((listener) => listener());
+  }
 }
 
 describe('OAuthService terminal completion', () => {
@@ -29,6 +41,83 @@ describe('OAuthService terminal completion', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     (service as unknown as { oAuthFlows: Map<string, OauthFlow> }).oAuthFlows.clear();
+  });
+
+  it.each([401, 403])('explains connection access refusal (%s)', async (status) => {
+    vi.spyOn(dataManager, 'callAction').mockRejectedValue({
+      response: { status, data: { message: 'Action is not allowed for this role' } },
+    });
+    await expect(service.connect('github')).rejects.toThrow('Connection access denied.');
+  });
+
+  it('preserves the backend explanation for other connection failures', async () => {
+    vi.spyOn(dataManager, 'callAction').mockRejectedValue({
+      response: { status: 503, data: { message: 'The provider is temporarily unavailable' } },
+    });
+    await expect(service.connect('github')).rejects.toThrow('The provider is temporarily unavailable');
+  });
+
+  it('completes an adopted grant without opening a popup', async () => {
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({
+      status: OAuthStatus.SUCCESS,
+      oauth_request_id: 'adopted-grant',
+    });
+    vi.spyOn(service, 'test').mockResolvedValue({ ok: true });
+    const popup = vi.spyOn(service, 'createOAuthPopupWindow');
+    const emitted = vi.spyOn(dataManager, 'emit');
+    await expect(service.connect('slack')).resolves.toBeNull();
+    expect(popup).not.toHaveBeenCalled();
+    expect(emitted).toHaveBeenCalledWith(
+      OAuthEventType.OAUTH_FLOW_COMPLETE,
+      expect.objectContaining({ provider: 'slack', status: OAuthStatus.SUCCESS }),
+    );
+  });
+
+  it('presents a provider code handoff and submits it in the request body', async () => {
+    const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({
+      kind: 'manual',
+      url: 'https://provider.example/authorize',
+      state: 'code-state',
+    });
+    const emitted = vi.spyOn(dataManager, 'emit');
+    const popup = vi.spyOn(service, 'createOAuthPopupWindow');
+    vi.spyOn(service, 'test').mockResolvedValue({ ok: true });
+    await expect(service.connect('anthropic')).resolves.toBeNull();
+    expect(popup).not.toHaveBeenCalled();
+    expect(emitted).toHaveBeenCalledWith(
+      OAuthEventType.CODE_FLOW_START,
+      expect.objectContaining({ provider: 'anthropic', state: 'code-state' }),
+    );
+    call.mockResolvedValue({});
+    await service.submitAuthorizationCode({ provider: 'anthropic', state: 'code-state', url: '' }, ' code#code-state ');
+    const action = call.mock.calls.at(-1)![0];
+    expect(action.bodyParameters).toEqual({ state: 'code-state', code: 'code#code-state' });
+    expect(action.queryParameters).toEqual({});
+    expect(emitted).toHaveBeenCalledWith(
+      OAuthEventType.OAUTH_FLOW_COMPLETE,
+      expect.objectContaining({ provider: 'anthropic', status: OAuthStatus.SUCCESS }),
+    );
+  });
+
+  it('drives loopback exchange and completes once when HTTP and WebSocket race', async () => {
+    vi.spyOn(service, 'createOAuthPopupWindow').mockResolvedValue(new TestWindow());
+    const probe = vi.spyOn(service, 'test').mockResolvedValue({ ok: true });
+    const emitted = vi.spyOn(dataManager, 'emit');
+    const call = vi
+      .spyOn(dataManager, 'callAction')
+      .mockResolvedValueOnce({
+        kind: 'loopback',
+        url: 'https://example.test/auth',
+        state: 'loopback-request',
+      })
+      .mockImplementationOnce(async () => {
+        await service.onOAuthMessage({ oauth_request_id: 'loopback-request', status: OAuthStatus.SUCCESS } as never);
+        return { status: 'success' };
+      });
+    await service.connect('flowpad');
+    await vi.waitFor(() => expect(probe).toHaveBeenCalledOnce());
+    expect(call.mock.calls[1][0].subpath).toBe('flowpad/wait-callback');
+    expect(emitted.mock.calls.filter(([event]) => event === OAuthEventType.OAUTH_FLOW_COMPLETE)).toHaveLength(1);
   });
 
   it('verifies a new grant at owner scope before attaching its target', async () => {
@@ -119,20 +208,35 @@ describe('OAuthService terminal completion', () => {
     );
   });
 
-  it('cancels the exact Hub request when its tracked popup closes', async () => {
+  it('names this tab as the initiator and completes a Hub grant from its addressed oauth_msg', async () => {
+    vi.spyOn(service, 'createOAuthPopupWindow').mockResolvedValue(new TestWindow());
+    vi.spyOn(service, 'test').mockResolvedValue({ ok: true });
     const emitted = vi.spyOn(dataManager, 'emit');
-    const waitCallback = vi
-      .spyOn(
-        service as unknown as {
-          waitCallback: OAuthService['test'];
-        },
-        'waitCallback',
-      )
-      .mockResolvedValue({
-        oauth_request_id: 'request-3',
-        provider: 'slack',
-        status: 'pending',
-      } as never);
+    const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({
+      kind: 'code',
+      auth_url: 'https://hub.test/authorize',
+      oauth_request_id: 'hub-request',
+    });
+
+    await service.connect('slack');
+    await service.onOAuthMessage({ oauth_request_id: 'hub-request', status: OAuthStatus.SUCCESS } as never);
+
+    expect(call.mock.calls[0][0].carriesInitiator).toBe(true);
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(emitted).toHaveBeenCalledWith(
+      OAuthEventType.OAUTH_FLOW_COMPLETE,
+      expect.objectContaining({ provider: 'slack', status: OAuthStatus.SUCCESS }),
+    );
+  });
+
+  it('cancels the exact Hub request when the user closes its window, without polling', async () => {
+    const emitted = vi.spyOn(dataManager, 'emit');
+    const waitCallback = vi.spyOn(
+      service as unknown as {
+        waitCallback: OAuthService['test'];
+      },
+      'waitCallback',
+    );
     const cancelFlow = vi
       .spyOn(
         service as unknown as {
@@ -145,33 +249,32 @@ describe('OAuthService terminal completion', () => {
         provider: 'slack',
         status: 'cancelled',
       } as never);
+    const consent = new TestWindow();
     const flow = new OauthFlow(
       { provider: 'slack', auth_url: 'https://example.test/auth', oauth_request_id: 'request-3' },
-      new TestWindow(),
+      consent,
       TARGET,
     );
-    flow.closeWindow();
+    (service as unknown as { oAuthFlows: Map<string, OauthFlow> }).oAuthFlows.set('request-3', flow);
 
     await (
       service as unknown as {
-        driveHubCallback: (
-          provider: string,
-          info: { provider: string; auth_url: string; oauth_request_id: string },
-          flow: OauthFlow,
-          target?: typeof TARGET,
-        ) => Promise<void>;
+        drivePopupCallback: (flow: OauthFlow, kind: string) => Promise<void>;
       }
-    ).driveHubCallback('slack', flow.oAuthRequestInfo, flow, TARGET);
+    ).drivePopupCallback(flow, 'code');
+    consent.userClosed();
 
-    expect(waitCallback).toHaveBeenCalledWith('slack', 'request-3', TARGET);
-    expect(cancelFlow).toHaveBeenCalledWith('slack', 'request-3', TARGET);
-    expect(emitted).toHaveBeenCalledWith(
-      OAuthEventType.OAUTH_FLOW_COMPLETE,
-      expect.objectContaining({
-        provider: 'slack',
-        status: OAuthStatus.CANCELLED,
-        oauth_request_id: 'request-3',
-      }),
+    await vi.waitFor(() =>
+      expect(emitted).toHaveBeenCalledWith(
+        OAuthEventType.OAUTH_FLOW_COMPLETE,
+        expect.objectContaining({
+          provider: 'slack',
+          status: OAuthStatus.CANCELLED,
+          oauth_request_id: 'request-3',
+        }),
+      ),
     );
+    expect(waitCallback).not.toHaveBeenCalled();
+    expect(cancelFlow).toHaveBeenCalledWith('slack', 'request-3', TARGET);
   });
 });

@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.types.whiteboard import extract_whiteboard
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer
-from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.fixtures.identity import resolve_id

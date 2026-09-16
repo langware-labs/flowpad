@@ -4,10 +4,10 @@ A flowpad-native REPO asset at ``agentic-assets/agent/<name>/agent.md``, found
 by the shared ``repo_assets_fn`` walker via ``main_file`` — no bespoke walker.
 Distinct from SUBAGENT, which is the provider-owned ``.claude/agents/*.md``.
 """
-from flow_sdk.builtin.agent import AgentSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
+from flow_sdk.assets.identity import frontmatter_identity
+from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
+from flow_sdk.schema.data_spec.agent_spec import AgentSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 

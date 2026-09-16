@@ -590,7 +590,7 @@ async def _handle_hook_op_event(
             element_type = event_name
             if isinstance(flow_value, dict) and element_type.startswith("task"):
                 try:
-                    from flow_sdk.builtin.task import TaskEventType
+                    from flow_sdk.schema.data_spec.task_spec import TaskEventType
 
                     op = SyncOperation.CREATE if element_type == TaskEventType.TASK_CREATED else SyncOperation.UPDATE
                     entity_result, _warning = await _reflect_entity("task", op, flow_value)
@@ -626,7 +626,7 @@ async def _handle_hook_op_invoke(
 
     if isinstance(flow_value, dict) and element_type.startswith("task"):
         try:
-            from flow_sdk.builtin.task import TaskEventType
+            from flow_sdk.schema.data_spec.task_spec import TaskEventType
 
             op = SyncOperation.CREATE if element_type == TaskEventType.TASK_CREATED else SyncOperation.UPDATE
             entity_result, _warning = await _reflect_entity("task", op, flow_value)

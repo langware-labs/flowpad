@@ -57,8 +57,10 @@ describe('embedStandardAgent', () => {
     await embed(proc);
 
     // The system asset, NOT the same-named project one that would shadow it,
-    // and not the same-scoped `vibe` one.
-    expect(proc.loadEmbeddedSubagent).toHaveBeenCalledWith('/sdk/.claude/agents/standard.md');
+    // and not the same-scoped `vibe` one. `true` is the persona declaration:
+    // `standard` IS the chat's identity, so the process records it as such
+    // instead of the renderer inferring it from how many agents got embedded.
+    expect(proc.loadEmbeddedSubagent).toHaveBeenCalledWith('/sdk/.claude/agents/standard.md', true);
   });
 
   it('queries the subagent route with system assets included', async () => {
@@ -95,7 +97,7 @@ describe('embedStandardAgent', () => {
     await embed(second);
 
     expect(apiMock.get).toHaveBeenCalledTimes(2);
-    expect(second.loadEmbeddedSubagent).toHaveBeenCalledWith('/sdk/.claude/agents/standard.md');
+    expect(second.loadEmbeddedSubagent).toHaveBeenCalledWith('/sdk/.claude/agents/standard.md', true);
   });
 
   it('degrades without throwing when the agent is not indexed', async () => {

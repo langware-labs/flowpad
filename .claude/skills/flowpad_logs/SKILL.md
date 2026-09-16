@@ -1,10 +1,12 @@
 ---
 id: 597e49f2-4dc3-5aaf-a276-cfbfc09289be
 name: flowpad_logs
-description: Where to find the on-disk logs for Flowpad — the local backend instances
-  (Alice / Bob), the Electron desktop app (shell / monitor / server), and the local
-  hub. Use when you need to read backend or desktop logs to debug the running
-  processes instead of asking the user to copy-paste console output.
+description: Where to find the on-disk logs for Flowpad — the per-instance backend
+  logs (server / monitor / CLI, under the instance named by FLOW_INSTANCE), the
+  Electron desktop shell's global log, and the local hub. Use when you need to read
+  backend or desktop logs to debug the running processes instead of asking the user
+  to copy-paste console output, or to search log history around when a problem
+  happened.
 tags:
 - logs
 - debugging
@@ -20,46 +22,70 @@ Each local flowpad backend and the local hub mirror their **full** log output
 to a timestamped file on disk (in addition to the PyCharm / stdout console).
 Read these files directly — do not ask the user to copy-paste console output.
 
-## Layout
+## Layout — resolve the instance, never assume it
 
-| Process | Checkout | Instance | Port | Log directory |
-|---------|----------|----------|------|---------------|
-| **Alice** — flowpad app | `~/Developer/flowpad-2`   | `dev`  | 9008 | `~/.flow/instances/dev/logs/` |
-| **Bob** — flowpad app   | `~/Developer/flowpad`     | `prod` | 9007 | `~/.flow/instances/prod/logs/` |
-| **Local hub**           | `~/Developer/flowpad-hub` | n/a    | 8093 | `~/Developer/flowpad-hub/logs/` |
+**Backend logs are per-instance. Do not hardcode `dev` / `prod`** — there are
+usually more than two: every `scripts/instance_ctl.sh launch <name>` mints its
+own instance, and each one has its own log tree. Resolve the name first:
 
-The app log directory comes from `instance_settings.logs_dir`, which resolves
-to `<flow_home>/instances/<instance_name>/logs` (`flow_home` = `~/.flow`).
-`instance_name` is `dev` when `FLOWPAD_DEV=true` (Alice, port 9008) and `prod`
-otherwise (Bob, port 9007) — so the two local instances never share a folder.
+```bash
+INST="${FLOW_INSTANCE:-prod}"                 # unset → prod
+LOGS=~/.flow/instances/$INST/logs             # this instance's log root
+ls ~/.flow/instances                          # what actually exists on this machine
+```
+
+That path is `instance_settings.logs_dir` — `<flow_home>/instances/<name>/logs`
+(`flow_home` = `~/.flow`), defined at `flow_sdk/instance_settings/base_settings.py`
+and used by every writer (`service_log.py`, `server/launch.py`, `cli/cli_log.py`,
+`system_tools.py`). Two instances never share a folder.
+
+| What | Where | Notes |
+|------|-------|-------|
+| **backend server** | `$LOGS/server/`  | one file per boot; the monitor redirects the server's stderr here and `init_dev_file_logging()` adopts the same path, so it holds the full logging tree (uvicorn, `flow_sdk.*`, rich-timer lines) **plus** raw pre-logging output and crash tracebacks |
+| **backend monitor** | `$LOGS/monitor/` | monitor / restart activity; the tail shown in the shell's Startup-Error dialog |
+| **CLI**            | `$LOGS/cli.log.jsonl` | one JSON line per `flow` invocation |
+| **session logs**   | `$LOGS/*.log`    | timestamped per-run files at the log root |
+
+Common instances as *examples only* — check `ls ~/.flow/instances` for the real
+list: `prod` (:9007, the default) and `dev` (:9008, when `FLOWPAD_DEV=true`).
 
 The hub is a single shared service, not per-instance, so its logs live in the
 hub repo at `<hub-repo>/logs/`, **not** under `~/.flow/instances`.
 
-## Electron desktop app logs (`~/.flow/logs/...`)
+## Electron desktop app logs (`~/.flow/logs/main_desktop/`)
 
-The packaged **desktop app** (the Electron shell) writes a separate set of logs
-under `~/.flow/logs/` — **not** under `~/.flow/instances/<name>/logs/`. These are
-the ones to read when the app "won't start" / is "stuck on Starting…":
+The packaged **desktop app** (the Electron shell) is the one component that does
+**not** log per-instance — it writes to the global `~/.flow/logs/main_desktop/`.
+Read it when the app "won't start" / is "stuck on Starting…":
 
 | Dir | Written by | What's in it |
 |-----|------------|--------------|
 | `~/.flow/logs/main_desktop/` | Electron main process (`electron/main.js`) | shell startup, `waitForBackend` health polling, `[uv]` / `[electron-updater]` / `[flow stderr]` lines, the "Startup Error" details |
-| `~/.flow/logs/monitor/`      | the backend monitor (`flow start`)        | monitor / restart activity, the tail shown in the shell's Startup-Error dialog |
-| `~/.flow/logs/server/`       | the backend server process                | the Python backend's own log for a desktop-launched run |
+
+**`~/.flow/logs/server/` and `~/.flow/logs/monitor/` are dead** — the backend
+moved to per-instance logging in Apr 2026 and these have been empty ever since.
+`bootstrap.py` also creates a per-instance `main_desktop/` that stays empty for
+the mirror-image reason. If you find yourself reading either, you are looking at
+an empty directory and will conclude "no evidence" when there are hundreds of MB
+of it one level away. **A desktop-launched backend still logs to `$LOGS/server/`**
+— the Electron shell spawns `flow start`, and that backend is instance-scoped
+like any other.
 
 Filenames are timestamped (`<day><Mon><Year>_<HH>_<MM>_<SS>.log`); take the newest:
 
 ```bash
-# macOS/Linux — newest of each (last 40 lines)
-for d in main_desktop monitor server; do
-  echo "== $d =="; tail -40 "$(ls -t ~/.flow/logs/$d/*.log 2>/dev/null | head -1)"
+# macOS/Linux — the three that matter, newest of each (last 40 lines)
+INST="${FLOW_INSTANCE:-prod}"; LOGS=~/.flow/instances/$INST/logs
+for p in "$LOGS/server" "$LOGS/monitor" ~/.flow/logs/main_desktop; do
+  echo "== $p =="; tail -40 "$(ls -t $p/*.log 2>/dev/null | head -1)"
 done
 ```
 ```powershell
 # Windows
-foreach ($d in 'main_desktop','monitor','server') {
-  "== $d =="; Get-Content (Get-ChildItem $HOME\.flow\logs\$d\*.log | Sort LastWriteTime -Desc | Select -First 1) -Tail 40
+$inst = if ($Env:FLOW_INSTANCE) { $Env:FLOW_INSTANCE } else { 'prod' }
+$logs = "$HOME\.flow\instances\$inst\logs"
+foreach ($p in "$logs\server", "$logs\monitor", "$HOME\.flow\logs\main_desktop") {
+  "== $p =="; Get-Content (Get-ChildItem $p\*.log | Sort LastWriteTime -Desc | Select -First 1) -Tail 40
 }
 ```
 
@@ -68,6 +94,24 @@ timeout`, `[startup error details]`, `[update] desktop upgraded`, `[uv] Upgradin
 flowpad...`, `[electron-updater] update downloaded`, `flow shim blocked by Windows
 Device Guard`, `Failed to spawn flow start`.
 
+## Searching history, not just the tail
+
+`tail` shows you the present. For an issue that has already passed — an error the
+user saw an hour ago, an intermittent stall, a restart loop that recovered — the
+tail is the wrong tool and will show you a healthy system. Search the **window**
+the symptom happened in, across all rotated files:
+
+```bash
+INST="${FLOW_INSTANCE:-prod}"; LOGS=~/.flow/instances/$INST/logs
+# everything logged between two timestamps, across rotations
+grep -rn -E '2026-09-09 1[4-6]:' $LOGS/server/*.log
+# or find the error and read around it
+grep -rn -iE 'error|traceback|exception|failed' $LOGS/server/*.log | tail -50
+grep -rn -B5 -A20 'the exact error string' $LOGS/server/*.log
+```
+
+Log files are large (hundreds of MB is normal) — `grep` them, don't `cat` them.
+
 ## Get the most recent log
 
 A new timestamped file (`<day><Mon><Year>_<HH>_<MM>_<SS>.log`, e.g.
@@ -75,12 +119,11 @@ A new timestamped file (`<day><Mon><Year>_<HH>_<MM>_<SS>.log`, e.g.
 also prints the exact path at boot as `Dev file log: <path>`.
 
 ```bash
-# Alice  (dev,  :9008)
-ls -t ~/.flow/instances/dev/logs/*.log  | head -1
-# Bob    (prod, :9007)
-ls -t ~/.flow/instances/prod/logs/*.log | head -1
-# Hub    (:8093)
-ls -t ~/Developer/flowpad-hub/logs/*.log | head -1
+INST="${FLOW_INSTANCE:-prod}"; LOGS=~/.flow/instances/$INST/logs
+ls -t $LOGS/server/*.log  | head -1     # this instance's backend
+ls -t $LOGS/monitor/*.log | head -1     # its monitor
+ls -t ~/.flow/logs/main_desktop/*.log | head -1   # the desktop shell (global)
+ls -t ~/Developer/flowpad-hub/logs/*.log | head -1  # hub (:8093)
 ```
 
 ## What's in them
