@@ -88,6 +88,18 @@ class WahaSource(Source):
     def message_origin(self, message_id: str, chat: str) -> CloudOrigin:
         return self.origin(message_id, MESSAGES_SEGMENT, chat)
 
+    @property
+    def _scope_namespace(self) -> str:
+        """The namespace every origin this source mints sits in — a chat hangs off it."""
+        return self.origin("-").namespace
+
+    def _chat_from(self, origin: CloudOrigin) -> str:
+        """The chat an in-scope origin hangs off; "" when it names the namespace itself."""
+        base = self._scope_namespace
+        if origin.kind != self._scope.kind or not (origin.namespace == base or origin.namespace.startswith(base + "/")):
+            raise ValueError(f"{origin!r} is outside this source's scope")
+        return chat_id(origin.namespace[len(base) + 1:]) if origin.namespace != base else ""
+
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
     def outbound_spec(cls) -> type:
@@ -243,10 +255,7 @@ class WahaSource(Source):
             raise ValueError("a reply is routed from the message it answers; leave conversation and recipients empty")
         if not isinstance(origin, CloudOrigin):
             raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
-        base = self.origin("-").namespace
-        if origin.kind != self._scope.kind or not (origin.namespace == base or origin.namespace.startswith(base + "/")):
-            raise ValueError(f"{origin!r} is outside this source's scope")
-        chat = chat_id(origin.namespace[len(base) + 1:]) if origin.namespace != base else ""
+        chat = self._chat_from(origin)
         if not chat:
             raise NotFound(f"{origin!r} names no message", origin=origin)
         sent = await self._send(chat, data.text or "", self.conversation_origin(chat), quoted=origin.key)
@@ -274,8 +283,8 @@ class WahaSource(Source):
     def _chat_of(self, origin: object) -> str:
         if not isinstance(origin, CloudOrigin):
             raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
-        if origin != self.origin(origin.key):
-            raise ValueError(f"{origin!r} is outside this source's scope")
+        if origin.kind != self._scope.kind or origin.namespace != self._scope_namespace:
+            raise ValueError(f"{origin!r} is outside this source's scope")  # a message hangs off a chat; a chat IS one
         return chat_id(origin.key)
 
     def _secret(self, name: str) -> Optional[str]:
