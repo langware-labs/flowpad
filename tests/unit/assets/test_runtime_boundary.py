@@ -29,7 +29,7 @@ def test_filesystem_operations_never_import_application_or_resolve_settings():
         assert {'skill', 'markdown', 'task', 'mcp', 'graph_workflow', 'journey'} <= set(SchemaRegistry.get_all_types())
         from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialManifestSpec
         from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
-        CredentialManifestSpec.model_validate({'schema': 1, 'name': 'api', 'lm_provider': 'openai', 'vars': {'API_KEY': {}}})
+        CredentialManifestSpec.model_validate({'schema': 2, 'name': 'api', 'lm_provider': 'openai', 'vars': {'API_KEY': {}}})
         ManifestSpec.model_validate({'schema': 1, 'name': 'source', 'reflect': ['copy']})
         import subprocess, socket
         def forbidden_command(*args, **kwargs):
@@ -90,4 +90,31 @@ def test_failed_declaration_import_cannot_silently_hide_a_type():
                 assert not SchemaRegistry._loaded
             else:
                 raise AssertionError('Incomplete registry accepted as complete')
+    ''')
+
+
+def test_the_source_contract_imports_no_application_module():
+    """``flow_sdk.sources`` is the access contract: it must load, register its kinds and run a
+    local source with the runtime, the entities and the server never imported."""
+    run_isolated('''
+        import sys, asyncio, tempfile
+        blocked = ('flow_sdk.builtin', 'flow_sdk.core', 'flow_sdk.db', 'flow_sdk.server', 'flow_sdk.app',
+                   'flow_sdk.ingest', 'flow_sdk.inbox', 'flow_sdk.blocks', 'flow_sdk.config', 'flow_sdk.instance_settings')
+        class Boundary:
+            def find_spec(self, name, path=None, target=None):
+                if name.startswith(blocked):
+                    raise AssertionError(f'Forbidden contract dependency: {name}')
+        sys.meta_path.insert(0, Boundary())
+        from flow_sdk.sources import FolderSource, ObjectQuery, SourceItemSpec, MessageItem, MessageData, CloudOrigin
+        from flow_sdk.schema.data_spec._kinds import register_builtin_kinds, resolve_kind
+        register_builtin_kinds()
+        assert resolve_kind('ingest.message') is MessageData
+        async def main():
+            with tempfile.TemporaryDirectory() as root:
+                open(f'{root}/a.txt', 'wb').write(b'abc')
+                async with FolderSource.at(root) as s:
+                    (item,) = [i async for i in s.iterate(ObjectQuery(prefix='a'))]
+                    assert item.data.size == 3
+        asyncio.run(main())
+        assert not any(name.startswith(blocked) for name in sys.modules)
     ''')

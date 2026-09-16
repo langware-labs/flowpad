@@ -64,23 +64,36 @@ describe('DockPointer viewMode override', () => {
     document.documentElement.classList.remove('view-mode-glow-flicker');
   });
 
-  it('adopts ?viewMode on load: applies it AND persists it as the user default', async () => {
+  it('?viewMode on load is displayed, not saved as the user default', async () => {
     renderAt('/dock/settings?viewMode=advanced');
 
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
     expect(document.documentElement.getAttribute('data-view')).toBe('advanced');
-    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('advanced');
+    // Opening something only displays its mode; only a switch saves it.
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
   });
 
-  it('keeps the adopted mode when navigating to a DockPointer without an override', async () => {
+  it('a dock URL without a mode falls back to the saved preference', async () => {
     const router = renderAt('/dock/settings?viewMode=advanced');
 
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
+    // A raw router navigation has no openDock seed, so nothing carries the mode.
     await router.navigate('/dock/settings');
 
+    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('standard'));
+    expect(document.documentElement.getAttribute('data-view')).toBe('standard');
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
+  });
+
+  it('a mode added to a bare dock URL without the switch marker is displayed, not saved', async () => {
+    const router = renderAt('/dock/settings');
+
+    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('standard'));
+    // What a redirect does: same dock, a mode appears, but the user switched nothing.
+    await router.navigate('/dock/settings?viewMode=advanced');
+
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
-    expect(document.documentElement.getAttribute('data-view')).toBe('advanced');
-    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('advanced');
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
   });
 
   it('footer click on a dock URL without an override navigates instead of writing the pref', async () => {

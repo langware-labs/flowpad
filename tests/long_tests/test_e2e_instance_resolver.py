@@ -91,6 +91,7 @@ def test_resolver_accepts_only_the_agreed_live_launcher_target(resolver_state, r
         backend_port=6106,
         backend_pid=41006,
         hub_url="http://localhost:8093",
+        flow_home=resolver_state["expected_flow_home"],
     )
     assert resolver_state["seen_flow_home"] == resolver_state["expected_flow_home"]
     with pytest.raises(FrozenInstanceError):
@@ -166,6 +167,7 @@ def test_reconnect_pair_rejects_the_same_instance_twice():
         backend_port=6106,
         backend_pid=41006,
         hub_url="http://localhost:8093",
+        flow_home="/tmp/qacycle-6/.flow",
     )
 
     with pytest.raises(pytest.fail.Exception, match="must be distinct"):

@@ -1,74 +1,60 @@
-"""CredentialSpec — the authored definition of a named credential.
+"""CredentialSpec — a named set of environment variables, and the only way to
+declare secrets.
 
-A credential is a NAMED SET OF ENVIRONMENT VARIABLES some provider needs: Gmail
-is ``GMAIL_ADDRESS`` + ``GMAIL_APP_PASSWORD``; Twilio is an account SID and an
-auth token. This is the definition of that set. It is not the values, and it is
-not the per-project decision to require them.
+Where the folder lives is the declaration's scope, using the asset scopes
+Flowpad already has:
 
-The split mirrors ``DataSourceSpec`` : ``DataSource`` exactly, one layer over:
+* ``<project>/agentic-assets/credential/<name>/`` — declared for that project.
+* ``~/agentic-assets/credential/<name>/`` — declared for the user (every project
+  on this machine).
+* the shipped assistant project — ``system`` scope, a read-only TEMPLATE that
+  declares nothing until it is added to one of the two scopes above.
 
-    CredentialSpec  :  SecretOrigin
-          ==
-    DataSourceSpec  :  DataSource
-
-``SecretOrigin`` (``flow_sdk/builtin/secret_origin.py``) is the per-project
-DECLARATION — identity ``(project_id, env_var)``, one row per VARIABLE, carrying
-a locator that says where THIS machine keeps the value. ``CredentialSpec`` is
-global, shipped, and says what the credential IS. One spec fans out to N
-``SecretOrigin`` rows.
-
-The invariant that keeps the two apart is load-bearing:
-
-    CredentialSpec never names a store for a specific project or a project id.
-    SecretOrigin never carries provider presentation.
-
-Break it and the same Gmail credential can no longer sit in ``.env.local`` here
-and in the hub vault on a teammate's machine — which is the entire reason the
-locator exists.
-
-**A manifest is value-free, structurally.** Every parse runs through
-``assert_value_free``, so a bundled or agent-authored ``credential.json`` that
-carries a ``value:`` fails to index rather than shipping a secret in git.
+Where the values live is ``value_store``: the scope's ``.env.local`` or the
+encrypted vault (``credential_contract``), per environment — ``environments``
+overrides the store or the required set for a named one. The manifest is
+value-free, structurally: every parse runs through ``assert_value_free``.
 """
 from __future__ import annotations
 
-from typing import ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+from pydantic import field_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
+from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
+from flow_sdk.schema.data_spec.credential_contract import (
+    DEFAULT_ENVIRONMENT,
+    SCOPE_PROJECT,
+    SCOPE_SYSTEM,
+    SCOPE_USER,
+    VALUE_STORE_ENV,
+    normalize_environment,
+)
 from flow_sdk.schema.data_spec.credential_manifest_spec import (
     CURRENT_SCHEMA,
+    CredentialEnvironmentSpec,
     CredentialVarSpec,
 )
-from flow_sdk.schema.data_spec.secret_origin_contract import (
-    SOD_STORE_ENV_LOCAL,
-)
 from flow_sdk.schema.types import EntityType
+from flow_sdk.secrets.requirements import SecretRequirements
 
-#: The manifest format this build reads. A manifest that says otherwise is a
-#: load error, not a best-effort parse — same rule as ``ManifestSpec``.
-
-
-#: Where a provided value is cached by default. The same two local stores
-#: ``SecretOrigin.effective_sod_store`` chooses between; named from there rather
-#: than re-spelled, so a third store cannot appear in one place only.
+if TYPE_CHECKING:
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.secrets import SecretStore
 
 
-#: The providers an ``lm_provider`` may name. ``FLOWPAD`` is excluded on purpose:
-#: its "key" is the hub login the box already holds and the hub owns the binding,
-#: so there is nothing for a person to type and nothing to store
-#: (``cli/auth/lm_api_keys.set_lm_api`` raises for it).
+class CredentialNotFound(NameNotFound):
+    """Neither the project nor the user scope declares a credential of that name."""
+
+    message = "no credential named {name!r} in this project or the user scope"
 
 
+class CredentialAmbiguous(NameAmbiguous):
+    """More than one credential of that name in the scope that answered; ``candidates`` are typeids."""
 
-class CredentialManifestError(ValueError):
-    """A credential folder that cannot be loaded. The message is shown to an author."""
-
-
-
-
-
-
+    plural = "credentials"
 
 
 class CredentialSpec(Entity):
@@ -76,34 +62,93 @@ class CredentialSpec(Entity):
 
     type: str = APIField(default=EntityType.CREDENTIAL_SPEC.value)
 
-    # A folder-backed asset, so it OWNS its path — declaring `asset_ref` is what
-    # enrolls the class in `Entity.asset_owner_classes()`, and therefore what
-    # lets `get_by_asset_ref` resolve a folder to this row. PRIVATE: the path is
-    # this machine's and means nothing to a receiver.
+    # A folder-backed asset, so it OWNS its path. PRIVATE: the path is this
+    # machine's and means nothing to a receiver.
     asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
 
-    # -- the header, held as entity fields --
     title: str = APIField(default="")
     description: str = APIField(default="")
     icon_name: str = APIField(default="")
     manifest_schema: int = APIField(default=CURRENT_SCHEMA)
     help_url: str = APIField(default="")
     setup_wiki: str = APIField(default="")
-    default_store: str = APIField(default=SOD_STORE_ENV_LOCAL)
+    value_store: str = APIField(default=VALUE_STORE_ENV)
     lm_provider: str = APIField(default="")
     vars: dict[str, CredentialVarSpec] = APIField(default_factory=dict)
+    environments: dict[str, CredentialEnvironmentSpec] = APIField(default_factory=dict)
 
     _api_visible: ClassVar[bool] = True
+
+    @field_validator("vars", "environments", mode="before")
+    @classmethod
+    def _project_nested(cls, value: Any, info: Any) -> Any:
+        """Read each nested entry field by field, dropping keys the model does not name.
+
+        A row indexed by an earlier build can carry fields that no longer exist
+        (``sod_name``). The manifest is still strict — ``CredentialManifestSpec``
+        rejects them on disk — but a stored row must stay readable, or one stale
+        row fails every credential query.
+        """
+        if not isinstance(value, dict):
+            return value
+        model = CredentialVarSpec if info.field_name == "vars" else CredentialEnvironmentSpec
+        known = set(model.model_fields)
+        return {
+            name: {k: v for k, v in spec.items() if k in known} if isinstance(spec, dict) else spec
+            for name, spec in value.items()
+        }
+
+    def store_for(self, environment: str = DEFAULT_ENVIRONMENT) -> str:
+        """Where this credential's values live in ``environment``."""
+        override = (self.environments or {}).get(environment)
+        return (override and override.value_store) or self.value_store
+
+    @property
+    def is_template(self) -> bool:
+        """A shipped catalogue entry: copied into a scope, never injected itself."""
+        return self.scope == SCOPE_SYSTEM
 
     def var_names(self) -> list[str]:
         """Every variable this credential is made of, in manifest order."""
         return list(self.vars or {})
 
-    def required_var_names(self) -> list[str]:
-        """The variables that must be satisfied for the credential to be usable.
-
-        The tri-state a connection row renders — connected / partial / not
-        connected — is computed against THIS list, not ``var_names``: an
-        optional member missing must not hold a working credential at "partial".
-        """
+    def required_var_names(self, environment: str = DEFAULT_ENVIRONMENT) -> list[str]:
+        """The variables that must have a value for the credential to be connected
+        in ``environment`` — the environment's own list when it names one."""
+        override = (self.environments or {}).get(environment)
+        if override is not None and override.required is not None:
+            return [name for name in self.vars or {} if name in set(override.required)]
         return [name for name, spec in (self.vars or {}).items() if spec.required]
+
+    @property
+    def credentials(self) -> SecretRequirements:
+        """The names this credential needs a store to hold — the same accessor a data source has."""
+        return SecretRequirements(self.var_names())
+
+    async def secret_store(self, environment: str = DEFAULT_ENVIRONMENT) -> "SecretStore":
+        """The store ``credential.json`` names for ``environment``, configured for this row's scope."""
+        from flow_sdk.builtin.credential_store import scope_of, secret_store_ref  # noqa: PLC0415
+        from flow_sdk.secrets import SecretStore  # noqa: PLC0415
+
+        scope, _ = await scope_of(self)
+        if scope is None:
+            raise LookupError(f"credential {self.name!r} is a template or its project is gone; it has no store")
+        return SecretStore.from_ref(secret_store_ref(self, scope, normalize_environment(environment)))
+
+    @classmethod
+    async def get(cls, name: str, project: Optional["Project"] = None) -> "CredentialSpec":
+        """The credential named ``name``: ``project``'s (default: the current project's), else the
+        user scope's. Raises :class:`CredentialNotFound` or :class:`CredentialAmbiguous`."""
+        from flow_sdk import context  # noqa: PLC0415
+        from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+
+        if project is None:
+            project = await context.current_project()
+        named = [(spec, scope) for spec, scope in await credentials_in_scope(project) if spec.name == name]
+        for wanted in (SCOPE_PROJECT, SCOPE_USER):
+            matches = [spec for spec, scope in named if scope.scope == wanted]
+            if len(matches) > 1:
+                raise CredentialAmbiguous(name, [str(spec.typeid) for spec in matches])
+            if matches:
+                return matches[0]
+        raise CredentialNotFound(name)

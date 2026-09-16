@@ -21,6 +21,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Open a URL in the system browser
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // OAuth consent in a window the app owns, so a confirmed grant can close it.
+  openAuthWindow: (url) => ipcRenderer.invoke('open-auth-window', url),
+  closeAuthWindow: (id) => ipcRenderer.invoke('close-auth-window', id),
+  onAuthWindowClosed: (callback) => {
+    const listener = (_event, id) => callback(id);
+    ipcRenderer.on('auth-window-closed', listener);
+    return () => ipcRenderer.removeListener('auth-window-closed', listener);
+  },
+
   // Capture a viewport-relative rectangle from the active BrowserWindow.
   captureRegion: (region) => ipcRenderer.invoke('capture-region', region),
 

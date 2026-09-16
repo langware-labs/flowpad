@@ -27,6 +27,7 @@ import contextlib
 import json as _json
 import logging
 import uuid
+from typing import Any
 
 from flow_sdk.actions.action_registry import action as _action_registry
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist
@@ -880,7 +881,13 @@ async def _load_target_entity(target_type: str | None, target_id: str | None):
     return await entity_cls.get_one({"id": str(target_id)})
 
 
-async def ensure_tab(
+async def ensure_tab(pointer: str, **options: Any) -> Tab:
+    """Deterministic get-or-create for a tab — ``ensure_tab_created`` without the flag."""
+    tab, _created = await ensure_tab_created(pointer, **options)
+    return tab
+
+
+async def ensure_tab_created(
     pointer: str,
     *,
     target_type: str | None = None,
@@ -891,8 +898,10 @@ async def ensure_tab(
     worktree: bool | None = None,
     after_tab_id: str | None = None,
     parent_tab_id: str | None = None,
-) -> Tab:
+) -> tuple[Tab, bool]:
     """Deterministic get-or-create for a tab, keyed by the canonical pointer.
+    Returns the tab and whether this call minted its row (a hidden row re-shown
+    is a reopen, not a create).
 
     On reopen (same pointer) the existing row is reused and re-shown
     (``visible=True``); the denormalized target/project/name hints are refreshed
@@ -1041,7 +1050,7 @@ async def ensure_tab(
         if dirty:
             await existing.save()
         await existing.reconcile_target_name()
-        return existing
+        return existing, False
     # Fresh create: place the new tab in the GLOBAL order — immediately after the
     # opener. ``after_tab_id`` is the explicit opener when given; otherwise the
     # opener defaults to the most-recently-active visible tab (browser-style: a
@@ -1082,7 +1091,7 @@ async def ensure_tab(
     await _persist_global_order(new_order, {t.id: t for t in visible})
     await tab.save()
     await tab.reconcile_target_name()
-    return tab
+    return tab, True
 
 
 async def _tabs_for_target(target_type: str, target_id: str) -> list["Tab"]:
@@ -1447,11 +1456,11 @@ async def broadcast_tabs_changed() -> None:
         logger.debug(f"broadcast_tabs_changed failed: {e}")
 
 
-async def _list_response(project: str | None):
+async def _list_response(project: str | None, **extra: object):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs = await _build_tab_list(project)
-    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
+    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs], **extra})
 
 
 async def _http_new_tab(
@@ -1468,8 +1477,9 @@ async def _http_new_tab(
 ):
     """POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
     right after ``after_tab_id`` (the opener); reopen keeps its slot. Returns the
-    updated project-filtered list."""
-    await ensure_tab(
+    updated project-filtered list, and ``created`` — whether this call minted the
+    row, which the client's view-mode memory policy keys ``TabCreate`` on."""
+    _tab, created = await ensure_tab_created(
         pointer,
         target_type=target_type,
         target_id=target_id,
@@ -1481,7 +1491,7 @@ async def _http_new_tab(
         parent_tab_id=parent_tab_id,
     )
     await broadcast_tabs_changed()
-    return await _list_response(project_id)
+    return await _list_response(project_id, created=created)
 
 
 _action_registry.register(

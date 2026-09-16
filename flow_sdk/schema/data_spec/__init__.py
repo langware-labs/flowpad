@@ -6,6 +6,6 @@ type's document holds is its ``TypeInfo.asset_spec``.
 """
 from flow_sdk.schema.data_spec.frontmatter import FrontMatter, SectionedHeader
 from flow_sdk.schema.data_spec.markers import Body, FreeSection, SubAsset
-from flow_sdk.schema.data_spec.spec import DataSpec, SpecType, to_authoring_form
+from flow_sdk.schema.data_spec.spec import DataSpec, SpecType, Tagged, to_authoring_form
 
-__all__ = ["Body", "DataSpec", "FreeSection", "FrontMatter", "SectionedHeader", "SpecType", "SubAsset", "to_authoring_form"]
+__all__ = ["Body", "DataSpec", "FreeSection", "FrontMatter", "SectionedHeader", "SpecType", "SubAsset", "Tagged", "to_authoring_form"]

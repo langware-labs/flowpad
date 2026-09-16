@@ -79,9 +79,9 @@ WHERE through `TypeInfo.identity_carrier` (`flow_sdk/assets/identity_carrier.py`
 | carrier | types | stores |
 |---|---|---|
 | `Frontmatter` | every type whose main document is markdown — markdown, claude_md, claude_memory, claude_rules, subagent, command, plan, prompt, agent, spec, and skill/task/whiteboard (`SKILL.md`, `task.md`, `WHITE_BOARD.md`) | `id:` first in the YAML frontmatter of that document |
-| `Sidecar` | folder types whose main is JSON — dataset, deck, deck_template, graph_workflow, journey, mcp | `<folder>/.flow/capsules/identity.json` |
+| `Sidecar` | folder types whose main is JSON — credential_spec, dataset, deck, deck_template, graph_workflow, journey, mcp | `<folder>/.flow/capsules/identity.json` |
 | `JsonRoot` | reports (`_report.py`: usage_report, asset_cleanup_report, …) | the `"id"` key of the report's own JSON root |
-| `Derived` | claude/codex/copilot sessions, project, mcp_server, plugin, claude_hook, dynamic_workflow, workflow_run, markdown_index, spreadsheet, micro_app, todo_file, helpdesk, secret_origin, data_source_spec | nothing — the id is a pure function of the source (`writable = False`) |
+| `Derived` | claude/codex/copilot sessions, project, mcp_server, plugin, claude_hook, dynamic_workflow, workflow_run, markdown_index, spreadsheet, micro_app, todo_file, helpdesk, data_source_spec | nothing — the id is a pure function of the source (`writable = False`) |
 
 A carrier does four things — `locate(layout)` (the path that holds the id),
 `accepts(where)`, `read(where)` → `Found` / `Foreign` / `Absent`, and

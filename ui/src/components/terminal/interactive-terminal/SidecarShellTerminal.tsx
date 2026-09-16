@@ -1,4 +1,5 @@
-import { registerTerminalLinks, useTerminalLinkHandler } from './terminal-links';
+import { registerTerminalLinks } from './terminal-links';
+import { useTerminalLinks } from './TerminalLinkMenu';
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
@@ -27,7 +28,7 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const shellRef = useRef<Shell | null>(null);
-  const activateLink = useTerminalLinkHandler(shellRef);
+  const terminalLinks = useTerminalLinks(shellRef);
   const [terminalReady, setTerminalReady] = useState(false);
   const [shell, setShell] = useState<Shell | null>(null);
 
@@ -75,13 +76,12 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
       allowProposedApi: true,
     });
 
-    registerTerminalLinks(term, activateLink);
-
     const fit = new FitAddon();
     term.loadAddon(fit);
 
     try {
       term.open(container);
+      registerTerminalLinks(term, terminalLinks.handlers);
       // A plain shell emits logical order on every platform — no CLI here that
       // pre-reverses, so this terminal always takes the browser-bidi contract.
       applyRtlGridContract(container, 'unknown');
@@ -205,11 +205,14 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
   }, [active, terminalReady]);
 
   return (
-    <div
-      ref={containerRef}
-      className={`min-h-0 flex-1 ${className}`}
-      onClick={() => terminalRef.current?.focus()}
-      tabIndex={0}
-    />
+    <>
+      <div
+        ref={containerRef}
+        className={`min-h-0 flex-1 ${className}`}
+        onClick={() => terminalRef.current?.focus()}
+        tabIndex={0}
+      />
+      {terminalLinks.menu}
+    </>
   );
 };

@@ -9,8 +9,11 @@ import re
 from pathlib import Path
 
 import flow_sdk
-from flow_sdk.ingest.drivers import agent as agent_driver
+from flow_sdk.ingest.source_registry import asset_module
 from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
+
+agent_source = asset_module("agent")
+agent_driver = asset_module("agent", "transport")
 
 ROOT = Path(flow_sdk.__file__).parent
 MANIFEST = ROOT / "system_projects/flowpad_assistant/agentic-assets/data_source/agent/data_source.json"
@@ -18,7 +21,8 @@ MANIFEST = ROOT / "system_projects/flowpad_assistant/agentic-assets/data_source/
 
 def test_every_key_the_driver_reads_is_declared():
     declared = set(json.loads(MANIFEST.read_text())["config"])
-    read = set(re.findall(r"config\.get\(['\"](\w+)['\"]", Path(agent_driver.__file__).read_text()))
+    text = "\n".join(Path(module.__file__).read_text() for module in (agent_driver, agent_source))
+    read = set(re.findall(r"config\.get\(['\"](\w+)['\"]", text))
     assert read, "the driver reads config through config.get(...)"
     assert read <= declared, f"config keys the driver reads but the manifest does not declare: {sorted(read - declared)}"
 

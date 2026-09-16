@@ -13,7 +13,6 @@ import {
   launchWizard,
   MessageAttachment,
   Prompt,
-  SourceItem,
   Task,
   TypeId,
   User,
@@ -23,6 +22,7 @@ import {
   type AnyEntity,
 } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
+import { profileLabel } from '@sdk/models/MessageEnvelope';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -143,7 +143,7 @@ interface FlowMessageBubbleProps {
    *  query (one request for all messages, replacing the per-bubble fetch).
    *  When omitted the bubble falls back to fetching by id. */
   fm?: FlowMessage | null;
-  /** Show the original email envelope, resolved from SourceItem provenance. */
+  /** Show the original email envelope the inbox projection stamped on the message. */
   showEmailHeaders?: boolean;
   timestamp: string;
   task?: ITask | null;
@@ -236,11 +236,6 @@ export function FlowMessageBubble({
   // fetch — the same pattern the creator lookup below uses.
   const { data: fetchedFm } = useEntity<FlowMessage>(fmProp ? null : new TypeId(FlowMessage.type, messageId));
   const fm = fmProp ?? fetchedFm;
-  const { data: sourceItem } = useEntity<SourceItem>(
-    showEmailHeaders && fm?.source_item_id && isValidIdentifier(fm.source_item_id)
-      ? new TypeId(SourceItem.type, fm.source_item_id)
-      : null,
-  );
   // Resolve the message author via `created_by`. Used as the sender-name
   // fallback for messages that carry no `sender_id`/`sender_name` — notably
   // the invitation-kind placeholder, whose author is the inviter.
@@ -680,23 +675,20 @@ export function FlowMessageBubble({
 
   return (
     <>
-      {showEmailHeaders && sourceItem && (
+      {showEmailHeaders && fm.envelope && (
         <dl
           className="ms-10 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 text-[11px] text-muted-foreground"
           data-testid="email-message-headers"
         >
           <dt><Trans>From</Trans></dt>
+          <dd className="truncate">{profileLabel(fm.envelope.sender) || fm.sender_name || '—'}</dd>
+          <dt><Trans>To</Trans></dt>
           <dd className="truncate">
-            {sourceItem.author_display || sourceItem.author_external_id || fm.sender_name || '—'}
-            {sourceItem.author_display && sourceItem.author_external_id &&
-              sourceItem.author_display !== sourceItem.author_external_id
-              ? ` <${sourceItem.author_external_id}>`
-              : ''}
+            {(fm.envelope.recipients ?? []).map(profileLabel).join(', ') || fm.receiver_address || '—'}
           </dd>
-          <dt><Trans>To</Trans></dt><dd className="truncate">{fm.receiver_address || '—'}</dd>
-          <dt><Trans>Subject</Trans></dt><dd className="truncate">{sourceItem.name || '—'}</dd>
+          <dt><Trans>Subject</Trans></dt><dd className="truncate">{fm.envelope.subject || '—'}</dd>
           <dt><Trans>Time</Trans></dt>
-          <dd>{new Date(sourceItem.occurred_at || timestamp).toLocaleString()}</dd>
+          <dd>{new Date(fm.envelope.sent_at || timestamp).toLocaleString()}</dd>
         </dl>
       )}
       <MessageBubble

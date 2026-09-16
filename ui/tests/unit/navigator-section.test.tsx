@@ -71,6 +71,16 @@ describe('NavigatorSection', () => {
     expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('renders the children when empty and no emptyState is given', async () => {
+    render(
+      <NavigatorSection id="demo" label="Demo" itemCount={0}>
+        <span>own empty state</span>
+      </NavigatorSection>,
+    );
+    await userEvent.click(screen.getByTestId('navigator-section-demo'));
+    expect(screen.getByText('own empty state')).toBeInTheDocument();
+  });
+
   it('renders no count badge', async () => {
     render(<Section itemCount={42} />);
     await waitFor(() => expect(screen.getByText('a row')).toBeInTheDocument());

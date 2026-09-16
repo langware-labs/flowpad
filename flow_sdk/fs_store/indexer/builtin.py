@@ -215,7 +215,7 @@ def register_default_functions(idx: FSIndexer) -> None:
     # ONE generic walker, registered on each root its ``Walk`` names and
     # emitting the type itself — a new declared type enrolls with no edit here.
     # (claude_rules, command, plan, todo_file, subagent, skill, markdown's docs
-    # walk, secret_origin, dynamic_workflow, spreadsheet, …)
+    # walk, dynamic_workflow, spreadsheet, …)
     for type_name in SchemaRegistry.get_all_types():
         info = SchemaRegistry.get(type_name)
         if info is None or not info.walk:

@@ -2375,14 +2375,13 @@ class FsRecordsActionsMixin:
 
         ids_raw = qp.get("ids")
         modified_after_raw = qp.get("modified_after")
-        parent_id = qp.get("parent_id")
         status = qp.get("status")
         limit_raw = qp.get("limit")
         offset_raw = qp.get("offset")
         sort_by = qp.get("sort_by")
         sort_desc_raw = qp.get("sort_desc")
 
-        if not any([ids_raw, modified_after_raw, parent_id, status, limit_raw, offset_raw, sort_by]):
+        if not any([ids_raw, modified_after_raw, status, limit_raw, offset_raw, sort_by]):
             return None
 
         sort_desc = True
@@ -2392,7 +2391,6 @@ class FsRecordsActionsMixin:
         return RecordQuery(
             ids=ids_raw.split(",") if ids_raw else None,
             modified_after=datetime.fromisoformat(modified_after_raw) if modified_after_raw else None,
-            parent_id=parent_id,
             status=status,
             limit=int(limit_raw) if limit_raw else None,
             offset=int(offset_raw) if offset_raw else 0,

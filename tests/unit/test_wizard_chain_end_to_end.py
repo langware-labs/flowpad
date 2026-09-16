@@ -23,7 +23,7 @@ from flow_sdk.builtin.wizard import Wizard
 from flow_sdk.config import system_projects_root
 from flow_sdk.server.builtin_triggers import WIZARD_TRIGGER_UNAME_PREFIX
 from flow_sdk.tags import emit_tag, target_of
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 from tests.fixtures.identity import index_path
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
