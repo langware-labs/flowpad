@@ -9,6 +9,7 @@ from pathlib import Path
 from flow_sdk.builtin.faas import scan_indexer
 from flow_sdk.builtin.faas.project_list import (
     list_projects_from_indexer as _list_projects_from_indexer,
+from flow_sdk.builtin.faas.project_list import invalidate_project_list_cache
 )
 from flow_sdk.flowpad_types.vendors import VENDOR_KEYS, vendor_for, vendor_or_none
 from flow_sdk.request_context.methods import get_current_request_info
@@ -406,6 +407,9 @@ class ScanActionsMixin:
         succeeded = sum(1 for r in results if r["ok"])
         return ApiSuccessResponse(data={"results": results, "succeeded": succeeded, "failed": len(results) - succeeded})
 
+        if succeeded:
+            # Either action changes what the picker's cached disk scan would find.
+            invalidate_project_list_cache()
     async def _scan_project(self) -> ApiResponse:
         """Scan all resources for a specific project.
 

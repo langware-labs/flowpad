@@ -44,6 +44,24 @@ export function latestPointer(
   return best;
 }
 
+/**
+ * The message ids a conversation row reads — its first pointer and its latest
+ * (see `latestPointer`) — across `conversations`, deduped and sorted so a batch
+ * built from them has a stable key.
+ */
+export function conversationRowMessageIds(
+  conversations: readonly { conversationMessageIds?: readonly ConversationMessagePointer[] | null }[],
+): string[] {
+  const ids = new Set<string>();
+  for (const conv of conversations) {
+    const pointers = conv.conversationMessageIds ?? [];
+    if (pointers[0]?.id) ids.add(pointers[0].id);
+    const latest = latestPointer(pointers)?.id;
+    if (latest) ids.add(latest);
+  }
+  return [...ids].sort();
+}
+
 export interface ConversationMessagePointer {
   /** Entity id (uuid). */
   id: string;

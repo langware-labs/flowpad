@@ -431,8 +431,13 @@ class GitRepo:
             path = path[: -len(".git")]
         return f"https://{host}/{path}" if path else None
 
-    async def get_status(self) -> GitStatus:
+    async def get_status(self, *, line_counts: bool = False) -> GitStatus:
         """Return a rich git-status object.
+
+        ``line_counts`` fills each file's ``insertions``/``deletions``. It is
+        opt-in because it costs four more git spawns plus a throwaway index
+        over the whole worktree, and only the Git panel shows the counts —
+        the footer pill and other status readers need just the file list.
 
         Schema::
 
@@ -457,7 +462,7 @@ class GitRepo:
 
         # One count per path, staged and unstaged and untracked together, so a
         # file's ``+/-`` is its whole change against HEAD.
-        numstat = await self._line_counts()
+        numstat = await self._line_counts() if line_counts else {}
 
         # File list comes from the same ``status_out`` above. ``--untracked-files=all``
         # lists each untracked file individually instead of collapsing a wholly-
@@ -981,7 +986,7 @@ class GitRepo:
         """Route a git-ops sub-path to the appropriate git operation.
 
         Sub-paths:
-            status              → get_status()           → GitStatus (camelCase)
+            status              → get_status()           → GitStatus (camelCase; ?lineCounts=true adds +/-)
             unpushed-files      → get_unpushed_files()   → {files} (repo-rel, ahead of @{u})
             diff?filepath=...   → get_diff(filepath)     → GitDiffData
             branch              → get_branch()           → {branch}
@@ -1008,7 +1013,8 @@ class GitRepo:
                 return ApiFailResponse(message="git-ops/init requires POST", status_code=405)
             return ApiSuccessResponse(data=(await self.init()).model_dump(by_alias=True))
         if sub == "status":
-            return ApiSuccessResponse(data=(await self.get_status()).model_dump(by_alias=True))
+            line_counts = params.get("lineCounts") in (True, "1", "true")
+            return ApiSuccessResponse(data=(await self.get_status(line_counts=line_counts)).model_dump(by_alias=True))
         if sub == "unpushed-files":
             return ApiSuccessResponse(data=(await self.get_unpushed_files()).model_dump(by_alias=True))
         if sub == "branch":

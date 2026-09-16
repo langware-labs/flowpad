@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const gitMocks = vi.hoisted(() => ({
+  getStatus: vi.fn(),
   status: {
     error: null as string | null,
     branch: 'main',
@@ -25,7 +26,8 @@ vi.mock('@sdk', async (importOriginal) => {
   return {
     ...actual,
     GitWorkdir: class {
-      async getStatus() {
+      async getStatus(options?: { lineCounts?: boolean }) {
+        gitMocks.getStatus(options);
         return gitMocks.status;
       }
     },
@@ -52,6 +54,8 @@ describe('GitPanel line totals', () => {
     expect(screen.getByTestId('git-panel-sloc-added')).toHaveTextContent('+7');
     expect(screen.getByTestId('git-panel-sloc-removed')).toHaveTextContent('-7');
     expect(screen.getByTestId('git-panel-sloc-net')).toHaveTextContent('0');
+    // Counts are opt-in on the backend; the panel is the surface that asks.
+    expect(gitMocks.getStatus).toHaveBeenCalledWith({ lineCounts: true });
   });
 
   it('is absent when the tree is clean — nothing to total', async () => {
