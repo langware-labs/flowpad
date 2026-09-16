@@ -266,15 +266,24 @@ async def reflect_to_hub(
 
     hub_id = entity.id
     verb = (method or "").lower()
+    # The BARE name: a class-body-defined action's own ``action_name`` carries a
+    # ``type.`` prefix (``register()``'s frame-introspection trick, so two types can
+    # each register their own action of the same bare name without colliding) — the
+    # hub has no such prefix in its own URL/action convention, so forwarding the
+    # prefixed form 400s at the hub's router (proven live: a reflected ``set_public``
+    # went out as ``.../agent/<id>/agent.set_public`` and the hub rejected it as an
+    # unknown path). ``bare_name`` is a no-op for a module-level action like
+    # ``members``/``fs``, whose ``action_name`` was already bare.
+    bare_action = a.bare_name
     # Entity files ride the same reflection as entity fields, but write-through
     # rather than replace — see ``_reflect_fs_to_hub``.
-    if a.action_name == "fs":
+    if bare_action == "fs":
         return await _reflect_fs_to_hub(et, hub_id, sub_path)
     # Roster-shaped handling applies to the bare ``members`` action only — a
     # sub-path (``members/link``) is a different hub endpoint with its own shape.
-    is_roster = a.action_name == "members" and not sub_path
+    is_roster = bare_action == "members" and not sub_path
     if verb == "get":
-        hub_resp = await hub_get(et, hub_id, action=a.action_name, sub_path=sub_path, params=_query_params(body))
+        hub_resp = await hub_get(et, hub_id, action=bare_action, sub_path=sub_path, params=_query_params(body))
         # hub_get returns None on transport/HTTP failure (does not raise);
         # treat that as "fall through to local" via HubError.
         if hub_resp is None:
@@ -284,7 +293,7 @@ async def reflect_to_hub(
         # MembershipMethod {member_through, value}); hub_delete sends it as
         # the JSON body and raises HubError on non-200 (e.g. 403 owner-only),
         # which propagates to the caller verbatim.
-        hub_resp = await hub_delete(et, hub_id, action=a.action_name, sub_path=sub_path, payload=body or {})
+        hub_resp = await hub_delete(et, hub_id, action=bare_action, sub_path=sub_path, payload=body or {})
     elif verb in ("put", "patch") and is_roster:
         # Role change — PUT ``/<type>/<id>/members`` with ``{user_id|user_email|
         # invitation_id, role}``. Without this branch the generic PUT below would
@@ -292,7 +301,7 @@ async def reflect_to_hub(
         # writing the member selector onto the conversation row instead of hitting
         # the hub's gated ``update_membership``. Raises HubError on non-200 (e.g.
         # 403 from the hub's ``can_assign`` ceiling), propagated to the caller.
-        hub_resp = await hub_put(et, hub_id, body or {}, action=a.action_name)
+        hub_resp = await hub_put(et, hub_id, body or {}, action=bare_action)
     elif verb in ("put", "patch"):
         # A bare entity field update (the generic ``update`` CRUD action, e.g. a
         # conversation rename) reflects as a hub PUT to ``/<type>/<id>``. Merge the
@@ -307,7 +316,7 @@ async def reflect_to_hub(
             await entity.save(notify=True)  # local row + data_op broadcast to watchers
         return entity.model_dump()
     else:
-        hub_resp = await hub_post(et, body or {}, hub_id, action=a.action_name, sub_path=sub_path)
+        hub_resp = await hub_post(et, body or {}, hub_id, action=bare_action, sub_path=sub_path)
 
     # A sub-path'd call (e.g. ``members/link`` → {id, url, …}) is not a roster:
     # return the hub's payload verbatim, with no re-fetch, rename, or mirror.
@@ -318,12 +327,12 @@ async def reflect_to_hub(
     # a message, not a roster — so re-fetch the canonical roster to mirror
     # locally (keeps participants in sync without a second client round-trip).
     if verb in ("delete", "put", "patch") and is_roster:
-        refreshed = await hub_get(et, hub_id, action=a.action_name)
+        refreshed = await hub_get(et, hub_id, action=bare_action)
         if refreshed is not None:
             hub_resp = refreshed
 
-    normalized = _normalize_hub_response(a.action_name, hub_resp)
-    await mirror_hub_response_into_local(entity, a.action_name, normalized)
+    normalized = _normalize_hub_response(bare_action, hub_resp)
+    await mirror_hub_response_into_local(entity, bare_action, normalized)
     return normalized
 
 

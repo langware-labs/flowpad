@@ -35,6 +35,25 @@ class Action:
             if isinstance(methods, list):
                 self.methods.extend(method.lower() for method in methods)
 
+    @property
+    def bare_name(self) -> str:
+        """The action name without its ``type.`` namespace prefix.
+
+        A class-body-defined action (``version_action``, ``set_public_action``) gets
+        a TYPE-PREFIXED registry key (``"agent.set_public"``) so two entity types can
+        each register their own action of the same bare name without colliding
+        (``register()`` — the ``type: str = APIField(...)`` frame-introspection trick).
+        A module-level action (``members_action.py``) has no such prefix and its
+        ``action_name`` is already bare.
+
+        The HUB's own URL convention is always the bare form (``/<type>/<id>/set_public``,
+        never ``/<type>/<id>/<type>.set_public``), so any caller building an outbound hub
+        path or comparing against a semantic action name (``"members"``, ``"fs"``) must use
+        this, not ``action_name`` — passing the prefixed key straight through is exactly
+        the bug that left a reflected ``set_public`` 400ing at the hub's own router.
+        """
+        return self.action_name.rsplit(".", 1)[-1]
+
     def is_allowed_method(self, method: str) -> bool:
         if len(self.methods) == 1 and "all" in self.methods:
             return True
