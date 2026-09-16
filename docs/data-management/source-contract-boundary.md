@@ -10,7 +10,8 @@ Two layers, one dependency direction. Read this before touching either.
 A **source** is an async session over one remote or local system:
 
 ```
-async with row.session() as s:
+async with await source_type(row.provider).open(row) as s:   # a DataSource row, bound by flow_sdk.ingest.sources
+                                                              # (in contract terms: SomeSource(SourceBinding(...)))
     item  = await s.get(origin)                       # SourceItemSpec | None — None only on confirmed absence
     page  = await s.fetch(query, cursor=…, page_size=…)   # DataPage(items, next_cursor)
     async for item in s.iterate(query): …

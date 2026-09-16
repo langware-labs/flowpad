@@ -225,9 +225,9 @@ getIdentifierType(id: string): IdentifierType
 
 ## Type Registry
 
-`SchemaRegistry` (`flow_sdk/fs_store/schema_registry.py`) is the single source of truth for all type metadata. It maps type name strings to `TypeInfo` dataclasses that hold both the record class and the entity class for each type.
+`SchemaRegistry` (`flow_sdk/fs_store/schema_registry.py`) is the single source of truth for all type metadata. It maps type name strings to `TypeInfo` instances that hold each type's metadata and its entity class (`entity_cls`).
 
-Two legacy facades exist for backward compatibility — they delegate all operations to `SchemaRegistry`:
+One legacy facade exists for backward compatibility — it delegates all operations to `SchemaRegistry`:
 
 ### DB Entity Registry (`flow_sdk/schema/entity_factory.py`)
 
@@ -251,27 +251,16 @@ class DBBaseRecord(BaseModel):
         SchemaRegistry.register(TypeInfo(..., entity_cls=cls))  # ← auto on class definition
 ```
 
-### FS Record Registry (`flow_sdk/fs_store/factory/type_registry.py`)
+### FS records (no registry of their own)
 
-`type_registry` is an `_FsRegistryShim` instance.
-
-```python
-# Shim API — all calls forward to SchemaRegistry
-type_registry.get(type_name)        # → SchemaRegistry.get_record_cls(type_name)
-type_registry.get_all_types()       # → SchemaRegistry.get_all_record_types()
-type_registry.register(...)         # no-op — registration via __init_subclass__
-```
-
-FS records auto-register directly into `SchemaRegistry` via `__init_subclass__` on `Record`:
+There is no FS record registry and no `Record` class hierarchy. `FSRecord` (`flow_sdk/fs_store/fs_record.py`) is the single concrete record class; per-type behavior lives in the type's `TypeInfo`, authored in `flow_sdk/schema/type_info/<type>_*info.py` and registered by `register_all()` (`flow_sdk/schema/type_info/__init__.py`). The registry runs `register_all()` lazily on its first read, so callers query `SchemaRegistry` directly:
 
 ```python
-class Record:
-    _record_type: ClassVar[str] = ""
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
-    def __init_subclass__(cls, **kwargs):
-        rt = cls.__dict__.get("_record_type")
-        if rt:
-            SchemaRegistry.register(TypeInfo(..., record_cls=cls))  # ← auto on class definition
+SchemaRegistry.get("skill")              # → TypeInfo (register_all() runs on first read)
+SchemaRegistry.get_all_types()           # → every registered type name
+SchemaRegistry.get_all_record_types()    # → registered type names with a bound entity_cls
 ```
 
 ### TypeScript Registry (`ts_sdk/src/resource_management/fs_records/record-type-registry.ts`)
@@ -289,33 +278,31 @@ export const fsRecordTypeRegistry = new RecordTypeRegistry();
 
 ## Entity Types
 
-### DB Entity Types (`BuiltinEntityType` enum)
+Every type name is a member of the one `EntityType` enum in `flow_sdk/schema/types.py`. `BuiltinEntityType` (`flow_sdk/db/drivers/db_base_record.py`) and `RecordType` (`flow_sdk/fs_store/record_types.py`) are aliases of it. The enum also names types that have no registered `TypeInfo`; the authoritative registered set is `SchemaRegistry.get_all_types()`.
 
-Defined in `flow_sdk/db/drivers/db_base_record.py`:
+### Row-backed entity types
 
-```
-user, visitor, app_host, team, group, organization, workspace,
-account, page, flow, agent, invitation, mention, connection,
-extension, func, sync_service, plugin, plugin_manifest,
-flowpad_service, storage_device, flow_file, micro_app, web_domain,
-compute_node, job, system_job, job_execution, project, artifact,
-api_key, code_ref, comment, agent_hook, trigger,
-agentic_process, process_result, workflow
-```
-
-### FS Record Types (`RecordType` enum)
-
-Defined in `flow_sdk/fs_store/record_types.py`. A selection:
+A selection of registered types:
 
 ```
-task, skill, log, rule, agentic_process, artifact, memo,
-claude_session, claude_hook, claude_error, claude_debug_log,
-claude_settings, claude_settings:oauth_account, claude_usage,
-compute_node, hook, hook_entry, todo_file, todo_item, plan,
-command, mcp_server, plugin, claude_md, history, ...
+user, visitor, team, group, organization, workspace, agent, invitation,
+connection, plugin, micro_app, compute_node, job, system_job, job_execution,
+project, artifact, api_key, code_ref, comment, trigger, agentic_process,
+process_result, shell, notification, data_source, source_item, llm_endpoint
 ```
 
-Note: colon-delimited subtypes (e.g. `claude_settings:oauth_account`) are used for nested record hierarchies.
+### File-backed types
+
+A selection of registered types:
+
+```
+task, skill, subagent, command, plan, markdown, spec, deck, whiteboard,
+spreadsheet, dataset, claude_session, claude_md, claude_memory, claude_rules,
+claude_hook, claude_error, claude_debug_log, todo_file, mcp_server,
+codex_session, copilot_session, ...
+```
+
+Note: `EntityType` also declares colon-delimited subtypes for nested record hierarchies (e.g. `claude_settings:oauth_account`, `transcript_entry:tool_use`); none of them currently has a registered `TypeInfo`.
 
 ## Relationship to VFS
 

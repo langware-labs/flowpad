@@ -201,18 +201,18 @@ inside one component with scattered `isAdvanced &&`. Instead:
 
 ```tsx
 // container builds slots ONCE (all hooks already ran above)
-const center = <EntityActionsToolbar … showExport={false} />;   // Share + Bookmark
-const download = <ExportEntityButton … />;
+const title = <span className="truncate">{process.name}</span>;
+const download = <ExportEntityButton typeId={process.typeId} defaultTitle={process.name ?? ''} />;
 // …debug, restart, right slots…
 
 <ViewSwap
   advanced={<AdvancedInteractiveTabHeader debug={debug} restart={restart}
-              center={center} download={download} right={right} />}
-  standard={<StandardInteractiveTabHeader center={center} />}
+              title={title} download={download} right={right} />}
+  standard={<StandardInteractiveTabHeader title={title} />}
 />
 ```
 
-The same `center` node is handed to both layouts — one set of buttons, two
+The same `title` node is handed to both layouts — one node, two
 arrangements. Nothing is rebuilt or refetched on toggle.
 
 ## Worked example — the interactive tab header
@@ -220,16 +220,16 @@ arrangements. Nothing is rebuilt or refetched on toggle.
 `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx` is the
 stateful container; `InteractiveTabHeader.tsx` holds the two layouts.
 
-Standard strips the toolbar to its essence: only **Share + Bookmark**, aligned
-right. Advanced is the full toolbar. The download/export action moved out of the
-center CTA group into the right toolbar (it's an Advanced-only action and never
-belonged between Share and the star).
+Standard strips the toolbar to its essence: only the centered **title**. Share +
+Bookmark are deliberately absent — the top navigation bar already carries them.
+Advanced is the full toolbar; the download/export action sits in the right
+toolbar (it's an Advanced-only action).
 
 | Slot | Standard | Advanced |
 | --- | --- | --- |
 | `debug` (CLI Options, Columns & Trace) | — | ✓ left |
 | `restart` | — | ✓ left |
-| `center` (Share + Bookmark) | ✓ right-aligned | ✓ centered |
+| `title` (entity title) | ✓ centered | ✓ centered |
 | `download` (export bundle) | — | ✓ right |
 | `right` (asset mgr, commit/merge, terminal, fork, worktree, session info, transcript) | — | ✓ right |
 

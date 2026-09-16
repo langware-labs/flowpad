@@ -83,24 +83,31 @@ Walker functions live in `flow_sdk/fs_store/indexer/functions/*.py` and are wire
 ```python
 # USER_HOME_FOLDER expanders
 idx.add_function(RecordType.USER_HOME_FOLDER, claude_projects_fn, RecordType.PROJECT)
-idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn,           RecordType.SKILL)
 idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
 ...
 # PROJECT (encoded ~/.claude/projects/<dir>) expanders
 idx.add_function(RecordType.PROJECT, claude_sessions_fn, RecordType.CLAUDE_SESSION)
 idx.add_function(RecordType.PROJECT, claude_memory_fn,   RecordType.CLAUDE_MEMORY)
 # REAL_PROJECT_CWD expanders
-idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
 idx.add_function(RecordType.REAL_PROJECT_CWD, claude_md_in_project_root_fn, RecordType.CLAUDE_MD)
+idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
 ...
 # Repo assets (agentic-assets/<type>/…): ONE multi-output walker per scope root
-repo_output_types = frozenset(RecordType(t) for t in SchemaRegistry.get_repo_types())
-for _root in (USER_HOME_FOLDER, REAL_PROJECT_CWD, SYSTEM_ROOT, CWD_ROOT):
+repo_output_types = frozenset(RecordType(type_name) for type_name in SchemaRegistry.get_repo_types())
+for _root in (RecordType.USER_HOME_FOLDER, RecordType.REAL_PROJECT_CWD, RecordType.SYSTEM_ROOT, RecordType.CWD_ROOT):
     idx.add_function(_root, repo_assets_fn, repo_output_types)
 # FOLDER (transient scaffold) expanders
-idx.add_function(RecordType.FOLDER, markdown_in_folder_fn,      RecordType.MARKDOWN)
-idx.add_function(RecordType.FOLDER, skill_in_folder_fn,         RecordType.SKILL)
-idx.add_function(RecordType.FOLDER, spreadsheet_in_folder_fn,   RecordType.SPREADSHEET)
+idx.add_function(RecordType.FOLDER, markdown_in_folder_fn, RecordType.MARKDOWN)
+# Declared walks: every type carrying TypeInfo.walk (skill, spreadsheet, subagent,
+# command, plan, claude_rules, todo_file, …) is scanned by the ONE generic walker,
+# registered on each root its Walk names.
+for type_name in SchemaRegistry.get_all_types():
+    info = SchemaRegistry.get(type_name)
+    if info is None or not info.walk:
+        continue
+    walker = layout_walker(info)
+    for root in walk_roots(info):
+        idx.add_function(root, walker, RecordType(info.type_name))
 # Stage-2 into-file walks
 idx.add_function(RecordType.CLAUDE_HOOK_SOURCE, hooks_in_settings_fn,  RecordType.CLAUDE_HOOK)
 idx.add_function(RecordType.MCP_SERVER_SOURCE,  mcp_servers_in_file_fn, RecordType.MCP_SERVER)
@@ -118,7 +125,7 @@ Notable structural facts:
 
 ### Type-gating the dispatch
 
-When `opts.types` is set, `scan()` computes the reverse-reachability closure (`_compute_needed_output_types`, BFS over reversed edges) of output types whose walk transitively produces a requested type. A walker function whose `output_type` isn't in that closure is skipped — e.g. a `?type=skill` scan skips `project_folder_walker_fn` (FOLDER) since no chain leads from FOLDER to SKILL. Functions registered with `output_type=None` disable the skip (legacy safe default).
+When `opts.types` is set, `scan()` computes the reverse-reachability closure (`_compute_needed_output_types`, BFS over reversed edges) of output types whose walk transitively produces a requested type. A walker function whose `output_type` isn't in that closure is skipped — e.g. a `?type=claude_session` scan skips `project_folder_walker_fn` (FOLDER) since no chain leads from FOLDER to CLAUDE_SESSION. (A `?type=skill` scan does NOT skip it: skill declares a `Walk(roots=("folder",), anywhere=True)`.) Functions registered with `output_type=None` disable the skip (legacy safe default).
 
 ### Chunked / threaded DFS
 
@@ -164,26 +171,20 @@ The dispatch callables:
 | `post_sync_fn` | hook | Post-sync side effects. |
 | `default_body_fn` | hook | Default-body writer for a type with no `asset_spec` (`dynamic_workflow`) on create. |
 
-Example (`flow_sdk/schema/type_info/skill_type_info.py`):
+Discovery itself is one slot: `walk`. `skill_type_info.py` declares two walks — the
+harness dot-dirs at the scope roots, and the folder-wide sweep that finds a `SKILL.md`
+folder anywhere in a project:
 
 ```python
-SKILL = TypeInfo(
-    type_name=EntityType.SKILL,
-    icon="FileBadge", display_name="Skills",
-    browseable_by=ViewMode.STANDARD, creatable=True,
-    indexed_by_default=True, api_visible=True,
-    cloud_file_transport="git",
-    index_fields=["description"],
-    asset_class="shared", family="skills",          # placement axis; main_subdir is DERIVED
-    shape=Folder(main="SKILL.md"), editor="skill", hub_main_file="SKILL.md",
-    fts_content=("name", "description", "body"),
-    identity_carrier=Frontmatter(),
-    asset_hash_fn=skill_asset_hash,
-    asset_spec=SkillSpec,                           # from_disk_fn defaults to spec_extractor
-    derive_fields_fn=derive_skill,
-    setup_skill=EntityType.SKILL.value, reception_verb="Run",
-)
+    walk=(                                          # discovery: the generic layout_walker
+        Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root", "system_root")),
+        Walk(roots=("folder",), anywhere=True),     # a SKILL.md folder anywhere in a project
+    ),
 ```
+
+The rest of that declaration — placement, shape, serialization and the reception seams —
+is annotated field by field in
+[the schema registry's `SKILL` example](schema-registry.md#registration).
 
 ### `index()` per-record loop
 
