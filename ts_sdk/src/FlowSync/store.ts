@@ -10,7 +10,7 @@ import config from '../config';
 import { IEntity } from '../IEntity';
 import type { AssetOccurrence } from '../APIEntity';
 import { ActionInfo, BootstrapInfo, DeferredInfo, ScanInfo } from '../models';
-import { TypeId } from '../models/TypeId';
+import { isValidUUIDv4, TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
 import { isElectronShell } from '../utils/runtime';
@@ -694,14 +694,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           }
           break;
         }
-        const entity = this.castAndDeepAssign(data);
-        this.register_new_entity(typeId, entity);
-        // X5a: splice the already-delivered entity into every matching live
-        // query locally (mirror of `removeEntityFromResults` for delete) instead
-        // of a full network LIST refetch per create data-op. Gated by the same
-        // `query.validate(data)` scope check inside the helper.
-        this.watchedQueries.insertEntityIntoResults(typeId.type, typeId, entity, data);
-        this._notifyAllAliases(typeId, entity, entity);
+        this.applyCreate(typeId, data);
         break;
       }
       case 'update': {
@@ -1206,6 +1199,80 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         ref.entityPendingPromises = [];
       }
     }
+  }
+
+  /**
+   * A query that filters `id` by `$IN` fetches exactly those entities. Claim
+   * their refs as FETCHING for its lifetime, so a concurrent `getByTypeId` (a
+   * row's `useEntity` mounting in the same commit as its batch) waits for the
+   * batch instead of issuing its own GET — without this every batch hydrator
+   * still paid one GET per row on a cold cache. Only refs nobody else owns are
+   * claimed; `settleIdBatch` releases every one of them.
+   */
+  private claimIdBatch(type: string, query: QueryRequest['query']): Map<EntityRef<T>, TypeId> {
+    const claimed = new Map<EntityRef<T>, TypeId>();
+    const match = (query?.toJSON() as { filter?: { match?: { op?: string; operands?: unknown[] } } } | undefined)
+      ?.filter?.match;
+    if (match?.op !== '$IN' || match.operands?.[0] !== 'id' || !Array.isArray(match.operands[1])) return claimed;
+    for (const id of match.operands[1]) {
+      if (typeof id !== 'string' || !isValidUUIDv4(id)) continue;
+      const typeId = new TypeId(type, id);
+      const ref = this.getRef(typeId);
+      if (ref.entity || ref.status === EntityStatus.FETCHING || ref.notFound || ref.saveInFlight) continue;
+      ref.status = EntityStatus.FETCHING;
+      claimed.set(ref, typeId);
+    }
+    return claimed;
+  }
+
+  /**
+   * Release refs claimed by `claimIdBatch` — on success, a partial result, an
+   * error, or a scope switch alike. A row the batch returned resolves its
+   * waiters with the entity; any other goes back to NA and resolves them with
+   * null, so `getByTypeId` falls through to its own GET (hint_path self-heal
+   * included). Waiters are settled here directly: `resolvePendingRequests` only
+   * settles READY/ERROR refs, and a claimed ref can be orphaned when
+   * `register_new_entity` re-points its key at an aliased ref.
+   */
+  private settleIdBatch(claimed: Map<EntityRef<T>, TypeId>): void {
+    for (const [ref, typeId] of claimed) {
+      const current = this.entities.get(typeId);
+      let entity = ref.entity ?? (current && current !== ref ? current.entity : null);
+      if (ref.status === EntityStatus.FETCHING) {
+        if (ref.entity) {
+          ref.status = EntityStatus.READY;
+        } else if (ref.pendingUpdate && this.adoptBufferedCreate(typeId, ref)) {
+          entity = ref.entity;
+        } else {
+          ref.status = EntityStatus.NA;
+        }
+      }
+      const waiters = ref.entityPendingPromises;
+      ref.entityPendingPromises = [];
+      waiters.forEach((p) => p.resolve(entity ?? null));
+    }
+  }
+
+  /** A `create` data-op that arrived while a batch owned a ref the batch did not
+   *  return: register it exactly as the unowned `create` path would. */
+  private adoptBufferedCreate(typeId: TypeId, ref: EntityRef<T>): boolean {
+    const pending = ref.pendingUpdate as (IEntity & { type?: string; id?: string }) | null;
+    if (!pending?.type || !pending.id) return false;
+    ref.pendingUpdate = null;
+    this.applyCreate(typeId, pending);
+    return true;
+  }
+
+  /** Register a created entity and splice it into every matching live query. */
+  private applyCreate(typeId: TypeId, data: IEntity): void {
+    const entity = this.castAndDeepAssign(data);
+    this.register_new_entity(typeId, entity);
+    // X5a: splice the already-delivered entity into every matching live
+    // query locally (mirror of `removeEntityFromResults` for delete) instead
+    // of a full network LIST refetch per create data-op. Gated by the same
+    // `query.validate(data)` scope check inside the helper.
+    this.watchedQueries.insertEntityIntoResults(typeId.type, typeId, entity, data);
+    this._notifyAllAliases(typeId, entity, entity);
   }
 
   private async fetchByTypeId<U extends T>(
@@ -1750,6 +1817,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
 
     // Create the promise that will be stored in WatchedQuery
+    const idBatch = this.claimIdBatch(type, query);
     const queryPromise = (async (): Promise<U[]> => {
       // Check all scope entities are saved
       for (const parent_type_id of scope) {
@@ -1819,11 +1887,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         const entity = this.castAndDeepAssign(entityJson);
         this.register_new_entity(entity.typeId, entity);
         const ref = this.getRef(entity.typeId);
+        // A data-op that landed while the batch owned this ref was buffered.
+        if (idBatch.has(ref)) this.applyPendingUpdate(entity.typeId, ref);
         queryResult.push(ref.entity as U);
       }
 
       return queryResult;
-    })();
+    })().finally(() => this.settleIdBatch(idBatch));
 
     // Register the pending promise BEFORE awaiting it
     this.watchedQueries.registerWatchResults(request, undefined as any, queryPromise);

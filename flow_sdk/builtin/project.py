@@ -2526,6 +2526,11 @@ class Project(Entity):
         # 5. Delete the project's own record (DB row + FTS + wiki + shadow + data).
         await _destroy({"type": self.type, "id": pid})
 
+        # 6. The picker's cached disk scan may still list the removed folder.
+        from flow_sdk.builtin.faas.project_list import invalidate_project_list_cache  # noqa: PLC0415
+
+        invalidate_project_list_cache()
+
         return {
             "project_id": pid,
             "deleted_children": len(targets),

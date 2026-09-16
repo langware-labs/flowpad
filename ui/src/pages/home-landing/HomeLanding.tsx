@@ -77,7 +77,10 @@ export function HomeLanding() {
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
   const [vibeModel, setVibeModel] = useVibeModelTier();
-  const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
+  // The project list is a disk scan; Home only needs it once results render.
+  const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope({
+    enabled: searchQuery.trim().length >= 2,
+  });
 
   useEffect(() => {
     setSelectedResultIndex(-1);

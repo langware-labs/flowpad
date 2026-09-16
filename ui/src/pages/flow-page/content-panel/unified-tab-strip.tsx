@@ -25,6 +25,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { globalHomeDock } from '@src/tabs/project-entry';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
+import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
 import {
   closeTabsWithLifecycle,
   closeTabWithLifecycle,
@@ -83,6 +84,18 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   // "<project>'s Assets" name. Only its icon/title are borrowed, below.
   const ancestorChildTabs = useMemo(() => (ancestor ? [ancestor.child] : []), [ancestor]);
   const ancestorChildItem = useTabStripItems(ancestorChildTabs)[0];
+  // Every process chip reads its process (the shown-target badge): load them in
+  // one batch instead of one GET per chip.
+  const processIds = useMemo(
+    () => [
+      ...new Set(
+        [...tabs, ...ancestorChildTabs]
+          .filter((tab) => tab.target_type === AgenticProcess.type && tab.target_id)
+          .map((tab) => tab.target_id as string),
+      ),
+    ],
+    [tabs, ancestorChildTabs],
+  );
 
   const tabByKey = useMemo(() => {
     const m = new Map<string, Tab>();
@@ -309,6 +322,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
 
   return (
     <>
+      <EntityBatchHydrator type={AgenticProcess.type} ids={processIds} />
       <TabStrip
         items={items}
         activeKey={activeKey}

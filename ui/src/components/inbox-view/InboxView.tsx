@@ -35,11 +35,13 @@ import {
   isInvitationGoneError,
   leaveConversation,
   unarchiveConversation,
+  conversationRowMessageIds,
   latestPointer,
   type AgentInboxScope,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
+import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
@@ -581,17 +583,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   // warm the DataManager cache with ONE ``$IN`` query; the rows' ``useEntity``
   // calls then hit ``getByTypeIdFromCache`` and issue no network at all. The
   // single ``watchQuery`` subscription replaces the would-be per-row watches.
-  const flowMessageIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const conv of sorted) {
-      const pointers = conv.conversationMessageIds ?? [];
-      const first = pointers[0]?.id;
-      const last = pointers[pointers.length - 1]?.id;
-      if (first) ids.add(first);
-      if (last) ids.add(last);
-    }
-    return [...ids];
-  }, [sorted]);
+  const flowMessageIds = useMemo(() => conversationRowMessageIds(sorted), [sorted]);
   const flowMessageBatchRequest = useMemo(
     () =>
       new QueryRequest({
@@ -617,18 +609,6 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
     }
     return [...ids];
   }, [batchedMessages]);
-  const invitationBatchRequest = useMemo(
-    () =>
-      new QueryRequest({
-        type: Invitation.type,
-        query: { match: { op: '$IN', operands: ['id', invitationIds] } },
-        name: 'inbox invitation hydration',
-      }),
-    [invitationIds],
-  );
-  useEntitiesQuery<Invitation>(invitationBatchRequest, {
-    enabled: invitationIds.length > 0,
-  });
 
   const handleRowVisibility = useCallback((convId: string, visible: boolean) => {
     setVisibleIds((prev) => {
@@ -1243,6 +1223,10 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
           <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
         )}
 
+        {/* Start the row batches in the layout phase so the rows' own reads wait
+            for them instead of each firing a GET (see EntityBatchHydrator). */}
+        <EntityBatchHydrator type={FlowMessage.type} ids={flowMessageIds} />
+        <EntityBatchHydrator type={Invitation.type} ids={invitationIds} />
         {
           !initialLoading &&
           sorted.map((conv) => (

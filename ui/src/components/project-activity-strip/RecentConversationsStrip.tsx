@@ -11,11 +11,13 @@ import {
   fetchConversations,
   isInvitationGoneError,
   isTypeId,
+  conversationRowMessageIds,
   latestPointer,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
+import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
 import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
@@ -130,8 +132,15 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   // conversations) don't skew the count.
   const liveVisibleCount = sorted.reduce((acc, c) => acc + (c.id && hiddenIds.has(c.id) ? 0 : 1), 0);
   const visibleCountActual = liveVisibleCount;
-  const visible = sorted.slice(0, visibleCount);
+  const visible = useMemo(() => sorted.slice(0, visibleCount), [sorted, visibleCount]);
   const hasMore = visibleCountActual > visibleCount;
+  // One batch per type for what the visible rows read (first + latest message,
+  // linked task) instead of one GET per row.
+  const rowMessageIds = useMemo(() => conversationRowMessageIds(visible), [visible]);
+  const rowTaskIds = useMemo(
+    () => visible.map((conv) => conv.firstContextOfType?.('task')?.id).filter((id): id is string => !!id),
+    [visible],
+  );
 
   // "New conversation" — gated on a cloud session (same as the home landing's
   // former "Start conversation" CTA, which this footer button replaces). After
@@ -338,6 +347,8 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       )}
 
       <div className="pb-1">
+        <EntityBatchHydrator type={FlowMessage.type} ids={rowMessageIds} />
+        <EntityBatchHydrator type={Task.type} ids={rowTaskIds} />
         {visibleCountActual === 0 ? (
           <div className="px-3 pb-3 text-xs text-muted-foreground">
             <Trans>No conversations</Trans>

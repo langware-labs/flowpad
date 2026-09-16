@@ -9,10 +9,11 @@ served only while the file is byte-identical to when it was parsed, so cached
 values can never go stale (residual risk: a rewrite that preserves both mtime_ns
 and size, which no real transcript writer does).
 
-Scope is deliberately narrow: only the ``worker_history`` collectors read or
-write it. It does NOT front ``ensure_claude_session_stats`` /
-``_parse_jsonl_stats`` — analytics callers (usage_report, cost_overview) need
-the full token/cost stats and keep their own parse path.
+Scope is deliberately narrow: the ``worker_history`` collectors read and write
+it, and ``cost_overview``'s loader reuses the class against its own
+``cost_stats_cache.sqlite`` (a separate file, since both key rows by path alone).
+It does NOT front ``ensure_claude_session_stats`` / ``_parse_jsonl_stats`` for
+other analytics callers (usage_report), which keep their own parse path.
 
 The cache lives in its own sqlite file (``worker_history_cache.sqlite`` in the
 instance dir), never the main flowpad.db, so cold-fill write bursts can't

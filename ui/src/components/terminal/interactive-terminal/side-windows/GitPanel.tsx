@@ -240,7 +240,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   const fetchStatus = useCallback(async () => {
     if (!computeNodeId || !workdir) return;
     try {
-      const result = await git.getStatus();
+      const result = await git.getStatus({ lineCounts: true });
       if (mountedRef.current) {
         setData(result ?? null);
         setLoading(false);
