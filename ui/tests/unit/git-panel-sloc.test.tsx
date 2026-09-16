@@ -66,7 +66,8 @@ describe('GitPanel line totals', () => {
 describe('GitPanel header remote', () => {
   it('copies the branch, and shows the remote with copy and open-in-browser', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
+    // jsdom's navigator.clipboard is a getter, so it must be redefined, not assigned.
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     render(<GitPanel computeNodeId="@local" workdir="/repo" />);
 
     const open = await screen.findByTestId('git-panel-open-remote');
