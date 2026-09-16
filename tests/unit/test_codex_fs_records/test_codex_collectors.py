@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.types.codex_sessions import extract_codex_session_from_path
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.codex_projects import (
     _read_codex_projects_from_config,
@@ -19,7 +20,6 @@ from flow_sdk.fs_store.indexer.functions.codex_projects import (
 from flow_sdk.fs_store.indexer.functions.codex_sessions import (
     discover_codex_session_paths_iter,
     ensure_codex_session_stats,
-    extract_codex_session_from_path,
     get_codex_session,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions

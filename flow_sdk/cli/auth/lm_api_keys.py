@@ -22,8 +22,7 @@ from typing import Callable
 
 from flow_sdk.cli.auth.secrets import delete_secret, get_secrets, read_secret, write_secret
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
-
-_PREFIX = "lm_api."
+from flow_sdk.schema.data_spec.credential_contract import LM_SECRET_PREFIX as _PREFIX
 
 
 def _sod_name(provider: LMApiProvider | str) -> str:

@@ -17,20 +17,19 @@ from . import env, liveness, paths, procs, registry
 from .errors import NoSuchRole, ProtectedInstance, UnknownInstance
 from .liveness import ProcTable
 from .model import (
-    int_or_none,
     InstanceKind,
-    PortConflict,
     InstanceState,
     InstanceStatus,
     LauncherRecord,
     Orphan,
+    PortConflict,
     Role,
     RoleStatus,
     StatusReport,
     Tier,
+    int_or_none,
 )
 from .ports import PortLedger
-
 
 #: States withheld from the default view: leftovers, not running services.
 _QUIESCENT = (InstanceState.STALE, InstanceState.UNKNOWN)
@@ -379,6 +378,10 @@ def _role_status(
     alive_unowned = (
         proc is None and ref.pid is not None and table.owner_of(ref.pid) is not None
     )
+    # Listening means this instance serves the role's port, whichever of its processes
+    # binds it: the launcher records `uv run`, whose Python child is the listener, so
+    # asking the recorded process alone read every such launch as "not listening".
+    listening = bool(proc and ref.port and any(p.instance == name for p in table.listeners(ref.port)))
     return RoleStatus(
         role=role,
         applicable=True,
@@ -387,7 +390,7 @@ def _role_status(
         alive=proc is not None or alive_unowned,
         owned=proc is not None,
         tier=proc.tier if proc is not None else Tier.NONE,
-        listening=bool(proc and ref.port and ref.port in proc.listen_ports),
+        listening=listening,
     )
 
 

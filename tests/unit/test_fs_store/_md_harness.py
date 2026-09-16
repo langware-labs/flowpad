@@ -12,7 +12,7 @@ from pathlib import Path
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 

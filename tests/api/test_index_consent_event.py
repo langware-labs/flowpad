@@ -74,8 +74,6 @@ async def test_index_consent_event_reaches_listen_route(bootstrapped_client):
         json.dumps(
             {
                 "port": sink.server_address[1],
-                "webhook_path": LISTEN_URL,
-                "health_path": "/api/v1/health/status",
                 "server_pid": os.getpid(),
             }
         )

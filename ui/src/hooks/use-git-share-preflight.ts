@@ -69,6 +69,33 @@ function toOrigin(raw: Record<string, unknown> | null | undefined): GitOrigin | 
 
 type PreflightState = Omit<GitSharePreflight, 'refetch'>;
 
+/**
+ * Live preflight subscribers, keyed by the ref they are asking about.
+ *
+ * Git state is FILESYSTEM state, so no entity update announces it — a wizard
+ * that gives a project a remote leaves every mounted consumer of this hook
+ * holding a stale answer, and there are seven of them (the project chip, the
+ * cloud-link button, both share surfaces, the deploy checklist, the share gate,
+ * the asset git link). `refetch` only ever helped the ONE component that also
+ * owned the remediation. This is the channel for the rest: whoever CHANGED the
+ * git state says so, and everyone looking at it asks again.
+ */
+const subscribers = new Map<string, Set<() => void>>();
+
+/**
+ * Tell every mounted preflight for `ref` to ask the backend again — call it
+ * after something changed git state (a repo was created, a remote added, a
+ * merge pushed). Omit `ref` to refresh all of them, which is the honest default
+ * for a wizard that may have touched a folder shared by several refs.
+ *
+ * Event-driven by contract: call it when a remediation SETTLES, never on a timer.
+ */
+export function invalidateGitPreflight(ref?: TypeId | string): void {
+  const key = ref ? ref.toString() : null;
+  const targets = key === null ? [...subscribers.values()] : [subscribers.get(key)];
+  for (const set of targets) set?.forEach((fn) => fn());
+}
+
 const IDLE: PreflightState = {
   loading: false,
   available: false,
@@ -101,6 +128,18 @@ export function useGitSharePreflight(
   const refetch = useCallback(() => setNonce((n) => n + 1), []);
 
   const refKey = ref ? ref.toString() : '';
+
+  // Subscribe to the shared invalidation channel for this ref.
+  useEffect(() => {
+    if (!enabled || !refKey) return;
+    const set = subscribers.get(refKey) ?? new Set<() => void>();
+    subscribers.set(refKey, set);
+    set.add(refetch);
+    return () => {
+      set.delete(refetch);
+      if (set.size === 0) subscribers.delete(refKey);
+    };
+  }, [refKey, enabled, refetch]);
   useEffect(() => {
     mountedRef.current = true;
     if (!enabled || !ref) {

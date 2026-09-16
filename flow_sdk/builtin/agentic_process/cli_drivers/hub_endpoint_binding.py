@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 
-from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _SPECS
+from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _SPECS, managed_env_vars
 from flow_sdk.instance_settings.llm_endpoint import (
     HubLLMEndpoint,
     clear_hub_llm_endpoint,
@@ -93,8 +93,12 @@ async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, di
     for worker in HUB_ENDPOINT_HARNESSES:
         kind = worker_capability_kind(worker)
         view = await picker_view_for(worker, constraint)
-        sources[kind] = [c.source.model_dump(mode="json") for c in view.offers]
-        resolved[kind] = view.chosen.source.model_dump(mode="json") if view.chosen else None
+        # ``to_wire`` rather than a bare ``model_dump``: it carries ``unverified`` alongside the
+        # source, which is the one thing a client cannot derive from the source on its own (it
+        # needs the endpoint's kind). Both the CLI and the setup screen read that flag instead
+        # of each re-implementing the rule -- see ``Candidate.unverified``.
+        sources[kind] = [c.to_wire() for c in view.offers]
+        resolved[kind] = view.chosen.to_wire() if view.chosen else None
         blocked[kind] = view.blocked
         notes[kind] = view.note
         for candidate in view.offers:
@@ -156,6 +160,10 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False, scope: LLMScope
         "provider": bound.provider if bound else None,
         "name": bound.name if bound else None,
         "hub_logged_in": hub_logged_in,
+        # Every variable a shell binding can set. Static and secret-free; it rides the status so
+        # a client that already has one need not ask again, but ``flow llm clear`` calls
+        # ``managed_env_vars`` directly rather than buying a hub refresh for a constant.
+        "managed_vars": list(managed_env_vars()),
         # Who the hub thinks this box is. Lets a caller tell a budget allocated TO this person
         # from one they merely administer -- both are listed, and only this says which is which.
         "hub_user_typeid": _hub_user_typeid(),
@@ -248,8 +256,67 @@ async def unbind_hub_llm_endpoint() -> dict:
     return {**status, "was_bound": was_bound}
 
 
+def _hub_key() -> str | None:
+    """The hub login key. Imported per call so a monkeypatch on it applies -- a module-scope
+    binding would freeze the function at import time (same reason as ``_hub_logged_in``)."""
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
+
+    return resolve_hub_api_key()
+
+
+async def _pin_project_endpoint(payload: dict) -> dict:
+    """Rung 2: make every worker in a project spend one endpoint. ``endpoint_typeid`` empty unpins.
+
+    The project field has had no writer at all -- the resolver read
+    ``Project.llm_endpoint_typeid`` and nothing set it -- so this is it, and it lives beside
+    ``select_llm_source`` rather than in the CLI that first needed it, so a project picker in
+    the UI inherits it instead of growing a second one. Mirrors
+    ``AgenticProcess.set_llm_endpoint``, the rung-1 equivalent.
+
+    Only a HUB endpoint can be pinned: ``_apply_constraint`` matches a constraint against
+    ``endpoint.kind == HUB``, so a device or stored-key typeid here would match nothing and
+    rule out every source instead -- a project nobody could spawn in. Refused up front rather
+    than written and discovered at the next spawn.
+    """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_base_record import TypeId  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceKind  # noqa: PLC0415
+
+    project_id = str(payload.get("project_id") or "").strip()
+    if not project_id:
+        raise HubEndpointBindError("project_id is required to pin a project", 400)
+    project = await Project.get_by_id(project_id)
+    if project is None:
+        raise HubEndpointBindError(f"unknown project {project_id!r}", 404)
+
+    typeid = str(payload.get("endpoint_typeid") or "").strip()
+    if typeid:
+        kind = str(payload.get("kind") or LLMSourceKind.ENDPOINT.value)
+        if kind != LLMSourceKind.ENDPOINT.value:
+            raise HubEndpointBindError(f"a project can only be pinned to a hub endpoint, not {kind!r}", 400)
+        try:
+            TypeId(typeid)
+        except (TypeError, ValueError) as exc:
+            raise HubEndpointBindError(f"{typeid!r} is not an endpoint id", 400) from exc
+        endpoints = await fetch_hub_llm_endpoints()
+        known = next((e for e in endpoints if str(e.typeid) == typeid), None)
+        if known is not None and known.kind != LLMEndpointKind.HUB:
+            raise HubEndpointBindError(f"{known.name or typeid} is not a hub endpoint, so a project cannot pin it", 400)
+
+    project.llm_endpoint_typeid = typeid or None
+    await project.save()
+    logger.info(f"[llm-endpoint] project {project_id}: pinned to {typeid or '(none)'}")
+    return await _status(bool(_hub_key()), scope=LLMScope.of_project(project_id))
+
+
 async def select_llm_source(payload: dict) -> dict:
     """Choose which ``LLMSource`` funds one harness, and return the refreshed status.
+
+    ``payload["scope"]`` picks WHERE the choice lands: ``"user"`` (default) is this box and is
+    what the picker's Use button has always written; ``"project"`` writes the project's rung-2
+    pin instead and leaves every ``Capability`` alone. Same one entry point either way, so a
+    surface never has to know which row a scope corresponds to.
 
     This is the ONE write behind the picker, and it writes a PREFERENCE -- the same
     ``Capability.auth_mode`` / ``api_provider`` pair the resolver reads on rung 3. The mapping
@@ -269,11 +336,16 @@ async def select_llm_source(payload: dict) -> dict:
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
-    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
     from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
     from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceKind
 
-    hub_key = bool(resolve_hub_api_key())
+    scope = str(payload.get("scope") or "user")
+    if scope == "project":
+        return await _pin_project_endpoint(payload)
+    if scope != "user":
+        raise HubEndpointBindError(f"unknown scope {scope!r}", 400)
+
+    hub_key = bool(_hub_key())
     harness = str(payload.get("harness") or "").strip()
     if not harness:
         raise HubEndpointBindError("harness is required", 400)
@@ -322,6 +394,25 @@ async def select_llm_source(payload: dict) -> dict:
 
     await cap.save(notify=True)
     logger.info(f"[llm-endpoint] {kind_key}: user chose {source_kind.value}")
+    # Announce the change on the channel that means "this box's LLM config changed". The
+    # Capability row's own notify reaches entity WATCHERS, which is the UI and nobody else;
+    # ``flow llm set auto`` is a separate PROCESS holding a socket open with nothing watched,
+    # waiting to learn that the box can now fund a call. This is that frame -- and it is why
+    # the command needs no poll interval and no timeout.
+    from flow_sdk.app.actions.desktop_oauth import broadcast_llm_config_msg  # noqa: PLC0415
+
+    await broadcast_llm_config_msg(
+        True,
+        # NOT the provider name: `oauth-service.ts` reads `auth_method` as "the flow for this
+        # provider finished", so a real provider id here could complete an unrelated in-flight
+        # grant. The detail rides in auth_data instead.
+        "llm_source",
+        auth_data={
+            "harness": kind_key,
+            "kind": source_kind.value,
+            "provider": cap.api_provider or "",
+        },
+    )
     return await _status(hub_key)
 
 
@@ -417,3 +508,244 @@ async def chain_hub_llm_endpoint(endpoint_ref: str) -> dict:
     # both shapes are real (see ``fetch_hub_llm_endpoints._rows``), so unwrap defensively.
     data = body.get("data") if isinstance(body, dict) and "data" in body else body
     return data if isinstance(data, dict) else {}
+
+
+async def llm_binding(payload: dict) -> dict:
+    """One source, rendered for a shell — per harness, what to export and what to write first.
+
+    ``flow llm use`` at shell scope is the only caller: the user names a row from the picker's
+    own list and wants to type ``claude`` / ``codex`` / ``opencode`` into that terminal. It
+    persists NOTHING, which is what separates it from ``select_llm_source`` -- the choice
+    reaches only the shell that evaluates the answer.
+
+    The recipe stays server-side (``api_auth.shell_binding``) so the four ``ProviderBinding``
+    definitions remain the one description of how a harness reaches a provider. A CLI that
+    built the env itself would be a second one, and the two would drift the first time a
+    vendor changed a variable.
+
+    A harness that cannot use this source reports ``reason`` instead of a binding, using the
+    resolver's own sentence -- so "why not" reads the same here as on the picker and in a
+    spawn failure.
+    """
+    from dataclasses import asdict
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
+        binding_for_candidate,
+        shell_binding,
+        user_binding,
+    )
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import picker_view_for, resolve_constraint
+
+    typeid = str(payload.get("endpoint_typeid") or "").strip()
+    if not typeid:
+        raise HubEndpointBindError("endpoint_typeid is required", 400)
+
+    harness = str(payload.get("harness") or "all").strip() or "all"
+    if harness != "all" and harness not in HUB_ENDPOINT_HARNESSES:
+        raise HubEndpointBindError(f"unknown harness {harness!r}", 404)
+    workers = HUB_ENDPOINT_HARNESSES if harness == "all" else (harness,)
+
+    # ONCE, not per harness, and the OFFER list rather than the overlaid one -- the same two
+    # decisions ``_sources_by_kind`` makes, for the same reasons. Calling ``list_llm_candidates``
+    # in the loop re-read the whole inventory per harness and threw away an overlay sort each
+    # time; ``llm_source`` documents that exact regression ("four harnesses became eight
+    # inventories per status poll"). Offers is also the list ``flow llm list`` numbers rows off,
+    # so a row number and this lookup cannot disagree.
+    constraint = await resolve_constraint(LLMScope())
+    out: dict[str, dict] = {}
+    for worker in workers:
+        offers = (await picker_view_for(worker, constraint)).offers
+        candidate = next((c for c in offers if c.source.endpoint_typeid == typeid), None)
+        if candidate is None:
+            out[worker] = {"reason": f"{worker} has no source {typeid}"}
+            continue
+        if not candidate.source.eligible:
+            out[worker] = {"reason": candidate.source.reason or f"{candidate.source.name} is unusable"}
+            continue
+        try:
+            auth = await binding_for_candidate(worker, candidate)
+        except Exception as exc:  # noqa: BLE001 -- one harness must not lose the others
+            out[worker] = {"reason": str(exc)}
+            continue
+        if auth is None:
+            # A device login: the vendor CLI reads its own credentials, so there is nothing to
+            # export. Saying so beats an empty env block that reads like a failure.
+            out[worker] = {"device": True, "name": candidate.source.name}
+            continue
+        # ``shell``: fund ONE terminal, persist nothing. ``user``: write where the harness looks
+        # by default, so every terminal is funded. Both from the same ``auth``, so a box-wide
+        # setup and an ad-hoc shell can never disagree about how to reach a provider.
+        # ``asdict`` rather than a field-by-field copy: a field added to either dataclass reaches
+        # the caller without a second edit here, which is how ``user`` came to be missed once.
+        out[worker] = {
+            **asdict(shell_binding(worker, auth)),
+            "user": asdict(user_binding(worker, auth)),
+            "model": auth.model_slug or "",
+            "name": candidate.source.name,
+        }
+    return {"endpoint_typeid": typeid, "harnesses": out}
+
+
+#: The cheapest model each provider will answer a one-token completion with. A test that
+#: spends is only honest if it spends the least it can: the question is "can this key buy
+#: tokens", and the smallest model answers it for the smallest amount.
+_TEST_MODELS = {
+    "openrouter": "openai/gpt-5-mini",
+    "openai": "gpt-5-mini",
+    "anthropic": "claude-haiku-4.5",
+}
+
+
+def _verdict(ok: bool, *, status: int = 0, model: str = "", latency_ms: int = 0, message: str = "") -> dict:
+    """The one shape every source kind answers a test in.
+
+    Deliberately the hub's ``test`` shape verbatim (``LLMEndpointTestResult``), so the page
+    renders one verdict component for three unrelated checks. A refusal is a VERDICT and comes
+    back inside the success envelope with ``ok: false`` -- only a transport failure raises.
+    """
+    return {"ok": ok, "status": status, "model": model, "latency_ms": latency_ms, "message": message}
+
+
+async def _test_device_login(worker_type: str, *, force: bool) -> dict:
+    """Ask the vendor CLI whether THIS login works.
+
+    ``force`` drops a latched refusal first, and is for a person pressing Test: the latch is
+    exactly what they are disputing, since a refusal the harness made mid-turn survives a
+    silent re-probe on purpose (a stored credential proves presence, not validity). The
+    arrival probe passes ``force=False`` -- it is automatic, and automatically overturning a
+    refusal the harness itself made is how a signed-out harness comes to read as signed in.
+
+    The honest limit, stated rather than hidden: a device login is a credential for a TERMINAL
+    (``LLMEndpointKind.DEVICE`` is ``invocable=False``), so nothing here can spend it. This
+    reports what the vendor's own ``auth-status`` says and never claims to have bought a token
+    with it -- unlike the other two kinds, which really do.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
+    if cap is None:
+        return _verdict(False, message=f"no capability row for {worker_type}")
+    # Deliberately NOT ``auth_status_action``, though it is the other forced probe. That one
+    # answers "what funds this harness" -- it resolves the box endpoint and reports THAT -- so
+    # pressing Test on a signed-in device login replied "using the hub endpoint", which is the
+    # complaint this whole action exists to fix. Here the row asks about ITSELF.
+    # ``force`` only when a PERSON pressed Test. The latch exists because a refusal the
+    # harness made mid-turn is stronger evidence than ``auth-status``, which reports a
+    # credential's presence and never its validity -- so an automatic probe that cleared it
+    # would resurrect "signed in" for a login the harness itself had just refused. The
+    # arrival probe is automatic and therefore never forces; the button is the user saying
+    # they fixed it, and may.
+    if force:
+        cap.login_denied = False
+    result = await cap.refresh_login_state()
+    if result is None:
+        return _verdict(False, message=f"{worker_type} has no device login to test")
+    status = str(getattr(result.status, "value", result.status) or "")
+    signed_in = status == "logged_in"
+    # ``unknown`` is not a sign-out: the probe timed out or could not parse the vendor's
+    # output, and saying "signed out" for that is the exact conflation the driver contract
+    # forbids. It reports as a failed TEST with the probe's own words, and (by
+    # ``_mirror_probe_to_login_state``) moves ``login_state`` in neither direction.
+    return _verdict(
+        signed_in,
+        status=200 if signed_in else 401,
+        message="" if signed_in else (result.message or f"{worker_type} reports: {status or 'no answer'}"),
+    )
+
+
+async def _test_api_key(provider: str) -> dict:
+    """Spend one token through the stored key, and report what the provider said.
+
+    A real completion, because the question a person asks this button is "will a run work",
+    and every cheaper check answers a different one: a key can be present, well-formed and
+    accepted for authentication while the account behind it has no credit -- which fails a
+    spawn at the first turn, with the key still looking perfect on this page.
+
+    The key never leaves this machine: the call goes straight to the provider from the box
+    that stores it, which is the same path a worker's own key auth takes.
+    """
+    import time  # noqa: PLC0415
+
+    import httpx  # noqa: PLC0415
+
+    from flow_sdk.cli.auth.lm_api_keys import get_lm_api  # noqa: PLC0415
+
+    key = get_lm_api(provider)
+    if not key:
+        return _verdict(False, status=401, message=f"no {provider} key is stored on this machine")
+    model = _TEST_MODELS.get(provider, "")
+    if not model:
+        return _verdict(False, message=f"{provider} has no test model configured")
+
+    if provider == "anthropic":
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+        body = {"model": model, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+    else:
+        base = "https://openrouter.ai/api/v1" if provider == "openrouter" else "https://api.openai.com/v1"
+        url = f"{base}/chat/completions"
+        headers = {"Authorization": f"Bearer {key}"}
+        body = {"model": model, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+
+    started = time.monotonic()
+    try:
+        # No timeout of our own: httpx's default bounds this, and inventing a budget here to
+        # ride past a slow provider is the move the repo's timeout rule forbids.
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=body)
+    except httpx.HTTPError as exc:
+        return _verdict(False, model=model, latency_ms=int((time.monotonic() - started) * 1000), message=str(exc))
+    latency = int((time.monotonic() - started) * 1000)
+    if response.status_code < 400:
+        return _verdict(True, status=response.status_code, model=model, latency_ms=latency)
+    # The provider's own sentence, never one of ours: "insufficient credit" and "invalid key"
+    # are different problems with different cures, and only it knows which this is.
+    detail = ""
+    try:
+        payload = response.json()
+        detail = str((payload.get("error") or {}).get("message") or "") if isinstance(payload, dict) else ""
+    except ValueError:
+        detail = ""
+    return _verdict(
+        False,
+        status=response.status_code,
+        model=model,
+        latency_ms=latency,
+        message=detail or response.text[:200] or f"HTTP {response.status_code}",
+    )
+
+
+async def check_llm_source(payload: dict) -> dict:
+    """Does THIS source work — one row, one answer.
+
+    The page has three kinds of row and they fail for three unrelated reasons: a device login
+    is signed out, a stored key is revoked or out of credit, a hub endpoint is unbound or its
+    budget is spent. One button per row, each running the check that kind actually needs, is
+    the only way a verdict means anything -- the single Test this replaces asked "is the
+    harness signed in" and answered it on every row alike, including rows where sign-in is not
+    what funds anything.
+
+    Dispatches on the endpoint KIND rather than the harness, because that is what decides which
+    credential is under test. ``harness`` is still required for the device kind: a device login
+    is per-harness and has no other identity.
+    """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+
+    kind = str(payload.get("kind") or "").strip()
+    if kind == LLMEndpointKind.DEVICE:
+        worker = str(payload.get("harness") or "").strip()
+        if not worker:
+            raise HubEndpointBindError("harness is required to test a device login", 400)
+        return await _test_device_login(
+            worker.split(".")[1] if worker.startswith("harness.") else worker,
+            force=bool(payload.get("force")),
+        )
+    if kind == LLMEndpointKind.API_KEY:
+        provider = str(payload.get("provider") or "").strip()
+        if not provider:
+            raise HubEndpointBindError("provider is required to test a stored key", 400)
+        return await _test_api_key(provider)
+    if kind == LLMEndpointKind.HUB:
+        return await test_hub_llm_endpoint(payload)
+    raise HubEndpointBindError(f"unknown source kind {kind!r}", 400)

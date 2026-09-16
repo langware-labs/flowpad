@@ -8,9 +8,11 @@ recently-active project roots and returns the parsed findings. Identify-only —
 nothing is ever deleted.
 """
 
+from flow_sdk.assets.cleanup import collect_asset_inventory
+
 from .report import generate_asset_cleanup_report, render_markdown
 from .run import AssetCleanupFinding, AssetCleanupResult, run_asset_cleanup
-from .scan import collect_asset_inventory, collect_project_inventory, collect_scan_roots
+from .scan import collect_project_inventory, collect_scan_roots
 
 __all__ = [
     "AssetCleanupFinding",

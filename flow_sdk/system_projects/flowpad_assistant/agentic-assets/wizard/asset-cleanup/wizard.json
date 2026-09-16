@@ -1,0 +1,8 @@
+{
+  "name": "asset-cleanup-wizard",
+  "description": "Removes the garbage assets selected in an AssetCleanupReport — presents the plan, waits for confirmation, and deletes exactly the listed items.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Trash2",
+  "agent": "asset-cleanup-wizard"
+}

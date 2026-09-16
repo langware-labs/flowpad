@@ -37,19 +37,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
+from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.indexer.functions._claude_session_stats import (
     _get_session_batch_stats,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
-
-_HEAD_LINES = 64
-_TAIL_BYTES = 16384
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus, _tail_status
 
 # Fields populated onto the record by ensure_claude_session_stats. Mirror of
 # the _SessionStatsProp descriptors on the deleted subclass.
@@ -101,156 +98,23 @@ def _extract_text(content: object) -> str | None:
                 return text if text and not text.startswith("<") else None
     return None
 
-def _iter_head_json(path: str | Path) -> Iterator[dict]:
-    """Yield parsed JSON envelopes from the first ``_HEAD_LINES`` JSONL lines.
-
-    Mirror of ``codex_sessions._iter_head_json``: iterates complete lines and
-    skips unparsable ones. A fixed-byte head slab is NOT safe here — an early
-    oversized entry (e.g. a file-history-snapshot) can push the ``cwd``-bearing
-    line past the byte boundary, and the truncated line's parse error used to
-    abort the scan, silently dropping ``cwd`` (which then bound resumed
-    processes to the wrong project).
-    """
-    with open(path, encoding="utf-8", errors="replace") as fh:
-        for _, line in zip(range(_HEAD_LINES), fh):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-def claude_session_identity_key(ref: FSRef | Path) -> str:
-    """Stable, filesystem-safe **UUID** id = sessionId from the JSONL head
-    envelope (fallback: filename stem). Claude session ids are already UUIDs so
-    they're kept as-is; anything non-conforming is hashed with the same
-    ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches the DB
-    id."""
-    path = Path(getattr(ref, "_path", ref))
-    key = path.stem
-    try:
-        for raw in _iter_head_json(path):
-            sid = raw.get("sessionId")
-            if sid:
-                key = str(sid)
-                break
-    except OSError:
-        pass
-    return key
 
 
-def claude_session_id_from_file(ref: FSRef | Path) -> str | None:
-    key = claude_session_identity_key(ref)
-    return key if is_valid_entity_id(key) else None
+
+
+
+
 
 
 # ── Extractor (head + tail read, no stat parse) ──────────────────────────────
 
-def extract_claude_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
-    """Parse a JSONL session into a Record. Replaces ``ClaudeSessionRecord._from_fsref_sync``."""
-    return [extract_claude_session_from_path(ref._path, resolved_id=resolved_id)]
 
-def extract_claude_session_from_path(
-    path: str | Path,
-    *,
-    include_content: bool = True,
-    resolved_id: str | None = None,
-) -> FSRecord:
-    """Build a Record from a JSONL transcript path.
 
-    Envelope fields are read cheaply: first ``_HEAD_LINES`` lines for
-    session_id / slug / cwd, tail ``_TAIL_BYTES`` for the most-recent ai-title
-    or custom-title. The searchable ``content`` (extractive transcript text for
-    FTS) requires a full-transcript parse via ``worker_summary_log`` — this is
-    gated by the indexer's skip-fresh check, so it only runs when the JSONL has
-    changed. Listing callers that hit many transcripts per request (e.g.
-    worker history) must pass ``include_content=False`` — they have no
-    skip-fresh gate, and the full parse per file starves the server.
-    Stats are NOT populated here — call
-    ``ensure_claude_session_stats(rec)`` to lazy-load them.
 
-    Replaces ``ClaudeSessionRecord.from_jsonl``.
-    """
-    path = Path(path)
-    session_id = path.stem  # fallback
-    slug = ""
-    cwd = ""
-    custom_title = ""
-
-    # head — first few lines cover session_id / slug / cwd
-    try:
-        for raw in _iter_head_json(path):
-            if raw.get("sessionId"):
-                session_id = raw["sessionId"]
-            if raw.get("slug"):
-                slug = raw["slug"]
-            if not cwd and raw.get("cwd"):
-                cwd = raw["cwd"]
-            # Stop at the first cwd-bearing line. slug/sessionId ride the same
-            # envelope when present, and most transcripts have no slug at all —
-            # requiring it here would force reading all _HEAD_LINES lines
-            # (including multi-hundred-KB snapshot entries) on every listing.
-            if cwd:
-                break
-    except OSError:
-        pass
-
-    # tail — most-recent ai-title (preferred) or custom-title
-    try:
-        sz = path.stat().st_size
-        with open(path, "rb") as fb:
-            if sz > _TAIL_BYTES:
-                fb.seek(sz - _TAIL_BYTES)
-            tail = fb.read().decode("utf-8", errors="replace")
-        tail_custom: str = ""
-        for line in reversed(tail.splitlines()):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                raw = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            rtype = raw.get("type")
-            if rtype == "ai-title" and raw.get("aiTitle"):
-                custom_title = raw["aiTitle"]
-                break
-            if not tail_custom and rtype == "custom-title" and raw.get("customTitle"):
-                tail_custom = raw["customTitle"]
-        if not custom_title and tail_custom:
-            custom_title = tail_custom
-    except OSError:
-        pass
-
-    name = custom_title or slug or session_id
-
-    # Extractive transcript text for full-text search (worker-generic).
-    content = ""
-    if include_content:
-        from flow_sdk.transcript_analyzer import worker_summary_log  # noqa: PLC0415
-        content = worker_summary_log(path, "claude")
-
-    rec = FSRecord(
-        type=RecordType.CLAUDE_SESSION,
-        id=resolved_id or session_id,
-        name=name,
-        session_id=session_id,
-        slug=slug,
-        cwd=cwd,
-        custom_title=custom_title,
-        jsonl_path=str(path),
-        source_file=str(path),
-        path=str(path),
-        content=content,
-    )
-    # Read-only — Claude Code owns the JSONL.
-    object.__setattr__(rec, "_asset_ref", FSRef(path, read_only=True))
-    return rec
 
 # ── Lazy stats (mirror of ensure_codex_session_stats) ─────────────────────────
 
-def ensure_claude_session_stats(rec: Record) -> FSRecord:
+def ensure_claude_session_stats(rec: FSRecord) -> FSRecord:
     """Populate lazy stat fields onto the record. Idempotent.
 
     Replaces the ``_SessionStatsProp`` descriptors: instead of triggering on
@@ -269,7 +133,7 @@ def ensure_claude_session_stats(rec: Record) -> FSRecord:
 
 # ── Active / start_time (replaces PropertyRecord descriptors) ─────────────────
 
-def claude_session_is_active(rec: Record) -> bool:
+def claude_session_is_active(rec: FSRecord) -> bool:
     """True iff JSONL mtime is within the last 5 minutes."""
     path = getattr(rec, "jsonl_path", None) or rec.source_file
     if not path:
@@ -280,7 +144,7 @@ def claude_session_is_active(rec: Record) -> bool:
         return False
     return (time.time() - mtime) <= _ACTIVE_MAX_AGE_SECONDS
 
-def claude_session_start_time(rec: Record) -> str | None:
+def claude_session_start_time(rec: FSRecord) -> str | None:
     """ISO timestamp of the first JSONL entry; fallback to file ctime."""
     path = getattr(rec, "jsonl_path", None) or rec.source_file
     if not path:
@@ -303,7 +167,7 @@ def claude_session_start_time(rec: Record) -> str | None:
     except OSError:
         return None
 
-def claude_session_status(rec: Record) -> WorkerStatus:
+def claude_session_status(rec: FSRecord) -> WorkerStatus:
     """Derive WorkerStatus from the last 4 KB of the JSONL (~60µs)."""
     path = getattr(rec, "jsonl_path", None) or rec.source_file
     if not path:
@@ -312,7 +176,7 @@ def claude_session_status(rec: Record) -> WorkerStatus:
 
 # ── Transcript helpers ────────────────────────────────────────────────────────
 
-def claude_session_transcript_entries(rec: Record) -> list:
+def claude_session_transcript_entries(rec: FSRecord) -> list:
     """Lazily load transcript entries from the JSONL file."""
     from flow_sdk.fs_store.indexer.functions._claude_transcript import create_transcript_entry
 
@@ -332,14 +196,14 @@ def claude_session_transcript_entries(rec: Record) -> list:
             entries.append(create_transcript_entry(raw))
     return entries
 
-def claude_session_filtered_entries(rec: Record) -> list:
+def claude_session_filtered_entries(rec: FSRecord) -> list:
     """Transcript entries minus noisy types (file-history-snapshot, progress)."""
     return [
         e for e in claude_session_transcript_entries(rec)
         if getattr(e, "entry_type", None) not in _EXCLUDED_ENTRY_TYPES
     ]
 
-def claude_session_to_transcript_dicts(rec: Record, include_raw_json: bool = False) -> list[dict]:
+def claude_session_to_transcript_dicts(rec: FSRecord, include_raw_json: bool = False) -> list[dict]:
     """Return filtered transcript entries as serializable dicts."""
     entries = claude_session_filtered_entries(rec)
     if include_raw_json:
@@ -349,7 +213,7 @@ def claude_session_to_transcript_dicts(rec: Record, include_raw_json: bool = Fal
         for e in entries
     ]
 
-def claude_session_to_dict(rec: Record) -> dict:
+def claude_session_to_dict(rec: FSRecord) -> dict:
     """Serialize to dict, including lazy stat fields and derived status."""
     ensure_claude_session_stats(rec)
     d = rec.to_dict()
@@ -357,7 +221,7 @@ def claude_session_to_dict(rec: Record) -> dict:
     d["is_active"] = claude_session_is_active(rec)
     return d
 
-def claude_session_meta_dict(rec: Record) -> dict:
+def claude_session_meta_dict(rec: FSRecord) -> dict:
     """Fast meta_dict for bulk listings — avoids the full JSONL parse.
 
     Mirrors the deleted ``ClaudeSessionRecord.meta_dict`` fast path: derives

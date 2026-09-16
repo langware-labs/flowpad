@@ -123,25 +123,36 @@ def _reconcile_server_json(
 def _reconcile_singleton_lock(
     name: str, table: ProcTable, report: ReconcileReport, dry_run: bool
 ) -> None:
-    """Remove ``server.lock``/``server.pid`` left by an exited backend.
+    """Remove ``server.lock``/``server.pid`` (and the monitor's pair) left by an
+    exited process.
 
-    ``run.py`` releases the lock on a clean exit but never unlinks the files, so
-    every instance that ever ran keeps a pair forever — 268 of them on the
-    machine that motivated this. They are harmless individually and misleading
-    in bulk, since their presence reads as "a backend lives here".
+    Neither the backend nor the monitor unlinks its lock file on exit (see
+    ``flow_sdk.singleton_lock.release`` for why), so every instance that ever
+    ran keeps the files forever — 268 of them on the machine that motivated
+    this. They are harmless individually and misleading in bulk, since their
+    presence reads as "a backend lives here".
     """
-    lock, pidfile = paths.server_lock_path(name), paths.server_pid_path(name)
-    if not lock.exists() and not pidfile.exists():
+    pairs = [
+        (paths.server_lock_path(name), paths.server_pid_path(name)),
+        (paths.monitor_lock_path(name), paths.monitor_pid_path(name)),
+    ]
+    stale = []
+    for lock, pidfile in pairs:
+        if not lock.exists() and not pidfile.exists():
+            continue
+        try:
+            pid = int(pidfile.read_text().strip())
+        except (OSError, ValueError):
+            pid = None
+        if pid is not None and table.owner_of(pid) is not None:
+            continue  # a live process still holds it
+        stale.append((lock, pidfile))
+    if not stale:
         return
-    try:
-        pid = int(pidfile.read_text().strip())
-    except (OSError, ValueError):
-        pid = None
-    if pid is not None and table.owner_of(pid) is not None:
-        return  # a live process still holds it
     report.removed_locks.append(name)
     if not dry_run:
-        lock.unlink(missing_ok=True)
-        pidfile.unlink(missing_ok=True)
+        for lock, pidfile in stale:
+            lock.unlink(missing_ok=True)
+            pidfile.unlink(missing_ok=True)
 
 

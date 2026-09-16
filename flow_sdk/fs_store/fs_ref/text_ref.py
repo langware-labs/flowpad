@@ -25,5 +25,4 @@ class TextFsRef(FSRef):
     def write(self, content: str) -> None:
         if self.read_only:
             raise IOError(f"TextFsRef at {self.path!r} is read-only")
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(content, encoding="utf-8")
+        super().write(content)

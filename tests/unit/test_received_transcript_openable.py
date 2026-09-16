@@ -32,9 +32,10 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.placement import Scope
+from flow_sdk.builtin.asset_placement import resolve_destination
 from flow_sdk.builtin.claude_session import ClaudeSession
 from flow_sdk.builtin.project import Project
-from flow_sdk.fs_store.placement import Scope, resolve_destination
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
 from flow_sdk.transcript_analyzer.resolver import (

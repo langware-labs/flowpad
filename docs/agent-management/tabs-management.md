@@ -127,7 +127,6 @@ strip:
 
 - opener toolbar and menu items for Claude, Codex, Copilot, plain terminal,
   sandbox, docker, resume-by-id, and history
-- projects counter chip
 - history/resume/install modals
 - spawn locks and pending state
 

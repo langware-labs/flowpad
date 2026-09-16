@@ -14,12 +14,14 @@ export {
   AssetEditor,
   EDITOR_TYPES,
   FILELESS_EDITORS,
+  PREVIEW_EDITORS,
   TYPE_TO_EDITOR,
   editorForPath,
   editorForType,
   isAssetEditor,
   isFileOnlyEditor,
   isFilelessEditor,
+  isPreviewEditor,
   primaryTypeForEditor,
 } from '@sdk';
 

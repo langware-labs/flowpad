@@ -75,6 +75,8 @@ allowed_fs_actions = [
     "move",
     "mkdir",
     "write",
+    "document",
+    "ensure_document",
     "open",
     "create_symlink",
     "resolve_symlink",

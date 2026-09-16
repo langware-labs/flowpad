@@ -265,15 +265,15 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       const browserPty = await currentPty();
       const expectedMode = targetPty ? 'advanced' : 'standard';
       const urlMode = new URL(page!.page.url()).searchParams.get('viewMode');
-      // Reconciliation is ONE-DIRECTIONAL since bf9b51706 ("let a surface watch a
-      // turn it didn't start"): only a TERMINAL mode forces a transport. Chat
-      // renders from `flowDataStream` and is transport-independent, so switching
-      // BACK to standard deliberately leaves a healthy PTY alive. Advanced must
-      // therefore own the transport on both sides; standard only owns what the
-      // mode switch itself commits — the URL, a live pane, a ready session.
+      // Reconciliation is BIDIRECTIONAL again since FLOWPAD-2105: the surface
+      // owns the transport on both sides, so standard must land the session on
+      // `pty_mode=false` just as advanced lands it on true. It was
+      // one-directional between bf9b51706 and this, and asserting only
+      // `browserPty !== null` on the standard leg is what let the latch hide —
+      // that check passes on a session still sitting on a live PTY.
       const surfaceOk = targetPty
         ? browserPty === true && proc.pty_mode === true
-        : browserPty !== null;
+        : browserPty === false && proc.pty_mode === false;
       if (surfaceOk && urlMode === expectedMode && inst!.sdk.isReadyForInput(proc)) return;
       await page!.page.waitForTimeout(150);
     }

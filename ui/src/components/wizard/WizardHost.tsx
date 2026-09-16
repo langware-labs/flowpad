@@ -98,6 +98,40 @@ export function WizardHost() {
     }
   };
 
+  // Dismiss the modal when the work is finished, for EVERY wizard.
+  //
+  // The signal is the process entity's own `busy` (`is_turn_busy`) going false
+  // after a turn actually ran — nothing wizard-specific, and nothing each agent
+  // has to be told to do in prose. An agent that finishes and stops is the
+  // overwhelmingly common case, and leaving its transcript on screen made the
+  // user dismiss a window that had nothing left to say; worse, the only button
+  // offered was `Done`, which REPORTS SUCCESS to the caller — so a click while
+  // the agent was still mid-run resolved the wizard with a result it had not
+  // reached yet.
+  //
+  // Dismissing is not killing: `wizard.close` resolves the caller's promise and
+  // unmounts the modal, but the AgenticProcess is a normal entity that stays
+  // alive and reachable, so an agent that ended its turn to ASK something is
+  // still there to answer. That is what makes settling a safe trigger.
+  useEffect(() => {
+    if (!active) return;
+    const { process } = active;
+    // A turn must have started before its end can mean anything: a wizard is
+    // mounted before the worker's first turn, when `busy` is legitimately false.
+    let turnStarted = process.busy;
+    const unsubscribe = process.on('state_change', (change: { field?: string; newValue?: unknown }) => {
+      if (change?.field !== 'busy') return;
+      if (change.newValue === true) {
+        turnStarted = true;
+        return;
+      }
+      if (turnStarted) void closeWith('done');
+    });
+    return unsubscribe;
+    // `closeWith` closes over `active`, which is this effect's only dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
   return (
     <Dialog
       open={!!active}

@@ -28,6 +28,15 @@ export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_e
  */
 export type SourceStatus = 'new' | 'setup' | 'active' | 'disabled';
 
+/** What the channel confirmed about one sent message (data_source.py `_outcome_dict`).
+ *  `recorded: false` on a sent message means the local copy is missing — never re-send to fix it. */
+export interface DataSourceSendOutcome {
+  external_id: string;
+  status: 'sent' | 'drafted';
+  recorded: boolean;
+  artifact_id: string;
+}
+
 export interface IDataSource extends IEntity {
   owner?: string | null;
   name: string;
@@ -36,6 +45,7 @@ export interface IDataSource extends IEntity {
   channel?: string;
   account_key?: string;
   account_identities?: string[];
+  inbound_allowed_senders?: string[];
   required_capabilities?: string[];
   config?: Record<string, unknown>;
   status?: SourceStatus;
@@ -92,6 +102,11 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   owner: string | null = null;
   /** Addresses that are ME on this source. Display/round-trip only. */
   account_identities: string[] = [];
+  /** Who may drive the owning agent from this channel — sender external ids
+   *  (a Slack member id, an email address), one per provider's own namespace.
+   *  Empty admits nobody: see `EmailInbox.allowed`, the gate this backs for
+   *  every channel-bound agent, not only an allocated mailbox. */
+  inbound_allowed_senders: string[] = [];
   required_capabilities: string[] = [];
   config: Record<string, unknown> = {};
   status: SourceStatus = 'new';
@@ -121,6 +136,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.account_key = entity.account_key ?? this.account_key;
     this.owner = entity.owner ?? this.owner;
     this.account_identities = entity.account_identities ?? this.account_identities;
+    this.inbound_allowed_senders = entity.inbound_allowed_senders ?? this.inbound_allowed_senders;
     this.required_capabilities = entity.required_capabilities ?? this.required_capabilities;
     this.config = entity.config ?? this.config;
     this.status = entity.status ?? this.status;
@@ -249,6 +265,32 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     detail: string;
   }> {
     return this.post('replay', since ? { since } : undefined);
+  }
+
+  /** Send one message into the channel. `to` is what the channel addresses (a chat, a channel
+   *  id, an address); the source class decides how it reads it. */
+  async send(message: { to: string; text: string; thread_key?: string; subject?: string; in_reply_to?: string }): Promise<DataSourceSendOutcome> {
+    return this.post('send', message);
+  }
+
+  /** Reply to one of this source's records; who it reaches is the channel's rule. */
+  async reply(itemId: string, text: string): Promise<DataSourceSendOutcome> {
+    return this.post('reply', { item_id: itemId, text });
+  }
+
+  /** This source's records, newest first. */
+  async items(limit = 20): Promise<{ items: Array<Record<string, unknown>> }> {
+    return this.post('items', { limit });
+  }
+
+  /** One sync cycle NOW, reported — unlike `pollNow`, which only marks the source due. */
+  async syncNow(): Promise<{ created: number; updated: number; unchanged: number; health: SourceHealth; status: SourceStatus }> {
+    return this.post('sync');
+  }
+
+  /** Resume or stop polling. */
+  async setEnabled(enabled: boolean): Promise<{ status: SourceStatus }> {
+    return this.post('set_enabled', { enabled });
   }
 
   /**

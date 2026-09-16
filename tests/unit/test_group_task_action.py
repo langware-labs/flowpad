@@ -114,7 +114,8 @@ async def test_resolve_group_requires_group_id_or_members():
 
 
 def test_group_fields_round_trip_task_md(tmp_path):
-    from flow_sdk.builtin.task import Task, TaskKind
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.schema.data_spec.task_spec import TaskKind
 
     child = Task(
         title="Ship It",
@@ -134,7 +135,8 @@ def test_group_fields_round_trip_task_md(tmp_path):
 
 
 def test_group_kind_round_trips(tmp_path):
-    from flow_sdk.builtin.task import Task, TaskKind
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.schema.data_spec.task_spec import TaskKind
 
     parent = Task(title="Overview", kind=TaskKind.GROUP)
     folder = tmp_path / "tasks" / "overview"

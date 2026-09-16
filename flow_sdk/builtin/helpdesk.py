@@ -60,10 +60,7 @@ class Helpdesk(Entity):
             return None
         from pathlib import Path  # noqa: PLC0415
 
-        from flow_sdk.fs_store.indexer.functions.helpdesk import (  # noqa: PLC0415
-            manifest_str,
-            read_manifest,
-        )
+        from flow_sdk.assets.types.helpdesk import manifest_str, read_manifest
 
         return manifest_str(read_manifest(Path(self.asset_ref)), key)
 

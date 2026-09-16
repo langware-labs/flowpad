@@ -39,6 +39,7 @@ from tests.long_tests._transcript_helpers import (
     ANALYZER_WORKER_KEY,
     assert_prompt_ok,
     await_transcript,
+    fail_no_transcript,
     safe_exit,
 )
 from tests.test_settings import test_service_config
@@ -172,7 +173,7 @@ async def test_skill_usage_visible_in_transcript(
             deadline_s=90,
         )
         if transcript is None:
-            pytest.skip(f"{cli_name} produced no usable transcript within 90s — infra/LLM latency")
+            fail_no_transcript(90, cli_name)
 
         # The analyzer normalizes every worker's skill shape onto SkillCallEntry,
         # so the assertion is identical across claude / codex / copilot.

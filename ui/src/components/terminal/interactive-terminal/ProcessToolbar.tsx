@@ -90,17 +90,10 @@ export function ProcessToolbar({
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
   const [showCommandStatus, setShowCommandStatus] = useState(false);
 
-  // Force re-render whenever any field this toolbar reads changes. Backend
-  // mutates the entity in place via castAndDeepAssign, so without an explicit
-  // subscription React stays unaware of fields not already shadowed by local
-  // component state. The snapshot is a composite of every entity field rendered
-  // here — restart_required, the wire `status` (ready/busy), and `workerStatus`
-  // — so a mid-turn status broadcast re-renders the toolbar (this is what fixes
-  // the old headless-staleness: the snapshot used to read restart_required only,
-  // so status/worker moves never re-rendered). Use dataManager.subscribe with
-  // initialFetch=false — APIEntity.subscribe() forces initialFetch which would
-  // re-invoke the snapshot during subscription and cause an update loop.
-  const snapshot = () => `${process.restart_required}|${process.status}|${process.workerStatus}`;
+  // Entities mutate in place. Observe names as well as runtime state so a
+  // title arriving after the turn settles still repaints the header.
+  // initialFetch=false avoids fetching again while subscribing.
+  const snapshot = () => JSON.stringify([process.name, process.restart_required, process.status, process.workerStatus]);
   useSyncExternalStore(
     useCallback((cb) => dataManager.subscribe(process.typeId, cb, false), [process]),
     snapshot,
@@ -183,8 +176,8 @@ export function ProcessToolbar({
   const anyColActive = !colVis.trace || !colVis.time || !colVis.annotations || anyTimeFieldActive;
 
   const processDisplayName = useMemo(
-    () => resolveProcessDisplayName(process, 30),
-    [process.context_data, process.name, process.instruction_content],
+    () => resolveProcessDisplayName(process),
+    [process.name],
   );
 
   const setTrace = (key: keyof TraceFilters) => (val: boolean) => onTraceFiltersChange({ ...traceFilters, [key]: val });

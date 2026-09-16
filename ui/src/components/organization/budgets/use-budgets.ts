@@ -55,12 +55,24 @@ export function useInvalidateBudgets() {
   return () => Promise.all([qc.invalidateQueries({ queryKey: BUDGETS_KEY }), invalidatePlan()]);
 }
 
-/** Set one pool's or one person's lifetime cap. `null` = uncapped. */
+/**
+ * Set one pool's or one person's lifetime cap. `null` = uncapped.
+ *
+ * The invalidation is deliberately NOT awaited. React-query settles a mutation only after its
+ * `onSuccess` promise resolves, and `invalidate()` resolves only once every refetch it triggers
+ * has come back — the two budget reads, `token_plan/me` (~30 hub queries) and every mounted
+ * `['llm-endpoint', …]` query. One slow or paused refetch among those therefore pinned
+ * `isPending` true indefinitely, and the money boxes read that flag: the whole table went
+ * not-allowed after a save and only came back on remount or reload. The write itself is already
+ * done at this point; the refreshed numbers can land whenever they land.
+ */
 export function useSetLifetimeCap() {
   const invalidate = useInvalidateBudgets();
   return useMutation({
     mutationFn: ({ endpointId, usd }: { endpointId: string; usd: number | null }) => setLifetimeCap(endpointId, usd),
-    onSuccess: () => invalidate(),
+    onSuccess: () => {
+      void invalidate();
+    },
   });
 }
 

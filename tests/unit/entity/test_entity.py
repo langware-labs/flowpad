@@ -8,7 +8,7 @@ from flow_sdk.builtin.user import User
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.core.loaders import is_new_instance
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 from tests.unit.entity.test_models import TEntity, TRelationship
 
 # TODO fix execution context

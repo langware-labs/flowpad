@@ -39,6 +39,7 @@ export enum OAuthEventType {
   /** Fired when an OAuth flow requires the user to enter a device code
    *  (RFC 8628). UI listens and renders a modal with `user_code` + verify URL. */
   DEVICE_FLOW_START = 'on_oauth_device_flow_start',
+  CODE_FLOW_START = 'on_oauth_code_flow_start',
 }
 
 /**
@@ -76,6 +77,14 @@ export interface OAuthDeviceFlowPayload {
   state: string;
 }
 
+export interface OAuthCodeFlowPayload {
+  provider: string;
+  state: string;
+  url: string;
+  targetEntity?: TypeId;
+  sharedEntityVarName?: string;
+}
+
 export interface OAuthProvider {
   name: string;
   display_name: string;
@@ -89,7 +98,7 @@ export interface OAuthProvider {
 /** The OAuth grants a provider's flow can use. Mirrors the backend's
  *  `OAuthFlowKind` — shown to the user because the three differ in what they
  *  ask of them and in what the resulting token can do. */
-export type OAuthFlowKind = 'code' | 'loopback' | 'device';
+export type OAuthFlowKind = 'code' | 'loopback' | 'device' | 'manual';
 
 /** What a connection test found. */
 export interface OAuthTestResult {
@@ -198,11 +207,17 @@ export class OauthFlow extends EventEmitter {
       console.error(`[OAuthFlow] Window not found for OAuth request: ${this.oAuthRequestInfo.oauth_request_id}`);
     }
   }
+
+  /** The user closed the consent window, where the window can say so. Returns the unsubscribe. */
+  public onWindowClosed(listener: () => void): () => void {
+    return this.authWindow?.onClosed?.(listener) ?? (() => {});
+  }
 }
 
 export class OAuthService {
   private static instance: OAuthService;
   private oAuthFlows: Map<string, OauthFlow> = new Map();
+  private codeFlowStates = new Set<string>();
 
   /** Typed wrapper so every emit site produces the same payload shape. */
   private emitFlowComplete(payload: OAuthFlowCompletePayload) {
@@ -246,6 +261,8 @@ export class OAuthService {
   }
 
   public async onOAuthMessage(data: OAuthMessage) {
+    // Code-entry flows finish through their submitted action response.
+    if (this.codeFlowStates.has(data.oauth_request_id)) return;
     const oauthFlow = this.oAuthFlows.get(data.oauth_request_id);
     if (!oauthFlow) {
       // FlowpadCloud is owned by cloudManager — its WS messages don't go through this map.
@@ -359,6 +376,7 @@ export class OAuthService {
     provider: string,
     targetEntity?: TypeId,
     sharedEntityVarName?: string,
+    options: { reauthorize?: boolean } = {},
   ): Promise<OauthFlow | null> {
     try {
       // FlowpadCloud is owned by cloudManager — route there instead of going through
@@ -374,12 +392,29 @@ export class OAuthService {
       const actionInfo = new ActionInfo('oauth');
       if (targetEntity) actionInfo.targetEntity = targetEntity;
       actionInfo.subpath = [provider, 'auth'];
-      if (sharedEntityVarName) {
-        actionInfo.queryParameters = { shared_entity_var_name: sharedEntityVarName };
-      }
+      actionInfo.carriesInitiator = true;
+      const query: Record<string, string> = {};
+      if (sharedEntityVarName) query.shared_entity_var_name = sharedEntityVarName;
+      // Re-authorize runs the provider's consent even when the hub already
+      // holds a valid grant it could simply hand back.
+      if (options.reauthorize) query.reauthorize = 'true';
+      if (Object.keys(query).length) actionInfo.queryParameters = query;
       const raw = await dataManager.callAction<unknown, Record<string, unknown>>(actionInfo);
       if (!raw) {
         throw new Error(`Empty OAuth /auth response for ${provider}`);
+      }
+
+      // The backend may have adopted an existing verified hub grant. It has
+      // already stored the local token, so there is no browser flow to open.
+      if (raw.status === OAuthStatus.SUCCESS) {
+        const result = await this.verifyAndAttach(provider, targetEntity, sharedEntityVarName);
+        this.emitFlowComplete({
+          provider,
+          ...result,
+          oauth_request_id: String(raw.oauth_request_id ?? ''),
+          targetEntity,
+        });
+        return null;
       }
 
       // Device flow (e.g. GitHub): no browser popup; emit an event so the UI can
@@ -430,6 +465,18 @@ export class OAuthService {
         return null;
       }
 
+      if (raw.kind === 'manual') {
+        this.codeFlowStates.add(String(raw.oauth_request_id ?? raw.state ?? ''));
+        dataManager.emit(OAuthEventType.CODE_FLOW_START, {
+          provider,
+          state: String(raw.oauth_request_id ?? raw.state ?? ''),
+          url: String(raw.url ?? ''),
+          targetEntity,
+          sharedEntityVarName,
+        } satisfies OAuthCodeFlowPayload);
+        return null;
+      }
+
       // Loopback flow (Anthropic et al.): adapt to OAuthClientRequestInfo + popup.
       const authUrl = String(raw.auth_url ?? raw.url ?? '');
       if (!authUrl) {
@@ -448,25 +495,51 @@ export class OAuthService {
       const oauthFlow = new OauthFlow(oauthRequestInfo, popupWindow, targetEntity, sharedEntityVarName);
       this.oAuthFlows.set(oauthRequestInfo.oauth_request_id, oauthFlow);
 
-      // A `code` grant looks like a `loopback` one from here — same popup, same
-      // auth_url — but it does not finish like one: its redirect is handled by
-      // the HUB, not by a port on this machine. So no local server posts a
-      // result back, `onOAuthMessage` is never called, and the hub's completion
-      // websocket is not one this process is on either. Treated as loopback,
-      // the user authorized successfully and the app waited forever for a
-      // message nobody would send: the token sat on the hub, the connection read
-      // as MISSING, and the caller's spinner never stopped. `wait-callback` is
-      // the backend's own answer — it polls the hub and adopts the token into
-      // local SOD — so drive it.
-      if ((raw as { kind?: OAuthFlowKind }).kind === 'code') {
-        void this.driveHubCallback(provider, oauthRequestInfo, oauthFlow, targetEntity);
-      }
+      // Both popup grants need the backend to finish the exchange/adoption.
+      // A loopback callback only captures the code; wait-callback exchanges it.
+      void this.drivePopupCallback(oauthFlow, String(raw.kind ?? ''));
 
       return oauthFlow;
     } catch (error) {
       console.error(`[OAuthService] OAuth connection failed for ${provider}:`, error);
-      throw error;
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 401 || status === 403) {
+        throw Object.assign(
+          new Error('Connection access denied. This session may not have permission to manage personal connections.'),
+          { cause: error },
+        );
+      }
+      throw Object.assign(new Error(oauthErrorText(error, `Could not connect to ${provider}.`)), { cause: error });
     }
+  }
+
+  public async submitAuthorizationCode(flow: OAuthCodeFlowPayload, code: string): Promise<void> {
+    const action = new ActionInfo('oauth', null, null, 'POST');
+    if (flow.targetEntity) action.targetEntity = flow.targetEntity;
+    action.subpath = [flow.provider, 'callback'];
+    action.bodyParameters = { state: flow.state, code: code.trim() };
+    await dataManager.callAction(action);
+    const result = await this.verifyAndAttach(flow.provider, flow.targetEntity, flow.sharedEntityVarName);
+    this.codeFlowStates.delete(flow.state);
+    this.emitFlowComplete({
+      provider: flow.provider,
+      oauth_request_id: flow.state,
+      targetEntity: flow.targetEntity,
+      ...result,
+    });
+    if (result.status !== OAuthStatus.SUCCESS) throw new Error('The provider could not verify the connection.');
+  }
+
+  public async cancelCodeFlow(flow: OAuthCodeFlowPayload): Promise<void> {
+    await this.cancelFlow(flow.provider, flow.state, flow.targetEntity);
+    this.codeFlowStates.delete(flow.state);
+    this.emitFlowComplete({
+      provider: flow.provider,
+      oauth_request_id: flow.state,
+      targetEntity: flow.targetEntity,
+      status: OAuthStatus.CANCELLED,
+      attachSuccess: null,
+    });
   }
 
   /**
@@ -507,72 +580,83 @@ export class OAuthService {
   }
 
   /**
-   * Carry a hub-redirected (`code`) grant to completion, since nothing else will.
+   * Carry a popup grant to its end.
    *
-   * `wait-callback` answers `success` once the hub holds the token (the backend
-   * then copies it into local SOD), or `polling` when the user is still at the
-   * provider. `polling` is the backend asking to be called again — it is the
-   * protocol's own continuation, not a retry budget bolted on out here, and the
-   * loop is bounded by the popup: close it and the flow is over. Emitting
-   * OAUTH_FLOW_COMPLETE is what releases every caller's spinner, so it happens
-   * on EVERY exit, including the one where the user walks away.
+   * A hub grant (`kind: 'code'`) ends on the SERVER: the hub returns the browser
+   * to this instance, or pushes its result, and the backend answers THIS tab with
+   * an addressed `oauth_msg` (flow_sdk/core/oauth/flows.py). There is nothing to
+   * poll — only a window the user abandoned is decided here.
+   *
+   * A loopback grant needs `wait-callback` to exchange the code the callback
+   * captured; it answers once, with the terminal state.
+   *
+   * Emitting OAUTH_FLOW_COMPLETE is what releases every caller's spinner, so it
+   * happens on every exit.
    */
-  private async driveHubCallback(
-    provider: string,
-    info: OAuthClientRequestInfo,
-    flow: OauthFlow,
-    targetEntity?: TypeId,
-  ): Promise<void> {
+  private async drivePopupCallback(flow: OauthFlow, kind: string): Promise<void> {
+    const { oAuthRequestInfo: info, targetEntity } = flow;
+    const { provider } = info;
     const finish = async (status: OAuthStatus) => {
-      let attachSuccess: boolean | null = null;
-      if (status === OAuthStatus.SUCCESS) {
-        ({ status, attachSuccess } = await this.verifyAndAttach(provider, targetEntity, flow.sharedEntityVarName));
-      }
-      this.oAuthFlows.delete(info.oauth_request_id);
-      this.emitFlowComplete({
-        provider,
-        status,
-        oauth_request_id: info.oauth_request_id,
-        targetEntity,
-        attachSuccess,
-      });
+      // HTTP and WebSocket completion share one claim before verification.
+      if (!this.oAuthFlows.has(info.oauth_request_id)) return;
+      await this.onOAuthMessage({ oauth_request_id: info.oauth_request_id, status } as OAuthMessage);
     };
 
+    if (kind === 'code') {
+      this.cancelWhenAbandoned(flow);
+      return;
+    }
+
     try {
-      // `isClosed` reports whether the popup is OPEN (an inversion this class
-      // already carries); read it through the flow so the two agree.
-      for (;;) {
-        const result = await this.waitCallback(provider, info.oauth_request_id, targetEntity);
-        const status = String(result?.status ?? '');
-        if (status === 'success') {
-          await finish(OAuthStatus.SUCCESS);
-          return;
-        }
-        if (status === 'cancelled') {
-          await finish(OAuthStatus.CANCELLED);
-          return;
-        }
-        if (status !== 'pending' && status !== 'polling') {
-          console.warn(`[OAuthService] hub wait-callback for ${provider} answered ${status || 'nothing'}`);
-          await finish(OAuthStatus.ERROR);
-          return;
-        }
-        if (!flow.isClosed) {
-          // The popup is gone and the hub still has nothing: the user closed it
-          // or gave up. Say so rather than leaving the caller waiting.
-          const cancelled = await this.cancelFlow(provider, info.oauth_request_id, targetEntity);
-          if (cancelled?.status === 'success') {
-            await finish(OAuthStatus.SUCCESS);
-          } else {
-            await finish(OAuthStatus.CANCELLED);
-          }
-          return;
-        }
+      const result = await this.waitCallback(provider, info.oauth_request_id, targetEntity);
+      const status = String(result?.status ?? '');
+      if (status === 'success') {
+        await finish(OAuthStatus.SUCCESS);
+      } else if (status === 'cancelled') {
+        await finish(OAuthStatus.CANCELLED);
+      } else {
+        console.warn(`[OAuthService] wait-callback for ${provider} answered ${status || 'nothing'}`);
+        await finish(OAuthStatus.ERROR);
       }
     } catch (err) {
-      console.warn(`[OAuthService] hub wait-callback failed for ${provider}:`, err);
+      console.warn(`[OAuthService] wait-callback failed for ${provider}:`, err);
       await finish(OAuthStatus.ERROR);
     }
+  }
+
+  /**
+   * End a hub grant whose consent window the user left — the one decision the client owns.
+   *
+   * "Closed" is read only where it can be trusted: the app's own Electron window
+   * reports it, and a web popup is re-checked when this tab regains focus. A timer
+   * on `popup.closed` would cancel people mid-consent — a COOP provider (claude.ai,
+   * Google) severs the popup, which then reads closed while consent is on screen.
+   * The backend's cancel answers `success` when the hub had already finished, and
+   * stores the local copy before saying so.
+   */
+  private cancelWhenAbandoned(flow: OauthFlow): void {
+    const { oAuthRequestInfo: info, targetEntity } = flow;
+    let stopped = false;
+    const stop = () => {
+      stopped = true;
+      window.removeEventListener('focus', onFocus);
+      offClosed();
+    };
+    const check = async () => {
+      if (stopped) return;
+      if (!this.oAuthFlows.has(info.oauth_request_id)) return stop();
+      // `isClosed` reports whether the window is OPEN — an inversion this class carries.
+      if (flow.isClosed) return;
+      stop();
+      const cancelled = await this.cancelFlow(info.provider, info.oauth_request_id, targetEntity);
+      if (!this.oAuthFlows.has(info.oauth_request_id)) return;
+      const status = cancelled?.status === 'success' ? OAuthStatus.SUCCESS : OAuthStatus.CANCELLED;
+      await this.onOAuthMessage({ oauth_request_id: info.oauth_request_id, status } as OAuthMessage);
+    };
+    const onFocus = () => void check();
+    window.addEventListener('focus', onFocus);
+    const offClosed = flow.onWindowClosed(() => void check());
+    flow.on(OAuthEventType.WINDOW_CLOSE, stop);
   }
 
   /**

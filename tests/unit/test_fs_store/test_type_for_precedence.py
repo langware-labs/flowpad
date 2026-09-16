@@ -77,7 +77,7 @@ def test_a_harness_type_owns_its_family_dir(tmp_path: Path) -> None:
 
 
 def test_a_shared_type_is_found_under_every_harness_prefix(tmp_path: Path) -> None:
-    from flow_sdk.fs_store.placement import WORKER_PREFIX
+    from flow_sdk.assets.placement import WORKER_PREFIX
 
     for prefix in set(WORKER_PREFIX.values()):
         assert SchemaRegistry.type_for(tmp_path / prefix / "agents" / "reviewer.md") == "subagent", prefix
@@ -155,7 +155,7 @@ def _probe_type():
 
 
 def test_a_fixed_filename_beats_every_extension_tier(tmp_path: Path, _probe_type) -> None:
-    from flow_sdk.schema.layout import File
+    from flow_sdk.assets.layout import File
 
     _probe_type("_probe_named", File(ext=".md", names=("PROBE.md", "PROBE.local.md")))
     assert SchemaRegistry.type_for(tmp_path / "PROBE.md") == "_probe_named"
@@ -164,7 +164,7 @@ def test_a_fixed_filename_beats_every_extension_tier(tmp_path: Path, _probe_type
 
 
 def test_a_second_extension_names_the_same_type(tmp_path: Path, _probe_type) -> None:
-    from flow_sdk.schema.layout import File
+    from flow_sdk.assets.layout import File
 
     _probe_type("_probe_multi", File(ext=".probe", also=(".probe2",)))
     assert SchemaRegistry.type_for(tmp_path / "a.probe") == "_probe_multi"

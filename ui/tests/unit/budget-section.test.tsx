@@ -530,3 +530,55 @@ describe('inviting a team\u2019s people', () => {
     expect(screen.queryByTestId(`team-add-people-${UUID(4)}`)).toBeNull();
   });
 });
+
+describe('the org’s own people', () => {
+  const person = (
+    over: Partial<{ user_id: string; name: string; email: string | null; role: string | null }> = {},
+  ) => ({
+    user_id: UUID(9),
+    name: 'Ishay Sela',
+    email: 'ishay@example.test',
+    role: 'admin',
+    ...over,
+  });
+
+  it('lists someone held by the org alone, once the section is opened', () => {
+    h.org.mockReturnValue({
+      data: { org: orgScope(), teams: [teamScope()], people: [person()] },
+      isLoading: false,
+      error: null,
+    });
+    h.team.mockReturnValue(idle);
+
+    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    // Collapsed like a team's roster: the names appear only once it is opened.
+    expect(screen.queryByTestId(`org-people-${UUID(1)}`)).toBeNull();
+
+    fireEvent.click(screen.getByTestId(`org-people-toggle-${UUID(1)}`));
+
+    expect(screen.getByTestId(`org-person-${UUID(9)}`).textContent).toContain('Ishay Sela');
+    expect(screen.getByTestId(`org-person-${UUID(9)}`).textContent).toContain('admin');
+  });
+
+  it('is not rendered at all when everybody reaches the org through a team', () => {
+    h.org.mockReturnValue({
+      data: { org: orgScope(), teams: [teamScope()], people: [] },
+      isLoading: false,
+      error: null,
+    });
+    h.team.mockReturnValue(idle);
+
+    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+
+    expect(screen.queryByTestId(`org-people-toggle-${UUID(1)}`)).toBeNull();
+  });
+
+  it('renders the page against a hub that does not send the field yet', () => {
+    // The app and the hub ship separately; a missing list is an absent section, not a blank org.
+    h.org.mockReturnValue({ data: { org: orgScope(), teams: [] }, isLoading: false, error: null });
+    h.team.mockReturnValue(idle);
+
+    expect(() => draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />)).not.toThrow();
+    expect(screen.getByTestId('org-unit')).toBeTruthy();
+  });
+});

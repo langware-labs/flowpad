@@ -15,9 +15,15 @@
 import { dataContext, initSdk, isBackendUnreachable } from '@sdk';
 import type { LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { applySupportedLocales } from '@src/contexts/locale-context';
+import { isAnonymousEntryPath } from '@src/routes/anonymous-entry';
 
-export async function loadRoot(_args: LoaderArgs) {
-  await initSdk();
+export async function loadRoot(args: LoaderArgs) {
+  // Which route this is decides whether a signed-out hub load renders or is
+  // redirected to the provider — and this loader is the last place that knows
+  // before `initSdk` (which is memoised) settles the question for the whole
+  // session. The route table is the app's, so the app answers; the SDK only
+  // obeys. See `anonymous-entry.ts`.
+  await initSdk({ allowAnonymous: isAnonymousEntryPath(new URL(args.request.url).pathname) });
 
   // Backend is the source of truth for supported locales (bootstrap payload).
   // Install the list + re-resolve the active locale now that it's available

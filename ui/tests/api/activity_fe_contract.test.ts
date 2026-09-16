@@ -19,7 +19,11 @@ const ROOT = `e2etest-activity-${Date.now()}`;
 /** Every key the TypeScript interface declares. Kept literal so a rename is caught. */
 const MIRRORED_FIELDS: Array<keyof ActivityProgressSpec> = [
   'activity_id',
-  'scope',
+  // `scope` became `subject_entity` in 753485c49 (the wizard work): addressing
+  // moved from (scope, path) to (subject_entity, path). The TS mirror and the
+  // backend spec were both updated; this list was not, so the contract test was
+  // asserting a field neither side declares any more.
+  'subject_entity',
   'path',
   'name',
   'label',

@@ -65,7 +65,7 @@ async def _index_single_markdown(md_path: Path) -> None:
     walker setup and is not handled here — those rows are populated by
     the regular project walks.
     """
-    from flow_sdk.fs_store.placement import DOCS_FAMILY
+    from flow_sdk.assets.placement import DOCS_FAMILY
 
     root = next((p.parent for p in md_path.parents if p.name == DOCS_FAMILY), None)
     if root is None:

@@ -19,10 +19,10 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.agent_hook import AgentHook, AgentProvider, HookScope
-from flow_sdk.builtin.hook_models import ActionType, TriggerAction
 from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 
 # Reset DB state before every test so TestClient gets a fresh event-loop session
 # and async tests reinitialise the DB in the pytest event loop each time.

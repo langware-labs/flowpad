@@ -14,12 +14,13 @@ import json
 import pytest
 
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — enrolls MICRO_APP
-from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, AssetClass
+from flow_sdk.builtin.faas.micro_app import MicroApp
 from flow_sdk.builtin.faas.serve_static import AppNotBuilt, serve_app_bytes
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR, AssetClass
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.layout import Folder
+from flow_sdk.schema.data_spec.app_location_type import AppLocationType
 from tests.fixtures.identity import resolve_id
 
 AA = AGENTIC_ASSETS_DIR

@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from flow_sdk.fs_store.indexer.functions.skill import parse_skill_yaml_from_dir
+from flow_sdk.assets.types.skill import parse_skill_yaml_from_dir
 
 SYSTEM_PROJECTS = Path(__file__).resolve().parents[2] / "flow_sdk" / "system_projects"
 

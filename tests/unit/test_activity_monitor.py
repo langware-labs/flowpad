@@ -68,11 +68,11 @@ def test_list_is_ordered_by_most_recently_updated(clock):
 
 def test_list_filters_by_scope():
     Activity.get("index").inc_success()
-    Activity.get("run", scope="agentic_process-1").inc_success()
+    Activity.get("run", subject_entity="agentic_process-1").inc_success()
 
-    assert [s.path for s in monitor.list(scope="agentic_process-1")] == ["run"]
-    assert [s.path for s in monitor.list()] == ["index"], "the default scope is the instance"
-    assert len(monitor.list(all_scopes=True)) == 2
+    assert [s.path for s in monitor.list(subject_entity="agentic_process-1")] == ["run"]
+    assert [s.path for s in monitor.list()] == ["index"], "the default subject_entity is the instance"
+    assert len(monitor.list(all_subjects=True)) == 2
 
 
 def test_count_counts_roots_not_nodes():
@@ -319,33 +319,33 @@ def test_this_machines_compute_node_is_the_same_address_as_no_scope():
     index`` scopes to nothing. Both mean "this box", so the same job name would otherwise
     run twice under one name with neither seeing the other — and the single-flight claim
     would not notice. Collapsing here also makes "belongs to the box" structurally
-    ``scope is None``, so nothing downstream re-derives it.
+    ``subject_entity is None``, so nothing downstream re-derives it.
     """
-    from flow_sdk.activity.emit import local_scope_typeid
+    from flow_sdk.activity.emit import local_subject_typeid
 
-    scoped = Activity.get("index", scope=local_scope_typeid())
+    scoped = Activity.get("index", subject_entity=local_subject_typeid())
     unscoped = Activity.get("index")
 
     assert scoped is unscoped
-    assert scoped.scope is None, "the box's own node normalises away"
+    assert scoped.subject_entity is None, "the box's own node normalises away"
     assert monitor.count() == 1
 
 
 def test_another_compute_node_keeps_its_scope():
     """Only THIS machine's node is the instance; a remote one is an ordinary entity."""
     mine = Activity.get("index")
-    theirs = Activity.get("index", scope="compute_node-11111111-1111-4111-8111-111111111111")
+    theirs = Activity.get("index", subject_entity="compute_node-11111111-1111-4111-8111-111111111111")
 
     assert mine is not theirs
-    assert theirs.scope == "compute_node-11111111-1111-4111-8111-111111111111"
+    assert theirs.subject_entity == "compute_node-11111111-1111-4111-8111-111111111111"
 
 
 def test_the_claim_sees_through_both_spellings():
     """The gate must refuse a second claim even when the two callers spell the box
     differently — otherwise two indexes run at once and neither knows."""
-    from flow_sdk.activity.emit import local_scope_typeid
+    from flow_sdk.activity.emit import local_subject_typeid
 
-    Activity.try_claim("index", scope=local_scope_typeid())
+    Activity.try_claim("index", subject_entity=local_subject_typeid())
 
     with pytest.raises(RuntimeError, match="already running"):
         Activity.try_claim("index")

@@ -10,15 +10,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessError, RunResult
-from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
-from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
     get_default_records_root,
     set_default_records_data_root,
     set_default_records_root,
 )
+from flow_sdk.responses.response import ApiSuccessResponse
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 @pytest.fixture(autouse=True)
@@ -146,6 +146,7 @@ def test_fork_factory_passes_workdir():
 def test_claude_project_dir_lookup_uses_fork_session_id():
     """When forking, CLAUDE_PROJECT_DIR lookup uses fork_session_id, not the new session_id."""
     from unittest.mock import MagicMock
+
     from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
 
     proc = _proc(session_id="new-session-uuid")

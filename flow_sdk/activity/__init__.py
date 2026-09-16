@@ -12,7 +12,7 @@ one shape, ``ActivityProgressSpec``::
     Activity.get("index/pdf").inc_error("encrypted", ref="a.pdf")
     Activity.get("index").done("indexed 5,000")
 
-    async with Activity.claim("index", scope=node, timeout_seconds=600, queue=True) as act:
+    async with Activity.claim("index", subject_entity=node, timeout_seconds=600, queue=True) as act:
         act.total(5000)     # single-flight: the address IS the slot
 
     monitor.list()          # what is live right now
@@ -22,7 +22,7 @@ See ``docs/snippets/activity.md`` for the shelf page and the same verbs in TypeS
 the CLI and HTTP.
 """
 
-from flow_sdk.activity.activity import SEP, Activity, canonical_verb, split_path
+from flow_sdk.activity.activity import SEP, Activity, ActivityEnded, canonical_verb, split_path
 from flow_sdk.activity.progress_monitor import (
     ActivityProgressMonitor,
     Subscriber,
@@ -39,6 +39,7 @@ __all__ = [
     "SEP",
     "TERMINAL",
     "Activity",
+    "ActivityEnded",
     "ActivityErrorSpec",
     "ActivityProgressMonitor",
     "ActivityProgressSpec",

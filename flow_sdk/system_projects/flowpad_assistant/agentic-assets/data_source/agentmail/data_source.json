@@ -2,8 +2,15 @@
   "schema": 1,
   "name": "agentmail",
   "title": "AgentMail",
-  "icon_name": "Mail",
-  "description": "A hosted mailbox over its HTTP API \u2014 reads the inbox and really sends.",
+  "icon_name": "AgentMail",
+  "description": "A hosted mailbox over its HTTP API — reads the inbox and really sends. Not offered in the picker: people get Agent Email, which the cloud allocates.",
+  "kind": "datasource.api.agentmail",
+  "listed": false,
+  "auth": {
+    "secrets": {
+      "api_key": "ingest_api.agentmail"
+    }
+  },
   "config": {
     "inbox": {
       "type": "text",

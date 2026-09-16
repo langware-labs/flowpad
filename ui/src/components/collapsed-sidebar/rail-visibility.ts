@@ -2,7 +2,15 @@ import { ViewMode } from '@src/contexts/view-mode-context';
 
 /**
  * THE left rail spec — one ordered list that owns BOTH what appears and in what
- * order, for every mode and every entry.
+ * order, for every mode and every entry IN THE MODE-MATRIX RAIL.
+ *
+ * Scope, so this is not read as total: the account cluster at the foot of the
+ * sidebar (dev-mode toggle, JourneyBadge, Org & teams, assistant, theme,
+ * user menu) is a deliberately separate region rendered directly by
+ * collapsed-sidebar.tsx. Those buttons are not modal, not ordered by mode, and
+ * carry `data-testid` rather than `data-rail-item` — do not "fix" one into
+ * RAIL_ITEMS, which would put it in the mode matrix and in the rail-order
+ * contract that `tests/react/rail-order-and-gates.test.tsx` pins.
  *
  * Two rules, and they are the whole model:
  *

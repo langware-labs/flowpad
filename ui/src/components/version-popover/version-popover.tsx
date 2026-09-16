@@ -2,6 +2,7 @@ import { MarkdownView } from '@src/components/markdown-view';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
+import { useCopied } from '@src/components/ui/copy-button';
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import apiClient from '@sdk/client';
@@ -62,6 +63,9 @@ interface VersionCheckResponse {
   latest_release: ReleaseInfo | null;
   releases: ReleaseInfo[];
   github_error: string | null;
+  /** When THIS machine installed the running flow SDK — a LOCAL fact, so it
+   *  sits beside `hub` rather than inside `pypi`. Null for a source checkout. */
+  installed_at: string | null;
   hub: HubInfo | null;
 }
 
@@ -141,6 +145,18 @@ function findReleaseByTag(releases: ReleaseInfo[], tag: string | null | undefine
   if (!tag) return null;
   const norm = tag.replace(/^v/i, '');
   return releases.find((r) => r.tag === norm) ?? null;
+}
+
+/** PyPI publish date for a flow SDK version.
+ *
+ *  Deliberately separate from `findReleaseByTag`: that one searches the GitHub
+ *  Releases list, which is the DESKTOP app's tags (v0.2.41…). Asking it for a
+ *  flow SDK version (v0.2.157) never matches, which is why both PyPI rows used
+ *  to render a blank date. PyPI ships its own per-version publish times. */
+function findPypiRelease(releases: PypiRelease[] | undefined, version: string | null | undefined): PypiRelease | null {
+  if (!version) return null;
+  const norm = version.replace(/^v/i, '');
+  return (releases ?? []).find((r) => r.version === norm) ?? null;
 }
 
 interface VersionRowProps {
@@ -238,26 +254,17 @@ function CopyableUrlField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CopyableCommand({ command }: { command: string }) {
+export function CopyableCommand({ command }: { command: string }) {
   const { t } = useLingui();
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore
-    }
-  }, [command]);
+  const { copied, copy } = useCopied();
   return (
     <button
       type="button"
-      onClick={() => void handleCopy()}
+      onClick={() => void copy(command).catch(() => undefined)}
       className="flex w-full items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] transition-colors hover:bg-muted"
       title={t`Copy to clipboard`}
     >
-      <span>{command}</span>
+      <span className="break-all text-start">{command}</span>
       {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
     </button>
   );
@@ -412,17 +419,21 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const pypi = data?.pypi;
   const githubLatest = data?.latest_release ?? null;
 
-  const { pypiCurrentRelease, pypiLatestRelease, electronCurrentRelease, githubUpdateAvailable } = useMemo(() => {
-    const releases = data?.releases ?? [];
+  const { pypiCurrentPublished, pypiLatestPublished, electronCurrentRelease, githubUpdateAvailable } = useMemo(() => {
+    // Generically named on the wire, but GitHub Releases carry DESKTOP tags
+    // only — never a flow SDK version. Naming it here so the next reader is
+    // not tempted to resolve an SDK version out of it, which is exactly how
+    // both PyPI rows ended up with a blank date.
+    const githubReleases = data?.releases ?? [];
     return {
-      pypiCurrentRelease: findReleaseByTag(releases, currentVersion),
-      pypiLatestRelease: pypi?.latest ? findReleaseByTag(releases, pypi.latest) : null,
-      electronCurrentRelease: findReleaseByTag(releases, electronVersion),
+      pypiCurrentPublished: findPypiRelease(pypi?.releases, currentVersion),
+      pypiLatestPublished: findPypiRelease(pypi?.releases, pypi?.latest),
+      electronCurrentRelease: findReleaseByTag(githubReleases, electronVersion),
       githubUpdateAvailable: Boolean(
         electronVersion && githubLatest && electronVersion.replace(/^v/i, '') !== githubLatest.tag,
       ),
     };
-  }, [data?.releases, currentVersion, pypi?.latest, electronVersion, githubLatest]);
+  }, [data?.releases, pypi?.releases, currentVersion, pypi?.latest, electronVersion, githubLatest]);
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -553,19 +564,20 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             <VersionRow
               label={t`Installed`}
               version={currentVersion}
-              date={formatDateWithAge(pypiCurrentRelease?.published_at)}
+              date={formatDateWithAge(pypiCurrentPublished?.published_at)}
             />
             <VersionRow
               label={t`Latest on PyPI`}
               version={pypi?.latest ?? null}
-              date={formatDateWithAge(pypiLatestRelease?.published_at)}
+              date={formatDateWithAge(pypiLatestPublished?.published_at)}
               badge={pypi?.update_available ? t`Update available` : null}
               muted={!pypi?.update_available}
             />
-            <ReleaseNotes title={`Notes for v${currentVersion}`} release={pypiCurrentRelease} />
-            {pypi?.update_available && pypiLatestRelease && (
-              <ReleaseNotes title={`Notes for v${pypi.latest}`} release={pypiLatestRelease} />
-            )}
+            {data?.installed_at && <TimestampRow label={t`Installed on`} timestamp={data.installed_at} />}
+            {/* No release notes here: PyPI carries no notes body (``PypiRelease``
+                is version/date/yanked only), and GitHub Releases are desktop
+                tags, so an SDK version never resolves there. The rows that used
+                to try rendered nothing, every time. */}
             {pypi?.update_available && (
               <div className="pt-1">
                 {electronApi?.upgradeFlowpad ? (

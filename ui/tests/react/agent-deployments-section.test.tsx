@@ -14,7 +14,8 @@ const mocks = vi.hoisted(() => ({
   success: vi.fn(),
 }));
 
-vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => true }));
+// Desktop runtime on purpose: the chat button is no longer hub-only.
+vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => false }));
 
 vi.mock('@src/components/assets/editor/agent-profile/DeployedAgentChatPanel', () => ({
   DeployedAgentChatPanel: ({ deployment }: { deployment: Deployment }) => (
@@ -43,7 +44,7 @@ beforeEach(() => {
 });
 
 describe('AgentDeploymentsSection', () => {
-  it('opens one exact deployment chat at a time on the Hub', async () => {
+  it('opens one exact deployment chat at a time, on the desktop as on the hub', async () => {
     const first = new Deployment({
       id: '00000000-0000-4000-8000-000000000002',
       name: 'First GCP box',

@@ -641,11 +641,11 @@ class PtyActionsMixin:
         # Parser-fn-only types need their own dispatch (no record_cls). Add
         # cases here as more types migrate.
         if record_type == "claude_session":
-            from flow_sdk.fs_store.indexer.functions.claude_sessions import (  # noqa: PLC0415
+            from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
+            from flow_sdk.fs_store.indexer.functions.claude_sessions import (
                 claude_session_meta_dict,
                 discover_claude_session_paths_iter,
                 ensure_claude_session_stats,
-                extract_claude_session_from_path,
                 get_claude_session,
             )
 

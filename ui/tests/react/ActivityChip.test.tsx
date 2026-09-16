@@ -36,7 +36,7 @@ import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 function spec(over: Partial<ActivityProgressSpec> = {}): ActivityProgressSpec {
   return {
     activity_id: 'a1',
-    scope: null,
+    subject_entity: null,
     path: 'index',
     name: 'index',
     label: 'Indexing',
@@ -195,7 +195,7 @@ describe('footer chip — activities', () => {
     render(<PendingActionsChip />);
     act(() =>
       handleActivitySnapshot(
-        spec({ activity_id: 'p1', path: 'process', name: 'process', scope: 'agentic_process-abc', seq: 2 }),
+        spec({ activity_id: 'p1', path: 'process', name: 'process', subject_entity: 'agentic_process-abc', seq: 2 }),
       ),
     );
 

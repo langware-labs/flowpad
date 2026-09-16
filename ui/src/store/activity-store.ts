@@ -47,8 +47,8 @@ const evictionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let snapshot: ReadonlyArray<ActivityProgressSpec> = [];
 let attached = false;
 
-function key(spec: Pick<ActivityProgressSpec, 'scope' | 'path'>): string {
-  return `${spec.scope ?? ''}::${spec.path}`;
+function key(spec: Pick<ActivityProgressSpec, 'subject_entity' | 'path'>): string {
+  return `${spec.subject_entity ?? ''}::${spec.path}`;
 }
 
 /** Most-recently-updated first, with the timestamp parsed once per ingest rather than
@@ -178,8 +178,8 @@ export function getActivities(): ReadonlyArray<ActivityProgressSpec> {
 }
 
 /** One activity by address, without rendering. */
-export function getActivity(path: string, scope?: string | null): ActivityProgressSpec | null {
-  return specs.get(`${scope ?? ''}::${path}`) ?? null;
+export function getActivity(path: string, subject_entity?: string | null): ActivityProgressSpec | null {
+  return specs.get(`${subject_entity ?? ''}::${path}`) ?? null;
 }
 
 /** Snapshot hydration is lazy; live events continue through the existing sequence guard. */
@@ -195,12 +195,12 @@ export function useActivities(): ReadonlyArray<ActivityProgressSpec> {
 }
 
 /** One activity by address, or `null` when nothing is live there. */
-export function useActivitySpec(path: string, scope?: string | null): ActivityProgressSpec | null {
+export function useActivitySpec(path: string, subject_entity?: string | null): ActivityProgressSpec | null {
   useActivityHydration();
   // Subscribe for re-renders, then read the map directly — a linear scan of the snapshot
   // is not needed when the store is already keyed by address.
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  return getActivity(path, scope);
+  return getActivity(path, subject_entity);
 }
 
 /** How many activities are live — for a caller that needs the count and not the rows. */

@@ -1,5 +1,5 @@
 {
-  "comment": "Cross-language asset-editor contract. Parsed by tests/unit/test_asset_editor_contract.py (Python, flow_sdk/core/asset_editor.py) and ui/tests/unit/asset-editor-contract.test.ts (TypeScript, ts_sdk/src/models/asset-editor.ts). Neither side generates this file: it is an independent third statement, so a change to one language map fails the other language suite. Extension routing is NOT here \u2014 it is TypeScript-only (see ui/tests/unit/editor-for-path.test.ts). `hub_url_cases` pins the HUB grammar the same way: Python `hub_asset_url` vs TypeScript `hubProjectAssetDock`. Change this only with both suites in hand.",
+  "comment": "Cross-language asset-editor contract. Parsed by tests/unit/test_asset_editor_contract.py (Python, flow_sdk/core/asset_editor.py) and ui/tests/unit/asset-editor-contract.test.ts (TypeScript, ts_sdk/src/models/asset-editor.ts). Neither side generates this file: it is an independent third statement, so a change to one language map fails the other language suite. Extension routing is NOT here — it is TypeScript-only (see ui/tests/unit/editor-for-path.test.ts). `hub_url_cases` pins the HUB grammar the same way: Python `hub_asset_url` vs TypeScript `hubProjectAssetDock`. Change this only with both suites in hand.",
   "editors": [
     "code",
     "markdown",
@@ -16,6 +16,7 @@
     "usage_report",
     "asset_cleanup_report",
     "journey",
+    "wizard",
     "mcp",
     "llm_endpoint",
     "html",
@@ -75,6 +76,9 @@
     "journey": [
       "journey"
     ],
+    "wizard": [
+      "wizard"
+    ],
     "mcp": [
       "mcp"
     ],
@@ -109,6 +113,7 @@
     "usage_report": "usage_report",
     "asset_cleanup_report": "asset_cleanup_report",
     "journey": "journey",
+    "wizard": "wizard",
     "mcp": "mcp",
     "llm_endpoint": "llm_endpoint"
   },

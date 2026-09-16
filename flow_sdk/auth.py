@@ -17,7 +17,13 @@ async def login() -> dict[str, Any]:
 
 
 async def logout() -> None:
-    """Clear this FlowPad instance's Hub login."""
+    """Clear this FlowPad instance's Hub login.
+
+    Credentials only — deliberately narrower than the app's Logout button,
+    which also drops the hub's local copy of the inbox via ``clear_user_data``.
+    A script ending its session is not a user asking for their data to be
+    removed from the machine; callers that want that ask for it by name.
+    """
     from flow_sdk.cli.auth.cloud_login import clear_cloud_credentials
 
     await clear_cloud_credentials()

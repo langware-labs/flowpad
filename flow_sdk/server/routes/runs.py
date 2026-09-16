@@ -76,6 +76,7 @@ def _row(process) -> dict[str, Any]:
         "flow_run_id": context.get("flow_run_id") or None,
         "flow_id": context.get("flow_id") or None,
         "node_id": context.get("node_id") or None,
+        "trigger_id": context.get("trigger_id") or None,
         "deployment_id": getattr(process, "deployment_id", None) or None,
         "project_id": getattr(process, "project_id", None) or None,
         "session_id": getattr(process, "session_id", None) or None,
@@ -99,6 +100,9 @@ SCOPES: dict[str, str] = {
     # this list exists. Its source is the only handle anyone has on it, stamped
     # by `ingest_run_context` (flow_sdk/ingest/driver.py), which owns the key.
     "data_source_id": "context_data.data_source_id",
+    # A scheduled run's spawning entity is its trigger — stamped by the
+    # RUN_AGENT handler (flow_sdk/builtin/hook_models.py).
+    "trigger_id": "context_data.trigger_id",
 }
 
 

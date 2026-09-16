@@ -31,7 +31,7 @@ def frontmatter_id(path: Any) -> str | None:
     """The valid ``id:`` a markdown document's frontmatter carries, else None."""
     from pathlib import Path
 
-    from flow_sdk.fs_store.identity_carrier import Found, Frontmatter
+    from flow_sdk.assets.identity_carrier import Found, Frontmatter
 
     found = Frontmatter().read(Path(getattr(path, "_path", path)))
     return found.id if isinstance(found, Found) else None

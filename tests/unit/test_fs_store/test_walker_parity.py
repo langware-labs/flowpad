@@ -18,7 +18,6 @@ from flow_sdk.schema.type_info.command_type_info import COMMAND
 from flow_sdk.schema.type_info.dynamic_workflow_type_info import DYNAMIC_WORKFLOW
 from flow_sdk.schema.type_info.markdown_type_info import MARKDOWN
 from flow_sdk.schema.type_info.plan_type_info import PLAN
-from flow_sdk.schema.type_info.secret_origin_type_info import SECRET_ORIGIN
 from flow_sdk.schema.type_info.skill_type_info import SKILL
 from flow_sdk.schema.type_info.subagent_type_info import SUBAGENT
 from flow_sdk.schema.type_info.todo_file_type_info import TODO_FILE
@@ -126,16 +125,6 @@ def test_markdown_docs_walk_is_recursive_and_skips_appledouble(tmp_path: Path) -
     _touch(tmp_path / "notes" / "d.md")
     node = FSRef(tmp_path, record_type=RecordType.USER_HOME_FOLDER)
     assert _emitted(layout_walker(MARKDOWN), [node]) == _expect(RecordType.MARKDOWN, hits)
-
-
-def test_secret_origin_walk_under_any_folder(tmp_path: Path) -> None:
-    hits = [_touch(tmp_path / "assets" / "sodot" / "api.json", "{}"), _touch(tmp_path / "assets" / "sodot" / "db.json", "{}")]
-    _touch(tmp_path / "assets" / "sodot" / "._api.json", "{}")
-    _touch(tmp_path / "assets" / "sodot" / "readme.md")
-    _touch(tmp_path / "assets" / "other.json", "{}")
-    folders = [tmp_path, tmp_path / "assets", tmp_path / "assets" / "sodot"]
-    nodes = [FSRef(p, record_type=RecordType.FOLDER) for p in folders]
-    assert _emitted(layout_walker(SECRET_ORIGIN), nodes) == _expect(RecordType.SECRET_ORIGIN, hits)
 
 
 def test_dynamic_workflow_walk_includes_skill_bundled_scripts(tmp_path: Path) -> None:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.assets.layout import File
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.layout import File
 from flow_sdk.schema.type_info import register_all
 
 #: File-layout types whose document really is markdown.

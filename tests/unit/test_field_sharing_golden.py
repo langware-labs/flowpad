@@ -184,12 +184,16 @@ CONVERGED_TO_PRIVATE = {
     "project_root",
     "project_name",
 }
-# Fields that carried NO policy at all (bare pydantic `Field`, so they resolved
-# to SHARED and travelled) and are now declared PRIVATE. `fs_storage_provider`
-# was popped from the hub body by hand in `Project._hub_body` — that pop was the
-# policy; `visitor_role` is a per-request auth projection whose declaration even
-# said "Use Field not APIField for security".
-NEWLY_DECLARED_PRIVATE = {"fs_storage_provider", "visitor_role"}
+# Declared PRIVATE after `BASE_BUNDLE_EXCLUDE` was frozen, so the literal cannot
+# know about them. Two kinds land here. Converted: fields that carried NO policy
+# at all (bare pydantic `Field`, so they resolved to SHARED and travelled) —
+# `fs_storage_provider` was popped from the hub body by hand in
+# `Project._hub_body`, and that pop was the policy; `visitor_role` is a
+# per-request auth projection whose declaration even said "Use Field not
+# APIField for security". Born private: fields added since, which were PRIVATE
+# from their first line — `published` is a cache of the project manifest row,
+# reconciled from a local FILE that no receiver has.
+NEWLY_DECLARED_PRIVATE = {"fs_storage_provider", "published", "visitor_role"}
 BASE_LOCAL_ONLY = ["asset_occurrences", "asset_ref", "fetched_at", "remote", "system"]
 HUB_AUTHORITATIVE = ["updated_date"]
 
@@ -271,8 +275,9 @@ def test_the_two_egress_seams_now_agree():
             # permalink) stays SHARED so a received message keeps its badge.
             # `source_item_id` is its queryable twin — same row-id reasoning.
             # `sent_at` is the projection-owned EVENT time: locally re-derived
-            # from the item, and a hub LWW refresh must never blank it.
-            ["origin_local", "source_item_id", "sent_at"],
+            # from the item, and a hub LWW refresh must never blank it. `envelope`
+            # is its projection-owned sibling (sender, recipients, subject).
+            ["origin_local", "source_item_id", "sent_at", "envelope"],
             # Per-device inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
@@ -297,6 +302,7 @@ def test_the_two_egress_seams_now_agree():
                 "env_vars",
                 "expand",
                 "fs_storage_provider",
+                "envelope",
                 "kind",
                 "last_active_at",
                 "last_edited_at",
@@ -351,7 +357,9 @@ def test_the_two_egress_seams_now_agree():
             # of the pointer log, rebuilt locally and never accepted from the hub.
             # `owner`: whose inbox lists it — a fact about this machine's partition,
             # never the hub's (that is the roster's `owner` role).
-            ["hub_updated_date", "message_ids", "owner"],
+            # `channel_source_id`: the local DataSource behind a source-backed
+            # conversation — a row id in OUR database.
+            ["hub_updated_date", "message_ids", "owner", "channel_source_id"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
@@ -466,11 +474,9 @@ def test_project_hub_body_override_strips_local_project_state():
         "last_mode",
         "last_session_at",
         "presence",
-        "secret_origins",
         "session_code",
         "session_count",
         "shared_context_origins",
-        "shared_secret_origins",
     ]
     assert added == []
     assert "name" in inst._hub_body(), "the hub hosts a project's name verbatim"

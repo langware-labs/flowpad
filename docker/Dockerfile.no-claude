@@ -1,0 +1,74 @@
+# The bare box a wizard exists to fix: everything the backend needs, and NO
+# claude CLI. Derived from Dockerfile.flow-backend — see the npm layer below.
+# Single image used for BOTH alice and bob backends.
+# Each container only differs in env vars (port, hub URL, cloud user creds,
+# FLOWPAD_DEV flag) and which named volume mounts to /root/.flow.
+#
+# Why a headless image instead of running the host backend directly?
+# The host runs both backends, both reading the same macOS keychain and the
+# same ~/.flow/ — when env vars (FLOWPAD_DEV) leak between shell-sourced
+# sessions, alice and bob collapse onto the same identity. Containers give
+# each backend its own filesystem + keyring → identity isolation by
+# construction.
+FROM python:3.10-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates git gnupg \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node 20 (current LTS). The harness CLIs below are npm globals, and the QA
+# cycle's scenarios shell out to them from the agentic_process PTY.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/*
+
+# All four harnesses (binary names the drivers shell out to — see
+# ``flow_sdk/flowpad_types/vendors.py``). claude is pinned because its releases
+# have broken worker spawning before, and an unpinned harness turns "we changed
+# the model" into "we changed the model and the CLI".
+#
+# Caveat worth knowing: the other three are NOT really floating. This layer is
+# cached, so each machine freezes whatever npm served on ITS build day, with the
+# version recorded nowhere. Four other install sites are unpinned too
+# (tests/long_tests/stress_matrix, scripts/docker_login_poc, and both
+# .github/actions), so moving a pin here moves it for one rig of five.
+# DELIBERATELY NO @anthropic-ai/claude-code. This image exists to prove a
+# wizard can install it: the wizard's precondition (`command -v claude`) has to
+# genuinely fail on a machine that genuinely lacks it, and an image that ships
+# the CLI makes that step a no-op that looks like a pass.
+RUN npm install -g \
+      opencode-ai \
+ && npm cache clean --force \
+ && opencode --version \
+ && ! command -v claude
+
+# Install uv for fast deps install (already used on the host).
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# Install flow_sdk + its deps. No lock file in repo, so install directly
+# from pyproject — slower than uv sync --frozen but correct.
+COPY pyproject.toml README.md ./
+COPY flow_sdk ./flow_sdk
+RUN uv pip install --system .
+# The unconstrained resolve above can land fastmcp 4.x pre-releases whose mcp
+# 2.0 beta drops ``mcp.types`` (server crashes on import). Pin the stable
+# series the host runs (fastmcp 3.x / mcp 1.x).
+RUN uv pip install --system 'fastmcp<4' 'mcp<2'
+
+# Use the file-based keyring backend. Inside a slim container there is no
+# macOS Keychain / SecretService / kwallet, so the default backend would
+# crash on first set_password. ``keyrings.alt`` is already a flow_sdk
+# dependency; this env var tells the ``keyring`` library to use the file
+# backend without any code changes.
+#
+# Credentials live in /root/.local/share/python_keyring/keyring_pass.cfg.
+# That path is NOT under /root/.flow, so docker-compose gives it a volume of its
+# own; without one a `--force-recreate` discards every stored key.
+ENV PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring
+
+# Default port; compose overrides per service via LOCAL_SERVER_PORT.
+EXPOSE 9000-9100
+
+CMD ["python", "-m", "flow_sdk.server.run"]

@@ -3,7 +3,7 @@
  *
  * Only classes the backend can actually put on the wire live here. The record
  * types it can emit are fixed by `_EXTRACTORS` in
- * `flow_sdk/fs_store/source_file_records.py` (settings.json, managed-settings,
+ * `flow_sdk/assets/types/source_file_records.py` (settings.json, managed-settings,
  * mcp.json) plus what the indexer broadcasts (`claude_session`, `claude_hook`).
  * Importing this module is also what registers those classes — registration is
  * a module-level side effect, so the barrel is load-bearing, not decorative.

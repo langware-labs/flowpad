@@ -1,13 +1,6 @@
 """SDK-independent connection orchestration and canonical catalogue access."""
 
-from .orchestrator import AuthorizationPresenter, connect, test
-from .specs import (
-    list_connection_specs,
-    list_connections,
-    resolve_connection_spec,
-    token_for_spec,
-)
-from .types import (
+from flow_sdk.schema.data_spec.connection_spec import (
     Authorization,
     BrowserAuthorization,
     ConnectionCancelled,
@@ -19,6 +12,14 @@ from .types import (
     ConnectionTokenResult,
     ConnectionTokenStatus,
     DeviceAuthorization,
+)
+
+from .orchestrator import AuthorizationPresenter, connect, test
+from .specs import (
+    list_connection_specs,
+    list_connections,
+    resolve_connection_spec,
+    token_for_spec,
 )
 
 __all__ = [

@@ -57,6 +57,8 @@ class EntityType(StrEnum):
     # MCP_SERVER below, which is the read-only scan of a vendor's config files.
     MCP = "mcp"
     MCP_SERVER = "mcp_server"
+    # The per-project ledger of PUBLISHED assets (agentic-assets/project_manifest/).
+    PROJECT_MANIFEST = "project_manifest"
     # Scaffold type — .mcp.json / mcp.json files that contain server definitions.
     MCP_SERVER_SOURCE = "mcp_server_source"
     PLUGIN = "plugin"
@@ -155,7 +157,6 @@ class EntityType(StrEnum):
     SYSTEM_ROOT = "system_root"
     CWD_ROOT = "cwd_root"
     FOLDER = "folder"
-    SECRET_ORIGIN = "secret_origin"
     CONTACTS_GROUP = "contacts_group"
     # A blessed dot-taxonomy tag name (flow_sdk/builtin/tag.py). Optional
     # enrichment — anonymous tags (plain strings) need no entity at all.
@@ -214,6 +215,11 @@ class EntityType(StrEnum):
     JOURNEY = "journey"
     # A user's private progress through a Journey (DB-only, one per user+journey).
     JOURNEY_JOURNAL = "journey_journal"
+    # A folder-backed AUTONOMOUS setup document (wizard.json of ordered steps).
+    # The counterpart of JOURNEY, and the distinction is the reason both exist:
+    # a Journey PRESENTS a step and waits for a person; a Wizard DECIDES and
+    # executes. So a wizard step carries an exit-code map, not a waitFor.
+    WIZARD = "wizard"
     # A folder-backed support desk PORTAL: guides plus a helpdesk.json naming the
     # hub project that owns the ticket queue. A repo declares itself a help desk
     # by shipping one, so cloning it as a context folder is what gives a project
@@ -250,9 +256,8 @@ class EntityType(StrEnum):
     #: is. ``DATA_SOURCE`` is the configured instance; this is its definition.
     DATA_SOURCE_SPEC = "data_source_spec"
     #: The authored definition of a NAMED SET OF ENV VARS a provider needs
-    #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD). ``SECRET_ORIGIN`` is one
-    #: project's declaration of ONE variable; this is the global definition of
-    #: the group. Same split as DATA_SOURCE_SPEC : DATA_SOURCE.
+    #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD) — the only way secrets are
+    #: declared, in user or project scope.
     CREDENTIAL_SPEC = "credential_spec"
     # One thread of ingested cloud messages (a Gmail thread, a Slack
     # `thread_ts`). MANY threads may point at ONE conversation — that is the

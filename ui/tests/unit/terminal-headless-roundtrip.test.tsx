@@ -65,6 +65,9 @@ vi.mock('@xterm/xterm', () => {
     cols = 80;
     loadAddon() {}
     attachCustomKeyEventHandler() {}
+    registerLinkProvider() {
+      return { dispose() {} };
+    }
     open(el: HTMLElement) {
       xtermSpies.open.calls += 1;
       xtermSpies.open.lastContainer = el;

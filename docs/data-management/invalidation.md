@@ -43,8 +43,12 @@ Every entity GET schedules a non-blocking freshness check:
 `handle_get_by_id` → `asyncio.create_task(entity.check_and_refresh_record())`
 (`flow_sdk/app/actions/graph_crud_actions.py:110`). Under `record_sync_guard`,
 if `record.index_required` is true (source hash **or path digest** differs from
-the `.hash` sentinel), it re-syncs and re-stamps; any error in the re-sync is
-swallowed silently (`entity_model.py:1530`).
+the `.hash` sentinel), it re-parses the asset from disk through
+`reparse_entity` (`flow_sdk/fs_store/reindex.py` — the same step `/invalidate`
+runs) and re-stamps; only a shadow-only type (no `from_disk_fn`) or a path that no
+longer resolves falls back to `sync_to_db` on the shadow. Rebuilding from the shadow
+lost every field the file alone authors — an agent's `system_prompt` read back as
+`""` after a restart. Any error in the re-sync is swallowed (logged at warning).
 This covers navigation/open, but **not** a file that changed while already open —
 nothing re-GETs it.
 
@@ -163,8 +167,9 @@ The token is threaded through the editor wrappers:
   GET-time path — but the explicit `/invalidate` and turn-end paths force a
   re-parse regardless of the sentinel, so they still refresh.
 - **Force re-parse, not `sync_to_db` on a loaded record.** The shadow metadata
-  body is stale; always route a forced re-index through
-  `resolve_asset` + `index_one(..., notify=True)`.
+  never holds the body and is stale for everything the file authors; route every
+  re-index of an existing entity through `reparse_entity` (`resolve_asset` +
+  `index_one(..., notify=True)`).
 - **Dirty-guard drops external changes while editing** — intentional. The user's
   save wins; don't remove the guard to "always refresh".
 

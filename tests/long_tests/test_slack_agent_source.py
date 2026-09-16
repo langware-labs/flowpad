@@ -34,7 +34,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped drivers
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.flow_message import FlowMessage
@@ -144,8 +143,13 @@ async def test_connect_my_slack_channel(assistant):
 
     # ── the run's declared output IS the source ─────────────────────────────
     target = await _await_declared_source(assistant)
-    if target is None:
-        pytest.skip("the run declared no data_source artifact — LLM non-compliance, not a defect")
+    # THE SUBJECT: "the run's declared output IS the source" (above). A run that
+    # declared no data_source artifact is the failure this test exists to catch,
+    # so it must fail — skipping here left the test unable to fail for any input.
+    assert target is not None, (
+        "the run declared no data_source artifact — the skill did not produce "
+        "the source that is this test's subject"
+    )
     src = await Entity.get_by_typeid(TypeId(target))
     assert src is not None, f"artifact points at a missing entity: {target}"
     assert (src.config or {}).get("connector") == "slack", (
