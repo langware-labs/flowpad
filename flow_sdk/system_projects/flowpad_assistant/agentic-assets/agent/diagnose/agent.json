@@ -9,5 +9,6 @@
   "permission_mode": "bypassPermissions",
   "load_flowpad_assistant": true,
   "enabled": true,
-  "version": 3
+  "version": 4,
+  "title": ""
 }
