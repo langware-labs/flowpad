@@ -86,3 +86,21 @@ async def test_status_counts_a_repo_with_no_commits(tmp_path: Path):
     status = await GitRepo(str(tmp_path), LocalNode()).get_status()
 
     assert [(f.path, f.insertions, f.deletions) for f in status.files] == [("first.txt", 2, 0)]
+
+
+@pytest.mark.asyncio
+async def test_status_reports_remote_and_its_browser_url(repo: Path):
+    status = await GitRepo(str(repo), LocalNode()).get_status()
+    assert (status.remote_url, status.remote_web_url) == (None, None)
+
+    _git(repo, "remote", "add", "origin", "https://x-access-token:secret@github.com/org/repo.git")
+    status = await GitRepo(str(repo), LocalNode()).get_status()
+    # Credentials never reach the UI; the browser form drops .git.
+    assert status.remote_url == "https://github.com/org/repo.git"
+    assert status.remote_web_url == "https://github.com/org/repo"
+
+    _git(repo, "remote", "set-url", "origin", "git@github.com:org/repo.git")
+    status = await GitRepo(str(repo), LocalNode()).get_status()
+    assert status.remote_url == "git@github.com:org/repo.git"
+    assert status.remote_web_url == "https://github.com/org/repo"
+

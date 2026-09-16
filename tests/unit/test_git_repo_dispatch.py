@@ -72,6 +72,14 @@ async def test_dispatch_status_clean_repo():
     assert result.data["files"] == []
 
 
+def test_remote_web_url_forms():
+    assert GitRepo._remote_web_url("git@github.com:org/repo.git") == "https://github.com/org/repo"
+    assert GitRepo._remote_web_url("ssh://git@gitlab.com:22/g/sub/repo.git") == "https://gitlab.com/g/sub/repo"
+    assert GitRepo._remote_web_url("https://github.com/org/repo") == "https://github.com/org/repo"
+    assert GitRepo._remote_web_url("/srv/git/repo.git") is None
+    assert GitRepo._remote_web_url("C:/repos/repo") is None
+
+
 async def test_dispatch_status_staged_flag():
     """Porcelain X column drives GitStatusFile.staged (backend-computed)."""
     responses = [

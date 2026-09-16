@@ -70,6 +70,10 @@ class GitStatus(_CamelModel):
     ahead: int = 0
     behind: int = 0
     files: list[GitStatusFile] = []
+    # Fetch URL of the branch's remote (origin when there is no upstream), as
+    # configured, and its https browser form when the host is recognisable.
+    remote_url: str | None = None
+    remote_web_url: str | None = None
 
 
 class GitCurrentBranchData(_CamelModel):
@@ -402,6 +406,31 @@ class GitRepo:
             return (None, ahead, behind)
         return (body.split("...", 1)[0].strip() or None, ahead, behind)
 
+    @staticmethod
+    def _remote_web_url(remote_url: str) -> str | None:
+        """Browser URL for a git remote, or None when it isn't a web host.
+
+        Examples::
+
+            git@github.com:org/repo.git          → https://github.com/org/repo
+            ssh://git@host:22/org/repo.git       → https://host/org/repo
+            https://user@host/org/repo.git       → https://host/org/repo
+            /local/path/repo.git                 → None
+        """
+        url = remote_url.strip()
+        m = re.match(r"^(?:[\w.-]+@)?([\w.-]+):(?!//)(.+)$", url)
+        if m and len(m.group(1)) > 1:  # a one-letter "host" is a Windows drive
+            host, path = m.group(1), m.group(2)
+        else:
+            m = re.match(r"^(?:https?|ssh|git)://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+)$", url)
+            if not m:
+                return None
+            host, path = m.group(1), m.group(2)
+        path = path.strip("/")
+        if path.endswith(".git"):
+            path = path[: -len(".git")]
+        return f"https://{host}/{path}" if path else None
+
     async def get_status(self) -> GitStatus:
         """Return a rich git-status object.
 
@@ -474,12 +503,22 @@ class GitRepo:
                 )
             )
 
+        # ``ls-remote --get-url`` resolves the upstream's remote, else origin,
+        # through insteadOf rewrites — and never touches the network.
+        remote_out, remote_rc = await self._run_git("ls-remote", "--get-url")
+        remote_url = remote_out.strip() if remote_rc == 0 and remote_out.strip() else None
+        if remote_url:
+            # Credentials embedded in an https remote never leave the node.
+            remote_url = re.sub(r"^(https?://)[^@/]+@", r"\1", remote_url)
+
         return GitStatus(
             error=None,
             branch=branch,
             ahead=ahead,
             behind=behind,
             files=files,
+            remote_url=remote_url,
+            remote_web_url=self._remote_web_url(remote_url) if remote_url else None,
         )
 
     async def get_file_diff(self, file_path: str, status: str) -> GitFileDiff:
