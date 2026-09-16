@@ -35,9 +35,6 @@ DATA_SOURCE_SPEC = TypeInfo(
     asset_class="repo",
     family="data_driver",
     shape=Folder(main="data_driver.json"),
-    # Written before the driver rename: reported by the scan until the migration moves them.
-    retired_families=("data_source",),
-    retired_mains=("data_source.json",),
     retired_files=tuple((name, RETIRED_RUNTIME_UPGRADE) for name in RETIRED_RUNTIME_FILES),
     asset_spec=ManifestSpec,
     fts_content=("name", "description"),
