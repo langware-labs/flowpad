@@ -113,6 +113,7 @@ Each `<type>_info.py` module declares one (or more) `TypeInfo` instance at modul
 ```python
 SKILL = TypeInfo(
     type_name=EntityType.SKILL,
+    process_projection=project_process_asset,
     icon="FileBadge",
     display_name="Skills",
     browseable_by=ViewMode.STANDARD,
@@ -124,10 +125,14 @@ SKILL = TypeInfo(
     asset_class="shared",
     family="skills",
     shape=Folder(main="SKILL.md"),
+    walk=(
+        Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root", "system_root")),
+        Walk(roots=("folder",), anywhere=True),
+    ),
     editor="skill",
     hub_main_file="SKILL.md",
     fts_content=("name", "description", "body"),
-    identity_carrier=Frontmatter(),
+    identity_carrier=frontmatter_identity(),
     asset_hash_fn=skill_asset_hash,
     asset_spec=SkillSpec,                 # from_disk_fn defaults to spec_extractor
     derive_fields_fn=derive_skill,
@@ -210,7 +215,7 @@ Scan/index bookkeeping is **not** a registry concern; it lives in `index_log` as
 All operations are logged to JSONL files:
 
 ```
-~/.flow/schema/
+~/.flow/instances/<name>/schema/     # InstanceSettings.schema_dir (per instance)
   scan_log.jsonl              # global scan log (all types)
   index_log.jsonl             # global index log (written only by clear; see note)
   types/

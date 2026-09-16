@@ -17,7 +17,7 @@ description: A long PTY turn was truncated mid-generation and still reported out
 ```breadcrumb
 tag: breadcrumb.test.pty_turn_liveness.rules
 sites:
-  - rel_path: "tests/unit/test_agentic_process_pty_turn_liveness.py"
+  - rel_path: "tests/long_tests/test_agentic_process_pty_turn_liveness.py"
     line: 166
     note: "FAILING? the PTY turn was cut off while the worker was still generating - read this tag's rules before touching the inactivity fallback or _pty_change_signature"
 ```

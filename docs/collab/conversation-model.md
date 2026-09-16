@@ -152,27 +152,35 @@ doesn't trip the guard — keeping CRUD working without making the guard leaky.
 
 A conversation's owning `project_id` is computed **once, deterministically, at
 every init point** (local create, share, hub receive) via the single classmethod
-`resolve_project_id` (`conversation.py:155-184`). The rule: the project follows
+`resolve_project_id` (`conversation.py:299-353`). The rule: the project follows
 the *shared/target entity*, never the client's ambient "active project".
 
 ```
-resolve_project_id(shared_context_entities, *, fallback=None) -> str | None:
+@classmethod
+async resolve_project_id(cls, shared_context_entities=None, *, fallback=None) -> str | None:
     for ref in shared_context_entities or []:
-        tid = _coerce_context_typeid(ref)          # :79
+        tid = _coerce_context_typeid(ref)          # :120
         if tid is None or not tid.id:
             continue
-        proj = await Entity.project_id_of(tid.type, tid.id)   # shared primitive
+        model = SchemaRegistry.get_entity_cls(tid.type)
+        if model is None:
+            continue
+        target = await model.get_one({"id": tid.id})          # DB row only
+        proj = await target.effective_project_id() if target is not None else None
         if proj:
             return proj                            # first non-null wins
     return fallback                                # explicit scope, else None
 ```
 
-`_coerce_context_typeid` (`:79-93`) normalizes the heterogeneous wire shapes a
+`_coerce_context_typeid` (`:120-134`) normalizes the heterogeneous wire shapes a
 context ref can take — a `TypeId`, a `"<type>-<id>"` string, or a
 `{"type","id"}` dict — into a `TypeId`, returning `None` for anything
-unparseable. `Entity.project_id_of` (`entity_model.py:2084`) is the same primitive
-Tab project derivation uses, so a conversation and its tab agree on project by
-construction.
+unparseable. The resolver deliberately reads DB rows only (`get_one` +
+`effective_project_id`), NOT `Entity.project_id_of` (`entity_model.py:3204`):
+that primitive's `get_by_id` lets a type recover itself from disk, and binding a
+conversation to a project is durable install consent, so it must never be
+decided from a filesystem scan. An unresolvable entity leaves the conversation
+unbound and the receiver chooses.
 
 Resolution order and the deliberate `None` tail:
 
@@ -210,7 +218,7 @@ There is no `task_id` field. The conversation's parent task is one of its
 `shared_context_entities`, read back via:
 
 ```
-conv.first_context_of_type('task', bucket='shared')   # entity_model.py:2295
+conv.first_context_of_type('task', bucket='shared')   # entity_model.py:3413
 ```
 
 This unifies "the task this conversation is about" with every other shared anchor
