@@ -1,11 +1,14 @@
-import { ActionInfo, Agent, dataManager } from '@sdk';
+import { ActionInfo, Agent, dataManager, TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Globe, Loader2 } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { Button } from '@src/components/ui/button';
+import { ShareButton } from '@src/components/entity-actions/ShareButton';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { genericEntityShareSource } from '@src/hooks/share-sources';
 
 /**
  * Stamp the agent readable by anyone, signed-out callers included: the hub's `set_public`
@@ -35,6 +38,17 @@ export function AgentPublicVisibilitySection({ agent }: { agent: Agent }) {
   const publishable = agent.remote === true;
   const [isPublic, setIsPublic] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+
+  // Targeted sharing (pick specific people) is independent of the public-visibility
+  // toggle above — a private agent can still be shared with named recipients via the
+  // same contact-first dialog every other entity uses. A fresh source per open resets
+  // its resolve-once prep cache.
+  const shareSource = useMemo(
+    () => genericEntityShareSource(new TypeId(Agent.type, agent.id), { label: agent.name }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agent.id, agent.name, shareOpen],
+  );
 
   useEffect(() => {
     if (!publishable) return;
@@ -68,28 +82,39 @@ export function AgentPublicVisibilitySection({ agent }: { agent: Agent }) {
 
   return (
     <section className="mt-4 border-t pt-4" data-testid="agent-public-visibility">
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={busy || isPublic || !publishable}
-        onClick={() => void onMakePublic()}
-        data-testid="agent-make-public"
-      >
-        {busy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Globe className="me-1.5 h-3.5 w-3.5" />}
-        {!publishable ? (
-          <Trans>Publish this agent to share it</Trans>
-        ) : isPublic ? (
-          <Trans>Agent is publicly visible</Trans>
-        ) : (
-          <Trans>Make agent publicly visible</Trans>
-        )}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy || isPublic || !publishable}
+          onClick={() => void onMakePublic()}
+          data-testid="agent-make-public"
+        >
+          {busy ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Globe className="me-1.5 h-3.5 w-3.5" />}
+          {!publishable ? (
+            <Trans>Publish this agent to share it</Trans>
+          ) : isPublic ? (
+            <Trans>Agent is publicly visible</Trans>
+          ) : (
+            <Trans>Make agent publicly visible</Trans>
+          )}
+        </Button>
+        <ShareButton
+          variant="compact"
+          onClick={() => setShareOpen(true)}
+          tooltip={t`Share this agent with specific people`}
+          testId="agent-share-with-people"
+        />
+      </div>
       <p className="mt-1.5 text-xs text-muted-foreground" data-testid="agent-public-consequence">
         <Trans>
           Anyone, even without signing in, can see this agent's name, description and system prompt — its files and
           actions stay private.
         </Trans>
       </p>
+      {shareOpen && (
+        <ShareToConversationDialog open={shareOpen} onClose={() => setShareOpen(false)} source={shareSource} />
+      )}
     </section>
   );
 }
