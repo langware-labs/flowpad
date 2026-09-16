@@ -58,19 +58,15 @@ class PtyActionsMixin:
         - close: Close PTY session
         - list: List all active PTY sessions for this compute node
         """
-        logging.debug("[PTY] terminal_command action called")
         request_info = get_current_request_info()
         if not request_info or not request_info.sub_path:
             logging.error("[PTY] No operation specified in sub_path")
             return ApiFailResponse(message="No operation specified")
 
         op = request_info.sub_path.strip("/").lower()
-        logging.debug("[PTY] Terminal operation: %s", op)
 
         try:
             body = await request_info.get_post_data()
-            # Never log the body: ``input`` carries whatever the user typed or pasted.
-            logging.debug("[PTY] Request shell=%s", (body or {}).get("shell_id"))
 
             if op == "start":
                 result = await self._start_pty_session(body)
@@ -91,7 +87,6 @@ class PtyActionsMixin:
             else:
                 result = ApiFailResponse(message=f"Unknown terminal operation: {op}")
 
-            logging.debug("[PTY] Returning %s", type(result).__name__)
             return result
         except Exception as e:
             logging.error(f"[PTY] Error in terminal_command: {str(e)}", exc_info=True)
