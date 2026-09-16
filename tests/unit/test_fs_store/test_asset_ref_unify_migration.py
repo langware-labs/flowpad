@@ -1,6 +1,6 @@
 """``asset_ref`` is the folder for every folder type. A row written while
 agent, spec and the reports pointed it at the inner main file
-(``<folder>/agent.md``) is rewritten to the folder by the migration — id
+(``<folder>/agent.json``) is rewritten to the folder by the migration — id
 unchanged."""
 from __future__ import annotations
 
@@ -54,7 +54,10 @@ def _asset_ref(db: Path, eid: str) -> str:
 def _agent(home: Path, name: str, entity_id: str) -> Path:
     folder = home / "agentic-assets" / "agent" / name
     folder.mkdir(parents=True)
-    (folder / "agent.md").write_text(f"---\nid: {entity_id}\nname: {name}\n---\n\nprompt\n", encoding="utf-8")
+    (folder / "agent.json").write_text(
+        json.dumps({"type": "agent", "id": entity_id, "name": name}, indent=2) + "\n", encoding="utf-8"
+    )
+    (folder / "system_prompt.md").write_text("prompt\n", encoding="utf-8")
     return folder
 
 
@@ -72,18 +75,18 @@ async def test_migration_rewrites_the_row_to_the_folder_and_keeps_the_id(tmp_pat
     home = tmp_path / "home"
     folder = _agent(home, "a", AGENT_ID)
     db = _db(tmp_path)
-    _row(db, AGENT_ID, "agent", {"name": "a", "asset_ref": str(folder / "agent.md")})
+    _row(db, AGENT_ID, "agent", {"name": "a", "asset_ref": str(folder / "agent.json")})
     roots = [FSRef(home, record_type=RecordType.USER_HOME_FOLDER, scope="user")]
 
     with patch("flow_sdk.fs_store.indexer.index_log._schema_dir", lambda: tmp_path / "schema"):
         planned = await mig.migrate(dry_run=True, db=db, roots=roots)
         assert [(m.type_name, m.entity_id, m.new) for m in planned.rows] == [("agent", AGENT_ID, str(folder))]
-        assert _asset_ref(db, AGENT_ID) == str(folder / "agent.md"), "dry-run writes nothing"
+        assert _asset_ref(db, AGENT_ID) == str(folder / "agent.json"), "dry-run writes nothing"
 
         applied = await mig.migrate(dry_run=False, db=db, roots=roots)
         assert applied.rows_rewritten == 1
         assert _asset_ref(db, AGENT_ID) == str(folder)
-        assert (folder / "agent.md").read_text(encoding="utf-8").startswith(f"---\nid: {AGENT_ID}\n")
+        assert json.loads((folder / "agent.json").read_text(encoding="utf-8"))["id"] == AGENT_ID
 
         again = await mig.migrate(dry_run=False, db=db, roots=roots)
     assert again.rows == [] and again.rows_rewritten == 0 and not again.converted

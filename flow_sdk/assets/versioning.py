@@ -30,6 +30,17 @@ def _strip_version(text: str) -> str:
     frontmatter re-rendered canonically — the comparison key for "did the asset
     actually change?". Two saves differing only by the version bump (or by benign
     frontmatter formatting the YAML writer normalizes) collapse to the same key."""
+    if text.lstrip().startswith("{"):
+        # An entity document (``<type>.json``): its keys minus ``version``, canonically ordered.
+        import json  # noqa: PLC0415
+
+        try:
+            doc = json.loads(text)
+        except ValueError:
+            return text
+        if isinstance(doc, dict):
+            return json.dumps({k: v for k, v in doc.items() if k != "version"}, sort_keys=True, ensure_ascii=False)
+        return text
     if _extract_frontmatter(text) is None:
         return text
     from flow_sdk.assets.document import read_document_bytes
@@ -69,7 +80,8 @@ def _versionable_folder_types() -> list:
     """
     from flow_sdk.assets.identity_carrier import Frontmatter
 
-    return [t for t in _folder_backed_types() if isinstance(t.identity_carrier, Frontmatter)]
+    # An entity document carries ``version`` as a key of its ``<type>.json`` — the same field, another carrier.
+    return [t for t in _folder_backed_types() if isinstance(t.identity_carrier, Frontmatter) or t.is_entity_document]
 
 
 def _versionable_main_files() -> set[str]:

@@ -25,7 +25,7 @@ export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
  * constructor not found for type"), so without it every `agent` row fetched
  * from the backend is silently discarded client-side.
  *
- * The entity projects agent.md for actions and launching. File editors use the
+ * The entity projects agent.json (+ system_prompt.md) for actions and launching. File editors use the
  * revision-checked FS document action to preserve unknown metadata and identity
  * capsules. The backend refreshes this projection after a document write.
  * `system_prompt` is the Markdown body; profile controls submit typed field patches.
@@ -41,11 +41,11 @@ export class Agent extends APIEntity<Agent> {
    *  `IconPicker` stores and `renderIconValue()` renders. */
   avatar?: string | null;
   /** Who this agent is. Delivered to the worker via `context_data.instructions`;
-   *  on disk it is the markdown body of `agent.md`. */
+   *  on disk it is `system_prompt.md` beside `agent.json`. */
   system_prompt?: string;
 
   // ── launch bundle ──────────────────────────────────────────────────────
-  /** The DRIVER short-id an agent.md declares: `claude` | `codex` | `copilot`.
+  /** The DRIVER short-id an agent.json declares: `claude` | `codex` | `copilot`.
    *  Deliberately NOT the `AgentConfig.WorkerType` vocabulary (`claude_code`),
    *  which is what `AgenticProcess.worker_type` stores. Feeding one where the
    *  other belongs is a real, previously-shipped bug. */
@@ -75,7 +75,7 @@ export class Agent extends APIEntity<Agent> {
 
   // ── lifecycle ──────────────────────────────────────────────────────────
   enabled: boolean;
-  /** Absolute on-disk path to the agent's folder (`agent.md` sits inside). */
+  /** Absolute on-disk path to the agent's folder (`agent.json` sits inside). */
   asset_ref?: string;
 
   // ── presentation + project auto-launch ─────────────────────────────────
@@ -88,10 +88,12 @@ export class Agent extends APIEntity<Agent> {
   auto_launch: boolean;
   /** First prompt of the auto-launched session, delivered via the prompt queue. */
   auto_launch_prompt?: string;
-  /** Per-place launch overrides, keyed by Deployment id (agent.md `places`). */
+  /** Per-place launch overrides, keyed by Deployment id (agent.json `places`). */
   places?: AgentPlaceSpecWire[] | null;
   /** Deployment id of the one place that answers this agent's email. */
   email_place?: string | null;
+  /** The agent's own phone number (agent.json `phone`) — declaration only. */
+  phone?: PhoneNumberWire | null;
 
   constructor(entity: Partial<Agent> = {}) {
     super(entity);
@@ -125,6 +127,7 @@ export class Agent extends APIEntity<Agent> {
     this.auto_launch_prompt = entity.auto_launch_prompt;
     this.places = entity.places ?? null;
     this.email_place = entity.email_place ?? null;
+    this.phone = entity.phone ?? null;
   }
 
   /**
@@ -150,17 +153,17 @@ export class Agent extends APIEntity<Agent> {
     const typeId = dataContext.computeNodeTypeId;
     const directory = this.bundleDirectory;
     if (!typeId || !directory) return null;
-    return new FrontMatterFsRef(`${directory}/${mainFileForType(Agent.type, 'agent.md')}`, typeId);
+    return new FrontMatterFsRef(`${directory}/${mainFileForType(Agent.type, 'agent.json')}`, typeId);
   }
 
   /** Directory containing the portable Agent bundle: `asset_ref` (a row from
-   *  before the unification may still name the inner `agent.md`). */
+   *  before the unification may still name the inner main file). */
   get bundleDirectory(): string | null {
     // `asset_ref` is stored natively (backslashes on Windows) but `FSRef.parent`
     // splits on `/` only.
     const normalized = this.asset_ref?.replace(/\\/g, '/').replace(/\/+$/, '');
     if (!normalized) return null;
-    const main = mainFileForType(Agent.type, 'agent.md') as string;
+    const main = mainFileForType(Agent.type, 'agent.json') as string;
     if (normalized === main) return '.';
     if (normalized.endsWith(`/${main}`)) return normalized.slice(0, -(main.length + 1)) || '/';
     return normalized;
@@ -432,7 +435,7 @@ function normalizeAgentInboxState(state: AgentInboxStateWire): AgentInboxState {
  * local backend has already adopted by the time this resolves. Callers render
  * the persisted Deployment rather than this response: it is a receipt, not the
  * state. `agent_definition_error` is present when the box came up but
- * `agent.md` failed to land — a live machine that is not yet the agent.
+ * `agent.json` failed to land — a live machine that is not yet the agent.
  */
 export interface AgentDeployResult {
   agent_id: string;
@@ -479,6 +482,12 @@ export interface AgentPlaceOverrides {
 
 export interface AgentPlaceSpecWire extends AgentPlaceOverrides {
   deployment_id: string;
+}
+
+/** `PhoneNumberSpec` — digits only; the backend strips `+`, separators and one trunk `0`. */
+export interface PhoneNumberWire {
+  country_code: string;
+  number: string;
 }
 
 /** One place an agent runs on (`GET /agent/<id>/places`). */

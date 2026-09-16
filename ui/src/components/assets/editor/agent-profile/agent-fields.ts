@@ -24,6 +24,7 @@ export type AgentDocumentPatch = Partial<
     | 'intro'
     | 'auto_launch'
     | 'auto_launch_prompt'
+    | 'phone'
     | 'system_prompt'
   >
 >;

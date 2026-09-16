@@ -364,6 +364,8 @@ class JsonRoot:
         return data
 
     def read(self, where: Path) -> CarrierRead:
+        if not where.exists():
+            return ABSENT
         return _outcome(self._load(where).get("id"), "native-json")
 
     def stamp(self, where: Path, entity_id: str) -> str:
@@ -381,8 +383,18 @@ class JsonRoot:
             if isinstance(current, Foreign):
                 raise ForeignId(where, current.raw)
             data["id"] = entity_id
-            _atomic_write_text_unlocked(where, json.dumps(data, indent=2) + "\n", expect=before)
+            _atomic_write_text_unlocked(where, dump_json_document(data), expect=before)
             return entity_id
+
+
+def dump_json_document(data: dict) -> str:
+    """A JSON document's text. An ENTITY document (one that names its ``type``) leads with ``type``
+    then ``id`` — the order the shadow ``metadata.json`` reads in; any other keeps its own order."""
+    if "type" not in data:
+        return json.dumps(data, indent=2) + "\n"
+    ordered = {key: data[key] for key in ("type", "id") if key in data}
+    ordered.update((key, value) for key, value in data.items() if key not in ordered)
+    return json.dumps(ordered, indent=2, ensure_ascii=False) + "\n"
 
 
 @dataclass(frozen=True, slots=True)
