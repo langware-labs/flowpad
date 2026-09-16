@@ -151,6 +151,9 @@ class Agent(Entity):
     # slug: get_agent_local_deployment("asset-cleanup") resolves on it.
     description: str = APIField(default="", description="One-line purpose, shown on the agent card.")
     avatar: Optional[str] = APIField(default=None, description="Emoji or image ref — presentation only.")
+    color: Optional[str] = APIField(
+        default=None, description="Avatar background hex — presentation only. Unset = derived from the name."
+    )
     system_prompt: str = APIField(
         default="",
         description="Who this agent is. Delivered through context_data.instructions — the channel "

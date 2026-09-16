@@ -52,6 +52,8 @@ class AgentSpec(AssetDocumentSpec):
     title: Optional[str] = None
     description: Optional[str] = None
     avatar: Optional[str] = None
+    #: The avatar circle's background — a palette hex. Unset = derived from the name.
+    color: Optional[str] = None
     worker_type: Optional[str] = None
     model: Optional[str] = None
     permission_mode: Optional[str] = None

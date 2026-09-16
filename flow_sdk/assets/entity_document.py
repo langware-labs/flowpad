@@ -122,7 +122,7 @@ def patch_entity_document(
             body_bytes = f"{new_body}\n".encode() if new_body else b""
             atomic_write(body_path, body_bytes)
         # What was just written IS the document; re-reading it would only prove the filesystem works.
-        return _as_document(after, {**doc, **fields}, body_bytes)
+        return _as_document(after, document, body_bytes)
 
 
 __all__ = ["IDENTITY_KEYS", "entity_info_for", "patch_entity_document", "read_entity_document"]

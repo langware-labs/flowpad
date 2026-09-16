@@ -38,8 +38,11 @@ export class Agent extends APIEntity<Agent> {
   name?: string;
   description?: string;
   /** Emoji (`🩺`) or a lucide icon name — the same one-string contract
-   *  `IconPicker` stores and `renderIconValue()` renders. */
+   *  `IconPicker` stores and `AvatarValue` renders. */
   avatar?: string | null;
+  /** Avatar circle background — a palette hex (`ColorPicker`). Unset = derived
+   *  from the agent's name. */
+  color?: string | null;
   /** Who this agent is. Delivered to the worker via `context_data.instructions`;
    *  on disk it is `system_prompt.md` beside `agent.json`. */
   system_prompt?: string;
@@ -100,6 +103,7 @@ export class Agent extends APIEntity<Agent> {
     this.name = entity.name;
     this.description = entity.description;
     this.avatar = entity.avatar;
+    this.color = entity.color;
     this.system_prompt = entity.system_prompt;
 
     this.worker_type = entity.worker_type;

@@ -45,6 +45,15 @@ def test_a_patch_writes_the_field_and_the_body_and_keeps_identity_first(note):
     assert after.revision != before.revision and after.body == "New body.\n"
 
 
+def test_a_dropped_field_is_gone_from_the_returned_document(note):
+    """The editor adopts the returned fields as its draft: a dropped key echoed back comes back to life."""
+    main, _ = note
+    before = read_entity_document(main, INFO)
+    after = patch_entity_document(main, DocumentPatch(drop_fields=("title",)), expected_revision=before.revision, info=INFO)
+    assert "title" not in json.loads(main.read_text())
+    assert "title" not in after.fields and after.revision == read_entity_document(main, INFO).revision
+
+
 def test_a_stale_revision_writes_nothing(note):
     main, _ = note
     text = main.read_text()
