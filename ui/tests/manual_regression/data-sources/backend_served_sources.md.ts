@@ -2,7 +2,7 @@
  * The Add-a-data-source dialog, checked against the manifests the backend indexed.
  *
  * The point of every assertion here is that nothing in `ui/` decides what a provider is.
- * So the expected values are FETCHED from `/api/v1/graph/data_source_spec` and compared to
+ * So the expected values are FETCHED from `/api/v1/graph/data_driver` and compared to
  * what rendered — writing them out as literals would just recreate `provider-catalog.ts`,
  * which this work deleted.
  */
@@ -42,10 +42,10 @@ function specNamed(name: string): Spec {
 
 test.beforeAll(async () => {
   const api = await apiContext();
-  const res = await api.get('/api/v1/graph/data_source_spec');
-  expect(res.ok(), 'the backend did not serve data_source_spec').toBeTruthy();
+  const res = await api.get('/api/v1/graph/data_driver');
+  expect(res.ok(), 'the backend did not serve data_driver').toBeTruthy();
   specs = ((await res.json()).data ?? []) as Spec[];
-  expect(specs.length, 'no data_source_spec assets indexed').toBeGreaterThan(0);
+  expect(specs.length, 'no data_driver assets indexed').toBeGreaterThan(0);
   await api.dispose();
 });
 

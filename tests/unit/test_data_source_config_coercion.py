@@ -5,17 +5,17 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.builtin.data_driver_spec import DataDriverSpec
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ConfigFieldSpec
+from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.schema.data_spec.data_driver_spec import FieldHints
 from tests.unit._ingest_helpers import make_data_source
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]
 
 
 async def test_lines_csv_and_number_fields_are_coerced_on_save():
-    await DataDriverSpec(
+    await DataDriver(
         name="probe_provider", title="Probe",
-        config={"feed_urls": ConfigFieldSpec(type="lines"), "tags": ConfigFieldSpec(type="csv"), "depth": ConfigFieldSpec(type="number")},
+        config={"feed_urls": FieldHints(type="lines"), "tags": FieldHints(type="csv"), "depth": FieldHints(type="number")},
     ).save(notify=False)
     src = make_data_source(provider="probe_provider", config={"feed_urls": "http://a/x\nhttp://b/y", "tags": "a, b", "depth": "3", "other": "kept"})
     await src.save(notify=False)
@@ -33,7 +33,7 @@ async def test_reflect_off_the_spec_list_falls_to_the_spec_default_on_create():
     """A folder source created through the API with the row default `record`
     has no reflector for the refs its driver returns; the spec's head is what
     the dialog would have picked."""
-    await DataDriverSpec(name="tree_provider", title="Tree", reflect=["none", "copy"]).save(notify=False)
+    await DataDriver(name="tree_provider", title="Tree", reflect=["none", "copy"]).save(notify=False)
     src = make_data_source(provider="tree_provider", config={"root": "/tmp/x"})
     assert src.reflect == "record"
     await src.save(notify=False)
@@ -47,9 +47,9 @@ async def test_reflect_off_the_spec_list_falls_to_the_spec_default_on_create():
 async def test_a_missing_required_field_refuses_the_create_naming_the_field():
     """The form already refuses it; this is the API's and an agent's copy of
     the rule — a `ValueError`, which the create route maps to a 400."""
-    await DataDriverSpec(
+    await DataDriver(
         name="strict_provider", title="Strict",
-        config={"root": ConfigFieldSpec(type="path", required=True), "note": ConfigFieldSpec()},
+        config={"root": FieldHints(type="path", required=True), "note": FieldHints()},
     ).save(notify=False)
     with pytest.raises(ValueError, match="config.root is required"):
         await make_data_source(provider="strict_provider", config={"note": "x"}).save(notify=False)
@@ -61,9 +61,9 @@ async def test_a_missing_required_field_refuses_the_create_naming_the_field():
 
 
 async def test_a_required_field_with_a_default_may_be_omitted():
-    await DataDriverSpec(
+    await DataDriver(
         name="defaulted_provider", title="Defaulted",
-        config={"depth": ConfigFieldSpec(type="number", required=True, default=3)},
+        config={"depth": FieldHints(type="number", required=True, default=3)},
     ).save(notify=False)
     src = make_data_source(provider="defaulted_provider", config={})
     await src.save(notify=False)
@@ -73,9 +73,9 @@ async def test_a_required_field_with_a_default_may_be_omitted():
 async def test_a_value_off_the_pattern_is_refused_per_entry_after_coercion():
     """`lines` are split first, so the message names the entry at fault, not
     the whole blob — the form's rule (`source-form.ts`), applied here."""
-    await DataDriverSpec(
+    await DataDriver(
         name="regex_provider", title="Regex",
-        config={"feed_urls": ConfigFieldSpec(type="lines", pattern=r"^https?://")},
+        config={"feed_urls": FieldHints(type="lines", pattern=r"^https?://")},
     ).save(notify=False)
     with pytest.raises(ValueError, match=r"config.feed_urls is not valid: ftp://b/y"):
         await make_data_source(provider="regex_provider", config={"feed_urls": "http://a/x\nftp://b/y"}).save(notify=False)
@@ -87,11 +87,11 @@ async def test_a_value_off_the_pattern_is_refused_per_entry_after_coercion():
 async def test_an_existing_row_is_not_re_validated_on_re_save():
     """The poller re-saves every tick; a rule added to the spec after the row
     was minted must not turn that into an exception nobody reads."""
-    await DataDriverSpec(name="lenient_provider", title="Lenient", config={"root": ConfigFieldSpec()}).save(notify=False)
+    await DataDriver(name="lenient_provider", title="Lenient", config={"root": FieldHints()}).save(notify=False)
     src = make_data_source(provider="lenient_provider", config={"root": "/tmp/x"})
     await src.save(notify=False)
-    spec = await DataDriverSpec.get_one({"name": "lenient_provider"})
-    spec.config = {"root": ConfigFieldSpec(required=True), "token": ConfigFieldSpec(required=True)}
+    spec = await DataDriver.get_one({"name": "lenient_provider"})
+    spec.config = {"root": FieldHints(required=True), "token": FieldHints(required=True)}
     await spec.save(notify=False)
     src.config = {"root": "/tmp/x"}
     await src.save(notify=False)   # no `token`, and no raise

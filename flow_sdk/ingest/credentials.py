@@ -27,7 +27,7 @@ from typing import Any, Optional
 
 from pydantic import SecretStr
 
-from flow_sdk.schema.data_spec.data_source_manifest_spec import AuthSpec
+from flow_sdk.schema.data_spec.data_driver_spec import AuthSpec
 from flow_sdk.sources.credentials import AuthShape, Credentials
 
 logger = logging.getLogger(__name__)

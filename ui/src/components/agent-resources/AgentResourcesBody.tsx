@@ -309,7 +309,7 @@ export function AgentResourcesBody() {
   return (
     <div className="flex flex-col py-1">
       {/* The CONNECTED sources — what an agent here can actually read from —
-          and never again the installed `DataDriverSpec` catalog this section
+          and never again the installed `DataDriver` catalog this section
           used to list. That catalog was the nine provider types the machine
           *can* connect: neither viewable nor selectable, so every row was
           decoration. Same shape as the three sections below it: rows are what

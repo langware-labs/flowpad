@@ -254,7 +254,7 @@ class EntityType(StrEnum):
     SOURCE_CHANGE = "source_change"
     #: The AUTHORED half of a source — a folder asset describing what a source
     #: is. ``DATA_DRIVER`` is the configured instance; this is its definition.
-    DATA_SOURCE_SPEC = "data_source_spec"
+    DATA_DRIVER = "data_driver"
     #: The authored definition of a NAMED SET OF ENV VARS a provider needs
     #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD) — the only way secrets are
     #: declared, in user or project scope.

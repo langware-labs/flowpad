@@ -59,7 +59,7 @@ class ManifestError(ValueError):
     """A manifest folder that cannot be loaded. The message is shown to an author."""
 
 
-class ConfigFieldSpec(DataSpec):
+class FieldHints(DataSpec):
     """One field of the user-facing form — the whole reason the frontend can
     stop hardcoding a catalog per provider."""
 
@@ -88,7 +88,7 @@ class ConfigFieldSpec(DataSpec):
     choices: bool = False
 
     @model_validator(mode="after")
-    def _choices_needs_a_pickable_type(self) -> "ConfigFieldSpec":
+    def _choices_needs_a_pickable_type(self) -> "FieldHints":
         """A choosable field must be one `type` already knows how to render.
 
         The pairing IS the design: without it, `choices` on a `number` would reach the
@@ -154,11 +154,11 @@ class AuthSpec(DataSpec):
 
 
 def coerce_config(fields: dict, config: dict) -> dict:
-    """``config`` shaped by a field catalog (``{name: ConfigFieldSpec}``); unknown keys kept as-is."""
+    """``config`` shaped by a field catalog (``{name: FieldHints}``); unknown keys kept as-is."""
     return {k: (fields[k].coerce(v) if k in fields else v) for k, v in config.items()}
 
 
-class ManifestSpec(DataSpec):
+class DataDriverSpec(DataSpec):
     """``data_driver.json`` — the shape, with every authoring rule as a validator."""
 
     model_config = ConfigDict(populate_by_name=True)   # extra="forbid" is DataSpec's
@@ -194,7 +194,7 @@ class ManifestSpec(DataSpec):
     #: picker must not offer a mode that silently fails.
     reflect: list[str] = Field(default_factory=lambda: ["record"])
     #: The user-facing form. Replaces the frontend's hardcoded provider catalog.
-    config: dict[str, ConfigFieldSpec] = Field(default_factory=dict)
+    config: dict[str, FieldHints] = Field(default_factory=dict)
     #: Offered in the add-source picker. ``False`` keeps a provider loadable — its rows
     #: still poll, scripts still name it — without offering it to a person. A vendor
     #: reached through the cloud (AgentMail behind Agent Email) is unlisted.

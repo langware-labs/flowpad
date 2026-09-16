@@ -95,13 +95,13 @@ test('2. connect: an rss source over the dialog, pointed at the loopback feed', 
   const rows = ((await (await api.get('/api/v1/graph/data_source')).json()).data ?? []) as { id: string; name: string }[];
   sourceId = rows.find((r) => r.name === SOURCE_NAME)?.id ?? '';
   expect(sourceId, 'the source row exists').toBeTruthy();
-  const specs = ((await (await api.get('/api/v1/graph/data_source_spec')).json()).data ?? []) as { id: string; name: string }[];
+  const specs = ((await (await api.get('/api/v1/graph/data_driver')).json()).data ?? []) as { id: string; name: string }[];
   specId = specs.find((s) => s.name === 'rss')?.id ?? '';
   expect(specId, 'the rss definition is indexed').toBeTruthy();
   // The editor is a webapp asset NESTED in the definition, so finding it is a
   // containment query — there is no registry of editors to read.
   const apps = ((await (await api.get(
-    `/api/v1/graph/micro_app?filter=${encodeURIComponent(JSON.stringify({ parent_type_id: `data_source_spec-${specId}` }))}`,
+    `/api/v1/graph/micro_app?filter=${encodeURIComponent(JSON.stringify({ parent_type_id: `data_driver-${specId}` }))}`,
   )).json()).data ?? []) as { id: string; kind?: string }[];
   editorTypeId = `micro_app-${apps.find((a) => a.kind === 'application.web.editor')?.id ?? ''}`;
   expect(editorTypeId, "the definition's editor is indexed as its child").not.toBe('micro_app-');

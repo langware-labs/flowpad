@@ -1,5 +1,5 @@
 /**
- * DataDriverSpec — the AUTHORED half of a data source
+ * DataDriver — the AUTHORED half of a data source
  * (flow_sdk/builtin/data_driver_spec.py).
  *
  * `DataSource` is a configured instance: credentials, schedule, health,
@@ -44,12 +44,12 @@ export interface SpecConfigField {
    * The provider can enumerate this field's legal values — GCS buckets, Drive shared
    * drives, Slack channels — so the form offers a picker instead of asking for an id
    * nobody can produce from memory. `type` still decides the shape: `text` picks one,
-   * `lines` picks many. Mirrors `ConfigFieldSpec.choices`.
+   * `lines` picks many. Mirrors `FieldHints.choices`.
    */
   choices?: boolean;
 }
 
-export interface IDataDriverSpec extends IEntity {
+export interface IDataDriver extends IEntity {
   /** The definition's folder on this machine. */
   asset_ref?: string;
   title?: string;
@@ -78,15 +78,15 @@ export interface IDataDriverSpec extends IEntity {
   provisioned?: boolean;
 }
 
-// `implements IDataDriverSpec` only checks the class; it contributes no members, so every
-// field declared solely on IDataDriverSpec read as "does not exist". deepAssign populates
+// `implements IDataDriver` only checks the class; it contributes no members, so every
+// field declared solely on IDataDriver read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface DataDriverSpec extends EntityMerge<IDataDriverSpec> {}
+export interface DataDriver extends EntityMerge<IDataDriver> {}
 
 @registerEntity
-export class DataDriverSpec extends APIEntity<DataDriverSpec> implements IDataDriverSpec {
-  static type: string = 'data_source_spec';
+export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
+  static type: string = 'data_driver';
 
   title: string = '';
   description: string = '';
@@ -139,7 +139,7 @@ export class DataDriverSpec extends APIEntity<DataDriverSpec> implements IDataDr
    * (the reason the `asset_occurrences` special case exists), so it is safe over
    * an empty default and would UNION for any class with a non-empty one.
    */
-  constructor(json: IDataDriverSpec | undefined = undefined) {
+  constructor(json: IDataDriver | undefined = undefined) {
     super(json as never);
     if (json) dataManager.deepAssign(this, json);
   }

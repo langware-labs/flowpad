@@ -7,17 +7,17 @@ from pathlib import Path
 from flow_sdk.fs_store.fs_ref import FSRef
 
 
-def derive_data_source_spec(data: dict, root: Path, header_raw: dict) -> None:
+def derive_data_driver(data: dict, root: Path, header_raw: dict) -> None:
     """The runtime the folder implies — a fact the manifest alone cannot state. Only the retired
     runtimes' marker names are stat'ed: listing the folder cost one syscall per entry for a source
     that vendors helper modules."""
-    from flow_sdk.schema.data_spec.data_source_manifest_spec import AGENT_FILE, SCRIPT_FILE, ManifestSpec
+    from flow_sdk.schema.data_spec.data_driver_spec import AGENT_FILE, SCRIPT_FILE, DataDriverSpec
 
     markers = {name for name in (SCRIPT_FILE, AGENT_FILE) if (root / name).is_file()}
-    data["runtime"] = ManifestSpec.model_validate(header_raw).runtime_for_folder(markers).value
+    data["runtime"] = DataDriverSpec.model_validate(header_raw).runtime_for_folder(markers).value
 
 
-def data_source_spec_identity_key(ref: "FSRef | Path") -> str:
+def data_driver_identity_key(ref: "FSRef | Path") -> str:
     """The spec's ``name`` — its instance-global natural key.
 
     NOT the path. A spec SHIPS inside the wheel, so its absolute path names the
@@ -32,7 +32,7 @@ def data_source_spec_identity_key(ref: "FSRef | Path") -> str:
     dialog keys its lookup map by it. Identity just agrees with that now.
 
     Read from the manifest, which owns the value the row carries; the folder name
-    is the fallback, and the two are one noun by contract (``ManifestSpec.name``:
+    is the fallback, and the two are one noun by contract (``DataDriverSpec.name``:
     "the registry key AND the folder name").
     """
     path = Path(getattr(ref, "_path", ref))

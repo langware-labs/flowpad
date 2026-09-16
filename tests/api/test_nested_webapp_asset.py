@@ -52,17 +52,17 @@ async def _index(root: Path) -> dict:
     idx.add_function(
         RecordType.USER_HOME_FOLDER,
         repo_assets_fn,
-        frozenset({RecordType.DATA_SOURCE_SPEC, RecordType.MICRO_APP}),
+        frozenset({RecordType.DATA_DRIVER, RecordType.MICRO_APP}),
     )
-    await idx.index(IndexerOptions(verbose=False, types=[RecordType.DATA_SOURCE_SPEC, RecordType.MICRO_APP]))
-    from flow_sdk.builtin.data_driver_spec import DataDriverSpec
+    await idx.index(IndexerOptions(verbose=False, types=[RecordType.DATA_DRIVER, RecordType.MICRO_APP]))
+    from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
 
     # Scoped to THIS tree, not to the name: "demo"/"editor" are ordinary words and
     # the DB is shared across the suite, so a name lookup can answer with another
     # test's row and pass or fail for the wrong reason.
     under = str(root.resolve())
-    specs = [s for s in await DataDriverSpec.get_all({"name": "demo"}) if str(s.asset_ref).startswith(under)]
+    specs = [s for s in await DataDriver.get_all({"name": "demo"}) if str(s.asset_ref).startswith(under)]
     apps = [a for a in await MicroApp.get_all({"name": "editor"}) if str(a.asset_ref).startswith(under)]
     return {"spec": specs[0] if specs else None, "app": apps[0] if apps else None}
 

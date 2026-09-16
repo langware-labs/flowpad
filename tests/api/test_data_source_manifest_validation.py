@@ -7,16 +7,16 @@ import uuid
 
 import pytest
 
-from flow_sdk.builtin.data_driver_spec import DataDriverSpec
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ConfigFieldSpec
+from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.schema.data_spec.data_driver_spec import FieldHints
 
 pytestmark = pytest.mark.asyncio
 
 
 async def test_a_missing_required_field_is_a_400_naming_the_field(client):
-    await DataDriverSpec(
+    await DataDriver(
         name="api_strict_provider", title="Strict",
-        config={"root": ConfigFieldSpec(type="path", required=True), "feed": ConfigFieldSpec(pattern=r"^https?://")},
+        config={"root": FieldHints(type="path", required=True), "feed": FieldHints(pattern=r"^https?://")},
     ).save(notify=False)
 
     resp = await client.post("/api/v1/graph/data_source", json={"name": f"s {uuid.uuid4().hex[:8]}", "provider": "api_strict_provider", "config": {}})

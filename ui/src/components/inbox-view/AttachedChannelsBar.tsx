@@ -20,7 +20,7 @@
  * source shows before its first poll.
  */
 import { type ReactNode, useMemo, useState } from 'react';
-import { DataSource, type DataDriverSpec, TypeId, User } from '@sdk';
+import { DataSource, type DataDriver, TypeId, User } from '@sdk';
 import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -67,7 +67,7 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
   return { rows, specFor };
 }
 
-type SpecFor = (provider: string) => DataDriverSpec | undefined;
+type SpecFor = (provider: string) => DataDriver | undefined;
 type ChannelState = 'on' | 'off' | 'parked';
 const stateOf = (s: DataSource): ChannelState => (s.needsAttention ? 'parked' : s.status === 'disabled' ? 'off' : 'on');
 
@@ -213,7 +213,7 @@ function ChannelMark({
   onDelete,
 }: {
   group: ChannelGroup;
-  spec: DataDriverSpec | undefined;
+  spec: DataDriver | undefined;
   filtering: boolean;
   pressed: boolean;
   onClick: () => void;
@@ -300,12 +300,12 @@ export function ChannelList({
 }
 
 /** A spec already in hand, as the lookup `ChannelList` expects. */
-const specFor = (spec: DataDriverSpec | undefined): SpecFor => () => spec;
+const specFor = (spec: DataDriver | undefined): SpecFor => () => spec;
 
 /** One line of a channel list: glyph, name, its setup note, the on/off switch
  *  and a delete. A parked row's setup note IS its verify control — pressing
  *  the step it names re-runs the check. */
-function ChannelRow({ source, spec, onDelete }: { source: DataSource; spec: DataDriverSpec | undefined; onDelete: () => void }) {
+function ChannelRow({ source, spec, onDelete }: { source: DataSource; spec: DataDriver | undefined; onDelete: () => void }) {
   const { t } = useLingui();
   const { toggle, busy } = useSourceToggle(source);
   const { verify, busy: verifying } = useSourceVerify(source);

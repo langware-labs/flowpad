@@ -207,7 +207,7 @@ EXPECTED = {
     "DATA_SOURCE": "data_source",
     "DATA_SOURCE_CURSOR": "data_source_cursor",
     "CREDENTIAL_SPEC": "credential_spec",
-    "DATA_SOURCE_SPEC": "data_source_spec",
+    "DATA_DRIVER": "data_driver",
     "SOURCE_ITEM": "source_item",
     # The inbox projection's thread grouping — additive member, no existing
     # value changed.
@@ -241,7 +241,9 @@ def test_back_compat_aliases_are_the_same_class():
 
 #: Values an EntityType once had and may never be given again. A persisted row, shadow folder or
 #: TypeId still carrying one on an unmigrated install must read as unknown — never as a different type.
-RETIRED_VALUES: dict[str, str] = {}
+RETIRED_VALUES: dict[str, str] = {
+    "data_source_spec": "the driver definition, now data_driver (0.2.170; old rows are pruned at boot, no migration)",
+}
 
 
 def test_a_retired_value_is_never_reused():

@@ -1,9 +1,9 @@
-"""Extractor for DATA_SOURCE_SPEC — `agentic-assets/data_driver/<name>/data_driver.json`.
+"""Extractor for DATA_DRIVER — `agentic-assets/data_driver/<name>/data_driver.json`.
 
 Thin by design: the manifest's shape and every rule about what it may say are
-``ManifestSpec`` (``flow_sdk/builtin/data_source_spec.py``), loaded through the
+``DataDriverSpec`` (``flow_sdk/builtin/data_driver.py``), loaded through the
 type's serializer like any folder asset; the runtime is derived from the folder
-by ``ManifestSpec.runtime_for_folder``. This module only does the walk-side plumbing.
+by ``DataDriverSpec.runtime_for_folder``. This module only does the walk-side plumbing.
 
 A manifest that fails validation yields NO record rather than a half-parsed one.
 A source that silently loaded with a dropped field is worse than one that is

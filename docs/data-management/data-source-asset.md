@@ -5,7 +5,7 @@ id: f2a0bbff-0654-4416-b5c6-be1415a08f4d
 # Data source assets
 
 A data source is a **folder asset**. `data_driver.json` is the manifest (the
-`DataDriverSpec`); `source.py` is the source itself; everything else in the folder
+`DataDriver`); `source.py` is the source itself; everything else in the folder
 is discovered by convention. The loader reads the folder — nothing is registered in
 `flow_sdk` per source, and a shipped source is laid out exactly like an authored one.
 
@@ -49,7 +49,7 @@ Everything one source needs lives in its folder, shipped or authored alike — t
 
 ```
 agentic-assets/data_driver/<name>/
-  data_driver.json          # the DataDriverSpec
+  data_driver.json          # the DataDriver
   source.py                 # exactly one flow_sdk.sources.Source subclass — the source
   transport.py …            # optional helper modules, imported relatively (`from .transport import …`)
   tests/test_<name>_source.py   # conformance kit + wire cases, against flow_sdk.sources.testing doubles
@@ -103,11 +103,11 @@ config:
     label: Shared drive IDs
 ```
 
-The shape is `ManifestSpec` (`flow_sdk/schema/data_spec/data_source_manifest_spec.py`),
+The shape is `DataDriverSpec` (`flow_sdk/schema/data_spec/data_driver_spec.py`),
 a `DataSpec` with `extra="forbid"`: an unknown top-level key, an unknown `config` field
 key or an unknown `auth` key is a **load error**, and a rejected manifest yields no
 record at all (`spec_extractor` logs the rule and emits `[]`). The row is
-`DataDriverSpec`; the file says `schema`, the row says `manifest_schema` (the base
+`DataDriver`; the file says `schema`, the row says `manifest_schema` (the base
 entity already owns `schema_version`). The row also carries two computed facts from
 the loaded class: `sends` and `load_error`.
 
@@ -143,7 +143,7 @@ The folder name, the source-type registry key, and the source class's `provider`
 one noun, not three. The loader refuses a class whose `provider` names another source.
 
 **A folder cannot shadow a shipped source.** The shipped folders load first; an authored
-folder whose name collides with one still indexes as a `data_source_spec` row, but the
+folder whose name collides with one still indexes as a `data_driver` row, but the
 shipped class runs and the authored one reports a `load_error`. Overriding ours would
 mean no bug report could ever say which source ran.
 
@@ -216,8 +216,8 @@ provider catalog.
 | `account_key` | `true` on the ONE field whose value names the remote account. Descriptive only — ids are uuid4 and nothing dedupes on it |
 | `choices` | the source can list this field's legal values (the class is `Choosing`, or defines `choices_for`) |
 
-Each field is a `ConfigFieldSpec`, and its `type` is also a **coercion rule**:
-`DataSource.save()` runs `ConfigFieldSpec.coerce` over any string-valued config
+Each field is a `FieldHints`, and its `type` is also a **coercion rule**:
+`DataSource.save()` runs `FieldHints.coerce` over any string-valued config
 (`lines` splits on newlines, `csv` on commas, `number` parses), so a URL an agent
 sent as a string where `lines` is declared becomes a one-element list. On create,
 `required` and `pattern` are enforced by `DataSource.save()` too, so the CLI, the API
@@ -263,9 +263,9 @@ name a shipped source owns.
 
 The shipped folders load on the registry's first lookup. An authored folder in a
 project loads on first use — its `DataSource` is saved or synced — through its
-`DataDriverSpec` row.
+`DataDriver` row.
 
-The extractor (`derive_data_source_spec`) stamps `runtime: source` on the row. A folder
+The extractor (`derive_data_driver`) stamps `runtime: source` on the row. A folder
 still carrying the retired `fetch.py` or `FETCH.md` is reported by the scan (never indexed) with
 the upgrade — write a `source.py`. See "Porting a retired runtime" below.
 

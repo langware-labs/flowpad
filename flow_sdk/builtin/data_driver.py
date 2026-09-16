@@ -1,8 +1,8 @@
-"""DataDriverSpec — the authored half of a data source.
+"""DataDriver — the authored half of a data source.
 
 ``DataSource`` is a configured instance: a credential binding, a schedule, a
 health verdict, cursors. All of that is machine-local and changes every minute.
-``DataDriverSpec`` is what a source *is* — a folder asset carrying the manifest,
+``DataDriver`` is what a source *is* — a folder asset carrying the manifest,
 and nothing that churns.
 
 The split is the same one the codebase already makes twice: ``GraphWorkflow`` is
@@ -14,7 +14,7 @@ It also makes one spec serve many bindings: one "internal wiki" definition, two
 tenants, and a team that shares the definition while each person supplies their
 own credential.
 
-``ManifestSpec`` is the type's ``asset_spec``: the shape of ``data_driver.json``,
+``DataDriverSpec`` is the type's ``asset_spec``: the shape of ``data_driver.json``,
 read and written by the disk serializer like any other folder asset's main doc
 (flat, because the spec declares no ``FreeSection``). Every rule about what a
 manifest may say is a validator here — a load ERROR, never a warning, because
@@ -29,10 +29,10 @@ from pydantic import computed_field
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
-from flow_sdk.schema.data_spec.data_source_manifest_spec import (
+from flow_sdk.schema.data_spec.data_driver_spec import (
     CURRENT_SCHEMA,
     AuthSpec,
-    ConfigFieldSpec,
+    FieldHints,
     Runtime,
     coerce_config,
 )
@@ -71,11 +71,11 @@ from flow_sdk.schema.types import EntityType
 
 
 
-class DataDriverSpec(Entity):
-    """The ROW; its shape on disk is ``ManifestSpec`` (``TypeInfo.asset_spec``). The folder beside
+class DataDriver(Entity):
+    """The ROW; its shape on disk is ``DataDriverSpec`` (``TypeInfo.asset_spec``). The folder beside
     the manifest holds the source's own code (``source.py``), loaded by the source registry."""
 
-    type: str = APIField(default=EntityType.DATA_SOURCE_SPEC.value)
+    type: str = APIField(default=EntityType.DATA_DRIVER.value)
 
     # A folder-backed asset, so it OWNS its path — declaring `asset_ref` is what
     # enrolls the class in `Entity.asset_owner_classes()`, and therefore what
@@ -94,11 +94,11 @@ class DataDriverSpec(Entity):
     requires: dict[str, str] = APIField(default_factory=dict)
     auth: Optional[AuthSpec] = APIField(default=None)
     reflect: list[str] = APIField(default_factory=list)
-    config: dict[str, ConfigFieldSpec] = APIField(default_factory=dict)
+    config: dict[str, FieldHints] = APIField(default_factory=dict)
     listed: bool = APIField(default=True)
     provisioned: bool = APIField(default=False)
 
-    #: DERIVED from the folder by the extractor (``ManifestSpec.runtime_for_folder``), never
+    #: DERIVED from the folder by the extractor (``DataDriverSpec.runtime_for_folder``), never
     #: authored; mirrored to the shadow.
     runtime: str = APIField(default=Runtime.SOURCE.value, persist=Persist.TRUE)
 

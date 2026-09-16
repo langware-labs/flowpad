@@ -13,8 +13,8 @@ import json
 
 from typer.testing import CliRunner
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.data_driver_spec import DataDriverSpec
 from flow_sdk.cli.commands import _common, source_cmd
 from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module, read_manifest
 from flow_sdk.ingest.driver_types import driver_type
@@ -25,9 +25,9 @@ NAMES = sorted(p.name for p in SHIPPED_ROOT.iterdir() if (p / "data_driver.json"
 async def spec_row(name: str) -> None:
     """The manifest as its spec row — what the indexer writes on an instance — so config coercion
     and the reflect-mode rule run as they do there."""
-    if await DataDriverSpec.get_one({"name": name}) is None:
+    if await DataDriver.get_one({"name": name}) is None:
         manifest = read_manifest(SHIPPED_ROOT / name)
-        await DataDriverSpec(**manifest.model_dump(by_alias=False, exclude={"manifest_schema"})).save(notify=False)
+        await DataDriver(**manifest.model_dump(by_alias=False, exclude={"manifest_schema"})).save(notify=False)
 
 
 def _data(response) -> dict:

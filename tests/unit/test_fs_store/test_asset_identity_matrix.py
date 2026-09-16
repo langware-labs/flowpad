@@ -29,7 +29,7 @@ INDEXED_TYPES = {
     "agent_trace", "subagent", "agent", "graph_workflow", "asset_cleanup_report",
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
-    "credential_spec", "data_source", "data_source_spec",
+    "credential_spec", "data_source", "data_driver",
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
@@ -274,11 +274,11 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
         folder = root / "raw-copilot"
         folder.mkdir()
         return FSRef(folder / "events.jsonl"), "copilot_session:raw-copilot", uuid.NAMESPACE_DNS
-    if type_name == "data_source_spec":
+    if type_name == "data_driver":
         folder = root / "rss"
         folder.mkdir()
         (folder / "data_driver.json").write_text(json.dumps({"schema": 1, "name": "rss"}), encoding="utf-8")
-        return FSRef(folder), "data_source_spec:rss", namespace
+        return FSRef(folder), "data_driver:rss", namespace
     if type_name == "dynamic_workflow":
         path.write_text("export const meta = {name: 'W'};", encoding="utf-8")
         return FSRef(path), f"dynamic_workflow:{path.resolve()}", namespace
@@ -304,7 +304,7 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
 
 DETERMINISTIC_TYPES = (
     "claude_hook", "claude_session", "codex_session", "copilot_session",
-    "data_source_spec", "dynamic_workflow", "markdown_index", "mcp_server",
+    "data_driver", "dynamic_workflow", "markdown_index", "mcp_server",
     "plugin", "project", "spreadsheet", "todo_file",
     "workflow_run",
 )
@@ -362,12 +362,12 @@ def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -
 #: needs a key that carries its owner (e.g. `<owner>/<app>`), which is a separate
 #: change from FLOWPAD-2070; xfail keeps the defect visible until then.
 SHIPPED_RELOCATABLE_TYPES = (
-    "data_source_spec",
+    "data_driver",
     pytest.param("micro_app", marks=pytest.mark.xfail(strict=True, reason="needs an owner-scoped key; nine assets are named 'editor'")),
 )
 
 _SHIPPED_MANIFEST = {
-    "data_source_spec": ("data_driver", "data_driver.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
+    "data_driver": ("data_driver", "data_driver.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
     "micro_app": ("webapp", "webapp.json", {"schema": 1, "name": "editor", "title": "Editor"}),
 }
 

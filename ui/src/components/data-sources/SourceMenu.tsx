@@ -8,7 +8,7 @@
  * (Runs). Both links are URL-first: they navigate, and the destination reads its
  * own scope off the URL.
  */
-import { FSRef, TypeId, type DataSource, type DataDriverSpec } from '@sdk';
+import { FSRef, TypeId, type DataSource, type DataDriver } from '@sdk';
 import { FolderOpen, History, LayoutPanelLeft, MoreHorizontal, Pencil, RadioTower, Rewind, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -28,7 +28,7 @@ import {
 interface Props {
   source: DataSource;
   /** The source's definition — the apps NESTED INSIDE it are offered here. */
-  spec?: DataDriverSpec | null;
+  spec?: DataDriver | null;
   onToggleEnabled: () => void;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;

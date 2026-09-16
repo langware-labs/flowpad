@@ -196,7 +196,7 @@ deadline.
 
 **What a driver is, and what it is not.** The driver is Python and ships with the
 SDK. Everything a *person* sees about a source — its title, its glyph, the fields
-the create form renders — comes from a `data_source_spec` **asset**, one folder
+the create form renders — comes from a `data_driver` **asset**, one folder
 per source under `agentic-assets/data_driver/`. That split is what lets a source
 be added without a frontend release; see [the data-source asset](data-source-asset.md).
 
@@ -454,7 +454,7 @@ on the spec, not in drivers: `occurred_at` is coerced to aware-UTC ISO, and an
 
 **Key source files:** `flow_sdk/builtin/data_source.py` (the `send`, `reply`, `items`,
 `sync`, `set_enabled`, `remove` actions), `data_source_cursor.py`, `source_item.py`
-(`SourceItemSpec` = the row's header), `data_source_spec.py` (`ManifestSpec` = the
+(`SourceItemSpec` = the row's header), `data_driver.py` (`DataDriverSpec` = the
 manifest's header), `flow_sdk/ingest/` (`source_registry.py`, `sources.py`,
 `credentials.py`, `testing.py`, `poller.py`, `sync.py`, `ingestor.py`, `models.py`,
 `reflect.py`, `change_event.py`, `health.py`, `digest.py`, `ingest_on_tag.py`,

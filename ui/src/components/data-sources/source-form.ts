@@ -1,12 +1,12 @@
 import { t } from '@lingui/core/macro';
-import { FieldType, type DataSourceChoice, type DataDriverSpec, type SpecConfigField } from '@sdk';
+import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
 
 /**
  * The create form's logic, over a manifest the BACKEND supplies.
  *
  * This file used to be `provider-catalog.ts` and hardcoded every provider's
  * fields as literal strings, because the driver registry had no list accessor
- * and no route. It does now: a source is a `data_source_spec` asset, so the
+ * and no route. It does now: a source is a `data_driver` asset, so the
  * form reads the spec's `config` and a new source lights the dialog up with no
  * frontend release.
  *
@@ -45,12 +45,12 @@ export interface SourceDraft {
 }
 
 /** `[key, field]` pairs in declaration order — the order the form renders. */
-export function specFields(spec?: DataDriverSpec): [string, SpecConfigField][] {
+export function specFields(spec?: DataDriver): [string, SpecConfigField][] {
   return Object.entries(spec?.config ?? {});
 }
 
 /** A new source's draft for `spec` — its provider, and the fields the manifest gives a `default`. */
-export function emptyDraft(spec?: DataDriverSpec): SourceDraft {
+export function emptyDraft(spec?: DataDriver): SourceDraft {
   return {
     name: '',
     provider: spec?.name ?? '',
@@ -177,7 +177,7 @@ function patternFor(pattern: string): RegExp {
  * `sync_source` writes both from the driver on the first poll, so a form-set
  * value is authoritative-looking, owned by nobody, and silently corrected later.
  */
-export function buildConfig(draft: SourceDraft, spec?: DataDriverSpec): Record<string, unknown> {
+export function buildConfig(draft: SourceDraft, spec?: DataDriver): Record<string, unknown> {
   const config: Record<string, unknown> = {};
   for (const [key, field] of specFields(spec)) {
     // A pick wins over the text box: the two are never both filled, because hand-editing
@@ -208,7 +208,7 @@ export function buildConfig(draft: SourceDraft, spec?: DataDriverSpec): Record<s
  * is a plain edit. A spec with no `account_key` field has no account to name —
  * Slack's case, where the workspace belongs to the connection, not the form.
  */
-export function accountKeyFor(draft: SourceDraft, spec?: DataDriverSpec): string {
+export function accountKeyFor(draft: SourceDraft, spec?: DataDriver): string {
   const explicit = draft.account_key.trim();
   if (explicit) return explicit;
   const named = specFields(spec).find(([, f]) => f.account_key);
@@ -231,7 +231,7 @@ export function accountKeyFor(draft: SourceDraft, spec?: DataDriverSpec): string
  * the same account, and that is allowed — the cost of a second poller is the
  * operator's call, not this form's.
  */
-export function validateDraft(draft: SourceDraft, spec?: DataDriverSpec): string[] {
+export function validateDraft(draft: SourceDraft, spec?: DataDriver): string[] {
   const problems: string[] = [];
 
   if (!draft.name.trim()) problems.push('Name is required.');

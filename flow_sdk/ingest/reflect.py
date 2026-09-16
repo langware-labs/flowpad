@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Optional, Protocol
 from flow_sdk.assets.materialize import MaterializationMode, materialize_asset_sync, remove_path
 from flow_sdk.builtin.drivers.local_driver import _resolve_local_path
 from flow_sdk.fs_store.origin.fs_origin import safe_join
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.utils.kind_registry import KindRegistry
 
 if TYPE_CHECKING:  # pragma: no cover

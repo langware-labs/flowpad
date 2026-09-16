@@ -25,7 +25,7 @@ export * from './graph_context';
 export * from './capability';
 export * from './data-source';
 export * from './data-source-cursor';
-export * from './data-driver-spec';
+export * from './data-driver';
 export * from './credential-spec';
 export * from './email-inbox';
 export * from './source-item';

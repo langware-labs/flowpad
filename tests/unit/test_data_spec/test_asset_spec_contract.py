@@ -22,9 +22,9 @@ pytestmark = pytest.mark.timeout(5)
 
 
 def test_every_spec_bearing_type_passes_the_contract():
-    import flow_sdk.builtin.data_driver_spec  # noqa: F401 — bind the Entity under test
+    import flow_sdk.builtin.data_driver  # noqa: F401 — bind the Entity under test
     import flow_sdk.builtin.source_item  # noqa: F401
-    for t in (EntityType.AGENT, EntityType.SUBAGENT, EntityType.DATASET, EntityType.DATA_SOURCE_SPEC, EntityType.SOURCE_ITEM):
+    for t in (EntityType.AGENT, EntityType.SUBAGENT, EntityType.DATASET, EntityType.DATA_DRIVER, EntityType.SOURCE_ITEM):
         info = SchemaRegistry.get(t)
         assert info.asset_spec is not None, t
         check_asset_spec(str(t), info.entity_cls, info.asset_spec)   # raises on drift
