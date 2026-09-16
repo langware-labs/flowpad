@@ -1,0 +1,17 @@
+{
+  "type": "data_source",
+  "id": "66494bae-4de8-4c15-885a-564b2cef16e6",
+  "name": "WhatsApp (whatsapp-e2e)",
+  "data_driver_name": "whatsapp",
+  "data_driver_config": {
+    "phone_number_id": "1390528120800296",
+    "verify_token": "flowpad-c385cb153db39a77"
+  },
+  "owner": "agent-ceae4f10-5eb6-4a99-a0ef-61343f6ed30f",
+  "reflect": "record",
+  "reflect_into": "",
+  "poll_interval_seconds": 300,
+  "window_days": 7,
+  "required_capabilities": [],
+  "connection": ""
+}
