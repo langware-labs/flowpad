@@ -32,12 +32,17 @@ def provider(request):
     choices hook, and borrowing `rss` would both lie about which providers offer a picker and
     collide with the next test in this suite's shared database.
     """
+    from pydantic import create_model
+
     from flow_sdk.ingest.driver_runtime import DRIVERS
     from flow_sdk.sources.base import Source
+    from flow_sdk.sources.config import SourceConfig
 
     async def _make(hook=None, **config) -> str:
         name = f"stub-{mint_uuid()[:8]}"
-        attrs: dict = {"provider": name}
+        # The rules the catalog's widgets imply: a lines field is a list, anything else text.
+        fields = {k: ((list[str], []) if v.get("type") == "lines" else (str, "")) for k, v in config.items()}
+        attrs: dict = {"provider": name, "Config": create_model(f"_StubConfig_{name}", __base__=SourceConfig, **fields)}
         if hook is not None:
             attrs["choices_for"] = classmethod(lambda cls, row, field: hook(None, row, field))
         stub = type("_Stub", (Source,), attrs)
@@ -105,8 +110,8 @@ async def test_a_driver_that_blows_up_does_not_500_the_picker(provider):
 async def test_the_driver_is_handed_an_unsaved_source_carrying_the_draft_config(provider):
     """The picker runs while CREATING a source, so there is no row — and must not mint one.
 
-    The draft is shaped by the manifest's own catalog first, so a `lines` field arrives at
-    the driver as a list even though the form holds it as one newline-joined string.
+    The draft is shaped by the driver's `Config` first, so a list field arrives at the driver
+    as a list even though the form holds it as one newline-joined string.
     """
     seen: dict = {}
 

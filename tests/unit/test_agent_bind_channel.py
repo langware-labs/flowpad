@@ -50,7 +50,7 @@ async def test_binding_makes_the_source_the_agents(connected):
 async def test_the_channel_id_is_shaped_by_the_providers_declared_field(connected):
     """`channels` is declared `lines`, so a bare id must land as a list.
 
-    `bind_channel` writes the bare value on purpose and lets `_coerce_config`
+    `bind_channel` writes the bare value on purpose and lets the driver's `Config`
     apply the provider's own field type on save — otherwise this method would
     need to know which providers take lists.
     """

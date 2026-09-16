@@ -16,6 +16,7 @@ read) carries the manifest's fields; a LOADED driver also holds its class, manif
 """
 from __future__ import annotations
 
+from functools import cache
 from pathlib import Path
 from typing import ClassVar, Optional
 
@@ -30,10 +31,10 @@ from flow_sdk.schema.data_spec.data_driver_spec import (
     DataDriverSpec,
     FieldHints,
     Runtime,
-    coerce_config,
 )
 from flow_sdk.schema.types import EntityType
 from flow_sdk.sources.base import Source
+from flow_sdk.sources.config import SourceConfig
 
 
 class DataDriver(DriverRuntime, Entity):
@@ -79,7 +80,7 @@ class DataDriver(DriverRuntime, Entity):
     def __setattr__(self, name: str, value) -> None:
         """A loaded driver's verb may be replaced on the one instance (a test double's ``send``, a
         stubbed ``credentials_for``); everything else is a model field."""
-        if name not in type(self).model_fields and callable(getattr(type(self), name, None)) and not isinstance(getattr(type(self), name), property):
+        if name in _VERBS:
             object.__setattr__(self, name, value)
             return
         super().__setattr__(name, value)
@@ -136,7 +137,7 @@ class DataDriver(DriverRuntime, Entity):
         loaded, so this is a dict lookup. A driver nothing has registered answers False — the same
         answer the poller gives, which reports it as ``unknown_provider``.
         """
-        driver = self if self._cls is not None else DataDriver.loaded(self.name or "")
+        driver = self._loaded()
         return bool(driver is not None and driver.can_send)
 
     @computed_field
@@ -153,29 +154,35 @@ class DataDriver(DriverRuntime, Entity):
     def config_schema(self) -> dict:
         """The JSON Schema of this driver's ``Config`` — the form's rules (required, pattern, type);
         ``config`` holds only its hints. ``{}`` for a driver that declares none."""
-        driver = self if self._cls is not None else DataDriver.loaded(self.name or "")
-        config_cls = getattr(getattr(driver, "cls", None), "Config", None)
-        return config_cls.model_json_schema() if config_cls is not None else {}
+        return _schema_of(self.config_cls) if self.config_cls is not None else {}
+
+    @property
+    def config_cls(self) -> Optional[type[SourceConfig]]:
+        """The loaded driver's ``Config``, or None (not loaded, or a test double with none)."""
+        driver = self._loaded()
+        return getattr(driver.cls, "Config", None) if driver is not None else None
 
     def coerce_config(self, config: dict) -> dict:
-        """A config as a person typed it, shaped: the ``Config`` when the driver has one, else the
-        catalog's field types."""
-        config_cls = getattr(self._loaded_class(), "Config", None)
-        if config_cls is not None:
-            return {**config, **config_cls.draft(config)}
-        return coerce_config(self.config or {}, config)
-
-    def draft_config(self, raw: dict) -> dict:
-        """The keys of a half-filled form that are known and valid; the rest dropped, silently."""
-        config_cls = getattr(self._loaded_class(), "Config", None)
-        return config_cls.draft(raw) if config_cls is not None else self.coerce_config(raw)
+        """A config as a person typed it, shaped by the ``Config``: what validates replaces what was typed."""
+        return {**config, **self.config_cls.draft(config)} if self.config_cls is not None else dict(config)
 
     def config_of(self, source) -> dict:
         """A stored source's config, read as well as it still validates."""
-        config_cls = getattr(self._loaded_class(), "Config", None)
         raw = dict(getattr(source, "config", None) or {})
-        return config_cls.best_match(raw) if config_cls is not None else raw
+        return self.config_cls.best_match(raw) if self.config_cls is not None else raw
 
-    def _loaded_class(self):
-        driver = self if self._cls is not None else DataDriver.loaded(self.name or "")
-        return getattr(driver, "cls", None)
+    def _loaded(self) -> Optional["DataDriver"]:
+        """This driver when it is the loaded one; for a row read from the index, the registered driver."""
+        return self if self._cls is not None else DataDriver.loaded(self.name or "")
+
+
+#: The run-time verbs a single driver instance may have replaced (a test's stub); computed once.
+_VERBS = frozenset(
+    name for name, value in vars(DriverRuntime).items() if callable(value) and not name.startswith("__")
+)
+
+
+@cache
+def _schema_of(config_cls: type[SourceConfig]) -> dict:
+    """A ``Config``'s JSON Schema, built once per class — a list request serializes every driver row."""
+    return config_cls.model_json_schema()

@@ -450,10 +450,7 @@ class Inbox:
         key, value = self._identity()
         owner = self._owner()
         config = await self._store_secrets(driver)
-        existing = (
-            await DataSource.find_for_account(self.provider, key, value, owner=owner)
-            if key else await DataSource.find_for_account_key(self.provider, value, owner=owner)
-        )
+        existing = await DataSource.find_for_account(self.provider, key, value, owner=owner)
         if existing is not None:
             self._source = existing
             return existing
@@ -474,7 +471,9 @@ class Inbox:
         """The keyword config minus the secrets the driver's ``auth`` names; those are saved to the
         default secret store (the current project's) under the name the resolver reads them by."""
         auth = getattr(getattr(driver, "manifest", None), "auth", None)
-        names = {**{k: k for k in (auth.secrets if auth else {})}, **(dict(auth.vars) if auth else {})}
+        if auth is None:
+            return dict(self._config)
+        names = {**{k: k for k in auth.secrets}, **auth.vars}
         secrets = {names[k]: v for k, v in self._config.items() if k in names and v}
         if secrets:
             from flow_sdk.secrets import SecretStore  # noqa: PLC0415
