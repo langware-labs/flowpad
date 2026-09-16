@@ -3139,6 +3139,10 @@ msgstr "Calls"
 msgid "Can’t find what you need? Send us a question and a person will get back to you."
 msgstr "Can’t find what you need? Send us a question and a person will get back to you."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Can't launch this agent: it doesn't exist, or you don't have access to it."
+msgstr "Can't launch this agent: it doesn't exist, or you don't have access to it."
+
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
 msgstr "Can't open terminal"
@@ -14833,6 +14837,14 @@ msgstr "Please sign in"
 msgid "Please sign in again to keep using cloud features."
 msgstr "Please sign in again to keep using cloud features."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Please sign in to flowpad to continue with the agent creation process."
+msgstr "Please sign in to flowpad to continue with the agent creation process."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Please sign in to start the agent {agentName}…"
+msgstr "Please sign in to start the agent {agentName}…"
+
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
 msgstr "Please try again."
@@ -19990,8 +20002,8 @@ msgid "This agent"
 msgstr "This agent"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "This agent doesn't exist, or you don't have access to it."
-msgstr "This agent doesn't exist, or you don't have access to it."
+#~ msgid "This agent doesn't exist, or you don't have access to it."
+#~ msgstr "This agent doesn't exist, or you don't have access to it."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "This agent has no email address yet."

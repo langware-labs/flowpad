@@ -3139,6 +3139,10 @@ msgstr "קריאות"
 msgid "Can’t find what you need? Send us a question and a person will get back to you."
 msgstr "לא מצאתם את מה שחיפשתם? שלחו לנו שאלה ומישהו יחזור אליכם."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Can't launch this agent: it doesn't exist, or you don't have access to it."
+msgstr ""
+
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
 msgstr "לא ניתן לפתוח טרמינל"
@@ -14833,6 +14837,14 @@ msgstr "יש להתחבר"
 msgid "Please sign in again to keep using cloud features."
 msgstr "יש להתחבר שוב כדי להמשיך להשתמש בתכונות הענן."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Please sign in to flowpad to continue with the agent creation process."
+msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Please sign in to start the agent {agentName}…"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
 msgstr "אנא נסו שוב."
@@ -19990,8 +20002,8 @@ msgid "This agent"
 msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "This agent doesn't exist, or you don't have access to it."
-msgstr ""
+#~ msgid "This agent doesn't exist, or you don't have access to it."
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "This agent has no email address yet."

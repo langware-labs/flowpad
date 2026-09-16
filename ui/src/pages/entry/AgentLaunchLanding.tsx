@@ -18,6 +18,10 @@ import { useLaunchTarget } from './launch-target';
  * approve step, because the link names an agent the user can already see (the read
  * is refused otherwise), not a URL they have never been shown.
  *
+ * Signed out, the page still tries a quiet anonymous read: a PUBLIC agent answers it,
+ * so the sign-in card can name the agent it is for. A private one does not, and that is
+ * expected — the card falls back to the generic sign-in line, no error.
+ *
  * Opened with a top-level `assign` in THIS tab, not `useSandboxes().launch`: that
  * one ends in `window.open`, which a popup blocker eats once the click that started
  * it is minutes behind, and would leave this tab spinning next to the new one.
@@ -62,7 +66,7 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
 
   const agentProblemMessage =
     agentProblem === 'unavailable'
-      ? t`This agent doesn't exist, or you don't have access to it.`
+      ? t`Can't launch this agent: it doesn't exist, or you don't have access to it.`
       : agentProblem === 'session-expired'
         ? t`Your session has expired. Sign in again to open this agent.`
         : agentProblem === 'failed'
@@ -70,6 +74,8 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
           : null;
 
   const errorClass = 'mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs';
+  // One title style for both halves of the page: signing in changes the words, nothing else.
+  const titleClass = 'text-sm font-medium';
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -80,15 +86,24 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
             <Trans>Signed in</Trans>
           </p>
         ) : (
-          <Button
-            size="sm"
-            onClick={() => void cloudManager.login({ refresh: 'session' })}
-            className="w-full gap-1.5"
-            data-testid="launch-sign-in"
-          >
-            <LogIn className="h-3.5 w-3.5" />
-            <Trans>Sign In</Trans>
-          </Button>
+          <div className="flex flex-col items-center gap-3 text-center" data-testid="launch-sign-in-card">
+            <p className={titleClass} data-testid="launch-sign-in-title">
+              {agent ? (
+                <Trans>Please sign in to start the agent {agentName}…</Trans>
+              ) : (
+                <Trans>Please sign in to flowpad to continue with the agent creation process.</Trans>
+              )}
+            </p>
+            <Button
+              size="sm"
+              onClick={() => void cloudManager.login({ refresh: 'session' })}
+              className="w-full gap-1.5"
+              data-testid="launch-sign-in"
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              <Trans>Sign In</Trans>
+            </Button>
+          </div>
         )}
 
         {signedIn && agentLoading && (
@@ -104,15 +119,15 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
           </p>
         )}
 
-        {agent && !gitOrigin && (
+        {signedIn && agent && !gitOrigin && (
           <p className={errorClass} data-testid="launch-agent-no-repo">
             <Trans>This agent isn't published from a git repository, so there's nothing to launch.</Trans>
           </p>
         )}
 
-        {gitOrigin && !failure && (
+        {signedIn && gitOrigin && !failure && (
           <div className="mt-5 flex flex-col items-center gap-3 text-center" data-testid="launch-setting-up">
-            <p className="text-sm font-medium">
+            <p className={titleClass}>
               <Trans>Setting up your {agentName} on a new sandbox…</Trans>
             </p>
             <Progress value={percent} className="w-full" data-testid="launch-progress" />
