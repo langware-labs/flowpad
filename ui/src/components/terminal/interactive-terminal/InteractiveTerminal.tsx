@@ -1,3 +1,5 @@
+import { registerTerminalLinks } from './terminal-links';
+import { useTerminalLinks } from './TerminalLinkMenu';
 // InteractiveTerminal.tsx
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
@@ -31,7 +33,6 @@ import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
 import { fetchPtyStream, replayPtyStream } from './pty-replay';
 import { SearchAddon } from '@xterm/addon-search';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -105,7 +106,6 @@ import {
   FONT_FAMILY,
   FONT_SIZE_PX,
   applyRtlGridContract,
-  openTerminalLink,
   registerOsc52ClipboardWrite,
 } from './terminalConfig';
 import { workerCliVendor } from './process-cli-presentation';
@@ -215,6 +215,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const ptySyncSnapshot = usePtySyncSession(ptySyncRef.current);
 
   const shellRef = useRef<Shell | null>(null);
+  const terminalLinks = useTerminalLinks(shellRef);
   const firstPromptBufferRef = useRef('');
   const firstPromptReportedRef = useRef(false);
 
@@ -801,8 +802,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         allowProposedApi: true,
       });
 
-      term.loadAddon(new WebLinksAddon(openTerminalLink));
-
       const fit = new FitAddon();
       term.loadAddon(fit);
 
@@ -832,6 +831,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       try {
         term.open(container);
+        registerTerminalLinks(term, terminalLinks.handlers);
         // Stamp the RTL/bidi contract on THIS container. The vendor-keyed
         // effect below re-decides when worker_type resolves, but it cannot be
         // the only writer: the container is conditionally mounted
@@ -1744,6 +1744,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     </div>
                   )}
                 </div>
+                {terminalLinks.menu}
                 {/* Gutters — absolutely positioned over padded areas */}
                 {showGutter && (
                   <div
@@ -1816,6 +1817,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   activeTab={activeSideTab}
                   onActiveTabChange={selectSideTab}
                   onCloseTab={closeSideTab}
+                  onOpenChange={sideWindows.closeAll}
+                  closeLabel={t`Close all side tabs`}
+                  closeText={t`Close all`}
                   truncateLabels
                   scrollableTabs
                 >

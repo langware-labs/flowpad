@@ -21,7 +21,6 @@ import {
   tabTargetKey,
   TypeId,
 } from '@sdk';
-import { applyProjectViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
@@ -182,17 +181,11 @@ export async function loadProject(projectTypeId: TypeId): Promise<Project> {
     throw new ProjectLoadError('not_found', projectTypeId.id);
   }
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, projectTypeId);
-  // Per-project view-mode memory: apply the project's remembered mode (or stamp
-  // the current one onto a project that has none). After the context write, so
-  // dataContext.project is this project before any recording. Synchronous apart
-  // from fire-and-forget saves — the loader stays fast.
-  //
   // The project's LANGUAGE is deliberately not applied here: it hangs off the
   // context write above instead (`locale-context`'s CONTEXT_CHANGED
   // subscription), because a project also becomes current through paths that
   // never reach this loader — the boot-time `default_project` a sandbox opens
   // on, the pickers, the entity loaders. Wiring it here covered one of them.
-  applyProjectViewMode(project);
   return project;
 }
 

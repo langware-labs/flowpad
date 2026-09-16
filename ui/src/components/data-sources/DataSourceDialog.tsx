@@ -9,10 +9,11 @@
  * which the form does set — through the field that owns it.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DataSource, type SourceStatus } from '@sdk';
+import { Agent, DataSource, type SourceStatus } from '@sdk';
 import type { TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
+import { useAllocateAgentInbox } from '@src/hooks/use-allocate-agent-inbox';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import {
@@ -82,12 +83,20 @@ function fieldValue(key: string, field: SpecConfigField, config: Record<string, 
   return '';
 }
 
+/** The one config-shaped field that is NOT stored in `config` — it is the
+ *  entity's own `inbound_allowed_senders`. Named once here so the seed, the
+ *  submit-time extraction and the pre-fill all agree on the reserved key. */
+const ALLOWED_SENDERS_KEY = 'allowed_senders';
+
 function draftFrom(source: DataSource, spec?: DataSourceSpec): SourceDraft {
   const fields: Record<string, string> = {};
   const picked: Record<string, DataSourceChoice[]> = {};
   for (const [key, field] of specFields(spec)) {
-    fields[key] = fieldValue(key, field, source.config ?? {});
-    if (field.choices) picked[key] = pickedFrom(key, field, source.config ?? {});
+    // `allowed_senders` reads the real entity field, never `config` — it was
+    // never written there (see `submit`'s extraction below).
+    const raw = key === ALLOWED_SENDERS_KEY ? { [key]: source.inbound_allowed_senders } : (source.config ?? {});
+    fields[key] = fieldValue(key, field, raw);
+    if (field.choices) picked[key] = pickedFrom(key, field, raw);
   }
   return {
     name: source.name,
@@ -127,7 +136,12 @@ export function DataSourceDialog({
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
   // shows up here with no frontend release.
   const { specs: installed, specFor } = useSourceSpecs();
-  const specs = only ? installed.filter(only) : installed;
+  const allocateInbox = useAllocateAgentInbox();
+  const ownerAgentId = owner?.type === Agent.type ? owner.id : null;
+  // An unlisted provider is never offered (a vendor the cloud stands in front of), and one
+  // the cloud provisions is an agent's own account — offered only when adding for an agent.
+  const offered = installed.filter((s) => s.listed && (!s.provisioned || ownerAgentId));
+  const specs = only ? offered.filter(only) : offered;
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft(''));
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -147,7 +161,10 @@ export function DataSourceDialog({
   }, [open, editing]);
 
   const spec = specFor(draft.provider);
-  const problems = useMemo(() => validateDraft(draft, spec), [draft, spec]);
+  // The agent the cloud creates this account for — no form, nothing to validate. The
+  // picker only offers a provisioned provider with an agent owner, so this is that agent.
+  const provisioned = !editing && spec?.provisioned ? ownerAgentId : null;
+  const problems = useMemo(() => (provisioned ? [] : validateDraft(draft, spec)), [provisioned, draft, spec]);
 
   const setField = (key: string, value: string) =>
     // Typing into a choosable field drops its picks: the two inputs are never both
@@ -162,7 +179,26 @@ export function DataSourceDialog({
     if (problems.length) return;
     setBusy(true);
     try {
+      if (provisioned) {
+        // The one provisioned account today is the agent's mailbox; allocating wires
+        // the local source itself.
+        if (await allocateInbox(new Agent({ id: provisioned }))) {
+          notify.success({ title: t`${spec?.title} is ready` });
+          onOpenChange(false);
+        }
+        return;
+      }
       const config = buildConfig(draft, spec);
+      // `allowed_senders` shares the manifest-driven field/picker machinery
+      // (so a provider that offers it gets the same picker-or-type UX as any
+      // other choosable field, with no bespoke render code) but it is NOT a
+      // `config` entry — it is the entity's own `inbound_allowed_senders`.
+      // Pull it back out here, the one place a manifest field's destination
+      // can differ from `config`.
+      const allowedSenders = Array.isArray(config[ALLOWED_SENDERS_KEY])
+        ? (config[ALLOWED_SENDERS_KEY] as string[])
+        : [];
+      delete config[ALLOWED_SENDERS_KEY];
       const account = accountKeyFor(draft, spec);
       if (editing) {
         const nextName = draft.name.trim();
@@ -173,13 +209,15 @@ export function DataSourceDialog({
           editing.account_key !== account ||
           JSON.stringify(editing.config ?? {}) !== JSON.stringify(config) ||
           editing.poll_interval_seconds !== draft.poll_interval_seconds ||
-          editing.window_days !== draft.window_days;
+          editing.window_days !== draft.window_days ||
+          JSON.stringify(editing.inbound_allowed_senders ?? []) !== JSON.stringify(allowedSenders);
         editing.name = nextName;
         editing.status = nextStatus;
         editing.account_key = account;
         editing.config = config;
         editing.poll_interval_seconds = draft.poll_interval_seconds;
         editing.window_days = draft.window_days;
+        editing.inbound_allowed_senders = allowedSenders;
         await editing.save();
         if (changed) editing.markEdit();
         notify.success({ title: t`Updated ${editing.name}` });
@@ -196,6 +234,7 @@ export function DataSourceDialog({
           poll_interval_seconds: draft.poll_interval_seconds,
           window_days: draft.window_days,
           owner: owner ? owner.toString() : null,
+          inbound_allowed_senders: allowedSenders,
         });
         await source.save();
         notify.success({ title: t`Added ${source.name}` });
@@ -292,8 +331,7 @@ export function DataSourceDialog({
                         label={label}
                         onClick={() => setDraft(emptyDraft(p.name ?? ''))}
                         className={cn(
-                          draft.provider === p.name &&
-                            'border-primary bg-accent text-foreground ring-1 ring-primary',
+                          draft.provider === p.name && 'border-primary bg-accent text-foreground ring-1 ring-primary',
                         )}
                       />
                     </TooltipTrigger>
@@ -312,85 +350,97 @@ export function DataSourceDialog({
             </TileSection>
           )}
 
-          <div className="space-y-1">
-            <Label htmlFor="ds-name">
-              <Trans>Name</Trans>
-              <span className="ms-1 text-destructive">*</span>
-            </Label>
-            <Input
-              id="ds-name"
-              value={draft.name}
-              placeholder={spec?.title || undefined}
-              onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-            />
-          </div>
-
-          {specFields(spec).filter(([, f]) => !f.advanced).map(renderField)}
-
-          <div className="flex items-center justify-between rounded border p-2">
-            <Label htmlFor="ds-enabled" className="text-sm">
-              <Trans>Enabled</Trans>
-            </Label>
-            <Switch
-              id="ds-enabled"
-              checked={draft.enabled}
-              onCheckedChange={(v) => setDraft((d) => ({ ...d, enabled: v }))}
-            />
-          </div>
-
-          <button
-            type="button"
-            className="text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => setShowAdvanced((v) => !v)}
-          >
-            {showAdvanced ? t`Hide advanced` : t`Advanced`}
-          </button>
-
-          {showAdvanced && (
-            <div className="space-y-3 rounded border p-3">
+          {provisioned ? (
+            <p className="text-sm text-muted-foreground" data-testid="provisioned-source-note">
+              {spec?.description}
+            </p>
+          ) : (
+            <>
               <div className="space-y-1">
-                <Label htmlFor="ds-interval">
-                  <Trans>Poll interval (seconds)</Trans>
+                <Label htmlFor="ds-name">
+                  <Trans>Name</Trans>
+                  <span className="ms-1 text-destructive">*</span>
                 </Label>
                 <Input
-                  id="ds-interval"
-                  type="number"
-                  min={60}
-                  value={draft.poll_interval_seconds}
-                  onChange={(e) => setDraft((d) => ({ ...d, poll_interval_seconds: Number(e.target.value) }))}
+                  id="ds-name"
+                  value={draft.name}
+                  placeholder={spec?.title || undefined}
+                  onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
                 />
-                <p className="text-xs text-muted-foreground">
-                  <Trans>Minimum 60 — the heartbeat only ticks once a minute.</Trans>
-                </p>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="ds-window">
-                  <Trans>Window (days)</Trans>
+
+              {specFields(spec)
+                .filter(([, f]) => !f.advanced)
+                .map(renderField)}
+
+              <div className="flex items-center justify-between rounded border p-2">
+                <Label htmlFor="ds-enabled" className="text-sm">
+                  <Trans>Enabled</Trans>
                 </Label>
-                <Input
-                  id="ds-window"
-                  type="number"
-                  min={1}
-                  value={draft.window_days}
-                  onChange={(e) => setDraft((d) => ({ ...d, window_days: Number(e.target.value) }))}
+                <Switch
+                  id="ds-enabled"
+                  checked={draft.enabled}
+                  onCheckedChange={(v) => setDraft((d) => ({ ...d, enabled: v }))}
                 />
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="ds-account">
-                  <Trans>Account key</Trans>
-                </Label>
-                <Input
-                  id="ds-account"
-                  value={draft.account_key}
-                  placeholder={accountKeyFor(draft) || t`derived from the fields above`}
-                  onChange={(e) => setDraft((d) => ({ ...d, account_key: e.target.value }))}
-                />
-                <p className="text-xs text-muted-foreground">
-                  <Trans>This source&apos;s remote identity — one source per account.</Trans>
-                </p>
-              </div>
-              {specFields(spec).filter(([, f]) => f.advanced).map(renderField)}
-            </div>
+
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                {showAdvanced ? t`Hide advanced` : t`Advanced`}
+              </button>
+
+              {showAdvanced && (
+                <div className="space-y-3 rounded border p-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="ds-interval">
+                      <Trans>Poll interval (seconds)</Trans>
+                    </Label>
+                    <Input
+                      id="ds-interval"
+                      type="number"
+                      min={60}
+                      value={draft.poll_interval_seconds}
+                      onChange={(e) => setDraft((d) => ({ ...d, poll_interval_seconds: Number(e.target.value) }))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>Minimum 60 — the heartbeat only ticks once a minute.</Trans>
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="ds-window">
+                      <Trans>Window (days)</Trans>
+                    </Label>
+                    <Input
+                      id="ds-window"
+                      type="number"
+                      min={1}
+                      value={draft.window_days}
+                      onChange={(e) => setDraft((d) => ({ ...d, window_days: Number(e.target.value) }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="ds-account">
+                      <Trans>Account key</Trans>
+                    </Label>
+                    <Input
+                      id="ds-account"
+                      value={draft.account_key}
+                      placeholder={accountKeyFor(draft) || t`derived from the fields above`}
+                      onChange={(e) => setDraft((d) => ({ ...d, account_key: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>This source&apos;s remote identity — one source per account.</Trans>
+                    </p>
+                  </div>
+                  {specFields(spec)
+                    .filter(([, f]) => f.advanced)
+                    .map(renderField)}
+                </div>
+              )}
+            </>
           )}
 
           {problems.length > 0 && (
@@ -407,7 +457,7 @@ export function DataSourceDialog({
             <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => void submit()} disabled={busy || problems.length > 0}>
-            {busy ? '…' : editing ? t`Save` : t`Add source`}
+            {busy ? '…' : editing ? t`Save` : provisioned ? t`Create ${spec?.title}` : t`Add source`}
           </Button>
         </DialogFooter>
       </DialogContent>

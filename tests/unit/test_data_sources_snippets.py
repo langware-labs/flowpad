@@ -11,10 +11,9 @@ from pathlib import Path
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — the page's own first fence
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
-from tests.unit._ingest_helpers import fixture_bytes, local_http_server, with_token
+from tests.unit._ingest_helpers import fixture_bytes, local_http_server
 from tests.utils.snippets import doc, fence_under, run_fence
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -29,11 +28,9 @@ def _fresh_feed():
     The page says a first run takes only items inside ``window_days``; the fixture's entries
     are months old, so served as-is the snippet's sync would honestly create nothing.
     """
-    import re
-    from datetime import datetime, timezone
+    from flow_sdk.ingest.testing import fresh_timestamps
 
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    body = re.sub(rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", stamp.encode(), fixture_bytes("atom.xml"))
+    body = fresh_timestamps(fixture_bytes("atom.xml"))
 
     def respond(_path, _headers):
         return 200, body, {"Content-Type": "application/xml"}
@@ -119,7 +116,8 @@ async def _gcs_spec():
     """
     import json
 
-    from flow_sdk.builtin.data_source_spec import DataSourceSpec, ManifestSpec
+    from flow_sdk.builtin.data_source_spec import DataSourceSpec
+    from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 
     path = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/gcs/data_source.json"
     manifest = ManifestSpec.model_validate(json.loads(path.read_text()))
@@ -141,12 +139,19 @@ async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
     """
     import json
 
-    from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
+    from pydantic import SecretStr
+
+    from flow_sdk.ingest.sources import source_type
+    from flow_sdk.sources.credentials import AuthShape, Credentials
 
     await _gcs_spec()
+
     # The one thing a loopback server cannot supply: the credential comes from the
     # machine's connection store, not over the wire.
-    with_token(monkeypatch, GoogleCloudStorageDriver)
+    async def _token(_row):
+        return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
+
+    monkeypatch.setattr(source_type("gcs"), "credentials_for", _token)
 
     def storage(_path, _headers):
         body = {"items": [{"name": "acme-docs", "location": "US"}, {"name": "acme-logs", "location": "EU"}]}
@@ -169,3 +174,39 @@ async def test_9_a_refusal_is_a_sentence_not_an_exception():
     assert await DataSource.choices_for("gcs", "cache_root") is None, (
         "a field the manifest never marked is a caller bug, not a refusal"
     )
+
+
+async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
+    """The Drive fence, against the gdrive asset's own loopback Drive and a
+    doubled `google` connection. Two runs pin the section's two sentences: with
+    no connection `verify()` says so, parks the row and fetches nothing; with
+    one, the first `sync()` lands the drive in `cache_root` and the mirror.
+    """
+    from flow_sdk.ingest.source_registry import SHIPPED_ROOT, load_module
+    from flow_sdk.ingest.sources import source_type
+    from flow_sdk.sources.credentials import Credentials
+
+    drive = load_module(SHIPPED_ROOT / "gdrive" / "tests", "test_gdrive_source")
+    cache, dest = tmp_path / "cache", tmp_path / "dest"
+
+    def names(root):
+        return sorted(p.name for p in root.rglob("*.txt"))
+
+    with local_http_server(drive._Drive(drive.SEEDED)) as base:
+        env = {"CACHE_ROOT": str(cache), "BASE_URL": base, "DESTINATION": str(dest)}
+
+        monkeypatch.setattr(source_type("gdrive"), "credentials_for", drive._credentials(Credentials()))
+        ns = await _section("10.", dict(env))
+        assert ns["verdict"]["ready"] is False
+        assert "Google" in ns["verdict"]["detail"]
+        assert ns["src"].status == "setup"
+        assert names(cache) == [], "nothing is fetched without a connection"
+        await ns["src"].delete()
+
+        monkeypatch.setattr(source_type("gdrive"), "credentials_for", drive._credentials(drive.TOKEN))
+        ns = await _section("10.", dict(env))
+        assert ns["verdict"]["ready"] is True
+        assert ns["src"].status == "active"
+        assert names(cache) == names(dest) == ["one.txt", "three.txt", "two.txt"]
+        assert ns["outcome"].created == 0, "the report counts records; a file source shows in the tree"
+        await ns["src"].delete()

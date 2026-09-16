@@ -61,6 +61,11 @@ def pid_is_alive(pid: int | None) -> bool:
     PID reuse is not defended against here — a caller that must distinguish a
     recycled PID from the one it recorded should verify identity too (see
     ``flow_sdk.server.launch.is_process_alive``, which compares the cmdline).
+
+    Nor are zombies: on POSIX an exited-but-unreaped child still answers to
+    ``kill(pid, 0)``. The monitor reaps every backend it spawns, so a
+    supervised server never stays a zombie; a caller that needs to see through
+    one uses ``launch.is_process_alive``.
     """
     if not pid or pid <= 0:
         return False

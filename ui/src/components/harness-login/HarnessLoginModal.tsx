@@ -5,6 +5,7 @@ import { msg } from '@lingui/core/macro';
 import {
   Capability,
   capabilityManager,
+  cloudManager,
   CapabilityKinds,
   copyToClipboard,
   HARNESS_CAPABILITY_KINDS,
@@ -16,7 +17,9 @@ import {
   type LmApiKeyValidation,
   type WorkerAuthStatus,
 } from '@sdk';
-import { useEntity } from '@sdk/react/hooks';
+import { useCloudStatus, useEntity } from '@sdk/react/hooks';
+import flowpadIcon from '@src/assets/flowpad-icon.png';
+import { errorMessage } from '@src/lib/error-message';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -73,6 +76,22 @@ const HARNESS_SUPPORTED_PROVIDERS: Record<Worker, LMApiProvider[]> = {
   // its generated opencode.json provider block instead. The key still comes from
   // a bare OPENROUTER_API_KEY either way, and to a user it is the same choice.
   opencode: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
+};
+
+/**
+ * Which harnesses have a device login at all.
+ *
+ * OpenCode has none: it is not a vendor account you sign into, it is a client that spends a
+ * provider key. Offering "Device login" there gave it a mode it cannot enter — the toggle
+ * moved, nothing happened, and the row went on reporting "Not signed in" about a sign-in that
+ * does not exist. A harness listed false here is key-only: no toggle, no sign-in button, and
+ * its auth mode is `api` regardless of what the capability row happens to say.
+ */
+const SUPPORTS_DEVICE_LOGIN: Record<Worker, boolean> = {
+  claude: true,
+  codex: true,
+  copilot: true,
+  opencode: false,
 };
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -180,7 +199,10 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   );
   const apiAvailable = configuredProviders.length > 0;
 
-  const authMode: AuthMode = (capability?.auth_mode as AuthMode) ?? 'device';
+  // A key-only harness is in `api` mode by definition -- reading `auth_mode` there would let a
+  // stale 'device' (the column default) put the row into a mode it can never satisfy.
+  const supportsDevice = SUPPORTS_DEVICE_LOGIN[worker] ?? true;
+  const authMode: AuthMode = supportsDevice ? ((capability?.auth_mode as AuthMode) ?? 'device') : 'api';
   // The active provider must be one that actually has a key. Only read where
   // apiAvailable (so configuredProviders is non-empty); the raw fallback just
   // keeps the badge label sensible when it isn't.
@@ -318,6 +340,7 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
     // API-key auth (consumer view — keys are managed centrally)
     authMode,
     authBadge,
+    supportsDevice,
     configuredProviders,
     activeProvider,
     apiAvailable,
@@ -385,7 +408,11 @@ const STATUS_TEXT: Record<Status, { label: MessageDescriptor; dot: string; tone:
     dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60',
     tone: 'text-amber-500',
   },
-  unavailable: { label: msg`Not installed`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
+  // NOT "Not installed". This list answers "what pays for your LLM calls", and whether a
+  // vendor's CLI happens to be on this machine is a different question the user did not ask
+  // here — it made four of five rows report a fact about the filesystem instead of about
+  // funding. Install trouble surfaces in the row's own panel, where it is actionable.
+  unavailable: { label: msg`Not signed in`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
 };
 
 /** A status's visuals with its label resolved in the ACTIVE locale. */
@@ -394,51 +421,246 @@ function statusTextFor(status: Status): { label: string; dot: string; tone: stri
   return { ...entry, label: i18n._(entry.label) };
 }
 
-/** Master list: one big, tappable row per assistant. */
+/**
+ * ONE row, for every kind of thing that can pay for a call.
+ *
+ * FlowPad, the four assistants and the LLM-key store are different underneath — a hub login, a
+ * vendor device login, a stored secret — and they were each drawn differently, which made the
+ * dialog read as three lists stacked up. They answer the SAME question, so they get the same
+ * line: mark, name, the default tick, what state it is in, and the one button that changes it.
+ *
+ * The status is a button too, and it opens the same place. It is the word the user reads when
+ * they are deciding what to click, so making it inert forced a second, smaller decision about
+ * WHERE to click to act on what they just read.
+ */
+function SetupRow({
+  mark,
+  name,
+  status,
+  action,
+  onOpen,
+  busy,
+  isDefault,
+  onMakeDefault,
+  emphasis,
+  testId,
+}: {
+  mark: React.ReactNode;
+  name: React.ReactNode;
+  /** Short state, in the row's own vocabulary: "Signed in", "Key not set". */
+  status: { label: string; dot: string; tone: string };
+  /** The button's label — "Sign in", "Manage", "Details". */
+  action: React.ReactNode;
+  onOpen: () => void;
+  busy?: boolean;
+  /** Present only on rows that CAN be the default assistant (the four harnesses). */
+  isDefault?: boolean;
+  onMakeDefault?: () => void;
+  emphasis?: boolean;
+  testId: string;
+}) {
+  const { t } = useLingui();
+  return (
+    // The WHOLE row opens the panel, not just the button on its end. That was the affordance
+    // before this became a multi-control row, and losing it is a silent downgrade: a list of
+    // big tappable rows that suddenly only respond on a 92px target at the far right.
+    // Deliberately a div with an onClick rather than a <button>: it contains buttons, and
+    // nesting them is invalid. Keyboard users reach the same place via the action button,
+    // which is a real button and a real tab stop.
+    <div
+      data-testid={testId}
+      onClick={onOpen}
+      className={`flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${
+        emphasis
+          ? 'border-primary/40 bg-primary/5 hover:bg-primary/10'
+          : 'border-border/70 bg-card/40 hover:bg-accent/40'
+      }`}
+    >
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border/60 bg-background/70">
+        {mark}
+      </div>
+
+      <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{name}</span>
+
+      {/* The default tick, in place of the old "Default assistant" dropdown: the mark sits ON
+          the thing it describes, and clicking it is how you move it. A dropdown listing the
+          same four names the list already shows was a second copy of the list. */}
+      {onMakeDefault && (
+        <button
+          type="button"
+          // Stops at the tick: the row opens the panel, but making something the default is a
+          // different action and must not also navigate away from the list.
+          onClick={(e) => {
+            e.stopPropagation();
+            onMakeDefault();
+          }}
+          title={isDefault ? t`This is your default assistant` : t`Make this the default assistant`}
+          aria-pressed={isDefault}
+          data-testid={`${testId}-default`}
+          className={`shrink-0 rounded-md p-1 transition-colors ${
+            isDefault ? 'text-emerald-500' : 'text-muted-foreground/25 hover:text-muted-foreground'
+          }`}
+        >
+          <Check className="h-4 w-4" />
+        </button>
+      )}
+
+      {/* Status and button both open the same panel — see the component docstring. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        data-testid={`${testId}-status`}
+        // Not a tab stop: it goes exactly where the button beside it goes, so keyboard users
+        // would hit the same destination twice per row. It also made Radix's open-autofocus
+        // land on the FIRST row's status, drawing a ring around the words "Not signed in" that
+        // read as a validation error on a dialog that had not been touched yet.
+        tabIndex={-1}
+        className="flex shrink-0 items-center gap-1.5 text-xs hover:underline"
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+        <span className={status.tone}>{status.label}</span>
+      </button>
+
+      <Button
+        size="sm"
+        variant={emphasis ? 'default' : 'outline'}
+        className="h-8 w-[92px] shrink-0"
+        disabled={busy}
+        onClick={onOpen}
+        data-testid={`${testId}-action`}
+      >
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : action}
+      </Button>
+    </div>
+  );
+}
+
+/** One assistant, as a {@link SetupRow}. */
 function HarnessListRow({
   kind,
   onOpen,
-  index,
   isDefault,
+  onMakeDefault,
   keys,
 }: {
   kind: string;
   onOpen: () => void;
-  index: number;
   isDefault?: boolean;
+  onMakeDefault: () => void;
   keys: LmApiKeySummary[];
 }) {
-  const { statusText: st, name, Icon, iconClassName, authBadge } = useHarness(kind, keys);
+  const { statusText, name, Icon, iconClassName, supportsDevice, apiAvailable } = useHarness(kind, keys);
   const worker = workerOf(kind);
+  // A key-only harness has no login, so "Not signed in" would name a state it cannot leave.
+  // What it actually lacks is a key, and that is what the row should say.
+  const status = supportsDevice
+    ? statusText
+    : apiAvailable
+      ? { label: i18n._(msg`Key set`), dot: 'bg-emerald-400', tone: 'text-emerald-500' }
+      : { label: i18n._(msg`Key not set`), dot: 'bg-amber-400', tone: 'text-amber-500' };
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      data-testid={`harness-row-${worker}`}
-      style={{ animation: `hlIn 320ms cubic-bezier(0.16,1,0.3,1) ${index * 60}ms both` }}
-      className="group flex w-full items-center gap-3.5 rounded-xl border border-border/70 bg-card/40 p-3.5 text-start transition-all hover:border-border hover:bg-accent/40"
-    >
-      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-border/60 bg-background/70">
-        {Icon && <Icon className={`h-6 w-6 ${iconClassName}`} />}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 text-[15px] font-semibold">
-          {name}
-          {isDefault && (
-            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]" data-testid={`harness-default-${worker}`}>
-              <Trans>Default</Trans>
-            </Badge>
-          )}
-        </div>
-        <div className="mt-0.5 flex items-center gap-1.5">
-          <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
-          <span className={`text-xs ${st.tone}`}>{st.label}</span>
-        </div>
-      </div>
-      <AuthBadge badge={authBadge} testId={`harness-authmode-${worker}`} />
-      <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
-    </button>
+    <SetupRow
+      testId={`harness-row-${worker}`}
+      mark={Icon && <Icon className={`h-5 w-5 ${iconClassName}`} />}
+      name={name}
+      status={status}
+      // Says what the panel behind it DOES. "Details" described a place, not an action, and
+      // this row's whole purpose is getting the thing funded. A key-only harness drops the
+      // "Login" half — there is nothing to log in to, so offering the word is a false promise.
+      action={supportsDevice ? <Trans>Login/API key</Trans> : <Trans>API key</Trans>}
+      onOpen={onOpen}
+      isDefault={isDefault}
+      onMakeDefault={onMakeDefault}
+    />
+  );
+}
+
+/**
+ * FlowPad's own account, as the first {@link SetupRow}.
+ *
+ * It belongs in this list because it answers the same question the rows below it answer — what
+ * pays for your LLM calls — and it is the only answer that asks the user for nothing they do
+ * not already have: a new account is granted access to a hub endpoint, so signing in IS the
+ * whole setup.
+ *
+ * Sign-in only, by request. There is a `cloudManager.logout()`, but signing OUT of FlowPad is
+ * an account action with consequences far beyond this dialog (sharing, backup, the hub socket),
+ * and offering it beside four "Details" buttons framed it as a funding toggle.
+ *
+ * Connect is awaited HERE rather than routed through `useOAuthConnection`, for the reason
+ * `flowpad-connection-row.tsx` documents: `flowpad_cloud` registers no OAuth flow, so
+ * `OAUTH_FLOW_COMPLETE` never fires and the hook's only path for clearing its spinner never runs.
+ */
+function FlowpadListRow() {
+  const { t } = useLingui();
+  const { login, cloudUrl } = useCloudStatus();
+  const [busy, setBusy] = useState(false);
+  const loggedIn = login.status === 'logged_in';
+  const signingIn = busy || login.status === 'logging_in';
+
+  const connect = async () => {
+    if (loggedIn) return;
+    setBusy(true);
+    try {
+      await cloudManager.login();
+    } catch (error) {
+      notify.error({
+        title: t`Could not sign in to FlowPad`,
+        message: errorMessage(error, t`The login did not complete.`),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const account = [cloudUrl, typeof login.user?.email === 'string' ? login.user.email : null]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <SetupRow
+      testId="harness-row-flowpad"
+      emphasis
+      busy={signingIn}
+      mark={<img src={flowpadIcon} alt="" className="h-5 w-5 rounded-sm" title={account || undefined} />}
+      name="FlowPad"
+      status={statusTextFor(signingIn ? 'busy' : loggedIn ? 'signedin' : 'signedout')}
+      action={loggedIn ? <Trans>Signed in</Trans> : <Trans>Sign in</Trans>}
+      onOpen={() => void connect()}
+    />
+  );
+}
+
+/**
+ * The LLM key store, as a {@link SetupRow}.
+ *
+ * The keys form used to sit expanded at the top of this dialog, which made the first thing the
+ * user met a "Paste API key" box — the most technical answer, and the least likely one for
+ * whoever opened this because nothing works. As a row it keeps its place in the list without
+ * asking its question first.
+ *
+ * "Key not set" rather than "Not signed in", because a key is not a login: there is nothing to
+ * sign in to, and naming a state it can never reach would be a false instruction.
+ */
+function KeysListRow({ keys, onOpen }: { keys: LmApiKeySummary[]; onOpen: () => void }) {
+  const configured = keys.filter((k) => k.configured).length;
+  return (
+    <SetupRow
+      testId="row-llm-keys"
+      mark={<KeyRound className="h-5 w-5 text-muted-foreground" />}
+      name={<Trans>LLM API keys</Trans>}
+      status={
+        configured
+          ? { label: i18n._(msg`Key set`), dot: 'bg-emerald-400', tone: 'text-emerald-500' }
+          : { label: i18n._(msg`Key not set`), dot: 'bg-amber-400', tone: 'text-amber-500' }
+      }
+      // "API key", not "Manage": every other button in this list names the credential it
+      // takes you to set, and one row saying what it DOES to that credential instead read as
+      // a different kind of control.
+      action={<Trans>API key</Trans>}
+      onOpen={onOpen}
+    />
   );
 }
 
@@ -634,10 +856,14 @@ export function HarnessDetail({
   kind,
   onBack,
   onDone,
+  onManageKeys,
   keys,
 }: {
   kind: string;
   onBack: () => void;
+  /** Open the LLM API keys panel. A key-only harness has no other way forward, and pointing
+   *  at a section the user has to go and find themselves is not a way forward. */
+  onManageKeys: () => void;
   /** Dismiss the whole modal. "Done" means the sign-in is finished, so the user
    *  goes back to what they were doing — NOT one level up into the assistants
    *  list, which just reads as a second popup opening by itself. */
@@ -650,7 +876,7 @@ export function HarnessDetail({
     capability,
     status,
     statusReason,
-    statusText: st,
+    statusText: stRaw,
     name,
     account,
     Icon,
@@ -664,11 +890,21 @@ export function HarnessDetail({
     testAuth,
     authMode,
     authBadge,
+    supportsDevice,
     configuredProviders,
     activeProvider,
     apiAvailable,
     setAuthMode,
   } = useHarness(kind, keys);
+
+  // The SAME status the row shows. A key-only harness reads "Key not set", never "Not signed
+  // in": the panel is reached by clicking that row, and the two disagreeing about what is
+  // wrong is the fastest way to make a user distrust both.
+  const st = supportsDevice
+    ? stRaw
+    : apiAvailable
+      ? { label: i18n._(msg`Key set`), dot: 'bg-emerald-400', tone: 'text-emerald-500' }
+      : { label: i18n._(msg`Key not set`), dot: 'bg-amber-400', tone: 'text-amber-500' };
 
   // The install one-liner for THIS machine, or null when the vendor publishes
   // no unattended route here (see `CapabilitySpec.install_commands`). Read off
@@ -712,30 +948,39 @@ export function HarnessDetail({
       {/* Sign-in method: device login vs a configured LLM key. The "LLM key"
           option is disabled until a key exists for a provider this harness
           supports (keys are managed in the LLM API keys section above). */}
-      {status !== 'unavailable' && (
+      {/* Shown whether or not the CLI is installed.
+          Hiding it behind "not installed" made the panel a dead end: the user came here to
+          sign in or paste a key, and got an install advert with no sign of the thing they
+          asked for. Installing is a PREREQUISITE, not a different screen — so the choice
+          leads, and the install prompt sits underneath it as the footnote it is. */}
+      {
         <div className="mt-5 flex flex-col gap-3">
-          <div className="flex rounded-lg border border-border/60 p-0.5" data-testid="harness-authmode-toggle">
-            {(['device', 'api'] as const).map((mode) => {
-              const disabled = mode === 'api' && !apiAvailable;
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  disabled={disabled}
-                  data-testid={`harness-authmode-${mode}`}
-                  title={disabled ? t`Add a key in "LLM API keys" above to use it here` : undefined}
-                  onClick={() => void setAuthMode(mode, activeProvider)}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
-                    authMode === mode
-                      ? 'bg-accent font-medium text-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
-                >
-                  {mode === 'device' ? <Trans>Device login</Trans> : <Trans>LLM key</Trans>}
-                </button>
-              );
-            })}
-          </div>
+          {/* Only rendered when there are two modes to choose between. A key-only harness
+              (OpenCode) showed a toggle whose 'Device login' half did nothing. */}
+          {supportsDevice && (
+            <div className="flex rounded-lg border border-border/60 p-0.5" data-testid="harness-authmode-toggle">
+              {(['device', 'api'] as const).map((mode) => {
+                const disabled = mode === 'api' && !apiAvailable;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={disabled}
+                    data-testid={`harness-authmode-${mode}`}
+                    title={disabled ? t`Add a key in "LLM API keys" above to use it here` : undefined}
+                    onClick={() => void setAuthMode(mode, activeProvider)}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
+                      authMode === mode
+                        ? 'bg-accent font-medium text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+                  >
+                    {mode === 'device' ? <Trans>Device login</Trans> : <Trans>LLM key</Trans>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {authMode === 'api' && apiAvailable && (
             <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
               <span className="text-xs text-muted-foreground">
@@ -764,44 +1009,15 @@ export function HarnessDetail({
             </div>
           )}
         </div>
-      )}
+      }
 
-      {/* body per status — device sign-in flow (only relevant in device mode) */}
-      <div className={`mt-6 ${authMode === 'api' ? 'hidden' : ''}`}>
-        {status === 'unavailable' ? (
-          <div className="flex flex-col items-center gap-4 text-center">
-            <DialogDescription className="text-sm text-muted-foreground">
-              {installCommand ? (
-                <Trans>
-                  {name} isn't installed on this computer yet. Install it below, then come back here to sign in.
-                </Trans>
-              ) : (
-                <Trans>
-                  {name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign
-                  in.
-                </Trans>
-              )}
-            </DialogDescription>
-            {/* The vendor's own published one-liner, resolved by the backend for
-                THIS platform. It leads because it is the shortest route from
-                "not installed" to "signed in" — the guide stays for the
-                platforms with no unattended installer (OpenCode on Windows) and
-                for anyone who would rather read first. */}
-            {installCommand && (
-              <Button className="w-full gap-1.5" data-testid="harness-auto-install" onClick={tryAutoInstall}>
-                <Terminal className="h-4 w-4" />
-                <Trans>Try auto install</Trans>
-              </Button>
-            )}
-            <Button
-              variant={installCommand ? 'outline' : 'default'}
-              className="w-full"
-              onClick={() => openWikiModal(INSTALL_WIKI_PAGE)}
-            >
-              <Trans>Show setup guide</Trans>
-            </Button>
-          </div>
-        ) : status === 'signedin' ? (
+      {/* Body per status — the device sign-in flow, hidden in key mode because none of it
+          applies... EXCEPT for a harness that has no device mode at all. `authMode` is forced
+          to `api` there, so this container hid the key-only branch — the one thing that
+          harness's panel exists to show. Its "Add an API key" button rendered and was
+          invisible: present in the DOM, unclickable, and the panel looked like a dead end. */}
+      <div className={`mt-6 ${authMode === 'api' && supportsDevice ? 'hidden' : ''}`}>
+        {status === 'signedin' ? (
           <div className="flex flex-col items-center gap-4 text-center">
             <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-500">
               <Check className="h-4 w-4" />
@@ -892,6 +1108,25 @@ export function HarnessDetail({
               </button>
             </div>
           </div>
+        ) : !supportsDevice ? (
+          /* Key-only (OpenCode): there is no account to sign into, so a sign-in button here
+             would do nothing. It still needs a way FORWARD — this used to say "add one under
+             LLM API keys above", which was a dead end twice over: the keys form is no longer
+             above (it is its own row now), and telling someone where to go is not the same as
+             taking them there. */
+          <div className="flex flex-col items-center gap-4 text-center">
+            <DialogDescription className="text-sm text-muted-foreground">
+              {apiAvailable ? (
+                <Trans>{name} has no account to sign into — it runs on an LLM key.</Trans>
+              ) : (
+                <Trans>{name} has no account to sign into — it runs on an LLM key. Add one to get it working.</Trans>
+              )}
+            </DialogDescription>
+            <Button className="w-full gap-1.5" onClick={onManageKeys} data-testid="harness-manage-keys">
+              <KeyRound className="h-4 w-4" />
+              {apiAvailable ? <Trans>Manage API keys</Trans> : <Trans>Add an API key</Trans>}
+            </Button>
+          </div>
         ) : (
           <div className="flex flex-col gap-4">
             <DialogDescription className="text-center text-sm text-muted-foreground">
@@ -928,6 +1163,41 @@ export function HarnessDetail({
           </div>
         )}
       </div>
+
+      {/* Not installed: a footnote, not the offer.
+          These two were full-width filled buttons and the ONLY thing on the panel, which made
+          "install a CLI" look like the thing the user had come to do. They are a fallback for
+          when the sign-in above cannot proceed yet, so they read as one quiet line: small,
+          ghosted, side by side, under the thing that IS the offer. */}
+      {status === 'unavailable' && (
+        <div className="mt-4 flex flex-col items-center gap-2 border-t border-border/40 pt-3">
+          <span className="text-xs text-muted-foreground">
+            <Trans>{name} isn't installed on this computer yet.</Trans>
+          </span>
+          <div className="flex items-center justify-center gap-2">
+            {installCommand && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+                data-testid="harness-auto-install"
+                onClick={tryAutoInstall}
+              >
+                <Terminal className="h-3.5 w-3.5" />
+                <Trans>Try auto install</Trans>
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => openWikiModal(INSTALL_WIKI_PAGE)}
+            >
+              <Trans>Show setup guide</Trans>
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -993,43 +1263,6 @@ function useHarnessLoginGate() {
       cancelled = true;
     };
   }, [primaryReady]);
-}
-
-/** The default assistant — persisted on the `harness` reference capability's
- *  reference_kind (same mechanism as CapabilitiesView). */
-function DefaultHarnessSelect({ onChanged }: { onChanged: () => void }) {
-  const [value, setValue] = useState<string>(
-    () => capabilityManager.getSnapshot(CapabilityKinds.Harness).resolvedKind ?? HARNESS_CAPABILITY_KINDS[0],
-  );
-  const onChange = async (kind: string) => {
-    setValue(kind);
-    try {
-      await capabilityManager.setReferenceKind(CapabilityKinds.Harness, kind);
-      onChanged();
-    } catch {
-      /* revert on failure by re-reading the snapshot */
-      setValue(capabilityManager.getSnapshot(CapabilityKinds.Harness).resolvedKind ?? kind);
-    }
-  };
-  return (
-    <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
-      <span className="text-sm text-muted-foreground">
-        <Trans>Default assistant</Trans>
-      </span>
-      <Select value={value} onValueChange={(k) => void onChange(k)}>
-        <SelectTrigger className="h-8 w-[150px]" data-testid="default-harness-select">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {HARNESS_CAPABILITY_KINDS.map((kind) => (
-            <SelectItem key={kind} value={kind}>
-              {FRIENDLY[workerOf(kind)]?.name ?? workerOf(kind)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
 }
 
 const MAPPING_TIERS = [WorkerModelTier.SM, WorkerModelTier.MD, WorkerModelTier.LG] as const;
@@ -1272,7 +1505,7 @@ function MappingView({ onBack }: { onBack: () => void }) {
 
 /** Single global mount (App.tsx). */
 export function HarnessLoginModalRoot() {
-  const { open, setOpen } = useHarnessLoginStore();
+  const { open, payload, setOpen } = useHarnessLoginStore();
   const [selected, setSelected] = useState<string | null>(null);
   const [defaultKind, setDefaultKind] = useState<string | null>(
     () => capabilityManager.getSnapshot('harness').resolvedKind ?? null,
@@ -1289,11 +1522,46 @@ export function HarnessLoginModalRoot() {
   }, []);
   useHarnessLoginGate();
 
-  // Reset to the list + refresh keys whenever the modal is reopened.
+  /**
+   * Make one assistant the default — what the "Default assistant" dropdown used to do, moved
+   * onto the row it describes. Optimistic, and reverted from the manager's own snapshot on
+   * failure: the tick is the only feedback, so it must not claim a change that did not land.
+   */
+  const makeDefault = useCallback(
+    async (kind: string) => {
+      const previous = defaultKind;
+      setDefaultKind(kind);
+      try {
+        await capabilityManager.setReferenceKind(CapabilityKinds.Harness, kind);
+        setDefaultKind(capabilityManager.getSnapshot(CapabilityKinds.Harness).resolvedKind ?? kind);
+      } catch {
+        setDefaultKind(previous);
+      }
+    },
+    [defaultKind],
+  );
+
+  // Reset + refresh keys on a REAL re-open — the closed→open transition, not every render
+  // while open. Reset means "back to the list" UNLESS the opener named a harness (the LLM
+  // setup route does, because the user has already picked a vendor by then).
+  //
+  // The transition guard is load-bearing. `LlmSetupView` opens this modal from a mount effect,
+  // so anything that re-mounts that view calls `open()` again — and this effect, keyed on
+  // `open`/`payload`, then reset `selected` to null. Clicking a row selected it and the next
+  // re-open silently threw the selection away: the button appeared to do nothing at all, with
+  // no error anywhere. A redundant open() must never discard where the user has navigated to.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (!open) setSelected(null);
-    else void refreshKeys();
-  }, [open, refreshKeys]);
+    if (!open) {
+      wasOpen.current = false;
+      setSelected(null);
+      return;
+    }
+    if (wasOpen.current) return;
+    wasOpen.current = true;
+    setSelected(payload?.kind ?? null);
+    void refreshKeys();
+  }, [open, payload, refreshKeys]);
 
   if (!open) return null;
   return (
@@ -1306,14 +1574,35 @@ export function HarnessLoginModalRoot() {
         setOpen(next);
       }}
     >
-      <DialogContent className="sm:max-w-[440px]">
+      {/* Wide enough that every row fits on ONE line and the list needs no scrollbar:
+          icon + name + status + button side by side. At 440px the button wrapped under
+          the name and the list scrolled. */}
+      <DialogContent className="sm:max-w-[620px]">
         <style>{`@keyframes hlIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}`}</style>
         {selected === 'mapping' ? (
           <MappingView onBack={() => setSelected(null)} />
+        ) : selected === 'keys' ? (
+          /* The keys form, reached from its own row rather than sitting expanded above the
+             list. Same panel, same `onBack` as Mapping — one way in and out of a sub-view. */
+          <div className="flex flex-col">
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="mb-3 inline-flex w-fit items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              <Trans>Back</Trans>
+            </button>
+            <DialogTitle className="mb-3 text-lg font-semibold">
+              <Trans>LLM API keys</Trans>
+            </DialogTitle>
+            <LlmKeysSection keys={keys} refreshKeys={refreshKeys} />
+          </div>
         ) : selected ? (
           <HarnessDetail
             kind={selected}
             onBack={() => setSelected(null)}
+            onManageKeys={() => setSelected('keys')}
             onDone={() => {
               markHarnessGateSeen();
               setOpen(false);
@@ -1321,21 +1610,52 @@ export function HarnessLoginModalRoot() {
             keys={keys}
           />
         ) : (
-          <div className="flex max-h-[80vh] flex-col overflow-y-auto">
+          <div className="flex flex-col">
             <DialogTitle className="text-lg font-semibold">
               <Trans>Assistants &amp; keys</Trans>
             </DialogTitle>
 
-            {/* Base layer: LLM API keys, configured once and shared. */}
-            <div className="mt-3">
-              <LlmKeysSection keys={keys} refreshKeys={refreshKeys} />
+            {/* One line per thing that can pay for a call, FlowPad first: it is the only row
+                that asks the user for nothing they do not already have, so reading order hands
+                them that before it asks them to pick a vendor or find a key. */}
+            <div className="mt-4 flex flex-col gap-2">
+              <FlowpadListRow />
+
+              {/* The one label the tick column needs.
+                  With the "Default assistant" dropdown gone, which assistant is default is
+                  carried by a small green check and nothing else — legible once you know what
+                  it means, invisible until then. The heading says it, and earns its place
+                  twice: it also separates the four ASSISTANTS from FlowPad above and the key
+                  store below, which the flat list ran together even though only these four can
+                  be a default. */}
+              <div className="mt-3 flex items-center justify-between px-1">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Trans>Default assistant</Trans>
+                </span>
+                <span className="flex items-center gap-1 text-[11px] text-muted-foreground/70">
+                  <Check className="h-3 w-3" />
+                  <Trans>pick one</Trans>
+                </span>
+              </div>
+
+              {HARNESS_CAPABILITY_KINDS.map((kind) => (
+                <HarnessListRow
+                  key={kind}
+                  kind={kind}
+                  isDefault={kind === defaultKind}
+                  onMakeDefault={() => void makeDefault(kind)}
+                  onOpen={() => setSelected(kind)}
+                  keys={keys}
+                />
+              ))}
+
+              <div className="mt-3" />
+              <KeysListRow keys={keys} onOpen={() => setSelected('keys')} />
             </div>
 
-            {/* Consumers: each harness picks device login or a configured key. */}
-            <div className="mt-5 flex items-center justify-between">
-              <span className="text-sm font-medium text-muted-foreground">
-                <Trans>Harness setup</Trans>
-              </span>
+            {/* Mapping stays a link, not a row: it configures which MODEL a funded harness
+                calls, which is a different question from what pays for it. */}
+            <div className="mt-3 flex justify-end">
               <button
                 type="button"
                 data-testid="open-mapping"
@@ -1345,21 +1665,6 @@ export function HarnessLoginModalRoot() {
                 <Trans>Mapping</Trans>
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
-            </div>
-            <DefaultHarnessSelect
-              onChanged={() => setDefaultKind(capabilityManager.getSnapshot('harness').resolvedKind ?? null)}
-            />
-            <div className="mt-3 flex flex-col gap-2.5">
-              {HARNESS_CAPABILITY_KINDS.map((kind, i) => (
-                <HarnessListRow
-                  key={kind}
-                  kind={kind}
-                  index={i}
-                  isDefault={kind === defaultKind}
-                  onOpen={() => setSelected(kind)}
-                  keys={keys}
-                />
-              ))}
             </div>
           </div>
         )}

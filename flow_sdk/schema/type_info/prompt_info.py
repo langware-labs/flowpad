@@ -1,11 +1,11 @@
 """Type metadata for PROMPT (docs/prompt-library.md)."""
-from flow_sdk.builtin.prompt import PromptSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import (
+from flow_sdk.assets.identity import (
     frontmatter_identity,
     resolved_path_key,
 )
+from flow_sdk.assets.layout import File
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
+from flow_sdk.schema.data_spec.prompt_spec import PromptSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 

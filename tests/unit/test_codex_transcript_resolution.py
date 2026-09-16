@@ -24,6 +24,7 @@ from flow_sdk.transcript_analyzer.resolver import resolve_session_jsonl
 
 @pytest.fixture()
 def isolated_codex_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(tmp_path / "sandbox"))
     reset_instance_settings()
     yield get_instance_settings()

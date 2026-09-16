@@ -6,10 +6,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from flow_sdk.fs_store.indexer.functions.claude_projects import (
-    _claude_projects_dir,
-    _decode_claude_encoded,
-)
+from flow_sdk.fs_store.indexer.functions.claude_projects import _claude_projects_dir, _decode_claude_encoded
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.utils.file_system import is_temp_path
 

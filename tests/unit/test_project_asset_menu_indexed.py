@@ -26,7 +26,7 @@ import pytest
 
 # Register every walker + TypeInfo. Pytest does not run the server startup path.
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
-from flow_sdk.builtin.agentic_process.agentic_process import AssetSource
+from flow_sdk.assets.catalog import (AssetSource)
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.folder import Folder
 from flow_sdk.builtin.project import Project

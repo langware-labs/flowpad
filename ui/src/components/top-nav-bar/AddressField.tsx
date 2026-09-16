@@ -107,7 +107,12 @@ export function AddressField({ crumbs, onSearch }: { crumbs: Crumb[]; onSearch: 
             </BreadcrumbLink>
           </ProjectCrumbHoverCard>
         ) : isLast && crumb.path ? (
-          <CrumbDetailsPopover label={crumb.label} filename={crumb.filename} path={crumb.path}>
+          <CrumbDetailsPopover
+            label={crumb.label}
+            filename={crumb.filename}
+            path={crumb.path}
+            directory={!!crumb.directory}
+          >
             <button
               type="button"
               data-testid="top-nav-crumb-details-trigger"

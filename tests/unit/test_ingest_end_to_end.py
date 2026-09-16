@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401  — registers the shipped drivers
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem

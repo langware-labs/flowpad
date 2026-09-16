@@ -14,6 +14,7 @@ import { Button } from '@src/components/ui/button';
 import { createVibeProcessForProject } from '@src/pages/flow-page/use-start-vibe-session';
 import { notify } from '@src/notifications';
 import { tagAttrs } from '@src/tags/tag-attrs';
+import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
 
 interface SubAgentAssetEditorProps {
   /** FSRef to the subagent .md file. */
@@ -48,7 +49,7 @@ export function SubAgentAssetEditor({
   // resolves. Falls back to the URL-derived fsRef while loading. Both resolve
   // to the same file post mount-path fix, but the entity-derived ref is the
   // explicit source of truth.
-  const editorRef = agent?.doc ?? fsRef;
+  const editorRef = fsRef;
   // chatTarget MUST be the entity's TypeId — MarkdownEditor builds `new TypeId(chatTarget)`
   // and uses it as docTypeId. Passing a path here is what caused the "Invalid typeId" crash.
   const chatTarget = agent ? agent.typeId.toString() : null;
@@ -104,6 +105,7 @@ export function SubAgentAssetEditor({
         <MarkdownEditor
           fsRef={editorRef}
           editEntity={agent}
+          headerLeading={agent ? <PublishedToggle entity={agent} /> : null}
           chatTarget={chatTarget}
           onDelete={agent ? onDelete : undefined}
           deleteLabel={agent?.name ?? undefined}

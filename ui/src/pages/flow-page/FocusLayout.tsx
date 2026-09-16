@@ -19,6 +19,7 @@
  */
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { WindowTitle } from '@src/navigation/window-title';
 import { announceWinReady } from '@src/tabs/popout-handoff';
 import { ViewType } from '@src/types/ViewType';
 import { useEffect, useMemo } from 'react';
@@ -58,6 +59,8 @@ export default function FocusLayout() {
 
   return (
     <div data-testid="focus-layout" className="h-full w-full overflow-hidden bg-background">
+      {/* No nav bar here to set the OS title, so the window sets its own. */}
+      <WindowTitle dock={currentDock} />
       <ContentPanel />
     </div>
   );

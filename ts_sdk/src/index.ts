@@ -42,11 +42,8 @@ export * from './websocket';
 export * from './worldview';
 export * from './types/index';
 export * from './schema/index';
-// Three names are defined twice under this barrel, so a bare `export *` drops
-// all of them (both the type and, for `Skill`/`WorkerType`, the runtime value).
+// Resolve names defined more than once under this barrel explicitly.
 // Name the winner explicitly; the losers stay reachable via their own module.
-//   - `Skill`      — the entity class, not the `models/skill` plain-data shape
-//                    (internal to SkillManager).
 //   - `ShellResult`— `Shell.run`'s result, not the `shell-output` FlowData
 //                    payload (whose `exitCode` is optional).
 //   - `WorkerType` — the `AgentConfig` enum, the only one of the two that is a
@@ -57,6 +54,8 @@ export { WorkerType } from './entities/subagent';
 export { FSEntry } from './fs/FSEntry';
 export { FSRef, type FSRefJson } from './fs/FSRef';
 export { FrontMatterFsRef } from './fs/FrontMatterFsRef';
-export { Frontmatter } from './fs/Frontmatter';
+export * from './fs/AssetDocument';
 
 export * from './lazy';
+
+export * from './models/web-url-pointer';

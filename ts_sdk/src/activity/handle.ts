@@ -1,7 +1,8 @@
 /**
  * `Activity` in TypeScript — the same verbs, the same addressing, over the REST route.
  *
- *     Activity.get('index').label('Indexing').total(5000);
+ *     Activity.get('index').label('Indexing');
+ *     Activity.get('index').total(5000);
  *     Activity.get('index/pdf').incSuccess();
  *     Activity.get('index/pdf').incError('encrypted', { ref: 'a.pdf' });
  *     await Activity.get('index').done('indexed 5,000');
@@ -40,6 +41,22 @@ function asSpec(payload: unknown): ActivityProgressSpec | null {
   return candidate;
 }
 
+/**
+ * The backend refused a verb — e.g. `ACTIVITY_ENDED` for `block()` / `resume()` on an
+ * activity that has already finished. Thrown only by the lifecycle verbs that must not be
+ * silently dropped; ticks still swallow refusals.
+ */
+export class ActivityRefusedError extends Error {
+  constructor(
+    readonly errorCode: string,
+    readonly path: string,
+    readonly verb: string,
+  ) {
+    super(`activity '${path}': ${verb} refused (${errorCode})`);
+    this.name = 'ActivityRefusedError';
+  }
+}
+
 interface VerbBody {
   value?: unknown;
   n?: number;
@@ -47,37 +64,45 @@ interface VerbBody {
   ref?: string | null;
   code?: string | null;
   counter?: string;
-  scope?: string | null;
+  subject_entity?: string | null;
 }
 
 export class Activity {
   private constructor(
     readonly path: string,
-    readonly scope?: string | null,
+    readonly subject_entity?: string | null,
   ) {}
 
   /** The node at `path`, created on the backend by the first verb that reaches it. */
-  static get(path: string, scope?: string | null): Activity {
-    return new Activity(path.replace(/^\/+|\/+$/g, ''), scope ?? null);
+  static get(path: string, subject_entity?: string | null): Activity {
+    return new Activity(path.replace(/^\/+|\/+$/g, ''), subject_entity ?? null);
   }
 
   /** The child called `name` — the same node `Activity.get('parent/name')` addresses. */
   child(name: string): Activity {
-    return new Activity(`${this.path}/${name.replace(/^\/+|\/+$/g, '')}`, this.scope);
+    return new Activity(`${this.path}/${name.replace(/^\/+|\/+$/g, '')}`, this.subject_entity);
   }
 
   /** Chains verbs in issue order so a burst cannot arrive out of sequence. */
   private queue: Promise<ActivityProgressSpec | null> = Promise.resolve(null);
 
-  private send(verb: string, body: VerbBody = {}): Promise<ActivityProgressSpec | null> {
-    const payload = { ...body, scope: this.scope ?? undefined };
-    this.queue = this.queue
-      .then(() => apiClient.post(`${BASE}/${this.path}/${verb}`, payload))
-      .then(asSpec)
-      // A failed report must never take down whatever is being reported ON. The failure
-      // is already logged by the client's own interceptor.
-      .catch(() => null);
-    return this.queue;
+  /**
+   * `strict` verbs reject with `ActivityRefusedError` when the backend REFUSES them.
+   * Transport failures are still swallowed for every verb: a failed report must never
+   * take down whatever is being reported ON (the client's interceptor already logged it).
+   */
+  private send(verb: string, body: VerbBody = {}, strict = false): Promise<ActivityProgressSpec | null> {
+    const payload = { ...body, subject_entity: this.subject_entity ?? undefined };
+    const result = this.queue
+      .then(() => apiClient.post(`${BASE}/${this.path}/${verb}`, payload).catch(() => null))
+      .then((res: unknown) => {
+        const code = (res as { error_code?: string } | null)?.error_code;
+        if (strict && code) throw new ActivityRefusedError(code, this.path, verb);
+        return asSpec(res);
+      });
+    // The chain itself never stays rejected, so one refusal does not poison later verbs.
+    this.queue = result.catch(() => null);
+    return result;
   }
 
   label(text: string) { return this.send('label', { value: text }); }
@@ -96,9 +121,11 @@ export class Activity {
   }
   inc(counter: string, n = 1) { return this.send('inc', { counter, n }); }
 
-  block(message?: string) { return this.send('block', { message }); }
+  /** Rejects with `ActivityRefusedError` (`ACTIVITY_ENDED`) if the activity has already ended. */
+  block(message?: string) { return this.send('block', { message }, true); }
   pause(message?: string) { return this.send('pause', { message }); }
-  resume() { return this.send('resume'); }
+  /** Rejects with `ActivityRefusedError` (`ACTIVITY_ENDED`) if the activity has already ended. */
+  resume() { return this.send('resume', {}, true); }
   done(message?: string) { return this.send('done', { message }); }
   fail(message?: string) { return this.send('fail', { message }); }
   cancel(message?: string) { return this.send('cancel', { message }); }
@@ -108,9 +135,9 @@ export class Activity {
   async spec(): Promise<ActivityProgressSpec | null> {
     try {
       const res: unknown = await apiClient.get(`${BASE}/${this.path}`, {
-        // Omit an absent scope: a query string cannot carry null, and `scope=` would ask
-        // for an activity in a scope literally named "".
-        params: this.scope ? { scope: this.scope } : {},
+        // Omit an absent subject_entity: a query string cannot carry null, and `subject_entity=` would ask
+        // for an activity in a subject_entity literally named "".
+        params: this.subject_entity ? { subject_entity: this.subject_entity } : {},
       });
       return asSpec(res);
     } catch {
@@ -124,9 +151,9 @@ export class Activity {
 }
 
 /** Live roots, for a client that wants the list without subscribing. */
-export async function listActivities(scope?: string | null, allScopes = false): Promise<ActivityProgressSpec[]> {
+export async function listActivities(subject_entity?: string | null, allSubjects = false): Promise<ActivityProgressSpec[]> {
   try {
-    const params = allScopes ? { all: true } : scope ? { scope } : {};
+    const params = allSubjects ? { all: true } : subject_entity ? { subject_entity } : {};
     const res: unknown = await apiClient.get(BASE, { params });
     return Array.isArray(res) ? (res as ActivityProgressSpec[]) : [];
   } catch {

@@ -176,37 +176,52 @@ class Capability(Entity):
         db = cls._db
         if db in cls._seeded_dbs:
             return []
-        seeded: list[Capability] = []
-        for spec in get_default_capability_specs():
-            expected = cls.from_spec(spec)
-            existing = await db.get_by_id(expected.id, cls.get_type())
-            if existing is None:
-                seeded.append(await expected.save(notify=False))
-                continue
-            changed = False
-            for field in (
-                "name",
-                "kind",
-                "description",
-                "icon",
-                "homepage_url",
-                "value_type",
-                "dependent_capability_kinds",
-                "runnable",
-                "install_prompt",
-                # Platform-resolved, so it MUST reconcile: a row seeded on one
-                # machine (or before the command existed) otherwise keeps a
-                # command for the wrong OS forever.
-                "install_command",
-                "uname",
-                "system",
-            ):
-                expected_value = getattr(expected, field)
-                if getattr(existing, field) != expected_value:
-                    setattr(existing, field, expected_value)
-                    changed = True
-            seeded.append(await existing.save(notify=False) if changed else existing)
+        # Marked BEFORE the sweep, not after, because the sweep RE-ENTERS this
+        # method: `expected.save()` below goes through the entity machinery
+        # (save -> _merge_stored_context_links -> a Capability accessor ->
+        # ensure_seeded), and while the mark was set only at the end, every
+        # nested call found the guard clear and redid the whole spec loop —
+        # which redid it again, and so on. Profiling one API test showed
+        # 10,602,371 calls to this method from 92,865 entries, ~5.6s of a ~9s
+        # first-request cost, on every process that touches a capability.
+        #
+        # Discarded again if the sweep raises, so a failed seed is retried
+        # rather than latched as done.
         cls._seeded_dbs.add(db)
+        seeded: list[Capability] = []
+        try:
+            for spec in get_default_capability_specs():
+                expected = cls.from_spec(spec)
+                existing = await db.get_by_id(expected.id, cls.get_type())
+                if existing is None:
+                    seeded.append(await expected.save(notify=False))
+                    continue
+                changed = False
+                for field in (
+                    "name",
+                    "kind",
+                    "description",
+                    "icon",
+                    "homepage_url",
+                    "value_type",
+                    "dependent_capability_kinds",
+                    "runnable",
+                    "install_prompt",
+                    # Platform-resolved, so it MUST reconcile: a row seeded on one
+                    # machine (or before the command existed) otherwise keeps a
+                    # command for the wrong OS forever.
+                    "install_command",
+                    "uname",
+                    "system",
+                ):
+                    expected_value = getattr(expected, field)
+                    if getattr(existing, field) != expected_value:
+                        setattr(existing, field, expected_value)
+                        changed = True
+                seeded.append(await existing.save(notify=False) if changed else existing)
+        except Exception:
+            cls._seeded_dbs.discard(db)
+            raise
         return seeded
 
     @classmethod
@@ -363,14 +378,55 @@ class Capability(Entity):
         self.login_accepts_code = accepts_code
         self.login_message = message
 
+    async def _adopt_completed_login(self) -> None:
+        """A finished device login is also a CHOICE to fund this harness with it.
+
+        ``auth_mode``/``api_provider`` is rung 3, and rung 3 is a constraint: with
+        ``(api, flowpad)`` stored, ``_apply_preference`` marks every other candidate
+        ineligible with ``"<worker> is set to use flowpad"`` -- the device login
+        included, however freshly it authenticated. Nothing in the login path wrote
+        that pair, so signing in could not dislodge it: the row kept offering Sign in
+        for a login already completed, and the resolver kept spending the hub budget.
+        Reported on Windows exactly that way.
+
+        ``device`` is the field default and therefore reads as "no preference", so this
+        does not pin the login -- it drops the harness back onto the ordinary ladder,
+        where a probed login (``_RANK_DEVICE``) outranks a hub endpoint on its own
+        merits. That is the whole change: a stale pin stops speaking for the user.
+
+        Only an EXPLICIT pin is cleared, and only on a completed login. A box that
+        never stated a preference is already at the default, and a login that failed
+        or is mid-flight has said nothing about what should fund anything.
+        """
+        if self.auth_mode != "api":
+            return
+        import logging
+
+        previous = self.api_provider
+        self.auth_mode, self.api_provider = "device", None
+        await self.save(notify=True)
+        logging.getLogger(__name__).info(
+            "[capability] %s: device login completed; cleared the %r preference", self.kind, previous
+        )
+
     async def _apply_login_session(self, session) -> None:
-        """Mirror a DeviceLoginSession onto the transient login_* fields and
-        broadcast (no DB write — the fields are runtime-only)."""
+        """Mirror a DeviceLoginSession onto the transient login_* fields and broadcast.
+
+        The url/code/message fields really are runtime-only — they describe a login in
+        flight and mean nothing once it lands. ``login_state`` is NOT: it is
+        ``Persist.FALSE``, which is DB-only rather than in-memory-only, and the resolver
+        reads it through its own ``Capability.get_by_kind``. So a COMPLETED login has to be
+        saved or the verdict dies with this row object, exactly as an unsaved probe did —
+        sign in, come back to the LLM sources page, and it still says signed out, because
+        the one fact that changed never reached the reader. Reported that way.
+        """
         snapshot = session.to_json()
+        before = self.login_state
         if DeviceLoginState(snapshot["state"]) is DeviceLoginState.AUTHENTICATED:
             # A completed login is newer and stronger evidence than the refusal
             # that prompted it.
             self.login_denied = False
+            await self._adopt_completed_login()
         self._set_login_fields(
             state=DeviceLoginState(snapshot["state"]),
             url=snapshot["url"],
@@ -379,6 +435,11 @@ class Capability(Entity):
             message=snapshot["message"],
         )
         await self.notify_updated()
+        # After the broadcast, and only on a real change: a login moves through several
+        # states (starting, awaiting_user) and each is a frame worth publishing but not a
+        # row worth writing until the value actually differs.
+        if self.login_state != before:
+            await self.save(notify=False)
 
     @action.post(action_name="device-login")
     async def device_login_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -487,7 +548,24 @@ class Capability(Entity):
         if worker_type is None:
             return None
         result = await get_driver(worker_type).auth_probe()
+        before = self.login_state
         await self._mirror_probe_to_login_state(result)
+        if self.login_state != before:
+            # SAVE, or the verdict dies with this row object. ``Persist.FALSE`` means DB-only
+            # (never mirrored into metadata.json) -- NOT in-memory-only -- and
+            # ``notify_updated`` only publishes a frame. The resolver reads this field through
+            # its own ``Capability.get_by_kind`` in ``llm_source._inventory``, a DIFFERENT
+            # instance, which without this still sees the state we just disproved.
+            #
+            # That is what let a harness the user had signed OUT of outside Flowpad keep
+            # reporting "signed in" on the LLM sources page: arriving there probes, the probe
+            # correctly said logged out, and the answer was thrown away every time. The row
+            # then showed a failed test and "signed in" beneath it, disagreeing with itself.
+            #
+            # ``discovery._resolve_login_states`` carries this same save because it calls the
+            # mirror directly; here it belongs to the one method every ON-DEMAND probe goes
+            # through, so a caller cannot forget it.
+            await self.save(notify=False)
         return result
 
     async def _mirror_probe_to_login_state(self, result) -> None:

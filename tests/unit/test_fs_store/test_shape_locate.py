@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flow_sdk.schema.layout import File, Folder, LayoutKind
+from flow_sdk.assets.layout import File, Folder, LayoutKind
 
 
 def test_file_locates_by_extension_only(tmp_path: Path) -> None:

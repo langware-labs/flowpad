@@ -91,7 +91,7 @@ export function PendingActionsChip() {
   // something actually changed, and this list is a render dependency below.
   const allActivities = useActivities();
   const activities = useMemo(
-    () => allActivities.filter((a) => !a.scope?.startsWith(`${AgenticProcess.type}-`)),
+    () => allActivities.filter((a) => !a.subject_entity?.startsWith(`${AgenticProcess.type}-`)),
     [allActivities],
   );
   const [open, setOpen] = useState(false);
@@ -269,7 +269,7 @@ export function PendingActionsChip() {
                       {/* Keyed by scope+path: an activity's address is its identity, and a
                           recycled address is a new activity rather than a moved row. */}
                       {activities.map((spec) => (
-                        <ActivityRow key={`${spec.scope ?? ''}::${spec.path}`} spec={spec} />
+                        <ActivityRow key={`${spec.subject_entity ?? ''}::${spec.path}`} spec={spec} />
                       ))}
                     </ul>
                   </>

@@ -11,14 +11,18 @@ import asyncio
 import pytest
 
 from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
-from flow_sdk.ingest.driver import SendOutcome, SendStatus
-from flow_sdk.ingest.drivers.agent import (
-    CONNECTOR_PROFILES,
-    SEND_RECEIPT_FILENAME,
-    AgentDriver,
-    _send_slots,
-    _slots,
-)
+from flow_sdk.ingest.source_registry import asset_module
+from flow_sdk.ingest.sources import source_type
+
+CONNECTOR_PROFILES = asset_module("agent").CONNECTOR_PROFILES
+agent_transport = asset_module("agent", "transport")
+RECEIPT_FILENAME = asset_module("agent", "transport").RECEIPT_FILENAME
+SEND_RECEIPT_FILENAME = asset_module("agent", "transport").SEND_RECEIPT_FILENAME
+HarnessWorker = asset_module("agent", "transport").HarnessWorker
+_send_slots = asset_module("agent", "transport")._send_slots
+_slots = asset_module("agent", "transport")._slots
+send_instruction = asset_module("agent", "transport").send_instruction
+send_result_from = asset_module("agent", "transport").send_result_from
 
 
 class TestBudgetIsSeparate:
@@ -33,48 +37,40 @@ class TestBudgetIsSeparate:
 
 
 class TestReceiptReading:
-    driver = AgentDriver()
-
     def test_a_confirmed_send_yields_its_ids(self):
-        out = self.driver._send_result_from(
-            {"sent": True, "external_id": "m-1", "recorded": True})
-        assert out == SendOutcome(external_id="m-1", status=SendStatus.SENT,
-                                  recorded=True)
+        out = send_result_from({"sent": True, "external_id": "m-1", "recorded": True})
+        assert out == {"external_id": "m-1", "drafted": False, "recorded": True, "artifact_id": ""}
 
     def test_a_receipt_without_confirmation_is_not_an_outcome(self):
         # No error, no send and no draft is ambiguous, and ambiguity must not
         # read as success — a caller would tell the user their mail went out.
         with pytest.raises(LaunchError) as caught:
-            self.driver._send_result_from({"external_id": "m-1"})
+            send_result_from({"external_id": "m-1"})
         assert caught.value.health is LaunchHealth.CONFIG_ERROR
 
     def test_a_draft_is_a_real_outcome_not_a_failure(self):
         # The claude.ai Gmail connector exposes `create_draft` and NO send verb
         # at all, so drafting is the best a whole class of connectors can do.
         # Reporting it as an error would make the feature look broken.
-        out = self.driver._send_result_from(
-            {"drafted": True, "draft_id": "r-1"})
-        assert out.drafted is True
-        assert out.external_id == "r-1"
+        out = send_result_from({"drafted": True, "draft_id": "r-1"})
+        assert (out["drafted"], out["external_id"]) == (True, "r-1")
         # A draft has reached nobody, so it is never recorded as a message.
-        assert out.recorded is False
+        assert out["recorded"] is False
 
     def test_a_reported_error_is_never_retryable(self):
         with pytest.raises(LaunchError) as caught:
-            self.driver._send_result_from({"error": "auth_failed"})
+            send_result_from({"error": "auth_failed"})
         assert caught.value.health is LaunchHealth.CONFIG_ERROR
 
     def test_a_missing_connector_is_a_config_problem(self):
         with pytest.raises(LaunchError) as caught:
-            self.driver._send_result_from({"error": "no_connector"})
+            send_result_from({"error": "no_connector"})
         assert caught.value.health is LaunchHealth.CONFIG_ERROR
 
     def test_the_mail_can_be_sent_even_when_recording_failed(self):
         # The mail is gone. Reporting this as a failure invites a re-send.
-        out = self.driver._send_result_from(
-            {"sent": True, "external_id": "m-1", "recorded": False, "error": None})
-        assert out.external_id == "m-1"
-        assert out.recorded is False
+        out = send_result_from({"sent": True, "external_id": "m-1", "recorded": False, "error": None})
+        assert (out["external_id"], out["recorded"]) == ("m-1", False)
 
 class TestTimeoutIsNotRetryable:
     """THE test. `fetch` classes a timeout transient — "the next attempt may
@@ -83,18 +79,15 @@ class TestTimeoutIsNotRetryable:
     @pytest.mark.long  # 1.00s
     @pytest.mark.asyncio
     async def test_a_timed_out_send_refuses_a_retry(self, monkeypatch):
-        driver = AgentDriver()
-
         async def _never(*a, **kw):
             await asyncio.sleep(10)
 
-        monkeypatch.setattr(driver, "_run_send_agent", _never)
-        monkeypatch.setattr("flow_sdk.ingest.drivers.agent.ensure_launchable",
-                            _async_none)
+        monkeypatch.setattr(HarnessWorker, "_run_send", _never)
+        monkeypatch.setattr(agent_transport, "ensure_launchable", _async_none)
 
         source = _source(send_deadline_seconds=1)
         with pytest.raises(LaunchError) as caught:
-            await driver.send(source, thread_key="t", to="a@b.c", text="hi")
+            await source_type("agent").send(source, thread_key="t", to="a@b.c", text="hi")
 
         # CONFIG, never TRANSIENT: transient is what tells the caller to try
         # again, and there must not be a next attempt.
@@ -105,36 +98,32 @@ class TestTimeoutIsNotRetryable:
     async def test_a_send_failure_never_parks_the_data_source(self, monkeypatch):
         # `SourceError` health drives DataSource parking. One failed reply must
         # not stop a mailbox from syncing.
-        driver = AgentDriver()
-
         async def _boom(*a, **kw):
             raise RuntimeError("connector exploded")
 
-        monkeypatch.setattr(driver, "_run_send_agent", _boom)
-        monkeypatch.setattr("flow_sdk.ingest.drivers.agent.ensure_launchable",
-                            _async_none)
+        monkeypatch.setattr(HarnessWorker, "_run_send", _boom)
+        monkeypatch.setattr(agent_transport, "ensure_launchable", _async_none)
 
         with pytest.raises(LaunchError):
-            await driver.send(_source(), thread_key="t", to="a@b.c", text="hi")
+            await source_type("agent").send(_source(), thread_key="t", to="a@b.c", text="hi")
 
     @pytest.mark.asyncio
     async def test_an_unlaunchable_harness_is_reported_before_any_worker(self, monkeypatch):
-        driver = AgentDriver()
         problem = LaunchError.config("not_installed", "no claude", "claude")
 
         async def _problem(*a, **kw):
             return problem
 
-        monkeypatch.setattr("flow_sdk.ingest.drivers.agent.ensure_launchable", _problem)
+        monkeypatch.setattr(agent_transport, "ensure_launchable", _problem)
         with pytest.raises(LaunchError) as caught:
-            await driver.send(_source(), thread_key="t", to="a@b.c", text="hi")
+            await source_type("agent").send(_source(), thread_key="t", to="a@b.c", text="hi")
         assert caught.value is problem
 
 
 class TestInstruction:
     def test_the_body_is_fenced_verbatim(self):
         text = "please  DON'T   fix my spacing\nor my grammer"
-        out = AgentDriver._send_instruction(
+        out = send_instruction(
             _source(), {"connector": "gmail"}, "/tmp/sent.json",
             thread_key="t-1", to="a@b.c", text=text, subject="Re: x",
         )
@@ -144,7 +133,7 @@ class TestInstruction:
         assert "send exactly this" in out.lower()
 
     def test_it_carries_the_absolute_cli_path(self):
-        out = AgentDriver._send_instruction(
+        out = send_instruction(
             _source(), {"connector": "gmail"}, "/tmp/sent.json",
             thread_key="t", to="a@b.c", text="hi", subject="",
         )
@@ -153,7 +142,7 @@ class TestInstruction:
         assert "/tmp/sent.json" in out
 
     def test_a_threadless_send_says_so_rather_than_sending_blank(self):
-        out = AgentDriver._send_instruction(
+        out = send_instruction(
             _source(), {"connector": "gmail"}, "/tmp/sent.json",
             thread_key="", to="a@b.c", text="hi", subject="Hello",
         )
@@ -162,7 +151,7 @@ class TestInstruction:
 
 class TestDriverContract:
     def test_the_agent_transport_declares_that_it_sends(self):
-        assert AgentDriver.sends is True
+        assert source_type("agent").sends is True
 
     def test_replying_uses_its_own_agent_not_the_summarizer(self):
         # Each connector's send persona is distinct from its fetch persona —
@@ -171,8 +160,6 @@ class TestDriverContract:
             assert profile.send_agent != profile.agent
 
     def test_the_two_verbs_never_read_each_others_receipt(self):
-        from flow_sdk.ingest.drivers.agent import RECEIPT_FILENAME
-
         assert SEND_RECEIPT_FILENAME != RECEIPT_FILENAME
 
 
@@ -183,4 +170,4 @@ async def _async_none(*a, **kw):
 def _source(**config):
     from types import SimpleNamespace
 
-    return SimpleNamespace(id="ds-1", name="Gmail", config=config or {})
+    return SimpleNamespace(id="ds-1", name="Gmail", provider="agent", account_key="", config={"connector": "gmail", **config})

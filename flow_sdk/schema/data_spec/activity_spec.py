@@ -99,15 +99,15 @@ class ActivityProgressSpec(DataSpec):
     spec_kind: ClassVar[str] = "activity.progress"
 
     #: v4 from ``mint_uuid()``, minted once when the node is created. Nothing derives
-    #: it and nothing looks anything up by it — addressing is by ``(scope, path)``,
+    #: it and nothing looks anything up by it — addressing is by ``(subject_entity, path)``,
     #: which is a lookup on the natural key, per the entity-id policy.
     activity_id: str
     #: TypeId this activity belongs to; the default is the ``@local`` compute node.
     #: Scope decides WS routing: a compute-node activity is instance-wide and goes to
     #: every connection, anything else goes to that entity's watchers.
-    scope: Optional[str] = None
-    #: Address within the scope: ``index``, ``index/pdf``, ``qa.cycle``. Unique per
-    #: scope — ``Activity.get(p)`` and ``Activity.get(parent).child(leaf)`` are the
+    subject_entity: Optional[str] = None
+    #: Address within the subject entity: ``index``, ``index/pdf``, ``qa.cycle``. Unique per
+    #: subject entity — ``Activity.get(p)`` and ``Activity.get(parent).child(leaf)`` are the
     #: same node.
     path: str
     #: Last segment of ``path``. Denormalised so a row can render without splitting.
@@ -115,7 +115,7 @@ class ActivityProgressSpec(DataSpec):
     label: Optional[str] = None
     #: A lucide export name OR a backend-served path — whatever ``lucideByName``
     #: resolves. An activity is not an entity type, so ``iconForType`` cannot answer
-    #: for it; the producer says, or the frontend falls back to the scope entity's
+    #: for it; the producer says, or the frontend falls back to the subject entity's
     #: type glyph and then to a generic one.
     icon: Optional[str] = None
 

@@ -1,7 +1,7 @@
 """SubAgent entity — graph/HTTP surface for FSRecord(type='subagent').
 
-On-disk parsing lives in ``fs_store/indexer/functions/agent.py`` and is wired
-to the indexer via ``TypeInfo`` callable slots, not classmethods here.
+On-disk schema and parsing live in ``assets/types`` and are declared through
+``TypeInfo``; this module owns the Entity action surface.
 """
 from __future__ import annotations
 
@@ -12,44 +12,9 @@ from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums import SubAgentKind
-from flow_sdk.fs_store.serializer.fields import FieldKind, field_kinds
-from flow_sdk.schema.data_spec import Body, FrontMatter
 
 if TYPE_CHECKING:
     from flow_sdk.responses.response import ApiResponse
-
-
-class SubAgentSpec(FrontMatter):
-    """The ``.claude/agents/<name>.md`` document — Claude Code's own schema,
-    snake_case as Claude reads it. This class IS the field list: what it
-    declares is what is read and written, and nothing else. ``prompt`` is the
-    markdown ``Body``.
-
-    ``kind`` is flowpad's, not Claude's (excluded from the ``--agents`` CLI
-    JSON by ``subagent_to_cli_json``); it still rides the frontmatter.
-    """
-
-    name: str | None = None
-    description: str | None = None
-    kind: str | None = None
-    tools: Any = None
-    disallowed_tools: Any = None
-    model: str | None = None
-    color: str | None = None
-    permission_mode: str | None = None
-    max_turns: int | None = None
-    skills: Any = None
-    mcp_servers: Any = None
-    hooks: Any = None
-    memory: Any = None
-    background: Any = None
-    isolation: Any = None
-    prompt: Body = ""
-
-
-#: The Claude ``--agents`` spec keys — every header scalar except ``name``
-#: (the Body is the prompt; the name is the file).
-AGENTS_SPEC_FIELDS = tuple(n for n, k in field_kinds(SubAgentSpec) if k is FieldKind.SCALAR and n != "name")
 
 
 class SubAgent(Entity):

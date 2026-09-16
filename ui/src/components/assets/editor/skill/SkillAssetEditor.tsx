@@ -11,11 +11,12 @@ import { entityReloadKey } from '@src/utils/entity-reload-key';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { FSRef, ProcessKind, Skill } from '@sdk';
+import { mainFileForType } from '@sdk/models/asset-editor';
 import { cn } from '@src/lib/utils';
-import { notify } from '@src/notifications';
 import { FlaskConical, History } from 'lucide-react';
 import { useCallback, useMemo, useRef } from 'react';
 import { UsagePanel } from './UsagePanel';
+import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
 
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
@@ -60,18 +61,12 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }
   // Scalar so it's stable across identity-only skill ref churn; dirty-guarded.
   const reloadKey = entityReloadKey((skill as { updated_date?: unknown } | undefined)?.updated_date);
 
-  // Stable across metadata updates (same skillKey ⇒ same SKILL.md path) so the
-  // editor doesn't re-download the file on every eval flip.
-  // Keyed on the STABLE skillKey only — `skill.doc` mints a fresh FrontMatterFsRef
-  // on every access, so including the (also per-render) `fsRef` here would churn
-  // editorRef's identity every render and reload the MarkdownEditor. skillRef
-  // holds the live skill; fsRef is stable for a given SKILL.md path anyway.
+  // The URL-selected occurrence owns the bytes. An Entity may describe another
+  // same-ID occurrence, so its primary doc must never replace this route ref.
+  const mainFile = mainFileForType(Skill.type);
   const editorRef = useMemo(
-    // Same guard as Skill.doc: a file-valued ref (already .../SKILL.md) must not
-    // get the main file appended again, or the download 404s on SKILL.md/SKILL.md.
-    () => skillRef.current?.doc ?? (fsRef.path.endsWith('/SKILL.md') ? fsRef : fsRef.child('SKILL.md')),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [skillKey],
+    () => !mainFile || fsRef.path.endsWith(`/${mainFile}`) ? fsRef : fsRef.child(mainFile),
+    [fsRef, mainFile],
   );
 
   const onDelete = useCallback(async () => {
@@ -81,32 +76,10 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }
     navigation.openDock(DockPointer.forAssetList(Skill.type));
   }, [navigation]);
 
-  // Header eval toggle. Flipping it writes to BOTH layers so the flag takes
-  // effect immediately and durably:
-  //   1. SKILL.md frontmatter via the editor's content buffer (the durable
-  //      source of truth; single writer — see MarkdownHeaderExtrasCtx).
-  //   2. the Skill entity's `metadata.eval` via `save()` (the projection the
-  //      rest of the app reads through `isEval`). Without (2) the flag wouldn't
-  //      surface until a re-index re-walked this file — which isn't guaranteed
-  //      (the file may live in a root the manual rescan doesn't re-walk), so
-  //      the badge/auto-eval would silently never fire.
-  // `eval` round-trips as the string 'true'/'false' (frontmatter is quoted).
+  // One occurrence-scoped document patch; the backend refreshes the entity projection.
   const headerExtras = useCallback(({ fields, setField }: MarkdownHeaderExtrasCtx) => {
     const isEval = fields.eval === 'true';
-    const toggle = () => {
-      const next = isEval ? 'false' : 'true';
-      setField('eval', next);
-      const s = skillRef.current;
-      if (s) {
-        s.metadata = { ...(s.metadata ?? {}), eval: next };
-        void s.save().catch((e) => {
-          notify.error({
-            title: t`Could not update eval flag`,
-            message: e instanceof Error ? e.message : 'Save failed.',
-          });
-        });
-      }
-    };
+    const toggle = () => setField('eval', !isEval);
     return (
       <button
         type="button"
@@ -164,17 +137,15 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }
         ),
       },
     ];
-    // Depend on the stable skillKey ONLY (not editorRef/skill) — the host can
-    // hand a fresh fsRef each render, and including it here would rebuild the tab
-    // array and remount the panels on every render. skillRef/editorRef are
-    // snapshotted at first build; both are stable for a given SKILL.md.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skillKey]);
+    // Rebuild for a new identity or selected occurrence so Usage keeps the
+    // route-selected file even when two copies share an entity ID.
+  }, [skillKey, editorRef]);
 
   return (
     <MarkdownEditor
       fsRef={editorRef}
       editEntity={skill}
+      headerLeading={skill ? <PublishedToggle entity={skill} /> : null}
       chatTarget={skillKey}
       headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}

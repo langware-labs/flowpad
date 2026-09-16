@@ -228,7 +228,10 @@ async def test_project_share_emits_shared_context_origins_only(tmp_path, stub_gi
         async def __aexit__(self, *_args):
             return None
 
-        async def post(self, path, body):
+        # Mirrors the real ``FlowpadClient.post``, which takes ``idempotent``.
+        # A non-None return means the create succeeded, so ``share`` takes the
+        # ordinary path and makes no ownership probe.
+        async def post(self, path, body, *, idempotent: bool = False, **_kwargs):
             posts.append((path, body))
             return {"ok": True}
 

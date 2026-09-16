@@ -56,6 +56,28 @@ _LOCAL_UNAME = "local"
 TERMINAL_TAB_TYPES = frozenset({"shell", "agentic_process"})
 
 
+def _refresh_tree(staging: str, target: str) -> str:
+    """Lay a delivered tree over an existing project folder; the commit it lands on, or "".
+
+    With git on both sides the folder MOVES to the delivered commit (``fetch`` +
+    ``reset --hard``): files deleted upstream go, and files this node wrote that
+    git does not track stay. ``--update-shallow`` because the hub's clone may be
+    shallow. Without git, the delivered files are copied over the folder.
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    def git(cwd: str, *args: str) -> str:
+        return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+    if os.path.isdir(os.path.join(staging, ".git")) and os.path.isdir(os.path.join(target, ".git")):
+        git(target, "fetch", "--quiet", "--update-shallow", staging, "HEAD")
+        git(target, "reset", "--hard", "--quiet", "FETCH_HEAD")
+        return git(target, "rev-parse", "HEAD")
+    shutil.copytree(staging, target, dirs_exist_ok=True)
+    return git(target, "rev-parse", "HEAD") if os.path.isdir(os.path.join(target, ".git")) else ""
+
+
 def build_dir_zip(local_path: str) -> BytesIO:
     """Zip a local directory tree in memory, entries relative to its root.
 
@@ -151,7 +173,7 @@ class ComputeNode(
     def _start_activity(self, job_name: str, timeout_seconds: int = 600):
         """Claim the single-flight slot for ``job_name``, or raise if it is held.
 
-        The slot IS an ``Activity`` at ``(scope=typeid, path=job_name)`` — one activity per
+        The slot IS an ``Activity`` at ``(subject_entity=typeid, path=job_name)`` — one activity per
         address is the same statement this registry used to make, so the single-flight
         decision lives in one place instead of two that can disagree. ``_COMPUTE_ACTIVITIES``
         survives only as the carrier for the legacy ``IndexProgressTable`` payload while
@@ -160,7 +182,7 @@ class ComputeNode(
         from flow_sdk.activity import Activity  # noqa: PLC0415
         from flow_sdk.builtin.faas.in_process_activity import InProcessActivity  # noqa: PLC0415
 
-        claimed = Activity.try_claim(job_name, scope=str(self.typeid), timeout_seconds=timeout_seconds)
+        claimed = Activity.try_claim(job_name, subject_entity=str(self.typeid), timeout_seconds=timeout_seconds)
         activity = InProcessActivity(
             job_name=job_name,
             entity_id=str(self.typeid),
@@ -187,7 +209,7 @@ class ComputeNode(
         """
         from flow_sdk.activity import monitor  # noqa: PLC0415
 
-        if monitor.holder(job_name, scope=str(self.typeid)) is None:
+        if monitor.holder(job_name, subject_entity=str(self.typeid)) is None:
             return None
         return _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
 
@@ -741,7 +763,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return []
         if project is None:
             return []
-        return [row.get("env_var") for row in project.secret_origins if row.get("env_var")]
+        from flow_sdk.builtin.credential_resolver import declared_vars  # noqa: PLC0415
+
+        return sorted(await declared_vars(project))
 
     async def _recurate(self, project_id: str, env_var: str, *, add: bool) -> "ApiResponse":
         """Attach or detach one secret. Both verbs are the same operation over a
@@ -1248,7 +1272,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         membership_entity`` is the one seam that already mirrors a hub
         membership container locally (idempotent upsert, hub ``created_by`` and
         dates preserved through ``remote_reflection`` rather than stamped with
-        the local sync user, plus context-folder and secret-origin
+        the local sync user, plus context-folder
         materialization). This is the same adopt the invitation-accept path
         performs — a sandbox handover is the same event reached a different way,
         so it must not grow a second, subtly different copy. Which fields cross
@@ -1292,6 +1316,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not is_valid_entity_id(candidate):
             raise ValueError(f"project_id must be a UUID v4 or v5 entity id: {candidate}")
         return candidate
+
+    @staticmethod
+    def _staging_error(staging_path: str) -> ApiFailResponse | None:
+        """Why a delivered tree cannot be used, or None: it must be an existing directory on this node."""
+        if staging_path and os.path.isdir(staging_path):
+            return None
+        return ApiFailResponse(message="staging_path is required and must be an existing directory", status_code=400)
 
     async def _place_project(self, leaf: str, raw_project_id: object, deliver) -> ApiResponse:
         """Put a project at a free slot under ``AGENT_MOUNT_FOLDER`` and mint it.
@@ -1340,11 +1371,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
-        staging_path = body.get("staging_path")
-        if not staging_path or not os.path.isdir(staging_path):
-            return ApiFailResponse(
-                message="staging_path is required and must be an existing directory", status_code=400
-            )
+        staging_path = str(body.get("staging_path") or "")
+        if error := self._staging_error(staging_path):
+            return error
         leaf = (str(body.get("name") or os.path.basename(staging_path.rstrip("/")))).strip()
         if not leaf:
             return ApiFailResponse(message="could not derive a project name", status_code=400)
@@ -1354,6 +1383,59 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             shutil.move(staging_path, target_dir)
 
         return await self._place_project(leaf, body.get("project_id"), deliver)
+
+    @action.post(action_name="refresh-project")
+    async def _refresh_project_action(self) -> ApiResponse:
+        """Bring a project already on this node to a newly delivered tree, IN PLACE.
+
+        Body: ``{ "staging_path": "<abs dir>", "project_id": "<uuid v4/v5>" }`` →
+        ``{ project, path, head_commit }``.
+
+        The update half of ``materialize-project``: the same delivery (the hub
+        clones, ``copy_folder`` stages the tree here), but the tree lands in the
+        project's EXISTING folder, so its id, path, index and every agent placed
+        from it stay what they were. Materializing again would park a second copy
+        at a suffixed folder. Indexing stays the caller's own step.
+
+        Only a project under ``AGENT_MOUNT_FOLDER`` can be refreshed — the folders
+        this node materialized — so a caller cannot aim the overwrite anywhere else.
+        """
+        import asyncio  # noqa: PLC0415
+        import shutil  # noqa: PLC0415
+        import subprocess  # noqa: PLC0415
+
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        staging_path = str(body.get("staging_path") or "")
+        if error := self._staging_error(staging_path):
+            return error
+        try:
+            project_id = self._adopted_project_id(body.get("project_id"))
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        if not project_id:
+            return ApiFailResponse(message="project_id is required", status_code=400)
+        project = await Project.get_by_id(project_id)
+        path = str(getattr(project, "fs_storage_mount_path", "") or "") if project else ""
+        if not path or not os.path.isdir(path):
+            return ApiFailResponse(message=f"project {project_id} is not on this node", status_code=404)
+        mount_root = os.path.realpath(AGENT_MOUNT_FOLDER)
+        if os.path.commonpath([mount_root, os.path.realpath(path)]) != mount_root:
+            return ApiFailResponse(message="only a project this node materialized can be refreshed", status_code=403)
+
+        try:
+            head_commit = await asyncio.to_thread(_refresh_tree, staging_path, path)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            detail = getattr(exc, "stderr", "") or str(exc)
+            return ApiFailResponse(message=f"could not refresh the project: {str(detail)[:300]}", status_code=500)
+        finally:
+            shutil.rmtree(staging_path, ignore_errors=True)
+        return ApiSuccessResponse(
+            data={"project": project.model_dump(mode="json"), "path": path, "head_commit": head_commit}
+        )
 
     @action.post(action_name="init-empty-project")
     async def _init_empty_project_action(self) -> ApiResponse:
@@ -1453,7 +1535,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             HubEndpointBindError,
             bind_hub_llm_endpoint,
             chain_hub_llm_endpoint,
+            check_llm_source,
             hub_llm_endpoint_status,
+            llm_binding,
             select_llm_source,
             test_hub_llm_endpoint,
             unbind_hub_llm_endpoint,
@@ -1489,6 +1573,26 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # desktop screen has no other way to reach that action.
                 if sub_path == "test":
                     return ApiSuccessResponse(data=await test_hub_llm_endpoint(body))
+                # ``binding`` materializes ONE source for a terminal. A POST, like ``test``,
+                # because it is the one route here that hands back a CREDENTIAL -- for a stored
+                # key that is a secret out of the sod the caller does not otherwise hold, and a
+                # secret does not belong on a cacheable GET. Body forwarded whole, like its
+                # siblings, so the payload whitelist lives in one place.
+                if sub_path == "binding":
+                    return ApiSuccessResponse(data=await llm_binding(body))
+                # ``test-source`` is the PER-ROW check: the same verdict shape, but dispatched
+                # on the source kind, so a device login and a stored key are each asked the
+                # question that can actually fail for them. ``test`` above stays the hub-only
+                # pass-through it has always been.
+                if sub_path == "test-source":
+                    return ApiSuccessResponse(data=await check_llm_source(body))
+                if sub_path:
+                    # An unknown sub-action is a mistake, not a bind. Falling through used to
+                    # turn any misspelled or newer-client POST into "the hub is binding this
+                    # box", which fails with a message about the WRONG operation -- observed as
+                    # a new client's POST .../binding answering "invoke_path must be a
+                    # hub-relative path" against an older server.
+                    return ApiFailResponse(message=f"Unknown llm-endpoint action {sub_path!r}", status_code=404)
                 return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
             if method == "DELETE":
                 return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())
@@ -1547,7 +1651,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         return self._desktop_get_host(port, redirect)
 
     @action.get(action_name="connections")
-    async def connections_action(self, project_id: str = "") -> "ApiResponse":
+    async def connections_action(self, project_id: str = "", include_unconnected: bool = False) -> "ApiResponse":
         """Every connection this box has, in one read.
 
         Consolidated HERE rather than in the browser, which used to fetch four
@@ -1562,12 +1666,16 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         A pure read. ``check-harness-logins`` is the verb that asks the vendor
         CLIs; keeping it out of here is what stops a GET from spawning
         subprocesses on the path ``require()`` resolves through.
+
+        ``include_unconnected`` also lists every OAuth provider not yet connected
+        (``connected=False``) — the SDK's ``get_connections()``; the screen and the
+        CLI leave it off.
         """
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
         from flow_sdk.core.connections.status import list_connections  # noqa: PLC0415
 
         project = await Project.get_by_id(project_id) if project_id else None
-        rows = await list_connections(project=project)
+        rows = await list_connections(project=project, include_unconnected=include_unconnected)
         return ApiSuccessResponse(data={"connections": [r.model_dump(mode="json") for r in rows]})
 
     @action.post(action_name="check-harness-logins")
@@ -1601,6 +1709,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.post(action_name="open-terminal")
     async def open_terminal_action(self):
         return await self._desktop_open_terminal()
+
+    @action.post(action_name="worker-launch-commands")
+    async def worker_launch_commands_action(self):
+        return await self._desktop_worker_launch_commands()
 
     @action.post(action_name="pick-folder")
     async def pick_folder_action(self):

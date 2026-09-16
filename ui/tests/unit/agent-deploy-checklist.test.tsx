@@ -67,8 +67,8 @@ vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => mocks.hubOnly }
 vi.mock('@src/notifications', () => ({
   notify: { error: mocks.notifyError, success: mocks.notifySuccess, info: vi.fn(), warning: vi.fn() },
 }));
-vi.mock('@src/components/project-home/ProjectPublishButton', () => ({
-  ProjectPublishButton: (props: { project: unknown }) => {
+vi.mock('@src/components/project-home/ProjectCloudLinkButton', () => ({
+  ProjectCloudLinkButton: (props: { project: unknown }) => {
     mocks.publishButton(props);
     return <button data-testid="project-publish">Link to cloud</button>;
   },
@@ -165,7 +165,7 @@ describe('AgentDeployChecklist', () => {
     await vi.waitFor(() => expect(mocks.connect).toHaveBeenCalledWith('github'));
   });
 
-  it('hands the project row to the existing ProjectPublishButton', async () => {
+  it('hands the project row to the existing ProjectCloudLinkButton', async () => {
     mocks.project = { ...(mocks.project as Record<string, unknown>), remote: false };
     await renderChecklist();
 

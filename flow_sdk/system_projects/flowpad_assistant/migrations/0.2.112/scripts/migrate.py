@@ -39,7 +39,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 
 logger = logging.getLogger(__name__)
 

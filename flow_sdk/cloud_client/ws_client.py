@@ -169,7 +169,10 @@ async def connect_hub_websocket(
 
     api_base_url = (config or ApiConfig.from_env()).api_base_url
     url = build_hub_ws_url(api_base_url, connection_id)
-    headers = {"Authorization": f"Bearer {creds.api_key}"}
+    # ``X-Flowpad-Client: desktop`` tells the hub this socket is a desktop
+    # BACKEND, not a browser tab — the hub routes "install on my desktop"
+    # requests only to sockets that say so.
+    headers = {"Authorization": f"Bearer {creds.api_key}", "X-Flowpad-Client": "desktop"}
     # Workspace sandboxes carry a machine-bound login key; the hub's WS auth
     # requires the same X-Machine-ID header as HTTP (fails closed without it).
     attach_machine_id(headers)

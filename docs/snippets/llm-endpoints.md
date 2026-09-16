@@ -1,3 +1,6 @@
+---
+id: d2bc12cb-44c1-451a-bf3c-89fc71d2d445
+---
 # LLM endpoints — snippets
 
 An `LLMEndpoint` is one answer to "who pays for these tokens". There are three kinds

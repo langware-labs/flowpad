@@ -7,7 +7,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent_hook import HookEventType
-from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.assets.directory import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot import driver as driver_module
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver import CopilotDriver
 

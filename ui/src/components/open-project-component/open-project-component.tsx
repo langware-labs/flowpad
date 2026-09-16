@@ -10,11 +10,13 @@ import { useProject } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { Label } from '@src/components/ui/label';
 import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Info, Loader2, Search } from 'lucide-react';
 import { projectRecencyMs } from '@src/lib/project-recency';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { AdvancedOnly } from '@src/components/view-mode';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -24,6 +26,103 @@ import { Trans, useLingui } from '@lingui/react/macro';
  *  trimmed + lowercased. */
 const matchesProjectQuery = (project: ProjectListItem, q: string): boolean =>
   getProjectDisplayName(project).toLowerCase().includes(q) || (project.cwd ?? '').toLowerCase().includes(q);
+
+/** Abbreviate the host home directory to `~` for the compact path subscript;
+ *  the full path stays on the tooltip and in the details popover. */
+function tildePath(path: string): string {
+  const home = dataContext.bootstrapInfo?.desktop_info?.paths?.home;
+  if (!home) return path;
+  const h = canonicalPath(home);
+  const p = canonicalPath(path);
+  if (p === h) return '~';
+  return p.toLowerCase().startsWith(`${h.toLowerCase()}/`) ? `~${p.slice(h.length)}` : path;
+}
+
+function formatWhen(ms: number | null | undefined): string | null {
+  if (ms == null || Number.isNaN(ms)) return null;
+  return new Date(ms).toLocaleString();
+}
+
+/** Every field the project list knows about one project, behind the row's info icon. */
+function ProjectDetailsPopover({
+  project,
+  tabCount,
+  onOpenStatus,
+}: {
+  project: ProjectListItem;
+  tabCount?: number;
+  onOpenStatus: () => void;
+}) {
+  const { t } = useLingui();
+  const name = getProjectDisplayName(project);
+  const workers = project.worker_types?.length
+    ? project.worker_types.join(', ')
+    : [project.claude && 'claude', project.codex && 'codex', project.copilot && 'copilot'].filter(Boolean).join(', ');
+  const sessionParts = [
+    project.claude_session_count ? `Claude ${project.claude_session_count}` : null,
+    project.codex_session_count ? `Codex ${project.codex_session_count}` : null,
+    project.copilot_session_count ? `Copilot ${project.copilot_session_count}` : null,
+  ].filter(Boolean);
+  const rows: Array<[string, React.ReactNode, boolean?]> = [
+    [t`Name`, name],
+    [t`Path`, project.cwd, true],
+    [t`Project id`, project.id, true],
+    [t`Record id`, project.record_project_id, true],
+    [t`Claude dir`, project.encoded_name, true],
+    [t`Open tabs`, tabCount],
+    [
+      t`Sessions`,
+      `${project.session_count}${sessionParts.length ? ` (${sessionParts.join(' · ')})` : ''}`,
+    ],
+    [t`Workers`, workers || null],
+    [t`Last opened`, formatWhen(project.last_active_at)],
+    [t`Modified`, project.modified_at ? formatWhen(Date.parse(project.modified_at)) : null],
+    [t`System`, project.system ? t`Yes` : null],
+  ];
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          onClick={(e) => e.stopPropagation()}
+          title={t`Project details`}
+          aria-label={t`Details for ${name}`}
+          data-testid={`switch-project-info-${project.id}`}
+          className="shrink-0 px-2 py-1.5 text-muted-foreground hover:text-foreground"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="right" align="start" className="w-80 p-3 text-xs" data-testid="switch-project-details">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+          {rows
+            .filter(([, value]) => value !== null && value !== undefined && value !== '')
+            .map(([label, value, mono]) => (
+              <React.Fragment key={label}>
+                <dt className="text-muted-foreground">{label}</dt>
+                <dd className={`break-all ${mono ? 'font-mono text-[11px]' : ''}`} dir={mono ? 'ltr' : undefined}>
+                  {value}
+                </dd>
+              </React.Fragment>
+            ))}
+        </dl>
+        <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
+          {project.cwd && (
+            <CopyButton
+              value={project.cwd}
+              title={t`Copy project path`}
+              iconClassName="h-3.5 w-3.5"
+              copiedIconClassName="text-green-500"
+              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            />
+          )}
+          <Button variant="ghost" size="sm" className="ms-auto h-7 text-xs" onClick={onOpenStatus}>
+            <Trans>Status & cleanup</Trans>
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // CompactProjectSelectDialog — the project picker
@@ -87,8 +186,8 @@ function CompactProjectSelectDialog({
         ? t`Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions.`
         : null;
 
-  // Active projects = the ones that own open tabs — the SAME source the tab
-  // strip's projects chip renders, so both surfaces always agree.
+  // Active projects = the ones that own open tabs — the SAME source the nav
+  // bar's project chip renders, so both surfaces always agree.
   const { buckets } = useTabProjectBuckets();
   const tabCountByProjectId = useMemo(() => new Map(buckets.map((b) => [b.projectId, b.tabCount])), [buckets]);
 
@@ -117,7 +216,9 @@ function CompactProjectSelectDialog({
 
   // One row shape for both sections; active rows carry the chip's tab-count badge.
   const renderRow = (project: ProjectListItem, tabCount?: number) => {
-    const projectPath = normalizePath(project.cwd || project.name || '');
+    // Mount path only, never `name` — matches `currentProjectPath` above, so
+    // a cwd-less row simply never reads as current instead of matching by name.
+    const projectPath = normalizePath(project.cwd || '');
     const isCurrent = !!currentProjectPath && canonicalPath(projectPath) === canonicalPath(currentProjectPath);
     const isOpening = openingProjectId === project.id;
     return (
@@ -131,8 +232,7 @@ function CompactProjectSelectDialog({
         <button
           onClick={() => onProjectClick(project)}
           disabled={!!openingProjectId || isSubmitting}
-          title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
-          className="flex min-w-0 flex-1 items-center gap-2 py-1.5 ps-3 text-start text-sm disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex min-w-0 flex-1 items-center gap-2 py-1 ps-3 text-start text-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isOpening ? (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
@@ -141,7 +241,19 @@ function CompactProjectSelectDialog({
           ) : (
             <div className="h-3.5 w-3.5 shrink-0" />
           )}
-          <span className="min-w-0 flex-1 truncate font-medium">{getProjectDisplayName(project)}</span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
+            {project.cwd && (
+              <span
+                className="truncate text-[10px] leading-tight text-muted-foreground"
+                title={project.cwd}
+                data-testid={`switch-project-path-${project.id}`}
+                dir="ltr"
+              >
+                {tildePath(project.cwd)}
+              </span>
+            )}
+          </span>
           {tabCount !== undefined && (
             <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
               {tabCount}
@@ -149,18 +261,14 @@ function CompactProjectSelectDialog({
           )}
         </button>
         <AdvancedOnly reserve={false}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
+          <ProjectDetailsPopover
+            project={project}
+            tabCount={tabCount}
+            onOpenStatus={() => {
               onOpenChange(false);
               navigation.openLens('projects', 'cleanup', project.id);
             }}
-            title="Project status & cleanup"
-            aria-label={`Status for ${getProjectDisplayName(project)}`}
-            className="shrink-0 px-2 py-1.5 text-muted-foreground hover:text-foreground"
-          >
-            <Info className="h-3.5 w-3.5" />
-          </button>
+          />
         </AdvancedOnly>
       </div>
     );
@@ -463,15 +571,21 @@ export function OpenProjectComponent({
     }
   }, [open]);
 
+  // Mount path only, never `name` — a Project's name is not a location.
   const currentProjectPath = useMemo(
-    () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
+    () => normalizePath(currentProject?.fs_storage_mount_path || ''),
     [currentProject],
   );
 
   const handleProjectClick = useCallback(
     async (project: ProjectListItem) => {
-      const path = normalizePath(project.cwd || project.name || '');
-      if (!path) return;
+      // `cwd` is the only openable location; see `isOpenableProjectPath` for
+      // what falling back to `name` here used to mint.
+      const path = normalizePath(project.cwd || '');
+      if (!path) {
+        setError(t`This project has no folder on disk and can't be opened.`);
+        return;
+      }
 
       setOpeningProjectId(project.id);
       setError(null);

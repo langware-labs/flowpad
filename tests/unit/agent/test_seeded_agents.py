@@ -50,11 +50,27 @@ def test_shipped_agent_parses_and_is_cheap(path: Path):
     assert parsed["name"] == path.parent.name
     assert parsed.get("description"), "an agent with no description is unreadable in project home"
     assert parsed["system_prompt"], "an agent with no system prompt has no identity"
-    # sm tier == haiku (model_tiers.py). Internal agents must not silently
-    # default to an expensive model — the exemptions below are deliberate and
-    # each one names the failure that bought it.
-    expected = COSTLIER_BY_DESIGN.get(path.parent.name, "haiku")
-    assert parsed.get("model") == expected, (
-        f"{path.parent.name} is on {parsed.get('model')}, expected {expected}"
-    )
+    # Internal agents must not silently default to an expensive model — the
+    # exemptions above are deliberate and each one names the failure that bought
+    # it.
+    #
+    # The cheap tier has TWO legal spellings and this assertion accepts both,
+    # because they are the same model: `sm` is the portable tier (model_tiers.py)
+    # and `haiku` names one vendor's family. Prefer `sm` in new agents — the
+    # literal resolves to `claude-haiku-4-5-20251001`, which an OpenRouter or hub
+    # LLMEndpoint does not serve, so `capability-installer` failed with "may not
+    # exist or you may not have access" on exactly the bare machine it exists to
+    # fix. The tier resolves per provider and works on both.
+    CHEAP = {"sm", "haiku"}
+    expected = COSTLIER_BY_DESIGN.get(path.parent.name)
+    model = parsed.get("model")
+    if expected is None:
+        assert model in CHEAP, (
+            f"{path.parent.name} is on {model}, expected the cheap tier "
+            f"(one of {sorted(CHEAP)})"
+        )
+    else:
+        assert model == expected, (
+            f"{path.parent.name} is on {model}, expected {expected}"
+        )
     assert parsed.get("worker_type") == "claude"

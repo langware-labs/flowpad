@@ -3,14 +3,8 @@
 import uuid
 from typing import Optional
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.claude_projects import (
-    claude_project_identity_key,
-    existing_project_record_id,
-    extract_claude_project,
-)
+from flow_sdk.assets.layout import File
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -50,9 +44,6 @@ PROJECT = TypeInfo(
     icon="Briefcase",
     indexed_by_default=True,
     api_visible=True,
-    from_disk_fn=extract_claude_project,
-    identity_carrier=derived_identity(existing_project_record_id),
-    id_stable_key_fn=claude_project_identity_key,
     id_namespace=uuid.NAMESPACE_DNS,
     meta_model=ProjectMeta,
 )

@@ -13,17 +13,22 @@ Identity is a WRITABLE folder capsule, so the id is a v4 minted once and written
 into the asset. Nothing here is derived from a path: derivation exists only for
 read-only sources we cannot write into, which is the sibling MCP_SERVER scan.
 """
-from flow_sdk.fs_store.indexer.functions._asset_identity import (
+from flow_sdk.assets.identity import (
     folder_json_identity,
 )
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.process_projection import _mcp as project_process_asset
+from flow_sdk.assets.types.scaffolds import scaffold_mcp
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
 MCP = TypeInfo(
+    scaffold_fn=scaffold_mcp,
+    scaffold_spec=McpSpec,
     type_name=EntityType.MCP,
+    process_projection=project_process_asset,
     icon="Plug",
     display_name="MCP Servers",
     browseable_by=ViewMode.STANDARD,

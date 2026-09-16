@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
+from flow_sdk.assets.directory import AssetDir
 
 
 def test_asset_dir_loads_text_bytes_files_and_dirs(tmp_path):
@@ -66,3 +66,21 @@ def test_asset_dir_subdir_rejects_symlink_escape(tmp_path):
     with pytest.raises(ValueError):
         assets.subdir("linked/created/plugin")
     assert not (outside / "created").exists()
+
+
+def test_missing_source_preserves_destination(tmp_path):
+    from flow_sdk.assets.directory import AssetDir
+    directory = AssetDir(tmp_path)
+    directory.load_asset("skill", content="keep")
+    with pytest.raises(FileNotFoundError):
+        directory.load_asset("skill", source=tmp_path / "missing")
+    assert (tmp_path / "skill").read_text() == "keep"
+
+
+def test_source_inside_destination_cannot_be_deleted(tmp_path):
+    from flow_sdk.assets.directory import AssetDir
+    directory = AssetDir(tmp_path)
+    directory.load_asset("skill/body", content="keep")
+    with pytest.raises(ValueError, match="overlap"):
+        directory.load_asset("skill", source=tmp_path / "skill/body")
+    assert (tmp_path / "skill/body").read_text() == "keep"

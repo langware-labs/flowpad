@@ -24,6 +24,17 @@ from flow_sdk.schema.type_info import register_all
 register_all()
 
 
+async def _declare(project, *env_vars, values=None):
+    from flow_sdk.builtin.credential_service import save_credential
+
+    return await save_credential(
+        scope="project",
+        project_id=str(project.id),
+        manifest={"name": "pack", "vars": {v: {"label": v} for v in env_vars}},
+        values=values or {},
+    )
+
+
 def _sc(node) -> ComputeSourceControl:
     return ComputeSourceControl(compute_node=node)
 
@@ -73,7 +84,7 @@ async def test_resume_and_pause_do_no_secret_work(sod_env, monkeypatch):
     node = await ComputeNode.get_local(create=True)
     calls = []
 
-    import flow_sdk.builtin.secret_origin_resolver as resolver
+    import flow_sdk.builtin.credential_resolver as resolver
 
     async def spy(*a, **k):
         calls.append(a)
@@ -94,10 +105,7 @@ async def test_attached_secrets_survive_a_reload_verbatim(tmp_path, sod_env):
     project = Project(name=str(tmp_path / "p"))
     project.fs_storage_mount_path = str(tmp_path)
     await project.save()
-    await project.add_secret_pointer(
-        name="A_KEY", env_var="A_KEY", scope="private",
-        locator={"kind": "env-local", "env_key": "A_KEY"},
-    )
+    await _declare(project, "A_KEY")
     node = await _node()
     await node.attach_all_secrets(project_id=str(project.id))
 
@@ -132,11 +140,7 @@ async def test_loading_writes_nothing_to_the_node_rc_file(tmp_path, sod_env, mon
     project = Project(name=str(tmp_path / "p3"))
     project.fs_storage_mount_path = str(tmp_path)
     await project.save()
-    await project.add_secret_pointer(
-        name="RC_PROBE_KEY", env_var="RC_PROBE_KEY", scope="private",
-        locator={"kind": "env-local", "env_key": "RC_PROBE_KEY"},
-    )
-    await project.provide_secret(env_var="RC_PROBE_KEY", value="sk-never-on-disk")
+    await _declare(project, "RC_PROBE_KEY", values={"RC_PROBE_KEY": "sk-never-on-disk"})
 
     from flow_sdk.core.flow.models.execution.env_context import resolve_node_secret_env
 

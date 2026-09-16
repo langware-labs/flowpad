@@ -4,6 +4,7 @@
   "title": "Google Cloud Storage",
   "icon_name": "GoogleCloudStorage",
   "description": "Objects from a GCS bucket, downloaded and indexed. Needs a Google connection.",
+  "kind": "datasource.fs.gcs",
   "auth": {
     "connector": "google",
     "scopes": [
@@ -28,13 +29,13 @@
       "type": "text",
       "label": "GCP project",
       "placeholder": "acme-prod",
-      "hint": "Only needed to LIST buckets — a bucket you name yourself syncs without it. Google has no way to enumerate buckets except within one project."
+      "hint": "Only needed to LIST buckets \u2014 a bucket you name yourself syncs without it. Google has no way to enumerate buckets except within one project."
     },
     "prefixes": {
       "type": "lines",
       "label": "Prefixes",
       "placeholder": "handbook/",
-      "hint": "One per line. Leave empty for the whole bucket. GCS has no directories — a prefix is a query, and each gets its own cursor, so keep them non-overlapping or the objects under both are enumerated twice."
+      "hint": "One per line. Leave empty for the whole bucket. GCS has no directories \u2014 a prefix is a query, and each gets its own cursor, so keep them non-overlapping or the objects under both are enumerated twice."
     },
     "cache_root": {
       "type": "path",

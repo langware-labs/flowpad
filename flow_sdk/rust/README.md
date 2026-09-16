@@ -39,8 +39,8 @@ uv run maturin develop --features python
 
 # 3x3 interchange matrix (writers x readers) — requires the binary AND the
 # pyo3 module to be built first. Deliberately run from this directory so the
-# repo-root tests/conftest.py (which installs an in-memory keyring backend) is
-# not loaded.
+# repo-root conftest.py (which loads tests/pytest_plugin.py and its in-memory
+# keyring backend) is not loaded.
 uv run pytest tests/interchange.py -v
 ```
 

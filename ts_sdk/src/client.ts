@@ -178,7 +178,7 @@ export function getApiClient(): ApiAxiosInstance {
   // the seam — not at the hundreds of call sites downstream.
   const client = axios.create({
     headers: { Accept: 'application/json' },
-    baseURL: conf.SERVER_URL,
+    baseURL: conf.httpBaseUrl,
     withCredentials: true,
     validateStatus: (status) => {
       return (status >= 200 && status < 300) || status == 302 || status == 307; // Custom validation: allow 2xx and 3xx

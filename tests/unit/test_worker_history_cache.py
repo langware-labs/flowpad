@@ -152,11 +152,12 @@ def _dump(entries) -> list[dict]:
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_claude_warm_run_parses_nothing_and_matches_cold(wh_env, monkeypatch):
+    from flow_sdk.assets.types import claude_sessions as claude_reader
     from flow_sdk.fs_store.indexer.functions import claude_sessions as cs
 
     for sid in _SIDS:
         write_claude_transcript(wh_env.proj, sid, n_lines=3)
-    extract_calls = _spy(monkeypatch, cs, "extract_claude_session_from_path")
+    extract_calls = _spy(monkeypatch, claude_reader, "extract_claude_session_from_path")
     stats_calls = _spy(monkeypatch, cs, "ensure_claude_session_stats")
 
     cold = wh._collect_claude_entries_sync(10, {})
@@ -172,7 +173,7 @@ def test_claude_warm_run_parses_nothing_and_matches_cold(wh_env, monkeypatch):
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_claude_append_reparses_only_the_changed_file(wh_env, monkeypatch):
-    from flow_sdk.fs_store.indexer.functions import claude_sessions as cs
+    from flow_sdk.assets.types import claude_sessions as claude_reader
 
     paths = {sid: write_claude_transcript(wh_env.proj, sid, n_lines=2) for sid in _SIDS}
     wh._collect_claude_entries_sync(10, {})  # warm the cache
@@ -192,7 +193,7 @@ def test_claude_append_reparses_only_the_changed_file(wh_env, monkeypatch):
             + "\n"
         )
 
-    extract_calls = _spy(monkeypatch, cs, "extract_claude_session_from_path")
+    extract_calls = _spy(monkeypatch, claude_reader, "extract_claude_session_from_path")
     rows = wh._collect_claude_entries_sync(10, {})
     assert [a[0] for a in extract_calls] == [paths[changed_sid]], (
         "exactly the appended file must re-parse"
@@ -216,7 +217,7 @@ def test_claude_unusable_cache_path_falls_back_to_parsing(wh_env, monkeypatch):
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_codex_warm_run_parses_nothing_and_matches_cold(wh_env, monkeypatch):
-    from flow_sdk.fs_store.indexer.functions import codex_sessions as cx
+    from flow_sdk.assets.types import codex_sessions as cx
 
     rollout_src = (
         Path(__file__).parent / "resources" / "transcripts" / "codex_rollout.jsonl"
@@ -263,7 +264,8 @@ def test_copilot_warm_run_parses_nothing_and_matches_cold(wh_env, monkeypatch, t
         )
     monkeypatch.setattr(sh, "copilot_session_state_root", lambda: root)
 
-    meta_calls = _spy(monkeypatch, sh, "read_copilot_session_meta")
+    from flow_sdk.assets.types import copilot_meta
+    meta_calls = _spy(monkeypatch, copilot_meta, "read_copilot_session_meta")
     stats_calls = _spy(monkeypatch, wh, "_copilot_stats")
 
     cold = wh._collect_copilot_entries_sync(10, {})

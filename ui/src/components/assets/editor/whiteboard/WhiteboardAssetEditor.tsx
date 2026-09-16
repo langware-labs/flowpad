@@ -193,7 +193,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
     [],
   );
 
-  const [initialData, setInitialData] = useState<unknown | null>(null);
+  const [initialData, setInitialData] = useState<unknown>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
@@ -210,7 +210,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         // A board that has never been saved has no `board.json`, and that is the
         // ordinary first-open case — not an error. `read()`-and-catch emitted a
@@ -265,13 +265,13 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
       await boardRef.write(serialized);
 
       const mermaid = excalidrawToMermaid(data);
-      // Same rule as the board read above: a whiteboard whose WHITE_BOARD.md has not
-      // been written yet is the NORMAL first-save case. One request, no 404 — an
-      // `exists()`-then-`read()` pair would cost a second round trip on EVERY
-      // subsequent save just to avoid one 404 on the first.
-      const currentDoc = (await docRef.readIfExists()) ?? '';
-      const nextDoc = spliceMermaidBlock(currentDoc, mermaid);
-      await docRef.write(nextDoc);
+      const document = await docRef.readDocument().catch(async (error: unknown) => {
+        if (!whiteboard || (error as { response?: { status?: number } })?.response?.status !== 404) throw error;
+        await docRef.ensureDocument(whiteboard.typeId, { name: whiteboard.name ?? '', description: whiteboard.description ?? '' });
+        return docRef.readDocument();
+      });
+      const nextBody = spliceMermaidBlock(document.body, mermaid);
+      await docRef.updateDocument({ expected_revision: document.revision, body: nextBody });
 
       try {
         const lib = await loadExcalidrawLib();
@@ -290,7 +290,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
         // Thumbnail is best-effort.
       }
     },
-    [boardRef, docRef, thumbRef],
+    [boardRef, docRef, thumbRef, whiteboard],
   );
 
   const onChange = useCallback(
@@ -504,7 +504,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
               <Trans>Cancel</Trans>
             </Button>
             <Button
-              onClick={handleImport}
+              onClick={() => void handleImport()}
               disabled={importBusy || !importText.trim()}
               data-testid="confirm-import-mermaid"
             >

@@ -1,0 +1,13 @@
+{
+  "name": "Developer toolchain (app.ready)",
+  "description": "Runs the Developer toolchain wizard the first time this machine is opened.",
+  "fire_once": true,
+  "tag": {
+    "on": "app.ready"
+  },
+  "actions": [
+    {
+      "run_wizard": ""
+    }
+  ]
+}

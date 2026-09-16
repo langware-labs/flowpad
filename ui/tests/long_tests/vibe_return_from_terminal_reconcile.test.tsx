@@ -19,7 +19,8 @@
  * what the Vibe chat pane renders: `useAgenticProcessStream` items, plus the
  * mount-time `loadHistory()` the panel issues.
  *
- * No mocks: one real claude worker, a real headless→PTY `switchMode`, and the
+ * No mocks: one real claude worker, a real headless→PTY `switchMode` and a real
+ * PTY→headless one on the way back (FLOWPAD-2105), and the
  * second turn delivered to the PTY through `submit()` — which does NOT stream
  * back to this client, exactly like a human typing into the xterm. Backend
  * ground truth for "the terminal turn really happened" is `get-history`, not a
@@ -197,6 +198,19 @@ describe('vibe ⇄ terminal — the terminal turn is there when Vibe comes back'
       termView.unmount();
       openAt('vibe');
       await act(async () => {});
+
+      // The transport comes back with it (FLOWPAD-2105). `pty_mode` is the
+      // DURABLE intent, so leaving it true here would latch this session onto a
+      // PTY for good — reloads included. Backend ground truth again, and the
+      // proof that the reconciler ran the →CLI direction: nothing else in the
+      // app writes `pty_mode` back to false.
+      await vi.waitFor(
+        async () => {
+          const row: any = await apiClient.get(entityUrl).catch(() => null);
+          expect(row?.pty_mode, 'returned to the headless transport').toBe(false);
+        },
+        { timeout: RECONCILE_MS, interval: 500 },
+      );
 
       // The whole session is one conversation: both turns belong in the chat.
       await vi.waitFor(() => expect(chatText()).toContain(TERM_TOKEN), {

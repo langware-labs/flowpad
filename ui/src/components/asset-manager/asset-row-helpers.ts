@@ -24,12 +24,12 @@ export function displayLabelForTypeid(typeid: string, fallbackName?: string | nu
 }
 
 /**
- * Descriptor-level label. Every surface already holds the whole descriptor, so
- * take it whole — a call site cannot forget to thread the on-disk `name`
- * fallback (forgetting it silently regresses to a raw `skill-<uuid>`).
+ * The backend labels this filesystem occurrence. A cached entity may describe
+ * another copy with the same TypeId, so consult it only when no occurrence label
+ * was supplied.
  */
-export function displayLabelForDescriptor(d: { typeid: string; name?: string | null }): string {
-  return displayLabelForTypeid(d.typeid, d.name);
+export function displayLabelForDescriptor(d: { typeid: string; name?: string | null; invocation_name?: string | null }): string {
+  return d.invocation_name?.trim() || d.name?.trim() || displayLabelForTypeid(d.typeid);
 }
 
 export function parseTypeid(typeid: string): { type: string; id: string } {

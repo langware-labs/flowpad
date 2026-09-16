@@ -63,7 +63,13 @@ export class GraphEngine implements GraphRenderer {
 
     this.sigma = new Sigma(this.graph, container, {
       renderLabels: true,
-      renderEdgeLabels: false,
+      // Only overridden edges carry a `label` (see `accessEdges.ts`), and the
+      // label pass costs a walk of every edge per render — so switch it on only
+      // for a graph that has one.
+      renderEdgeLabels: Boolean(this.graph.getAttribute('hasOverrideLabels')),
+      edgeLabelColor: { color: this.palette.labelColor },
+      edgeLabelSize: 11,
+      edgeLabelWeight: '600',
       hideLabelsOnMove: true,
       hideEdgesOnMove: true,
       labelFont: 'Inter, system-ui, sans-serif',
@@ -157,7 +163,12 @@ export class GraphEngine implements GraphRenderer {
         // Color is theme-aware: stored attributes carry the dark-palette default;
         // re-pick from current palette so edges flip live on theme change.
         const kind = data.kind as keyof GraphPalette['edgeKindColor'] | undefined;
-        if (kind && this.palette.edgeKindColor[kind]) {
+        if (data.overridden) {
+          // An overridden edge keeps its own color in BOTH themes. Falling through
+          // to the kind lookup would repaint it as an ordinary edge the moment the
+          // theme flipped, which is exactly when it stops standing out.
+          res.color = this.palette.overrideEdgeColor;
+        } else if (kind && this.palette.edgeKindColor[kind]) {
           res.color = this.palette.edgeKindColor[kind];
         }
         if (this.hoveredNode && !this.isDragging) {

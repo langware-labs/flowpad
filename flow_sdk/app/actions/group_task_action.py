@@ -40,6 +40,7 @@ from fastapi import HTTPException
 
 from flow_sdk._compat import UTC
 from flow_sdk.actions import action
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 # The task primitive's own hub→local reception and assignment — group-agnostic,
 # and imported from here rather than owned here (see those modules' docstrings).
@@ -52,15 +53,15 @@ from flow_sdk.app.actions.task_assign_action import (
 )
 from flow_sdk.app.actions.task_receive import _member_asset_ref, materialize_remote_task
 from flow_sdk.builtin.contacts_group import ContactsGroup
-from flow_sdk.builtin.task import Task, TaskKind, TaskStatus
+from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.cloud_client.transport.hub_http import hub_get, hub_post
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
-from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.task_spec import TaskKind, TaskStatus
 
 logger = logging.getLogger(__name__)
 

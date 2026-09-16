@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Iterable, Optional, Protocol, TypeVar
 from urllib.parse import quote
 
-from flow_sdk.core.connections.types import (
+from flow_sdk.core.entity.entity_env.env_types import EnvStatusEnum
+from flow_sdk.schema.data_spec.connection_spec import (
     ConnectionConnectError,
     ConnectionKind,
     ConnectionSpec,
@@ -14,7 +15,6 @@ from flow_sdk.core.connections.types import (
     ConnectionTokenResult,
     ConnectionTokenStatus,
 )
-from flow_sdk.core.entity.entity_env.env_types import EnvStatusEnum
 
 
 async def _connection_user():
@@ -92,8 +92,13 @@ async def _list_connection_specs_with_client(client) -> list[ConnectionSpec]:
     return await _fetch_rows(client, "/api/v1/graph/oauth/_/catalogue", "values", "catalogue")
 
 
-async def _list_connections_with_client(client, project_id: str = "") -> list[ConnectionSpec]:
-    query = f"?project_id={quote(project_id, safe='')}" if project_id else ""
+async def _list_connections_with_client(
+    client, project_id: str = "", *, include_unconnected: bool = False
+) -> list[ConnectionSpec]:
+    params = [f"project_id={quote(project_id, safe='')}"] if project_id else []
+    if include_unconnected:
+        params.append("include_unconnected=true")
+    query = f"?{'&'.join(params)}" if params else ""
     return await _fetch_rows(
         client, f"/api/v1/graph/compute_node/@local/connections{query}", "connections", "list"
     )
@@ -110,7 +115,7 @@ async def _leased(fetch):
         raise ConnectionConnectError("", ConnectionStage.SERVICE, exc.code, exc.detail) from exc
 
 
-async def list_connections(project_id: str = "") -> list[ConnectionSpec]:
+async def list_connections(project_id: str = "", *, include_unconnected: bool = False) -> list[ConnectionSpec]:
     """Every connection this box HAS — all four kinds, consolidated by the backend.
 
     Distinct from :func:`list_connection_specs`, and the distinction is the same
@@ -118,8 +123,13 @@ async def list_connections(project_id: str = "") -> list[ConnectionSpec]:
     have, that is the catalogue of what you could connect. A provider you have
     never authorized is in the catalogue and not in this list, which is exactly
     why ``connect`` cannot be built on it.
+
+    ``include_unconnected`` asks the backend to keep those providers too, in the
+    screen's order, each row carrying its own ``connected`` — the SDK's list.
     """
-    return await _leased(lambda client: _list_connections_with_client(client, project_id))
+    return await _leased(
+        lambda client: _list_connections_with_client(client, project_id, include_unconnected=include_unconnected)
+    )
 
 
 async def list_connection_specs() -> list[ConnectionSpec]:
@@ -132,16 +142,26 @@ async def list_connection_specs() -> list[ConnectionSpec]:
     return await _leased(_list_connection_specs_with_client)
 
 
-async def resolve_connection_spec(provider: str) -> Optional[ConnectionSpec]:
+class _Named(Protocol):
+    provider: str
+
+
+_Row = TypeVar("_Row", bound=_Named)
+
+
+def match_provider(rows: Iterable[_Row], provider: str) -> Optional[_Row]:
+    """The row naming ``provider`` — the one normalised match every lookup uses."""
     wanted = (provider or "").strip().lower()
-    return next(
-        (spec for spec in await list_connection_specs() if spec.provider.strip().lower() == wanted),
-        None,
-    )
+    return next((row for row in rows if row.provider.strip().lower() == wanted), None)
+
+
+async def resolve_connection_spec(provider: str) -> Optional[ConnectionSpec]:
+    return match_provider(await list_connection_specs(), provider)
 
 
 async def _token_for_spec_local(spec: ConnectionSpec) -> Optional[str]:
     """Resolve a spec's canonical credential reference without provider logic."""
+    from flow_sdk.core.oauth.hub_mirror import HubMirrorUnavailable  # noqa: PLC0415
     from flow_sdk.core.oauth.hub_oauth import hub_credential_value  # noqa: PLC0415
     from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
     from flow_sdk.request_context.methods import get_user_credentials  # noqa: PLC0415
@@ -153,6 +173,8 @@ async def _token_for_spec_local(spec: ConnectionSpec) -> Optional[str]:
             token = token_from_credential(stored)
             if token:
                 return token
+        except HubMirrorUnavailable:
+            return None
         except Exception:  # noqa: BLE001 — absence falls through to the Hub tier
             pass
     return token_from_credential(await hub_credential_value(spec.credential_ref))

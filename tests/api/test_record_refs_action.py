@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from flow_sdk.assets.entity_vfs import local_asset_vfs_binding
+from flow_sdk.storage.asset_vfs import local_asset_vfs_binding
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 

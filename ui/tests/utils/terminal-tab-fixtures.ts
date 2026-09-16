@@ -32,5 +32,6 @@ export function makeBucket(id: string, displayName: string, tabCount: number): T
     state: 'live',
     tabCount,
     recover: vi.fn(),
+    closeAll: vi.fn(async () => {}),
   };
 }

@@ -9,6 +9,7 @@ Importing that module here once per session reproduces the same init, so
 ``SchemaRegistry.get("markdown")`` etc. resolve — without it the indexer walk
 finds no registered type and skips every record.
 """
+import pytest
 import pytest_asyncio
 
 import flow_sdk.db.drivers.db_driver as db_driver_mod
@@ -16,6 +17,15 @@ import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: re
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
+
+
+@pytest.fixture(autouse=True)
+def bind_application_identity_adapters():
+    """Bind the runtime identity adapters (e.g. PROJECT's carrier, stable key and
+    parser) that production binds lazily, so no test depends on run order."""
+    from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
+
+    register_asset_runtime_bindings()
 
 
 @pytest_asyncio.fixture

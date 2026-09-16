@@ -61,13 +61,29 @@ describe('CredentialsView', () => {
     h.pointer = 'environment';
     h.page = 'hub';
     h.user = { id: 'u1' };
+    h.contextProject = null;
   });
   afterEach(() => cleanup());
 
-  it('mounts Connections with the most recent project', () => {
+  it('keeps personal connections unscoped even when recent projects exist', () => {
     render(<CredentialsView />);
 
-    expect(screen.getByTestId('pane-connections').textContent).toBe('project-a');
+    expect(screen.getByTestId('pane-connections').textContent).toBe('undefined');
+  });
+
+  it('does not grant or test against a context project absent from the URL', () => {
+    h.pointer = undefined;
+    h.contextProject = { id: 'proj-b' };
+    render(<CredentialsView />);
+
+    expect(screen.getByTestId('pane-connections').textContent).toBe('undefined');
+  });
+
+  it('does not substitute a recent project for an unresolved URL project', () => {
+    h.pointer = 'connections/missing-project';
+    render(<CredentialsView />);
+
+    expect(screen.getByTestId('pane-connections').textContent).toBe('undefined');
   });
 
   it('forwards a retired subview to Connections rather than blanking', () => {

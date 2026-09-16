@@ -147,7 +147,7 @@ def test_weekly_limit_live_flowdata_matches_replay_shape():
 
     live = convert_event(event)[0]
     entry = ClaudeParser().feed(event, 0)[0]
-    replay = entry_to_flowdata(entry, observation_kind="replay")
+    replay = entry_to_flowdata(entry, observation_kind="replay")[0]
 
     assert live.attributes["element-type"] == FlowElementType.WORKER_UNAVAILABLE
     assert live.attributes["subtype"] == "worker_unavailable"
@@ -329,7 +329,7 @@ def _history(tool_name: str, tool_input: dict):
             "is_sidechain": False,
         },
     ))
-    return entry_to_flowdata(entry, observation_kind="replay")
+    return entry_to_flowdata(entry, observation_kind="replay")[0]
 
 
 @pytest.mark.parametrize(("tool_name", "tool_input", "subtype"), _TOOL_BLOCKS)

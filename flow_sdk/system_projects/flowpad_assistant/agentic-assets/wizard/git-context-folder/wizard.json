@@ -1,0 +1,8 @@
+{
+  "name": "git-context-folder",
+  "description": "Sets up a git repository — an existing clone or a brand-new one — as a project in the Flowpad workspace, and attaches it to the current project as a context folder.",
+  "version": 1,
+  "enabled": true,
+  "icon": "GitBranch",
+  "agent": "git-context-folder"
+}

@@ -104,6 +104,12 @@ export function participantRoleLabel(participant: ConversationParticipant | null
  *  privileged). Custom/unknown roles rank as ``null`` (not on the ladder). */
 const ROLE_LADDER = ['owner', 'full-access', 'admin', 'editor', 'member', 'reader', 'guest'] as const;
 
+/** The ladder as a plain list, highest first. Exported for surfaces that pick a
+ *  role with no member row to rank against -- e.g. the child-access editor,
+ *  whose `from_role` is a role held on the PARENT and so has no participant to
+ *  compare with. Assignment ceilings still apply server-side. */
+export const LADDER_ROLES: readonly string[] = ROLE_LADDER;
+
 /** Rank of a single standard role (0 = owner), or null for custom/unknown. */
 function roleRank(role: string | null | undefined): number | null {
   const idx = ROLE_LADDER.indexOf((role ?? '').trim().toLowerCase() as (typeof ROLE_LADDER)[number]);
@@ -126,6 +132,11 @@ export function participantRank(participant: ConversationParticipant | null | un
  *  strictly below anyone, ownership moves via ``leave``) and the
  *  non-membership ``full-access``/``guest`` (rankable, never assignable). */
 const ASSIGNABLE_ROLES = ['admin', 'editor', 'member', 'reader'] as const;
+
+/** Roles a rule may CONFER, before the caller's own ceiling narrows it. Same
+ *  list `assignableRoles` filters, exported for the same reason as
+ *  `LADDER_ROLES`. */
+export const CONFERRABLE_ROLES: readonly string[] = ASSIGNABLE_ROLES;
 
 /** Roles the caller may assign to a given member, mirroring the hub's
  *  ``can_assign`` ceiling: assigned role strictly below the caller's rank AND

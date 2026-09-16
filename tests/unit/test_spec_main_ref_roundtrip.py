@@ -43,7 +43,7 @@ def test_spec_main_ref_roundtrip_is_stable(tmp_path):
     assert md.exists()
     written = md.read_text(encoding="utf-8")
     assert written.startswith("---")
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+    from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
     fields = _yaml_load(_extract_frontmatter(written)) or {}
     assert list(fields)[0] == "id" and fields["id"] == resolved_id, "spec.md carries its id first in the header"
     assert "flowpad:capsule" not in written

@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Tests for flowpad_discovery module caching and rate-limiting."""
 
+import json
 import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from flow_sdk.discovery.flowpad_discovery import (
     HOUR_IN_SECONDS,
@@ -12,19 +15,15 @@ from flow_sdk.discovery.flowpad_discovery import (
     FlowpadDiscoveryResult,
     FlowpadServerInfo,
     FlowpadStatus,
-    _ServerState,
+    _parse_server_json,
     _server_json_path,
+    _ServerState,
 )
 
 
 def make_server_info(port: int = 3000) -> FlowpadServerInfo:
     """Create a test server info object."""
-    return FlowpadServerInfo(
-        port=port,
-        webhook_path="/api/v1/webhook/listen",
-        health_path="/health",
-        url=f"http://localhost:{port}/api/v1/webhook/listen",
-    )
+    return FlowpadServerInfo(port=port)
 
 
 def make_running_result(port: int = 3000) -> FlowpadDiscoveryResult:
@@ -308,3 +307,52 @@ class TestIntegration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# _parse_server_json: only `port` is required. The strict parser used to report
+# a file without the (never-varying) route keys as "not running".
+# ---------------------------------------------------------------------------
+
+
+def _server_json(tmp_path: Path, data) -> Path:
+    path = tmp_path / "server.json"
+    path.write_text(json.dumps(data))
+    return path
+
+
+def test_parse_server_json_derives_urls_from_the_route_constants(tmp_path):
+    info = _parse_server_json(_server_json(tmp_path, {"port": 9008, "server_pid": 1}))
+
+    assert info is not None
+    assert info.url == "http://localhost:9008/api/v1/webhook/listen"
+    assert info.health_url == "http://localhost:9008/api/v1/health/status"
+    assert info.server_pid == 1
+
+
+def test_parse_server_json_ignores_legacy_path_keys(tmp_path):
+    """Older files persisted the route constants; they were never anything but
+    the constants, so they are not data."""
+    info = _parse_server_json(_server_json(tmp_path, {"port": 9008, "webhook_path": "/w", "health_path": "/h"}))
+
+    assert info is not None
+    assert info.url == "http://localhost:9008/api/v1/webhook/listen"
+
+
+@pytest.mark.parametrize("data", [{"server_pid": 1}, {"port": "x"}, {"port": None}])
+def test_parse_server_json_rejects_a_file_without_a_usable_port(tmp_path, data):
+    assert _parse_server_json(_server_json(tmp_path, data)) is None
+
+
+def test_parse_server_json_requires_only_port(tmp_path):
+    info = _parse_server_json(_server_json(tmp_path, {"port": 9008}))
+
+    assert info is not None
+    assert info.port == 9008
+    assert info.server_pid is None
+
+
+def test_discovery_package_no_longer_exports_write_server_info():
+    import flow_sdk.discovery
+
+    assert not hasattr(flow_sdk.discovery, "write_server_info")

@@ -1,22 +1,22 @@
 /**
- * CloudOrigin — where the cloud record a local row caches actually lives.
- * Twin of `flow_sdk/builtin/cloud_origin.py`.
+ * CloudOrigin — the identity of a remote record: `(kind, namespace, key)`.
+ * Twin of `flow_sdk/sources/values/origin.py`.
  *
- * `kind` and `provider` are different axes and both matter. `kind` is the
- * CHANNEL a human names (gmail, slack, jira) — the badge axis and half of the
- * thread key. `provider` is the TRANSPORT that carried it, which is literally
- * `"agent"` for the harness-backed Gmail source. One channel can have several
- * transports, and they must resolve to the same thread.
+ * `kind` is the system a human names (gmail, slack, jira) — the badge axis. `namespace`
+ * is the account/collection scope within it (`<workspace>/<channel>`, `<address>`), and
+ * `key` the record within that scope. Two origins with the same triple are the same
+ * record whatever transport carried them, which is what keeps a thread ingested through
+ * the harness today and the API tomorrow ONE thread. `url` is browser metadata only.
  */
 export interface ICloudOrigin {
-  /** Channel: gmail | slack | jira | notion. Drives the message badge. */
+  /** System: gmail | slack | jira | local. Drives the message badge. */
   kind: string;
-  /** Ingest driver key: agent | gmail_api | slack_api. */
-  provider: string;
-  /** The provider's own id for the record. */
-  external_id: string;
-  /** Permalink into the origin system — what "Open in Gmail" opens. */
-  url: string;
+  /** Account and collection scope within the kind. */
+  namespace: string;
+  /** The record within that scope. */
+  key: string;
+  /** Permalink into the origin system — what "Open in Gmail" opens; null when there is none. */
+  url: string | null;
 }
 
 /**

@@ -11,7 +11,7 @@ were byte-identical; codex's spelled the stale-file case as a ``fallback``
 variable plus a ``break`` rather than an inline conditional, which produces the
 same answer by a longer route.
 
-NOT the same as ``flow_sdk.builtin.worker_status._tail_status``. That one is
+NOT the same as ``flow_sdk.transcript_analyzer.worker_status._tail_status``. That one is
 claude's, reached by a different call path, and it uses an *expanding* read
 (4 KB growing to 2 MB) because a single oversized assistant line can strand the
 signal it needs. Do not fold the two together.
@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from flow_sdk.builtin.worker_status import ACTIVE_SECONDS, WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import ACTIVE_SECONDS, WorkerStatus
 
 #: How much of the file's tail to read. One window, not an expanding scan — a
 #: vendor status line is small and always near the end.

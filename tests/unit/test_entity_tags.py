@@ -1,7 +1,7 @@
 """Phase 3 — entity writes dual-publish onto the unified bus (lean envelopes)."""
 from flow_sdk.builtin.usage_report import UsageReport
 from flow_sdk.tags import event_bus
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 
 
 @async_context

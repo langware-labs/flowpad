@@ -11,11 +11,11 @@ from unittest.mock import patch
 
 import pytest
 
+from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.migrations import migration_2026_09_identity_live_forms as mig
-from flow_sdk.schema.layout import Folder
 
 pytestmark = pytest.mark.timeout(30)
 

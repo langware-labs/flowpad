@@ -78,9 +78,18 @@ async def _reset_harness_auth_mode():
 
 
 def _login() -> None:
+    """Both halves of a real hub login, because the box asks about both.
+
+    ``cloud_login.complete_login`` writes the credential AND the user record (``set_user``), and
+    sign-out clears the record. Writing only the credential produced a state the product never
+    has -- ``resolve_hub_api_key`` answered a key while ``hub_auth_available`` / ``is_logged_in``
+    said signed out -- so any gate built on the cheap predicate read these tests as logged out.
+    """
+    from flow_sdk.cli.app_config import set_user
     from flow_sdk.cli.auth.hub_login import set_api_key
 
     set_api_key("fp-hub-key")
+    set_user({"id": "99999999-2222-4333-8444-555555555555", "email": "box@local.test"})
 
 
 # ── settings ────────────────────────────────────────────────────────────────
@@ -384,9 +393,22 @@ def test_the_entity_mirrors_a_hub_payload_and_ignores_what_it_does_not_model() -
     )
 
 
-async def test_fetch_is_empty_when_logged_out(env) -> None:
-    """A signed-out box has nothing to offer, and says so instead of raising."""
+async def test_fetch_is_empty_when_logged_out(env, monkeypatch) -> None:
+    """A signed-out box has nothing to offer, and does not ASK before saying so.
+
+    Answering ``[]`` was never the whole contract. Every surface that lists budgets drives this
+    read on open, and while logged out each one used to reach the hub anyway: the hub answered
+    ``401: Forbidden access``, ``client_hooks._on_response`` reported it verbatim, and the user
+    got a "Cloud Request Failed" warning on an idle box -- with "hub errors suppressed" behind it
+    once enough surfaces opened at once. So the call itself is what this pins.
+    """
+    import flow_sdk.cloud_client.transport.hub_http as hub_http
     from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
+
+    async def _boom(*args, **kwargs):
+        raise AssertionError("the hub must not be asked while logged out")
+
+    monkeypatch.setattr(hub_http, "hub_get", _boom)
 
     assert await fetch_hub_llm_endpoints() == []
 

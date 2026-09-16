@@ -13,15 +13,16 @@
  * the Tab. Every chip — terminal or content — is keyed by its `dockPointer.tabHash`,
  * so there is no kind-branching here.
  *
- * The controller is kept ONLY for the surrounding controls: leading/trailing
- * toolbars, the new-tab menu, spawn modals, and the close-shortcut label.
+ * The controller is kept ONLY for the surrounding controls: the trailing
+ * opener toolbar, the new-tab menu, spawn modals, and the close-shortcut label.
  */
-import { dataManager, Project, tabKey, tabManager, Tab, TypeId, uniqueTabsByDockKey } from '@sdk';
+import { AgenticProcess, dataManager, Project, tabKey, tabManager, Tab, TypeId, uniqueTabsByDockKey } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { isTypeIdLikeName } from '@src/components/terminal/rename-rules';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { globalHomeDock } from '@src/tabs/project-entry';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import {
@@ -56,7 +57,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   // in the backend's global order (preserved by the filter).
   const allTabs = useAllTabs();
   // Keep content-tab chip labels in step with their backing entities (generic
-  // entity → tab name mirror; terminals keep their own auto-rename path).
+  // entity → tab name mirror; process tabs are projected by the backend FSM).
   useSyncContentTabNames();
   const currentTabs = useCurrentTabs();
   const globalTabs = useMemo(() => uniqueTabsByDockKey(allTabs), [allTabs]);
@@ -194,7 +195,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       const next = tabManager.resolveNext(remaining, new Set());
       if (next?.dockPointer) navigation.openDock(next.dockPointer);
       else if (projectId) navigation.openDock(DockPointer.forProject(projectId));
-      else navigation.closeDock();
+      else navigation.openDock(globalHomeDock());
     },
     [allTabs, projectId, navigation],
   );
@@ -222,12 +223,12 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (key: string, newName: string) => {
       const tab = tabByKey.get(key);
       if (!tab) return;
-      // The strip owns the input UI; validation is the OWNER's job (see
-      // TabStrip's header). A TypeId-shaped name (`shell-<v4-uuid>`) is an
-      // ADDRESS, not a label — suppress it and keep the existing name rather
-      // than writing a name that reads like a pointer.
-      if (isTypeIdLikeName(newName)) return;
-      if (newName === tab.name?.trim()) return;
+      // Confirming a process name also pins it, even when the text is unchanged
+      // or resembles an identifier. Automatic title filtering is backend-owned.
+      if (tab.target_type !== AgenticProcess.type) {
+        if (isTypeIdLikeName(newName)) return;
+        if (newName === tab.name?.trim()) return;
+      }
       const target =
         tab.target_type && tab.target_id
           ? new TypeId(tab.target_type, tab.target_id)
@@ -321,7 +322,6 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
         onReorderCancel={() => void tabManager.refresh()}
         newTabMenuItems={controller.newTabMenuItems}
         closeShortcutLabel={controller.closeShortcutLabel}
-        leading={controller.leading}
         trailing={controller.trailing}
       />
       {controller.modals}

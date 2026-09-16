@@ -100,7 +100,7 @@ def test_every_probe_is_strict_and_uses_the_declared_provider_endpoint():
     assert get_probe("github").url == "https://api.github.com/user"
     assert get_probe("slack").url == "https://slack.com/api/auth.test"
     assert get_probe("google").url == "https://www.googleapis.com/drive/v3/about"
-    assert get_probe("anthropic").url == "https://api.anthropic.com/v1/organizations/me"
+    assert get_probe("anthropic").url == "https://api.anthropic.com/api/oauth/profile"
 
 
 def test_the_bearer_is_extracted_from_every_stored_credential_shape():
@@ -124,3 +124,20 @@ def test_identity_falls_back_to_what_the_credential_carries():
     """Anthropic's probe cannot name the holder, but its stored response can."""
     assert identity_from_credential({"email": "eran@langware.ai"}) == "eran@langware.ai"
     assert identity_from_credential("a bare token") is None
+
+
+@pytest.mark.asyncio
+async def test_anthropic_profile_probe_reads_oauth_account(monkeypatch):
+    import httpx
+
+    def handler(request):
+        assert request.url.path == "/api/oauth/profile"
+        assert request.headers["authorization"] == "Bearer oauth-token"
+        return httpx.Response(200, json={"account": {"uuid": "account-id", "email": "user@example.test"}})
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(handler)))
+    result = await run_probe("anthropic", "oauth-token")
+    assert result.ok is True
+    assert result.identity == "user@example.test"
+    assert result.account_key == "account-id"

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.identity_carrier import (
+from flow_sdk.assets.identity_carrier import (
     ABSENT,
     Derived,
     Foreign,

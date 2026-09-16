@@ -62,7 +62,9 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
       try {
         const { type } = parseTypeid(d.typeid);
         if (type === 'subagent' && d.posix_path) {
-          await proc.loadEmbeddedSubagent(d.posix_path);
+          // `true` -- the picked sub-agent DRIVES the run ("Act as the … agent
+          // and work on the current context"), so it is this process's persona.
+          await proc.loadEmbeddedSubagent(d.posix_path, true);
         } else {
           await proc.embeddedAssets.attach(d.typeid);
         }

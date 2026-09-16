@@ -17,10 +17,10 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
+from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.type_info import register_all
 from tests.fixtures.identity import resolve_id
 

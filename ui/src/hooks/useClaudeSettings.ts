@@ -99,11 +99,30 @@ export function useClaudeSettings(
     };
   }, [computeNodeId, projectDir, reloadTrigger]);
 
-  // Poll for live reactivity when enabled
+  // Refresh on focus / tab-visible (instead of a timer) when enabled.
+  // The settings files only change when the user edits them elsewhere, so
+  // re-reading when the tab becomes active is enough — no idle polling
+  // while the tab merely sits open.
   useEffect(() => {
     if (!poll) return;
-    const interval = setInterval(reload, 5000);
-    return () => clearInterval(interval);
+
+    let lastReload = 0;
+    const refreshIfActive = () => {
+      if (document.visibilityState !== 'visible') return;
+      // Guard the double-fire when `focus` and `visibilitychange` both land.
+      const now = Date.now();
+      if (now - lastReload < 100) return;
+      lastReload = now;
+      reload();
+    };
+
+    document.addEventListener('visibilitychange', refreshIfActive);
+    window.addEventListener('focus', refreshIfActive);
+
+    return () => {
+      document.removeEventListener('visibilitychange', refreshIfActive);
+      window.removeEventListener('focus', refreshIfActive);
+    };
   }, [poll, reload]);
 
   return { userRecords, projectRecords, localRecords, isLoading, error, reload };

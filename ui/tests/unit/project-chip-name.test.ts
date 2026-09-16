@@ -1,8 +1,8 @@
 /**
  * Unit tests for `resolveProjectChipName` — the pure name-resolution behind the
- * tab-strip project chip. It shows the current project's name alongside the
- * open-projects/terminals counts: prefer the explicit prop, else fall back to
- * the matching open bucket's display name, else null (counts-only chip).
+ * nav bar's project chip (RuntimeChip via `useProjectListMenu`): prefer the
+ * explicit name, else fall back to the matching open bucket's display name,
+ * else null (the chip then shows the runtime's word).
  */
 import { describe, expect, it } from 'vitest';
 import { resolveProjectChipName } from '@src/components/terminal/project-list-menu';

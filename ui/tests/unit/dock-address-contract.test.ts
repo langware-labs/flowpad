@@ -109,6 +109,7 @@ describe('dock-address contract (shared fixture)', () => {
     expect(!!meta, `${view} addressable`).toBe(expected.addressable);
     expect(!!meta?.foldsPointer, `${view} foldsPointer`).toBe(expected.folds_pointer);
     expect(!!meta?.scopeKeyed, `${view} scopeKeyed`).toBe(expected.scope_keyed);
+    expect(!!meta?.foldsSubPointer, `${view} foldsSubPointer`).toBe(expected.folds_sub_pointer);
     expect(meta?.chrome ?? 'workspace', `${view} chrome`).toBe(expected.chrome);
   });
 

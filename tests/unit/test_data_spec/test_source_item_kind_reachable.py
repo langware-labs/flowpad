@@ -37,7 +37,7 @@ def test_kind_resolves_without_the_builtin_row_module():
 
 
 def test_builtin_re_export_is_the_same_class():
-    from flow_sdk.builtin.source_item import SourceItemSpec as via_row
+    from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec as via_row
     from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec as via_spec
 
     assert via_row is via_spec

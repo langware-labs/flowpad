@@ -26,7 +26,7 @@
 import { ContextEntitiesEnum, dataContext, Tab, tabManager, TypeId, type TabRow } from '@sdk';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { dockForProjectEntry } from '@src/tabs/project-entry';
+import { dockForGlobalEntry, dockForProjectEntry, leaveProjectScope } from '@src/tabs/project-entry';
 import { ViewType } from '@src/types/ViewType';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -115,6 +115,36 @@ describe('dockForScopeEntry — unknown last tab is never guessed (A)', () => {
 
     expect(dock.viewType).toBe(ViewType.ASSETS);
     expect(dock.scopeFilter).toEqual(projectScope(PROJECT_P));
+  });
+
+  it('the Global fallback carries its scope explicitly, Home included', async () => {
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+
+    const dock = await dockForGlobalEntry();
+
+    // A BARE home dock is the one shape `adoptScopeProject` reads as "restore
+    // the remembered project" — leaving a project onto one would pull the user
+    // straight back into it (the stale-chip half of the close-all bug).
+    expect(dock.scopeFilter).toEqual(allScope());
+  });
+
+  it('leaveProjectScope drops the project from context, before it hands back a dock', async () => {
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    const order: string[] = [];
+    const cleared = vi.spyOn(dataContext, 'setContextEntityTypeId').mockImplementation((key) => {
+      order.push(String(key));
+      return Promise.resolve();
+    });
+
+    const dock = await leaveProjectScope();
+
+    // No loader owns this write — `adoptScopeProject` never touches the project
+    // on a globally-scoped dock, and it cannot start (the same URL shape is what
+    // a browse surface's "All" chip produces). So the caller gets the dock only
+    // after the context is already clear, and nothing races the write.
+    expect(order).toEqual([String(ContextEntitiesEnum.CurrentProjectTypeId)]);
+    expect(cleared.mock.calls[0][1]).toBeNull();
+    expect(dock.scopeFilter).toEqual(allScope());
   });
 
   it('resumes the stamped (known last-active) tab when one exists', async () => {
