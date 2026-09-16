@@ -15,7 +15,7 @@ import { promises as fs, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { DataSource } from '@sdk';
+import { ActionInfo, DataSource, credentialsService, dataManager } from '@sdk';
 import { apiTestSetup } from '../utils/test-utils';
 import { testEntityName } from '../_cleanup';
 
@@ -57,6 +57,8 @@ beforeEach(async () => {
 interface Case {
   provider: string;
   config: () => Promise<Record<string, unknown>> | Record<string, unknown>;
+  /** A secret is never config: put it where the driver's `auth` reads it; returns the undo. */
+  secret?: () => Promise<() => Promise<void>>;
   fields?: Record<string, unknown>;
   serve?: Handler;
   minItems?: number;
@@ -100,7 +102,16 @@ const CASES: Case[] = [
       const sent = JSON.parse(body || '{}');
       return { json: { ok: true, result: { message_id: telegramNext++, date: Math.floor(Date.now() / 1000), chat: { id: Number(sent.chat_id), type: 'private' }, from: { id: 777, is_bot: true }, text: sent.text } } };
     },
-    config: () => ({ bot_token: '123:MATRIX', base_url: base }),
+    config: () => ({ base_url: base }),
+    // The `telegram` credential (TELEGRAM_BOT_TOKEN), in this instance's vault — never a file.
+    secret: async () => {
+      const saved = await credentialsService.save({
+        scope: 'user',
+        manifest: { name: 'telegram', value_store: 'vault', vars: { TELEGRAM_BOT_TOKEN: { label: 'Bot token', secret: true, required: true } } },
+        values: { TELEGRAM_BOT_TOKEN: '123:MATRIX' },
+      } as never);
+      return async () => void (await credentialsService.remove(String((saved as { typeid?: string }).typeid)));
+    },
     fields: { account_key: '@matrix_bot' },
     minItems: 1,
     send: { to: TELEGRAM_CHAT, text: 'matrix send' },
@@ -112,7 +123,18 @@ const CASES: Case[] = [
       if (url.includes('/messages/send') || url.endsWith('/reply')) return { json: { message_id: `<sent-${Date.now()}@x>`, thread_id: 't-1' } };
       return { json: { messages: [{ message_id: '<in-1@x>', thread_id: 't-1', timestamp: new Date().toISOString(), from: 'Ada <ada@example.com>', to: ['matrix@agentmail.to'], subject: 'Hi', preview: 'Hello' }] } };
     },
-    config: () => ({ inbox: 'matrix@agentmail.to', api_key: 'am_matrix', base_url: base }),
+    config: () => ({ inbox: 'matrix@agentmail.to', base_url: base }),
+    // The machine secret `ingest_api.agentmail` the driver's `auth.secrets` names.
+    secret: async () => {
+      const put = new ActionInfo('secrets', 'compute_node', '@local', 'POST');
+      put.bodyParameters = { name: 'ingest_api.agentmail', value: 'am_matrix' };
+      await dataManager.callAction(put);
+      return async () => {
+        const del = new ActionInfo('secrets', 'compute_node', '@local', 'DELETE');
+        del.subpath = 'ingest_api.agentmail';
+        await dataManager.callAction(del);
+      };
+    },
     fields: { account_key: 'matrix@agentmail.to' },
     minItems: 1,
     send: { to: 'someone@example.com', text: 'matrix send', subject: 'Matrix' },
@@ -150,6 +172,7 @@ describe('data source matrix — TS SDK', () => {
   for (const c of CASES) {
     it(`${c.provider}: create, verify, sync, items, send, reply, disable, delete`, async () => {
       handler = c.serve ?? (() => ({ status: 404, json: {} }));
+      const forget = c.secret ? await c.secret() : null;
       const created = await new DataSource({
         name: testEntityName(`data-source-${c.provider}`),
         provider: c.provider,
@@ -177,6 +200,7 @@ describe('data source matrix — TS SDK', () => {
         expect((await created.setEnabled(true)).status).toBe('active');
       } finally {
         await created.delete();
+        await forget?.();
       }
     });
   }
