@@ -61,9 +61,9 @@ async def test_1_connect_a_feed_and_sync_it_once(feed_server):
 
 async def test_2_reuse_instead_of_duplicate():
     # §2 assumes §1 is in scope, so DataSource is already imported.
-    ns = await _section("2.", {"KEY": "not-a-real-key", "DataSource": DataSource})
+    ns = await _section("2.", {"DataSource": DataSource})
     first = ns["src"]
-    ns = await _section("2.", {"KEY": "not-a-real-key", "DataSource": DataSource})
+    ns = await _section("2.", {"DataSource": DataSource})
     assert ns["src"].id == first.id, "the second run must find the row, not mint a twin"
 
 

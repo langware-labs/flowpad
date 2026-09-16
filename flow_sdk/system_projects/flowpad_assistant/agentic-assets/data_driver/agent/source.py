@@ -17,10 +17,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, ClassVar, Mapping, Optional, Protocol
+from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, Protocol
+
+from pydantic import StringConstraints
 
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -106,7 +109,33 @@ class AgentSentData(EmailMessageData):
     artifact_id: str = ""
 
 
+class AgentConfig(SourceConfig):
+    """What a agent source is configured with."""
+
+    connector: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    harness: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    segments: list[str] = []
+    agent: str = ""
+    subagent: str = ""
+    max_items: Optional[int] = None
+    send_agent: str = ""
+    send_subagent: str = ""
+    deadline_seconds: int = 300
+    send_deadline_seconds: int = 120
+
+    @classmethod
+    def lift(cls, raw):
+        """``streams`` / ``stream`` are what ``segments`` was called before the names converged."""
+        raw = dict(raw)
+        streams, stream = raw.pop("streams", None), raw.pop("stream", None)
+        if not raw.get("segments") and (streams or stream):
+            raw["segments"] = streams or [stream]
+        return raw
+
+
 class AgentSource(Source):
+
+    Config = AgentConfig
     provider = "agent"
     #: The receipt's high-water is the only thing that says where the worker stopped.
     durable_cursor = True
@@ -155,14 +184,10 @@ class AgentSource(Source):
         return self.origin(key, key)
 
     async def segments(self) -> list[SegmentRef]:
-        """What the source walks, one cursor each. ``segments`` is the declared name; ``streams`` and
-        ``stream`` are read after it so rows written before the names converged keep their cursors."""
+        """What the source walks, one cursor each: ``segments``, else the connector's defaults. A row
+        written with ``streams`` / ``stream`` arrives renamed (``AgentConfig.lift``)."""
         profile = profile_of(self.config)
-        keys = (
-            self.config.get("segments")
-            or self.config.get("streams")
-            or ([self.config.get("stream")] if self.config.get("stream") else list(profile.default_segments))
-        )
+        keys = self.config.get("segments") or list(profile.default_segments)
         refs = [SegmentRef(key=str(k), label=str(k), query=MessageQuery(conversation=self.segment_origin(str(k)))) for k in keys if str(k or "").strip()]
         if not refs:
             raise Rejected(f"config.segments is required: name at least one {profile.segment_noun}")

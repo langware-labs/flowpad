@@ -7,7 +7,11 @@ import time
 import uuid
 from contextlib import contextmanager
 
+from pydantic import SecretStr
+
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.testing import local_http_server
+from flow_sdk.sources.credentials import AuthShape, Credentials
 
 from .test_whatsapp_source import APP_SECRET, WA_ID, _Graph, _text, _webhook, sign, wa_source
 
@@ -15,14 +19,17 @@ from .test_whatsapp_source import APP_SECRET, WA_ID, _Graph, _text, _webhook, si
 @contextmanager
 def case(monkeypatch, tmp_path):
     phone_number_id = f"matrix{uuid.uuid4().hex[:12]}"
+
+    async def credential(_row):  # the whatsapp credential, never config
+        return Credentials(shape=AuthShape.SECRETS, values={"access_token": SecretStr("EAAG-test"), "app_secret": SecretStr(APP_SECRET)})
+
+    monkeypatch.setattr(DataDriver.loaded("whatsapp"), "credentials_for", credential)
     with local_http_server(_Graph()) as base:
         monkeypatch.setattr(wa_source, "GRAPH_API_BASE", base)
         yield {
             "config": {
                 "phone_number_id": phone_number_id,
-                "access_token": "EAAG-test",
                 "verify_token": "matrix-token",
-                "app_secret": APP_SECRET,
             },
             "sign": lambda raw: {"X-Hub-Signature-256": sign(raw)},
             "push": _webhook(_text("wamid.MATRIX1", "hello from whatsapp", ts=str(int(time.time()))), phone_number_id=phone_number_id),

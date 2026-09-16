@@ -27,6 +27,7 @@ from email.utils import formatdate, getaddresses, make_msgid, parseaddr, parseda
 from typing import Any, AsyncGenerator, ClassVar, Optional
 
 from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
@@ -76,7 +77,15 @@ class LoginRefused(Exception):
     """An IMAP login refusal, told apart from protocol and network failures."""
 
 
+class GmailConfig(SourceConfig):
+    """What a gmail source is configured with."""
+
+    address: str = ""
+
+
 class GmailSource(EmailAddressing, Source):
+
+    Config = GmailConfig
     provider = "gmail"
     durable_cursor = True
     page_size = PAGE_LIMIT

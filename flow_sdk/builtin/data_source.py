@@ -456,6 +456,21 @@ class DataSource(Entity):
             raise ValueError(f"{value} is already watched by the data source {existing.name or existing.id!s}")
 
     @classmethod
+    async def find_for_account_key(
+        cls, provider: str, account_key: str, *, owner: "Optional[TypeId]" = None
+    ) -> "Optional[DataSource]":
+        """The source of ``provider`` whose ``account_key`` is ``account_key`` — the lookup for a driver
+        that names its account itself (``identity_config_key`` empty) rather than by a config field."""
+        from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+
+        wanted = str(account_key or "").strip()
+        for row in await cls.get_all({"provider": provider}):
+            if wanted and wanted in {str(row.account_key or "").strip(), *map(str, row.account_identities or [])}:
+                if owner is None or await owner_of(row) == owner:
+                    return row
+        return None
+
+    @classmethod
     async def find_for_account(
         cls, provider: str, key: str, value: str, *, owner: "Optional[TypeId]" = None
     ) -> "Optional[DataSource]":
@@ -1020,6 +1035,9 @@ class DataSource(Entity):
 
         if not isinstance(self.config, dict):
             return
+        if "agent_id" in self.config and "agent_id" not in config_cls.model_fields:
+            # The legacy spelling of the owner, already read into ``owner`` above; not this driver's config.
+            self.config = {k: v for k, v in self.config.items() if k != "agent_id"}
         if self.exist_in_db:
             if any(isinstance(v, str) for v in self.config.values()):
                 self.config = {**self.config, **config_cls.draft(self.config)}
@@ -1465,9 +1483,9 @@ def config_error(exc) -> str:
     fault, ``config.<field> is required`` or ``config.<field> is not valid: <value>``."""
     first = exc.errors()[0]
     name = ".".join(str(part) for part in first.get("loc", ())[:1]) or "config"
-    if first.get("type") == "missing":
-        return f"config.{name} is required"
     value = first.get("input")
+    if first.get("type") == "missing" or value in ("", [], None) or (isinstance(value, str) and not value.strip()):
+        return f"config.{name} is required"
     return f"config.{name} is not valid: {value}"
 
 

@@ -127,13 +127,13 @@ async def test_outside_a_project_an_unbound_source_still_reads_the_environment(h
     assert _value(await resolve_credentials(KEYED, make_data_source("keyed")), "KEYED_API_KEY") == "from-environ"
 
 
-async def test_secret_keys_load_from_the_bound_store_before_the_machine_secret_and_the_config(home):
+async def test_secret_keys_load_from_the_bound_store_before_the_machine_secret_and_never_the_config(home):
     from flow_sdk.cli.auth.secrets import write_secret
 
     auth = AuthSpec(secrets={"api_key": "ingest_api.binding-test"})
     row = make_data_source("secrets-test", config={"api_key": "from-config"})
 
-    assert _value(await resolve_credentials(auth, row), "api_key") == "from-config"
+    assert "api_key" not in (await resolve_credentials(auth, row)).values, "a config is value-free"
     write_secret("ingest_api.binding-test", "from-machine-secret")
     assert _value(await resolve_credentials(auth, row), "api_key") == "from-machine-secret"
 
@@ -202,11 +202,11 @@ async def test_a_credential_resolves_from_the_owning_agents_project_declaration(
     assert resolved.shape == AuthShape.SECRETS and _value(resolved, "api_key") == "from-project-env-local"
 
 
-async def test_an_undeclared_credential_falls_back_to_the_row_config(project):
+async def test_an_undeclared_credential_resolves_nothing_even_with_a_key_in_config(project):
     agent = await _agent_in(project)
     row = make_data_source("channel-test", owner=f"agent-{agent.id}", config={"api_key": "from-config"})
 
-    assert _value(await resolve_credentials(CHANNEL, row), "api_key") == "from-config"
+    assert not (await resolve_credentials(CHANNEL, row)).values, "a config is value-free"
 
 
 def test_credential_and_vars_are_declared_together():

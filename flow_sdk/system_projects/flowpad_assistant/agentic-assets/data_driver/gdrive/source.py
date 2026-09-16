@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, ClassVar, Optional
+from typing import Any, AsyncGenerator, AsyncIterator, ClassVar, Optional, Union
 from urllib.parse import quote
 
 import httpx
@@ -24,6 +24,7 @@ from pydantic import AwareDatetime
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import ChoiceEntry, SourceConfig
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, SourceError, SourceUnavailable, Unsupported
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
@@ -88,7 +89,17 @@ def _servable(meta: dict) -> bool:
     return bool(meta.get("id")) and not meta.get("trashed") and (not mime.startswith(NATIVE_PREFIX) or mime in EXPORT_TYPES)
 
 
+class DriveConfig(SourceConfig):
+    """What a gdrive source is configured with."""
+
+    drives: list[Union[str, ChoiceEntry]] = []
+    cache_root: str = ""
+    base_url: str = ""
+
+
 class DriveSource(Source):
+
+    Config = DriveConfig
     provider = "gdrive"
     reflects = True
     #: The change-log token is the only thing that says where the last traversal stopped.

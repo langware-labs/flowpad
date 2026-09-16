@@ -76,6 +76,15 @@ class _Bot:
         return 200, json.dumps({"ok": True, "result": result}).encode(), {"Content-Type": "application/json"}
 
 
+@pytest.fixture(autouse=True)
+def _token(monkeypatch):
+    """The token is the ``telegram`` credential (TELEGRAM_BOT_TOKEN), never config."""
+    async def resolve(_row):
+        return Credentials(shape=AuthShape.SECRETS, values={"bot_token": SecretStr(TOKEN)})
+
+    monkeypatch.setattr(DataDriver.loaded("telegram"), "credentials_for", resolve)
+
+
 @pytest.fixture
 def bot(request):
     fake = _Bot(getattr(request, "param", None))
@@ -86,7 +95,7 @@ def bot(request):
 
 def _row(bot, **fields):
     return SimpleNamespace(
-        id="ds-tg", provider="telegram", name="Telegram bot", config={"bot_token": TOKEN, "base_url": bot.base},
+        id="ds-tg", provider="telegram", name="Telegram bot", config={"base_url": bot.base},
         account_key="@my_bot", account_identities=["777", "@my_bot"], **fields,
     )
 
@@ -115,9 +124,10 @@ async def test_conformance(check, bot):
 
 
 class TestTheSource:
-    def test_it_sends_on_its_own_channel_and_its_token_is_the_identity_key(self, bot):
+    def test_it_sends_on_its_own_channel_and_getme_names_the_account(self, bot):
+        """No config field names the bot: its token is a credential, its @username comes from getMe."""
         driver = DataDriver.loaded("telegram")
-        assert driver.sends is True and driver.identity_config_key == "bot_token"
+        assert driver.sends is True and driver.identity_config_key == ""
         assert driver.channel_for(_row(bot)) == "telegram"
 
     async def test_the_queue_is_one_segment(self, bot):
@@ -215,7 +225,7 @@ class TestSend:
 
 
 async def test_the_token_never_reaches_an_error_message():
-    row = SimpleNamespace(id="ds-tg", provider="telegram", config={"bot_token": TOKEN, "base_url": "http://127.0.0.1:9"})
+    row = SimpleNamespace(id="ds-tg", provider="telegram", config={"base_url": "http://127.0.0.1:9"})
     with pytest.raises(Exception) as caught:
         await DataDriver.loaded("telegram").traverse(row, _view())
     assert TOKEN not in str(caught.value)

@@ -7,7 +7,11 @@ import time
 import uuid
 from contextlib import contextmanager
 
+from pydantic import SecretStr
+
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.testing import local_http_server
+from flow_sdk.sources.credentials import AuthShape, Credentials
 
 from . import test_waha_source as t
 
@@ -15,6 +19,11 @@ from . import test_waha_source as t
 @contextmanager
 def case(monkeypatch, tmp_path):
     session = f"matrix{uuid.uuid4().hex[:12]}"
+
+    async def credential(_row):  # the waha credential, never config
+        return Credentials(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in t.SECRETS.items()})
+
+    monkeypatch.setattr(DataDriver.loaded("waha"), "credentials_for", credential)
     monkeypatch.setattr(t, "SESSION", session)
     with local_http_server(t._Waha()) as base:
         yield {

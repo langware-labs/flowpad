@@ -26,7 +26,7 @@ NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 
 async def _source(**kw) -> DataSource:
-    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"Feed {uuid.uuid4().hex[:8]}")
+    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"Feed {uuid.uuid4().hex[:8]}", config={"feed_urls": ["http://127.0.0.1:1/feed"]})
     base.update(kw)
     src = DataSource(**base)
     await src.save()
@@ -365,13 +365,13 @@ async def test_channel_is_stamped_at_create_not_first_poll():
     channel is still empty bakes origin.kind="agent" into every message
     (observed live, inbox-7 2026-09-01). Stamping at create closes the race."""
 
-    src = await _source(provider="agent", config={"connector": "slack", "segments": ["C1"]})
+    src = await _source(provider="agent", config={"connector": "slack", "harness": "claude", "segments": ["C1"]})
     assert src.channel == "slack", "channel must be present before any poll"
 
     # A driver whose channel IS its provider name must not be mistaken for the
     # provider fallback — the first stamp implementation made exactly that
     # error and left agentmail sources channel-less at create.
-    src = await _source(provider="agentmail", config={"inbox": "x@agentmail.to", "api_key": "k"})
+    src = await _source(provider="agentmail", config={"inbox": "x@agentmail.to"})
     assert src.channel == "agentmail"
 
 

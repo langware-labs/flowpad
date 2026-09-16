@@ -12,12 +12,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from email.utils import getaddresses, parseaddr
-from typing import Any, AsyncGenerator, Optional
+from typing import Annotated, Any, AsyncGenerator, Optional
 from urllib.parse import quote
+
+from pydantic import StringConstraints
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, OutcomeUnknown, Rejected, Unsupported
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
@@ -39,7 +42,16 @@ _RESUME = "resume:"
 _PAGE = "page:"
 
 
+class AgentMailConfig(SourceConfig):
+    """What a agentmail source is configured with."""
+
+    inbox: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    base_url: str = ""
+
+
 class AgentMailSource(EmailAddressing, Source):
+
+    Config = AgentMailConfig
     provider = "agentmail"
     durable_cursor = True
     page_size = PAGE_LIMIT

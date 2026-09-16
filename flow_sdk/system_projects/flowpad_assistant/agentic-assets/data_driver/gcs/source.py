@@ -12,15 +12,16 @@ through ``open`` and nothing writes back. Where the bytes land is the applicatio
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, ClassVar, Optional
+from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Optional
 from urllib.parse import quote
 
 import httpx
-from pydantic import AwareDatetime
+from pydantic import AwareDatetime, StringConstraints
 
 from flow_sdk.sources import _paging, http
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import AccessDenied, Rejected, SourceError, SourceUnavailable, Unsupported
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
@@ -53,7 +54,19 @@ class GcsObjectData(FileData):
     updated_at: Optional[AwareDatetime] = None
 
 
+class GcsConfig(SourceConfig):
+    """What a gcs source is configured with."""
+
+    bucket: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    project: str = ""
+    prefixes: list[str] = []
+    cache_root: str = ""
+    base_url: str = ""
+
+
 class GcsSource(Source):
+
+    Config = GcsConfig
     provider = "gcs"
     reflects = True
     page_size = MAX_PAGE_SIZE

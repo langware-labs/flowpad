@@ -64,6 +64,16 @@ def coerce_value(field: FieldInfo, value: Any) -> Any:
     return value
 
 
+class ChoiceEntry(DataSpec):
+    """One entry a person PICKED from a choosable field: the id the source reads and the name the
+    form showed. A typed id beside it stays a plain string."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    name: str = ""
+
+
 class SourceConfig(DataSpec):
     """Base of every driver's ``Config``. Frozen: a config is a value."""
 
@@ -72,18 +82,25 @@ class SourceConfig(DataSpec):
     #: Fields the application fills (``Source.configure``), never the form: exempt from the catalog.
     derived: ClassVar[tuple[str, ...]] = ()
 
+    @classmethod
+    def lift(cls, raw: Mapping[str, Any]) -> dict[str, Any]:
+        """A config written under older key names, as this class names them. Override to adopt a
+        renamed key; every read — create, draft, best match — goes through it."""
+        return dict(raw)
+
     @model_validator(mode="before")
     @classmethod
     def _coerce_strings(cls, data: Any) -> Any:
         if not isinstance(data, Mapping):
             return data
         fields = cls.model_fields
-        return {k: (coerce_value(fields[k], v) if k in fields else v) for k, v in data.items()}
+        return {k: (coerce_value(fields[k], v) if k in fields else v) for k, v in cls.lift(data).items()}
 
     @classmethod
     def draft(cls, raw: Mapping[str, Any]) -> dict[str, Any]:
         """The keys of ``raw`` this config knows and that validate on their own — a form in
         progress. Unknown and invalid keys are dropped, silently: the form names them."""
+        raw = cls.lift(raw or {})
         return {k: v for k, (ok, v) in ((k, _one(cls, k, raw[k])) for k in raw) if ok}
 
     @classmethod
@@ -97,7 +114,8 @@ class SourceConfig(DataSpec):
             if name in valid:
                 out[name] = valid[name]
             elif not field.is_required():
-                out[name] = field.get_default(call_default_factory=True, validated_data=out)
+                default = field.get_default(call_default_factory=True, validated_data=out)
+                out[name] = _adapter(cls, name).dump_python(default, mode="json")
         return out
 
     @classmethod
@@ -115,8 +133,10 @@ def _one(config: type[SourceConfig], name: str, value: Any) -> tuple[bool, Any]:
     field = config.model_fields.get(name)
     if field is None:
         return False, None
+    adapter = _adapter(config, name)
     try:
-        return True, _adapter(config, name).validate_python(coerce_value(field, value))
+        # Plain JSON values, as a row stores them and a source reads them.
+        return True, adapter.dump_python(adapter.validate_python(coerce_value(field, value)), mode="json")
     except ValidationError:
         return False, None
 
@@ -129,4 +149,4 @@ def _adapter(config: type[SourceConfig], name: str) -> TypeAdapter:
     return TypeAdapter(Annotated[(field.annotation, *field.metadata)]) if field.metadata else TypeAdapter(field.annotation)
 
 
-__all__ = ["SourceConfig", "coerce_value"]
+__all__ = ["ChoiceEntry", "SourceConfig", "coerce_value"]

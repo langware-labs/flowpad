@@ -22,6 +22,7 @@ from typing import Any, AsyncGenerator, ClassVar, Optional
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import (
     AccessDenied,
     InvalidCursor,
@@ -55,13 +56,22 @@ class TelegramMessageData(MessageData):
     title: Optional[str] = None
 
 
+class TelegramConfig(SourceConfig):
+    """What a telegram source is configured with. Its secrets are the credential in auth, never here."""
+
+    base_url: str = ""
+
+
 class TelegramSource(Source):
+
+    Config = TelegramConfig
     provider = "telegram"
     durable_cursor = True
     echoes_sends = False
     page_size = PAGE_LIMIT
     #: The token names WHICH bot a row serves — what a caller matches to reuse a source.
-    identity_config_key = "bot_token"
+    #: The bot is named by getMe, not by a config field: its token is a credential.
+    identity_config_key = ""
     #: Chat-grade while watched: the Bot API is comfortable at one getUpdates every few seconds.
     attention_poll_seconds = 5
 

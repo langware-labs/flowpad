@@ -13,11 +13,10 @@ bound is what it uses, and the binding is saved on the row so every background p
 * ``env`` — variable names, loaded from the bound store; unbound, from the default store (the
   current project's ``.env.local``), then the process environment for any still missing.
 * ``secrets`` — ``{value key: machine secret name}``, loaded by value key from the bound (or
-  default) store; otherwise the named machine secret, then the row's own ``config[value key]``.
-  Either way the value reaches the source as a credential, never as configuration.
+  default) store; otherwise the named machine secret. A config is value-free: never read here.
 * ``credential`` + ``vars`` — ``{value key: env var}`` of a named SecretPack, resolved for the
   row's owner the way a worker process resolves its secrets (the owning agent's project over the
-  user scope); a key it cannot supply falls back to the row's ``config``.
+  user scope).
 """
 from __future__ import annotations
 
@@ -48,11 +47,9 @@ async def resolve_credentials(auth: Optional[AuthSpec], row: Any) -> Credentials
             if (value := stored.get(name) or str(os.environ.get(name) or "").strip())
         }
         return Credentials(shape=AuthShape.ENV, values=values) if values else Credentials()
-    config = getattr(row, "config", None) or {}
     values = {}
     for key, secret_name in auth.secrets.items():
-        value = stored.get(key) or (_machine_secret(secret_name) if secret_name else "")
-        if value := value or str(config.get(key) or "").strip():
+        if value := stored.get(key) or (_machine_secret(secret_name) if secret_name else ""):
             values[key] = SecretStr(value)
     return Credentials(shape=AuthShape.SECRETS, values=values) if values else Credentials()
 
@@ -68,11 +65,9 @@ async def _declared(auth: AuthSpec, row: Any) -> Credentials:
     # Only the named credential's specs: another spec declaring the same variable must not win it.
     pairs = [(spec, scope) for spec, scope in await credentials_in_scope(project) if spec.name == auth.credential]
     loaded = await resolve_project_secrets(project, only=auth.vars.values(), declared=declare(pairs)) if pairs else {}
-    config = getattr(row, "config", None) or {}
     values = {}
     for key, var in auth.vars.items():
-        stored = loaded[var].get_secret_value().strip() if var in loaded else ""
-        if value := stored or str(config.get(key) or "").strip():
+        if value := loaded[var].get_secret_value().strip() if var in loaded else "":
             values[key] = SecretStr(value)
     return Credentials(shape=AuthShape.SECRETS, values=values) if values else Credentials()
 

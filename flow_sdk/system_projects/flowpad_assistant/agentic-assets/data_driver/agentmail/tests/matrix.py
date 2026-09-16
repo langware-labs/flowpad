@@ -11,12 +11,12 @@ from .test_agentmail_source import INBOX, MSG, _AgentMail
 
 @contextmanager
 def case(monkeypatch, tmp_path):
-    monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: None)
+    monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: "am_test")  # the key is a machine secret, never config
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     fake = _AgentMail([{**MSG, "timestamp": now}])
     with local_http_server(fake) as base:
         yield {
-            "config": {"inbox": INBOX, "api_key": "am_test", "base_url": base},
+            "config": {"inbox": INBOX, "base_url": base},
             "fields": {"account_key": INBOX},
             "min_items": 1,
             "send": {"to": "someone@example.com", "text": "matrix send", "subject": "Matrix"},

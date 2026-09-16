@@ -41,8 +41,27 @@ def sign(body: bytes, secret: str = APP_SECRET) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
+#: The ``whatsapp`` credential's values per business number — never config. A number with no entry
+#: gets the default pair; a test that wants a missing secret sets its own.
+SECRETS: dict[str, dict[str, str]] = {}
+
+
+def _secrets_for(row) -> dict[str, str]:
+    return SECRETS.get(str((row.config or {}).get("phone_number_id") or ""), {"access_token": "EAAG-test", "app_secret": APP_SECRET})
+
+
+@pytest.fixture(autouse=True)
+def _credential(monkeypatch):
+    async def resolve(row):
+        return Credentials(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in _secrets_for(row).items() if v})
+
+    monkeypatch.setattr(DataDriver.loaded("whatsapp"), "credentials_for", resolve)
+    yield
+    SECRETS.clear()
+
+
 def _source(**config) -> DataSource:
-    return DataSource(provider="whatsapp", name=f"WhatsApp test {uuid.uuid4().hex[:8]}", config={"phone_number_id": PHONE_ID, "access_token": "EAAG-test", "app_secret": APP_SECRET, **config})
+    return DataSource(provider="whatsapp", name=f"WhatsApp test {uuid.uuid4().hex[:8]}", config={"phone_number_id": PHONE_ID, "verify_token": "verify-test", **config})
 
 
 def _binding() -> SourceBinding:
@@ -217,8 +236,8 @@ async def test_an_expired_token_says_which_token_to_make(serve):
 
 
 async def test_a_source_with_no_token_asks_for_one():
-    source = _source()
-    source.config = {"phone_number_id": PHONE_ID}
+    SECRETS["no-token-333"] = {"app_secret": APP_SECRET}
+    source = _source(phone_number_id="no-token-333")
     verdict = await DataDriver.loaded("whatsapp").verify(source)
     assert verdict.ready is False and "access token" in verdict.detail
 
@@ -301,6 +320,7 @@ async def test_a_delivery_meta_did_not_sign_is_refused_and_ingests_nothing(recor
 async def test_a_source_with_no_app_secret_accepts_no_delivery(recorded):
     from flow_sdk.server.routes.data_source_webhook import webhook_delivery
 
-    await _saved(phone_number_id="unsigned-222", app_secret="")
+    SECRETS["unsigned-222"] = {"access_token": "EAAG-test"}
+    await _saved(phone_number_id="unsigned-222")
     response = await webhook_delivery("whatsapp", _Request(body=_webhook(_text("wamid.U", "hi"), phone_number_id="unsigned-222")))
     assert response.status_code == 401 and recorded == []

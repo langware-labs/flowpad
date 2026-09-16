@@ -21,10 +21,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, ClassVar, Optional, Protocol
+from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional, Protocol
+
+from pydantic import StringConstraints
 
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import InvalidCursor, NotFound, OutcomeUnknown, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -60,7 +63,15 @@ class HelpdeskMessageData(MessageData):
     raw: Optional[dict] = None
 
 
+class HelpdeskConfig(SourceConfig):
+    """What a helpdesk source is configured with."""
+
+    desk_project_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
 class HelpdeskSource(Source):
+
+    Config = HelpdeskConfig
     provider = "helpdesk"
     origin_kind = CHANNEL
     durable_cursor = True
