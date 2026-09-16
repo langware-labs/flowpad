@@ -255,15 +255,18 @@ class ManifestSpec(DataSpec):
         The retired authored runtimes are refused where the author can read why, rather than
         indexing a definition nothing can run.
         """
-        retired = sorted(files & {SCRIPT_FILE, AGENT_FILE})
+        retired = sorted(files & set(RETIRED_RUNTIME_FILES))
         if retired:
-            raise ManifestError(
-                f"{' and '.join(retired)} belong to a retired runtime — upgrade: write {SOURCE_FILE}, "
-                "one flow_sdk.sources.Source subclass whose provider is this manifest's name"
-            )
+            raise ManifestError(f"{' and '.join(retired)} belong to a retired runtime — {RETIRED_RUNTIME_UPGRADE}")
         return Runtime.SOURCE
 
 
 SOURCE_FILE = "source.py"
 SCRIPT_FILE = "fetch.py"
 AGENT_FILE = "FETCH.md"
+#: The authored runtimes a folder may still carry. No migration converts one: it is code to port.
+RETIRED_RUNTIME_FILES = (SCRIPT_FILE, AGENT_FILE)
+RETIRED_RUNTIME_UPGRADE = (
+    "upgrade: write source.py, one flow_sdk.sources.Source subclass whose provider is this manifest's name "
+    "(docs/data-management/data-source-asset.md, 'Porting a retired runtime')"
+)

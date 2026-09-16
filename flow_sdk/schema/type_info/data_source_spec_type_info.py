@@ -18,7 +18,11 @@ from flow_sdk.assets.identity import derived_identity
 from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.types.data_source_spec import data_source_spec_identity_key, derive_data_source_spec
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
+from flow_sdk.schema.data_spec.data_source_manifest_spec import (
+    RETIRED_RUNTIME_FILES,
+    RETIRED_RUNTIME_UPGRADE,
+    ManifestSpec,
+)
 from flow_sdk.schema.types import EntityType
 
 DATA_SOURCE_SPEC = TypeInfo(
@@ -34,6 +38,7 @@ DATA_SOURCE_SPEC = TypeInfo(
     # Written before the driver rename: reported by the scan until the migration moves them.
     retired_families=("data_source",),
     retired_mains=("data_source.json",),
+    retired_files=tuple((name, RETIRED_RUNTIME_UPGRADE) for name in RETIRED_RUNTIME_FILES),
     asset_spec=ManifestSpec,
     fts_content=("name", "description"),
     derive_fields_fn=derive_data_source_spec,

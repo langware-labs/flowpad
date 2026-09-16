@@ -160,6 +160,12 @@ def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | 
                             entry, f"{retired} is a retired {info.type_name} document; run {info.retired_migration}",
                             info.type_name, retired))
                     continue
+                ported = next(((name, how) for name, how in info.retired_files if (candidate.path / name).is_file()), None)
+                if ported is not None:
+                    result.issues.append(AssetScanIssue(
+                        candidate.path, f"{ported[0]} belongs to a retired {info.type_name} runtime — {ported[1]}",
+                        info.type_name, ported[0]))
+                    continue
                 result.candidates.append(candidate)
                 if candidate.layout.kind is LayoutKind.FOLDER:
                     scan(candidate.path, candidate.path, ancestry)

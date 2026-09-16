@@ -97,3 +97,21 @@ def test_the_entity_document_migration_leaves_a_driver_manifest_alone(repo):
     _written(repo, "data_driver", "data_source.json")
     report = migrate_entity_documents(dry_run=False, roots=[repo])
     assert (report.scanned, dict(report.unconverted)) == (0, {})
+
+
+def test_a_retired_runtime_is_reported_by_the_scan_with_its_port(repo):
+    folder = _written(repo, "data_driver", "data_driver.json")
+    (folder / "fetch.py").write_text("print('{}')\n")
+    [issue] = _issues(repo)
+    assert issue.retired == "fetch.py" and "write source.py" in issue.message
+    assert not [c for c in scan_repo_tree(repo, SchemaRegistry.repo_family_to_info()).candidates
+                if c.type_name == "data_source_spec"], "a folder the indexer would refuse is never handed to it"
+
+
+def test_moving_a_retired_runtime_still_says_it_needs_a_port(repo):
+    folder = _written(repo, "data_source", "data_source.json")
+    (folder / "fetch.py").write_text("print('{}')\n")
+    report = migrate(dry_run=False, roots=[repo])
+    moved = repo / "agentic-assets" / "data_driver" / "rss"
+    assert (report.moved, report.renamed, report.needs_port) == (1, 1, [str(moved)])
+    assert "need a manual port" in report.summary()
