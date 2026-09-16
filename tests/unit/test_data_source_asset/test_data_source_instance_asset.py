@@ -68,7 +68,7 @@ async def test_the_file_holds_the_authored_fields_and_nothing_the_engine_writes(
     assert not set(document) & set(RUNTIME_FIELDS)
 
 
-def test_runtime_fields_are_row_only_and_never_authored():
+async def test_runtime_fields_are_row_only_and_never_authored():
     spec_fields = set(DataSourceSpec.model_fields)
     assert RUNTIME_FIELDS and not spec_fields & set(RUNTIME_FIELDS)
     for name in RUNTIME_FIELDS:
