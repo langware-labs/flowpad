@@ -12,6 +12,7 @@ import uuid
 import pytest
 
 from flow_sdk.api.api_types.api_field import Persist
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import (
     RECEIVED_SETUP_DETAIL,
     RUNTIME_FIELDS,
@@ -22,7 +23,6 @@ from flow_sdk.builtin.data_source import (
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.fs_store.orphan_removal import remove_orphan_row
-from flow_sdk.ingest.driver_types import DriverType, register_driver
 from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
 from flow_sdk.sources.base import Source
 from tests.fixtures.identity import index_path
@@ -37,7 +37,7 @@ class _Mailbox(Source):
 
 @pytest.fixture
 def scope(folder_db, fresh_user_scope):
-    register_driver(DriverType(_Mailbox, kind="datasource.test.asset"))
+    DataDriver.register(DataDriver.for_class(_Mailbox, kind="datasource.test.asset"))
     return fresh_user_scope
 
 

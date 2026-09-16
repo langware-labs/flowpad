@@ -79,16 +79,16 @@ def _admits(source, author: str) -> bool:
     help desk), under which an EMPTY list admits everyone; a non-empty list
     restricts either way, and a paused source admits nobody either way.
     """
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
     from flow_sdk.builtin.email_inbox import sender_allowed  # noqa: PLC0415
-    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
         return False
     allowlist = [a for a in (getattr(source, "inbound_allowed_senders", None) or []) if str(a).strip()]
     if sender_allowed(allowlist, author):
         return True
-    driver = driver_type(getattr(source, "provider", "") or "")
+    driver = DataDriver.loaded(getattr(source, "provider", "") or "")
     return bool(driver is not None and driver.open_inbound and not allowlist)
 
 

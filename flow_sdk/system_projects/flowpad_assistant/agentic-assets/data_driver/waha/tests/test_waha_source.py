@@ -13,9 +13,9 @@ import uuid
 import pytest
 from pydantic import SecretStr
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.testing import local_http_server
 from flow_sdk.sources import UserProfile
@@ -203,7 +203,7 @@ def _sent(double: _Waha) -> list[dict]:
 
 async def test_a_reply_goes_to_the_raw_chat_and_quotes_the_message_it_answers(serve, recorded):
     double, base = serve()
-    outcome = await driver_type("waha").send(_source(base), thread_key=LID, to=LID, text="hi", in_reply_to="true_x_AAA")
+    outcome = await DataDriver.loaded("waha").send(_source(base), thread_key=LID, to=LID, text="hi", in_reply_to="true_x_AAA")
     (body,) = _sent(double)
     assert (body["chatId"], body["reply_to"], body["session"]) == (LID, "true_x_AAA", SESSION)
     assert outcome.external_id == f"true_{LID}_OUT1"
@@ -211,14 +211,14 @@ async def test_a_reply_goes_to_the_raw_chat_and_quotes_the_message_it_answers(se
 
 async def test_the_noweb_engine_answer_still_names_the_sent_message(serve, recorded):
     double, base = serve(noweb=True)
-    outcome = await driver_type("waha").send(_source(base), thread_key=CHAT, to=CHAT, text="hi")
+    outcome = await DataDriver.loaded("waha").send(_source(base), thread_key=CHAT, to=CHAT, text="hi")
     assert len(_sent(double)) == 1
     assert outcome.external_id == f"true_{CHAT.replace('@c.us', '@s.whatsapp.net')}_OUT1"
 
 
 async def test_a_bare_number_is_sent_to_its_phone_chat(serve, recorded):
     double, base = serve()
-    await driver_type("waha").send(_source(base), thread_key="", to="+972 50 123 4567", text="hello")
+    await DataDriver.loaded("waha").send(_source(base), thread_key="", to="+972 50 123 4567", text="hello")
     (body,) = _sent(double)
     assert body["chatId"] == CHAT and "reply_to" not in body
 
@@ -228,7 +228,7 @@ async def test_a_bare_number_is_sent_to_its_phone_chat(serve, recorded):
 
 async def test_a_new_source_creates_its_session_with_the_signed_webhook_and_asks_for_the_qr(serve):
     double, base = serve(exists=False)
-    verdict = await driver_type("waha").verify(_source(base))
+    verdict = await DataDriver.loaded("waha").verify(_source(base))
     assert verdict.ready is False and "scan the QR" in verdict.detail and f"/api/{SESSION}/auth/qr" in verdict.detail
     (created,) = [body for method, path, body in double.calls if (method, path) == ("POST", "/api/sessions")]
     assert created["config"]["webhooks"] == [{"url": HOOK, "events": ["message"], "hmac": {"key": HMAC_KEY}}]
@@ -236,7 +236,7 @@ async def test_a_new_source_creates_its_session_with_the_signed_webhook_and_asks
 
 async def test_a_session_pointed_elsewhere_is_repointed_at_this_instance(serve):
     double, base = serve(hooks=[{"url": "http://somewhere-else/hook", "events": ["message.any"]}])
-    await driver_type("waha").verify(_source(base))
+    await DataDriver.loaded("waha").verify(_source(base))
     assert any(method == "PUT" for method, _, _ in double.calls)
     assert double.hooks == [{"url": HOOK, "events": ["message"], "hmac": {"key": HMAC_KEY}}]
 
@@ -244,21 +244,21 @@ async def test_a_session_pointed_elsewhere_is_repointed_at_this_instance(serve):
 async def test_a_paired_session_is_ready_and_stamps_the_number(serve):
     _, base = serve()
     source = _source(base)
-    verdict = await driver_type("waha").verify(source)
+    verdict = await DataDriver.loaded("waha").verify(source)
     assert verdict.ready is True and ME in verdict.detail
     assert source.account_key == ME and ME in source.account_identities
 
 
 async def test_a_wrong_api_key_says_which_key(serve):
     _, base = serve()
-    verdict = await driver_type("waha").verify(_source(base, api_key="wrong"))
+    verdict = await DataDriver.loaded("waha").verify(_source(base, api_key="wrong"))
     assert verdict.ready is False and "WAHA_API_KEY" in verdict.detail
 
 
 async def test_a_source_with_no_api_key_asks_for_the_credential():
     source = _source()
     source.config = {k: v for k, v in source.config.items() if k != "api_key"}
-    verdict = await driver_type("waha").verify(source)
+    verdict = await DataDriver.loaded("waha").verify(source)
     assert verdict.ready is False and "`waha` credential" in verdict.detail
 
 

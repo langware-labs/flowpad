@@ -7,9 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import SendStatus, driver_type
+from flow_sdk.ingest.driver_runtime import SendStatus
+from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import position
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import Unsupported
@@ -63,18 +64,18 @@ async def test_conformance_beyond_messaging(check):
 
 
 def test_the_connector_is_the_channel():
-    assert driver_type("agent").channel_for(_row()) == "gmail"
-    assert driver_type("agent").channel_for(_row(connector="slack")) == "slack"
+    assert DataDriver.loaded("agent").channel_for(_row()) == "gmail"
+    assert DataDriver.loaded("agent").channel_for(_row(connector="slack")) == "slack"
 
 
 async def test_the_worker_records_so_a_traversal_returns_no_items(worker):
-    result = await driver_type("agent").traverse(_row(), _view())
+    result = await DataDriver.loaded("agent").traverse(_row(), _view())
     assert result.items == [] and result.cursor == AgentSource.resume_after("2026-09-01T10:00:00+00:00")
     assert worker.fetches[0]["segment_key"] == "INBOX" and worker.fetches[0]["since"] == ""
 
 
 async def test_the_receipts_high_water_is_the_next_runs_floor(worker):
-    await driver_type("agent").traverse(_row(), _view({"high_water": "2026-08-31T00:00:00+00:00"}))
+    await DataDriver.loaded("agent").traverse(_row(), _view({"high_water": "2026-08-31T00:00:00+00:00"}))
     assert worker.fetches[0]["since"] == "2026-08-31T00:00:00+00:00", "a legacy cursor is adopted"
 
 
@@ -82,12 +83,12 @@ async def test_the_receipts_high_water_is_the_next_runs_floor(worker):
 async def test_a_reported_error_classifies_by_what_fixes_it(worker, reported, health):
     worker.receipt = {"error": reported}
     with pytest.raises(Exception) as caught:
-        await driver_type("agent").traverse(_row(), _view())
+        await DataDriver.loaded("agent").traverse(_row(), _view())
     assert classify(caught.value)[0] is health
 
 
 async def test_a_send_carries_the_thread_the_address_and_the_local_conversation(worker):
-    out = await driver_type("agent").send(_row(), thread_key="t-1", to="a@b.c", text="hi", subject="Re: x", conversation_id="conv-1")
+    out = await DataDriver.loaded("agent").send(_row(), thread_key="t-1", to="a@b.c", text="hi", subject="Re: x", conversation_id="conv-1")
     run = worker.sends[0]
     assert (run["thread_key"], run["to"], run["subject"], run["conversation_id"], run["channel"]) == ("t-1", "a@b.c", "Re: x", "conv-1", "gmail")
     assert (out.external_id, out.status, out.recorded, out.artifact_id) == ("m-1", SendStatus.SENT, True, "art-1")
@@ -95,7 +96,7 @@ async def test_a_send_carries_the_thread_the_address_and_the_local_conversation(
 
 async def test_a_draft_is_reported_as_a_draft_and_never_recorded(worker):
     worker.outcome = {"external_id": "r-1", "drafted": True, "recorded": False, "artifact_id": ""}
-    out = await driver_type("agent").send(_row(), thread_key="t-1", to="a@b.c", text="hi")
+    out = await DataDriver.loaded("agent").send(_row(), thread_key="t-1", to="a@b.c", text="hi")
     assert (out.drafted, out.external_id, out.recorded) == (True, "r-1", False)
 
 

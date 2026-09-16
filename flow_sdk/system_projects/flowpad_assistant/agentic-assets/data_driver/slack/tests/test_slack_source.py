@@ -16,9 +16,9 @@ from urllib.parse import parse_qs
 import pytest
 from pydantic import SecretStr
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
@@ -55,7 +55,7 @@ def _credentials(token):
 
 @pytest.fixture(autouse=True)
 def _a_token(monkeypatch):
-    monkeypatch.setattr(driver_type("slack"), "credentials_for", _credentials("xoxp-test"))
+    monkeypatch.setattr(DataDriver.loaded("slack"), "credentials_for", _credentials("xoxp-test"))
 
 
 class _Slack:
@@ -153,12 +153,12 @@ async def test_conformance(check, fake_slack):
 async def test_segments_key_on_the_channel_id_not_its_name():
     source = _source()
     source.config = {"channels": [{"id": CHANNEL, "name": "engineering"}]}
-    (segment,) = await driver_type("slack").segments(source)
+    (segment,) = await DataDriver.loaded("slack").segments(source)
     assert (segment.key, segment.label) == (CHANNEL, "engineering")
 
 
 async def test_a_bare_string_channels_config_names_one_channel():
-    (segment,) = await driver_type("slack").segments(DataSource(provider="slack", name=f"s {uuid.uuid4().hex[:8]}", config={"channels": CHANNEL}))
+    (segment,) = await DataDriver.loaded("slack").segments(DataSource(provider="slack", name=f"s {uuid.uuid4().hex[:8]}", config={"channels": CHANNEL}))
     assert segment.key == CHANNEL
 
 
@@ -167,7 +167,7 @@ async def test_a_bare_string_channels_config_names_one_channel():
 
 async def test_a_page_becomes_items_oldest_first(serve):
     serve([{"ok": True, "messages": [_message("200.000200", "second"), _message("100.000100", "first")]}])
-    result = await driver_type("slack").traverse(_source(), _view())
+    result = await DataDriver.loaded("slack").traverse(_source(), _view())
     assert [i.body for i in result.items] == ["first", "second"]
     assert [i.external_id for i in result.items] == ["100.000100", "200.000200"]
     assert result.items[0].occurred_at == datetime.fromtimestamp(100.0001, tz=timezone.utc).isoformat()
@@ -175,26 +175,26 @@ async def test_a_page_becomes_items_oldest_first(serve):
 
 async def test_the_cursor_resumes_from_the_last_ts(serve):
     slack = serve([{"ok": True, "messages": [_message("300.0", "next")]}])
-    result = await driver_type("slack").traverse(_source(), _view(state={"cursor": SlackSource.resume_after("200.000200")}))
+    result = await DataDriver.loaded("slack").traverse(_source(), _view(state={"cursor": SlackSource.resume_after("200.000200")}))
     assert "oldest=200.000200" in slack.requests[0] and "inclusive=false" in slack.requests[0]
     assert result.cursor == SlackSource.resume_after("300.0")
 
 
 async def test_a_legacy_cursor_is_adopted(serve):
     slack = serve([{"ok": True, "messages": []}])
-    await driver_type("slack").traverse(_source(), _view(state={"last_ts": "200.000200"}))
+    await DataDriver.loaded("slack").traverse(_source(), _view(state={"last_ts": "200.000200"}))
     assert "oldest=200.000200" in slack.requests[0]
 
 
 async def test_ts_advances_numerically_not_lexically(serve):
     serve([{"ok": True, "messages": [_message("100.000000", "newer"), _message("90.000000", "older")]}])
-    result = await driver_type("slack").traverse(_source(), _view(state={"cursor": SlackSource.resume_after("89.0")}))
+    result = await DataDriver.loaded("slack").traverse(_source(), _view(state={"cursor": SlackSource.resume_after("89.0")}))
     assert result.cursor == SlackSource.resume_after("100.000000")
 
 
 async def test_the_first_run_is_bounded_by_the_window(serve):
     slack = serve([{"ok": True, "messages": []}])
-    await driver_type("slack").traverse(_source(), _view(window_start="2026-08-01T00:00:00+00:00"))
+    await DataDriver.loaded("slack").traverse(_source(), _view(window_start="2026-08-01T00:00:00+00:00"))
     assert "oldest=1785542400.000000" in slack.requests[0]
 
 
@@ -205,7 +205,7 @@ async def test_a_pass_reads_one_page_and_never_paginates(serve):
         "has_more": True,
         "response_metadata": {"next_cursor": "dXNlcjpVMDYxTkZUVDI="},
     }])
-    result = await driver_type("slack").traverse(_source(), _view())
+    result = await DataDriver.loaded("slack").traverse(_source(), _view())
     assert len(slack.requests) == 1, "paginated into the next minute's budget"
     assert "limit=15" in slack.requests[0] and len(result.items) == 15
 
@@ -213,7 +213,7 @@ async def test_a_pass_reads_one_page_and_never_paginates(serve):
 async def test_an_empty_page_reports_unchanged(serve):
     serve([{"ok": True, "messages": []}])
     state = {"cursor": SlackSource.resume_after("1.0")}
-    result = await driver_type("slack").traverse(_source(), _view(state=state))
+    result = await DataDriver.loaded("slack").traverse(_source(), _view(state=state))
     assert result.unchanged and result.items == [] and result.cursor == state["cursor"], "an idle poll moved the cursor"
 
 
@@ -223,21 +223,21 @@ async def test_joins_and_leaves_are_not_messages_but_the_cursor_passes_them(serv
         _message("110.0", "x joined", subtype="channel_join"),
         _message("120.0", "renamed", subtype="channel_name"),
     ]}])
-    result = await driver_type("slack").traverse(_source(), _view())
+    result = await DataDriver.loaded("slack").traverse(_source(), _view())
     assert [i.body for i in result.items] == ["hello"]
     assert result.cursor == SlackSource.resume_after("120.0")
 
 
 async def test_a_threaded_reply_joins_its_parents_conversation_without_a_guessed_reply_target(serve):
     serve([{"ok": True, "messages": [_message("150.0", "reply", thread_ts="100.0"), _message("100.0", "parent")]}])
-    parent, reply = (await driver_type("slack").traverse(_source(), _view())).items
+    parent, reply = (await DataDriver.loaded("slack").traverse(_source(), _view())).items
     assert parent.thread_key == reply.thread_key == "100.0"
     assert parent.reply_to_external_id is None and reply.reply_to_external_id is None
 
 
 async def test_the_permalink_is_a_formula_not_a_fetch(serve):
     slack = serve([{"ok": True, "messages": [_message("100.0", "hi")]}])
-    (item,) = (await driver_type("slack").traverse(_source(), _view())).items
+    (item,) = (await DataDriver.loaded("slack").traverse(_source(), _view())).items
     assert item.permalink == f"https://slack.com/app_redirect?channel={CHANNEL}&message_ts=100.0"
     assert len(slack.requests) == 1
 
@@ -253,7 +253,7 @@ async def test_the_permalink_is_a_formula_not_a_fetch(serve):
 async def test_a_200_with_ok_false_is_a_failure_classified_by_what_fixes_it(serve, error, health):
     serve([{"ok": False, "error": error}])
     with pytest.raises(Exception) as caught:
-        await driver_type("slack").traverse(_source(), _view())
+        await DataDriver.loaded("slack").traverse(_source(), _view())
     assert classify(caught.value)[0] is health
     if error == "not_in_channel":
         assert "invite" in str(caught.value).lower()
@@ -261,9 +261,9 @@ async def test_a_200_with_ok_false_is_a_failure_classified_by_what_fixes_it(serv
 
 async def test_no_credential_is_reported_before_any_request(serve, monkeypatch):
     slack = serve([{"ok": True, "messages": []}])
-    monkeypatch.setattr(driver_type("slack"), "credentials_for", _credentials(None))
+    monkeypatch.setattr(DataDriver.loaded("slack"), "credentials_for", _credentials(None))
     with pytest.raises(Exception) as caught:
-        await driver_type("slack").traverse(_source(), _view())
+        await DataDriver.loaded("slack").traverse(_source(), _view())
     assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR and "Connect Slack" in str(caught.value)
     assert slack.requests == []
 
@@ -273,27 +273,27 @@ async def test_no_credential_is_reported_before_any_request(serve, monkeypatch):
 
 async def test_verify_passes_when_every_channel_reads(serve):
     serve([{"ok": True, "messages": []}])
-    assert (await driver_type("slack").verify(_source())).ready is True
+    assert (await DataDriver.loaded("slack").verify(_source())).ready is True
 
 
 async def test_verify_is_all_or_nothing_across_channels(serve):
     source = _source()
     source.config = {"channels": [CHANNEL, "C9999999999"]}
     serve([{"ok": True, "messages": []}, {"ok": False, "error": "not_in_channel"}, {"ok": True}])
-    verdict = await driver_type("slack").verify(source)
+    verdict = await DataDriver.loaded("slack").verify(source)
     assert verdict.ready is False and verdict.pending == ("C9999999999",) and "C9999999999" in verdict.detail
 
 
 async def test_verify_separates_a_missing_scope_from_a_missing_invite(serve):
     serve([{"ok": False, "error": "missing_scope"}])
-    verdict = await driver_type("slack").verify(_source())
+    verdict = await DataDriver.loaded("slack").verify(_source())
     assert verdict.ready is False and verdict.pending == () and "channels:history" in verdict.detail
 
 
 async def test_verify_refuses_a_source_with_no_channels():
     source = _source()
     source.config = {"channels": []}
-    verdict = await driver_type("slack").verify(source)
+    verdict = await DataDriver.loaded("slack").verify(source)
     assert verdict.ready is False and "channel" in verdict.detail.lower()
 
 
@@ -304,7 +304,7 @@ async def test_send_posts_into_the_thread_and_returns_the_ts(serve):
     slack = serve([{"ok": True, "ts": "300.000300", "channel": CHANNEL}, {"ok": True, "user_id": "UBOT", "bot_id": "B1", "user": "flowpad"}])
     source = _source()
     await source.save()
-    outcome = await driver_type("slack").send(source, thread_key="100.000100", to=CHANNEL, text="on it", in_reply_to="100.000100")
+    outcome = await DataDriver.loaded("slack").send(source, thread_key="100.000100", to=CHANNEL, text="on it", in_reply_to="100.000100")
     assert outcome.external_id == "300.000300" and outcome.recorded is False
     assert slack.requests[0] == "/chat.postMessage"
     assert json.loads(slack.bodies[0]) == {"channel": CHANNEL, "text": "on it", "thread_ts": "100.000100"}
@@ -316,7 +316,7 @@ async def test_send_stamps_the_bots_own_identity_once(serve):
     serve([{"ok": True, "ts": "1.1"}, {"ok": True, "user_id": "UBOT", "bot_id": "B1", "user": "flowpad"}])
     source = _source()
     await source.save()
-    await driver_type("slack").send(source, thread_key="", to=CHANNEL, text="hi")
+    await DataDriver.loaded("slack").send(source, thread_key="", to=CHANNEL, text="hi")
     assert source.account_key == "@flowpad"
     assert is_self_address(source, "UBOT") and is_self_address(source, "B1") and not is_self_address(source, "U1")
 
@@ -324,15 +324,15 @@ async def test_send_stamps_the_bots_own_identity_once(serve):
 async def test_a_refused_post_is_a_value_error_not_source_health(serve):
     serve([{"ok": False, "error": "not_in_channel"}])
     with pytest.raises(ValueError, match="not_in_channel"):
-        await driver_type("slack").send(_source(), thread_key="", to=CHANNEL, text="hi")
+        await DataDriver.loaded("slack").send(_source(), thread_key="", to=CHANNEL, text="hi")
 
 
 async def test_send_without_a_channel_or_text_is_refused_before_any_request(serve):
     slack = serve([{"ok": True}])
     with pytest.raises(ValueError):
-        await driver_type("slack").send(_source(), thread_key="1.1", to="", text="hi")
+        await DataDriver.loaded("slack").send(_source(), thread_key="1.1", to="", text="hi")
     with pytest.raises(ValueError):
-        await driver_type("slack").send(_source(), thread_key="1.1", to=CHANNEL, text="  ")
+        await DataDriver.loaded("slack").send(_source(), thread_key="1.1", to=CHANNEL, text="  ")
     assert slack.requests == []
 
 
@@ -348,7 +348,7 @@ def post_as(serve, monkeypatch):
         slack = serve([{"ok": True, "ts": "300.000300", "channel": CHANNEL}, {"ok": True, "user_id": "UBOT", "bot_id": "B1", "user": "flowpad"}])
         source = _source(agent_id="a-1")
         await source.save()
-        outcome = await driver_type("slack").send(source, thread_key="100.000100", to=CHANNEL, text="on it")
+        outcome = await DataDriver.loaded("slack").send(source, thread_key="100.000100", to=CHANNEL, text="on it")
         return json.loads(slack.bodies[0]), outcome
 
     return _run
@@ -393,4 +393,4 @@ async def test_slack_message_spec_replies_into_the_channel_thread():
     m = SimpleNamespace(segment_key=CHANNEL, thread_key="100.000100", external_id="100.000100", author_external_id="U1", name="", body="ship it?")
     r = SlackMessageSpec.reply_to(m, body="shipping")
     assert (r.to, r.thread_key, r.reply_to_external_id) == ([CHANNEL], "100.000100", "100.000100")
-    assert driver_type("slack").outbound_spec(_source()) is SlackMessageSpec
+    assert DataDriver.loaded("slack").outbound_spec(_source()) is SlackMessageSpec

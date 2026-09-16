@@ -84,13 +84,13 @@ class FolderChanges:
         """
         from flow_sdk.blocks import _cadence, current_workflow  # noqa: PLC0415
         from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
         source = await self._ensure_source()
         position = await ConsumerPosition.ensure_for(current_workflow.get(), str(source.id), baseline=None)
-        cadence = _cadence(poll_every, driver_type("folder"))
+        cadence = _cadence(poll_every, DataDriver.loaded("folder"))
         last_seen = position.watermark()
         in_flight_at_start = position.in_flight_key()
 

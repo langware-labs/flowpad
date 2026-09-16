@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -37,7 +37,7 @@ def test_a_choosable_field_has_a_driver_that_can_list_it(path: Path):
     if not choosable:
         return  # nine of the twelve ask for an address the user already knows
 
-    driver = driver_type(manifest.name)
+    driver = DataDriver.loaded(manifest.name)
     assert driver is not None, f"{manifest.name} declares choices but registers no driver"
     assert driver.offers_choices, (
         f"{manifest.name} marks {choosable} choosable, but its source class can list none "

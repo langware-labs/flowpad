@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.ingest.testing import position
 from flow_sdk.sources.testing import Subject, checks_for
 
@@ -53,7 +53,7 @@ async def test_hidden_entries_and_dependency_trees_are_never_listed(root):
 
 
 async def test_setup_is_verified_in_the_words_a_person_acts_on(tmp_path):
-    driver = driver_type("folder")
+    driver = DataDriver.loaded("folder")
     (tmp_path / "file").write_text("x")
     assert (await driver.verify(_row())).detail == "Set the folder to watch."
     assert (await driver.verify(_row(root=str(tmp_path / "nope")))).detail.endswith("does not exist yet.")
@@ -62,7 +62,7 @@ async def test_setup_is_verified_in_the_words_a_person_acts_on(tmp_path):
 
 
 async def test_a_same_size_edit_is_a_change_and_a_rename_is_not_a_removal(root):
-    driver, row, real = driver_type("folder"), _row(root=str(root)), os.path.realpath(root)
+    driver, row, real = DataDriver.loaded("folder"), _row(root=str(root)), os.path.realpath(root)
     first = await driver.traverse(row, _view({}))
 
     target = root / "a.txt"

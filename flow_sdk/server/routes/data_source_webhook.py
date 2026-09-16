@@ -32,9 +32,9 @@ router = APIRouter(prefix="/api/v1/data_source")
 
 
 async def _pushing_type(name: str, verb: str):
-    from flow_sdk.ingest.driver_registry import resolve_driver_type  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-    stype = await resolve_driver_type(name)
+    stype = await DataDriver.get(name)
     return stype if stype is not None and hasattr(stype.cls, verb) else None
 
 

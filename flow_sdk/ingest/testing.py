@@ -34,7 +34,7 @@ def make_data_source(provider: str = "rss", **fields):
 def position(segment_key: str = "", prior=None, window_start=None, **_ignored):
     """Where a segment's traversal resumes: a prior pass's cursor and manifest, or the dict an older
     build left on the cursor row (lifted by the source class)."""
-    from flow_sdk.ingest.driver_types import SegmentPass, SegmentPosition  # noqa: PLC0415
+    from flow_sdk.ingest.driver_runtime import SegmentPass, SegmentPosition  # noqa: PLC0415
 
     if isinstance(prior, SegmentPass):
         return SegmentPosition(segment_key=segment_key, cursor=prior.cursor, manifest=dict(prior.manifest), window_start=window_start)

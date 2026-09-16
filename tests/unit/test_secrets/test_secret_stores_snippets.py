@@ -12,9 +12,9 @@ import pytest
 
 from flow_sdk import connections
 from flow_sdk.builtin.credential_service import save_credential
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.cli.auth.secrets import read_secret
-from flow_sdk.ingest.driver_registry import resolve_driver_type
 from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.connection_spec import ConnectionResult, ConnectionSpec, ConnectionTestResult
 from flow_sdk.secrets import SecretStore
@@ -49,7 +49,7 @@ async def database(in_project):
 
 async def _session_free(provider: str, monkeypatch) -> None:
     """The page opens real source classes; their network session is the one thing not run."""
-    cls = (await resolve_driver_type(provider)).cls
+    cls = (await DataDriver.get(provider)).cls
 
     async def nothing(self):
         return None

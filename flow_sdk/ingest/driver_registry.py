@@ -1,4 +1,4 @@
-"""Loading data source assets — a folder becomes a registered ``DriverType``.
+"""Loading data driver assets — a folder becomes a registered ``DataDriver``.
 
 A data source is self-contained in its asset folder (``agentic-assets/data_driver/<name>/``): the
 manifest ``data_driver.json``, the ``source.py`` holding exactly one ``flow_sdk.sources.Source``
@@ -12,7 +12,7 @@ module attribute patches what the class reads.
 
 **Discovery.** The shipped folders are scanned from the wheel on the registry's first lookup — no
 database, deterministic, warm before the first poll. An authored folder registers on a name-scoped
-miss (``resolve_driver_type``), read off its ``DataDriver`` row; never from the indexer's
+miss (``DataDriver.get``), read off its ``DataDriver`` row; never from the indexer's
 per-record sync, which imports under the import lock.
 
 **Collisions.** A shipped name wins; an authored folder claiming it records a load error instead.
@@ -36,7 +36,7 @@ from flow_sdk.schema.data_spec.data_driver_spec import SOURCE_FILE, DataDriverSp
 from flow_sdk.sources.base import Source
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.ingest.driver_types import DriverType
+    from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.utils.kind_registry import KindRegistry
 
 logger = logging.getLogger(__name__)
@@ -101,10 +101,10 @@ def driver_class(module: ModuleType) -> type[Source]:
     return defined[0]
 
 
-def load_driver(folder: Path) -> "DriverType":
+def load_driver(folder: Path) -> "DataDriver":
     """A data source folder as a source type, or ``DriverLoadError`` naming what is wrong."""
 
-    from flow_sdk.ingest.driver_types import DriverType  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
     manifest = read_manifest(folder)
     if not (folder / SOURCE_FILE).is_file():
@@ -113,7 +113,7 @@ def load_driver(folder: Path) -> "DriverType":
     cls = driver_class(load_module(folder, digest=digest))
     if cls.provider != manifest.name:
         raise DriverLoadError(f"{cls.__name__}.provider is {cls.provider!r} but the manifest names {manifest.name!r}")
-    return DriverType(cls, manifest, folder=folder, content_hash=digest, shipped=folder.resolve().is_relative_to(SHIPPED_ROOT))
+    return DataDriver.for_class(cls, manifest, folder=folder, content_hash=digest, shipped=folder.resolve().is_relative_to(SHIPPED_ROOT))
 
 
 def asset_module(name: str, module: str = "source") -> ModuleType:
@@ -124,12 +124,12 @@ def asset_module(name: str, module: str = "source") -> ModuleType:
 def load_driver_value_kinds() -> None:
     """Load the shipped source folders, which registers the payload kinds their classes define. The
     registry builds once; every later call is a dict hit."""
-    from flow_sdk.ingest.driver_types import DRIVERS  # noqa: PLC0415
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
 
     DRIVERS.kinds()
 
 
-def register_shipped(registry: "KindRegistry[DriverType]") -> None:
+def register_shipped(registry: "KindRegistry[DataDriver]") -> None:
     """Every shipped folder, into ``registry``; a name already registered (a test's) is left alone.
     A folder that fails is logged and recorded, never raised: one broken source must not take the
     registry down with it."""
@@ -145,12 +145,12 @@ def register_shipped(registry: "KindRegistry[DriverType]") -> None:
             logger.error("[sources] shipped data source %s did not load: %s", name, exc)
 
 
-async def resolve_driver_type(name: str) -> "Optional[DriverType]":
-    """The source type for ``name``: registered, or an authored folder loaded now from its spec row.
-    An authored folder whose code changed since it loaded is loaded again."""
-    from flow_sdk.ingest.driver_types import DRIVERS, driver_type  # noqa: PLC0415
+async def resolve(name: str) -> "Optional[DataDriver]":
+    """``DataDriver.get``: registered, or an authored folder loaded now from its indexed row. An
+    authored folder whose code changed since it loaded is loaded again."""
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
 
-    known = driver_type(name)
+    known = DRIVERS.get_or_none(name or "")
     if known is not None and (known.folder is None or known.shipped):
         return known
     folder = await _authored_folder(name)
@@ -201,6 +201,6 @@ __all__ = [
     "load_driver",
     "read_manifest",
     "register_shipped",
-    "resolve_driver_type",
+    "resolve",
     "driver_class",
 ]

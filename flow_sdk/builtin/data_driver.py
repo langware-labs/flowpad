@@ -1,77 +1,42 @@
-"""DataDriver — the authored half of a data source.
+"""DataDriver — a data source driver: the code and manifest that know how to talk to a system.
 
-``DataSource`` is a configured instance: a credential binding, a schedule, a
-health verdict, cursors. All of that is machine-local and changes every minute.
-``DataDriver`` is what a source *is* — a folder asset carrying the manifest,
-and nothing that churns.
+``agentic-assets/data_driver/<name>/`` holds ``data_driver.json`` (the ``DataDriverSpec``) and
+``source.py`` (the one ``Source`` subclass). A ``DataSource`` is one configured instance of a driver,
+its own asset. The split is the one the codebase already makes twice: ``GraphWorkflow`` is the
+definition and ``GraphWorkflowRun`` the execution; a driver's file never churns, a source's row does.
 
-The split is the same one the codebase already makes twice: ``GraphWorkflow`` is
-the definition and ``GraphWorkflowRun`` the execution. Folding them together
-here would put ``health`` and ``next_poll_at`` in a file on disk, rewritten on
-every poll — a diff a minute in any git-tracked project.
+One class for the indexed row and the loaded driver. The row (a ``data_driver.json`` the indexer
+read) carries the manifest's fields; a LOADED driver also holds its class, manifest and folder —
+``DataDriver.loaded(name)`` / ``await DataDriver.get(name)`` return it, and the run-time verbs
+(``open``, ``traverse``, ``send``, ``verify``) come from ``DriverRuntime``::
 
-It also makes one spec serve many bindings: one "internal wiki" definition, two
-tenants, and a team that shares the definition while each person supplies their
-own credential.
-
-``DataDriverSpec`` is the type's ``asset_spec``: the shape of ``data_driver.json``,
-read and written by the disk serializer like any other folder asset's main doc
-(flat, because the spec declares no ``FreeSection``). Every rule about what a
-manifest may say is a validator here — a load ERROR, never a warning, because
-each silent version produced a real bug: a second owner for a fact the driver
-already declares, a picker offering a mode that cannot work.
+    driver = await DataDriver.get("rss")
+    source = driver.create_source({"feed_urls": [url]}, name="news")  # unsaved
+    await source.save()                                               # writes data_source.json
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import ClassVar, Optional
 
-from pydantic import computed_field
+from pydantic import PrivateAttr, computed_field
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
+from flow_sdk.ingest.driver_runtime import DRIVERS, DriverRuntime
 from flow_sdk.schema.data_spec.data_driver_spec import (
     CURRENT_SCHEMA,
     AuthSpec,
+    DataDriverSpec,
     FieldHints,
     Runtime,
     coerce_config,
 )
 from flow_sdk.schema.types import EntityType
-
-#: The manifest format this build reads. A manifest that says otherwise is a
-#: load error, not a best-effort parse.
+from flow_sdk.sources.base import Source
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class DataDriver(Entity):
+class DataDriver(DriverRuntime, Entity):
     """The ROW; its shape on disk is ``DataDriverSpec`` (``TypeInfo.asset_spec``). The folder beside
     the manifest holds the source's own code (``source.py``), loaded by the source registry."""
 
@@ -104,22 +69,75 @@ class DataDriver(Entity):
 
     _api_visible: ClassVar[bool] = True
 
+    # ── a LOADED driver (``for_class``); None / empty on a row read from the index ──
+    _cls: Optional[type[Source]] = PrivateAttr(default=None)
+    _manifest: Optional[DataDriverSpec] = PrivateAttr(default=None)
+    _folder: Optional[Path] = PrivateAttr(default=None)
+    _content_hash: str = PrivateAttr(default="")
+    _shipped: bool = PrivateAttr(default=False)
+
+    def __setattr__(self, name: str, value) -> None:
+        """A loaded driver's verb may be replaced on the one instance (a test double's ``send``, a
+        stubbed ``credentials_for``); everything else is a model field."""
+        if name not in type(self).model_fields and callable(getattr(type(self), name, None)) and not isinstance(getattr(type(self), name), property):
+            object.__setattr__(self, name, value)
+            return
+        super().__setattr__(name, value)
+
+    @classmethod
+    def for_class(
+        cls,
+        source_cls: type[Source],
+        manifest: Optional[DataDriverSpec] = None,
+        *,
+        kind: str = "",
+        folder: Optional[Path] = None,
+        content_hash: str = "",
+        shipped: bool = False,
+        **fields,
+    ) -> "DataDriver":
+        """A driver for ``source_cls``: the loader builds one per folder, a test one per double. Not
+        registered — ``DataDriver.register`` does that."""
+        header = manifest.model_dump(exclude={"name"}, exclude_unset=True) if manifest is not None else {}
+        header = {k: v for k, v in header.items() if k in cls.model_fields}
+        kind = kind or (manifest.kind if manifest is not None and manifest.kind else f"datasource.{source_cls.provider}")
+        driver = cls(**{**header, **fields, "name": source_cls.provider, "kind": kind})
+        driver._cls, driver._manifest, driver._folder = source_cls, manifest, folder
+        driver._content_hash, driver._shipped = content_hash, shipped
+        return driver
+
+    @classmethod
+    def loaded(cls, name: str) -> Optional["DataDriver"]:
+        """The registered driver for ``name``, or None. An authored folder not loaded yet is a miss
+        here; ``await DataDriver.get(name)`` loads it."""
+        return DRIVERS.get_or_none(name or "")
+
+    @classmethod
+    async def get(cls, name: str) -> Optional["DataDriver"]:
+        """The driver for ``name``: registered, or an authored folder loaded now from its indexed row
+        (again when its code changed since)."""
+        from flow_sdk.ingest.driver_registry import resolve  # noqa: PLC0415
+
+        return await resolve(name)
+
+    @classmethod
+    def register(cls, driver: "DataDriver") -> "DataDriver":
+        return DRIVERS.register(driver)
+
     @computed_field
     @property
     def sends(self) -> bool:
-        """Whether a source of this provider is a MessageSource — its class can push a reply back
-        to the channel (``DriverType.sends``).
+        """Whether a source of this driver is a MessageSource — its class can push a reply back to the
+        channel.
 
         Computed at serialization, not derived by the indexer like ``runtime``: the answer lives on
         the source CLASS, and importing source code from inside the indexer's per-record sync
-        deadlocks on the import lock. By the time a row reaches the wire the shipped sources are
-        loaded, so this is a dict lookup. A provider nothing has registered answers False — the same
+        deadlocks on the import lock. By the time a row reaches the wire the shipped drivers are
+        loaded, so this is a dict lookup. A driver nothing has registered answers False — the same
         answer the poller gives, which reports it as ``unknown_provider``.
         """
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
-
-        driver = driver_type(self.name or "")
-        return bool(driver is not None and driver.sends)
+        driver = self if self._cls is not None else DataDriver.loaded(self.name or "")
+        return bool(driver is not None and driver.can_send)
 
     @computed_field
     @property

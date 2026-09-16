@@ -11,7 +11,6 @@ import pytest
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
 from flow_sdk.schema.types import EntityType
 
@@ -20,7 +19,7 @@ pytestmark = pytest.mark.timeout(5)
 
 @pytest.mark.parametrize("provider", ["slack", "gmail", "rss", "agent"])
 def test_sends_mirrors_the_driver(provider):
-    driver = driver_type(provider)
+    driver = DataDriver.loaded(provider)
     assert driver is not None
     assert DataDriver(name=provider).sends is driver.sends
 

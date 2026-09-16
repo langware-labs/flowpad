@@ -14,9 +14,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 import pytest
 from pydantic import SecretStr
 
-from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, make_data_source, position
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, Credentials
@@ -39,7 +39,7 @@ def _credentials(credentials):
 
 @pytest.fixture
 def driver(monkeypatch):
-    gcs = driver_type("gcs")
+    gcs = DataDriver.loaded("gcs")
     monkeypatch.setattr(gcs, "credentials_for", _credentials(TOKEN))
     return gcs
 

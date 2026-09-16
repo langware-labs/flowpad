@@ -14,9 +14,10 @@ from urllib.parse import parse_qs
 import pytest
 from pydantic import SecretStr, ValidationError
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.source_item import TelegramMessageSpec
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import SendStatus, driver_type
+from flow_sdk.ingest.driver_runtime import SendStatus
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
@@ -115,22 +116,22 @@ async def test_conformance(check, bot):
 
 class TestTheSource:
     def test_it_sends_on_its_own_channel_and_its_token_is_the_identity_key(self, bot):
-        driver = driver_type("telegram")
+        driver = DataDriver.loaded("telegram")
         assert driver.sends is True and driver.identity_config_key == "bot_token"
         assert driver.channel_for(_row(bot)) == "telegram"
 
     async def test_the_queue_is_one_segment(self, bot):
-        assert [s.key for s in await driver_type("telegram").segments(_row(bot))] == ["updates"]
+        assert [s.key for s in await DataDriver.loaded("telegram").segments(_row(bot))] == ["updates"]
 
     async def test_the_token_never_rides_in_config(self, bot):
-        source = await driver_type("telegram").open(_row(bot))
+        source = await DataDriver.loaded("telegram").open(_row(bot))
         assert "bot_token" not in source.config and source.credentials.value("bot_token") == TOKEN
 
 
 class TestMapping:
     async def _only(self, bot, **message):
         bot.updates = [_update(900001, **message)]
-        (item,) = (await driver_type("telegram").traverse(_row(bot), _view())).items
+        (item,) = (await DataDriver.loaded("telegram").traverse(_row(bot), _view())).items
         return item
 
     async def test_the_key_carries_the_chat(self, bot):
@@ -151,28 +152,28 @@ class TestMapping:
 
     async def test_a_message_without_identity_is_not_an_item(self, bot):
         bot.updates = [{"update_id": 900001, "message": {"chat": {}, "message_id": None}}]
-        assert (await driver_type("telegram").traverse(_row(bot), _view())).items == []
+        assert (await DataDriver.loaded("telegram").traverse(_row(bot), _view())).items == []
 
 
 class TestTheCursorIsTheAck:
     async def test_the_committed_offset_is_what_is_sent_back(self, bot):
         bot.updates = [_update(900001)]
-        result = await driver_type("telegram").traverse(_row(bot), _view({"cursor": TelegramSource.resume_at(900001)}))
+        result = await DataDriver.loaded("telegram").traverse(_row(bot), _view({"cursor": TelegramSource.resume_at(900001)}))
         assert bot.requests[-1][1]["offset"] == "900001"
         assert result.cursor == TelegramSource.resume_at(900002)
         assert [i.external_id for i in result.items] == [f"{CHAT}/7"]
 
     async def test_a_legacy_offset_is_adopted(self, bot):
-        await driver_type("telegram").traverse(_row(bot), _view({"next_offset": 900001}))
+        await DataDriver.loaded("telegram").traverse(_row(bot), _view({"next_offset": 900001}))
         assert bot.requests[-1][1]["offset"] == "900001"
 
     async def test_a_first_run_sends_no_offset(self, bot):
-        result = await driver_type("telegram").traverse(_row(bot), _view())
+        result = await DataDriver.loaded("telegram").traverse(_row(bot), _view())
         assert "offset" not in bot.requests[-1][1] and result.unchanged is True and result.cursor is None
 
     async def test_non_message_updates_still_advance_the_offset(self, bot):
         bot.updates = [{"update_id": 900005, "edited_message": {**MESSAGE}}]
-        result = await driver_type("telegram").traverse(_row(bot), _view({"cursor": TelegramSource.resume_at(900001)}))
+        result = await DataDriver.loaded("telegram").traverse(_row(bot), _view({"cursor": TelegramSource.resume_at(900001)}))
         assert result.items == [] and result.cursor == TelegramSource.resume_at(900006)
 
 
@@ -188,35 +189,35 @@ class TestSend:
         return seen
 
     async def test_a_reply_maps_onto_send_message(self, bot, recorded):
-        out = await driver_type("telegram").send(_row(bot), thread_key=CHAT, to=CHAT, text="hi", in_reply_to=f"{CHAT}/7")
+        out = await DataDriver.loaded("telegram").send(_row(bot), thread_key=CHAT, to=CHAT, text="hi", in_reply_to=f"{CHAT}/7")
         assert bot.requests[-1][0] == "sendMessage"
         assert bot.bodies[-1] == {"chat_id": CHAT, "text": "hi", "reply_to_message_id": 7}
         assert (out.status, out.external_id) == (SendStatus.SENT, f"{CHAT}/8")
 
     async def test_the_sent_copy_is_recorded_because_nothing_will_echo_it(self, bot, recorded):
-        out = await driver_type("telegram").send(_row(bot), thread_key=CHAT, to=CHAT, text="hi")
+        out = await DataDriver.loaded("telegram").send(_row(bot), thread_key=CHAT, to=CHAT, text="hi")
         assert out.recorded is True
         assert [i.external_id for i in recorded] == [f"{CHAT}/8"]
         assert recorded[0].author_external_id == "777", "the copy's author is the bot, which is how it reads as ours"
 
     async def test_a_forum_thread_key_sets_the_topic(self, bot, recorded):
-        await driver_type("telegram").send(_row(bot), thread_key="-100123/42", to="", text="hi")
+        await DataDriver.loaded("telegram").send(_row(bot), thread_key="-100123/42", to="", text="hi")
         assert (bot.bodies[-1]["chat_id"], bot.bodies[-1]["message_thread_id"]) == ("-100123", 42)
 
     async def test_too_long_text_is_refused_never_truncated(self, bot):
         with pytest.raises(ValueError, match="4096"):
-            await driver_type("telegram").send(_row(bot), thread_key="1", to="1", text="x" * (MAX_TEXT_LEN + 1))
+            await DataDriver.loaded("telegram").send(_row(bot), thread_key="1", to="1", text="x" * (MAX_TEXT_LEN + 1))
         assert bot.requests == []
 
     async def test_no_chat_anywhere_is_refused(self, bot):
         with pytest.raises(ValueError, match="chat id"):
-            await driver_type("telegram").send(_row(bot), thread_key="", to="", text="hi")
+            await DataDriver.loaded("telegram").send(_row(bot), thread_key="", to="", text="hi")
 
 
 async def test_the_token_never_reaches_an_error_message():
     row = SimpleNamespace(id="ds-tg", provider="telegram", config={"bot_token": TOKEN, "base_url": "http://127.0.0.1:9"})
     with pytest.raises(Exception) as caught:
-        await driver_type("telegram").traverse(row, _view())
+        await DataDriver.loaded("telegram").traverse(row, _view())
     assert TOKEN not in str(caught.value)
 
 

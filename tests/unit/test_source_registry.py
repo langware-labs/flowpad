@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import DriverLoadError, content_hash, load_driver
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -76,22 +77,22 @@ def test_a_changed_folder_loads_as_a_new_module(tmp_path):
 
 
 async def test_an_authored_folder_cannot_take_a_shipped_name(tmp_path, monkeypatch):
+    from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.ingest import driver_registry
-    from flow_sdk.ingest.driver_types import driver_type
 
-    shipped = driver_type("rss")
+    shipped = DataDriver.loaded("rss")
     monkeypatch.setattr(driver_registry, "_authored_folder", lambda name: _async(_folder(tmp_path, name="rss")))
-    assert await driver_registry.resolve_driver_type("rss") is shipped
+    assert await DataDriver.get("rss") is shipped
 
 
 async def test_an_authored_folder_loads_on_first_use(tmp_path, monkeypatch):
     from flow_sdk.ingest import driver_registry
-    from flow_sdk.ingest.driver_types import DRIVERS
+    from flow_sdk.ingest.driver_runtime import DRIVERS
 
     folder = _folder(tmp_path, name="wiki-authored")
     monkeypatch.setattr(driver_registry, "_authored_folder", lambda name: _async(folder))
     try:
-        loaded = await driver_registry.resolve_driver_type("wiki-authored")
+        loaded = await DataDriver.get("wiki-authored")
         assert loaded is not None and loaded.provider == "wiki-authored"
         assert driver_registry.load_error_for("wiki-authored") == ""
     finally:

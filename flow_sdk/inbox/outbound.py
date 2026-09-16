@@ -165,9 +165,9 @@ async def _target_for_item(item, source=None) -> ReplyTarget:
 
 
 def _reply_target(source, item, channel: str) -> ReplyTarget:
-    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-    driver = driver_type(source.provider)
+    driver = DataDriver.loaded(source.provider)
     if driver is None or not driver.sends:
         raise ChannelSendUnavailable(f"the {channel} transport cannot send")
 

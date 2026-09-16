@@ -32,7 +32,7 @@ def provider(request):
     choices hook, and borrowing `rss` would both lie about which providers offer a picker and
     collide with the next test in this suite's shared database.
     """
-    from flow_sdk.ingest.driver_types import DRIVERS, DriverType
+    from flow_sdk.ingest.driver_runtime import DRIVERS
     from flow_sdk.sources.base import Source
 
     async def _make(hook=None, **config) -> str:
@@ -41,7 +41,7 @@ def provider(request):
         if hook is not None:
             attrs["choices_for"] = classmethod(lambda cls, row, field: hook(None, row, field))
         stub = type("_Stub", (Source,), attrs)
-        DRIVERS.register(DriverType(stub, kind="datasource.test.stub"))
+        DRIVERS.register(DataDriver.for_class(stub, kind="datasource.test.stub"))
         request.addfinalizer(lambda: DRIVERS.unregister(name))
         await DataDriver(name=name, title=name, config=config).save()
         return name

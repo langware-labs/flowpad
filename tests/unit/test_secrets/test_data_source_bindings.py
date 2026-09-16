@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, DataSourceAmbiguous, DataSourceNotFound
 from flow_sdk.connections import Connection
 from flow_sdk.ingest.credentials import resolve_credentials
-from flow_sdk.ingest.driver_types import DriverType, register_driver
 from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec, DataDriverSpec
 from flow_sdk.secrets import SecretStore
@@ -33,11 +33,11 @@ class _DriveSource(Source):
 
 @pytest.fixture
 def source_types():
-    register_driver(
-        DriverType(_KeyedSource, manifest=DataDriverSpec(name=_KeyedSource.provider, schema=CURRENT_SCHEMA, auth=KEYED))
+    DataDriver.register(
+        DataDriver.for_class(_KeyedSource, manifest=DataDriverSpec(name=_KeyedSource.provider, schema=CURRENT_SCHEMA, auth=KEYED))
     )
-    register_driver(
-        DriverType(
+    DataDriver.register(
+        DataDriver.for_class(
             _DriveSource,
             manifest=DataDriverSpec(
                 name=_DriveSource.provider,

@@ -142,7 +142,7 @@ async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
 
     from pydantic import SecretStr
 
-    from flow_sdk.ingest.driver_types import driver_type
+    from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.sources.credentials import AuthShape, Credentials
 
     await _gcs_spec()
@@ -152,7 +152,7 @@ async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
     async def _token(_row):
         return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
 
-    monkeypatch.setattr(driver_type("gcs"), "credentials_for", _token)
+    monkeypatch.setattr(DataDriver.loaded("gcs"), "credentials_for", _token)
 
     def storage(_path, _headers):
         body = {"items": [{"name": "acme-docs", "location": "US"}, {"name": "acme-logs", "location": "EU"}]}
@@ -183,8 +183,8 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
     no connection `verify()` says so, parks the row and fetches nothing; with
     one, the first `sync()` lands the drive in `cache_root` and the mirror.
     """
+    from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
-    from flow_sdk.ingest.driver_types import driver_type
     from flow_sdk.sources.credentials import Credentials
 
     drive = load_module(SHIPPED_ROOT / "gdrive" / "tests", "test_gdrive_source")
@@ -196,7 +196,7 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
     with local_http_server(drive._Drive(drive.SEEDED)) as base:
         env = {"CACHE_ROOT": str(cache), "BASE_URL": base, "DESTINATION": str(dest)}
 
-        monkeypatch.setattr(driver_type("gdrive"), "credentials_for", drive._credentials(Credentials()))
+        monkeypatch.setattr(DataDriver.loaded("gdrive"), "credentials_for", drive._credentials(Credentials()))
         ns = await _section("10.", dict(env))
         assert ns["verdict"]["ready"] is False
         assert "Google" in ns["verdict"]["detail"]
@@ -204,7 +204,7 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
         assert names(cache) == [], "nothing is fetched without a connection"
         await ns["src"].delete()
 
-        monkeypatch.setattr(driver_type("gdrive"), "credentials_for", drive._credentials(drive.TOKEN))
+        monkeypatch.setattr(DataDriver.loaded("gdrive"), "credentials_for", drive._credentials(drive.TOKEN))
         ns = await _section("10.", dict(env))
         assert ns["verdict"]["ready"] is True
         assert ns["src"].status == "active"

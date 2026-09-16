@@ -668,12 +668,12 @@ class Agent(Entity):
         rule ``EmailInbox.allowed`` enforces for a mailbox.
         """
         from flow_sdk.blocks import Inbox  # noqa: PLC0415
-        from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
         channel = str(channel or "").strip()
         if not channel:
             raise ValueError("a binding needs the channel's id")
-        driver = driver_type(provider)
+        driver = DataDriver.loaded(provider)
         if driver is None:
             raise ValueError(f"unknown provider {provider!r}")
         if not driver.sends:

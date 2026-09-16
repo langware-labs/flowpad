@@ -15,9 +15,9 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from pydantic import SecretStr
 
-from flow_sdk.ingest.health import SourceHealth, classify
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, make_data_source, position
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, Credentials
@@ -40,7 +40,7 @@ def _credentials(credentials):
 
 @pytest.fixture
 def driver(monkeypatch):
-    gdrive = driver_type("gdrive")
+    gdrive = DataDriver.loaded("gdrive")
     monkeypatch.setattr(gdrive, "credentials_for", _credentials(TOKEN))
     return gdrive
 
@@ -300,4 +300,4 @@ async def test_the_picker_answers_nothing_for_a_field_it_does_not_furnish(driver
 
 
 async def test_the_cache_is_never_stamped():
-    assert driver_type("gdrive").stamps_identity is False
+    assert DataDriver.loaded("gdrive").stamps_identity is False
