@@ -378,7 +378,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       // Warm switch = the panel is already in the Set (visibility flip only);
       // cold = first visit mounts InteractiveTerminal (attach + replay).
       toplog.log(
-        'process_load',
+        ['process_load', 'pty'],
         `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`,
       );
       if (prev.has(activeKey)) return prev;

@@ -25,6 +25,7 @@ from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
 
+from flow_sdk import toplog
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.assets.asset import Asset
@@ -7345,6 +7346,7 @@ class AgenticProcess(Entity):
         directly from the on-disk transcript, watermarked by entry count so each
         turn only reindexes its OWN new file-ops (not every file the session
         ever touched)."""
+        t0 = time.monotonic()
         tf = self._load_transcript()
         if tf is None:
             return []
@@ -7356,7 +7358,14 @@ class AgenticProcess(Entity):
         object.__setattr__(self, "_reindex_entry_watermark", len(entries))
         # entries[wm:] clamps to [] when wm > len (a truncated/rotated transcript)
         # — safer than re-scanning all, which would re-reindex the whole history.
-        return list(_iter_touched_paths(entries[wm:]))
+        touched = list(_iter_touched_paths(entries[wm:]))
+        # Whole-transcript parse on the event loop at every turn end — a known
+        # source of terminal-wide stalls.
+        toplog.log(
+            "pty", "turn_end_transcript_parse process=%s entries=%s watermark=%s touched=%s ms=%.0f",
+            self.id, len(entries), wm, len(touched), (time.monotonic() - t0) * 1000,
+        )
+        return touched
 
     @property
     def _last_broadcast_key(self) -> _BroadcastKey | None:

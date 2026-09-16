@@ -3045,7 +3045,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       ptyId: result.pty_id,
     });
     toplog.log(
-      'process_load',
+      ['process_load', 'pty'],
       `AgenticProcess.start attachPty took ${msSince(tAttach)}ms pty=${result.pty_id?.slice(0, 8)}`,
     );
     // Successful open clears any prior user-stop intent.
