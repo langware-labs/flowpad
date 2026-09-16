@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
 import { Input } from '@src/components/ui/input';
@@ -129,16 +129,18 @@ export function AgentPhoneField({
   onCommit: (value: { country_code: string; number: string } | undefined) => void;
 }) {
   const { t } = useLingui();
-  const [code, setCode] = useState(value?.country_code ?? '');
-  const [number, setNumber] = useState(value?.number ?? '');
-  useEffect(() => {
-    setCode(value?.country_code ?? '');
-    setNumber(value?.number ?? '');
-  }, [value?.country_code, value?.number]);
+  // Memoised so the pair is ONE value: the resync below is the same
+  // `setDraft(current)` idiom as the text fields, not a per-part effect.
+  const current = useMemo(
+    () => ({ country_code: value?.country_code ?? '', number: value?.number ?? '' }),
+    [value?.country_code, value?.number],
+  );
+  const [draft, setDraft] = useState(current);
+  useEffect(() => setDraft(current), [current]);
 
   const commit = () => {
-    const next = { country_code: code.trim(), number: number.trim() };
-    if (next.country_code === (value?.country_code ?? '') && next.number === (value?.number ?? '')) return;
+    const next = { country_code: draft.country_code.trim(), number: draft.number.trim() };
+    if (next.country_code === current.country_code && next.number === current.number) return;
     if (!next.country_code && !next.number) onCommit(undefined);
     else if (next.country_code && next.number) onCommit(next);
   };
@@ -149,19 +151,19 @@ export function AgentPhoneField({
       <div className="flex gap-2">
         <Input
           className="w-20"
-          value={code}
+          value={draft.country_code}
           placeholder="+972"
           inputMode="tel"
           aria-label={t`Country code`}
-          onChange={(e) => setCode(e.target.value)}
+          onChange={(e) => setDraft((d) => ({ ...d, country_code: e.target.value }))}
           onBlur={commit}
         />
         <Input
-          value={number}
+          value={draft.number}
           placeholder="055-770-9288"
           inputMode="tel"
           aria-label={t`Phone number`}
-          onChange={(e) => setNumber(e.target.value)}
+          onChange={(e) => setDraft((d) => ({ ...d, number: e.target.value }))}
           onBlur={commit}
         />
       </div>
