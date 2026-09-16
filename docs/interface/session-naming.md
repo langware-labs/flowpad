@@ -2,8 +2,8 @@
 
 `AgenticProcess.name` is the canonical display name. The backend naming service
 updates it and every linked process tab in one transaction, then publishes after
-commit. The browser submits explicit renames or raw terminal evidence; it does
-not decide provider provenance or save automatic labels.
+commit. The browser submits explicit renames only; it never reports terminal
+titles, decides provider provenance or saves automatic labels.
 
 ## Priority and state
 
@@ -28,19 +28,37 @@ entity saves cannot overwrite maintained naming fields. A missing process is
 never recreated by a naming observation. Loader-supplied tab labels are not
 worker naming evidence.
 
-## Provider hooks
+## When names move
 
-Provider adapters supply read-only title observations and filesystem watch paths.
-The shared runtime owns subscription, session binding, reconciliation and shutdown.
-Backend subscriptions operate independently of mounted terminals, and startup
-restores subscriptions for active processes. Native identity discovery uses the
-existing bounded driver transcript descriptor when a PTY has not yet reported
-its session id. The shared `report_event/first_prompt` handler supplies an
-immediate provisional title from the existing terminal input event.
-The first worker session report initializes naming even when its ID was
-preassigned. Claude observations watch the native projects directory until the
-transcript exists, then narrow to that file, so title arrival does not depend
-on a mounted browser or transcript view.
+Nothing watches the filesystem for names. A name moves on two kinds of edge:
+
+- **Transcript event.** The transcript streamer delivers a session's new entries
+  (`transcript_subscriber._route_to_ap` → `AgenticProcess.on_transcript_change`).
+  The debounced flush calls `naming.runtime.apply_transcript_names`, which asks
+  the provider adapter whether the batch can carry a title
+  (`transcript_may_rename`) and only then reads the native store once. It runs
+  before the flush's lifecycle gate, so a title written while a process is
+  starting or after its worker exited still applies.
+- **Lifecycle edge.** Open, resume, the first prompt
+  (`report_event/first_prompt`), session adoption and idle stamping call
+  `refresh_process_name` once: migration, native identity discovery,
+  first-prompt fallback and one adapter read. No subscription is left behind.
+
+A per-process file watcher used to do this. It bound processes with no transcript
+on disk to the whole projects dir, so every transcript write refreshed all of
+them and stalled unrelated requests (2026-09-16,
+`tests/long_tests/test_transcript_naming_does_not_stall_requests.py`).
+
+A reconcile that would rewrite nothing takes no write transaction: it is planned
+on plain reads, and only a plan with writes is re-planned under the lock.
+
+**Native identity.** Claude and Copilot are launched with a preassigned session
+id. Codex and OpenCode mint theirs after launch, so their first transcript event
+matches no process; the subscriber then resolves each running, id-less process of
+that vendor through its driver's transcript discovery (workdir + launch time) and
+adopts the id for the owner of that transcript. This is event-driven, never
+polled.
+
 `worker_history_changed` is published after a title or native identity changes;
 history hooks refetch on that semantic signal rather than on status traffic.
 Chat rows with a cached process also register a backend entity watch, so its live
@@ -54,8 +72,17 @@ retains the last usable name. Nothing writes titles back into native provider st
 | Copilot | `workspace.yaml` name and `user_named` | Native explicit/automatic marker |
 | OpenCode | Read-only SQLite `session.title` | Unknown: auto and manual use the same column |
 
-Claude terminal title evidence prefers durable metadata. Unclassified usable OSC
-text is protected. Other providers do not infer user intent from OSC decoration.
+| Worker | Transcript events | When a harness title applies |
+| --- | --- | --- |
+| Claude | Yes | The event whose entries carry `ai-title` / `custom-title` |
+| Codex | Yes | The next transcript event after `session_index.jsonl` changes |
+| Copilot | No | Lifecycle edges only |
+| OpenCode | No | Lifecycle edges only |
+
+Terminal (OSC) titles are not naming evidence. Names stored from the retired
+`claude.terminal` source as `protected_unknown` are released to `harness`, so a
+transcript title can replace them. A Claude `/clear` or fork gets a new session
+id that no process owns, so its titles do not rename the original process.
 
 Codex and OpenCode **cannot safely track subsequent native manual renames after
 an unknown title has been protected** without additional verified user-input
@@ -69,8 +96,11 @@ including isolated validation homes. A conflicting launch override is rejected.
 
 Focused tests cover reducer precedence, same-text pinning, native cursor replay,
 legacy conflicts, stale saves, atomic tab projection and post-commit publication.
-A real filesystem watcher test appends a Codex native title after the prompt and
-verifies the tab updates without another transcript event or mounted browser.
+Transcript-event tests deliver real transcript files through
+`transcript_streamer_registry.notify_change`: a Claude `ai-title` renames the
+process and tab, a Codex index title applies on the next event, and a
+terminal-typed Codex session is adopted from its first event. The long-tier
+test proves a writing session leaves unrelated request awaits unchanged.
 
 Real CLI and browser validation must report each worker in PTY and headless mode
 separately. Authentication failures, absent workers and unexecuted cells are

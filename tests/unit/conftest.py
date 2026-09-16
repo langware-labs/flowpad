@@ -236,6 +236,18 @@ def write_claude_transcript(proj: Path, sid: str = CLAUDE_SID, *, n_lines: int =
     return p
 
 
+async def settle_transcript_flushes() -> None:
+    """Await every pending transcript flush.
+
+    A delivered transcript routes to a freshly loaded process whose debounced
+    flush (``AgenticProcess._flush_transcript_change``) the test holds no
+    handle to; the task name is the only stable way to find it.
+    """
+    import asyncio
+
+    await asyncio.gather(*(t for t in asyncio.all_tasks() if t.get_name().startswith("ap-flush-")))
+
+
 @pytest.fixture
 def claude_projects(tmp_path, monkeypatch) -> Path:
     """A tmp ``claude_projects_dir`` (get_instance_settings patched); returns the project dir.

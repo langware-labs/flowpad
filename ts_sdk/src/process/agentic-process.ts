@@ -854,13 +854,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     await dataManager.callAction<{ name: string }, { id: string; name: string }>(info);
   }
 
-  /** Report an OSC frame; the backend driver validates it and reconciles names. */
-  async observeTitle(title: string, sessionId = this.session_id): Promise<void> {
-    const info = new ActionInfo('observe-title', AgenticProcess.type, this.id, 'POST');
-    info.bodyParameters = { title, session_id: sessionId ?? null };
-    await dataManager.callAction(info);
-  }
-
   /**
    * Headless transport (`pty_mode === false`): the chat streams over
    * flowDataStream and the process legitimately has NO shell/xterm — a null
