@@ -148,7 +148,7 @@ class Mcp(Entity):
         covers stdio, http and sse, and the test cannot drift from the launch.
 
         Never raises: a broken command is an answer (``ok: false``), not a 500 —
-        the rule ``DataDriver.verify_action`` states as "a driver must not 500
+        the rule ``DataSource.verify_action`` states as "a driver must not 500
         the button".
         """
         from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415

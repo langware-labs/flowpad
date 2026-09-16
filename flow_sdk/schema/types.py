@@ -239,13 +239,13 @@ class EntityType(StrEnum):
     # A content-panel tab — DB-only placement record keyed by a DockPointer
     # hash (docs/tab-management.md). Minted on demand (Tab.ensure_for).
     TAB = "tab"
-    # One record ingested from a cloud DataDriver (a feed entry, a chat
+    # One record ingested from a cloud DataSource (a feed entry, a chat
     # message). Generic and discriminated by `kind`, NOT one type per provider
     # — the inbox projection has to be one queryable table.
     SOURCE_ITEM = "source_item"
     # A configured remote system of record we sync from (flow_sdk/ingest).
-    DATA_DRIVER = "data_driver"
-    # One independently-checkpointed stream within a DataDriver — a feed URL, a
+    DATA_SOURCE = "data_source"
+    # One independently-checkpointed stream within a DataSource — a feed URL, a
     # channel. DB-only: written every poll, so it must never touch disk.
     DATA_SOURCE_CURSOR = "data_source_cursor"
     # How far one consumer (a workflow) has got through one source. See builtin/consumer_position.py.

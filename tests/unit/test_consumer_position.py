@@ -12,7 +12,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -23,13 +23,13 @@ def _name() -> str:
     return f"w-{mint_uuid()}"
 
 
-async def _source() -> DataDriver:
-    src = DataDriver(name="feed", provider="rss", config={"feeds": ["http://x/feed"]})
+async def _source() -> DataSource:
+    src = DataSource(name="feed", provider="rss", config={"feeds": ["http://x/feed"]})
     await src.save()
     return src
 
 
-async def _item(src: DataDriver, n: int, *, created: datetime | None = None) -> SourceItem:
+async def _item(src: DataSource, n: int, *, created: datetime | None = None) -> SourceItem:
     item = SourceItem(
         data_source_id=str(src.id), segment_key="s", external_id=f"e{n}",
         provider="rss", name=f"item {n}", body=f"body {n}",

@@ -5,7 +5,7 @@ import { CheckCircle2, LifeBuoy, RefreshCw, RotateCcw } from 'lucide-react';
 import {
   Agent,
   Conversation,
-  DataDriver,
+  DataSource,
   fetchConversations,
   FlowMessage,
   MessageThread,
@@ -274,7 +274,7 @@ export function ConversationView({
   const channel = conversation?.channel || undefined;
 
   // Attention-driven polling: while this source-backed conversation is the
-  // SELECTED dock, keep its DataDriver due (request_poll on an interval) so
+  // SELECTED dock, keep its DataSource due (request_poll on an interval) so
   // new messages land fast; deselect and the requests stop on their own.
   const attentionSourceId = agentId
     ? agentScope?.source_id ?? undefined
@@ -284,7 +284,7 @@ export function ConversationView({
   // The ingest sync boundary is too early: inbox projection runs as a detached
   // subscriber and writes the FlowMessage + conversation pointer afterward.
   // Refresh on the existing post-projection event instead, scoped to this
-  // Agent's DataDriver so another active source cannot disturb this thread.
+  // Agent's DataSource so another active source cannot disturb this thread.
   useOnTag(
     'inbox.*.message.projected',
     () => {

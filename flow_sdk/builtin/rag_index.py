@@ -15,10 +15,10 @@ entity is what carries a directory's transportable identity.
 **What is NOT on this row: anything that churns.** No per-file state, no per-root hash, no chunk
 inventory. Those live in the store under the instance's records-data directory, because a row
 rewritten on every document edit is a diff a minute in whatever watches entities — the same
-reasoning that split ``DataDriverSpec`` from ``DataDriver``. What this row holds is the
+reasoning that split ``DataDriverSpec`` from ``DataSource``. What this row holds is the
 configuration and one verdict.
 
-**Status and health are separate axes**, as on ``DataDriver``: status answers "should this be
+**Status and health are separate axes**, as on ``DataSource``: status answers "should this be
 running", ``index_refusal`` answers "can it, right now, and if not why". A boolean could say
 neither well.
 """

@@ -13,7 +13,7 @@ import json
 import pytest
 from pydantic import SecretStr
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.driver_types import driver_type
@@ -40,8 +40,8 @@ def sign(body: bytes, secret: str = APP_SECRET) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
-def _source(**config) -> DataDriver:
-    return DataDriver(provider="whatsapp", name="WhatsApp test", config={"phone_number_id": PHONE_ID, "access_token": "EAAG-test", "app_secret": APP_SECRET, **config})
+def _source(**config) -> DataSource:
+    return DataSource(provider="whatsapp", name="WhatsApp test", config={"phone_number_id": PHONE_ID, "access_token": "EAAG-test", "app_secret": APP_SECRET, **config})
 
 
 def _binding() -> SourceBinding:
@@ -240,7 +240,7 @@ class _Request:
         return self._raw
 
 
-async def _saved(**config) -> DataDriver:
+async def _saved(**config) -> DataSource:
     source = _source(**config)
     await source.save()
     return source

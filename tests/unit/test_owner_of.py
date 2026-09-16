@@ -15,7 +15,7 @@ import uuid
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.user import User
 from flow_sdk.fs_store.type_id import TypeId
@@ -39,13 +39,13 @@ async def _local_user() -> User:
 
 async def test_explicit_owner_wins_over_a_legacy_agent_id():
     tid = _agent_tid()
-    source = DataDriver(name="s", provider="cloud_email", owner=tid, config={"agent_id": str(uuid.uuid4())})
+    source = DataSource(name="s", provider="cloud_email", owner=tid, config={"agent_id": str(uuid.uuid4())})
     assert await owner_of(source) == tid
 
 
 async def test_a_legacy_source_with_only_config_agent_id_is_that_agents():
     agent_id = str(uuid.uuid4())
-    source = DataDriver(name="s", provider="cloud_email", config={"agent_id": agent_id})
+    source = DataSource(name="s", provider="cloud_email", config={"agent_id": agent_id})
     owner = await owner_of(source)
     assert owner == TypeId(type=EntityType.AGENT.value, id=agent_id)
     assert is_agent_owner(owner)
@@ -53,7 +53,7 @@ async def test_a_legacy_source_with_only_config_agent_id_is_that_agents():
 
 async def test_a_bare_row_is_the_local_users():
     local = await _local_user()
-    source = DataDriver(name="s", provider="rss")
+    source = DataSource(name="s", provider="rss")
     owner = await owner_of(source)
     assert owner == await default_owner()
     assert owner == TypeId(type=EntityType.USER.value, id=str(local.id))
@@ -63,11 +63,11 @@ async def test_a_bare_row_is_the_local_users():
 async def test_owner_serialises_as_the_plain_typeid_string_and_is_queryable():
     """Risk 1 from the plan: the field must be a filterable string on the wire."""
     tid = _agent_tid()
-    source = DataDriver(name="owned", provider="rss", owner=tid)
+    source = DataSource(name="owned", provider="rss", owner=tid)
     assert source.model_dump(mode="json")["owner"] == str(tid)
 
     await source.save(notify=False)
-    found = await DataDriver.get_one({"owner": str(tid)})
+    found = await DataSource.get_one({"owner": str(tid)})
     assert found is not None and found.id == source.id
     assert found.owner == tid
 
@@ -131,36 +131,36 @@ async def test_a_pre_owner_thread_is_adopted_by_the_first_owner_not_forked():
 async def test_find_for_account_narrows_by_owner_and_is_pre_owner_without_it():
     a, b = _agent_tid(), _agent_tid()
     channel = f"C{uuid.uuid4().hex[:8]}"
-    sa = DataDriver(name="a", provider="slack", config={"channels": [channel]}, owner=a)
-    sb = DataDriver(name="b", provider="slack", config={"channels": [channel]}, owner=b)
+    sa = DataSource(name="a", provider="slack", config={"channels": [channel]}, owner=a)
+    sb = DataSource(name="b", provider="slack", config={"channels": [channel]}, owner=b)
     await sa.save(notify=False)
     await sb.save(notify=False)
 
-    assert (await DataDriver.find_for_account("slack", "channels", channel, owner=a)).id == sa.id
-    assert (await DataDriver.find_for_account("slack", "channels", channel, owner=b)).id == sb.id
+    assert (await DataSource.find_for_account("slack", "channels", channel, owner=a)).id == sa.id
+    assert (await DataSource.find_for_account("slack", "channels", channel, owner=b)).id == sb.id
     # Omitted: the pre-owner lookup returns the first match, as it always has.
-    assert (await DataDriver.find_for_account("slack", "channels", channel)).id in {sa.id, sb.id}
+    assert (await DataSource.find_for_account("slack", "channels", channel)).id in {sa.id, sb.id}
 
 
 async def test_find_owned_includes_a_legacy_agent_row_and_filters_by_channel():
     agent_id = str(uuid.uuid4())
     tid = TypeId(type=EntityType.AGENT.value, id=agent_id)
-    owned = DataDriver(name="o", provider="rss", owner=tid, channel="rss")
-    legacy = DataDriver(name="l", provider="cloud_email", config={"agent_id": agent_id}, channel="agentmail")
-    stranger = DataDriver(name="s", provider="rss", owner=_agent_tid(), channel="rss")
+    owned = DataSource(name="o", provider="rss", owner=tid, channel="rss")
+    legacy = DataSource(name="l", provider="cloud_email", config={"agent_id": agent_id}, channel="agentmail")
+    stranger = DataSource(name="s", provider="rss", owner=_agent_tid(), channel="rss")
     for row in (owned, legacy, stranger):
         await row.save(notify=False)
     # The save choke-point must NOT overwrite a legacy row's implied owner with the local user.
-    assert (await DataDriver.get_one({"id": legacy.id})).owner == tid
+    assert (await DataSource.get_one({"id": legacy.id})).owner == tid
 
-    ids = {r.id for r in await DataDriver.find_owned(tid)}
+    ids = {r.id for r in await DataSource.find_owned(tid)}
     assert ids == {owned.id, legacy.id}
-    assert {r.id for r in await DataDriver.find_owned(tid, channel="agentmail")} == {legacy.id}
+    assert {r.id for r in await DataSource.find_owned(tid, channel="agentmail")} == {legacy.id}
 
 
 async def test_save_stamps_the_local_user_when_nothing_set_an_owner():
     local = await _local_user()
-    source = DataDriver(name="mine", provider="rss")
+    source = DataSource(name="mine", provider="rss")
     assert source.owner is None
     await source.save(notify=False)
     assert source.owner == TypeId(type=EntityType.USER.value, id=str(local.id))

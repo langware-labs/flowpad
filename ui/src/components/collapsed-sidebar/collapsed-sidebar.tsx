@@ -18,7 +18,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { AgenticProcess, DataDriver, PageId, RagIndex, dataContext } from '@sdk';
+import { AgenticProcess, DataSource, PageId, RagIndex, dataContext } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TAB_LINE_HEIGHT_CLASS } from '@src/components/tabs/TabStrip';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
@@ -104,7 +104,7 @@ export function CollapsedSidebar() {
     // item follows, so a TypeInfo icon change reaches the rail too.
     'data-sources': {
       title: t`Data sources`,
-      icon: iconForType(DataDriver.type),
+      icon: iconForType(DataSource.type),
       viewType: ViewType.DATA_SOURCES,
     },
     // Glyph from the type registry, never a literal — same rule the data-sources item follows.

@@ -193,7 +193,7 @@ def _thread_title(item) -> str:
 
 
 def channel_of(source) -> str:
-    """The user-facing channel for a DataDriver.
+    """The user-facing channel for a DataSource.
 
     Falls back to ``provider`` for rows written before ``channel`` existed —
     wrong-looking for the agent transport (whose provider is literally
@@ -237,14 +237,14 @@ async def project_source_item(
     exactly once without a lane having to know who won.
     """
     from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
     if not is_message(item):
         return None  # a feed article is not inbox material — see MESSAGE_KIND_ROOT
     if source is None:
-        source = await DataDriver.get_one({"id": item.data_source_id})
+        source = await DataSource.get_one({"id": item.data_source_id})
     if source is None:
-        logger.debug("[inbox] item %s has no DataDriver — skipped", item.id)
+        logger.debug("[inbox] item %s has no DataSource — skipped", item.id)
         return None
 
     channel = channel_of(source)
@@ -715,12 +715,12 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
     ``source_item_id``: "has this been projected?" is one bulk IN query over
     the indexed reference column, not a join or a per-item probe.
     """
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-    source = await DataDriver.get_one({"id": data_source_id})
+    source = await DataSource.get_one({"id": data_source_id})
     if source is None:
         return 0
     # The kind gate belongs in the QUERY, not after it: a source that mixes

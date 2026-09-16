@@ -52,7 +52,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (!created.length) return;
   const api = await apiContext();
-  for (const id of created) await api.delete(`/api/v1/graph/data_driver/${id}`);
+  for (const id of created) await api.delete(`/api/v1/graph/data_source/${id}`);
   await api.dispose();
 });
 
@@ -101,7 +101,7 @@ async function createSource(
   // Remember the row so afterAll can remove it — matched by the name we just typed,
   // which is unique per run.
   const api = await apiContext();
-  const rows = ((await (await api.get('/api/v1/graph/data_driver')).json()).data ?? []) as {
+  const rows = ((await (await api.get('/api/v1/graph/data_source')).json()).data ?? []) as {
     id: string;
     name: string;
   }[];

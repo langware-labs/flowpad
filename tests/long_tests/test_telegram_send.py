@@ -20,7 +20,7 @@ import uuid
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 from tests.test_settings import test_service_config
@@ -47,7 +47,7 @@ async def test_telegram_send_records_its_own_copy():
         print(f"[{time.perf_counter() - t0:6.2f}s] {label}", flush=True)
 
     marker = f"tg-send-{uuid.uuid4().hex[:8]}"
-    source = DataDriver(
+    source = DataSource(
         name="Telegram send test",
         provider="telegram",
         config={"bot_token": TOKEN},

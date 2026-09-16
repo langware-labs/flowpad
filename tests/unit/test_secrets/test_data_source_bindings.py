@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver, DataDriverAmbiguous, DataDriverNotFound
+from flow_sdk.builtin.data_source import DataSource, DataSourceAmbiguous, DataSourceNotFound
 from flow_sdk.connections import Connection
 from flow_sdk.ingest.credentials import resolve_credentials
 from flow_sdk.ingest.driver_types import DriverType, register_driver
@@ -48,7 +48,7 @@ def source_types():
     )
 
 
-async def _saved(provider: str, name: str, **fields) -> DataDriver:
+async def _saved(provider: str, name: str, **fields) -> DataSource:
     row = make_data_source(provider, name=name, **fields)
     await row.save()
     return row
@@ -63,11 +63,11 @@ async def test_get_answers_one_instance_by_name(home, source_types):
     await _saved(_DriveSource.provider, "shared")
     await _saved(_DriveSource.provider, "shared")
 
-    assert (await DataDriver.get("work drive")).id == work.id
-    with pytest.raises(DataDriverNotFound):
-        await DataDriver.get("no such drive")
-    with pytest.raises(DataDriverAmbiguous) as ambiguous:
-        await DataDriver.get("shared")
+    assert (await DataSource.get("work drive")).id == work.id
+    with pytest.raises(DataSourceNotFound):
+        await DataSource.get("no such drive")
+    with pytest.raises(DataSourceAmbiguous) as ambiguous:
+        await DataSource.get("shared")
     assert len(ambiguous.value.candidates) == 2
 
 
@@ -90,15 +90,15 @@ async def test_two_instances_of_one_type_keep_their_own_config_and_bindings(home
     await work.set_secret_store(store)
     await work.set_connection(Connection(provider="google", display_name="Google", connected=True))
 
-    again = await DataDriver.get("work drive")
-    other = await DataDriver.get("home drive")
+    again = await DataSource.get("work drive")
+    other = await DataSource.get("home drive")
     assert (again.secret_store, again.connection, again.config["folder"]) == (store.ref, "google", "A")
     assert (other.secret_store, other.connection, other.config["folder"]) == (None, "", "B")
 
     with pytest.raises(ValueError, match="google"):
         await other.set_connection("slack")
     await again.set_secret_store(None)
-    assert (await DataDriver.get("work drive")).secret_store is None
+    assert (await DataSource.get("work drive")).secret_store is None
 
 
 async def test_env_names_load_from_the_bound_store_then_the_default_store_then_the_environment(

@@ -7,7 +7,7 @@ version: 68
 Every fence on this page runs in `tests/unit/test_secrets/test_secret_stores_snippets.py`; the
 verbs underneath are pinned in `tests/unit/test_secrets/` and `tests/unit/test_connection_access.py`.
 
-A **`SecretStore`** is a place secret values live, the way a `DataDriver` is a
+A **`SecretStore`** is a place secret values live, the way a `DataSource` is a
 place records come from. Like a data source, a store is **a type plus its
 config**. It exposes **`load`** and **`save`**, and it can prove it holds what a
 consumer needs (**`validate_keys`**).
@@ -48,7 +48,7 @@ connection's token as one of its secrets.
 | `store.ref`                                    | the store as a value (`{type, config}`) — what a binding saves           |
 | `await CredentialSpec.get(name, project=None)` | the credential with that name                                            |
 | `await spec.secret_store(environment)`         | the store `credential.json` names for that environment                   |
-| `await DataDriver.get(name)`                   | the one data source instance with that name                              |
+| `await DataSource.get(name)`                   | the one data source instance with that name                              |
 | `consumer.credentials.names()`                 | the names a data source or credential needs                              |
 | `await source.set_secret_store(store)`         | binds the store the source loads from, and saves it                      |
 | `await Connection.get(provider)`               | the held connection; raises `NotConnected` when there is none            |
@@ -171,9 +171,9 @@ except CredentialNotFound:        # neither the project nor the user scope decla
 
 With no current project (a script outside any project folder), only step 3 runs.
 
-`DataDriver.get(name)` is simpler: a data source is not project-scoped, so the
-name is looked up across the instance — `DataDriverNotFound` when no instance has
-it, `DataDriverAmbiguous` (with `candidates`) when several do.
+`DataSource.get(name)` is simpler: a data source is not project-scoped, so the
+name is looked up across the instance — `DataSourceNotFound` when no instance has
+it, `DataSourceAmbiguous` (with `candidates`) when several do.
 
 ### Where a credential's store points
 
@@ -253,10 +253,10 @@ A data source names the variables it needs in its manifest:
 ```
 
 ```python
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.secrets import SecretStore
 
-source = await DataDriver.get("work gmail")  # the one instance with that name
+source = await DataSource.get("work gmail")  # the one instance with that name
 names = source.credentials.names()           # ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"] — from the manifest's auth
 
 store = await SecretStore.get()       # default: the current project's .env.local
@@ -290,11 +290,11 @@ bindings. Two Gmail inboxes — or two Drives with different folders — are two
 and each keeps its own:
 
 ```python
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.secrets import SecretStore
 
-work = await DataDriver.get("work gmail")
-home = await DataDriver.get("home gmail")  # same source type, its own config
+work = await DataSource.get("work gmail")
+home = await DataSource.get("home gmail")  # same source type, its own config
 await work.set_secret_store(await SecretStore.get("vault", {"prefix": "gmail.work."}))
 await home.set_secret_store(await SecretStore.get("vault", {"prefix": "gmail.home."}))
 ```
@@ -309,10 +309,10 @@ variable names:
 ```
 
 ```python
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.connections import Connection, MissingScopes, NotConnected
 
-source = await DataDriver.get("work drive")
+source = await DataSource.get("work drive")
 providers = source.connections.names()  # ["google"] — from the manifest's auth.connector
 
 try:
@@ -339,11 +339,11 @@ An external store is a consumer of both kinds — it acts as an account and hold
 named values. `gcp_secret_manager` ships as one; another registers with `register_store`:
 
 ```python
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.connections import Connection
 from flow_sdk.secrets import SecretStore
 
-agentmail = await DataDriver.get("agent inbox")
+agentmail = await DataSource.get("agent inbox")
 remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "agentmail-production-"})
 
 google = await Connection.get("google")  # remote.connections.names() → ["google"]
@@ -362,7 +362,7 @@ await agentmail.set_secret_store(remote)  # the agentmail source now loads its k
 | `SecretStore.get("vault", …)`                         | `credential_store._load_vault`, `cli.auth.secrets.write_secret`, `get_secrets`                           |
 | `CredentialSpec.get(name, project=None)`              | `credential_resolver.credentials_in_scope(project)` filtered by hand                                     |
 | `spec.secret_store(environment)`                      | `credential_store.location_name` + `CredentialSpec.store_for(env)` spread over read, write and forget    |
-| `DataDriver.get(name)`                                | `DataDriver.get_all({"name": ...})`                                                                      |
+| `DataSource.get(name)`                                | `DataSource.get_all({"name": ...})`                                                                      |
 | `source.set_secret_store` / `set_connection` + `open` | `resolve_credentials` reading `os.environ`, a named vault entry and `token_for(auth.connector)` directly |
 | `Connection.get(provider)`                            | `flow_sdk.connections.require(provider)` (kept)                                                          |
 | `connection.validate_scopes(scopes)`                  | comparing `Connection.scopes` by hand; a missing scope failed at the provider call                       |

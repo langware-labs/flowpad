@@ -84,7 +84,7 @@ def _rows(data) -> list:
 
 
 def _source_action(source_id: str, action: str, payload: Optional[dict] = None, *, timeout: int = 120) -> Any:
-    return _post(f"data_driver/{source_id}/{action}", payload, not_found=f"Data source not found: {source_id}", timeout=timeout)
+    return _post(f"data_source/{source_id}/{action}", payload, not_found=f"Data source not found: {source_id}", timeout=timeout)
 
 
 @source_app.command("types", help="The data source assets this instance can run, and what each can do.")
@@ -97,7 +97,7 @@ def types() -> None:
 
 @source_app.command("list", help="Configured data sources.")
 def list_sources() -> None:
-    rows = _rows(_get("data_driver"))
+    rows = _rows(_get("data_source"))
     ok({"sources": [
         {k: r.get(k) for k in ("id", "name", "provider", "status", "health", "channel", "error_detail", "last_synced_at")} for r in rows if isinstance(r, dict)
     ]})
@@ -119,7 +119,7 @@ def create(
         payload["reflect"] = reflect
     if window_days:
         payload["window_days"] = window_days
-    row = _post("data_driver", payload) or {}
+    row = _post("data_source", payload) or {}
     ok({"source": {k: row.get(k) for k in ("id", "name", "provider", "status", "health", "channel", "setup_detail")}})
 
 
@@ -130,7 +130,7 @@ def verify(source_id: str) -> None:
 
 @source_app.command("choices", help="What the credential can see for one config field.")
 def choices(provider: str, field: str, config: ConfigOpt = None) -> None:
-    ok({"choices": _post("data_driver/choices", {"provider": provider, "field": field, "config": _config(config)})})
+    ok({"choices": _post("data_source/choices", {"provider": provider, "field": field, "config": _config(config)})})
 
 
 @source_app.command("sync", help="Run one sync cycle now and report what it wrote.")
@@ -171,7 +171,7 @@ def disable(source_id: str) -> None:
 
 @source_app.command("delete", help="Delete the data source row.")
 def delete(source_id: str) -> None:
-    graph_json("DELETE", _url(f"data_driver/{source_id}"), timeout=60, on_error=_on_error(f"Data source not found: {source_id}"))
+    graph_json("DELETE", _url(f"data_source/{source_id}"), timeout=60, on_error=_on_error(f"Data source not found: {source_id}"))
     ok({"deleted": source_id})
 
 

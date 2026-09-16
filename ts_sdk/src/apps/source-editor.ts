@@ -659,7 +659,7 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
   const wanted = appOption('source');
   await dataManager.watchQuery(
     new QueryRequest({
-      type: 'data_driver',
+      type: 'data_source',
       query: { match: { provider: (spec as any).name } },
       scope: [],
       name: `spec-editor-sources-${spec.id}`,

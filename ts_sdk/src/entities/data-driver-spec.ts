@@ -2,7 +2,7 @@
  * DataDriverSpec — the AUTHORED half of a data source
  * (flow_sdk/builtin/data_driver_spec.py).
  *
- * `DataDriver` is a configured instance: credentials, schedule, health,
+ * `DataSource` is a configured instance: credentials, schedule, health,
  * cursors. This is what a source *is* — a folder asset carrying the manifest.
  * The split is the same one `GraphWorkflow` / `GraphWorkflowRun` already makes.
  *

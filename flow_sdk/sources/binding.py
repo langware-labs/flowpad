@@ -1,7 +1,7 @@
 """``SourceBinding`` — everything a source class needs to become one configured source.
 
 The single constructor argument, on every altitude: the runtime builds it from a
-``DataDriver`` row, a host receives it in its ``open`` frame, a test builds it by hand.
+``DataSource`` row, a host receives it in its ``open`` frame, a test builds it by hand.
 ``config`` is the row's provider-opaque configuration, already coerced by the manifest's
 field types and never carrying a secret; secrets arrive in ``credentials``.
 """

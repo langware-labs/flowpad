@@ -4,16 +4,16 @@
  * ("its streams and every record it ingested") exists once.
  */
 import { useCallback, useState } from 'react';
-import type { DataDriver } from '@sdk';
+import type { DataSource } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 
-export function useSourceDelete(onDeleted?: (source: DataDriver) => void) {
+export function useSourceDelete(onDeleted?: (source: DataSource) => void) {
   const { t } = useLingui();
-  const [deleting, setDeleting] = useState<DataDriver | null>(null);
+  const [deleting, setDeleting] = useState<DataSource | null>(null);
   const remove = useCallback(
-    async (source: DataDriver) => {
+    async (source: DataSource) => {
       try {
         // `delete()`, not `destroy()` — the TS entity has no destroy, and the
         // backend cascade hangs off `delete_by_id`, which is what this reaches.

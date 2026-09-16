@@ -202,11 +202,9 @@ EXPECTED = {
     # additive member, no existing value changed.
     "HELPDESK": "helpdesk",
     # Cloud data-source ingestion (flow_sdk/ingest): the configured remote
-    # source, its per-stream cursor, and the records it produces. The ONE
-    # deliberate value change in this table: ``data_source`` -> ``data_driver``,
-    # made legal by migration_2026_09_data_driver_rename in the 0.2.169 recipe,
-    # which rewrites every stored copy. See RETIRED_VALUES below.
-    "DATA_DRIVER": "data_driver",
+    # source, its per-stream cursor, and the records it produces — additive
+    # members, no existing value changed.
+    "DATA_SOURCE": "data_source",
     "DATA_SOURCE_CURSOR": "data_source_cursor",
     "CREDENTIAL_SPEC": "credential_spec",
     "DATA_SOURCE_SPEC": "data_source_spec",
@@ -243,9 +241,7 @@ def test_back_compat_aliases_are_the_same_class():
 
 #: Values an EntityType once had and may never be given again. A persisted row, shadow folder or
 #: TypeId still carrying one on an unmigrated install must read as unknown — never as a different type.
-RETIRED_VALUES = {
-    "data_source": "renamed to data_driver (migration_2026_09_data_driver_rename, 0.2.169)",
-}
+RETIRED_VALUES: dict[str, str] = {}
 
 
 def test_a_retired_value_is_never_reused():

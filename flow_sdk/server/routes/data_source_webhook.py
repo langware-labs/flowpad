@@ -39,9 +39,9 @@ async def _pushing_type(name: str, verb: str):
 
 
 async def _rows(name: str) -> list:
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
-    return list(await DataDriver.get_all({"provider": name}) or [])
+    return list(await DataSource.get_all({"provider": name}) or [])
 
 
 @router.get("/webhook/{name}")
@@ -71,10 +71,10 @@ async def webhook_delivery(name: str, request: Request):
         return ApiFailResponse(message="Expected a JSON object body")
     if not isinstance(payload, dict):
         return ApiFailResponse(message="Expected a JSON object body")
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
     account = str(stype.cls.webhook_account(payload) or "")
-    row = await DataDriver.find_for_account(name, stype.identity_config_key, account) if account else None
+    row = await DataSource.find_for_account(name, stype.identity_config_key, account) if account else None
     if row is None:
         # No amount of retrying makes a source exist; the log is where a person finds out.
         logger.warning("[webhook] %s delivery for %r matches no source on this instance", name, account)

@@ -51,7 +51,7 @@ def emit_item_tag(item: "SourceItemSpec", entity_id: str, status: str) -> None:
                 "occurred_at": item.occurred_at,
                 "entity_id": entity_id,
             },
-            ctx={"scope": [target_of("data_driver", item.data_source_id)]},
+            ctx={"scope": [target_of("data_source", item.data_source_id)]},
         )
     except Exception:
         logger.debug("ingest.on_tag: item emission failed", exc_info=True)
@@ -90,7 +90,7 @@ def emit_sync_tag(
 
         emit_tag(
             f"ingest.{provider}.sync.{verb}",
-            target_of("data_driver", source_id),
+            target_of("data_source", source_id),
             data,
         )
     except Exception:

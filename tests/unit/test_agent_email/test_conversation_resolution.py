@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.inbox.agent_runner import _conversation_id_for
@@ -22,8 +22,8 @@ from flow_sdk.inbox.projection import channel_of, owner_of, thread_key_for
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
-async def _source() -> DataDriver:
-    source = DataDriver(
+async def _source() -> DataSource:
+    source = DataSource(
         name="mailbox",
         provider="cloud_email",
         channel="email",
@@ -95,7 +95,7 @@ async def test_two_agents_resolve_to_different_conversations(mail_db):
     differ, but that two agents end up in two conversations — and therefore two
     processes, with two contexts."""
     source_a = await _source()
-    source_b = DataDriver(
+    source_b = DataSource(
         name="mailbox b",
         provider="cloud_email",
         channel="email",

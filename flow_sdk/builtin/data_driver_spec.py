@@ -1,6 +1,6 @@
 """DataDriverSpec — the authored half of a data source.
 
-``DataDriver`` is a configured instance: a credential binding, a schedule, a
+``DataSource`` is a configured instance: a credential binding, a schedule, a
 health verdict, cursors. All of that is machine-local and changes every minute.
 ``DataDriverSpec`` is what a source *is* — a folder asset carrying the manifest,
 and nothing that churns.

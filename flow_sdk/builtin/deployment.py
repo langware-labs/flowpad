@@ -206,7 +206,7 @@ class Deployment(Entity):
         THE idempotency seam. Re-deploying converges here rather than on a
         derived id: an id is a name, not a fact about the thing, and a key baked
         into one can never change afterwards. Same shape as
-        ``SourceItem.find_existing`` / ``DataDriver.find_for_account``.
+        ``SourceItem.find_existing`` / ``DataSource.find_for_account``.
 
         ``target.provider`` lives inside a JSON column, so it is matched in
         Python rather than in the query — a nested-JSON predicate is not a

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.ingest.driver_types import DriverType, SegmentPass, register_driver
 from flow_sdk.ingest.health import SourceError, SourceHealth
@@ -87,10 +87,10 @@ def _item(data_source_id, segment_key, n) -> SourceItemSpec:
     )
 
 
-async def _source(**kw) -> DataDriver:
+async def _source(**kw) -> DataSource:
     fields = {"provider": "faketest", "account_key": f"acct-{uuid.uuid4().hex[:8]}", "name": "fake"}
     fields.update(kw)
-    src = DataDriver(**fields)
+    src = DataSource(**fields)
     await src.save()
     return src
 
@@ -121,7 +121,7 @@ async def test_one_failing_stream_does_not_stall_its_siblings():
     assert bad_cursor.health == SourceHealth.TRANSIENT_ERROR.value
     assert bad_cursor.consecutive_failures == 1
 
-    refreshed = await DataDriver.get_one({"id": src.id})
+    refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.TRANSIENT_ERROR.value, "worst-of rollup"
 
 
@@ -135,7 +135,7 @@ async def test_rollup_records_the_segment_count():
 
     await sync_source(src, now=NOW, budget=1)
 
-    refreshed = await DataDriver.get_one({"id": src.id})
+    refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.segment_count == 3, (
         f"the count must cover every declared stream, not just the budgeted slice (got {refreshed.segment_count})"
     )
@@ -210,7 +210,7 @@ async def test_unknown_provider_is_a_config_error_not_a_crash():
     report = await sync_source(src, now=NOW)
     assert report.outcomes == []
 
-    refreshed = await DataDriver.get_one({"id": src.id})
+    refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.CONFIG_ERROR.value
     assert refreshed.error_code == "unknown_provider"
 
@@ -223,7 +223,7 @@ async def test_next_poll_is_scheduled_even_when_a_stream_failed():
     register_driver(_FakeType([key], {key: SourceError.transient("server_error", "boom")}))
 
     await sync_source(src, now=NOW)
-    refreshed = await DataDriver.get_one({"id": src.id})
+    refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.next_poll_at is not None, "a failed run must still reschedule"
     assert refreshed.is_due(NOW) is False
     assert refreshed.is_due(NOW + timedelta(seconds=121)) is True
@@ -242,7 +242,7 @@ async def test_a_parked_segment_does_not_park_the_source():
     register_driver(fake)
 
     await sync_source(src, now=NOW, budget=10)
-    refreshed = await DataDriver.get_one({"id": src.id})
+    refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.OK.value, f"one parked segment parked the whole source ({refreshed.health})"
     assert refreshed.poll_refusal() == "", "the healthy sibling must keep polling"
     assert refreshed.error_code == "not_found", "the card must still name the parked segment"
@@ -258,7 +258,7 @@ async def test_a_parked_segment_does_not_park_the_source():
     register_driver(_FakeType([parked], {parked: SourceError.config("not_found", "HTTP 404")}))
     only = await _source()
     await sync_source(only, now=NOW, budget=10)
-    assert (await DataDriver.get_one({"id": only.id})).health == SourceHealth.CONFIG_ERROR.value
+    assert (await DataSource.get_one({"id": only.id})).health == SourceHealth.CONFIG_ERROR.value
 
 
 @pytest.mark.asyncio
@@ -277,7 +277,7 @@ async def test_refs_under_record_mode_are_a_config_error_not_a_silent_drop():
 
     cursor = await DataSourceCursor.ensure_for(src.id, key)
     assert cursor.manifest == {} and cursor.high_water is None, "the cursor advanced past dropped files"
-    refreshed = await DataDriver.get_one({"id": src.id})
+    refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.CONFIG_ERROR.value
     assert refreshed.error_code == "reflect_mode"
 
@@ -304,7 +304,7 @@ async def test_a_write_failure_is_classified_and_leaves_the_cursor_put(monkeypat
     assert cursor.error_code == "RuntimeError"
     assert cursor.consecutive_failures == 1
     assert cursor.cursor is None and cursor.high_water is None, "records were not committed; the cursor must not move"
-    refreshed = await DataDriver.get_one({"id": src.id})
+    refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.TRANSIENT_ERROR.value, "roll-up must still run"
     assert refreshed.next_poll_at is not None and refreshed.is_due(NOW + timedelta(seconds=121))
 

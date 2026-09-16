@@ -57,7 +57,7 @@ runtime cannot work out for itself. Two rules keep it that way:
   class; a manifest copy would be "authoritative-looking, owned by nobody, and
   silently corrected later". A `traits` key in a manifest is a **load error**.
 * **Presence beats declaration.** A capability is a protocol the class implements,
-  discovered by `isinstance` — `DataDriver.save()` decides SETUP vs ACTIVE from
+  discovered by `isinstance` — `DataSource.save()` decides SETUP vs ACTIVE from
   whether the class is `Verifiable`. Presence of a verb cannot lie; a boolean can,
   and a wrong one parks a source no button releases.
 
@@ -132,7 +132,7 @@ mean no bug report could ever say which source ran.
 
 ### `kind`
 
-The record kind a `DataDriver` row of this source carries (`datasource.api.slack`).
+The record kind a `DataSource` row of this source carries (`datasource.api.slack`).
 Omitted, it is `datasource.<name>`.
 
 ### `auth`
@@ -200,10 +200,10 @@ provider catalog.
 | `choices` | the source can list this field's legal values (the class is `Choosing`, or defines `choices_for`) |
 
 Each field is a `ConfigFieldSpec`, and its `type` is also a **coercion rule**:
-`DataDriver.save()` runs `ConfigFieldSpec.coerce` over any string-valued config
+`DataSource.save()` runs `ConfigFieldSpec.coerce` over any string-valued config
 (`lines` splits on newlines, `csv` on commas, `number` parses), so a URL an agent
 sent as a string where `lines` is declared becomes a one-element list. On create,
-`required` and `pattern` are enforced by `DataDriver.save()` too, so the CLI, the API
+`required` and `pattern` are enforced by `DataSource.save()` too, so the CLI, the API
 and an agent meet the same rules as the form.
 
 ### `setup_wiki` and `channel_icon_names`
@@ -229,9 +229,9 @@ never a frontend table.
 | `sends` | the class implements `Messaging` and `message_for`; the row computes it |
 | `needs_setup` | the class is `Verifiable` |
 | `segment_budget` | a consequence of the fetch code, not a preference |
-| `account_key` VALUE | lives on the `DataDriver` row; the manifest only marks WHICH form field supplies it |
+| `account_key` VALUE | lives on the `DataSource` row; the manifest only marks WHICH form field supplies it |
 | `id` | carried by the asset's identity carrier, never written into the manifest |
-| poll cadence | per-instance on `DataDriver` — a big site wants six hours, a small one five minutes |
+| poll cadence | per-instance on `DataSource` — a big site wants six hours, a small one five minutes |
 | cursor shape | `cursor` is the source's opaque string, and a test greps the engine for leaks |
 
 ## Runtime
@@ -245,7 +245,7 @@ subclass, a class whose `provider` is not the manifest's `name`, an import error
 name a shipped source owns.
 
 The shipped folders load on the registry's first lookup. An authored folder in a
-project loads on first use — its `DataDriver` is saved or synced — through its
+project loads on first use — its `DataSource` is saved or synced — through its
 `DataDriverSpec` row.
 
 The extractor (`derive_data_source_spec`) stamps `runtime: source` on the row. A folder

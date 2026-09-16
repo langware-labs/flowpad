@@ -39,7 +39,7 @@ from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
 from flow_sdk.utils.kind_registry import KindRegistry
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource
 
 logger = logging.getLogger(__name__)
 
@@ -72,16 +72,16 @@ class ReflectReport:
 class Reflector(Protocol):
     """One placement policy. Holds no state and reaches no subsystem."""
 
-    def place(self, source: "DataDriver", ref: str, root: Optional[Path]) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         """The local path the indexer should be told about, or None to skip."""
         ...
 
-    def unplace(self, source: "DataDriver", ref: str, root: Optional[Path]) -> Optional[str]:
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         """The local path that should now be treated as gone, or None."""
         ...
 
 
-async def _materialize(source: "DataDriver") -> Optional[Path]:
+async def _materialize(source: "DataSource") -> Optional[Path]:
     """The source's tree as a local root, obtained once per page.
 
     A ``LocalOrigin`` is its own tree. Anything else goes through the origin
@@ -107,11 +107,11 @@ async def _materialize(source: "DataDriver") -> Optional[Path]:
     return safe_join(local_root, origin.rel_path or ".")   # the guarded join; None when the rel escapes
 
 
-def _target_root(source: "DataDriver") -> Optional[Path]:
+def _target_root(source: "DataSource") -> Optional[Path]:
     """The project directory reflected assets land under.
 
     Explicit on the source rather than inferred from request context: a
-    ``DataDriver`` is instance-global and the heartbeat tick that polls it has
+    ``DataSource`` is instance-global and the heartbeat tick that polls it has
     no request to resolve a project from — the trap ``data_source.py`` documents
     for scope resolution, arriving here for the same reason.
     """
@@ -124,10 +124,10 @@ def _target_root(source: "DataDriver") -> Optional[Path]:
 class InPlaceReflector:
     """``none`` — the source's own tree (its materialized origin) IS the indexed tree."""
 
-    def place(self, source: "DataDriver", ref: str, root: Optional[Path]) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         return ref
 
-    def unplace(self, source: "DataDriver", ref: str, root: Optional[Path]) -> Optional[str]:
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         return ref
 
 
@@ -139,7 +139,7 @@ class _ProjectionReflector:
     the replace-existing rule live here once.
     """
 
-    def _dest(self, source: "DataDriver", ref: str, base: Optional[Path]) -> Optional[Path]:
+    def _dest(self, source: "DataSource", ref: str, base: Optional[Path]) -> Optional[Path]:
         root = _target_root(source)
         if root is None:
             return None
@@ -170,7 +170,7 @@ class _ProjectionReflector:
     def _emplace(self, src: Path, dest: Path) -> None:  # pragma: no cover - overridden
         raise NotImplementedError
 
-    def place(self, source: "DataDriver", ref: str, root: Optional[Path]) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         src = Path(ref)
         dest = self._dest(source, ref, root)
         if dest is None or not src.exists():
@@ -178,7 +178,7 @@ class _ProjectionReflector:
         self._emplace(src, dest)
         return str(dest)
 
-    def unplace(self, source: "DataDriver", ref: str, root: Optional[Path]) -> Optional[str]:
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         dest = self._dest(source, ref, root)
         if dest is None:
             return None
@@ -219,10 +219,10 @@ class SymlinkReflector(_ProjectionReflector):
     # open — and an ADDRESSING no-op. Saying that here, once, is cheaper than
     # every caller rediscovering it.
 
-    def place(self, source: "DataDriver", ref: str, root: Optional[Path]) -> Optional[str]:
+    def place(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         return ref if super().place(source, ref, root) else None
 
-    def unplace(self, source: "DataDriver", ref: str, root: Optional[Path]) -> Optional[str]:
+    def unplace(self, source: "DataSource", ref: str, root: Optional[Path]) -> Optional[str]:
         return ref if super().unplace(source, ref, root) else None
 
 
@@ -244,7 +244,7 @@ REFLECTORS.register(CopyReflector(), kind=ReflectMode.COPY.value)
 REFLECTORS.register(SymlinkReflector(), kind=ReflectMode.SYMLINK.value)
 
 
-def origin_id_for(source: "DataDriver", ref: str, root: Optional[Path]) -> str:
+def origin_id_for(source: "DataSource", ref: str, root: Optional[Path]) -> str:
     """The source's own name for this asset — what identity is resolved ON.
 
     Delegates to the DRIVER, because only it knows what its source can promise.
@@ -272,7 +272,7 @@ def origin_id_for(source: "DataDriver", ref: str, root: Optional[Path]) -> str:
     return default_origin_id(source, ref, root)
 
 
-def default_origin_id(source: "DataDriver", ref: str, root: Optional[Path]) -> str:
+def default_origin_id(source: "DataSource", ref: str, root: Optional[Path]) -> str:
     """Source-relative path. The weakest handle that is still always correct.
 
     ``root`` is the page's materialized root — never a config key: `root` is the folder driver's spelling and `repo` is
@@ -287,7 +287,7 @@ def default_origin_id(source: "DataDriver", ref: str, root: Optional[Path]) -> s
     return f"{source.provider}:{source.id}:path:{rel}"
 
 
-def _retire_stale_placement(source: "DataDriver", known, placed: str) -> None:
+def _retire_stale_placement(source: "DataSource", known, placed: str) -> None:
     """Remove a previous copy of this origin that our own reflection made.
 
     Scoped hard to the reflect target: we delete only what we put there. A row
@@ -345,7 +345,7 @@ async def _retire_row(path: str) -> None:
     await remove_orphan_row(str(entity.id), entity.get_type())
 
 
-def _stamps_identity(source: "DataDriver") -> bool:
+def _stamps_identity(source: "DataSource") -> bool:
     """May we write into this source's bytes? The driver decides."""
     from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
@@ -367,7 +367,7 @@ def _placement_of(reflector, source, ref: str, root: Optional[Path]) -> str:
 
 
 async def reflect_refs(
-    source: "DataDriver",
+    source: "DataSource",
     refs: list[str],
     tombstones: Optional[list[str]] = None,
     renames: Optional[dict[str, str]] = None,

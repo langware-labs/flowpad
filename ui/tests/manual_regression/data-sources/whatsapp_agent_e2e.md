@@ -30,12 +30,12 @@ test 2: The agent lives in that project, and its answer is checkable
 - [browser] {APP_URL}/dock/agent/<agent id> — the profile shows the local place
 
 test 3: The channel is the agent's, with no secret in its config
-- [api] POST /graph/data_driver {provider: whatsapp, owner: agent-<agent id>, config: {phone_number_id,
+- [api] POST /graph/data_source {provider: whatsapp, owner: agent-<agent id>, config: {phone_number_id,
   verify_token}, inbound_allowed_senders: [<tester>]} — access token and app secret NOT in config
   (the dialog's verify-token field is a token the checklist agent may not type; a person can use
   agent place → Channels → Add channel → WhatsApp with the same fields)
 - [browser] agent place → Channels lists the WhatsApp channel with the WhatsApp glyph, enabled
-- [api] POST /graph/data_driver/<id>/verify → `ready: true`, "Sending as +1 555-…" — proof the
+- [api] POST /graph/data_source/<id>/verify → `ready: true`, "Sending as +1 555-…" — proof the
   token was read from the declared credential
 - [api] register the webhook (Graph `/{app-id}/subscriptions`, fields `messages`, callback
   `<tunnel>/api/v1/data_source/webhook/whatsapp`) → `success: true` — Meta's handshake reached us

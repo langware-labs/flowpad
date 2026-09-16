@@ -16,7 +16,7 @@ import pytest
 import flow_sdk.blocks as blocks
 from flow_sdk.blocks import EmailMessageSpec, Inbox, RunOutput, _AgentRunner
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -321,7 +321,7 @@ class TestInboxSend:
     @pytest.fixture
     def inbox(self, monkeypatch):
         ib = Inbox("me@agentmail.to", api_key="k")
-        ib._source = DataDriver(
+        ib._source = DataSource(
             name="Inbox me@agentmail.to",
             provider="agentmail",
             config={"inbox": "me@agentmail.to"},
@@ -391,5 +391,5 @@ def test_inbox_explicit_owner_wins_and_a_plain_inbox_is_the_local_users():
 
     tid = TypeId(type="agent", id="3c1d9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c")
     assert blocks.Inbox("me@agentmail.to", api_key="k", owner=tid, agent_id="ignored")._owner() == tid
-    # None here means "the DataDriver stamps the local user on save", not "nobody".
+    # None here means "the DataSource stamps the local user on save", not "nobody".
     assert blocks.Inbox("me@agentmail.to", api_key="k")._owner() is None

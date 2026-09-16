@@ -3,7 +3,7 @@
 Named for what it yields (change pages), not for what it wraps: ``FolderSource`` is the
 contract-level filesystem source, a different object.
 
-A view over the ``folder`` ``DataDriver`` for that directory (found or created by its root, the
+A view over the ``folder`` ``DataSource`` for that directory (found or created by its root, the
 driver's natural key), exactly as ``Inbox`` is a view over a mailbox's source. NOT ``Folder``:
 that word is taken by the ``Folder`` ENTITY (``builtin/folder.py``) — which ``RagIndex.add_root``
 mints for the very directory this block watches, so one word for both would name two different
@@ -48,13 +48,13 @@ class FolderChanges:
     async def _ensure_source(self):
         if self._source is not None:
             return self._source
-        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
-        existing = await DataDriver.find_for_account("folder", "root", self.root)
+        existing = await DataSource.find_for_account("folder", "root", self.root)
         if existing is not None:
             self._source = existing
             return existing
-        source = DataDriver(
+        source = DataSource(
             name=self.name or f"Folder {Path(self.root).name}",
             provider="folder",
             config={"root": self.root},

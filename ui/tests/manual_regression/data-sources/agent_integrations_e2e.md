@@ -26,7 +26,7 @@ test 2: Connect — an RSS source over the dialog, pointed at the loopback feed
 - [fixture] start a loopback feed server serving 3 entries dated now
 - [browser] Add data source → provider rss → name + feed URL → Add source
 - [browser] validate a card with data-provider="rss" and the name appears
-- [api] POST /graph/data_driver/{id}/poll_now → {"status": "due"}
+- [api] POST /graph/data_source/{id}/poll_now → {"status": "due"}
 
 test 3: Streaming — items land on the heartbeat
 - [api] sample GET /graph/source_item?data_source_id=… until count ≥ 2 (≤55 s;

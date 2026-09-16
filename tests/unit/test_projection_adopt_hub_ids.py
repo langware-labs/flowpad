@@ -15,7 +15,7 @@ import pytest
 
 from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
 from flow_sdk.builtin.conversation import Conversation, ConversationKind
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
@@ -26,13 +26,13 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 DESK = "4f9f1fd1-39b6-5465-9c20-cb4c59b08318"
 
 
-async def _desk_source() -> DataDriver:
-    src = DataDriver(name="desk", provider="helpdesk", channel="helpdesk", config={"desk_project_id": DESK})
+async def _desk_source() -> DataSource:
+    src = DataSource(name="desk", provider="helpdesk", channel="helpdesk", config={"desk_project_id": DESK})
     await src.save()
     return src
 
 
-async def _ticket_item(src: DataDriver, ticket: str, fm_id: str, *, text="my printer is broken") -> SourceItem:
+async def _ticket_item(src: DataSource, ticket: str, fm_id: str, *, text="my printer is broken") -> SourceItem:
     item = SourceItem(
         kind="content.message.chat", provider="helpdesk", data_source_id=str(src.id),
         segment_key=ticket, external_id=fm_id, thread_key=f"{DESK}:{ticket}",
@@ -105,7 +105,7 @@ async def test_a_hub_refresh_never_strips_the_projections_fields():
 
 async def test_a_record_without_hints_still_mints_as_before():
     """Every other channel is untouched: no hints, ordinary uuid4 births."""
-    src = DataDriver(name="tg", provider="telegram", channel="telegram", account_key="@b")
+    src = DataSource(name="tg", provider="telegram", channel="telegram", account_key="@b")
     await src.save()
     item = SourceItem(
         kind="content.message.chat", provider="telegram", data_source_id=str(src.id),

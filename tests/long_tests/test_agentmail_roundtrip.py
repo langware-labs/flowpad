@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.sync import sync_source
@@ -64,7 +64,7 @@ def _messages(inbox: str) -> list[dict]:
     return _api("GET", f"/inboxes/{urllib.parse.quote(inbox)}/messages").get("messages") or []
 
 
-async def _sync(source: DataDriver) -> None:
+async def _sync(source: DataSource) -> None:
     await sync_source(source, now=datetime.now(timezone.utc))
 
 
@@ -92,7 +92,7 @@ async def test_agentmail_roundtrip():
     watched = created.get("inbox_id") or created.get("address")
     assert watched, f"inbox create returned no address: {sorted(created)}"
     try:
-        source = DataDriver(
+        source = DataSource(
             name="AgentMail roundtrip",
             provider="agentmail",
             config={"inbox": watched, "api_key": KEY},

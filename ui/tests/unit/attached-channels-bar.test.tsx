@@ -5,13 +5,13 @@
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DataDriver, TypeId } from '@sdk';
+import { DataSource, TypeId } from '@sdk';
 
 const LOCAL = 'user-11111111-1111-4111-8111-111111111111';
 /** A real entity, so the status getters are the SDK's own. */
 const uuidOf = (name: string) => `${name.charCodeAt(0).toString(16).padStart(8, '0')}-0000-4000-8000-000000000000`;
 const fake = (name: string, status = 'active', provider = 'slack') =>
-  new DataDriver({ id: uuidOf(name), name, provider, channel: provider, owner: LOCAL, status: status as DataDriver['status'] });
+  new DataSource({ id: uuidOf(name), name, provider, channel: provider, owner: LOCAL, status: status as DataSource['status'] });
 const specFor = () => ({ sends: true, icon_name: 'Slack' }) as never;
 
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openTab: vi.fn() } }) }));
@@ -20,7 +20,7 @@ vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(
 
 import { AttachedChannelsBar, groupChannels } from '@src/components/inbox-view/AttachedChannelsBar';
 
-function mount(rows: DataDriver[], selected = new Set<string>()) {
+function mount(rows: DataSource[], selected = new Set<string>()) {
   const onSelectedChange = vi.fn();
   render(
     <AttachedChannelsBar owner={new TypeId(LOCAL)} rows={rows} specFor={specFor} selected={selected} onSelectedChange={onSelectedChange} />,
@@ -60,7 +60,7 @@ describe('AttachedChannelsBar', () => {
   });
 
   it('a group is parked only when nothing in it listens, and off only when everything is', () => {
-    const state = (rows: DataDriver[]) => groupChannels(rows)[0].state;
+    const state = (rows: DataSource[]) => groupChannels(rows)[0].state;
     expect(state([fake('a', 'setup'), fake('b')])).toBe('on');
     expect(state([fake('a', 'setup'), fake('b', 'disabled')])).toBe('parked');
     expect(state([fake('a', 'disabled'), fake('b', 'disabled')])).toBe('off');

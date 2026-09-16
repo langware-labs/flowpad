@@ -3,7 +3,7 @@
 ``MessageBlock`` is the smallest conversational block: one listener receives
 prompts and replies to them, while ``send`` waits for the matching reply.  It
 does not ingest, persist, address, or deliver messages through a provider;
-those jobs belong to ``DataDriver`` and ``Inbox``.
+those jobs belong to ``DataSource`` and ``Inbox``.
 """
 
 from __future__ import annotations

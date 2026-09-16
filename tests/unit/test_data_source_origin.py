@@ -1,4 +1,4 @@
-"""``DataDriver.origin`` — WHERE a source's bytes come from, as a typed origin
+"""``DataSource.origin`` — WHERE a source's bytes come from, as a typed origin
 the driver stamps; reflection reads it, and a non-local origin materializes
 through the ``FSOriginDriver`` registry."""
 from __future__ import annotations
@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
 from flow_sdk.ingest import reflect
@@ -43,7 +43,7 @@ async def test_local_root_reads_the_origin_not_a_config_key(tmp_path):
 async def test_save_stamps_the_origin_from_config(git_db, tmp_path):  # noqa: F811
     root = tmp_path / "w"
     root.mkdir()
-    src = DataDriver(name="w", provider="folder", config={"root": str(root)})
+    src = DataSource(name="w", provider="folder", config={"root": str(root)})
     await src.save()
     assert src.origin == local_origin_for_path(root.resolve())
     moved = tmp_path / "w2"

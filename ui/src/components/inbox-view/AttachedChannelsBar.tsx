@@ -14,13 +14,13 @@
  * (`useSourceToggle`); the marks themselves never toggle.
  *
  * One component, two mounts, no knowledge of which owner it serves. Its rows
- * are exactly `DataDriver.find_owned(owner)` ∩ MessageSource — the same
+ * are exactly `DataSource.find_owned(owner)` ∩ MessageSource — the same
  * `sources` query the Data Sources screen and the row chip already share —
  * keyed on the spec's `sends`, not the row's `channel`, so a just-attached
  * source shows before its first poll.
  */
 import { type ReactNode, useMemo, useState } from 'react';
-import { DataDriver, type DataDriverSpec, TypeId, User } from '@sdk';
+import { DataSource, type DataDriverSpec, TypeId, User } from '@sdk';
 import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -41,7 +41,7 @@ import { useSourceDelete } from '@src/components/data-sources/use-source-delete'
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
 import { ownerOf } from './channel-owner';
 
-const EMPTY: DataDriver[] = [];
+const EMPTY: DataSource[] = [];
 
 /** The owner's message sources, in a stable order — plus the spec lookup the
  *  caller needs to draw them, so a mount holds ONE specs subscription. The
@@ -52,7 +52,7 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
   // `localUser.id`, not `userTypeId`: that alias is the `@local` pointer, and rows
   // carry the user's real id.
   const { localUser } = useContext();
-  const { data: sources = EMPTY } = useEntitiesQuery<DataDriver>(sourcesQuery);
+  const { data: sources = EMPTY } = useEntitiesQuery<DataSource>(sourcesQuery);
   const ownerKey = owner?.toString() ?? '';
   const localKey = localUser?.id ? new TypeId(User.type, localUser.id).toString() : '';
   const rows = useMemo(
@@ -69,11 +69,11 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
 
 type SpecFor = (provider: string) => DataDriverSpec | undefined;
 type ChannelState = 'on' | 'off' | 'parked';
-const stateOf = (s: DataDriver): ChannelState => (s.needsAttention ? 'parked' : s.status === 'disabled' ? 'off' : 'on');
+const stateOf = (s: DataSource): ChannelState => (s.needsAttention ? 'parked' : s.status === 'disabled' ? 'off' : 'on');
 
 /** The identity a mark draws: provider AND channel, because one transport
  *  (`agent`) reaches several channels and wears a different glyph for each. */
-export const channelKeyOf = (s: DataDriver) => `${s.provider}|${s.channel}`;
+export const channelKeyOf = (s: DataSource) => `${s.provider}|${s.channel}`;
 
 /** Sources of one channel kind, sharing a mark. Its state is the best of its
  *  members' — one listening source lights the mark; parked beats paused. */
@@ -81,11 +81,11 @@ interface ChannelGroup {
   key: string;
   provider: string;
   channel: string;
-  sources: DataDriver[];
+  sources: DataSource[];
   state: ChannelState;
 }
-export function groupChannels(rows: DataDriver[]): ChannelGroup[] {
-  const groups = new Map<string, DataDriver[]>();
+export function groupChannels(rows: DataSource[]): ChannelGroup[] {
+  const groups = new Map<string, DataSource[]>();
   for (const s of rows) {
     const list = groups.get(channelKeyOf(s));
     if (list) list.push(s);
@@ -104,7 +104,7 @@ interface Props {
   owner: TypeId;
   /** The owner's message sources and their spec lookup — from ONE
    *  `useAttachedChannels` in the mount, which also filters its list by them. */
-  rows: DataDriver[];
+  rows: DataSource[];
   specFor: SpecFor;
   /** Channel keys (`channelKeyOf`) the list is narrowed to; empty = everything. */
   selected: ReadonlySet<string>;
@@ -217,7 +217,7 @@ function ChannelMark({
   filtering: boolean;
   pressed: boolean;
   onClick: () => void;
-  onDelete: (source: DataDriver) => void;
+  onDelete: (source: DataSource) => void;
 }) {
   const { t } = useLingui();
   const Icon = sourceIcon(spec, group.channel);
@@ -281,9 +281,9 @@ export function ChannelList({
   footer,
 }: {
   title: string;
-  sources: DataDriver[];
+  sources: DataSource[];
   specFor: SpecFor;
-  onDelete: (source: DataDriver) => void;
+  onDelete: (source: DataSource) => void;
   footer?: ReactNode;
 }) {
   const { t } = useLingui();
@@ -305,7 +305,7 @@ const specFor = (spec: DataDriverSpec | undefined): SpecFor => () => spec;
 /** One line of a channel list: glyph, name, its setup note, the on/off switch
  *  and a delete. A parked row's setup note IS its verify control — pressing
  *  the step it names re-runs the check. */
-function ChannelRow({ source, spec, onDelete }: { source: DataDriver; spec: DataDriverSpec | undefined; onDelete: () => void }) {
+function ChannelRow({ source, spec, onDelete }: { source: DataSource; spec: DataDriverSpec | undefined; onDelete: () => void }) {
   const { t } = useLingui();
   const { toggle, busy } = useSourceToggle(source);
   const { verify, busy: verifying } = useSourceVerify(source);

@@ -130,11 +130,11 @@ async def test_polling_converges_to_quiet(folder_db, watched, make_source):
 
 @pytest.mark.parametrize("mode", [ReflectMode.COPY, ReflectMode.SYMLINK])
 async def test_reflection_refuses_overlapping_source_without_deleting_it(tmp_path, mode):
-    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource
 
     source_path = tmp_path / "source.md"
     source_path.write_text("original")
-    source = DataDriver(reflect_into=str(tmp_path))
+    source = DataSource(reflect_into=str(tmp_path))
     with pytest.raises(ValueError, match="overlap"):
         get_reflector(mode).place(source, str(source_path), tmp_path)
     assert source_path.read_text() == "original"

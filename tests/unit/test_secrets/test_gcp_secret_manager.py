@@ -1,7 +1,7 @@
 """``gcp_secret_manager``: a store that acts as an account, against a loopback Secret Manager v1.
 
 Independently (load, save, names, validate_keys, forget, prefix, pagination, 404/401/403, an
-unbound or undeclared connection) and bound to a DataDriver that is reloaded from its row and
+unbound or undeclared connection) and bound to a DataSource that is reloaded from its row and
 opened, the way the heartbeat's sync would after a restart. No real GCP call is made.
 """
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.connections import Connection
 from flow_sdk.ingest.driver_types import DriverType, register_driver
 from flow_sdk.ingest.testing import make_data_source
@@ -214,7 +214,7 @@ async def test_another_http_failure_is_reported_as_is(gcp, monkeypatch):
         await (await _store()).names()
 
 
-# ── with a DataDriver ───────────────────────────────────────────────────────
+# ── with a DataSource ───────────────────────────────────────────────────────
 
 
 class _GcpKeyedSource(Source):
@@ -237,12 +237,12 @@ async def test_a_data_source_loads_its_key_from_gcp_after_a_restart(home, keyed_
     row = make_data_source(_GcpKeyedSource.provider, name="keyed in gcp")
     await row.save()
 
-    source = await DataDriver.get("keyed in gcp")
+    source = await DataSource.get("keyed in gcp")
     remote = await _store("keyed-prod-")
     await remote.validate_keys(source.credentials.names())
     await source.set_secret_store(remote)
 
-    fresh = await DataDriver.get("keyed in gcp")  # a new object from the row: nothing held in process
+    fresh = await DataSource.get("keyed in gcp")  # a new object from the row: nothing held in process
     assert fresh is not source
     assert fresh.secret_store == remote.ref and fresh.secret_store.connection == "google"
     live = await fresh.open()
@@ -254,7 +254,7 @@ async def test_a_data_source_loads_its_key_from_gcp_after_a_restart(home, keyed_
 
 async def test_a_data_source_names_what_gcp_lacks(home, keyed_source, gcp):
     await make_data_source(_GcpKeyedSource.provider, name="keyed empty").save()
-    source = await DataDriver.get("keyed empty")
+    source = await DataSource.get("keyed empty")
 
     with pytest.raises(MissingSecrets) as missing:
         await (await _store("keyed-prod-")).validate_keys(source.credentials.names())

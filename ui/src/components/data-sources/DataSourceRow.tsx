@@ -16,7 +16,7 @@
  * dialog to the view (so N rows don't mount 2N of them).
  */
 import { useCallback, useMemo, useState } from 'react';
-import { DataDriver, DataSourceCursor, type DataDriverSpec, QueryRequest } from '@sdk';
+import { DataSource, DataSourceCursor, type DataDriverSpec, QueryRequest } from '@sdk';
 import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -35,16 +35,16 @@ import { useSourceToggle } from './use-source-toggle';
 import { useSourceVerify } from './use-source-verify';
 
 interface Props {
-  source: DataDriver;
+  source: DataSource;
   /** This source's spec. Passed in rather than queried here: the specs are one
    *  global query, and a card per source asking separately is N identical
    *  subscriptions to the same rows. The view already owns the grid — and it
    *  hands over the WHOLE spec, so a third field the card wants is not a third
    *  prop and a third lookup. */
   spec?: DataDriverSpec | null;
-  onEdit: (source: DataDriver) => void;
-  onReplay: (source: DataDriver) => void;
-  onDelete: (source: DataDriver) => void;
+  onEdit: (source: DataSource) => void;
+  onReplay: (source: DataSource) => void;
+  onDelete: (source: DataSource) => void;
 }
 
 export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Props) {

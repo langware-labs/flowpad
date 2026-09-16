@@ -8,7 +8,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.inbox.agent_scope import AgentInboxScopeError, resolve_agent_inbox_scope
@@ -16,8 +16,8 @@ from flow_sdk.inbox.agent_scope import AgentInboxScopeError, resolve_agent_inbox
 pytestmark = pytest.mark.asyncio
 
 
-async def _source(agent_id: str) -> DataDriver:
-    source = DataDriver(
+async def _source(agent_id: str) -> DataSource:
+    source = DataSource(
         name=f"Inbox {agent_id[:8]}",
         provider="cloud_email",
         channel="email",
@@ -28,7 +28,7 @@ async def _source(agent_id: str) -> DataDriver:
     return source
 
 
-async def _message(source: DataDriver) -> FlowMessage:
+async def _message(source: DataSource) -> FlowMessage:
     item = SourceItem(
         name="A message",
         provider="cloud_email",

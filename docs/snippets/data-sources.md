@@ -5,7 +5,7 @@ version: 2
 # Data sources — snippets
 
 A data source is one remote account or tree Flowpad syncs from. The row is a
-`DataDriver`; every item it produces is a `SourceItem`; one cycle is one verb,
+`DataSource`; every item it produces is a `SourceItem`; one cycle is one verb,
 `source.sync()` (the heartbeat calls the same code through `sync_source`).
 Everything below runs in-process against the session DB, and every `python`
 fence is run as written by `tests/unit/test_data_sources_snippets.py`. Deeper
@@ -19,10 +19,10 @@ reading: [docs/data-management/data-sources.md](../data-management/data-sources.
 Pinned by `tests/unit/test_data_sources_snippets.py`.
 
 ```python
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
 
-src = DataDriver(
+src = DataSource(
     name="Hacker News front page",
     provider="rss",
     config={"feed_urls": [FEED_URL]},
@@ -69,8 +69,8 @@ when you build a row in code.
 A second source for the same account is a lookup, never a fresh row.
 
 ```python
-existing = await DataDriver.find_for_account("agentmail", "inbox", "me@agentmail.to")
-src = existing or DataDriver(
+existing = await DataSource.find_for_account("agentmail", "inbox", "me@agentmail.to")
+src = existing or DataSource(
     name="Inbox me@agentmail.to",
     provider="agentmail",
     config={"inbox": "me@agentmail.to", "api_key": KEY},
@@ -101,10 +101,10 @@ Pinned by `tests/unit/test_data_sources_snippets.py` (the CRUD matrix is
 `tests/unit/test_folder_source/test_crud_matrix.py`).
 
 ```python
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.reflect import ReflectMode
 
-src = DataDriver(
+src = DataSource(
     name="Shared drive notes",
     provider="folder",
     config={"root": WATCHED},  # the tree to watch
@@ -200,7 +200,7 @@ Read the row before poking it. `poll_now` clears `health`, `error_code` and
 `error_detail` together, so snapshot them first or the evidence is gone.
 
 ```python
-src = await DataDriver.get_one({"id": src.id})
+src = await DataSource.get_one({"id": src.id})
 src.status, src.health, src.error_code, src.last_synced_at, src.next_poll_at
 ```
 
@@ -242,9 +242,9 @@ Three providers ask for values nobody can produce from memory — a shared drive
 Pinned by `tests/unit/test_data_sources_snippets.py`.
 
 ```python
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 
-picks = await DataDriver.choices_for("gcs", "bucket", {"project": PROJECT, "base_url": BASE_URL})
+picks = await DataSource.choices_for("gcs", "bucket", {"project": PROJECT, "base_url": BASE_URL})
 
 [(c.id, c.name) for c in picks.items]  # what this credential can actually see
 picks.detail  # why the list is empty, when it is
@@ -279,10 +279,10 @@ connection**, made on the Connections screen. The scopes it grants,
 ```python
 from pathlib import Path
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.reflect import ReflectMode
 
-src = DataDriver(
+src = DataSource(
     name="My Drive",
     provider="gdrive",
     config={"cache_root": CACHE_ROOT, "base_url": BASE_URL},  # `drives: [...]` for shared drives; empty = My Drive

@@ -1,4 +1,4 @@
-import { ActionInfo, Agent, DataDriver, EmailInbox, dataManager } from '@sdk';
+import { ActionInfo, Agent, DataSource, EmailInbox, dataManager } from '@sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const AGENT_ID = '11111111-1111-4111-8111-111111111111';
@@ -21,7 +21,7 @@ const wireState = {
   },
   source: {
     id: SOURCE_ID,
-    typeid: `data_driver-${SOURCE_ID}`,
+    typeid: `data_source-${SOURCE_ID}`,
     status: 'active',
     health: 'ok',
     poll_interval_seconds: 60,
@@ -31,14 +31,14 @@ const wireState = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('Agent inbox actions', () => {
-  it('hydrates the mailbox and its DataDriver from inbox_state', async () => {
+  it('hydrates the mailbox and its DataSource from inbox_state', async () => {
     const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue(wireState as never);
     const state = await new Agent({ id: AGENT_ID }).inboxState();
 
     expect((call.mock.calls[0][0] as ActionInfo).name).toBe('inbox_state');
     expect(state.inbox).toBeInstanceOf(EmailInbox);
     expect(state.inbox?.id).toBe(INBOX_ID);
-    expect(state.source).toBeInstanceOf(DataDriver);
+    expect(state.source).toBeInstanceOf(DataSource);
     expect(state.source?.id).toBe(SOURCE_ID);
   });
 

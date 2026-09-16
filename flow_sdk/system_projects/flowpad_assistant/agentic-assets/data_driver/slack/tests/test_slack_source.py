@@ -15,7 +15,7 @@ from urllib.parse import parse_qs
 import pytest
 from pydantic import SecretStr
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.driver_types import driver_type
@@ -33,8 +33,8 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 CHANNEL = "C0123456789"
 
 
-def _source(**config) -> DataDriver:
-    return DataDriver(provider="slack", name="Slack test", config={"channels": [CHANNEL], **config})
+def _source(**config) -> DataSource:
+    return DataSource(provider="slack", name="Slack test", config={"channels": [CHANNEL], **config})
 
 
 def _view(state: dict | None = None, window_start: str | None = None):
@@ -157,7 +157,7 @@ async def test_segments_key_on_the_channel_id_not_its_name():
 
 
 async def test_a_bare_string_channels_config_names_one_channel():
-    (segment,) = await driver_type("slack").segments(DataDriver(provider="slack", name="s", config={"channels": CHANNEL}))
+    (segment,) = await driver_type("slack").segments(DataSource(provider="slack", name="s", config={"channels": CHANNEL}))
     assert segment.key == CHANNEL
 
 
@@ -379,9 +379,9 @@ async def test_find_for_account_matches_a_channel_inside_the_list():
     row.config = {"channels": ["C0AAAAAAAAA", mine]}
     await row.save()
     try:
-        found = await DataDriver.find_for_account("slack", "channels", mine)
+        found = await DataSource.find_for_account("slack", "channels", mine)
         assert found is not None and found.id == row.id
-        assert await DataDriver.find_for_account("slack", "channels", "C0" + uuid.uuid4().hex[:9].upper()) is None
+        assert await DataSource.find_for_account("slack", "channels", "C0" + uuid.uuid4().hex[:9].upper()) is None
     finally:
         await row.delete()
 

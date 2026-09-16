@@ -2,7 +2,7 @@
 
 Everything before this is plumbing. This asserts the thing that was actually
 asked for — a real flow, armed from its own ``graph.json``, entering a run
-because a DataDriver fetched something, with the ingested records reachable from
+because a DataSource fetched something, with the ingested records reachable from
 inside the flow.
 
 It also pins the guidance the storm caps force: a flow subscribes to
@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.graph_workflow import GraphWorkflow
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.graph_workflow_manager import GraphWorkflowManager, graph_workflow_functions
@@ -84,10 +84,10 @@ async def test_a_graph_workflow_receives_ingested_records(feed_server, tmp_path)
     manager = GraphWorkflowManager()
     assert await manager.load_flow(flow.id) is not None, "loading the flow arms its subscriptions"
 
-    # ── a DataDriver fetches ──
+    # ── a DataSource fetches ──
     url = f"{feed_server}/atom"
     account = f"acct-{uuid.uuid4().hex[:8]}"
-    src = DataDriver(
+    src = DataSource(
         provider="rss",
         kind="datasource.feed.rss",
         account_key=account,

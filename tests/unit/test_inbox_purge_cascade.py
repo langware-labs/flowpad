@@ -11,7 +11,7 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
@@ -25,7 +25,7 @@ async def _projected_pair(tmp_path, monkeypatch):
         "flow_sdk.fs_store.record_paths.get_default_records_data_root",
         lambda: tmp_path,
     )
-    src = DataDriver(
+    src = DataSource(
         provider="agent", channel="gmail", name="Mail",
         account_key=f"acct-{uuid.uuid4().hex[:8]}",
     )
@@ -58,7 +58,7 @@ async def test_purging_a_source_removes_messages_threads_and_the_conversation(
     assert await FlowMessage.get_by_id(fm_id) is not None
     assert await Conversation.get_one({"id": conv_id}) is not None
 
-    await DataDriver.purge_records_of(src.id)
+    await DataSource.purge_records_of(src.id)
 
     assert await SourceItem.get_all({"data_source_id": src.id}) == []
     assert await FlowMessage.get_all({"source_item_id": item.id}, hydrate=False) == []
@@ -74,7 +74,7 @@ async def test_purging_a_source_removes_messages_threads_and_the_conversation(
 async def test_reprojection_after_purge_converges_on_fresh_rows(monkeypatch, tmp_path):
     """The lookup identity makes purge → re-poll a clean rebirth, not a dupe."""
     src, item, (fm_id, thread_id) = await _projected_pair(tmp_path, monkeypatch)
-    await DataDriver.purge_records_of(src.id)
+    await DataSource.purge_records_of(src.id)
 
     # The provider still has the mail; the next poll re-ingests and re-projects.
     await item.save(notify=False)

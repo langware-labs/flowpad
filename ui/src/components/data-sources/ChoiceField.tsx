@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { Check, ChevronsUpDown, Loader2, X } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { DataDriver, FieldType, type DataDriverChoice, type SpecConfigField } from '@sdk';
+import { DataSource, FieldType, type DataSourceChoice, type SpecConfigField } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
@@ -39,8 +39,8 @@ export function ChoiceField({
   provider: string;
   /** The draft config so far — GCS cannot list buckets without its `project`. */
   config: Record<string, unknown>;
-  picked: DataDriverChoice[];
-  onPicked: (choices: DataDriverChoice[]) => void;
+  picked: DataSourceChoice[];
+  onPicked: (choices: DataSourceChoice[]) => void;
   /** The ordinary input this field would have had. Rendered INSTEAD of the picker when
    *  the provider cannot list — passed in rather than decided by the caller so the two
    *  can never both appear. */
@@ -53,7 +53,7 @@ export function ChoiceField({
   const load = useCallback(async () => {
     setFetch({ status: 'loading' });
     try {
-      setFetch(nextFetch(await DataDriver.choices(provider, fieldKey, config)));
+      setFetch(nextFetch(await DataSource.choices(provider, fieldKey, config)));
     } catch (error) {
       setFetch(failedFetch(error));
     }
@@ -66,7 +66,7 @@ export function ChoiceField({
     if (next) void load();
   };
 
-  const toggle = (choice: DataDriverChoice) => {
+  const toggle = (choice: DataSourceChoice) => {
     if (!many) {
       onPicked([choice]);
       setOpen(false);

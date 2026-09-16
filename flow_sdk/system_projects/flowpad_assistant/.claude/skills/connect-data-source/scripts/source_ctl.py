@@ -128,10 +128,10 @@ def cmd_create(args) -> dict:
     payload = json_arg(args.json)
     payload.setdefault("status", "new")
     keys = tuple(k for k in payload if k != "status")
-    source_id, row, dropped = create_and_verify("/graph/data_driver", payload, keys)
+    source_id, row, dropped = create_and_verify("/graph/data_source", payload, keys)
     return {
         "id": source_id,
-        "typeid": f"data_driver-{source_id}",
+        "typeid": f"data_source-{source_id}",
         "status": row.get("status"),
         "applied": {k: row.get(k) for k in payload if k != "status"},
         "dropped": dropped,
@@ -146,7 +146,7 @@ def cmd_verify(args) -> dict:
     passes when the driver has no verify verb at all.
     """
     source = _one(args.source)
-    out = _post(f"/graph/data_driver/{source['id']}/verify") or {}
+    out = _post(f"/graph/data_source/{source['id']}/verify") or {}
     return {
         "id": source["id"],
         "ready": out.get("ready"),
@@ -161,7 +161,7 @@ def cmd_verify(args) -> dict:
 def cmd_poll(args) -> dict:
     """Make it due. This does NOT sync — never report it as if it did."""
     source = _one(args.source)
-    out = _post(f"/graph/data_driver/{source['id']}/poll_now") or {}
+    out = _post(f"/graph/data_source/{source['id']}/poll_now") or {}
     return {"id": source["id"], "status": out.get("status"), "detail": out.get("detail"), "proves": "nothing yet — run `observe`"}
 
 
@@ -178,7 +178,7 @@ def cmd_observe(args) -> dict:
     deadline = time.monotonic() + args.wait
     row: dict = source
     while True:
-        row = _get(f"/graph/data_driver/{sid}") or {}
+        row = _get(f"/graph/data_source/{sid}") or {}
         cursors = _cursors(sid)
         count = _item_count(sid)
         advanced = any(c.get("last_synced_at") for c in cursors)
@@ -244,7 +244,7 @@ def cmd_delete(args) -> dict:
     # `local_request`, not a bare `requests.delete`: the cookie gate has no path
     # and no loopback exemption, so a hand-built call takes the gate's 403 HTML
     # while every other verb here works.
-    resp = local_request("DELETE", f"{api_base()}/graph/data_driver/{source['id']}", timeout=30)
+    resp = local_request("DELETE", f"{api_base()}/graph/data_source/{source['id']}", timeout=30)
     return {"id": source["id"], "deleted": resp.ok}
 
 

@@ -6,12 +6,12 @@
  * invite the bot, press, repeat for whatever is still listed.
  */
 import { useCallback, useState } from 'react';
-import type { DataDriver } from '@sdk';
+import type { DataSource } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 
-export function useSourceVerify(source: DataDriver) {
+export function useSourceVerify(source: DataSource) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
 

@@ -28,7 +28,7 @@ import weakref
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from flow_sdk.builtin.data_driver import DataDriver, SourceStatus
+from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.server.system_heartbeat import register_heartbeat_task
 
 logger = logging.getLogger(__name__)
@@ -134,7 +134,7 @@ async def _attention_loop() -> None:
             # OTHER leased source then stopped being polled, silently, until
             # something re-armed the lane.
             try:
-                source = await DataDriver.get_by_id(source_id)
+                source = await DataSource.get_by_id(source_id)
                 refused = source is None or source.poll_refusal()
             except Exception:  # noqa: BLE001 — classified as "drop the lease"
                 logger.exception("[ingest] attention lane: dropping %s", source_id)
@@ -202,7 +202,7 @@ async def dispatch_due_sources(
         # ACTIVE only. NEW and SETUP have not finished being configured — a
         # Slack source whose bot was never invited would otherwise be polled
         # every minute to re-learn that.
-        sources = await DataDriver.get_all({"status": SourceStatus.ACTIVE.value})
+        sources = await DataSource.get_all({"status": SourceStatus.ACTIVE.value})
     except Exception:  # noqa: BLE001 — a housekeeping tick must never raise
         logger.debug("[ingest] could not list data sources", exc_info=True)
         return dispatched
@@ -223,7 +223,7 @@ async def dispatch_due_sources(
     return dispatched
 
 
-async def poll_source(source: DataDriver, now: Optional[datetime] = None) -> bool:
+async def poll_source(source: DataSource, now: Optional[datetime] = None) -> bool:
     """Poll one source NOW, under the same in-flight guard as the tick lanes.
 
     Returns whether it ran. The one entry point for an out-of-band poll — a
@@ -241,7 +241,7 @@ async def poll_source(source: DataDriver, now: Optional[datetime] = None) -> boo
     return True
 
 
-async def _run_poll(source: DataDriver, now: datetime) -> None:
+async def _run_poll(source: DataSource, now: datetime) -> None:
     """Owns its own slot: whatever happens, the source is released."""
     try:
         # Push the next due time out BEFORE any I/O. If this process dies

@@ -656,7 +656,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   /**
    * POST one of this entity's actions (`/graph/<type>/<id>/<action>`) with an
    * optional JSON body and return the envelope's `data`. The one helper every
-   * entity's action methods share (`DataDriver.pollNow`, `Dataset.promote`, …).
+   * entity's action methods share (`DataSource.pollNow`, `Dataset.promote`, …).
    */
   protected post<R>(action: string, body?: Record<string, unknown>): Promise<R> {
     const info = new ActionInfo(action, this.getType(), this.id, 'POST' as HttpMethod);

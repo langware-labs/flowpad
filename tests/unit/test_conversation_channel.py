@@ -6,7 +6,7 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.inbox.projection import _stamp_channel, project_source_item
@@ -17,7 +17,7 @@ from flow_sdk.ingest import IngestMode, SourceItemSpec, ingest_items
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_projected_conversation_names_its_channel_and_source():
     tag = uuid.uuid4().hex[:8]
-    src = DataDriver(provider="slack", channel="slack", account_key=f"T-{tag}", name="Chat")
+    src = DataSource(provider="slack", channel="slack", account_key=f"T-{tag}", name="Chat")
     await src.save()
     spec = SourceItemSpec(
         data_source_id=str(src.id), provider="slack", kind="content.message.chat", segment_key="C1",

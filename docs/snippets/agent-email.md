@@ -21,7 +21,7 @@ assert pirate.inbox is None
 allocated = await pirate.allocate_inbox(allowed_senders=["captain@gmail.com"])
 assert pirate.inbox is allocated
 
-# Inbox is the message-facing view over the cloud_email DataDriver that
+# Inbox is the message-facing view over the cloud_email DataSource that
 # allocate_inbox() wired. owner= says whose inbox this is — the agent's, so
 # its replies are attributed to the agent, not to you. agent_id is the
 # mailbox's stable identity (the address is allocated and can change) and,
@@ -50,7 +50,7 @@ buying another. One call allocates at the Hub, wires the `cloud_email` source
 that polls it, and turns both on; there is no separate "enable" step, because
 enabling a mailbox you do not have and re-enabling one you do are the same
 request. `Inbox.listen()` is the public listening surface over that
-`DataDriver`; `DataDriver` itself does not expose `listen()`.
+`DataSource`; `DataSource` itself does not expose `listen()`.
 
 Everything after allocation belongs to the mailbox, not to the Agent:
 

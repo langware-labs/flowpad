@@ -96,7 +96,7 @@ class TestTimeoutIsNotRetryable:
 
     @pytest.mark.asyncio
     async def test_a_send_failure_never_parks_the_data_source(self, monkeypatch):
-        # `SourceError` health drives DataDriver parking. One failed reply must
+        # `SourceError` health drives DataSource parking. One failed reply must
         # not stop a mailbox from syncing.
         async def _boom(*a, **kw):
             raise RuntimeError("connector exploded")

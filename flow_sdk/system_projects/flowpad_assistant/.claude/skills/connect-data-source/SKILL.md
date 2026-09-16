@@ -70,7 +70,7 @@ fails** with what the user must do:
 | **connect** | The row exists, a read-back confirms every field applied, and `verify` is `ready` (or names what a human must do) |
 | **test** | **Records actually landed** — `observe` returns `items`, or `empty_but_healthy` with the window explained |
 | **use** | The content is findable — `flow record search`, or the reflected file opens |
-| **declare** | The run's output is registered — `flow artifact entity data_driver-<id>` exits `0`. After the test gate, never before |
+| **declare** | The run's output is registered — `flow artifact entity data_source-<id>` exits `0`. After the test gate, never before |
 | **view** | `flow show view data-sources` and the card is in the listing |
 
 ## Reference

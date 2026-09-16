@@ -38,10 +38,10 @@ logger = logging.getLogger(__name__)
 
 async def lift_page(items: Sequence[SourceItemSpec]) -> list[SourceItemSpec]:
     """Every envelope with its origin and payload — one source-row read per source in the page."""
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
     pending = {item.data_source_id for item in items if item.origin is None or item.data is None}
-    sources = {sid: await DataDriver.get_one({"id": sid}) for sid in pending}
+    sources = {sid: await DataSource.get_one({"id": sid}) for sid in pending}
     return [lift(sources.get(item.data_source_id), item) for item in items]
 
 
