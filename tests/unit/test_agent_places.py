@@ -1,11 +1,12 @@
 """An agent runs on places; each place may override how it runs and own its email.
 
-A place is a Deployment of the agent. Its choices live in agent.md keyed by the
+A place is a Deployment of the agent. Its choices live in agent.json keyed by the
 Deployment id (``places``, ``email_place``), so they travel with the definition
 and each machine applies only the ones naming a placement that runs there.
 """
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -33,6 +34,10 @@ pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 async def _agent(tmp_path: Path, name: str, **fields) -> Agent:
     project = await seed_project(tmp_path / f"{name}-project")
     return await seed_agent(Path(project.fs_storage_mount_path), name, project_id=project.id, **fields)
+
+
+def _document(agent: Agent) -> dict:
+    return json.loads((Path(agent.asset_ref) / "agent.json").read_text())
 
 
 async def _cloud_place(agent: Agent, node: str = "compute_node-11111111-2222-4333-8444-555555555555") -> Deployment:
@@ -74,22 +79,23 @@ async def test_a_place_override_reaches_the_launch_and_only_that_place(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_overrides_are_written_to_agent_md_and_reset_removes_them(tmp_path):
+async def test_overrides_are_written_to_agent_json_and_reset_removes_them(tmp_path):
     agent = await _agent(tmp_path, "places-file", model="haiku", system_prompt="Keep this prompt.")
     local = await agent.local_deployment()
-    document = Path(agent.asset_ref) / "agent.md"
-    assert "Keep this prompt." in document.read_text()
+    document = Path(agent.asset_ref) / "agent.json"
+    prompt = Path(agent.asset_ref) / "system_prompt.md"
+    assert "Keep this prompt." in prompt.read_text()
 
     await set_place_override(agent, local.id, "effort", "high")
-    text = document.read_text()
-    assert "places:" in text and local.id in text and "effort: high" in text
+    doc = _document(agent)
+    assert [(p["deployment_id"], p.get("effort")) for p in doc["places"]] == [(local.id, "high")]
     # A header patch: the body (the system prompt) and the other fields survive.
-    assert "Keep this prompt." in text and "model: haiku" in text
+    assert "Keep this prompt." in prompt.read_text() and doc["model"] == "haiku"
     assert (await Agent.get_by_id(agent.id)).system_prompt.strip() == "Keep this prompt."
 
     await set_place_override(agent, local.id, "effort", None)
     assert not (await Agent.get_by_id(agent.id)).places
-    assert "places:" not in document.read_text()
+    assert not json.loads(document.read_text()).get("places")
 
 
 @pytest.mark.asyncio
@@ -169,10 +175,10 @@ async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
     assert await email_answers_here(agent.id) is True
 
     await set_email_place(agent, cloud.id)
-    assert "Answer mail." in (Path(agent.asset_ref) / "agent.md").read_text()
+    assert "Answer mail." in (Path(agent.asset_ref) / "system_prompt.md").read_text()
     assert (await DataSource.get_by_id(source.id)).status == SourceStatus.DISABLED.value
     assert await email_answers_here(agent.id) is False
-    assert "email_place: " + cloud.id in (Path(agent.asset_ref) / "agent.md").read_text()
+    assert _document(agent)["email_place"] == cloud.id
 
     await set_email_place(agent, local.id)
     assert (await DataSource.get_by_id(source.id)).status == SourceStatus.ACTIVE.value
@@ -194,7 +200,7 @@ async def test_version_counts_what_is_not_published(tmp_path):
     assert state["has_repo"] is True and state["published"] is False
     assert state["pending_changes"] == 1  # one commit, never published
 
-    (folder / "agent.md").write_text((folder / "agent.md").read_text() + "\nMore.\n")
+    (folder / "system_prompt.md").write_text((folder / "system_prompt.md").read_text() + "\nMore.\n")
     assert version_state(agent)["pending_changes"] == 2
 
 
@@ -236,7 +242,7 @@ async def test_a_place_can_be_switched_off_on_its_own(tmp_path):
     assert fresh.enabled_on(cloud.id) is True, "the other place follows the definition"
     with pytest.raises(RuntimeError, match="disabled"):
         await (await Deployment.get_by_id(local.id)).with_element(fresh).create_process("hi")
-    assert "enabled: false" in (Path(agent.asset_ref) / "agent.md").read_text()
+    assert [p.get("enabled") for p in _document(agent)["places"] if p["deployment_id"] == local.id] == [False]
 
     with pytest.raises(PlaceError):
         await set_place_enabled(fresh, local.id, "no")

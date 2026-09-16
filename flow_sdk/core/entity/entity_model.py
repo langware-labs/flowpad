@@ -3872,7 +3872,7 @@ async def _asset_ref_is_borrowed(record) -> bool:
     round trip: ``FSRecord.meta_dict`` persists only ``ar.path``, so a ref the
     indexer deliberately created read-only comes back WRITABLE on the next load.
     For an ``owns_main_ref`` type that loses the guard completely — ``Agent``
-    re-renders ``agent.md`` on every save, so one Enabled toggle would rewrite a
+    re-renders ``agent.json`` on every save, so one Enabled toggle would rewrite a
     tracked file inside a cloned help desk and break the vendor's next
     ``git pull``.
 

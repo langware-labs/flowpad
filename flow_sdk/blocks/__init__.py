@@ -173,7 +173,7 @@ class _AgentRunner:
 
         The spawn goes through the agent's ``Deployment`` (the one sanctioned
         spawner from a persona) so worker, model, permission mode and
-        subagents are the ones the ``agent.md`` declares — never hand-rolled.
+        subagents are the ones the ``agent.json`` declares — never hand-rolled.
         """
         self._ensure_open()
         key = str(self.session_key(m))

@@ -22,6 +22,7 @@ from flow_sdk.fs_store.serializer.disk import DiskSerializer
 from flow_sdk.fs_store.serializer.fields import asset_class as _asset_class
 from flow_sdk.fs_store.serializer.fields import unwrap_annotation as _unwrap
 from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 
 
 def sample(name: str, annotation: Any, default: Any) -> Any:
@@ -33,6 +34,8 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         return [built] if is_list else built
     if ann is DataSpec or ann is type:          # a field that HOLDS a shape (SpecType)
         return DataSpec.parse({f"{name}_k": "string", f"{name}_n": ["int"]})
+    if ann is PhoneNumberSpec:                  # validated digits: a "<name>-v" placeholder is not a number
+        return PhoneNumberSpec(country_code="972", number="557709288")
     if isinstance(ann, type) and issubclass(ann, DataSpec):   # a field whose VALUE is a shape
         return ann(**{n: sample(n, f.annotation, f.default) for n, f in ann.model_fields.items()})
     if ann is str:

@@ -36,7 +36,7 @@ INDEXED_TYPES = {
     "task", "todo_file", "trigger", "usage_report", "whiteboard", "wizard", "workflow_run",
 }
 
-FRONTMATTER_PORTABLE = ("subagent", "agent", "claude_md", "markdown")
+FRONTMATTER_PORTABLE = ("subagent", "claude_md", "markdown")
 FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (
@@ -52,6 +52,9 @@ FOLDER_NO_LEGACY = ("credential_spec", "mcp", "project_manifest", "trigger")
 FOLDER_MARKDOWN = ("skill", "task", "whiteboard")
 FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
+#: Entity documents (``<type>.json``): the id is the document root's ``"id"``
+#: (``JsonRoot``), and an authored asset mints a portable v4 like any capsule.
+JSON_PORTABLE = ("agent",)
 
 
 def _info(type_name: str):
@@ -64,7 +67,7 @@ def _info(type_name: str):
 
 def _own_document(tmp_path: Path, type_name: str, default: str) -> Path:
     """A file the type CLAIMS: its declared main document for a folder type
-    (``agent.md``, ``trace.json``), its fixed filename for a named file type
+    (``agent.json``, ``trace.json``), its fixed filename for a named file type
     (``CLAUDE.md``), else ``default``. The seam writes an id only into a path
     of the type's own shape (FLOWPAD-2083) — the same gate every walker
     applies — so a mint-and-persist case must present one."""
@@ -98,16 +101,17 @@ def test_every_registered_extractor_has_one_identity_backend() -> None:
 
 def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_CAPSULE)
-    native_types = set(JSON_STABLE)
+    native_types = set(JSON_STABLE) | set(JSON_PORTABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    # Capsule: base's 17 + `agent` + `mcp` + `wizard` + `project_manifest` +
+    # Capsule: base's 17 + `mcp` + `wizard` + `project_manifest` +
     # `credential_spec` (an asset we AUTHOR carries its own v4; the shipped
     # credential templates commit theirs, so every install indexes one row).
     # The sibling `mcp_server` SCAN is derived, because its source is a vendor
     # config file we cannot write an id into. 15 derived, including `micro_app`,
     # whose webapp.json carries no id — so it still owes an install-independent
     # key. See `test_shipped_asset_declares_an_install_independent_key`.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (23, 3, 15)
+    # Native JSON: the three reports + `agent`, whose entity document carries its id.
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (22, 4, 15)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
@@ -213,6 +217,33 @@ def test_json_canonical_id_is_adopted_unchanged(
     assert resolve_id(info, path) == existing
     assert resolve_id(info, path) == existing
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("type_name", JSON_PORTABLE)
+@pytest.mark.parametrize("existing", (V4, V5))
+def test_entity_document_canonical_id_is_adopted_unchanged_without_write(
+    tmp_path: Path, type_name: str, existing: str,
+) -> None:
+    path = _own_document(tmp_path, type_name, "entity.json")
+    path.write_text(json.dumps({"type": type_name, "id": existing, "name": "Matrix"}) + "\n", encoding="utf-8")
+    before = path.read_bytes()
+    info = _info(type_name)
+    assert resolve_id(info, path) == existing
+    assert resolve_id(info, path) == existing
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("type_name", JSON_PORTABLE)
+def test_missing_entity_document_id_mints_persists_and_is_idempotent(
+    tmp_path: Path, type_name: str,
+) -> None:
+    path = _own_document(tmp_path, type_name, "entity.json")
+    path.write_text(json.dumps({"type": type_name, "name": "Matrix"}) + "\n", encoding="utf-8")
+    info = _info(type_name)
+    first = resolve_id(info, path)
+    assert uuid.UUID(first).version == 4
+    assert json.loads(path.read_text(encoding="utf-8"))["id"] == first
+    assert resolve_id(info, path) == first
 
 
 @pytest.mark.parametrize("type_name", JSON_STABLE)

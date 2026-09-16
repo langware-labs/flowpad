@@ -115,8 +115,63 @@ export function AgentSelectField({
 }
 
 /**
+ * The agent's phone number as its two stored parts. Commits on blur once both
+ * parts are filled (or both are cleared, which drops the field); the backend
+ * normalises `+972` / `055-770-9288` and refuses what is not a number.
+ */
+export function AgentPhoneField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value?: { country_code: string; number: string } | null;
+  onCommit: (value: { country_code: string; number: string } | undefined) => void;
+}) {
+  const { t } = useLingui();
+  const [code, setCode] = useState(value?.country_code ?? '');
+  const [number, setNumber] = useState(value?.number ?? '');
+  useEffect(() => {
+    setCode(value?.country_code ?? '');
+    setNumber(value?.number ?? '');
+  }, [value?.country_code, value?.number]);
+
+  const commit = () => {
+    const next = { country_code: code.trim(), number: number.trim() };
+    if (next.country_code === (value?.country_code ?? '') && next.number === (value?.number ?? '')) return;
+    if (!next.country_code && !next.number) onCommit(undefined);
+    else if (next.country_code && next.number) onCommit(next);
+  };
+
+  return (
+    <div className="space-y-1.5" data-testid="agent-phone-field">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex gap-2">
+        <Input
+          className="w-20"
+          value={code}
+          placeholder="+972"
+          inputMode="tel"
+          aria-label={t`Country code`}
+          onChange={(e) => setCode(e.target.value)}
+          onBlur={commit}
+        />
+        <Input
+          value={number}
+          placeholder="055-770-9288"
+          inputMode="tel"
+          aria-label={t`Phone number`}
+          onChange={(e) => setNumber(e.target.value)}
+          onBlur={commit}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
  * Comma-separated editor for a DECLARED-ONLY field. `tools`,
- * `disallowed_tools` and `subagents` round-trip through `agent.md` but reach no
+ * `disallowed_tools` and `subagents` round-trip through `agent.json` but reach no
  * worker yet. `mcp_servers` is NOT one of these — it is derived rather than
  * typed, and it does reach the worker; see `AgentMcpField`.
  */

@@ -54,7 +54,7 @@ def test_layout_mapper_handles_file_and_both_folder_shapes() -> None:
     }
     assert layout_for_origin(agent, _origin("agentic-assets/agent/q")).model_dump() == {
         "asset_rel_root": "agentic-assets/agent/q",
-        "main_ref": "agent.md",
+        "main_ref": "agent.json",
     }
     assert layout_for_origin(skill, _origin(".claude/skills/e2e-qa")).model_dump() == {
         "asset_rel_root": ".claude/skills/e2e-qa",

@@ -13,7 +13,7 @@ import mimetypes
 import re
 import urllib.parse
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import AsyncIterator, List
 
 from starlette.datastructures import UploadFile
@@ -709,7 +709,7 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
             storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else "", real_path=real_path
         )
 
-        # The file IS the record for a file-backed entity (agent.md, SKILL.md,
+        # The file IS the record for a file-backed entity (agent.json, SKILL.md,
         # a task's folder…), so a write here must land in the row too — else
         # every reader of the entity (an Agent's `system_prompt` at launch, the
         # card, search) keeps the pre-edit values until some sweep happens to
@@ -744,11 +744,19 @@ async def document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRe
     if request_info.method not in ("get", "post") or not fs_info.vpath.typeid:
         return ApiFailResponse(message="Document requires GET or POST and a target", status_code=400)
     try:
+        from flow_sdk.assets.entity_document import entity_info_for, read_entity_document
+
         storage = await _get_storage_for_entity(request_info)
         path = fs_info.vpath.abs_vfspath
+        local = _real_path(storage, path)
+        entity_info = entity_info_for(local) if local else None
         if request_info.method == "get":
-            raw = b"".join([chunk async for chunk in storage.stream(path)])
-            result = read_document_bytes(raw)
+            if entity_info is not None:
+                # An entity document is two files (``<type>.json`` + its body), read together.
+                result = await asyncio.to_thread(read_entity_document, local, entity_info)
+            else:
+                raw = b"".join([chunk async for chunk in storage.stream(path)])
+                result = read_document_bytes(raw)
         else:
             payload = await request_info.get_post_data()
             if not isinstance(payload, dict) or not isinstance(payload.get("expected_revision"), str):
@@ -769,8 +777,10 @@ async def document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRe
                 await finish_document_version(real_path, result, version_context)
                 await _resync_entity_from_disk(real_path)
         data = result.model_dump(mode="json")
-        data["body_ref"] = {"path": fs_info.vpath.entity_sub_path, "type_id": str(fs_info.vpath.typeid),
-                            "ref_type": "text", "read_only": False}
+        body_path = fs_info.vpath.entity_sub_path
+        if entity_info is not None and entity_info.body_file is not None:
+            body_path = str(PurePosixPath(body_path).with_name(f"{entity_info.body_file}.md"))
+        data["body_ref"] = {"path": body_path, "type_id": str(fs_info.vpath.typeid), "ref_type": "text", "read_only": False}
         return ApiSuccessResponse(data=data)
     except DocumentConflict as exc:
         return ApiFailResponse(message=str(exc), status_code=409,

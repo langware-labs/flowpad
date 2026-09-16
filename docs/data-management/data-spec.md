@@ -66,7 +66,7 @@ A dict is **always** an object whose keys are field names. That is why the
 registration hook is `spec_kind`, not `kind`: a user must be free to author a
 field called `kind`. Identical object forms share one compiled class, and the
 class remembers the (normalized) form it came from, so it dumps back to exactly
-what was written — that is what keeps `agent.md` and `dataset.json` readable.
+what was written — that is what keeps `agent.json` and `dataset.json` readable.
 
 ### `spec_kind` is the connector
 
@@ -160,8 +160,8 @@ is an entity field with a compatible core (the entity may narrow: `str` → `Typ
 
 | in the spec | on disk |
 |---|---|
-| a scalar field | frontmatter (`.md`) / the `metadata` section (`.json`) |
-| `prompt: Body` | the markdown body — never in the header |
+| a scalar field | frontmatter (`.md`) / the `metadata` section (`.json`) / a key of `<type>.json` (entity layout) |
+| `prompt: Body` | the markdown body — never in the header; `<field>.md` beside `<type>.json` in the entity layout |
 | `data: FreeSection` | the free `data` section of a two-section JSON manifest |
 | `FileRef` / `FolderSpec` | bytes — a file, a directory |
 | `list[ExampleSpec]` | rows, written by the `DatasetLayout` `TypeInfo.rows_layout_field` names |
@@ -202,6 +202,38 @@ that the header cannot (counts over rows, wiki-links in a body, a name from the
 path), applied by `load` before the row is built. The header dump is
 `exclude_defaults`: a spec default is not authored, so a fresh doc has an empty
 header and a counter is written only once it moved.
+
+### Entity document — `<type>.json`
+
+`manifest_layout="entity"` is the default home for a native folder asset's fields: ONE JSON
+document named after the type, shaped like the record shadow `metadata.json`, rendered and read
+in one place (`render_entity_json` / `read_entity_json`, `flow_sdk/assets/serialization.py`).
+Agent is the first type on it; task, spec, prompt and whiteboard are next.
+
+```
+agentic-assets/agent/whatsapp-e2e/
+  agent.json        {"type": "agent", "id": "ceae4f10-…", "name": "whatsapp-e2e",
+                     "worker_type": "claude", "model": "haiku", …,
+                     "phone": {"country_code": "972", "number": "557709288"}}
+  system_prompt.md  You are an end-to-end test agent reached over WhatsApp…
+```
+
+- **Declare it with one slot:** `shape=Folder.entity_json(type)` and `manifest_layout=ENTITY_LAYOUT`.
+  Registration refuses a main that is not `<type>.json`, a `FreeSection`, or a carrier other
+  than `JsonRoot`; `__post_init__` defaults the carrier and the fingerprint.
+- **Keys, in order:** `type`, `id` (the identity carrier — `JsonRoot`), `name`, `version`
+  (carried from the file), then the spec's header fields (`exclude_none` + `exclude_defaults`).
+  A `type` that names another type is a load error.
+- **Every `Body` field is `<field>.md`** beside the JSON (`TypeInfo.body_files`) — plain text, no
+  frontmatter. It never enters the shadow `metadata.json`; `fts_content` still indexes it.
+- **Freshness** (`entity_document_fingerprint`) covers the JSON and every body file, so editing
+  `system_prompt.md` alone re-indexes the entity.
+- **Editing** goes through the same `read_document` / `update_document` as a markdown main
+  (`flow_sdk/assets/entity_document.py`): fields are the JSON minus `type`/`id`, the body is the
+  body file, the revision spans both, identity keys are refused, the spec validates the patch.
+- **Retired forms:** `TypeInfo.retired_mains` (`("agent.md",)`) names the file a type used to
+  keep. A folder with only that file is a scan issue naming
+  `migration_2026_09_entity_json_mains`, which converts it keeping the id, then deletes the old file.
 
 ### Persistence is the serializer's
 

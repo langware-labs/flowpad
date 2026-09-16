@@ -67,6 +67,65 @@ def _manifest(obj: Any, info: Any) -> dict[str, Any]:
     return doc
 
 
+def entity_body_path(root: Path, field: str) -> Path:
+    """Where an entity document keeps one markdown body: ``<field>.md`` beside ``<type>.json``."""
+    return root / f"{field}.md"
+
+
+def render_entity_json(obj: Any, info: Any, *, entity_id: str | None = None, name: str | None = None, version: Any = None) -> str:
+    """THE entity document text: ``type``, ``id``, ``name``, the carried ``version``, then every header
+    field the spec declares, in declaration order. Bodies are not here — they are their own files.
+
+    ``entity_id`` / ``name`` / ``version`` are what the caller carries across a re-render: the file's own
+    id and folder name when ``obj`` is a bare spec (a ``name_from_path`` type declares neither), and the
+    revision counter, which is not a spec field."""
+    from flow_sdk.assets.identity_carrier import dump_json_document  # noqa: PLC0415
+
+    header = _frontmatter(obj, info)
+    doc: dict[str, Any] = {"type": info.type_name}
+    resolved_id = str(getattr(obj, "id", "") or entity_id or "")
+    if resolved_id:
+        doc["id"] = resolved_id
+    if header.get("name") or name:
+        doc["name"] = header.pop("name", None) or name
+    if version is not None:
+        doc["version"] = version
+    doc.update((key, value) for key, value in header.items() if key not in ("type", "id", "version"))
+    return dump_json_document(doc)
+
+
+def write_entity_bodies(obj: Any, info: Any, root: Path) -> None:
+    """The ``Body`` field of an entity document as its own ``<field>.md`` — every writer's second half.
+
+    THE body normalisation: stripped, one trailing newline (empty stays empty), so the editor, an
+    entity save and the migration all leave the same bytes and no save churns the file."""
+    from flow_sdk.assets.frontmatter import _atomic_write_text  # noqa: PLC0415
+
+    if info is None or not info.is_entity_document or info.body_file is None:
+        return
+    text = (getattr(obj, info.body_file, "") or "").strip()
+    _atomic_write_text(entity_body_path(root, info.body_file), f"{text}\n" if text else "")
+
+
+def read_entity_json(info: Any, root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """``(header, bodies)`` of an entity document. A document naming another type is refused."""
+    from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415
+
+    main = root / info.shape.main
+    doc = load_json_dict(main)
+    declared = doc.get("type")
+    if declared not in (None, "", info.type_name):
+        raise ValueError(f"{main} is a {declared!r} document, not a {info.type_name!r}")
+    header = {key: value for key, value in doc.items() if key not in ("type", "id", "version")}
+    bodies: dict[str, Any] = {}
+    if info.body_file is not None:
+        try:
+            bodies[info.body_file] = entity_body_path(root, info.body_file).read_text(encoding="utf-8").strip()
+        except OSError:
+            bodies[info.body_file] = ""
+    return header, bodies
+
+
 def _body(obj: Any, info: Any) -> str:
     """The spec's ``Body`` field, stripped; ``""`` when the spec has none."""
     body_field = spec_layout(info.asset_spec).body
@@ -139,6 +198,8 @@ def render_asset(obj: Any, info: Any) -> Optional[str]:
         return fn(obj) if fn is not None else None
     from flow_sdk.assets.frontmatter import _render_frontmatter
 
+    if info.is_entity_document:
+        return render_entity_json(obj, info)
     folder = isinstance(info.shape, Folder)
     main = info.shape.main if folder else None
     if main and main.endswith(".json"):
@@ -164,10 +225,13 @@ def read_main(info: Any, root: Path, *, field_data: dict | None = None) -> tuple
 
     spec = info.asset_spec
     lay = spec_layout(spec)
-    main = _main_doc(info, root)
     header_raw: dict[str, Any] = {}
     data: dict[str, Any] = {}
-    if main is not None and main.suffix == ".json":
+    if info.is_entity_document:
+        # Its own reader knows both files; locating a main document would stat the folder for nothing.
+        header_raw, bodies = read_entity_json(info, root)
+        data.update(bodies)
+    elif (main := _main_doc(info, root)) is not None and main.suffix == ".json":
         if _manifest_layout(info) == "sections":
             header_raw, free = load_doc(main)
             if free:
@@ -187,7 +251,8 @@ def read_main(info: Any, root: Path, *, field_data: dict | None = None) -> tuple
     # "not present", and a non-Optional entity field (an enum) must not see it.
     # The marker fields are EXCLUDED: they were read above, and the spec's
     # own default ("") must not overwrite the body/section just read.
-    data.update(spec.model_validate({**header_raw, **(field_data or {})}).model_dump(exclude_none=True, exclude=lay.marker_fields))
+    authored = header_raw if "name" in spec.model_fields else {k: v for k, v in header_raw.items() if k != "name"}
+    data.update(spec.model_validate({**authored, **(field_data or {})}).model_dump(exclude_none=True, exclude=lay.marker_fields))
     if info.name_from_path:
         data["name"] = header_raw.get("name") or (root.name if root.is_dir() else root.stem)
     return data, header_raw
@@ -332,6 +397,14 @@ def _write_main(obj: Any, info: Any, root: Path, main: Optional[Path]) -> None:
         return
     # Both substrates are atomic and skip a byte-identical rewrite, so a
     # no-op save never churns the mtime the hash sentinel keys on.
+    if info is not None and info.is_entity_document:
+        from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415
+
+        # One parse of what is there, for the two keys the spec does not carry: the id and the counter.
+        existing = load_json_dict(main) if main.is_file() else {}
+        _atomic_write_text(main, render_entity_json(obj, info, entity_id=existing.get("id"), version=existing.get("version")))
+        write_entity_bodies(obj, info, root)
+        return
     if info is None or info.asset_spec is None:
         text = render_asset(obj, info)
         if text is None:

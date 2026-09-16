@@ -8,7 +8,7 @@ An Agent answers *who*; a ``Deployment`` answers *where and how*; an
 
 Folder layout (``AssetClass.REPO``, like Spec/Task/Deck)::
 
-    <scope>/agentic-assets/agent/<name>/agent.md
+    <scope>/agentic-assets/agent/<name>/agent.json
 
 The entity OWNS that file (``owns_main_ref``): ``system_prompt`` is the
 authoring surface and the body is re-rendered on every save, so disk stays the
@@ -41,6 +41,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec import SpecType
 from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec
+from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -55,7 +56,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-#: The two vocabularies for "which CLI": an agent.md declares the DRIVER
+#: The two vocabularies for "which CLI": an agent.json declares the DRIVER
 #: short-id (``VENDORS[...].key``), ``AgenticProcess.worker_type`` carries the
 #: persisted value (``.worker_type``). Both directions read the one table; a
 #: blank ``worker_type:`` means "unset" and follows ``get_driver``'s default.
@@ -139,7 +140,7 @@ def _inbox_failures(verb: str):
 
 class Agent(Entity):
     """``agentic-assets/agent/<name>/`` — the ROW. Its shape on disk is
-    ``AgentSpec`` (``TypeInfo.asset_spec``); that ``agent.md`` is the main file
+    ``AgentSpec`` (``TypeInfo.asset_spec``); that ``agent.json`` is the main file
     and the folder names the agent is ``TypeInfo``'s (the serializer's)."""
 
     type: str = APIField(default=EntityType.AGENT.value)
@@ -167,7 +168,7 @@ class Agent(Entity):
     # launch has no box to size, so it is never projected into AgentOptions.
     machine_size: Optional[str] = APIField(default=None, description="Cloud box size: sm | md | lg.")
     # ── DECLARED ONLY, not yet enforced ───────────────────────────────────
-    # These round-trip through agent.md and are visible on the agent's card,
+    # These round-trip through agent.json and are visible on the agent's card,
     # but `to_agent_options` cannot project them: no AgentOptions subclass has
     # a field to carry them, so nothing reaches the worker. Do not present them
     # in a UI as if they gated anything until that lands.
@@ -179,7 +180,7 @@ class Agent(Entity):
     # folder (``agentic-assets/mcp/<name>/``), reached via ``mcp_assets()`` —
     # that structural 1:1 is still what a launch reads, and it is what makes a
     # RECEIVED agent carry its servers instead of dangling TypeIds. This list is
-    # the AUTHORED intent that produces it: ids the editor writes into agent.md,
+    # the AUTHORED intent that produces it: ids the editor writes into agent.json,
     # materialized into the folder by ``attach_declared_mcp_servers`` at process
     # creation. Two layers on purpose — the list can name an asset that lives
     # anywhere (the project's own ``agentic-assets/mcp/``), while the folder
@@ -192,7 +193,7 @@ class Agent(Entity):
     subagents: list[str] = APIField(
         default_factory=list,
         description="SubAgent NAMES this agent may delegate to. Names, not TypeIds, because a "
-        "shipped agent.md is authored before the SubAgent it references has ever been indexed. "
+        "shipped agent.json is authored before the SubAgent it references has ever been indexed. "
         "DECLARED ONLY — nothing projects these into --agents yet; wire through "
         "AgenticProcess.load_embedded_subagent(name) when a caller needs it.",
     )
@@ -207,7 +208,7 @@ class Agent(Entity):
 
     # ── I/O contract ──────────────────────────────────────────────────────
     # What this agent consumes and produces — `input + template → output`.
-    # Authored as shapes in agent.md frontmatter (a class, held via SpecType). DECLARATION ONLY: they
+    # Authored as shapes in agent.json (a class, held via SpecType). DECLARATION ONLY: they
     # never enter `to_agent_options`, whose to_json() is md5'd into
     # `last_started_hash` — a new key there flips `restart_required` on every
     # running process (the same reason `system_prompt` stays out).
@@ -249,7 +250,7 @@ class Agent(Entity):
 
     # ── places ────────────────────────────────────────────────────────────
     # Where this agent runs is a Deployment; how it runs THERE may differ from
-    # the definition. Both choices live in agent.md, keyed by Deployment id, so
+    # the definition. Both choices live in agent.json, keyed by Deployment id, so
     # they travel with the agent — see ``flow_sdk/builtin/agent_places.py``.
     places: Optional[list[AgentPlaceSpec]] = APIField(
         default=None,
@@ -258,6 +259,14 @@ class Agent(Entity):
     email_place: Optional[str] = APIField(
         default=None,
         description="Deployment id of the one place that answers this agent's email. Empty = every polling machine.",
+    )
+
+    # ── contact ───────────────────────────────────────────────────────────
+    # DECLARATION ONLY: never enters `to_agent_options`.
+    phone: Optional[PhoneNumberSpec] = APIField(
+        default=None,
+        description="The agent's own phone number — country code and national number — the one its "
+        "WhatsApp channel answers on.",
     )
 
     _api_visible: ClassVar[bool] = True
@@ -346,7 +355,7 @@ class Agent(Entity):
         """Materialize the declared ``mcp_servers`` ids as attached assets.
 
         The bridge between the two layers: ``mcp_servers`` is the AUTHORED
-        intent (ids the editor writes into ``agent.md``, pointing at Mcp assets
+        intent (ids the editor writes into ``agent.json``, pointing at Mcp assets
         that typically live in the project, not under this agent), while
         ``mcp_assets()`` is the structural attachment a launch actually reads.
         This walks the first and produces the second. Returns how many

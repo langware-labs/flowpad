@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Button } from '@src/components/ui/button';
 
 import { AgentPlacesColumn } from './AgentPlacesColumn';
-import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfileFields';
+import { AgentChoiceField, AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
 import { AgentMcpField } from './AgentMcpField';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import {
@@ -397,6 +397,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     rows={2}
                   />
                 </div>
+                <AgentPhoneField
+                  label={t`Phone number — recorded on the agent's card, not yet used to route messages`}
+                  value={profile.phone}
+                  onCommit={(v) => void save({ phone: v })}
+                />
                 <div className="rounded-md border border-border px-3 py-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm">
