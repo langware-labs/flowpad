@@ -84,7 +84,7 @@ def consume_name_observation(state: SessionNameState, observation: NameObservati
     """Advance source evidence without adopting its title.
 
     User rename baselines use this to acknowledge provider records that already
-    existed before the user's choice. A late watcher replay must not resurrect
+    existed before the user's choice. A late provider read must not resurrect
     an earlier native manual rename.
     """
     if observation.session_id != state.session_id or not observation.title.strip():

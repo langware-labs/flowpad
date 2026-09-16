@@ -65,7 +65,7 @@ async def _make_headless_ap(monkeypatch, path: Path) -> AgenticProcess:
     ap.pty_mode = False  # HEADLESS transport
     await ap.save(notify=False)
     # Settle initial naming migration before measuring status-only broadcasts.
-    await refresh_process_name(ap, watch=False)
+    await refresh_process_name(ap)
     # A headless turn is in flight for its whole duration. Under the OLD code this
     # pinned worker_status to INITIALIZING and suppressed every broadcast.
     object.__setattr__(ap, "_turn_in_flight", True)

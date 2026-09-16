@@ -1731,7 +1731,7 @@ class WorkerDriver(Protocol):
 
     @property
     def naming_adapter(self) -> "NamingAdapter":
-        """Provider observations; shared naming runtime owns state and watching."""
+        """Provider title observations, read on transcript events and lifecycle edges."""
         ...
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:

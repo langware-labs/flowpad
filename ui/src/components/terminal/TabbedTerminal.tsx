@@ -264,15 +264,9 @@ const TerminalPanel: React.FC<{
 
   const handleTitleChange = (title: string): void => {
     if (tab.is_disabled) return;
-    if (isProcess) {
-      // The driver/backend owns title validation, provenance, pinning and tab
-      // synchronization. An OSC frame never writes a process name in the UI.
-      void activeProcess?.observeTitle(title).catch((error) => {
-        console.warn('[terminal] title observation failed', error);
-      });
-      return;
-    }
-    if (!shell || !shell.auto_rename) return; // user pinned this shell
+    // A process tab has no shell: the backend names a process from its
+    // transcript, and an OSC frame is never evidence for it.
+    if (!shell || !shell.auto_rename) return; // no shell, or user pinned this shell
     // Clean spinner frames / icons / ANSI off the raw OSC title, then gate on
     // real text and dedupe against the CLEANED name — so animation ticks that
     // reduce to the same title never fire a save.

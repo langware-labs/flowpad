@@ -58,8 +58,8 @@ By-id: `close` (soft `visible=false` + per-`target_type` teardown via
 `teardown_for_tab`), `rename` (reflects explicit user input onto the target;
 worker processes update their canonical name and linked tabs atomically), and
 `set_name` (sets an ordinary tab label; worker process tabs instead reconcile the
-canonical process name and ignore the supplied automatic label). Worker OSC
-frames use `AgenticProcess.observe-title`; provider provenance and name priority
+canonical process name and ignore the supplied automatic label). Worker
+terminal titles are never naming evidence; provider provenance and name priority
 live in the [shared naming service](interface/session-naming.md). Ordinary shell
 and entity tabs retain their existing label/reflection behavior. List/display mutations broadcast a
 `tabs_changed` ping. Orphan cleanup: `Entity.delete` soft-closes any Tab pointing

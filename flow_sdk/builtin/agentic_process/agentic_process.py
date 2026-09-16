@@ -53,12 +53,12 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     latch_spawn_failure,
     resolve_worker_language,
 )
+from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
 from flow_sdk.builtin.agentic_process.process_assets import (
     PreparedProcessAssets,
     ProcessAssets,
     SystemInstructionAssets,
 )
-from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
 from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
@@ -4691,6 +4691,18 @@ class AgenticProcess(Entity):
             logger.debug("AgenticProcess %s _load_transcript: parse failed", self.id, exc_info=True)
             return None
 
+    async def adopt_discovered_session(self) -> str | None:
+        """Discover this process's native session through its driver and adopt it.
+
+        For a harness that mints its id after launch. Returns the adopted id, or
+        None when the transcript is not discoverable yet.
+        """
+        descriptor = await asyncio.to_thread(lambda: self.transcript)
+        if descriptor is None or not descriptor.session_id:
+            return None
+        await self._persist_transcript_session_id(descriptor)
+        return self.session_id if self.session_id == descriptor.session_id else None
+
     async def _persist_transcript_session_id(self, descriptor) -> None:
         """Adopt a session id discovered in the on-disk transcript (PTY resume
         rotation). Routed through ``adopt_worker_session`` — the single owner
@@ -5435,8 +5447,8 @@ class AgenticProcess(Entity):
                     if self.adopt_worker_session(sid):
                         await self.save()
                     # A preassigned id is unchanged at init, but this is still
-                    # the first evidence of its native session. Bind naming
-                    # before the transcript/title file exists too.
+                    # the first evidence of its native session: reconcile once.
+                    # Later titles arrive as transcript events.
                     await self.reconcile_name()
                 except Exception:
                     logger.warning("%s: session adoption failed", log_prefix, exc_info=True)
@@ -6761,20 +6773,6 @@ class AgenticProcess(Entity):
                                        "event_name": event.value, "event_data": data,
                                        "session_id": self.session_id})
 
-    @action.post(action_name="observe-title")
-    async def observe_title_action(self):
-        """Accept raw terminal evidence; the backend adapter decides its meaning."""
-        from .naming.runtime import observe_terminal_title
-
-        body = await _read_json_body()
-        if isinstance(body, ApiFailResponse):
-            return body
-        title = body.get("title")
-        if not isinstance(title, str):
-            return ApiFailResponse(message="title must be a string")
-        current = await observe_terminal_title(self, title, body.get("session_id"))
-        return ApiSuccessResponse(data={"name": current.name if current else None})
-
     async def stamp_default_name(self) -> bool:
         """Compatibility entry point for shared name reconciliation on lifecycle edges."""
         before = self.name
@@ -6790,9 +6788,6 @@ class AgenticProcess(Entity):
 
         Returns True on success, False if already terminated or on error.
         """
-        from .naming.runtime import stop_name_observation
-
-        stop_name_observation(str(self.id))
         logger.info(f"AgenticProcess {self.id}: close")
 
         # End the process's activity here, not only when a terminal worker status happens
@@ -7177,9 +7172,6 @@ class AgenticProcess(Entity):
         carries the headless ``_turn_in_flight`` short-circuit and visible-PTY
         liveness reconciliation that ``driver.tail_status`` alone misses.
         """
-        from .naming.runtime import request_name_refresh
-
-        request_name_refresh(str(self.id))
         pending = getattr(self, "_pending_entries", None)
         if pending is None:
             object.__setattr__(self, "_pending_entries", [])
@@ -7204,6 +7196,14 @@ class AgenticProcess(Entity):
                     name=f"ap-flush-{self.id[:8]}",
                 ),
             )
+
+    async def _apply_transcript_names(self, durable: "AgenticProcess", entries: list) -> None:
+        from .naming.runtime import apply_transcript_names
+
+        try:
+            await apply_transcript_names(durable, entries)
+        except Exception:
+            logger.debug("AgenticProcess %s: transcript naming failed", self.id, exc_info=True)
 
     async def _process_transcript_entries(self, entries: list) -> None:
         """Per-flush entry side effects: live reindex + plan/file events.
@@ -7403,10 +7403,15 @@ class AgenticProcess(Entity):
             await asyncio.sleep(self._DEBOUNCE_SECONDS)
 
             durable = await AgenticProcess.get_by_id(str(self.id))
+            entries = list(getattr(self, "_pending_entries", []))
+            # A name belongs to the durable row, so it moves in any lifecycle
+            # state (starting, or after the worker exited); only entry
+            # processing below is gated on RUNNING.
+            if durable is not None:
+                await self._apply_transcript_names(durable, entries)
             if durable is None or durable.status != ProcessStatus.RUNNING.value or durable.pty_mode != self.pty_mode:
                 return
 
-            entries = list(getattr(self, "_pending_entries", []))
             object.__setattr__(self, "_pending_entries", [])
             await self._process_transcript_entries(entries)
 
