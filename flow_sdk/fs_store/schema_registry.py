@@ -242,9 +242,6 @@ class TypeInfo:
     # Main documents this type USED to carry (``agent.md``). A folder holding one and not the current
     # main is a RETIRED form: reported with the migration that converts it, never indexed or written.
     retired_mains: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
-    # ``agentic-assets/<family>`` directories this type USED to live under (``data_source``). A folder
-    # found there is a RETIRED form too: reported with its migration, never indexed or written.
-    retired_families: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
     # ``(file, how to port it)``: a folder holding one is a retired form NO migration converts — it is
     # code to rewrite (a retired runtime's ``fetch.py``). Reported with the port, never indexed.
     retired_files: tuple[tuple[str, str], ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
@@ -425,11 +422,8 @@ class TypeInfo:
 
     @property
     def retired_migration(self) -> str:
-        """The migration that converts this type's retired forms. An entity document's retired main is a
-        different FORMAT (markdown → ``<type>.json``); any other retired form is only a move or a rename."""
-        if self.manifest_layout == ENTITY_LAYOUT:
-            return "flow_sdk.migrations.migration_2026_09_entity_json_mains"
-        return "flow_sdk.migrations.migration_2026_09_retired_asset_forms"
+        """The migration that converts this type's retired main (markdown → ``<type>.json``), or ``""``."""
+        return "flow_sdk.migrations.migration_2026_09_entity_json_mains" if self.manifest_layout == ENTITY_LAYOUT else ""
 
     # --- SCAN declarations ---
 
