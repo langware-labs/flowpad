@@ -6,7 +6,10 @@
   "worker_type": "claude",
   "model": "haiku",
   "skills": [],
-  "mcp_servers": [],
+  "mcp_servers": [
+    "mcp-6a29cf68-f6ce-4458-adfc-5398e849e760",
+    "mcp-a884cc06-f36f-415c-94ac-227f04f450c2"
+  ],
   "subagents": [],
   "additional_dirs": [],
   "load_flowpad_assistant": false,
@@ -19,5 +22,5 @@
     "country_code": "972",
     "number": "557709288"
   },
-  "version": 55
+  "version": 56
 }
