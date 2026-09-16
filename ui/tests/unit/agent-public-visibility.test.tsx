@@ -8,6 +8,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createRouterWrapper } from '../utils/router-test-utils';
 
 const mocks = vi.hoisted(() => ({ error: vi.fn() }));
 // Delegate rather than hand over `mocks.error` itself: the factory runs once, and each test swaps in
@@ -20,9 +21,22 @@ vi.mock('@src/notifications', () => ({
 const { Agent, dataManager } = await import('@sdk');
 const { AgentPublicVisibilitySection } =
   await import('@src/components/assets/editor/agent-profile/AgentPublicVisibilitySection');
+const { TooltipProvider } = await import('@src/components/ui/tooltip');
 
 const AGENT_ID = '11111111-2222-4333-8444-555555555555';
 const agent = (over: Record<string, unknown> = {}) => new Agent({ id: AGENT_ID, name: 'q', remote: true, ...over });
+
+// ShareButton renders a Tooltip (needs a TooltipProvider), and opening its dialog calls
+// useDockNavigation (needs a Router) — neither is otherwise on this page's own tree.
+const RouterWrapper = createRouterWrapper('/');
+const renderSection = (props: { agent: InstanceType<typeof Agent> }) =>
+  render(
+    <RouterWrapper>
+      <TooltipProvider>
+        <AgentPublicVisibilitySection {...props} />
+      </TooltipProvider>
+    </RouterWrapper>,
+  );
 
 // The hub's answer for a published agent: not public, unless a test says otherwise.
 let hubPermissions: ReturnType<typeof vi.spyOn>;
@@ -41,7 +55,7 @@ describe('AgentPublicVisibilitySection', () => {
   it('calls set_public with anonymous, reflected to the hub, and then reads as public', async () => {
     const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ public: 'anonymous' });
 
-    render(<AgentPublicVisibilitySection agent={agent()} />);
+    renderSection({ agent: agent() });
     const button = screen.getByTestId('agent-make-public');
     expect(button).toHaveTextContent('Make agent publicly visible');
     expect(screen.getByTestId('agent-public-consequence')).toHaveTextContent('even without signing in');
@@ -61,7 +75,7 @@ describe('AgentPublicVisibilitySection', () => {
     const fetch = vi.spyOn(Agent.prototype, 'fetchPermissions').mockResolvedValue(['anonymous_viewer']);
     const call = vi.spyOn(dataManager, 'callAction');
 
-    render(<AgentPublicVisibilitySection agent={agent()} />);
+    renderSection({ agent: agent() });
 
     const button = screen.getByTestId('agent-make-public');
     await waitFor(() => expect(button).toHaveTextContent('Agent is publicly visible'));
@@ -74,7 +88,7 @@ describe('AgentPublicVisibilitySection', () => {
     const fetch = vi.spyOn(Agent.prototype, 'fetchPermissions');
     const call = vi.spyOn(dataManager, 'callAction');
 
-    render(<AgentPublicVisibilitySection agent={agent({ remote: false })} />);
+    renderSection({ agent: agent({ remote: false }) });
 
     const button = screen.getByTestId('agent-make-public');
     expect(button).toHaveTextContent('Publish this agent to share it');
@@ -87,7 +101,7 @@ describe('AgentPublicVisibilitySection', () => {
   it('reports a refused call and leaves the button usable', async () => {
     vi.spyOn(dataManager, 'callAction').mockRejectedValue(new Error('agent cannot be made public'));
 
-    render(<AgentPublicVisibilitySection agent={agent()} />);
+    renderSection({ agent: agent() });
     const button = screen.getByTestId('agent-make-public');
     fireEvent.click(button);
 
@@ -95,6 +109,14 @@ describe('AgentPublicVisibilitySection', () => {
     expect((mocks.error.mock.calls[0][0] as { message: string }).message).toContain('agent cannot be made public');
     await waitFor(() => expect(button).toBeEnabled());
     expect(button).toHaveTextContent('Make agent publicly visible');
+  });
+
+  it('offers a Share button that opens the contact-first share dialog, independent of publish state', () => {
+    renderSection({ agent: agent({ remote: false }) });
+
+    fireEvent.click(screen.getByTestId('agent-share-with-people'));
+
+    expect(screen.getByTestId('share-to-conversation-dialog')).toBeInTheDocument();
   });
 });
 
