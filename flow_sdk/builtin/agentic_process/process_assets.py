@@ -20,6 +20,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: The SDK-shipped persona of a Vibe session (``.claude/agents/vibe.md``). A
+#: session carrying it has a display pane beside the chat.
+VIBE_PERSONA_NAME = "vibe"
+
 class SystemInstructionAssets(DataSpec):
     """This process's asset MOUNT, plus the instruction text when there is any.
 
@@ -83,6 +87,8 @@ class ProcessAssets:
                 projection = await self._place_projection(ref, projection)
             if set_ap_persona:
                 self.process.process_persona_path = projection.path.relative_to(self._process_assets_path()).as_posix()
+                if projection.name == VIBE_PERSONA_NAME:
+                    self._enable_display_context_hook()
             self._drop_legacy_agent_name(projection.name)
             self._normalize_process_asset_mount()
             self._record_embedded_ref(ref)
@@ -90,6 +96,22 @@ class ProcessAssets:
             return ApiSuccessResponse(data={"ok": True, "name": projection.name, "ref": str(ref)})
         except (OSError, ValueError, LookupError) as exc:
             return ApiFailResponse(message=str(exc))
+
+    def _enable_display_context_hook(self) -> None:
+        """A Vibe session has a display, so its worker answers ``UserPromptSubmit``
+        with the shown page's display context (``display_context.py``).
+
+        Set here, while the persona is loaded before launch, so it never flips
+        ``restart_required``. Only for drivers that read the hook's answer back.
+        """
+        from flow_sdk.builtin.hooks.types import HookEventType  # noqa: PLC0415
+
+        event = HookEventType.USER_PROMPT_SUBMIT
+        if not self.process.hooks.supports_response(event):
+            return
+        events = set(self.process.process_hook_events or [])
+        if event.value not in events:
+            self.process.process_hook_events = sorted({*events, event.value})
 
     def _drop_legacy_agent_name(self, name: str | None) -> None:
         """Migrate-on-touch: strip a legacy ``embedded_subagent_ids`` name entry."""

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import re
 from pathlib import Path
 
 import anyio
@@ -46,13 +47,37 @@ class AppNotBuilt(HTTPException):
         super().__init__(status_code=404, detail=f"App is not built yet (no {root})")
 
 
+_HEAD_OPEN = re.compile(r"<head(?:\s[^>]*)?>", re.IGNORECASE)
+
+
+def _inject_after_head(html: str, snippet: str) -> str:
+    """Insert ``snippet`` right after the opening ``<head …>`` — before any of the
+    page's own scripts — or at the very start when there is none. Idempotent.
+    Same rule as the MCP App host's ``injectHeadScript`` (ui/src/lib/mcp-app-resources.ts)."""
+    if snippet in html:
+        return html
+    match = _HEAD_OPEN.search(html)
+    at = match.end() if match else 0
+    return html[:at] + snippet + html[at:]
+
+
 def inject_api_origin(html: str) -> str:
     """Point the page's SDK at the backend that served it. Idempotent."""
-    if API_ORIGIN_SNIPPET in html:
+    return _inject_after_head(html, API_ORIGIN_SNIPPET)
+
+
+def inject_process_id(html: str, process_id: str | None) -> str:
+    """Tell a page which agentic process it is shown beside (``__FLOWPAD_PROCESS_ID__``).
+
+    Only a well-formed UUID is ever written into the document; anything else is
+    ignored, so a query string can never inject script. Placed right after
+    ``<head>`` like the API origin, so it is set before the page's own scripts.
+    """
+    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
+
+    if not process_id or not is_valid_uuid(process_id):
         return html
-    idx = html.lower().find("<head>")
-    at = idx + len("<head>") if idx != -1 else 0  # no <head> → prepend, still before the bundle
-    return html[:at] + API_ORIGIN_SNIPPET + html[at:]
+    return _inject_after_head(html, f'<script>globalThis.__FLOWPAD_PROCESS_ID__="{process_id}";</script>')
 
 
 def inject_base_tag(html: str, base_url: str) -> str:
@@ -170,6 +195,7 @@ async def serve_app_bytes(
     api_url_scheme: str | None = None,
     fallback_index: bool = True,
     cache_control: str = ASSET_CACHE_CONTROL,
+    process_id: str | None = None,
 ) -> Response:
     """Serve one file out of *root*, falling back to its ``index.html``.
 
@@ -215,7 +241,8 @@ async def serve_app_bytes(
             html = inject_base_tag(html, _base_url_for(request, api_url_scheme))
         # The document carries the same policy as its assets; without a header a
         # browser caches it heuristically and a cross-origin iframe never refetches.
-        return HTMLResponse(content=inject_api_origin(html), headers={"Cache-Control": cache_control})
+        html = inject_process_id(inject_api_origin(html), process_id)
+        return HTMLResponse(content=html, headers={"Cache-Control": cache_control})
 
     etag = _etag(requested_file)
     if request.headers.get("if-none-match") == etag:
@@ -239,5 +266,6 @@ __all__ = [
     "API_ORIGIN_SNIPPET",
     "AppNotBuilt",
     "inject_api_origin",
+    "inject_process_id",
     "serve_app_bytes",
 ]

@@ -118,6 +118,12 @@ origin does not execute generated MCP UI code directly.
   supporting context, not the final delivery trigger by itself.
 - Tool calls from the guest are not routed through the Vibe MCP preview today;
   unsupported tool calls return an error result.
+- A guest may use the Flowpad SDK instead: the host sets
+  `__FLOWPAD_API_URL__` / `__FLOWPAD_PROCESS_ID__` in a head prelude and passes a
+  sandbox CSP allowing the backend origin (HTTP, WebSocket, `/sdk/flowpad-sdk.js`).
+  Live page state goes through `process.setDisplayContext(data)`, which reaches the
+  agent every turn — unlike `ui/update-model-context`, which only rides the next
+  `ui/message`. See "Display context" in `docs/interface/agentic-process.md`.
 - The host may normalize legacy/simple message shapes, but new MCP UI files
   should emit the structured MCP Apps methods described in the `mcp-ui` skill.
 
