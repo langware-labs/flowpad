@@ -1,11 +1,11 @@
-"""CredentialSpec — a named set of environment variables, and the only way to
+"""SecretPack — a named set of environment variables, and the only way to
 declare secrets.
 
 Where the folder lives is the declaration's scope, using the asset scopes
 Flowpad already has:
 
-* ``<project>/agentic-assets/credential/<name>/`` — declared for that project.
-* ``~/agentic-assets/credential/<name>/`` — declared for the user (every project
+* ``<project>/agentic-assets/secret_pack/<name>/`` — declared for that project.
+* ``~/agentic-assets/secret_pack/<name>/`` — declared for the user (every project
   on this machine).
 * the shipped assistant project — ``system`` scope, a read-only TEMPLATE that
   declares nothing until it is added to one of the two scopes above.
@@ -32,7 +32,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     VALUE_STORE_ENV,
     normalize_environment,
 )
-from flow_sdk.schema.data_spec.credential_manifest_spec import (
+from flow_sdk.schema.data_spec.credential_spec import (
     CURRENT_SCHEMA,
     CredentialEnvironmentSpec,
     CredentialVarSpec,
@@ -57,10 +57,10 @@ class CredentialAmbiguous(NameAmbiguous):
     plural = "credentials"
 
 
-class CredentialSpec(Entity):
-    """The ROW; its shape on disk is ``CredentialManifestSpec`` (``TypeInfo.asset_spec``)."""
+class SecretPack(Entity):
+    """The ROW; its shape on disk is ``CredentialSpec`` (``TypeInfo.asset_spec``)."""
 
-    type: str = APIField(default=EntityType.CREDENTIAL_SPEC.value)
+    type: str = APIField(default=EntityType.SECRET_PACK.value)
 
     # A folder-backed asset, so it OWNS its path. PRIVATE: the path is this
     # machine's and means nothing to a receiver.
@@ -85,7 +85,7 @@ class CredentialSpec(Entity):
         """Read each nested entry field by field, dropping keys the model does not name.
 
         A row indexed by an earlier build can carry fields that no longer exist
-        (``sod_name``). The manifest is still strict — ``CredentialManifestSpec``
+        (``sod_name``). The manifest is still strict — ``CredentialSpec``
         rejects them on disk — but a stored row must stay readable, or one stale
         row fails every credential query.
         """
@@ -126,7 +126,7 @@ class CredentialSpec(Entity):
         return SecretRequirements(self.var_names())
 
     async def secret_store(self, environment: str = DEFAULT_ENVIRONMENT) -> "SecretStore":
-        """The store ``credential.json`` names for ``environment``, configured for this row's scope."""
+        """The store ``secret_pack.json`` names for ``environment``, configured for this row's scope."""
         from flow_sdk.builtin.credential_store import scope_of, secret_store_ref  # noqa: PLC0415
         from flow_sdk.secrets import SecretStore  # noqa: PLC0415
 
@@ -136,7 +136,7 @@ class CredentialSpec(Entity):
         return SecretStore.from_ref(secret_store_ref(self, scope, normalize_environment(environment)))
 
     @classmethod
-    async def get(cls, name: str, project: Optional["Project"] = None) -> "CredentialSpec":
+    async def get(cls, name: str, project: Optional["Project"] = None) -> "SecretPack":
         """The credential named ``name``: ``project``'s (default: the current project's), else the
         user scope's. Raises :class:`CredentialNotFound` or :class:`CredentialAmbiguous`."""
         from flow_sdk import context  # noqa: PLC0415

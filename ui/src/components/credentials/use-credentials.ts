@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  CredentialSpec,
+  SecretPack,
   QueryRequest,
   credentialsService,
   DEFAULT_CREDENTIAL_ENVIRONMENT,
@@ -10,17 +10,17 @@ import {
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /**
- * Every CredentialSpec row. Global on purpose: the shipped templates are a
+ * Every SecretPack row. Global on purpose: the shipped templates are a
  * property of the instance, not of a project — the picker keeps only those, and
  * the declared credentials come from `status` instead.
  */
 const credentialSpecsQuery = new QueryRequest({
-  type: CredentialSpec.type,
+  type: SecretPack.type,
   scope: [],
   name: 'connections:credential-specs',
 });
 
-const NO_SPECS: CredentialSpec[] = [];
+const NO_SPECS: SecretPack[] = [];
 
 export const CREDENTIALS_STATUS_KEY = ['credentials-status'] as const;
 
@@ -34,7 +34,7 @@ export const CREDENTIALS_STATUS_KEY = ['credentials-status'] as const;
  * a write.
  */
 export function useCredentials(projectId: string | null, environment: string = DEFAULT_CREDENTIAL_ENVIRONMENT) {
-  const { data: specs = NO_SPECS } = useEntitiesQuery<CredentialSpec>(credentialSpecsQuery);
+  const { data: specs = NO_SPECS } = useEntitiesQuery<SecretPack>(credentialSpecsQuery);
   const templates = useMemo(() => specs.filter((spec) => spec.isTemplate), [specs]);
 
   const { data, isPending } = useQuery({

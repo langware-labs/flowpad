@@ -29,7 +29,7 @@ INDEXED_TYPES = {
     "agent_trace", "subagent", "agent", "graph_workflow", "asset_cleanup_report",
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
-    "credential_spec", "data_source", "data_driver",
+    "secret_pack", "data_source", "data_driver",
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
@@ -46,7 +46,7 @@ FOLDER_PORTABLE = (
 #: Folder-capsule types introduced after the json capsule; they mint +
 #: persist + adopt like the rest. ``project_manifest`` is the per-project
 #: published-asset ledger: a singleton folder whose main is JSON.
-FOLDER_NO_LEGACY = ("credential_spec", "mcp", "project_manifest", "trigger")
+FOLDER_NO_LEGACY = ("secret_pack", "mcp", "project_manifest", "trigger")
 #: Folder types whose main document is markdown: the id lives in that
 #: document's frontmatter (``Frontmatter``).
 FOLDER_MARKDOWN = ("skill", "task", "whiteboard")
@@ -104,7 +104,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     native_types = set(JSON_STABLE) | set(JSON_PORTABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
     # Capsule: base's 17 + `mcp` + `wizard` + `project_manifest` +
-    # `credential_spec` (an asset we AUTHOR carries its own v4; the shipped
+    # `secret_pack` (an asset we AUTHOR carries its own v4; the shipped
     # credential templates commit theirs, so every install indexes one row).
     # The sibling `mcp_server` SCAN is derived, because its source is a vendor
     # config file we cannot write an id into. 15 derived, including `micro_app`,

@@ -1,9 +1,9 @@
 /**
- * CredentialSpec — a named set of environment variables, and the only way to
- * declare secrets (flow_sdk/builtin/credential_spec.py).
+ * SecretPack — a named set of environment variables, and the only way to
+ * declare secrets (flow_sdk/builtin/secret_pack.py).
  *
  * Where the folder lives is its scope: a project (`<project>/agentic-assets/
- * credential/<name>/`), the user (`~/agentic-assets/credential/<name>/`), or the
+ * credential/<name>/`), the user (`~/agentic-assets/secret_pack/<name>/`), or the
  * shipped catalogue (`system` — a template, added to one of the other two).
  * `value_store` says where its values live: the scope's `.env.local` or the
  * encrypted vault. Declaring, filling and removing go through
@@ -42,7 +42,7 @@ export function isSecret(v: CredentialVar | undefined): boolean {
   return v?.secret !== false;
 }
 
-export interface ICredentialSpec extends IEntity {
+export interface ISecretPack extends IEntity {
   title?: string;
   description?: string;
   icon_name?: string;
@@ -59,11 +59,11 @@ export interface ICredentialSpec extends IEntity {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface CredentialSpec extends EntityMerge<ICredentialSpec> {}
+export interface SecretPack extends EntityMerge<ISecretPack> {}
 
 @registerEntity
-export class CredentialSpec extends APIEntity<CredentialSpec> implements ICredentialSpec {
-  static type: string = 'credential_spec';
+export class SecretPack extends APIEntity<SecretPack> implements ISecretPack {
+  static type: string = 'secret_pack';
 
   title: string = '';
   description: string = '';
@@ -81,7 +81,7 @@ export class CredentialSpec extends APIEntity<CredentialSpec> implements ICreden
    * emits every initializer above AFTER `super(json)`, so a list-query row would
    * otherwise arrive with `vars` as `{}`.
    */
-  constructor(json: ICredentialSpec | undefined = undefined) {
+  constructor(json: ISecretPack | undefined = undefined) {
     super(json as never);
     if (json) dataManager.deepAssign(this, json);
   }

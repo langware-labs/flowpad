@@ -206,7 +206,7 @@ EXPECTED = {
     # members, no existing value changed.
     "DATA_SOURCE": "data_source",
     "DATA_SOURCE_CURSOR": "data_source_cursor",
-    "CREDENTIAL_SPEC": "credential_spec",
+    "SECRET_PACK": "secret_pack",
     "DATA_DRIVER": "data_driver",
     "SOURCE_ITEM": "source_item",
     # The inbox projection's thread grouping — additive member, no existing
@@ -243,6 +243,7 @@ def test_back_compat_aliases_are_the_same_class():
 #: TypeId still carrying one on an unmigrated install must read as unknown — never as a different type.
 RETIRED_VALUES: dict[str, str] = {
     "data_source_spec": "the driver definition, now data_driver (0.2.170; old rows are pruned at boot, no migration)",
+    "credential_spec": "the named set of environment variables, now secret_pack (0.2.170; old rows are pruned at boot)",
 }
 
 

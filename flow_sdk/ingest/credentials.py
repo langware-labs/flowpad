@@ -15,7 +15,7 @@ bound is what it uses, and the binding is saved on the row so every background p
 * ``secrets`` — ``{value key: machine secret name}``, loaded by value key from the bound (or
   default) store; otherwise the named machine secret, then the row's own ``config[value key]``.
   Either way the value reaches the source as a credential, never as configuration.
-* ``credential`` + ``vars`` — ``{value key: env var}`` of a named CredentialSpec, resolved for the
+* ``credential`` + ``vars`` — ``{value key: env var}`` of a named SecretPack, resolved for the
   row's owner the way a worker process resolves its secrets (the owning agent's project over the
   user scope); a key it cannot supply falls back to the row's ``config``.
 """

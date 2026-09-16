@@ -26,7 +26,7 @@ from flow_sdk.schema.data_spec.credential_status_spec import (
 )
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.credential_spec import CredentialSpec
+    from flow_sdk.builtin.secret_pack import SecretPack
     from flow_sdk.builtin.project import Project
 
 
@@ -65,7 +65,7 @@ def _file_status(scope: CredentialScope, environment: str) -> tuple[dict, list[d
 
 
 def _in_vault(
-    spec: "CredentialSpec", scope: CredentialScope, env_var: str, names: set[str], environment: str
+    spec: "SecretPack", scope: CredentialScope, env_var: str, names: set[str], environment: str
 ) -> bool:
     """Whether the vault holds this variable — checked for either store, so a
     value kept in the store the credential does not read shows as ``wrong-store``."""
