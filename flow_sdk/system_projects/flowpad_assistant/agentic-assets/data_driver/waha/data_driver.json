@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "waha",
   "title": "WhatsApp (WAHA)",
-  "icon_name": "WhatsApp",
+  "icon_name": "MessagesSquare",
   "description": "A WhatsApp number linked to WAHA, the self-hosted WhatsApp HTTP API — people message the number, an agent answers. WAHA runs as a container next to this instance and posts each message to it.",
   "kind": "datasource.api.whatsapp.waha",
   "auth": {
