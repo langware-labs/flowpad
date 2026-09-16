@@ -455,21 +455,6 @@ class DataSource(Entity):
             raise ValueError(f"{value} is already watched by the data source {existing.name or existing.id!s}")
 
     @classmethod
-    async def find_for_account_key(
-        cls, provider: str, account_key: str, *, owner: "Optional[TypeId]" = None
-    ) -> "Optional[DataSource]":
-        """The source of ``provider`` whose ``account_key`` is ``account_key`` — the lookup for a driver
-        that names its account itself (``identity_config_key`` empty) rather than by a config field."""
-        from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
-
-        wanted = str(account_key or "").strip()
-        for row in await cls.get_all({"provider": provider}):
-            if wanted and wanted in {str(row.account_key or "").strip(), *map(str, row.account_identities or [])}:
-                if owner is None or await owner_of(row) == owner:
-                    return row
-        return None
-
-    @classmethod
     async def find_for_account(
         cls, provider: str, key: str, value: str, *, owner: "Optional[TypeId]" = None
     ) -> "Optional[DataSource]":
@@ -481,6 +466,9 @@ class DataSource(Entity):
         hand — the id policy's whole point is that identity is a lookup.
         ``key`` is normally the driver's ``identity_config_key``.
 
+        An empty ``key`` is a driver that names its account itself (a bot's getMe):
+        ``value`` then matches the row's ``account_key`` or a discovered identity.
+
         ``owner`` narrows to that owner's source, so the same account can be
         watched by the local user AND by an Agent without either reusing the
         other's row. Omitted, it is the pre-owner lookup. Resolved through
@@ -491,7 +479,7 @@ class DataSource(Entity):
 
         value = str(value or "").strip()
         for row in await cls.get_all({"provider": provider}):
-            current = (row.config or {}).get(key)
+            current = (row.config or {}).get(key) if key else [row.account_key, *(row.account_identities or [])]
             # A `lines` field (Slack's ``channels``) is a list; the source
             # serves the account when the value is one of its entries.
             members = current if isinstance(current, list) else [current]
@@ -976,17 +964,11 @@ class DataSource(Entity):
                 # `sync_source`, which reports `unknown_provider` as a
                 # config_error the card can actually explain.
                 self.status = SourceStatus.ACTIVE.value
-        # ONE spec read per save, shared by the three rules below. Each used
-        # to fetch it independently, so a create paid three round trips for the
-        # same row on a request a person is waiting on. `_needs_spec` keeps the
-        # steady state free: the poller's per-tick re-save reads nothing.
-        spec = await self._spec() if self._needs_spec() else None
-        config_cls = getattr(getattr(self._driver(), "cls", None), "Config", None)
-        if config_cls is not None:
-            self._type_config(config_cls)
-        else:  # a driver with no Config: its values shaped by the catalog's widgets, no rules
-            self._coerce_config(spec)
-        self._coerce_reflect(spec)
+        driver = self._driver()
+        if driver is not None and driver.config_cls is not None:
+            self._type_config(driver.config_cls)
+        # The reflect rule reads the driver's row; `_needs_spec` keeps the poller's per-tick re-save free of it.
+        self._coerce_reflect(await self._spec() if self._needs_spec() else None)
         if not (self.channel or "").strip():
             # Stamp the channel at CREATE, not first poll: the credential probe keys on it (Verify on
             # a fresh source probed nothing) and the UI badges by it. `sync_source` keeps re-stamping
@@ -1006,13 +988,12 @@ class DataSource(Entity):
     def _needs_spec(self) -> bool:
         """True when any save-time rule below still has a question for the spec.
 
-        A saved row whose config is already typed and whose reflect mode is
-        settled has nothing to ask, which is the poller's case on every tick.
+        A saved row whose reflect mode is settled has nothing to ask, which is
+        the poller's case on every tick.
         """
-        untyped = isinstance(self.config, dict) and any(isinstance(v, str) for v in self.config.values())
         driver = self._driver()
         stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.reflects
-        return untyped or stuck or not self.exist_in_db
+        return stuck or not self.exist_in_db
 
     async def _spec(self) -> "Optional[object]":
         """The provider's definition row, or None when it cannot be resolved —
@@ -1045,23 +1026,6 @@ class DataSource(Entity):
         except ValidationError as exc:
             raise ValueError(config_error(exc)) from None
         self.config = typed.model_dump(mode="json", exclude_unset=True)
-
-    def _coerce_config(self, spec) -> None:
-        """Shape ``config`` by the definition's field types on save — a URL sent
-        as a string where ``lines`` is declared must not produce a source that
-        looks configured and fails on its first sync (the rss driver iterating
-        the characters of a URL). The rule is the spec's
-        (``FieldHints.coerce``); this is only where a row applies it, and
-        ``save`` is the one gate the dialog, the API and an agent all pass.
-
-        Only a string can need shaping, so a config whose values are already
-        typed (the poller re-saves one on every tick) costs one pass over a
-        handful of values and never a spec lookup.
-        """
-        if not isinstance(self.config, dict) or not any(isinstance(v, str) for v in self.config.values()):
-            return
-        if spec is not None:
-            self.config = spec.coerce_config(self.config)
 
     def _coerce_reflect(self, spec) -> None:
         """``reflect`` must be a mode the spec offers, or the source ingests
@@ -1161,7 +1125,7 @@ class DataSource(Entity):
             logger.warning("[ingest] %s declares choices on %r but its driver offers none", provider, field)
             return ChoiceSet(detail="This provider can't list options here — type the value directly.")
 
-        draft = cls(provider=provider, config=spec.coerce_config(dict(config or {})))
+        draft = cls(provider=provider, config=stype.coerce_config(dict(config or {})))
         try:
             return ChoiceSet(items=await stype.choices(draft, field))
         except contract.SourceError as exc:

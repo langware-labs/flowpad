@@ -100,21 +100,6 @@ class FieldHints(DataSpec):
             )
         return self
 
-    def coerce(self, value: Any) -> Any:
-        """A value as a person (or an agent) typed it → the shape this field
-        declares: ``lines``/``csv`` are lists, ``number`` a number. The one
-        definition of what a ``FieldType`` means for a stored value."""
-        if self.type in (FieldType.LINES, FieldType.CSV) and isinstance(value, str):
-            sep = "\n" if self.type == FieldType.LINES else ","
-            return [part.strip() for part in value.split(sep) if part.strip()]
-        if self.type == FieldType.NUMBER and isinstance(value, str) and value.strip():
-            try:
-                number = float(value)
-            except ValueError:
-                return value
-            return int(number) if number.is_integer() else number
-        return value
-
 
 class AuthSpec(DataSpec):
     """How the source is credentialed. Exactly one shape.
@@ -149,11 +134,6 @@ class AuthSpec(DataSpec):
         if bool(self.credential) != bool(self.vars):
             raise ValueError("auth `credential` and `vars` go together: which credential, and which of its variables")
         return self
-
-
-def coerce_config(fields: dict, config: dict) -> dict:
-    """``config`` shaped by a field catalog (``{name: FieldHints}``); unknown keys kept as-is."""
-    return {k: (fields[k].coerce(v) if k in fields else v) for k, v in config.items()}
 
 
 class DataDriverSpec(DataSpec):

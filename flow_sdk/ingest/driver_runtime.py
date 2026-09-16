@@ -51,9 +51,9 @@ from flow_sdk.utils.kind_registry import KindRegistry
 from flow_sdk.utils.serialization import iso_to_utc
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.source_item import MessageSpec
-    from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
 
 logger = logging.getLogger(__name__)
@@ -245,11 +245,9 @@ async def _pull(source: Source, wanted: list) -> None:
 def binding_of(row: Any, *, credentials: Optional[Credentials] = None, persona: Optional[Persona] = None) -> SourceBinding:
     credentials = credentials or Credentials()
     # A secret the resolver lifted out of the row never also rides in ``config``.
-    raw = getattr(row, "config", None) or {}
     driver = DRIVERS.get_or_none(str(getattr(row, "provider", "") or ""))
-    config_cls = getattr(driver.cls, "Config", None) if driver is not None else None
-    # A driver with a ``Config`` reads its stored config as well as it still validates.
-    typed = config_cls.best_match(raw) if config_cls is not None else raw
+    # A stored config, read as well as it still validates.
+    typed = driver.config_of(row) if driver is not None else dict(getattr(row, "config", None) or {})
     config = {k: v for k, v in typed.items() if k not in credentials.values}
     return SourceBinding(
         source_id=str(getattr(row, "id", "") or ""),

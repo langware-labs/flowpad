@@ -1,6 +1,5 @@
-"""``DataSource.save`` shapes ``config`` by the spec's field types — a URL sent
-as a string where the manifest declares ``lines`` becomes a one-element list,
-so the driver never iterates the characters of a URL."""
+"""``DataSource.save`` shapes ``config`` by the driver's ``Config`` — a URL sent as a string where a
+list is declared becomes a one-element list, so the driver never iterates the characters of a URL."""
 from __future__ import annotations
 
 from typing import Annotated
@@ -9,7 +8,6 @@ import pytest
 from pydantic import StringConstraints
 
 from flow_sdk.builtin.data_driver import DataDriver
-from flow_sdk.schema.data_spec.data_driver_spec import FieldHints
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
 from tests.unit._ingest_helpers import make_data_source
@@ -17,15 +15,18 @@ from tests.unit._ingest_helpers import make_data_source
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]
 
 
-async def test_lines_csv_and_number_fields_are_coerced_on_save():
-    await DataDriver(
-        name="probe_provider", title="Probe",
-        config={"feed_urls": FieldHints(type="lines"), "tags": FieldHints(type="csv"), "depth": FieldHints(type="number")},
-    ).save(notify=False)
-    src = make_data_source(provider="probe_provider", config={"feed_urls": "http://a/x\nhttp://b/y", "tags": "a, b", "depth": "3", "other": "kept"})
+class _ProbeConfig(SourceConfig):
+    feed_urls: list[str] = []
+    tags: list[str] = []
+    depth: int = 0
+
+
+async def test_list_and_number_fields_are_coerced_on_save():
+    _driver("probe_provider", _ProbeConfig)
+    src = make_data_source(provider="probe_provider", config={"feed_urls": "http://a/x\nhttp://b/y", "tags": "a, b", "depth": "3"})
     await src.save(notify=False)
     assert src.config["feed_urls"] == ["http://a/x", "http://b/y"]
-    assert src.config["tags"] == ["a", "b"] and src.config["depth"] == 3 and src.config["other"] == "kept"
+    assert src.config["tags"] == ["a", "b"] and src.config["depth"] == 3
 
 
 async def test_a_list_stays_a_list_and_an_unknown_provider_changes_nothing():

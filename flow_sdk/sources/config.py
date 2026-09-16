@@ -21,7 +21,6 @@ Three ways a config is read, because three callers want three different things:
 """
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Any, ClassVar, Mapping, Union, get_args, get_origin
 
 from pydantic import ConfigDict, TypeAdapter, ValidationError, model_validator
@@ -108,6 +107,10 @@ class SourceConfig(DataSpec):
         """A stored config read as well as it can be: every known key that still validates, the
         declared default for one that no longer does. Never raises — a row saved under an older
         rule keeps running on what still makes sense."""
+        try:  # the common case: a stored config that is simply valid
+            return cls.model_validate(raw or {}).model_dump(mode="json")
+        except ValidationError:
+            pass
         valid = cls.draft(raw or {})
         out: dict[str, Any] = {}
         for name, field in cls.model_fields.items():
@@ -141,12 +144,18 @@ def _one(config: type[SourceConfig], name: str, value: Any) -> tuple[bool, Any]:
         return False, None
 
 
-@lru_cache(maxsize=None)
 def _adapter(config: type[SourceConfig], name: str) -> TypeAdapter:
-    field = config.model_fields[name]
-    from typing import Annotated  # noqa: PLC0415
+    """One field's validator, kept on its class so a reloaded driver's old class takes its cache with it."""
+    cache = config.__dict__.get("_field_adapters")
+    if cache is None:
+        cache = {}
+        setattr(config, "_field_adapters", cache)
+    if name not in cache:
+        from typing import Annotated  # noqa: PLC0415
 
-    return TypeAdapter(Annotated[(field.annotation, *field.metadata)]) if field.metadata else TypeAdapter(field.annotation)
+        field = config.model_fields[name]
+        cache[name] = TypeAdapter(Annotated[(field.annotation, *field.metadata)]) if field.metadata else TypeAdapter(field.annotation)
+    return cache[name]
 
 
 __all__ = ["ChoiceEntry", "SourceConfig", "coerce_value"]
