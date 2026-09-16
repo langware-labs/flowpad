@@ -23,6 +23,10 @@ export interface GitStatus {
   ahead: number;
   behind: number;
   files: GitStatusFile[];
+  /** Fetch URL of the branch's remote (origin without an upstream); credentials stripped. */
+  remoteUrl: string | null;
+  /** https browser form of `remoteUrl`, null when the remote isn't a web host. */
+  remoteWebUrl: string | null;
 }
 
 export interface GitFileDiff {
