@@ -1,4 +1,5 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
@@ -132,6 +133,21 @@ export class Agent extends APIEntity<Agent> {
     this.auto_launch_prompt = entity.auto_launch_prompt;
     this.places = entity.places ?? null;
     this.email_place = entity.email_place ?? null;
+  }
+
+  /**
+   * The agent read with `expand=permissions` — `expand.roles` / `allowed_actions`, so
+   * `ImAnonymousViewer` answers whether it is public. Reflected to the hub: visibility is
+   * the hub row's `visitor_role`, which never syncs down to the local copy. The hub only
+   * answers for a published (`remote`) agent; otherwise the local backend answers.
+   * The result is a detached `Agent`, not merged into the cache.
+   */
+  public async fetchPermissions(): Promise<Agent> {
+    const info = new ActionInfo('', Agent.type, this.id, 'GET');
+    info.hubReflect = true;
+    info.queryParameters = { expand: 'permissions' };
+    const json = await dataManager.callAction<undefined, Partial<Agent>>(info);
+    return new Agent(json);
   }
 
   /**
