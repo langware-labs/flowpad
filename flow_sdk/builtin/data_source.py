@@ -967,8 +967,12 @@ class DataSource(Entity):
         # same row on a request a person is waiting on. `_needs_spec` keeps the
         # steady state free: the poller's per-tick re-save reads nothing.
         spec = await self._spec() if self._needs_spec() else None
-        self._coerce_config(spec)
-        self._validate_config(spec)
+        config_cls = getattr(getattr(self._driver(), "cls", None), "Config", None)
+        if config_cls is not None:
+            self._type_config(config_cls)
+        else:  # a driver still on its manifest catalog alone
+            self._coerce_config(spec)
+            self._validate_config(spec)
         self._coerce_reflect(spec)
         if not (self.channel or "").strip():
             # Stamp the channel at CREATE, not first poll: the credential probe keys on it (Verify on
@@ -1006,6 +1010,25 @@ class DataSource(Entity):
             return await DataDriver.get_one({"name": self.provider})
         except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
             return None
+
+    def _type_config(self, config_cls) -> None:
+        """The driver's ``Config`` applied on save. A create is validated whole — a field it lacks or
+        a value off its rule is a ``ValueError`` naming it, which the create route maps to a 400. An
+        existing row only has what it typed shaped (a string where a list is declared); a rule added
+        later must not turn the poller's re-save into an exception nobody reads."""
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        if not isinstance(self.config, dict):
+            return
+        if self.exist_in_db:
+            if any(isinstance(v, str) for v in self.config.values()):
+                self.config = {**self.config, **config_cls.draft(self.config)}
+            return
+        try:
+            typed = config_cls.model_validate(self.config)
+        except ValidationError as exc:
+            raise ValueError(config_error(exc)) from None
+        self.config = typed.model_dump(mode="json", exclude_unset=True)
 
     def _coerce_config(self, spec) -> None:
         """Shape ``config`` by the definition's field types on save — a URL sent
@@ -1435,6 +1458,17 @@ RUNTIME_FIELDS: tuple[str, ...] = tuple(
     if name in DataSource.__annotations__  # this type's own, not the Entity base's
     and persist_policy(field) == Persist.FALSE
 )
+
+
+def config_error(exc) -> str:
+    """A ``Config`` validation failure as the sentence the create route returns: the first field at
+    fault, ``config.<field> is required`` or ``config.<field> is not valid: <value>``."""
+    first = exc.errors()[0]
+    name = ".".join(str(part) for part in first.get("loc", ())[:1]) or "config"
+    if first.get("type") == "missing":
+        return f"config.{name} is required"
+    value = first.get("input")
+    return f"config.{name} is not valid: {value}"
 
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:

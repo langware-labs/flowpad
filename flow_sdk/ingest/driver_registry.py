@@ -113,7 +113,34 @@ def load_driver(folder: Path) -> "DataDriver":
     cls = driver_class(load_module(folder, digest=digest))
     if cls.provider != manifest.name:
         raise DriverLoadError(f"{cls.__name__}.provider is {cls.provider!r} but the manifest names {manifest.name!r}")
+    check_config(cls, manifest)
     return DataDriver.for_class(cls, manifest, folder=folder, content_hash=digest, shipped=folder.resolve().is_relative_to(SHIPPED_ROOT))
+
+
+def check_config(cls: type[Source], manifest: DataDriverSpec) -> None:
+    """A driver's ``Config`` and its manifest's form catalog name the same fields, and none is a secret.
+
+    A catalog field with no ``Config`` field is a form input the source never reads; a ``Config`` field
+    with no catalog entry is one the form can never set (``derived`` fields excepted — the application
+    fills those). A secret belongs to ``auth``: a config lands in ``data_source.json``.
+    """
+    config = cls.Config
+    if config is None:
+        return
+    declared = set(config.model_fields) - set(config.derived)
+    catalog = set(manifest.config or {})
+    if declared != catalog:
+        missing, extra = sorted(declared - catalog), sorted(catalog - declared)
+        raise DriverLoadError(
+            f"{manifest.name}: the config catalog and {config.__name__} disagree"
+            + (f" — no form hints for {missing}" if missing else "")
+            + (f" — hints for fields {config.__name__} does not have: {extra}" if extra else "")
+        )
+    auth = manifest.auth
+    secret_keys = set(auth.env) | set(auth.secrets) | set(auth.vars) if auth is not None else set()
+    secrets = sorted(set(config.secret_fields()) | (set(config.model_fields) & secret_keys))
+    if secrets:
+        raise DriverLoadError(f"{manifest.name}: {config.__name__} declares secrets {secrets} — a secret is a credential in auth, never config")
 
 
 def asset_module(name: str, module: str = "source") -> ModuleType:

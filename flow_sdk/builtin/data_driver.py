@@ -148,6 +148,34 @@ class DataDriver(DriverRuntime, Entity):
 
         return load_error_for(self.name or "")
 
+    @computed_field
+    @property
+    def config_schema(self) -> dict:
+        """The JSON Schema of this driver's ``Config`` — the form's rules (required, pattern, type);
+        ``config`` holds only its hints. ``{}`` for a driver that declares none."""
+        driver = self if self._cls is not None else DataDriver.loaded(self.name or "")
+        config_cls = getattr(getattr(driver, "cls", None), "Config", None)
+        return config_cls.model_json_schema() if config_cls is not None else {}
+
     def coerce_config(self, config: dict) -> dict:
-        """The row's field catalog applied to a source's ``config``."""
+        """A config as a person typed it, shaped: the ``Config`` when the driver has one, else the
+        catalog's field types."""
+        config_cls = getattr(self._loaded_class(), "Config", None)
+        if config_cls is not None:
+            return {**config, **config_cls.draft(config)}
         return coerce_config(self.config or {}, config)
+
+    def draft_config(self, raw: dict) -> dict:
+        """The keys of a half-filled form that are known and valid; the rest dropped, silently."""
+        config_cls = getattr(self._loaded_class(), "Config", None)
+        return config_cls.draft(raw) if config_cls is not None else self.coerce_config(raw)
+
+    def config_of(self, source) -> dict:
+        """A stored source's config, read as well as it still validates."""
+        config_cls = getattr(self._loaded_class(), "Config", None)
+        raw = dict(getattr(source, "config", None) or {})
+        return config_cls.best_match(raw) if config_cls is not None else raw
+
+    def _loaded_class(self):
+        driver = self if self._cls is not None else DataDriver.loaded(self.name or "")
+        return getattr(driver, "cls", None)
