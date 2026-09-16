@@ -49,24 +49,51 @@ export function specFields(spec?: DataDriverSpec): [string, SpecConfigField][] {
   return Object.entries(spec?.config ?? {});
 }
 
-export function emptyDraft(provider: string, spec?: DataDriverSpec): SourceDraft {
+/** A new source's draft for `spec` — its provider, and the fields the manifest gives a `default`. */
+export function emptyDraft(spec?: DataDriverSpec): SourceDraft {
   return {
     name: '',
-    provider,
+    provider: spec?.name ?? '',
     // Empty means "derive from the fields" — `accountKeyFor` owns the default,
     // so exactly one place knows it.
     account_key: '',
     enabled: true,
     poll_interval_seconds: 300,
     window_days: 7,
-    // A manifest `default` is what a new source starts with, not a hint the user must retype.
+    // A manifest `default` is what a new source starts with, not a hint the user must retype —
+    // rendered the way an edited source's stored value is, so create and edit show the same text.
     fields: Object.fromEntries(
       specFields(spec)
-        .filter(([, field]) => field.default !== undefined && field.default !== null)
-        .map(([key, field]) => [key, Array.isArray(field.default) ? field.default.join('\n') : String(field.default)]),
+        .map(([key, field]) => [key, fieldValue(key, field, { [key]: field.default })] as const)
+        .filter(([, value]) => value !== ''),
     ),
     picked: {},
   };
+}
+
+/** Config value → the string its input shows. Arrays rejoin the way they split. */
+export function fieldValue(key: string, field: SpecConfigField, config: Record<string, unknown>): string {
+  const raw = config?.[key];
+  if (raw === undefined || raw === null) return '';
+  // A choosable field's entries may be `{id, name}`. Joining those directly is how a
+  // Slack source configured with named channels rendered as `[object Object]` — and then
+  // SAVED that back over the real ids.
+  //
+  // IDs, not names, even though a name is friendlier: this string is only ever shown in
+  // the TYPED fallback, and whatever sits there is what gets stored the moment someone
+  // edits it. Showing "Marketing" in a box whose next keystroke saves "Marketing" as a
+  // drive id is a silent corruption. The name belongs to the picker, which reads `picked`.
+  if (field.choices) {
+    const picked = pickedFrom(key, field, config);
+    return picked.map((c) => c.id).join(field.type === FieldType.LINES ? '\n' : ', ');
+  }
+  if (Array.isArray(raw)) return raw.join(field.type === FieldType.LINES ? '\n' : ', ');
+  // Only scalars round-trip through an input. A nested object in config means
+  // the driver grew a shape this form does not model — show nothing rather than
+  // "[object Object]", which would be saved back verbatim and corrupt it.
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);
+  return '';
 }
 
 /**

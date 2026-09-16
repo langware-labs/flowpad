@@ -697,6 +697,7 @@ export function FlowMessageBubble({
         flowMessage={fm}
         task={task ?? undefined}
         senderName={displayName}
+        onSenderClick={agentSender ? () => navigation.openDock(agentSender.dockPointer) : undefined}
         onEditName={
           isCurrentUser
             ? (newName) => {

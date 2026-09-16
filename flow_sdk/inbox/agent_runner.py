@@ -104,7 +104,7 @@ def _is_own_outgoing(item, source) -> bool:
     return is_self_address(source, item.author_external_id or "")
 
 
-async def _reuse_or_spawn_agent_process(agent, conversation_id: str, workdir: str, name: str = ""):
+async def _reuse_or_spawn_agent_process(agent, conversation_id: str, workdir: str, name: str | None = None):
     """One headless process for this Agent deployment and conversation.
 
     The generic conversation runner creates a bare ``AgenticProcess``. Mail is
@@ -161,7 +161,7 @@ async def _reuse_or_spawn_agent_process(agent, conversation_id: str, workdir: st
         "",
         # Created with no prompt, so without a name its run reads "<agent>: " — nothing says whose
         # conversation it answers. The process is reused per conversation, so this names that.
-        name=name or None,
+        name=name,
         deployment=deployment,
         target_typeid_str=target,
         workdir=workdir,
@@ -182,7 +182,7 @@ async def handle_inbound(item) -> bool:
     from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply, conversation_turn_lock  # noqa: PLC0415
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
-    from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+    from flow_sdk.inbox.projection import display_name_of, owner_of  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
     source = await DataDriver.get_one({"id": item.data_source_id})
@@ -218,9 +218,8 @@ async def handle_inbound(item) -> bool:
     # that did overlap each captured the LATEST reply and sent it twice. It waits instead.
     async with conversation_turn_lock(conversation_id):
         workdir = await _workdir_for(agent)
-        who = getattr(item, "author_display", "") or item.author_external_id or ""
-        channel = getattr(source, "channel", "") or getattr(source, "provider", "")
-        run_name = " · ".join(part for part in (agent.name, channel, who) if part)
+        who = display_name_of(item.author_display or "", item.author_external_id or "")
+        run_name = " · ".join(part for part in (agent.name, source.channel or source.provider, who) if part) or None
         ap = await _reuse_or_spawn_agent_process(agent, conversation_id, workdir, name=run_name)
         prompt_result = await ap.prompt(body)
         if isinstance(prompt_result, ApiFailResponse):

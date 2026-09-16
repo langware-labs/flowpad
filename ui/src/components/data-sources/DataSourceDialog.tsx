@@ -32,6 +32,7 @@ import {
   accountKeyFor,
   buildConfig,
   emptyDraft,
+  fieldValue,
   pickedFrom,
   pickedIn,
   specFields,
@@ -56,31 +57,6 @@ import { FieldType, type DataDriverChoice, type DataDriverSpec, type SpecConfigF
 function statusFor(enabled: boolean, current: SourceStatus): SourceStatus {
   if (!enabled) return 'disabled';
   return current === 'disabled' ? 'new' : current;
-}
-
-/** Config value → the string its input shows. Arrays rejoin the way they split. */
-function fieldValue(key: string, field: SpecConfigField, config: Record<string, unknown>): string {
-  const raw = config?.[key];
-  if (raw === undefined || raw === null) return '';
-  // A choosable field's entries may be `{id, name}`. Joining those directly is how a
-  // Slack source configured with named channels rendered as `[object Object]` — and then
-  // SAVED that back over the real ids.
-  //
-  // IDs, not names, even though a name is friendlier: this string is only ever shown in
-  // the TYPED fallback, and whatever sits there is what gets stored the moment someone
-  // edits it. Showing "Marketing" in a box whose next keystroke saves "Marketing" as a
-  // drive id is a silent corruption. The name belongs to the picker, which reads `picked`.
-  if (field.choices) {
-    const picked = pickedFrom(key, field, config);
-    return picked.map((c) => c.id).join(field.type === FieldType.LINES ? '\n' : ', ');
-  }
-  if (Array.isArray(raw)) return raw.join(field.type === FieldType.LINES ? '\n' : ', ');
-  // Only scalars round-trip through an input. A nested object in config means
-  // the driver grew a shape this form does not model — show nothing rather than
-  // "[object Object]", which would be saved back verbatim and corrupt it.
-  if (typeof raw === 'string') return raw;
-  if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);
-  return '';
 }
 
 /** The one config-shaped field that is NOT stored in `config` — it is the
@@ -142,7 +118,7 @@ export function DataSourceDialog({
   // the cloud provisions is an agent's own account — offered only when adding for an agent.
   const offered = installed.filter((s) => s.listed && (!s.provisioned || ownerAgentId));
   const specs = only ? offered.filter(only) : offered;
-  const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft(''));
+  const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft());
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -156,7 +132,7 @@ export function DataSourceDialog({
   useEffect(() => {
     if (!open) return;
     const { specFor: lookup, specs: available } = seedRef.current;
-    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft(available[0]?.name ?? '', available[0]));
+    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft(available[0]));
     setShowAdvanced(false);
   }, [open, editing]);
 
@@ -329,7 +305,7 @@ export function DataSourceDialog({
                         data-testid={`provider-${p.name}`}
                         Icon={Glyph}
                         label={label}
-                        onClick={() => setDraft(emptyDraft(p.name ?? '', p))}
+                        onClick={() => setDraft(emptyDraft(p))}
                         className={cn(
                           draft.provider === p.name && 'border-primary bg-accent text-foreground ring-1 ring-primary',
                         )}

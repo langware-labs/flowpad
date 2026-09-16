@@ -10,6 +10,8 @@ import { useCallback, useEffect, useState } from 'react';
 import apiClient from '@sdk/client';
 import { formatBytes } from '@src/utils/format-bytes';
 import { timeSince } from '@src/utils/duration';
+import { openAgenticProcess } from '@src/navigation/agentic-process-open';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { RunSummary } from './RunRow';
 
 interface ArtifactFile {
@@ -50,6 +52,7 @@ export function RunDetail({ runId }: { runId: string }) {
   const [openFile, setOpenFile] = useState<{ key: string; name: string } | null>(null);
   const [content, setContent] = useState<ArtifactContent | null>(null);
   const [asSource, setAsSource] = useState(false);
+  const { navigation } = useDockNavigation();
 
   useEffect(() => {
     setRun(null);
@@ -118,6 +121,10 @@ export function RunDetail({ runId }: { runId: string }) {
           {typeof run.cost_usd === 'number' && run.cost_usd > 0 && (
             <span>${run.cost_usd.toFixed(3)}</span>
           )}
+          {/* A run IS its process: the transcript is what it did, live while it runs. */}
+          <button className="lnk" data-testid="run-open-transcript" onClick={() => void openAgenticProcess(run.id, navigation)}>
+            transcript
+          </button>
         </div>
         {run.start_failure && <p className="run-fail">{run.start_failure}</p>}
       </header>
