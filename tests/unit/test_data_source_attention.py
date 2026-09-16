@@ -213,7 +213,10 @@ class TestAttentionFastLane:
         # the bell returns it. Poking `next` without ringing is an incomplete
         # simulation, and it raced the loop's own wait — which is how this
         # test failed on a loaded machine.
-        poller._attention[str(src.id)]["next"] = 0
+        # The lane may already have made its re-check and dropped the source — the outcome under test.
+        entry = poller._attention.get(str(src.id))
+        if entry is not None:
+            entry["next"] = 0
         poller.wake_attention_lane()
         import time as _time
 
