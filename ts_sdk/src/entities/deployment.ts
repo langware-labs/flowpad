@@ -5,6 +5,7 @@ import { normalizeKind } from '../models/Kind';
 import { isTypeId, TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
+import { DEFAULT_CREDENTIAL_ENVIRONMENT } from '../services/credentials-service';
 
 /** Provider label carrying a local dev server's port. Pairs with `runtimePort`. */
 const RUNTIME_PORT_LABEL = 'flowpad.runtime.port';
@@ -24,7 +25,7 @@ export const KIND_NODE = 'compute.node';
  * names that node. An inventoried `gcp` resource is not node-backed — its
  * `external_id` is the provider's own resource name.
  */
-export const NODE_PROVIDERS: ReadonlySet<string> = new Set(['local', 'e2b', 'docker', 'gcp_vm', 'user_machine']);
+export const NODE_PROVIDERS: ReadonlySet<string> = new Set(['local', 'local_machine', 'e2b', 'docker', 'gcp_vm', 'user_machine']);
 
 /** Provider-normalized signal; unavailable data is represented explicitly, never as zero. */
 export interface DeploymentObservation {
@@ -48,12 +49,13 @@ export interface DeploymentTarget {
 /**
  * Where this record's truth lives — the cloud resource being placed.
  *
- * The same value object the ingest side uses (`flow_sdk/builtin/cloud_origin.py`):
- * secret-free, no behaviour, just a pointer at a mutable object in someone
- * else's system. `external_id` is the ComputeNode typeid for a node-backed
- * placement, or the provider's own resource name for an inventoried one.
+ * Not a `CloudOrigin` (a record identity has a key from birth): a placement exists
+ * before it is placed, so `external_id` stays empty until a node is allocated. Twin of
+ * `PlacementOrigin` in `flow_sdk/builtin/deployment.py`. `external_id` is the ComputeNode
+ * typeid for a node-backed placement, or the provider's own resource name for an
+ * inventoried one.
  */
-export interface CloudOrigin {
+export interface PlacementOrigin {
   kind: string;
   provider: string;
   external_id: string;
@@ -73,12 +75,14 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
   artifact_id?: string | null;
   artifact_link_source?: ArtifactLinkSource | null;
   target: DeploymentTarget;
-  origin?: CloudOrigin | null;
+  origin?: PlacementOrigin | null;
   status: DeploymentStatus;
   provider_labels: Record<string, string>;
   observations: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
   source_revision?: string | null;
   project_id?: string | null;
+  /** Credential environment: `development` (this computer) or a named one (`production`, `staging`, …). */
+  environment?: string;
 }
 
 // `implements IDeployment` only checks the class; it contributes no members, so every
@@ -104,12 +108,13 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   artifact_id: string | null;
   artifact_link_source: ArtifactLinkSource | null;
   target: DeploymentTarget;
-  origin: CloudOrigin | null;
+  origin: PlacementOrigin | null;
   status: DeploymentStatus;
   provider_labels: Record<string, string>;
   observations: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
   source_revision: string | null;
   project_id: string | null;
+  environment: string;
 
   constructor(entity: Partial<IDeployment> | IEntity = {}) {
     super(entity);
@@ -142,6 +147,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     this.observations = normalizeObservations(deployment.observations);
     this.source_revision = deployment.source_revision ?? null;
     this.project_id = deployment.project_id ?? null;
+    this.environment = deployment.environment || DEFAULT_CREDENTIAL_ENVIRONMENT;
     this.validateStructure();
   }
 
@@ -191,6 +197,22 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
    */
   async pause(): Promise<Deployment> {
     return new Deployment((await this.post('pause')) as IDeployment);
+  }
+
+  /** Start a paused machine again. */
+  async resume(): Promise<Deployment> {
+    return new Deployment((await this.post('resume')) as IDeployment);
+  }
+
+  /** Bring a cloud machine to the published definition (the hub re-clones and re-indexes it). */
+  async update(): Promise<Record<string, unknown>> {
+    return ((await this.post('update')) ?? {}) as Record<string, unknown>;
+  }
+
+  /** The latest runs on a cloud machine, read through the hub. This computer's runs are the local run list. */
+  async runs<T = Record<string, unknown>>(limit: number): Promise<T[]> {
+    const data = await this.get<{ runs?: T[] } | null>(`runs?limit=${encodeURIComponent(String(limit))}`);
+    return data?.runs ?? [];
   }
 
   private validateStructure(): void {

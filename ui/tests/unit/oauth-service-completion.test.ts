@@ -9,6 +9,7 @@ const TARGET = { type: 'project', id: '3f2504e0-4f89-41d3-9a0c-0305e82c3301' } a
 
 class TestWindow implements OAuthWindow {
   private openState = true;
+  private listeners = new Set<() => void>();
 
   open(): void {
     this.openState = true;
@@ -20,6 +21,17 @@ class TestWindow implements OAuthWindow {
 
   get isOpen(): boolean {
     return this.openState;
+  }
+
+  onClosed(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /** The user closes the consent window themselves. */
+  userClosed(): void {
+    this.openState = false;
+    this.listeners.forEach((listener) => listener());
   }
 }
 
@@ -196,20 +208,35 @@ describe('OAuthService terminal completion', () => {
     );
   });
 
-  it('cancels the exact Hub request when its tracked popup closes', async () => {
+  it('names this tab as the initiator and completes a Hub grant from its addressed oauth_msg', async () => {
+    vi.spyOn(service, 'createOAuthPopupWindow').mockResolvedValue(new TestWindow());
+    vi.spyOn(service, 'test').mockResolvedValue({ ok: true });
     const emitted = vi.spyOn(dataManager, 'emit');
-    const waitCallback = vi
-      .spyOn(
-        service as unknown as {
-          waitCallback: OAuthService['test'];
-        },
-        'waitCallback',
-      )
-      .mockResolvedValue({
-        oauth_request_id: 'request-3',
-        provider: 'slack',
-        status: 'pending',
-      } as never);
+    const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({
+      kind: 'code',
+      auth_url: 'https://hub.test/authorize',
+      oauth_request_id: 'hub-request',
+    });
+
+    await service.connect('slack');
+    await service.onOAuthMessage({ oauth_request_id: 'hub-request', status: OAuthStatus.SUCCESS } as never);
+
+    expect(call.mock.calls[0][0].carriesInitiator).toBe(true);
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(emitted).toHaveBeenCalledWith(
+      OAuthEventType.OAUTH_FLOW_COMPLETE,
+      expect.objectContaining({ provider: 'slack', status: OAuthStatus.SUCCESS }),
+    );
+  });
+
+  it('cancels the exact Hub request when the user closes its window, without polling', async () => {
+    const emitted = vi.spyOn(dataManager, 'emit');
+    const waitCallback = vi.spyOn(
+      service as unknown as {
+        waitCallback: OAuthService['test'];
+      },
+      'waitCallback',
+    );
     const cancelFlow = vi
       .spyOn(
         service as unknown as {
@@ -222,29 +249,32 @@ describe('OAuthService terminal completion', () => {
         provider: 'slack',
         status: 'cancelled',
       } as never);
+    const consent = new TestWindow();
     const flow = new OauthFlow(
       { provider: 'slack', auth_url: 'https://example.test/auth', oauth_request_id: 'request-3' },
-      new TestWindow(),
+      consent,
       TARGET,
     );
-    flow.closeWindow();
     (service as unknown as { oAuthFlows: Map<string, OauthFlow> }).oAuthFlows.set('request-3', flow);
 
     await (
       service as unknown as {
-        drivePopupCallback: (flow: OauthFlow) => Promise<void>;
+        drivePopupCallback: (flow: OauthFlow, kind: string) => Promise<void>;
       }
-    ).drivePopupCallback(flow);
+    ).drivePopupCallback(flow, 'code');
+    consent.userClosed();
 
-    expect(waitCallback).toHaveBeenCalledWith('slack', 'request-3', TARGET);
-    expect(cancelFlow).toHaveBeenCalledWith('slack', 'request-3', TARGET);
-    expect(emitted).toHaveBeenCalledWith(
-      OAuthEventType.OAUTH_FLOW_COMPLETE,
-      expect.objectContaining({
-        provider: 'slack',
-        status: OAuthStatus.CANCELLED,
-        oauth_request_id: 'request-3',
-      }),
+    await vi.waitFor(() =>
+      expect(emitted).toHaveBeenCalledWith(
+        OAuthEventType.OAUTH_FLOW_COMPLETE,
+        expect.objectContaining({
+          provider: 'slack',
+          status: OAuthStatus.CANCELLED,
+          oauth_request_id: 'request-3',
+        }),
+      ),
     );
+    expect(waitCallback).not.toHaveBeenCalled();
+    expect(cancelFlow).toHaveBeenCalledWith('slack', 'request-3', TARGET);
   });
 });

@@ -9,6 +9,7 @@ import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { IDeployment } from './deployment';
 import { DataSource, type IDataSource } from './data-source';
 import { EmailInbox, type IEmailInbox } from './email-inbox';
+import { Trigger } from './trigger';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 
@@ -93,6 +94,10 @@ export class Agent extends APIEntity<Agent> {
   auto_launch: boolean;
   /** First prompt of the auto-launched session, delivered via the prompt queue. */
   auto_launch_prompt?: string;
+  /** Per-place launch overrides, keyed by Deployment id (agent.md `places`). */
+  places?: AgentPlaceSpecWire[] | null;
+  /** Deployment id of the one place that answers this agent's email. */
+  email_place?: string | null;
 
   constructor(entity: Partial<Agent> = {}) {
     super(entity);
@@ -125,6 +130,8 @@ export class Agent extends APIEntity<Agent> {
     this.intro = entity.intro;
     this.auto_launch = entity.auto_launch ?? false;
     this.auto_launch_prompt = entity.auto_launch_prompt;
+    this.places = entity.places ?? null;
+    this.email_place = entity.email_place ?? null;
   }
 
   /**
@@ -210,6 +217,25 @@ export class Agent extends APIEntity<Agent> {
   }
 
   /**
+   * Add a scheduled run: a child trigger asset under this agent's folder that
+   * runs the agent headlessly with `prompt`. Indexed and armed before it
+   * returns, so the row it hands back is already live.
+   */
+  async addSchedule(fields: AgentScheduleFields & { name: string; expr: string; prompt: string }): Promise<Trigger> {
+    return new Trigger((await this.post('add_schedule', { ...fields })) as Partial<Trigger>);
+  }
+
+  /** Change one of this agent's schedules. Only the fields given change. */
+  async updateSchedule(triggerId: string, fields: AgentScheduleFields): Promise<Trigger> {
+    return new Trigger((await this.post('update_schedule', { trigger_id: triggerId, ...fields })) as Partial<Trigger>);
+  }
+
+  /** Remove one of this agent's schedules — its folder, row and job. */
+  async removeSchedule(triggerId: string): Promise<void> {
+    await this.post('remove_schedule', { trigger_id: triggerId });
+  }
+
+  /**
    * Open a session AS this agent: a new, visible, headless Chat process built
    * from the agent's local deployment, with no first turn — the human types it.
    * `POST /agent/<id>/use`. The counterpart of `run` (one prompt, headless).
@@ -246,9 +272,50 @@ export class Agent extends APIEntity<Agent> {
    *
    * Slow by nature (create + boot + health on a real sandbox); callers should
    * show progress rather than assume a snappy round trip.
+   *
+   * `environment` is the placement's credential environment — `production`
+   * when omitted. One cloud machine per environment.
    */
-  async deploy(): Promise<AgentDeployResult> {
-    return (await this.post('deploy')) as AgentDeployResult;
+  async deploy(environment?: string): Promise<AgentDeployResult> {
+    return (await this.post('deploy', environment ? { environment } : undefined)) as AgentDeployResult;
+  }
+
+  /** Every place this agent runs on — this computer first — with what each owns. */
+  async listPlaces(): Promise<AgentPlace[]> {
+    return (await this.get<AgentPlace[]>('places')) ?? [];
+  }
+
+  /** Set one launch override for one place; `null` resets it to the definition. */
+  async setPlaceOverride(deploymentId: string, field: AgentPlaceField, value: string | string[] | null): Promise<void> {
+    await this.post('set_place_override', { deployment_id: deploymentId, field, value });
+  }
+
+  /** Switch this agent on or off on one place; `null` follows the definition's `enabled`. */
+  async setPlaceEnabled(deploymentId: string, enabled: boolean | null): Promise<void> {
+    await this.post('set_place_enabled', { deployment_id: deploymentId, enabled });
+  }
+
+  /** Make one place the only one answering this agent's email. */
+  async setEmailPlace(deploymentId: string): Promise<void> {
+    await this.post('set_email_place', { deployment_id: deploymentId });
+  }
+
+  /** Published commit and the changes on this computer that aren't published. */
+  async versionState(): Promise<AgentVersionState> {
+    return this.get<AgentVersionState>('version');
+  }
+
+  /** Fire one of this agent's schedules on a CLOUD place, through the hub (`run_now`). */
+  async placeAction(deploymentId: string, op: 'run_now', triggerId: string): Promise<Record<string, unknown>> {
+    return ((await this.post('place_action', { deployment_id: deploymentId, op, trigger_id: triggerId })) ??
+      {}) as Record<string, unknown>;
+  }
+
+  /** Commit, push and register this agent on the hub. `force` republishes an agent already there. */
+  async publish(
+    options: { force?: boolean } = {},
+  ): Promise<{ agent_id: string; published: boolean; already_on_hub: boolean }> {
+    return this.post('publish', { force: !!options.force });
   }
 
   /**
@@ -388,6 +455,61 @@ export interface AgentDeployResult {
 export type AgentUseResult = Omit<AgentRunResult, 'compute_node_id'>;
 
 /** What `POST /agent/<id>/run` hands back. */
+/** The fields a schedule manages — `POST /agent/<id>/add_schedule` and friends
+ *  (`flow_sdk/builtin/agent_schedule.py`). Omitted fields are left as they are. */
+export interface AgentScheduleFields {
+  name?: string;
+  description?: string;
+  /** How `expr` is read: a crontab, an interval (`30s`/`5m`), or an ISO date. */
+  every?: 'cron' | 'interval' | 'date';
+  expr?: string;
+  /** IANA zone, e.g. `Asia/Jerusalem`. Empty = the backend machine's zone. */
+  timezone?: string;
+  /** The place (Deployment id) the schedule runs on. Empty = every machine (legacy). */
+  runs_on?: string;
+  prompt?: string;
+  enabled?: boolean;
+}
+
+/** The launch settings a place may override — `PLACE_OVERRIDABLE_FIELDS` in agent_spec.py. */
+export const AGENT_PLACE_FIELDS = ['worker_type', 'model', 'permission_mode', 'effort', 'mcp_servers'] as const;
+export type AgentPlaceField = (typeof AGENT_PLACE_FIELDS)[number];
+
+export interface AgentPlaceOverrides {
+  worker_type?: string;
+  model?: string;
+  permission_mode?: string;
+  effort?: string;
+  /** Server NAMES — names travel between machines, ids do not. */
+  mcp_servers?: string[];
+}
+
+export interface AgentPlaceSpecWire extends AgentPlaceOverrides {
+  deployment_id: string;
+}
+
+/** One place an agent runs on (`GET /agent/<id>/places`). */
+export interface AgentPlace {
+  /** The Deployment row, as wire data — wrap with `new Deployment(...)`. */
+  deployment: Record<string, unknown> & { id: string; name: string; kind: string };
+  is_local: boolean;
+  overrides: AgentPlaceOverrides;
+  schedule_count: number;
+  answers_email: boolean;
+  /** Published commits a cloud machine does not run yet; null when unknown or for this computer. */
+  behind: number | null;
+  /** Whether the agent runs on this place: its own switch, else the definition's `enabled`. */
+  enabled: boolean;
+}
+
+/** `GET /agent/<id>/version` — what this computer has that the published version lacks. */
+export interface AgentVersionState {
+  published: boolean;
+  published_commit: string;
+  has_repo: boolean;
+  pending_changes: number;
+}
+
 export interface AgentRunResult {
   process_id: string;
   process_typeid: string;

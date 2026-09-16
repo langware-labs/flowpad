@@ -320,7 +320,7 @@ def test_stored_path_under_a_walk_denylisted_dir_is_not_retained(tmp_path: Path)
 
 def test_denylisted_ancestor_detection_is_ancestor_only(tmp_path: Path) -> None:
     """Only ANCESTOR directories disqualify a path — never the file's own name."""
-    from flow_sdk.fs_store.indexer.gitignore import is_under_denylisted_dir
+    from flow_sdk.fs_store.gitignore import is_under_denylisted_dir
 
     assert is_under_denylisted_dir("/repo/.venv/lib/site-packages/pkg/doc.md") is True
     assert is_under_denylisted_dir("/repo/ui/node_modules/pkg/doc.md") is True

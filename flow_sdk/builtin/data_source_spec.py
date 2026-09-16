@@ -33,7 +33,7 @@ from flow_sdk.schema.data_spec.data_source_manifest_spec import (
     CURRENT_SCHEMA,
     AuthSpec,
     ConfigFieldSpec,
-    TraitsSpec,
+    Runtime,
     coerce_config,
 )
 from flow_sdk.schema.types import EntityType
@@ -72,12 +72,8 @@ from flow_sdk.schema.types import EntityType
 
 
 class DataSourceSpec(Entity):
-    """The ROW; its shape on disk is ``ManifestSpec`` (``TypeInfo.asset_spec``)."""
-
-    #: Folder markers. Runtime is DERIVED from these, never declared. The
-    #: manifest itself is the shape's ``Folder.main`` (``data_source.json``).
-    SCRIPT_FILE: ClassVar[str] = "fetch.py"
-    AGENT_FILE: ClassVar[str] = "FETCH.md"
+    """The ROW; its shape on disk is ``ManifestSpec`` (``TypeInfo.asset_spec``). The folder beside
+    the manifest holds the source's own code (``source.py``), loaded by the source registry."""
 
     type: str = APIField(default=EntityType.DATA_SOURCE_SPEC.value)
 
@@ -90,6 +86,7 @@ class DataSourceSpec(Entity):
     # ── the header, held as entity fields ──
     title: str = APIField(default="")
     description: str = APIField(default="")
+    kind: str = APIField(default="")
     icon_name: str = APIField(default="")
     channel_icon_names: dict[str, str] = APIField(default_factory=dict)
     setup_wiki: str = APIField(default="")
@@ -98,34 +95,40 @@ class DataSourceSpec(Entity):
     auth: Optional[AuthSpec] = APIField(default=None)
     reflect: list[str] = APIField(default_factory=list)
     config: dict[str, ConfigFieldSpec] = APIField(default_factory=dict)
-    traits: Optional[TraitsSpec] = APIField(default=None)
+    listed: bool = APIField(default=True)
+    provisioned: bool = APIField(default=False)
 
-    #: builtin | script | agent — DERIVED from the folder's contents by the
-    #: extractor (``ManifestSpec.runtime_for_folder``), never authored; mirrored to the shadow
-    #: so the driver registry can query it.
-    runtime: str = APIField(default="builtin", persist=Persist.TRUE)
+    #: DERIVED from the folder by the extractor (``ManifestSpec.runtime_for_folder``), never
+    #: authored; mirrored to the shadow.
+    runtime: str = APIField(default=Runtime.SOURCE.value, persist=Persist.TRUE)
 
     _api_visible: ClassVar[bool] = True
 
     @computed_field
     @property
     def sends(self) -> bool:
-        """Whether a source of this provider is a MessageSource — its driver
-        can push a reply back to the channel (``IngestDriver.sends``).
+        """Whether a source of this provider is a MessageSource — its class can push a reply back
+        to the channel (``SourceType.sends``).
 
-        Computed at serialization, not derived by the indexer like ``runtime``:
-        the answer lives on the driver CLASS, and importing the drivers package
-        from inside the indexer's per-record sync deadlocks on the import lock
-        (``ingest/spec_registry.py`` records the 120s stall). By the time a row
-        reaches the wire the shipped drivers are registered and every
-        script-runtime adapter has been refreshed, so this is a dict lookup.
-        A provider nothing has registered answers False — the same answer the
-        poller gives, which reports it as ``unknown_provider``.
+        Computed at serialization, not derived by the indexer like ``runtime``: the answer lives on
+        the source CLASS, and importing source code from inside the indexer's per-record sync
+        deadlocks on the import lock. By the time a row reaches the wire the shipped sources are
+        loaded, so this is a dict lookup. A provider nothing has registered answers False — the same
+        answer the poller gives, which reports it as ``unknown_provider``.
         """
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
-        driver = get_driver(self.name or "")
+        driver = source_type(self.name or "")
         return bool(driver is not None and driver.sends)
+
+    @computed_field
+    @property
+    def load_error(self) -> str:
+        """Why this folder's source did not load (no ``source.py``, an import error, a name a
+        shipped source owns), or ``""``."""
+        from flow_sdk.ingest.source_registry import load_error_for  # noqa: PLC0415
+
+        return load_error_for(self.name or "")
 
     def coerce_config(self, config: dict) -> dict:
         """The row's field catalog applied to a source's ``config``."""

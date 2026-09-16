@@ -15,6 +15,7 @@ pinned by a test so it cannot drift silently.
 | [Agent email](agent-email.md) | allocate an Agent inbox, listen for mail, run the Agent and send a threaded reply | `tests/hub_tests/test_agent_email_conversation.py`, `tests/long_tests/test_blocks_email_workflow.py` |
 | [Workflows](workflows.md) | the plain-Python `blocks` surface: an inbox, an agent runner, a typed reply that acks, on email, Telegram and Slack | `tests/unit/test_workflows_snippets.py` (runs every loop), `tests/unit/test_blocks_email.py`, live `tests/long_tests/test_blocks_email_workflow.py` |
 | [Connections](connections.md) | list, connect and verify providers from a Python REPL or `flow connections` | `tests/unit/test_connections.py`, `tests/unit/test_connections_cli.py` |
+| [Secret stores](secret-stores.md) | load, save and validate named secrets; a credential's store per environment; bind a store and an account to a data source instance | `tests/unit/test_secrets/test_secret_stores_snippets.py` (runs every fence), `tests/unit/test_secrets/`, `tests/unit/test_connection_access.py` |
 | [Processes and agents](processes.md) | give a process or an agent an MCP server, launch it, read the answer | `tests/long_tests/test_process_mcp_multi_vendor.py` |
 | [Agent deployment](agent-deployment.md) | place an agent, start a session on a placement, read its runs, pause the machine, and the same verbs from TypeScript and HTTP | `tests/unit/agent/test_agent_deployment_contract.py`, `tests/unit/agent/test_agent_run_dispatch.py`, `tests/unit/test_deployed_agent_chat_demo.py` |
 | [LLM endpoints](llm-endpoints.md) | fund a call: a provider key, a hub budget or a device login; complete, embed, list, probe | `tests/unit/test_llm_endpoint_rows.py`, `tests/unit/test_llm_client.py`, `tests/long_tests/test_llm_endpoint_live.py` |
@@ -28,10 +29,11 @@ pinned by a test so it cannot drift silently.
   connection operations lease the selected standard service for their normal
   HTTP actions and restore its initial up/down state. Long tests that pin live
   legs run under the standard 30s cap and skip without credentials.
-* **Import the drivers once.** `import flow_sdk.ingest.drivers` registers the
-  twelve shipped providers (`rss`, `hackernews`, `folder`, `git`, `gdrive`,
-  `gcs`, `gmail`, `agentmail`, `cloud_email`, `slack`, `telegram`, `agent`). Without it
-  `get_driver()` returns `None` and a source parks on `config_error`.
+* **The shipped sources load on first ask.** The first `source_type(provider)`
+  loads every shipped data source asset folder
+  (`agentic-assets/data_source/<name>/source.py`), so a snippet imports nothing to
+  make `rss` or `slack` resolve, and an override it registers before or after that
+  first lookup is kept.
 * **Values travel as `DataSpec`.** What a driver emits is a
   `SourceItemSpec`, what you send back is a `MessageSpec` subclass, and what an
   agent returns is a `RunOutput`. They are frozen and refuse unknown keys. A

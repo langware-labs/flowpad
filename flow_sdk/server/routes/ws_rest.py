@@ -11,10 +11,10 @@ from starlette.requests import Request
 from starlette.websockets import WebSocket
 
 from flow_sdk.api.messages import APIMessage, WSMessageType
+from flow_sdk.request_context.auth_info import AuthResult
 from flow_sdk.request_context.execution_context import ExecutionContext, set_execution_context
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.request_context.auth_info import AuthResult
-from flow_sdk.responses.response import ApiResponse, ApiFailResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiResponse
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,9 @@ async def setup_rest_context(connection_id: str, message_json: dict) -> Executio
         # WS-REST has no HTTP header; carry the per-call reflection opt-in from the
         # message itself (the HTTP path parses the ``Hub-Reflect`` header instead).
         req_info.hub_reflect = bool(getattr(api_message, "hub_reflect", False))
+        # Same for the initiator: this socket IS the tab, so its id needs no header.
+        if getattr(api_message, "carries_initiator", False):
+            req_info.initiator_connection_id = connection_id
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk.server.middleware.request_transaction_middleware import _get_local_user_cached
 

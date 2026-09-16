@@ -2,20 +2,21 @@
  * Per-project view-mode memory (`Project.last_mode`).
  *
  * Contract under test (real backend, no mocks):
- *   1. First `loadProject` of a project with no `last_mode` stamps the current
- *      mode onto it (fire-and-forget save).
- *   2. Every effective mode switch (`setViewMode`) records onto the CURRENT
- *      project only.
- *   3. Re-entering a project applies its remembered mode.
- *   4. A garbage stored `last_mode` reads as unset — the current mode is kept
- *      and the garbage is overwritten (not laundered into Standard).
- *   5. Re-loading a project whose `last_mode` already matches performs no
- *      redundant save (backend `updated_date` stays put).
+ *   1. Loading a project writes no memory: opening something only displays a
+ *      mode; `last_mode` is minted by a mode SWITCH (VIEW_MODE_STORE).
+ *   2. Every mode switch (`setViewMode`) records onto the CURRENT project only.
+ *   3. Loading a project neither applies nor rewrites its memory; the remembered
+ *      mode reaches the screen through the URL — a project dock's seed reads it
+ *      (`rememberedDockViewMode`).
+ *   4. A garbage stored `last_mode` reads as no memory, and the next switch
+ *      replaces it (it is not laundered into Standard).
+ *   5. Re-loading a project saves nothing (backend `updated_date` stays put).
  *
  * Uses the REAL production seams: `loadProject` (the URL-first project
- * primitive every project route funnels through) and `setViewMode` (the single
- * converged mode writer). Backend state is asserted via raw entity GETs so the
- * fire-and-forget saves are observed at the source of truth, not the cache.
+ * primitive every project route funnels through), `setViewMode` (the one mode
+ * switch) and `rememberedDockViewMode` (what `openDock` seeds a dock with).
+ * Backend state is asserted via raw entity GETs so the fire-and-forget saves are
+ * observed at the source of truth, not the cache.
  */
 import { instancePreferences, PrefKey, Project } from '@sdk';
 import { waitFor } from '@testing-library/react';
@@ -23,7 +24,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'crypto';
 
 import { loadProject } from '@src/routes/loaders/load-project';
-import { getViewMode, setViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { getViewMode, rememberedDockViewMode, setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { apiTestSetup, fetchRow, getTestSignupInfo } from '../utils/test-utils';
 
 const RUN = randomUUID().slice(0, 8);
@@ -48,6 +50,9 @@ async function waitForBackendLastMode(id: string, expected: string): Promise<voi
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Give a hypothetical stray fire-and-forget save time to land. */
+const STRAY_SAVE_MS = 600;
+
 describe('per-project view-mode memory (Project.last_mode)', () => {
   beforeAll(async () => {
     await apiTestSetup(getTestSignupInfo(), 'project-view-mode-memory');
@@ -64,24 +69,26 @@ describe('per-project view-mode memory (Project.last_mode)', () => {
     await projectB?.delete().catch(() => {});
   });
 
-  it('first load stamps the current mode onto a project without last_mode', async () => {
+  it('loading a project writes no memory', async () => {
     const loaded = await loadProject(projectA.typeId);
     expect(loaded.id).toBe(projectA.id);
-    await waitForBackendLastMode(projectA.id, getViewMode());
+
+    await sleep(STRAY_SAVE_MS);
+    // Null fields are omitted from the wire.
+    expect((await backendProject(projectA.id)).last_mode ?? null).toBeNull();
   });
 
   it('a mode switch records onto the current project only', async () => {
     setViewMode(ViewMode.Dev);
     await waitForBackendLastMode(projectA.id, ViewMode.Dev);
-    // B was never loaded — untouched (null fields are omitted from the wire).
+    // B was never loaded — untouched.
     expect((await backendProject(projectB.id)).last_mode ?? null).toBeNull();
   });
 
-  it('loading another project stamps it, and its switches record there', async () => {
+  it('switches after loading another project record there', async () => {
     await loadProject(projectB.typeId);
-    // B had no last_mode → adopts (and records) the current mode.
+    // Loading displays nothing new: the current mode is unchanged and B stays empty.
     expect(getViewMode()).toBe(ViewMode.Dev);
-    await waitForBackendLastMode(projectB.id, ViewMode.Dev);
 
     setViewMode(ViewMode.Vibe);
     await waitForBackendLastMode(projectB.id, ViewMode.Vibe);
@@ -89,38 +96,40 @@ describe('per-project view-mode memory (Project.last_mode)', () => {
     expect((await backendProject(projectA.id)).last_mode).toBe(ViewMode.Dev);
   });
 
-  it('re-entering a project applies its remembered mode', async () => {
+  it('re-entering a project does not apply or rewrite its memory; its dock seeds from it', async () => {
     expect(getViewMode()).toBe(ViewMode.Vibe);
     await loadProject(projectA.typeId);
-    expect(getViewMode()).toBe(ViewMode.Dev);
-    // Applying a remembered mode must not clobber the other project's memory.
+    // The loader applies nothing — the mode reaches the screen through the URL.
+    expect(getViewMode()).toBe(ViewMode.Vibe);
+    expect(rememberedDockViewMode(DockPointer.forProject(projectA.id))).toBe(ViewMode.Dev);
+
+    await sleep(STRAY_SAVE_MS);
+    expect((await backendProject(projectA.id)).last_mode).toBe(ViewMode.Dev);
     expect((await backendProject(projectB.id)).last_mode).toBe(ViewMode.Vibe);
   });
 
-  it('garbage last_mode reads as unset: current mode kept, garbage overwritten', async () => {
+  it('garbage last_mode reads as no memory, and the next switch replaces it', async () => {
     projectB.last_mode = 'bogus-mode';
     await projectB.save();
     await waitForBackendLastMode(projectB.id, 'bogus-mode');
 
     await loadProject(projectB.typeId);
-    // Not laundered into Standard — the current mode (dev, from project A) wins…
-    expect(getViewMode()).toBe(ViewMode.Dev);
-    // …and replaces the garbage on the project.
-    await waitForBackendLastMode(projectB.id, ViewMode.Dev);
+    // Not laundered into Standard — it is simply no memory.
+    expect(rememberedDockViewMode(DockPointer.forProject(projectB.id))).toBeNull();
+
+    setViewMode(ViewMode.Advanced);
+    await waitForBackendLastMode(projectB.id, ViewMode.Advanced);
   });
 
-  it('re-loading a project whose last_mode already matches saves nothing', async () => {
+  it('re-loading a project saves nothing', async () => {
     const before = await backendProject(projectB.id);
-    expect(before.last_mode).toBe(ViewMode.Dev);
+    expect(before.last_mode).toBe(ViewMode.Advanced);
 
     await loadProject(projectB.typeId);
-    expect(getViewMode()).toBe(ViewMode.Dev);
 
-    // Give a hypothetical stray fire-and-forget save time to land, then assert
-    // the row was not rewritten.
-    await sleep(600);
+    await sleep(STRAY_SAVE_MS);
     const after = await backendProject(projectB.id);
     expect(after.updated_date).toEqual(before.updated_date);
-    expect(after.last_mode).toBe(ViewMode.Dev);
+    expect(after.last_mode).toBe(ViewMode.Advanced);
   });
 });

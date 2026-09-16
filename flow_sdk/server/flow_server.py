@@ -81,11 +81,16 @@ class FlowServer:
         # 4. Middleware (added in reverse execution order)
         from .middleware.catch_all_exception_middleware import CatchAllExceptionMiddleware
         from .middleware.cookie_gate_middleware import CookieGateMiddleware
+        from .middleware.json_body_relabel_middleware import JsonBodyRelabelMiddleware
         from .middleware.request_transaction_middleware import RequestTransactionMiddleware
 
         app.add_middleware(CatchAllExceptionMiddleware)
         app.add_middleware(RequestTransactionMiddleware)
         app.add_middleware(CORSMiddleware, **self._cors_config)
+        # Outside RequestTransactionMiddleware, which parses the body into RequestInfo: the
+        # relabel must happen before ANY reader, or it waits on a body that is already consumed.
+        # `curl -d '{...}'` JSON then arrives labelled application/json everywhere.
+        app.add_middleware(JsonBodyRelabelMiddleware)
         # Last = outermost = runs first: an ungated request is rejected before
         # RequestTransactionMiddleware opens a transaction or resolves a user.
         # No-op on an unarmed instance, which is the default and every desktop.

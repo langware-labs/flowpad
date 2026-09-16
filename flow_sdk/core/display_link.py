@@ -74,6 +74,7 @@ async def resolve_display_link(link: str, *, source: Entity | None, discover: bo
         if tid and tid.id:
             return {**await resolve_display_target(typeid=raw), **options}
 
+    node = None
     if source is not None and getattr(source, "compute_node_id", None):
         from flow_sdk.builtin.faas.compute_node import ComputeNode
         from flow_sdk.config import ComputeProviderType
@@ -84,15 +85,17 @@ async def resolve_display_link(link: str, *, source: Entity | None, discover: bo
 
     path = Path(raw).expanduser()
     if not path.is_absolute():
-        bases = [getattr(source, "workdir", None), getattr(source, "fs_storage_mount_path", None)]
+        relative = path
+        # Output names paths relative to where the shell IS now, not where it started.
+        live_cwd = node.compute_provider.get_pty_cwd(node.node_provider_id, source.id) if node else None
+        stored = [getattr(source, "workdir", None), getattr(source, "fs_storage_mount_path", None)]
+        path = _first_existing(relative, [live_cwd, *stored])
         project_id = getattr(source, "project_id", None)
-        if project_id:
+        if path is None and project_id:
             from flow_sdk.builtin.project import Project
 
             project = await Project.get_by_id(project_id)
-            bases.append(project.fs_storage_mount_path if project else None)
-        candidates = [Path(base) / path for base in dict.fromkeys(bases) if base]
-        path = next((candidate for candidate in candidates if candidate.exists()), None)
+            path = _first_existing(relative, [project.fs_storage_mount_path if project else None])
         if path is None:
             raise DisplayTargetNotFound(f"File not found in this session or project: {raw}")
     if not path.exists():
@@ -101,3 +104,9 @@ async def resolve_display_link(link: str, *, source: Entity | None, discover: bo
     if path.is_dir() and target["kind"] == DisplayTargetKind.VFS:
         raise InvalidDisplayTarget("This directory is not a registered asset")
     return {**target, **options}
+
+
+def _first_existing(relative: Path, bases: list[str | None]) -> Path | None:
+    """``relative`` under the first base where it exists."""
+    candidates = (Path(base) / relative for base in dict.fromkeys(bases) if base)
+    return next((candidate for candidate in candidates if candidate.exists()), None)

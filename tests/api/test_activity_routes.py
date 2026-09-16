@@ -54,6 +54,51 @@ def refusal(resp) -> str:
     return body["data"]["error_code"]
 
 
+# ---------------------------------------------------------------- body parsing
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},  # no Content-Type at all
+        {"Content-Type": "application/x-www-form-urlencoded"},  # what `curl -d` sends
+        {"Content-Type": "application/json"},
+    ],
+    ids=["no-header", "form-urlencoded", "json"],
+)
+async def test_the_body_is_json_whatever_content_type_claims(client, headers):
+    resp = await client.post(
+        f"{BASE}/index/pdf/inc_error", content=b'{"message":"encrypted","ref":"a.pdf"}', headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    spec = data(resp)
+    assert spec["errors_count"] == 1
+    assert (spec["errors"][0]["message"], spec["errors"][0]["ref"]) == ("encrypted", "a.pdf")
+
+
+@pytest.mark.parametrize("headers", [{}, {"Content-Type": "application/json"}], ids=["no-header", "json"])
+async def test_an_empty_body_is_the_default_body(client, headers):
+    resp = await client.post(f"{BASE}/index/inc_success", content=b"", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert data(resp)["done"] == 1  # VerbBody().n == 1
+
+
+@pytest.mark.parametrize("raw", [b"not json", b"[1, 2]", b'{"n": "many"}'], ids=["garbage", "array", "invalid"])
+async def test_a_bad_body_is_a_validation_error(client, raw):
+    resp = await client.post(f"{BASE}/index/inc_success", content=raw)
+    assert resp.status_code == 422, resp.text
+    assert monitor.get("index") is None, "a rejected body touches nothing"
+
+
+async def test_block_or_resume_on_an_ended_activity_is_refused(client):
+    # A child: its root stays tracked after it ends, so the address still names the ended node.
+    await post(client, "index/pdf", "inc_success")
+    await post(client, "index/pdf", "done")
+    for verb in ("block", "resume"):
+        assert refusal(await post(client, "index/pdf", verb, message="late")) == "ACTIVITY_ENDED"
+    assert data(await client.get(f"{BASE}/index"))["children"][0]["state"] == "completed"
+
+
 # ---------------------------------------------------------------- reporting
 
 

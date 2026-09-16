@@ -11,7 +11,7 @@ from flow_sdk.assets.types.graph_workflow_doc import GUIDED_PRESENT_KINDS
 from flow_sdk.builtin.graph_workflow_run import GraphWorkflowRun, RunStatus
 from flow_sdk.builtin.journey import Journey
 from flow_sdk.graph_workflow_manager import GraphWorkflowManager, parse_graph_workflow_doc
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 
 
 async def _until(cond, what="condition"):

@@ -79,9 +79,14 @@ export interface ControlMessage extends BaseMessage {
 
 export interface OAuthMessage extends BaseMessage {
   oauth_request_id: string;
-  status: 'success' | 'error';
+  status: 'success' | 'error' | 'cancelled';
   message?: string | null;
   user?: Record<string, any> | null;
+  // Sent to the initiating connection only (flow_sdk/core/oauth/flows.py), so
+  // that screen can confirm without a follow-up read. Absent from older senders.
+  provider?: string | null;
+  identity?: string | null;
+  code?: string | null;
 }
 
 export interface HubClientErrorMessage extends BaseMessage {
@@ -205,6 +210,9 @@ export interface RestApiMessage extends BaseMessage {
   // Per-call hub-reflection opt-in (default false). The WS-REST handler copies
   // this onto request_info.hub_reflect (the HTTP path uses the Hub-Reflect header).
   hub_reflect?: boolean;
+  // This call names its socket as the initiator (the HTTP path sends
+  // X-Flow-Connection-Id). The handler already knows the connection id.
+  carries_initiator?: boolean;
 }
 
 export interface ResponseMessage extends BaseMessage {

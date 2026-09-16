@@ -9,6 +9,7 @@ from urllib.parse import quote
 from filelock import FileLock, Timeout
 
 from flow_sdk.schema.data_spec.connection_spec import (
+    FLOWPAD_ACCOUNT_PROVIDER,
     Authorization,
     BrowserAuthorization,
     ConnectionCancelled,
@@ -71,6 +72,48 @@ async def _test_with_client(provider: str, client) -> ConnectionTestResult:
         raise _error(provider, ConnectionStage.VERIFICATION, "invalid_response", str(exc)) from exc
 
 
+async def _account_row(client, provider: str):
+    """This instance's hub-account row, read from the consolidated list.
+
+    The account is not in the OAuth catalogue — it is its own kind — so the
+    connect/test state machines cannot find it there.
+    """
+    from flow_sdk.core.connections.specs import _list_connections_with_client  # noqa: PLC0415
+
+    rows = await _list_connections_with_client(client)
+    row = next((item for item in rows if item.provider.lower() == FLOWPAD_ACCOUNT_PROVIDER), None)
+    if row is None:
+        raise _error(provider, ConnectionStage.CATALOG, "unknown_provider")
+    return row
+
+
+def _account_test(row) -> ConnectionTestResult:
+    """The account's verdict is the hub login itself; there is no token to probe."""
+    return ConnectionTestResult(
+        ok=bool(row.connected),
+        identity=row.identity or None,
+        detail=row.detail or None,
+        code=None if row.connected else "cloud_login_required",
+    )
+
+
+async def _connect_account(provider: str, client, presenter: AuthorizationPresenter, *, reauthorize: bool):
+    """Sign this instance in to its hub — the account row's whole connect."""
+    row = await _account_row(client, provider)
+    if row.connected and not reauthorize:
+        return ConnectionResult(spec=row, test=_account_test(row))
+    await _ensure_cloud_login(provider, client, presenter)
+    refreshed = await _account_row(client, provider)
+    if not refreshed.connected:
+        raise _error(
+            provider,
+            ConnectionStage.CLOUD,
+            "cloud_login_failed",
+            refreshed.detail or "Cloud login finished but this instance is not signed in",
+        )
+    return ConnectionResult(spec=refreshed, test=_account_test(refreshed))
+
+
 async def test(provider: str) -> ConnectionTestResult:
     from flow_sdk.core.connections.service import FlowServiceError, flow_service
     from flow_sdk.core.connections.specs import _list_connection_specs_with_client
@@ -78,6 +121,8 @@ async def test(provider: str) -> ConnectionTestResult:
     try:
         async with flow_service() as lease:
             wanted = provider.strip().lower()
+            if wanted == FLOWPAD_ACCOUNT_PROVIDER:
+                return _account_test(await _account_row(lease.client, provider))
             specs = await _list_connection_specs_with_client(lease.client)
             spec = next((item for item in specs if item.provider.lower() == wanted), None)
             if spec is None:
@@ -263,7 +308,9 @@ def _acquire_provider_lock(provider: str) -> FileLock:
     return lock
 
 
-async def connect(provider: str, presenter: AuthorizationPresenter) -> ConnectionResult:
+async def connect(provider: str, presenter: AuthorizationPresenter, *, reauthorize: bool = False) -> ConnectionResult:
+    """Connect ``provider``. ``reauthorize`` runs the provider's consent even over a held grant
+    (the Connections row's Reconnect) — how a grant missing a scope is replaced."""
     from flow_sdk.core.connections.service import FlowServiceError, flow_service
     from flow_sdk.core.connections.specs import _list_connection_specs_with_client
 
@@ -273,6 +320,8 @@ async def connect(provider: str, presenter: AuthorizationPresenter) -> Connectio
         try:
             async with flow_service() as lease:
                 client = lease.client
+                if provider == FLOWPAD_ACCOUNT_PROVIDER:
+                    return await _connect_account(provider, client, presenter, reauthorize=reauthorize)
                 specs = await _list_connection_specs_with_client(client)
                 wanted = provider.lower()
                 spec = next((item for item in specs if item.provider.lower() == wanted), None)
@@ -281,7 +330,14 @@ async def connect(provider: str, presenter: AuthorizationPresenter) -> Connectio
 
                 await _ensure_secrets(spec.provider, client)
                 initial = await _test_with_client(spec.provider, client)
-                if initial.ok is True:
+                # A passing probe is not a held connection: for a hub provider the
+                # test is delegated to the hub, so it passes on the owner's hub
+                # grant before this machine has adopted anything. Returning here
+                # reported "connected" while nothing landed in local SOD — the row
+                # stayed disconnected and `require()` failed right after. Only a
+                # row the catalogue already calls connected may skip `/auth`, which
+                # is where a valid hub grant is adopted without a browser.
+                if initial.ok is True and spec.connected and not reauthorize:
                     return ConnectionResult(spec=spec, test=initial)
                 if initial.ok is None:
                     raise _error(
@@ -291,16 +347,14 @@ async def connect(provider: str, presenter: AuthorizationPresenter) -> Connectio
                         initial.detail,
                     )
 
-                auth_response = await client.request(
-                    "POST", f"/api/v1/graph/oauth/{quote(spec.provider, safe='')}/auth", json={}
+                # A query parameter, the way the Connections screen's Reconnect sends it.
+                auth_path = f"/api/v1/graph/oauth/{quote(spec.provider, safe='')}/auth" + (
+                    "?reauthorize=true" if reauthorize else ""
                 )
+                auth_response = await client.request("POST", auth_path, json={})
                 if not auth_response.success and auth_response.error_code == "cloud_login_required":
                     await _ensure_cloud_login(spec.provider, client, presenter)
-                    auth_response = await client.request(
-                        "POST",
-                        f"/api/v1/graph/oauth/{quote(spec.provider, safe='')}/auth",
-                        json={},
-                    )
+                    auth_response = await client.request("POST", auth_path, json={})
                 if not auth_response.success:
                     stage = (
                         ConnectionStage.CLOUD
@@ -313,19 +367,24 @@ async def connect(provider: str, presenter: AuthorizationPresenter) -> Connectio
                         auth_response.error_code or "authorization_failed",
                         auth_response.message,
                     )
-                authorization = _authorization(spec.provider, auth_response.data)
-                try:
-                    await presenter.present(authorization)
-                    await _wait_exact(client, authorization)
-                except asyncio.CancelledError:
-                    await asyncio.shield(_cancel_exact(client, authorization))
-                    raise
-                except ConnectionCancelled:
-                    await _cancel_exact(client, authorization)
-                    raise
-                except BaseException:
-                    await _cancel_exact(client, authorization)
-                    raise
+                auth_data = auth_response.data if isinstance(auth_response.data, dict) else {}
+                # `/auth` completes synchronously when it adopted an existing,
+                # provider-verified hub grant: there is no URL to present and
+                # nothing to wait for.
+                if str(auth_data.get("status") or "").lower() != "success":
+                    authorization = _authorization(spec.provider, auth_response.data)
+                    try:
+                        await presenter.present(authorization)
+                        await _wait_exact(client, authorization)
+                    except asyncio.CancelledError:
+                        await asyncio.shield(_cancel_exact(client, authorization))
+                        raise
+                    except ConnectionCancelled:
+                        await _cancel_exact(client, authorization)
+                        raise
+                    except BaseException:
+                        await _cancel_exact(client, authorization)
+                        raise
 
                 refreshed_specs = await _list_connection_specs_with_client(client)
                 refreshed = next(
@@ -341,6 +400,16 @@ async def connect(provider: str, presenter: AuthorizationPresenter) -> Connectio
                         ConnectionStage.VERIFICATION,
                         final.code or ("verification_unreachable" if final.ok is None else "verification_failed"),
                         final.detail,
+                    )
+                if not refreshed.connected:
+                    # The provider accepts the token, yet this machine still holds
+                    # none — the exact false success this state machine exists to
+                    # prevent. Say so instead of returning "connected".
+                    raise _error(
+                        refreshed.provider,
+                        ConnectionStage.SECRETS,
+                        "credential_not_held",
+                        "Authorization finished but no credential is held on this instance",
                     )
                 return ConnectionResult(spec=refreshed, test=final)
         except FlowServiceError as exc:

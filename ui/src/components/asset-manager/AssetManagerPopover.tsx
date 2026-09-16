@@ -68,18 +68,28 @@ const ASSET_IMPROVEMENT_WIKI = 'Asset improvement';
  * One column template, applied identically to every row (asset rows and dir
  * rows alike) so cells line up down the list:
  *
- *   name chip │ scope icon │ scope name │ explorer │ wand │ select
+ *   name chip │ scope (icon + name) │ explorer │ wand │ select
  *
  * Deliberately not CSS subgrid: a row carries its own background (selected rows
  * are tinted) and bottom border, which `display: contents` would throw away.
- * Fixed tracks on a fixed-width popover align by construction, and cost nothing.
+ * Fixed tracks align by construction, and cost nothing.
  *
  * The corollary is that optional cells still have to occupy their track — see
  * `GridCellSpacer`. Rows whose wand or un-select button is absent were the whole
  * reason nothing lined up before.
+ *
+ * The track widths live in styles/index.css (`.asset-grid-row`) because they
+ * respond to the row's width: a narrow host gets the dense layout, where the
+ * scope name drops out and only its icon remains. A grid can't container-query
+ * itself, so the outer div is the container and the inner one is the grid.
  */
-const ASSET_GRID_ROW =
-  'grid grid-cols-[minmax(0,1fr)_1.25rem_4.5rem_1.5rem_1.5rem_1.5rem] items-center gap-2 px-3 py-1.5';
+function AssetGridRow({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn('asset-grid-row-host border-b last:border-b-0', className)} {...rest}>
+      <div className="asset-grid-row grid items-center gap-2 px-3 py-1.5">{children}</div>
+    </div>
+  );
+}
 
 /** Holds a grid track open where an optional cell isn't rendered. */
 function GridCellSpacer() {
@@ -797,7 +807,7 @@ export function AssetManagerPopover({
 function DirRow({ path, onRemove }: { path: string; onRemove?: (path: string) => void | Promise<void> }) {
   const { t } = useLingui();
   return (
-    <div className={cn(ASSET_GRID_ROW, 'border-b last:border-b-0')} data-testid={`asset-manager-dir-row-${path}`}>
+    <AssetGridRow data-testid={`asset-manager-dir-row-${path}`}>
       <span className="flex min-w-0 items-center gap-1.5 text-xs text-foreground" title={path}>
         <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate">{_basename(path) || path}</span>
@@ -821,7 +831,7 @@ function DirRow({ path, onRemove }: { path: string; onRemove?: (path: string) =>
       ) : (
         <GridCellSpacer />
       )}
-    </div>
+    </AssetGridRow>
   );
 }
 
@@ -990,8 +1000,8 @@ export function AssetRow({
   }, [navigation, type, id, readOnly, openable, openAction, descriptor]);
 
   return (
-    <div
-      className={cn(ASSET_GRID_ROW, 'border-b last:border-b-0', selected && 'bg-primary/5')}
+    <AssetGridRow
+      className={selected ? 'bg-primary/5' : undefined}
       data-testid={`asset-manager-row-${descriptor.typeid}-${descriptor.source}`}
       data-read-only={readOnly ? 'true' : 'false'}
       data-selected={selected ? 'true' : 'false'}
@@ -1085,6 +1095,6 @@ export function AssetRow({
       ) : (
         <GridCellSpacer />
       )}
-    </div>
+    </AssetGridRow>
   );
 }

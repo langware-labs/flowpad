@@ -1,4 +1,4 @@
-"""Read-only primitives over a project's ``.env.local``.
+"""Primitives over a scope root's ``.env.local`` (a project mount or the home folder).
 
 Two contracts are pinned here, both load-bearing for the secrets UI:
 
@@ -29,14 +29,11 @@ from flow_sdk.builtin.env_local_store import (
     list_env_local,
     write_env_local,
 )
-from flow_sdk.builtin.project import Project
 
 
 def _project(tmp_path):
-    """A Project pointed at ``tmp_path``. Never saved — these are pure reads."""
-    project = Project(name=str(tmp_path / "env-local-proj"))
-    project.fs_storage_mount_path = str(tmp_path)
-    return project
+    """The scope root under test."""
+    return tmp_path
 
 
 def _git(tmp_path, *args: str) -> subprocess.CompletedProcess:
@@ -45,6 +42,47 @@ def _git(tmp_path, *args: str) -> subprocess.CompletedProcess:
 
 def _init_repo(tmp_path) -> None:
     _git(tmp_path, "init", "-q")
+
+
+# ── per environment ───────────────────────────────────────────────────────────
+
+
+def test_a_named_environment_reads_and_writes_its_own_file(tmp_path):
+    from flow_sdk.builtin.env_local_store import read_env_local_values
+
+    (tmp_path / ".env.local").write_text("DATABASE_URL=local\n")
+    write_env_local(tmp_path, "DATABASE_URL", "hosted", "production")
+
+    assert env_local_path(tmp_path, "production") == tmp_path / ".env.production.local"
+    assert read_env_local_values(tmp_path) == {"DATABASE_URL": "local"}
+    assert read_env_local_values(tmp_path, "production") == {"DATABASE_URL": "hosted"}
+    assert [r["key"] for r in list_env_local(tmp_path, "production")] == ["DATABASE_URL"]
+
+
+def test_a_repo_ignoring_only_env_local_still_protects_a_named_environment_file(tmp_path):
+    _init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".env.local\n")
+
+    assert gitignore_status(tmp_path)["code"] == GITIGNORE_IGNORED
+    assert gitignore_status(tmp_path, "production")["code"] == GITIGNORE_NOT_IGNORED
+
+    status = ensure_gitignored(tmp_path, "production")
+
+    assert status["code"] == GITIGNORE_IGNORED
+    assert ".env.production.local" in (tmp_path / ".gitignore").read_text().splitlines()
+    assert "production" not in gitignore_status(tmp_path)["reason"], "development still names its own file"
+
+
+def test_a_tracked_named_environment_file_refuses_a_write(tmp_path):
+    _init_repo(tmp_path)
+    (tmp_path / ".env.staging.local").write_text("EXISTING=1\n")
+    _git(tmp_path, "add", "-f", ".env.staging.local")
+
+    with pytest.raises(EnvLocalNotWritable) as refused:
+        write_env_local(tmp_path, "TOKEN", "sk-must-not-land", "staging")
+
+    assert refused.value.code == GITIGNORE_TRACKED
+    assert "sk-must-not-land" not in (tmp_path / ".env.staging.local").read_text()
 
 
 # ── list_env_local ────────────────────────────────────────────────────────────
@@ -97,10 +135,8 @@ def test_list_env_local_duplicate_key_reports_the_effective_line(tmp_path):
 def test_list_env_local_empty_when_no_file_or_no_mount(tmp_path):
     assert list_env_local(_project(tmp_path)) == []
 
-    unmounted = Project(name="no-mount")
-    unmounted.fs_storage_mount_path = ""
-    assert list_env_local(unmounted) == []
-    assert env_local_path(unmounted) is None
+    assert list_env_local(None) == []
+    assert env_local_path(None) is None
 
 
 def test_env_local_path_points_at_the_file_even_when_absent(tmp_path):
@@ -123,10 +159,7 @@ def test_gitignore_status_outside_a_repo_is_not_blocked(tmp_path):
 
 
 def test_gitignore_status_no_project_dir(tmp_path):
-    project = Project(name="no-mount")
-    project.fs_storage_mount_path = str(tmp_path / "does-not-exist")
-
-    status = gitignore_status(project)
+    status = gitignore_status(tmp_path / "does-not-exist")
 
     assert status["code"] == GITIGNORE_NO_DIR
     assert status["ignored"] is True
@@ -303,11 +336,35 @@ def test_env_local_block_is_none_when_writable(tmp_path):
     assert env_local_block(gitignore_status(_project(tmp_path))) is None
 
 
+def test_env_local_block_lets_a_not_yet_ignored_file_through(tmp_path):
+    """A write appends the file to .gitignore and verifies, so not ignored YET is not a block."""
+    _init_repo(tmp_path)
+
+    assert gitignore_status(_project(tmp_path))["code"] == GITIGNORE_NOT_IGNORED
+    assert env_local_block(gitignore_status(_project(tmp_path))) is None
+
+
 def test_env_local_block_reports_a_code(tmp_path):
     _init_repo(tmp_path)
+    (tmp_path / ".env.local").write_text("A=1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", ".env.local"], cwd=tmp_path, check=True, capture_output=True)
 
     block = env_local_block(gitignore_status(_project(tmp_path)))
 
     assert block is not None
-    assert block["code"] == GITIGNORE_NOT_IGNORED
-    assert "NOT excluded" in block["reason"]
+    assert block["code"] == GITIGNORE_TRACKED
+    assert "TRACKED" in block["reason"]
+
+
+def test_writing_outside_a_repo_adds_no_gitignore(tmp_path):
+    """A user-scope root is the home folder: nothing is dropped into it."""
+    write_env_local(tmp_path, "TOKEN", "sk-fine")
+
+    assert not (tmp_path / ".gitignore").exists()
+
+
+def test_a_missing_folder_is_a_block_not_a_pass(tmp_path):
+    """Nothing can be written where there is no folder, so status must say so."""
+    block = env_local_block(gitignore_status(tmp_path / "missing"))
+
+    assert block is not None and block["code"] == GITIGNORE_NO_DIR

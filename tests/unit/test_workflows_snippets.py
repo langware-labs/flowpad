@@ -1,6 +1,6 @@
 """``docs/snippets/workflows.md`` §1–3, run as written.
 
-The provider is a ``ScriptedDriver`` registered under the snippet's own provider name and the
+The provider is a ``ScriptedSource`` registered under the snippet's own provider name and the
 worker is ``MockDriver``, so each program runs verbatim with no network: one inbound message,
 one agent turn, one reply, one ack. What is pinned is the shape — every item gets exactly one
 of ``ack()`` / ``reply()`` — not the words the mock replies with.

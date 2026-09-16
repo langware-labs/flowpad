@@ -292,3 +292,36 @@ async def test_oauth_anthropic_status_reflects_flowpad_sod(bootstrapped_client, 
     assert res["data"]["status"] == "available"
     assert res["data"]["has_token"] is True
     assert res["data"]["auth_method"] == "anthropic"
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_that_finds_the_hub_finished_stores_the_local_copy(bootstrapped_client, user, monkeypatch):
+    """The user closed the consent window after the hub had already stored the grant.
+
+    Answering "success" without storing this instance's copy would read as
+    connected and be empty — so the cancel completes the flow like the landing does.
+    """
+    from flow_sdk.app.actions import oauth_action
+    from flow_sdk.core.oauth.flows import AuthFlowResult, AuthFlowStatus
+
+    async def no_desktop_session(_state):
+        return False
+
+    async def hub_cancel(provider, request_id):
+        return {"oauth_request_id": request_id, "provider": provider, "status": "success"}
+
+    completed = []
+
+    async def complete(provider, flow_id):
+        completed.append((provider, flow_id))
+        return AuthFlowResult(status=AuthFlowStatus.SUCCESS, provider=provider), True
+
+    monkeypatch.setattr(oauth_action, "cancel_desktop_oauth_flow", no_desktop_session)
+    monkeypatch.setattr("flow_sdk.core.oauth.hub_oauth.hub_cancel_auth", hub_cancel)
+    monkeypatch.setattr(oauth_action, "complete_hub_flow", complete)
+
+    response = await bootstrapped_client.post(f"/api/v1/graph/user/{user.id}/oauth/slack/cancel?state=late-request")
+
+    assert response.status_code == 200
+    assert completed == [("slack", "late-request")]
+    assert response.json()["data"]["status"] == "success"

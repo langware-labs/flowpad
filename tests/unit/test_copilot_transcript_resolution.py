@@ -63,6 +63,31 @@ def test_preassigned_session_never_adopts_latest_foreign_history(isolated_copilo
     assert descriptor.source is TranscriptSource.PROCESS_LOCAL
 
 
+def test_never_launched_process_adopts_no_session_from_its_cwd(isolated_copilot_state):
+    """A second process on the same cwd must not claim the first one's live session.
+
+    With no session id and no launch stamp, the newest session for the cwd is
+    someone else's; adopting it resumed into copilot's "Session in use" dialog.
+    """
+    _write_foreign_session(isolated_copilot_state.copilot_session_state_dir, "live-session-of-another-process")
+    process = _process()
+
+    assert process.driver.transcript_descriptor(process) is None
+
+
+def test_launched_process_still_discovers_its_session_by_cwd(isolated_copilot_state):
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticProcessContextKey
+
+    events = _write_foreign_session(isolated_copilot_state.copilot_session_state_dir, "own-session")
+    process = _process(context_data={AgenticProcessContextKey.WORKER_STARTED_AT.value: "2000-01-01T00:00:00+00:00"})
+
+    descriptor = process.driver.transcript_descriptor(process)
+
+    assert descriptor is not None
+    assert descriptor.path == events
+    assert descriptor.source is TranscriptSource.WORKER_SESSION
+
+
 def test_process_local_flowpad_error_replays_as_visible_terminal_error(tmp_path):
     transcript = tmp_path / "copilot_transcript.jsonl"
     transcript.write_text(

@@ -43,9 +43,17 @@ export async function dockForScopeEntry(
   // branch above already does. An unscoped context-neutral dock is the one
   // shape `adoptScopeProject` reads as "restore the remembered project", so a
   // bare Home would pull the caller back into the project they asked to leave.
-  return projectId == null
-    ? DockPointer.forHome().withScopeFilter(allScope())
-    : DockPointer.forProject(projectId);
+  return projectId == null ? globalHomeDock() : DockPointer.forProject(projectId);
+}
+
+/**
+ * Home carrying the all-scope — where the Global scope lands when it has no
+ * tab left. A BARE Home is a different place: with no scope and no project its
+ * loader restores the remembered project (`adoptScopeProject` → `setupProject`),
+ * silently re-entering a project the moment the Global scope is emptied.
+ */
+export function globalHomeDock(): DockPointer {
+  return DockPointer.forHome().withScopeFilter(allScope());
 }
 
 /**

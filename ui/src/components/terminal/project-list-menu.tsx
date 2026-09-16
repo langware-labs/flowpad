@@ -1,15 +1,24 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Project } from '@sdk';
+import { FSRef, Project, Tab, tabKey, tabManager, TypeId } from '@sdk';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { canonicalPath } from '@src/components/project-selector';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
+import type { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForGlobalEntry, dockForProjectEntry, leaveProjectScope } from '@src/tabs/project-entry';
-import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
+import { dockForGlobalEntry, dockForProjectEntry, globalHomeDock, leaveProjectScope } from '@src/tabs/project-entry';
+import {
+  useAncestorActiveTab,
+  useCurrentTabs,
+  useTabProjectBuckets,
+  type TabProjectBucket,
+} from '@src/tabs/use-tab-manager';
+import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { ProjectLaunchBar } from './project-launch-bar';
-import { WikiTip } from '@src/components/wiki-tip';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
+import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import { FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
@@ -19,6 +28,85 @@ import React, { useMemo, useState } from 'react';
  * {@link RuntimeChip} wears it: the chip owns its trigger, Popover and testids;
  * the buckets, ordering, counts and URL-first selection live here, once.
  */
+
+/**
+ * The project row tip's path affordances: reveal the folder in the OS file
+ * manager and copy its path. Reveal goes through the compute node the path
+ * belongs to — `localComputeNodeId` is null for a remote one, which hides it.
+ */
+function ProjectPathActions({ projectId, projectPath }: { projectId: string; projectPath: string }) {
+  const { t } = useLingui();
+  const fsRef = new FSRef(projectPath, new TypeId('compute_node', '@local'));
+  return (
+    <>
+      {fsRef.localComputeNodeId && (
+        <button
+          type="button"
+          onClick={() => void fsRef.open()}
+          title={t`Open in Finder/Explorer`}
+          aria-label={t`Open in Finder/Explorer`}
+          data-testid={`project-reveal-${projectId}`}
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+        </button>
+      )}
+      <CopyButton
+        value={projectPath}
+        title={t`Copy project path`}
+        testId={`project-copy-path-${projectId}`}
+        iconClassName="h-3.5 w-3.5"
+        copiedIconClassName="text-green-500"
+        className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      />
+    </>
+  );
+}
+
+/**
+ * A project row's quick-tab-switch submenu: the project's open top-level tabs,
+ * as the strip renders them (same chips, same closing filter, same active
+ * resolution — a workspace child lights its parent). Mounted only while the
+ * row card is open. Active is derived from `currentDock` (URL), never context.
+ */
+function ProjectTabsSubmenu({ projectId, onSelectTab }: { projectId: string; onSelectTab: (tab: Tab) => void }) {
+  const projectTabs = useCurrentTabs(projectId);
+  const tabs = useMemo(() => tabManager.lifecycle.excludeClosing(projectTabs), [projectTabs]);
+  const items = useTabStripItems(tabs);
+  const { currentDock } = useDockNavigation();
+  const urlActiveKey = currentDock?.tabHash ?? '';
+  const ancestor = useAncestorActiveTab(tabs, urlActiveKey);
+  const activeKey = ancestor ? tabKey(ancestor.parent) : urlActiveKey;
+  if (tabs.length === 0) return null;
+  return (
+    <ul
+      className="flex max-h-80 flex-col overflow-y-auto border-t border-border pt-1"
+      data-testid={`project-tabs-submenu-${projectId}`}
+    >
+      {items.map((item, i) => {
+        const key = item.key;
+        const isActive = key === activeKey;
+        return (
+          <li key={key}>
+            <button
+              type="button"
+              aria-current={isActive ? 'true' : undefined}
+              disabled={item.isDisabled}
+              onClick={() => onSelectTab(tabs[i])}
+              className={`flex w-full min-w-0 items-center gap-2 rounded px-1.5 py-1 text-start text-sm hover:bg-muted disabled:opacity-50 ${
+                isActive ? 'bg-muted/60 font-medium' : ''
+              }`}
+              data-testid={`project-tabs-submenu-item-${key}`}
+            >
+              {item.icon}
+              <span className={`min-w-0 flex-1 truncate ${item.titleClassName ?? ''}`}>{item.title}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 function bucketDisplayName(bucket: TabProjectBucket): string {
   return bucket.project?.displayName ?? bucket.projectId;
@@ -38,6 +126,45 @@ export function resolveProjectChipName(
   if (currentProjectName?.trim()) return currentProjectName.trim();
   const bucket = currentProjectId ? buckets.find((b) => b.projectId === currentProjectId) : null;
   return bucket ? bucketDisplayName(bucket) : null;
+}
+
+/** The `closingId` value while the Global row's close-all is in flight — a
+ *  pseudo-scope, so it needs a key no project id can collide with. */
+const GLOBAL_ROW_ID = '__global__';
+
+/**
+ * A row's close-all X — a SIBLING of the row's select button, never a child: a
+ * button inside a button is invalid HTML, and browsers recover by dropping the
+ * inner one, so the row would swallow every close. Kept mounted (not
+ * hover-gated in the DOM) so it stays keyboard-reachable and testable; only
+ * opacity changes, revealed by the row's `group` hover.
+ */
+function CloseRowButton({
+  closing,
+  disabled,
+  label,
+  testId,
+  onClick,
+}: {
+  closing: boolean;
+  disabled?: boolean;
+  label: string;
+  testId: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={closing || disabled}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      data-testid={testId}
+      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100"
+    >
+      {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+    </button>
+  );
 }
 
 /**
@@ -225,8 +352,12 @@ export interface ProjectListMenu {
   closingId: string | null;
   handleSelect: (bucket: TabProjectBucket) => Promise<void>;
   handleSelectGlobal: () => Promise<void>;
+  /** Jump straight to one open tab (the row submenu's quick tab switch). */
+  handleSelectTab: (tab: Tab) => void;
   /** Close every tab of `bucket`, which is what empties it out of the menu. */
   handleCloseProject: (bucket: TabProjectBucket) => Promise<void>;
+  /** Close every global tab, which is what takes the Global row out of the menu. */
+  handleCloseGlobal: () => Promise<void>;
   /** Whether the "Open project" dialog (the footer's Switch Project picker) is showing. */
   projectDialogOpen: boolean;
   setProjectDialogOpen: (open: boolean) => void;
@@ -245,7 +376,7 @@ export function useProjectListMenu({
   const [closingId, setClosingId] = useState<string | null>(null);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const { currentDock, navigation } = useDockNavigation();
-  const { buckets: allBuckets, globalTabCount } = useTabProjectBuckets();
+  const { buckets: allBuckets, globalTabCount, closeGlobal } = useTabProjectBuckets();
 
   // System projects (e.g. the shipped "Flowpad Assistant") are kept out of the
   // chip entirely — they stay reachable via Preferences → UI → "Show system
@@ -328,23 +459,32 @@ export function useProjectListMenu({
   // Emptying the scope you are in is also the one close that ends your MEMBERSHIP
   // of it, which is why this leaves via `leaveProjectScope` (it owns the context
   // clear no loader can) rather than merely navigating.
-  const handleCloseProject = async (bucket: TabProjectBucket) => {
-    setClosingId(bucket.projectId);
+  //
+  // The Global row's X is the same verb: Global is always the CURRENT scope when
+  // its row shows, so it always leaves first — onto the all-scoped Home (see
+  // `globalHomeDock` for why not a bare one).
+  const closeScope = async (rowId: string, leave: DockPointer | null, close: () => Promise<void>) => {
+    setClosingId(rowId);
     try {
-      if (bucket.projectId === currentProjectId) {
-        navigation.openDock(await leaveProjectScope(currentDock));
-      }
-      await bucket.closeAll();
+      if (leave) navigation.openDock(leave);
+      await close();
     } catch (error) {
       notify.error({
-        title: t`Couldn't close the project's tabs`,
+        title: t`Couldn't close the tabs`,
         message: error instanceof Error ? error.message : String(error),
-        id: `project-close-all:${bucket.projectId}`,
+        id: `project-close-all:${rowId}`,
       });
     } finally {
       setClosingId(null);
     }
   };
+  const handleCloseProject = async (bucket: TabProjectBucket) =>
+    closeScope(
+      bucket.projectId,
+      bucket.projectId === currentProjectId ? await leaveProjectScope(currentDock) : null,
+      bucket.closeAll,
+    );
+  const handleCloseGlobal = () => closeScope(GLOBAL_ROW_ID, globalHomeDock(), closeGlobal);
 
   // Selecting the Global row re-focuses the Global scope (it's only shown while
   // Global is already current). URL-first: resolve the most-recently-active
@@ -352,6 +492,15 @@ export function useProjectListMenu({
   const handleSelectGlobal = async () => {
     setOpen(false);
     navigation.openDock(await dockForGlobalEntry(currentDock));
+  };
+
+  // Quick tab switch from a row's submenu. URL-first: navigate to the tab's own
+  // dock; its loader re-scopes the project, so a tab in another project is a
+  // project switch too.
+  const handleSelectTab = (tab: Tab) => {
+    if (!tab.dockPointer) return;
+    setOpen(false);
+    navigation.openDock(tab.dockPointer as DockPointer);
   };
 
   // The list only switches between projects that already own tabs; opening
@@ -380,7 +529,9 @@ export function useProjectListMenu({
     closingId,
     handleSelect,
     handleSelectGlobal,
+    handleSelectTab,
     handleCloseProject,
+    handleCloseGlobal,
     projectDialogOpen,
     setProjectDialogOpen,
     handleOpenProject,
@@ -455,6 +606,11 @@ export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
  * owns the Popover and its content so the chip keeps its own testid, width
  * and alignment. With nothing to list it says so, rather than opening onto an
  * empty box.
+ *
+ * Hosts must disable open auto-focus on that content
+ * (`onOpenAutoFocus={(e) => e.preventDefault()}`): every row is a HoverCard
+ * trigger, which opens on focus, so auto-focusing the first row pops its tab
+ * submenu unhovered and leaves it stuck behind the row the pointer visits next.
  */
 export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
   const {
@@ -466,6 +622,8 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
     closingId,
     handleSelect,
     handleSelectGlobal,
+    handleSelectTab,
+    handleCloseGlobal,
     handleCloseProject,
   } = menu;
   const { t } = useLingui();
@@ -503,12 +661,16 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
         {isGlobalScope ? (
           // The Global scope row — violet-accented so it never reads as a
           // regular project, and always the current scope when shown.
-          <li key="__global__">
+          <li
+            key={GLOBAL_ROW_ID}
+            className="group flex w-full items-center gap-2 rounded bg-violet-500/10 pe-1 hover:bg-violet-500/15"
+          >
             <button
               type="button"
               aria-current="true"
+              disabled={closingId === GLOBAL_ROW_ID}
               onClick={() => void handleSelectGlobal()}
-              className="flex w-full items-center gap-2 rounded bg-violet-500/10 px-2 py-1.5 text-start text-sm font-medium hover:bg-violet-500/15"
+              className="flex min-w-0 flex-1 items-center gap-2 rounded py-1.5 ps-2 text-start text-sm font-medium"
               data-testid="projects-counter-global"
             >
               <Globe className="h-3.5 w-3.5 shrink-0 text-violet-500" />
@@ -519,6 +681,12 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
                 {globalTabCount}
               </span>
             </button>
+            <CloseRowButton
+              closing={closingId === GLOBAL_ROW_ID}
+              label={t`Close all ${globalTabCount} global tabs`}
+              testId="projects-counter-close-global"
+              onClick={() => void handleCloseGlobal()}
+            />
           </li>
         ) : null}
         {isGlobalScope && treeRows.length > 0 ? (
@@ -548,9 +716,6 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
             );
           }
           const isClosing = closingId === bucket.projectId;
-          // The close control is a SIBLING of the select button, not a child:
-          // a button inside a button is invalid HTML, and browsers recover from
-          // it by dropping the inner one — the row would swallow every close.
           // The `<li>` is the flex row; `group` lets the X reveal on row hover.
           const rowClass = `group flex w-full items-center gap-2 rounded pe-1 hover:bg-muted ${
             isCurrent ? 'bg-muted/60' : ''
@@ -558,11 +723,12 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
           const selectClass = `flex min-w-0 flex-1 items-center gap-2 rounded py-1.5 ps-2 text-left text-sm ${
             isCurrent ? 'font-medium' : ''
           } ${isMissing ? 'text-muted-foreground' : ''}`;
-          // The row wears the SAME tip the footer's project name wears — path
-          // plus the wiki peek — so "where is this project" has one answer in
-          // both places. Its second row is this list's own: the OS-terminal
-          // launchers, which need a resolved folder, so a bucket without one
-          // (loading / missing) gets the plain one-line tip.
+          // The row's card leads with the SAME line the footer's project tip
+          // wears — path plus the wiki peek — so "where is this project" has one
+          // answer in both places. Then this list's own: the OS-terminal
+          // launchers (only with a resolved folder, so loading / missing buckets
+          // skip them) and the quick-tab-switch submenu. A card of its own, not
+          // WikiTip: WikiTip is a one-line help tip, this is a navigation menu.
           const mountPath = bucket.project?.fs_storage_mount_path ?? null;
           const selectButton = (
             <button
@@ -585,18 +751,14 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
               </span>
             </button>
           );
+          // The tip anchors on the whole ROW, not the select button: opening to
+          // the right of the button would lay the card over the close-all X.
           return (
-            <li key={bucket.projectId} className={rowClass}>
-              <WikiTip
-                wikiword="Flowpad project"  /* the page the footer's project tip opens */
-                label={mountPath ?? bucketDisplayName(bucket)}
-                buttonLabel={t`What is a Flowpad project?`}
-                side="right"
-                actions={mountPath ? <ProjectLaunchBar projectPath={mountPath} /> : undefined}
-              >
-                {selectButton}
-              </WikiTip>
-              {/* Close-all-in-this-project. Emptying the bucket is what removes
+            <HoverCard key={bucket.projectId} openDelay={200} closeDelay={100}>
+              <HoverCardTrigger asChild>
+                <li className={rowClass}>
+                  {selectButton}
+                  {/* Close-all-in-this-project. Emptying the bucket is what removes
                   the row: the menu is built from open tabs, so a project with
                   none simply stops being listed.
                   Reachable on a MISSING row too — not as the only way out (the
@@ -605,25 +767,48 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
                   only ever junk: it also latches when `Project.getById` fails
                   transiently, and the reaper deliberately fails open on a
                   lookup error. A user who wants those rows gone should not have
-                  to wait on a sweep that may correctly decline to run.
-                  Kept mounted (not hover-gated in the DOM) so it stays
-                  keyboard-reachable and testable; only opacity changes. */}
-              <button
-                type="button"
-                disabled={isClosing || isRecovering}
-                onClick={() => void handleCloseProject(bucket)}
-                title={t`Close all ${bucket.tabCount} tabs in this project`}
-                aria-label={t`Close all ${bucket.tabCount} tabs in this project`}
-                data-testid={`projects-counter-close-${bucket.projectId}`}
-                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+                  to wait on a sweep that may correctly decline to run. */}
+                  <CloseRowButton
+                    closing={isClosing}
+                    disabled={isRecovering}
+                    label={t`Close all ${bucket.tabCount} tabs in this project`}
+                    testId={`projects-counter-close-${bucket.projectId}`}
+                    onClick={() => void handleCloseProject(bucket)}
+                  />
+                </li>
+              </HoverCardTrigger>
+              {/* Top-aligned to the row, with the toolbar as a row-high (h-8)
+                  first line: the launchers sit on the row's own horizontal
+                  center, so reaching them is a straight move right. The side
+                  offset clears the popover's padding + border; the align offset
+                  its top border. pointer-events-auto: the card portals to
+                  <body>, which a modal Radix layer marks pointer-events:none. */}
+              <HoverCardContent
+                side="right"
+                align="start"
+                sideOffset={6}
+                alignOffset={-1}
+                className="pointer-events-auto flex w-auto max-w-md flex-col gap-1 px-2 pb-1.5 pt-0"
               >
-                {isClosing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <X className="h-3.5 w-3.5" />
-                )}
-              </button>
-            </li>
+                <div className="flex h-8 shrink-0 items-center gap-0.5">
+                  {mountPath ? (
+                    <>
+                      <ProjectLaunchBar projectPath={mountPath} />
+                      <ProjectPathActions projectId={bucket.projectId} projectPath={mountPath} />
+                    </>
+                  ) : (
+                    <span className="truncate text-xs text-muted-foreground">{bucketDisplayName(bucket)}</span>
+                  )}
+                  <WikiButton
+                    wikiword="Flowpad project" /* the page the footer's project tip opens */
+                    label={t`What is a Flowpad project?`}
+                    className="ms-auto ps-1.5"
+                  />
+                </div>
+                {mountPath ? <span className="truncate px-1 text-xs text-muted-foreground">{mountPath}</span> : null}
+                <ProjectTabsSubmenu projectId={bucket.projectId} onSelectTab={handleSelectTab} />
+              </HoverCardContent>
+            </HoverCard>
           );
         })}
       </ul>
