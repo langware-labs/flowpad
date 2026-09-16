@@ -190,7 +190,7 @@ async def handle_request(
     entity_for_early_fs_proxy = kwargs.get("self")
     if entity_for_early_fs_proxy is None and request_info.auth_result is not None:
         entity_for_early_fs_proxy = request_info.auth_result.target
-    if is_git_backed_remote_fs(entity_for_early_fs_proxy, a.action_name):
+    if is_git_backed_remote_fs(entity_for_early_fs_proxy, a.bare_name):
         return await proxy_git_backed_remote_fs(request)
 
     request_params = request_info.request_parameters
@@ -290,7 +290,7 @@ async def handle_request(
     entity_for_reflect = kwargs.get("self")
     if entity_for_reflect is None and request_info.auth_result is not None:
         entity_for_reflect = request_info.auth_result.target
-    if should_reflect_to_hub(entity_for_reflect, request_info.hub_reflect, a.action_name):
+    if should_reflect_to_hub(entity_for_reflect, request_info.hub_reflect, a.bare_name):
         try:
             # Carry the REAL request method into reflection — never infer the hub
             # verb from the matched action's static methods (see reflect_to_hub).
