@@ -3,7 +3,7 @@
 Where the filesystem indexer walks roots and turns files into entities, this
 subsystem polls remote systems of record and turns their items into entities:
 
-    DataSource → cursor (since last pull) → driver → ingest_item
+    DataDriver → cursor (since last pull) → driver → ingest_item
                → SourceItem written + indexed → FlowEvent → triggers/flows
 
 ``ingest_item`` is the single chokepoint; drivers only produce ``SourceItemSpec``s

@@ -28,15 +28,9 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import Wiki entities: {e}")
 
-try:
-    from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: F401
-except Exception as e:
-    print(f"[WARN] Failed to import DataSourceSpec: {e}")
-
-try:
-    from flow_sdk.builtin.credential_spec import CredentialSpec  # noqa: F401
-except Exception as e:
-    print(f"[WARN] Failed to import CredentialSpec: {e}")
+# A core type: a failure here must be loud, not a WARN that leaves the type unregistered.
+from flow_sdk.builtin.credential_spec import CredentialSpec  # noqa: F401
+from flow_sdk.builtin.data_driver_spec import DataDriverSpec  # noqa: F401
 
 try:
     from flow_sdk.builtin.workspace import Workspace  # noqa: F401

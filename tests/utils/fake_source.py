@@ -16,7 +16,7 @@ from dataclasses import replace
 from typing import AsyncGenerator, ClassVar, Iterable, Optional
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.ingest.sources import SOURCES, SourceType
+from flow_sdk.ingest.driver_types import DRIVERS, DriverType
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import SourceBinding
@@ -126,7 +126,7 @@ class ScriptedSource(Source):
         return MessageItem(origin=self.origin(external_id), data=data)
 
 
-class _ScriptedType(SourceType):
+class _ScriptedType(DriverType):
     """The scripted provider's type: a send the test replaced answers first."""
 
     def __init__(self, cls, script: Script, *, kind: str):
@@ -151,16 +151,16 @@ class _ScriptedType(SourceType):
 @contextmanager
 def scripted_provider(provider: str = "scripted", *, pages: Iterable[list[dict]] = ()):
     """Register a scripted source under *provider* for the block, restoring what was there."""
-    previous: Optional[SourceType] = SOURCES.get_or_none(provider)
+    previous: Optional[DriverType] = DRIVERS.get_or_none(provider)
     script = Script(provider, pages)
     cls = type(f"Scripted_{provider}", (ScriptedSource,), {"provider": provider, "script_of": script})
-    SOURCES.register(_ScriptedType(cls, script, kind=f"datasource.api.{provider}"))
+    DRIVERS.register(_ScriptedType(cls, script, kind=f"datasource.api.{provider}"))
     try:
         yield script
     finally:
-        SOURCES.unregister(provider)
+        DRIVERS.unregister(provider)
         if previous is not None:
-            SOURCES.register(previous)
+            DRIVERS.register(previous)
 
 
 __all__ = ["SCRIPTED_KIND", "SEGMENT", "Script", "ScriptedSource", "scripted_provider"]

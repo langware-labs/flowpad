@@ -13,8 +13,8 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
 from flow_sdk.builtin.consumer_position import ConsumerPosition
-from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.sources import SendOutcome, SendStatus
+from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.ingest.driver_types import SendOutcome, SendStatus
 from flow_sdk.tags import on_tag
 from tests.utils.fake_source import scripted_provider
 
@@ -27,9 +27,9 @@ def _name() -> str:
     return f"w-{mint_uuid()}"
 
 
-async def _inbox(addr: str) -> tuple[Inbox, DataSource]:
+async def _inbox(addr: str) -> tuple[Inbox, DataDriver]:
     """A source that knows its own address, so a sent copy is recognised as ours."""
-    src = DataSource(name="pre", provider="scripted", config={"inbox": addr}, account_key=ME)
+    src = DataDriver(name="pre", provider="scripted", config={"inbox": addr}, account_key=ME)
     await src.save()
     return Inbox(addr, provider="scripted"), src
 

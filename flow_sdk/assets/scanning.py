@@ -118,6 +118,8 @@ def scan_declared(info: TypeInfo, root: Path, root_type: str) -> AssetScanResult
 
 def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | None = None) -> AssetScanResult:
     result = AssetScanResult()
+    # A family a type moved OUT of: its folders are reported, not silently skipped as an unknown dir.
+    retired_families = {family: info for info in infos.values() for family in info.retired_families}
 
     def scan(container: Path, parent: Path, ancestors: frozenset[Path]) -> None:
         resolved = container.resolve()
@@ -134,6 +136,13 @@ def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | 
             return
         for family in families:
             info = infos.get(family.name)
+            if info is None and family.name in retired_families and family.is_dir():
+                moved = retired_families[family.name]
+                for entry in sorted(p for p in family.iterdir() if p.is_dir()):
+                    result.issues.append(AssetScanIssue(
+                        entry, f"{family.name}/ is a retired {moved.type_name} family (now {moved.family}/); "
+                        f"run {moved.retired_migration}", moved.type_name))
+                continue
             if info is None or not family.is_dir():
                 continue
             try:
@@ -148,8 +157,8 @@ def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | 
                     retired = next((name for name in info.retired_mains if (entry / name).is_file()), None)
                     if retired is not None and entry.is_dir():
                         result.issues.append(AssetScanIssue(
-                            entry, f"{retired} is a retired {info.type_name} document; run "
-                            "flow_sdk.migrations.migration_2026_09_entity_json_mains", info.type_name, retired))
+                            entry, f"{retired} is a retired {info.type_name} document; run {info.retired_migration}",
+                            info.type_name, retired))
                     continue
                 result.candidates.append(candidate)
                 if candidate.layout.kind is LayoutKind.FOLDER:

@@ -2,12 +2,12 @@
 
 `FieldType` decides what a manifest's config field renders as, and it is declared twice:
 `flow_sdk/schema/data_spec/data_source_manifest_spec.py` validates a manifest against it at load, and
-`ts_sdk/src/entities/data-source-spec.ts` is what the form switches on to draw the input.
+`ts_sdk/src/entities/data-driver-spec.ts` is what the form switches on to draw the input.
 
 Nothing generates one from the other, and TypeScript cannot catch the drift: the value
 arrives over the wire as untyped JSON, so a member the frontend has never heard of is just
 a string that falls through to the default branch and silently renders a text box. The
-`data-source-spec.ts` comment claims a typo is "a compile error at the three comparison
+`data-driver-spec.ts` comment claims a typo is "a compile error at the three comparison
 sites" — true for a typo in OUR source, not for a member only one side declares.
 
 The `SpecConfigField` flags are pinned for the same reason: `choices` reaching the form as
@@ -25,7 +25,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 _REPO = Path(__file__).resolve().parents[2]
 _PY_FILE = _REPO / "flow_sdk" / "schema" / "data_spec" / "data_source_manifest_spec.py"
-_TS_FILE = _REPO / "ts_sdk" / "src" / "entities" / "data-source-spec.ts"
+_TS_FILE = _REPO / "ts_sdk" / "src" / "entities" / "data-driver-spec.ts"
 
 #: Python:  class FieldType(StrEnum): \n TEXT = "text" ...
 _PY_ENUM = r"class FieldType\(StrEnum\):(.*?)(?=\n\nclass |\n\nclass\b|\Z)"

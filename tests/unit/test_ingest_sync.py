@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
+from flow_sdk.ingest.driver_types import DriverType, SegmentPass, register_driver
 from flow_sdk.ingest.health import SourceError, SourceHealth
-from flow_sdk.ingest.sources import SegmentPass, SourceType, register_source
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.sources.base import Source
@@ -47,7 +47,7 @@ class _FakeSource(Source):
     provider = "faketest"
 
 
-class _FakeType(SourceType):
+class _FakeType(DriverType):
     """A source type whose traversal each test dictates per stream."""
 
     def __init__(self, streams, behaviour, stamps: dict[str, str] | None = None, *, reflects: bool = False):
@@ -87,10 +87,10 @@ def _item(data_source_id, segment_key, n) -> SourceItemSpec:
     )
 
 
-async def _source(**kw) -> DataSource:
+async def _source(**kw) -> DataDriver:
     fields = {"provider": "faketest", "account_key": f"acct-{uuid.uuid4().hex[:8]}", "name": "fake"}
     fields.update(kw)
-    src = DataSource(**fields)
+    src = DataDriver(**fields)
     await src.save()
     return src
 
@@ -100,7 +100,7 @@ async def _source(**kw) -> DataSource:
 async def test_one_failing_stream_does_not_stall_its_siblings():
     src = await _source()
     good, bad = "https://good.test/f", "https://bad.test/f"
-    register_source(
+    register_driver(
         _FakeType(
             [good, bad],
             {
@@ -121,7 +121,7 @@ async def test_one_failing_stream_does_not_stall_its_siblings():
     assert bad_cursor.health == SourceHealth.TRANSIENT_ERROR.value
     assert bad_cursor.consecutive_failures == 1
 
-    refreshed = await DataSource.get_one({"id": src.id})
+    refreshed = await DataDriver.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.TRANSIENT_ERROR.value, "worst-of rollup"
 
 
@@ -131,11 +131,11 @@ async def test_rollup_records_the_segment_count():
     """So a list can show it without watching the cursor table, the highest-churn rows there are."""
     src = await _source()
     feeds = ["https://a.test/f", "https://b.test/f", "https://c.test/f"]
-    register_source(_FakeType(feeds, {f: SegmentPass() for f in feeds}))
+    register_driver(_FakeType(feeds, {f: SegmentPass() for f in feeds}))
 
     await sync_source(src, now=NOW, budget=1)
 
-    refreshed = await DataSource.get_one({"id": src.id})
+    refreshed = await DataDriver.get_one({"id": src.id})
     assert refreshed.segment_count == 3, (
         f"the count must cover every declared stream, not just the budgeted slice (got {refreshed.segment_count})"
     )
@@ -146,7 +146,7 @@ async def test_rollup_records_the_segment_count():
 async def test_unchanged_result_advances_nothing_and_ingests_nothing():
     src = await _source()
     key = "https://static.test/f"
-    register_source(_FakeType([key], {key: SegmentPass(cursor="kept", unchanged=True)}))
+    register_driver(_FakeType([key], {key: SegmentPass(cursor="kept", unchanged=True)}))
 
     report = await sync_source(src, now=NOW)
     assert report.outcomes == []
@@ -170,7 +170,7 @@ async def test_a_legacy_state_is_handed_to_the_type_once_then_cleared():
             seen.append(dict(position.legacy_state))
             return SegmentPass(cursor="lifted")
 
-    register_source(_Lifting([key], {}))
+    register_driver(_Lifting([key], {}))
     row = await DataSourceCursor.ensure_for(src.id, key)
     row.state = {"old": "pointer"}
     await row.save()
@@ -189,7 +189,7 @@ async def test_budget_round_robins_the_longest_waiting_streams():
     src = await _source()
     keys = [f"https://s{i}.test/f" for i in range(4)]
     fake = _FakeType(keys, {k: SegmentPass() for k in keys})
-    register_source(fake)
+    register_driver(fake)
 
     # Two streams already attempted recently; two never attempted.
     for k in keys[:2]:
@@ -210,7 +210,7 @@ async def test_unknown_provider_is_a_config_error_not_a_crash():
     report = await sync_source(src, now=NOW)
     assert report.outcomes == []
 
-    refreshed = await DataSource.get_one({"id": src.id})
+    refreshed = await DataDriver.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.CONFIG_ERROR.value
     assert refreshed.error_code == "unknown_provider"
 
@@ -220,10 +220,10 @@ async def test_unknown_provider_is_a_config_error_not_a_crash():
 async def test_next_poll_is_scheduled_even_when_a_stream_failed():
     src = await _source(poll_interval_seconds=120)
     key = "https://bad.test/f"
-    register_source(_FakeType([key], {key: SourceError.transient("server_error", "boom")}))
+    register_driver(_FakeType([key], {key: SourceError.transient("server_error", "boom")}))
 
     await sync_source(src, now=NOW)
-    refreshed = await DataSource.get_one({"id": src.id})
+    refreshed = await DataDriver.get_one({"id": src.id})
     assert refreshed.next_poll_at is not None, "a failed run must still reschedule"
     assert refreshed.is_due(NOW) is False
     assert refreshed.is_due(NOW + timedelta(seconds=121)) is True
@@ -239,10 +239,10 @@ async def test_a_parked_segment_does_not_park_the_source():
         [good, parked],
         {good: SegmentPass(cursor="1", high_water="1"), parked: SourceError.config("not_found", "HTTP 404")},
     )
-    register_source(fake)
+    register_driver(fake)
 
     await sync_source(src, now=NOW, budget=10)
-    refreshed = await DataSource.get_one({"id": src.id})
+    refreshed = await DataDriver.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.OK.value, f"one parked segment parked the whole source ({refreshed.health})"
     assert refreshed.poll_refusal() == "", "the healthy sibling must keep polling"
     assert refreshed.error_code == "not_found", "the card must still name the parked segment"
@@ -255,10 +255,10 @@ async def test_a_parked_segment_does_not_park_the_source():
     assert parked_cursor.health == SourceHealth.CONFIG_ERROR.value
 
     # When NOTHING is left to run, the source itself is parked.
-    register_source(_FakeType([parked], {parked: SourceError.config("not_found", "HTTP 404")}))
+    register_driver(_FakeType([parked], {parked: SourceError.config("not_found", "HTTP 404")}))
     only = await _source()
     await sync_source(only, now=NOW, budget=10)
-    assert (await DataSource.get_one({"id": only.id})).health == SourceHealth.CONFIG_ERROR.value
+    assert (await DataDriver.get_one({"id": only.id})).health == SourceHealth.CONFIG_ERROR.value
 
 
 @pytest.mark.asyncio
@@ -269,7 +269,7 @@ async def test_refs_under_record_mode_are_a_config_error_not_a_silent_drop():
     src = await _source(reflect="record")
     key = "root"
     fake = _FakeType([key], {key: SegmentPass(refs=["a.md"], manifest={"a.md": ["1", ""]}, high_water="1")}, reflects=True)
-    register_source(fake)
+    register_driver(fake)
 
     report = await sync_source(src, now=NOW)
     assert report.outcomes == []
@@ -277,7 +277,7 @@ async def test_refs_under_record_mode_are_a_config_error_not_a_silent_drop():
 
     cursor = await DataSourceCursor.ensure_for(src.id, key)
     assert cursor.manifest == {} and cursor.high_water is None, "the cursor advanced past dropped files"
-    refreshed = await DataSource.get_one({"id": src.id})
+    refreshed = await DataDriver.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.CONFIG_ERROR.value
     assert refreshed.error_code == "reflect_mode"
 
@@ -294,7 +294,7 @@ async def test_a_write_failure_is_classified_and_leaves_the_cursor_put(monkeypat
     monkeypatch.setattr(sync_mod, "ingest_items", _boom)
     src = await _source(poll_interval_seconds=120)
     key = "https://w.test/f"
-    register_source(_FakeType([key], {key: SegmentPass(items=[_item(src.id, key, 1)], cursor="1", high_water="1")}))
+    register_driver(_FakeType([key], {key: SegmentPass(items=[_item(src.id, key, 1)], cursor="1", high_water="1")}))
 
     report = await sync_source(src, now=NOW)
     assert report.outcomes == []
@@ -304,7 +304,7 @@ async def test_a_write_failure_is_classified_and_leaves_the_cursor_put(monkeypat
     assert cursor.error_code == "RuntimeError"
     assert cursor.consecutive_failures == 1
     assert cursor.cursor is None and cursor.high_water is None, "records were not committed; the cursor must not move"
-    refreshed = await DataSource.get_one({"id": src.id})
+    refreshed = await DataDriver.get_one({"id": src.id})
     assert refreshed.health == SourceHealth.TRANSIENT_ERROR.value, "roll-up must still run"
     assert refreshed.next_poll_at is not None and refreshed.is_due(NOW + timedelta(seconds=121))
 
@@ -317,7 +317,7 @@ async def test_a_stream_whose_listing_token_did_not_move_is_neither_fetched_nor_
     src = await _source()
     idle, moved = "https://idle.test/f", "https://moved.test/f"
     fake = _FakeType([], {k: SegmentPass() for k in (idle, moved)}, stamps={idle: "3:t1", moved: "1:t1"})
-    register_source(fake)
+    register_driver(fake)
 
     await sync_source(src, now=NOW, budget=2)
     assert sorted(fake.calls) == sorted([idle, moved]), "first sight: both fetched"
@@ -354,7 +354,7 @@ async def test_a_failed_stream_is_retried_whatever_its_listing_token_says():
     src = await _source()
     key = "https://flaky.test/f"
     fake = _FakeType([], {key: SourceError.transient("network", "boom")}, stamps={key: "1:t1"})
-    register_source(fake)
+    register_driver(fake)
 
     await sync_source(src, now=NOW, budget=1)
     fake.calls.clear()

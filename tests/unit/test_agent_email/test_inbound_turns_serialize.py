@@ -45,14 +45,14 @@ async def test_messages_arriving_together_each_get_their_own_turn(monkeypatch):
     async def conversation_id_for(*_):
         return "conv-1"
 
-    monkeypatch.setattr("flow_sdk.builtin.data_source.DataSource.get_one", classmethod(lambda cls, _q: _async(source)))
+    monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.get_one", classmethod(lambda cls, _q: _async(source)))
     monkeypatch.setattr(runner, "_is_own_outgoing", lambda *_: False)
     monkeypatch.setattr("flow_sdk.inbox.projection.owner_of", lambda _s: _async("agent-1"))
     monkeypatch.setattr(runner, "_agent_for", lambda _o: _async(SimpleNamespace(name="a", id="1")))
     monkeypatch.setattr(runner, "_admits", lambda *_: True)
     monkeypatch.setattr(runner, "_conversation_id_for", conversation_id_for)
     monkeypatch.setattr(runner, "_workdir_for", lambda _a: _async("/tmp"))
-    monkeypatch.setattr(runner, "_reuse_or_spawn_agent_process", lambda *_: _async(worker))
+    monkeypatch.setattr(runner, "_reuse_or_spawn_agent_process", lambda *_, **__: _async(worker))
     monkeypatch.setattr("flow_sdk.app.actions.execute_prompt._capture_assistant_reply", lambda _ap: worker.finish())
     monkeypatch.setattr("flow_sdk.inbox.outbound.dispatch_channel_reply", dispatch)
 

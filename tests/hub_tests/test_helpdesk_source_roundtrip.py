@@ -20,7 +20,7 @@ import httpx
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
@@ -108,7 +108,7 @@ async def _await_hub_message(base, token, conv_id, *, containing: str, not_from:
     return None
 
 
-async def _poll(source: DataSource) -> None:
+async def _poll(source: DataDriver) -> None:
     """One poll the way the server does it: the driver fetch, then the inbox
     projection's reconcile sweep (the lane a first, BACKFILL sync relies on —
     pytest never starts the bus lanes, so the sweep is called directly)."""
@@ -116,8 +116,8 @@ async def _poll(source: DataSource) -> None:
     await reconcile_source(str(source.id))
 
 
-async def _desk_source(desk_id: str) -> DataSource:
-    source = DataSource(name="test desk", provider="helpdesk", config={"desk_project_id": desk_id})
+async def _desk_source(desk_id: str) -> DataDriver:
+    source = DataDriver(name="test desk", provider="helpdesk", config={"desk_project_id": desk_id})
     await source.save()
     return source
 
@@ -168,7 +168,7 @@ async def test_a_guest_ticket_reaches_the_desk_owner_as_a_message_source_and_the
         await _poll(source)
         rows = await FlowMessage.get_all({"conversation_id": ticket})
         assert sorted(r.id for r in rows) == sorted([first["id"], reply["id"]])
-        loaded = await DataSource.get_one({"id": source.id})
+        loaded = await DataDriver.get_one({"id": source.id})
         from flow_sdk.inbox.projection import self_addresses
         sent_item = await SourceItem.find_existing(source.id, origin_in_ticket(reply["id"]))
         assert sent_item is not None and sent_item.author_external_id == me, (sent_item.author_external_id, me)
@@ -185,8 +185,8 @@ async def test_a_stranger_is_refused_by_the_pool_in_a_sentence(hub_session, bob_
     membership sentence, not a generic error. Exercised through the driver's
     hub seam with bob's token, since this instance is logged in as alice."""
     from flow_sdk.cloud_client.shared.errors import HubError
+    from flow_sdk.ingest.driver_registry import asset_module
     from flow_sdk.ingest.health import SourceHealth, classify
-    from flow_sdk.ingest.source_registry import asset_module
     hub_refusal = asset_module("helpdesk", "transport").hub_refusal
 
     base = hub_session["base_url"]

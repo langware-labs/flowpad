@@ -4,12 +4,12 @@
  * same way.
  */
 import { useCallback, useState } from 'react';
-import type { DataSource } from '@sdk';
+import type { DataDriver } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 
-export function useSourceToggle(source: DataSource) {
+export function useSourceToggle(source: DataDriver) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
 

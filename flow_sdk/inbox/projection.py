@@ -193,7 +193,7 @@ def _thread_title(item) -> str:
 
 
 def channel_of(source) -> str:
-    """The user-facing channel for a DataSource.
+    """The user-facing channel for a DataDriver.
 
     Falls back to ``provider`` for rows written before ``channel`` existed —
     wrong-looking for the agent transport (whose provider is literally
@@ -237,14 +237,14 @@ async def project_source_item(
     exactly once without a lane having to know who won.
     """
     from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
     if not is_message(item):
         return None  # a feed article is not inbox material — see MESSAGE_KIND_ROOT
     if source is None:
-        source = await DataSource.get_one({"id": item.data_source_id})
+        source = await DataDriver.get_one({"id": item.data_source_id})
     if source is None:
-        logger.debug("[inbox] item %s has no DataSource — skipped", item.id)
+        logger.debug("[inbox] item %s has no DataDriver — skipped", item.id)
         return None
 
     channel = channel_of(source)
@@ -320,12 +320,12 @@ def _origins(item, source, channel: str, key: str):
     origin; `origin_local` is PRIVATE and carries the row ids that only resolve
     here."""
     from flow_sdk.fs_store.origin.cloud_origin import CloudOriginLocal  # noqa: PLC0415
-    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
     # The connector's link when it gives one; otherwise the channel's own address
     # formula (the channel's source class says it), so "Open in Gmail" works for records
     # whose provider never supplied a URL. None when neither has one.
-    channel_type = source_type(channel)
+    channel_type = driver_type(channel)
     url = item.permalink or (channel_type.cls.permalink(item.external_id or "", key) if channel_type else "") or None
     origin = _origin_of(item, source).model_copy(update={"url": url})
     origin_local = CloudOriginLocal(data_source_id=item.data_source_id or "", source_item_id=item.id or "")
@@ -715,12 +715,12 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
     ``source_item_id``: "has this been projected?" is one bulk IN query over
     the indexed reference column, not a join or a per-item probe.
     """
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-    source = await DataSource.get_one({"id": data_source_id})
+    source = await DataDriver.get_one({"id": data_source_id})
     if source is None:
         return 0
     # The kind gate belongs in the QUERY, not after it: a source that mixes

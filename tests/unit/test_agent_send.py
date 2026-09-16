@@ -11,8 +11,8 @@ import asyncio
 import pytest
 
 from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
-from flow_sdk.ingest.source_registry import asset_module
-from flow_sdk.ingest.sources import source_type
+from flow_sdk.ingest.driver_registry import asset_module
+from flow_sdk.ingest.driver_types import driver_type
 
 CONNECTOR_PROFILES = asset_module("agent").CONNECTOR_PROFILES
 agent_transport = asset_module("agent", "transport")
@@ -87,7 +87,7 @@ class TestTimeoutIsNotRetryable:
 
         source = _source(send_deadline_seconds=1)
         with pytest.raises(LaunchError) as caught:
-            await source_type("agent").send(source, thread_key="t", to="a@b.c", text="hi")
+            await driver_type("agent").send(source, thread_key="t", to="a@b.c", text="hi")
 
         # CONFIG, never TRANSIENT: transient is what tells the caller to try
         # again, and there must not be a next attempt.
@@ -96,7 +96,7 @@ class TestTimeoutIsNotRetryable:
 
     @pytest.mark.asyncio
     async def test_a_send_failure_never_parks_the_data_source(self, monkeypatch):
-        # `SourceError` health drives DataSource parking. One failed reply must
+        # `SourceError` health drives DataDriver parking. One failed reply must
         # not stop a mailbox from syncing.
         async def _boom(*a, **kw):
             raise RuntimeError("connector exploded")
@@ -105,7 +105,7 @@ class TestTimeoutIsNotRetryable:
         monkeypatch.setattr(agent_transport, "ensure_launchable", _async_none)
 
         with pytest.raises(LaunchError):
-            await source_type("agent").send(_source(), thread_key="t", to="a@b.c", text="hi")
+            await driver_type("agent").send(_source(), thread_key="t", to="a@b.c", text="hi")
 
     @pytest.mark.asyncio
     async def test_an_unlaunchable_harness_is_reported_before_any_worker(self, monkeypatch):
@@ -116,7 +116,7 @@ class TestTimeoutIsNotRetryable:
 
         monkeypatch.setattr(agent_transport, "ensure_launchable", _problem)
         with pytest.raises(LaunchError) as caught:
-            await source_type("agent").send(_source(), thread_key="t", to="a@b.c", text="hi")
+            await driver_type("agent").send(_source(), thread_key="t", to="a@b.c", text="hi")
         assert caught.value is problem
 
 
@@ -151,7 +151,7 @@ class TestInstruction:
 
 class TestDriverContract:
     def test_the_agent_transport_declares_that_it_sends(self):
-        assert source_type("agent").sends is True
+        assert driver_type("agent").sends is True
 
     def test_replying_uses_its_own_agent_not_the_summarizer(self):
         # Each connector's send persona is distinct from its fetch persona —

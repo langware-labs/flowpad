@@ -1,6 +1,6 @@
 """One-shot backfill: stamp ``owner`` on rows written before the field existed.
 
-``owner`` (a user or agent typeid) became a field on ``DataSource``,
+``owner`` (a user or agent typeid) became a field on ``DataDriver``,
 ``MessageThread`` and ``Conversation``. Every reader already resolves a row
 that lacks it through ``inbox.projection.owner_of`` — a legacy source that
 carries ``config.agent_id`` is that agent's, everything else is the local
@@ -12,7 +12,7 @@ is absent. This pass makes the column agree with the reader.
 Per type:
   * ``data_source``   → ``owner_of(row)``.
   * ``message_thread`` → the owner of the source behind any message in the
-    thread (a FlowMessage's ``source_item_id`` → SourceItem → DataSource);
+    thread (a FlowMessage's ``source_item_id`` → SourceItem → DataDriver);
     the local user when the thread has no source-backed message.
   * ``conversation``  → the owner of a thread that points at it; the local
     user when no thread does.
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 async def _repair(dry_run: bool) -> dict[str, int]:
     from flow_sdk.builtin.conversation import Conversation
-    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.builtin.message_thread import MessageThread
     from flow_sdk.builtin.source_item import SourceItem
@@ -57,7 +57,7 @@ async def _repair(dry_run: bool) -> dict[str, int]:
 
     # Sources first: threads and conversations resolve THROUGH them.
     source_owner: dict[str, object] = {}
-    for source in await DataSource.get_all(unowned()):
+    for source in await DataDriver.get_all(unowned()):
         owner = await owner_of(source)
         source_owner[str(source.id)] = owner
         counts["data_source"] += 1
@@ -78,7 +78,7 @@ async def _repair(dry_run: bool) -> dict[str, int]:
                 continue
             owner = source_owner.get(str(item.data_source_id))
             if owner is None:
-                source = await DataSource.get_one({"id": str(item.data_source_id)})
+                source = await DataDriver.get_one({"id": str(item.data_source_id)})
                 owner = await owner_of(source) if source is not None else None
             if owner is not None:
                 break

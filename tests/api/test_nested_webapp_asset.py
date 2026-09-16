@@ -23,9 +23,9 @@ pytestmark = pytest.mark.asyncio
 
 def _definition_with_editor(root: Path) -> tuple[Path, Path]:
     """A source definition that ships an editor, laid out exactly as the shipped ones."""
-    spec = root / AA / "data_source" / "demo"
+    spec = root / AA / "data_driver" / "demo"
     spec.mkdir(parents=True)
-    (spec / "data_source.json").write_text(json.dumps({"schema": 1, "name": "demo", "title": "Demo"}))
+    (spec / "data_driver.json").write_text(json.dumps({"schema": 1, "name": "demo", "title": "Demo"}))
 
     app = spec / AA / "webapp" / "editor"
     app.mkdir(parents=True)
@@ -55,14 +55,14 @@ async def _index(root: Path) -> dict:
         frozenset({RecordType.DATA_SOURCE_SPEC, RecordType.MICRO_APP}),
     )
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.DATA_SOURCE_SPEC, RecordType.MICRO_APP]))
-    from flow_sdk.builtin.data_source_spec import DataSourceSpec
+    from flow_sdk.builtin.data_driver_spec import DataDriverSpec
     from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
 
     # Scoped to THIS tree, not to the name: "demo"/"editor" are ordinary words and
     # the DB is shared across the suite, so a name lookup can answer with another
     # test's row and pass or fail for the wrong reason.
     under = str(root.resolve())
-    specs = [s for s in await DataSourceSpec.get_all({"name": "demo"}) if str(s.asset_ref).startswith(under)]
+    specs = [s for s in await DataDriverSpec.get_all({"name": "demo"}) if str(s.asset_ref).startswith(under)]
     apps = [a for a in await MicroApp.get_all({"name": "editor"}) if str(a.asset_ref).startswith(under)]
     return {"spec": specs[0] if specs else None, "app": apps[0] if apps else None}
 

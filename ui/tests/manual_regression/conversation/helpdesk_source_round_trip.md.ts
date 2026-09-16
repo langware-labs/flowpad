@@ -46,14 +46,14 @@ test('binding criterion: a guest ticket answered from the staff inbox through th
   let sourceId = '';
   try {
     // Step 1 (API form): staff attach the desk — what the "+" on the inbox line creates.
-    const created = await (await staffRq.post(`${STAFF_API}/api/v1/graph/data_source`, { data: { name: 'desk-manual', provider: 'helpdesk', config: { desk_project_id: desk }, status: 'new', owner: `user-${staff.id}` } })).json();
+    const created = await (await staffRq.post(`${STAFF_API}/api/v1/graph/data_driver`, { data: { name: 'desk-manual', provider: 'helpdesk', config: { desk_project_id: desk }, status: 'new', owner: `user-${staff.id}` } })).json();
     sourceId = created.data.id;
 
     // Step 2: the guest opens a ticket.
     const ticket = (await (await guestRq.post(`${HUB}/api/v1/graph/project/${desk}/start_guest_conversation`, { ...auth(guest.token), data: { text: `my printer is broken ${ts}` } })).json()).data.id;
 
     // Step 3: the staff instance polls it; the ticket is a local conversation with the hub's id.
-    await staffRq.post(`${STAFF_API}/api/v1/graph/data_source/${sourceId}/request_poll`, { data: {} });
+    await staffRq.post(`${STAFF_API}/api/v1/graph/data_driver/${sourceId}/request_poll`, { data: {} });
     await until(async () => {
       const r = await staffRq.get(`${STAFF_API}/api/v1/graph/conversation/${ticket}`);
       if (r.status() !== 200) return null;
@@ -76,7 +76,7 @@ test('binding criterion: a guest ticket answered from the staff inbox through th
     expect(pool.find((r) => r.conversation_id === ticket)?.picked_up).toBe(true);
 
     // Step 5: the sent copy converges — exactly the two hub ids, no twin.
-    await staffRq.post(`${STAFF_API}/api/v1/graph/data_source/${sourceId}/request_poll`, { data: {} });
+    await staffRq.post(`${STAFF_API}/api/v1/graph/data_driver/${sourceId}/request_poll`, { data: {} });
     const hubIds = ((await (await staffRq.get(`${HUB}/api/v1/graph/conversation/${ticket}/flow_message`, auth(staff.token))).json()).data ?? []).map((m: any) => m.id).sort();
     const local = await until(async () => {
       const r: any = await (await staffRq.get(`${STAFF_API}/api/v1/graph/conversation/${ticket}`)).json();
@@ -85,7 +85,7 @@ test('binding criterion: a guest ticket answered from the staff inbox through th
     }, 'local conversation holds both hub messages');
     expect(local).toEqual(hubIds);
   } finally {
-    if (sourceId) await staffRq.delete(`${STAFF_API}/api/v1/graph/data_source/${sourceId}`);
+    if (sourceId) await staffRq.delete(`${STAFF_API}/api/v1/graph/data_driver/${sourceId}`);
     await staffRq.delete(`${HUB}/api/v1/graph/project/${desk}`, { ...auth(staff.token), data: {} });
   }
 });

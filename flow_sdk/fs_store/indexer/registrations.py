@@ -14,7 +14,7 @@ import flow_sdk.builtin.codex_session  # noqa: F401
 import flow_sdk.builtin.command  # noqa: F401
 import flow_sdk.builtin.consumer_position  # noqa: F401
 import flow_sdk.builtin.copilot_session  # noqa: F401
-import flow_sdk.builtin.data_source  # noqa: F401
+import flow_sdk.builtin.data_driver  # noqa: F401
 import flow_sdk.builtin.data_source_cursor  # noqa: F401
 import flow_sdk.builtin.dataset  # noqa: F401
 import flow_sdk.builtin.deck  # noqa: F401

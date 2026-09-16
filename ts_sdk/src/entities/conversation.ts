@@ -115,7 +115,7 @@ export interface IConversation extends IEntity {
   /** The channel a source-backed conversation replies through (``gmail``,
    *  ``slack``); stamped by the inbox projection. Null = a Flowpad conversation. */
   channel?: string | null;
-  /** The local DataSource feeding this conversation; never leaves the machine. */
+  /** The local DataDriver feeding this conversation; never leaves the machine. */
   channel_source_id?: string | null;
   /** Hub role roster — inherited from the Entity base as ``members``. The wire
    *  key on the conversation fanout is ``participants`` (hub contract), adapted

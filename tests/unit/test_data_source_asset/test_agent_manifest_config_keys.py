@@ -9,14 +9,14 @@ import re
 from pathlib import Path
 
 import flow_sdk
-from flow_sdk.ingest.source_registry import asset_module
+from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 
 agent_source = asset_module("agent")
 agent_driver = asset_module("agent", "transport")
 
 ROOT = Path(flow_sdk.__file__).parent
-MANIFEST = ROOT / "system_projects/flowpad_assistant/agentic-assets/data_source/agent/data_source.json"
+MANIFEST = ROOT / "system_projects/flowpad_assistant/agentic-assets/data_driver/agent/data_driver.json"
 
 
 def test_every_key_the_driver_reads_is_declared():

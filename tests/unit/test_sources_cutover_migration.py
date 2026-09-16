@@ -24,7 +24,7 @@ def _db(tmp_path: Path) -> Path:
     def put(eid, type_name, stamp, **data):
         conn.execute("INSERT INTO entities VALUES (?, ?, ?, ?, ?)", (eid, type_name, stamp, stamp, json.dumps(data)))
 
-    put(SRC, "data_source", "2026-01-01", provider="agent", channel="slack", account_key="T1")
+    put(SRC, "data_driver", "2026-01-01", provider="agent", channel="slack", account_key="T1")
     header = dict(data_source_id=SRC, provider="agent", kind="content.message.chat", segment_key="C1")
     put(OLD, "source_item", "2026-01-02", **header, external_id="17", body="old", read=True)
     put(NEW, "source_item", "2026-01-03", **header, external_id="17", body="new")

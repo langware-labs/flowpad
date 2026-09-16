@@ -1,7 +1,7 @@
 /**
  * Data sources — the configured pullers, and a way to add one.
  *
- * Global by construction: `scope: []`, because a DataSource is a property of the
+ * Global by construction: `scope: []`, because a DataDriver is a property of the
  * instance, not of a project (flow_sdk/builtin/data_source.py says so, and the
  * scheduler tick that polls it has no request context to resolve a scope from).
  * Switching project must not change what this shows, which is also why the view
@@ -22,7 +22,7 @@
  * not be created from the UI at all.
  */
 import { useCallback, useMemo, useState } from 'react';
-import { DataSource } from '@sdk';
+import { DataDriver } from '@sdk';
 import { Plus } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -41,23 +41,23 @@ import { ReplayDialog } from './ReplayDialog';
 export function DataSourcesView() {
   const { t } = useLingui();
   const { start: startVibe, installDialog } = useStartVibeSession();
-  const { data: sources = [], refetch } = useEntitiesQuery<DataSource>(sourcesQuery);
+  const { data: sources = [], refetch } = useEntitiesQuery<DataDriver>(sourcesQuery);
   const { specFor } = useSourceSpecs();
 
   // A separate flag, not the `null = closed` idiom its two neighbours use:
   // `editing === null` is the legitimate "add new" state, so it cannot double
   // as closed.
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editing, setEditing] = useState<DataSource | null>(null);
-  const [replaying, setReplaying] = useState<DataSource | null>(null);
-  const Icon = iconForType(DataSource.type);
+  const [editing, setEditing] = useState<DataDriver | null>(null);
+  const [replaying, setReplaying] = useState<DataDriver | null>(null);
+  const Icon = iconForType(DataDriver.type);
 
   const openAdd = useCallback(() => {
     setEditing(null);
     setEditorOpen(true);
   }, []);
 
-  const openEdit = useCallback((source: DataSource) => {
+  const openEdit = useCallback((source: DataDriver) => {
     setEditing(source);
     setEditorOpen(true);
   }, []);

@@ -13,7 +13,7 @@ import pytest_asyncio
 
 import flow_sdk.db.drivers.db_driver as db_driver_mod
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
@@ -102,7 +102,7 @@ def receiving(tmp_path):
 
 @pytest.fixture
 def make_source(asset_repo, receiving, tmp_path, monkeypatch):
-    """A saved git DataSource in the requested delivery mode, plus its Project.
+    """A saved git DataDriver in the requested delivery mode, plus its Project.
 
     cwd is the workspace so `Entity._scope_from_path` infers `scope="project"`;
     without it every asset lands `scope=""`, which `apply_scope_filter` DROPS
@@ -120,7 +120,7 @@ def make_source(asset_repo, receiving, tmp_path, monkeypatch):
         proj = Project(name="git-project", fs_storage_mount_path=str(landing))
         await proj.save()
 
-        src = DataSource(
+        src = DataDriver(
             name="asset-repo",
             provider="git",
             config={"repo": str(asset_repo), "branch": "main"},

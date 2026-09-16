@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]
 
@@ -72,7 +72,7 @@ async def test_binding_twice_adopts_the_same_source(connected):
     assert first.id == second.id
     # Scoped to this agent: the module's other tests bind the same channel, and
     # a count over every slack row would measure them instead.
-    mine = await DataSource.get_all({"provider": "slack", "owner": str(agent.typeid)})
+    mine = await DataDriver.get_all({"provider": "slack", "owner": str(agent.typeid)})
     assert len(mine) == 1
 
 
@@ -89,7 +89,7 @@ async def test_the_allowlist_defaults_to_nobody(connected):
 async def test_a_one_way_provider_is_refused(monkeypatch):
     """Reading it is fine; an agent bound to it could never answer."""
     monkeypatch.setattr(
-        "flow_sdk.ingest.sources.source_type",
+        "flow_sdk.ingest.driver_types.driver_type",
         lambda _p: SimpleNamespace(sends=False, identity_config_key="feeds", kind="datasource.api.rss"),
     )
     agent = await _agent("binder-oneway")
@@ -126,4 +126,4 @@ async def test_an_unconnected_provider_is_refused_before_a_row_exists(monkeypatc
     with pytest.raises(NotConnected):
         await agent.bind_channel(provider="slack", channel=CHANNEL)
 
-    assert await DataSource.get_all({"provider": "slack", "owner": str(agent.typeid)}) == []
+    assert await DataDriver.get_all({"provider": "slack", "owner": str(agent.typeid)}) == []

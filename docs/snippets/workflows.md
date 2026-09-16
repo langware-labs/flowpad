@@ -8,7 +8,7 @@ graph: blocks are ordinary classes, your own `async for` is the orchestration,
 and every value that moves between blocks is a `DataSpec`. The
 [simple message block](message-block.md) yields an ephemeral `MessageRequest`;
 the block owns its one-shot reply correlation. Entity-backed blocks are views
-over existing `DataSource`, `Agent`, `AgenticProcess`, ingest, and projection
+over existing `DataDriver`, `Agent`, `AgenticProcess`, ingest, and projection
 machinery; `MessageBlock` owns only a transient queue. Nothing here persists
 state of its own.
 
@@ -39,8 +39,8 @@ What each line does:
   the name in its `context_data`, and — the part that matters — the loop's
   position is stored under it: a restart resumes from the last `ack()`.
   Outside a workflow the position lives only for the loop.
-* `Inbox(address, ...)` finds or creates the `DataSource` for that account
-  (`DataSource.find_for_account` on the driver's `identity_config_key`). Extra
+* `Inbox(address, ...)` finds or creates the `DataDriver` for that account
+  (`DataDriver.find_for_account` on the driver's `identity_config_key`). Extra
   keyword config lands on the row verbatim.
 * `inbox.listen()` syncs the source every `poll_every` seconds, projects what
   landed into its conversation, and yields arrivals in ingest order, each
@@ -116,7 +116,7 @@ everyone is reading.
 Slack differs from both: the reply targets the channel, inside the message's
 thread, and Slack echoes the bot's own post back through history, so the
 driver records nothing itself. Pinned by `tests/unit/test_workflows_snippets.py`,
-and by `flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/slack/tests/test_slack_source.py` (send, identity stamp, channel reuse)
+and by `flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/slack/tests/test_slack_source.py` (send, identity stamp, channel reuse)
 against a loopback Slack.
 
 ```python

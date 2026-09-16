@@ -87,7 +87,7 @@ class Dataset(Entity):
     type: str = APIField(default="dataset")
     title: str = APIField("")
     description: Optional[str] = APIField(None, blob=True)
-    # The DataSource this dataset curates: its items are promoted into rows
+    # The DataDriver this dataset curates: its items are promoted into rows
     # (`promote`) and labelled (`annotate`). One source may feed many datasets.
     source_id: str = APIField("")
 

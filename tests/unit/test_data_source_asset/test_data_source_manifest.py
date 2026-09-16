@@ -17,7 +17,7 @@ RSS = {"schema": 1, "name": "rss", "title": "RSS / Atom",
        "config": {"feed_urls": {"type": "lines", "required": True, "label": "Feed URLs"}}}
 
 
-def parse(data: dict, files: set[str] = frozenset({"data_source.json", "source.py"})) -> tuple[ManifestSpec, Runtime]:
+def parse(data: dict, files: set[str] = frozenset({"data_driver.json", "source.py"})) -> tuple[ManifestSpec, Runtime]:
     spec = ManifestSpec.model_validate(data)
     return spec, spec.runtime_for_folder(set(files))
 

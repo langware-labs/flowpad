@@ -159,7 +159,7 @@ def coerce_config(fields: dict, config: dict) -> dict:
 
 
 class ManifestSpec(DataSpec):
-    """``data_source.json`` — the shape, with every authoring rule as a validator."""
+    """``data_driver.json`` — the shape, with every authoring rule as a validator."""
 
     model_config = ConfigDict(populate_by_name=True)   # extra="forbid" is DataSpec's
 

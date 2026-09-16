@@ -49,10 +49,10 @@ def _forked_instance(tmp_path: Path, names: tuple[str, ...]) -> tuple[Path, dict
         for name in names:
             folder = (
                 tmp_path / install / "Lib" / "site-packages" / "flow_sdk" / "system_projects"
-                / "flowpad_assistant" / "agentic-assets" / "data_source" / name
+                / "flowpad_assistant" / "agentic-assets" / "data_driver" / name
             )
             folder.mkdir(parents=True)
-            (folder / "data_source.json").write_text(
+            (folder / "data_driver.json").write_text(
                 json.dumps({"schema": 1, "name": name, "title": name.upper()}), encoding="utf-8"
             )
             row_id = _old_path_keyed_id(folder)
@@ -105,7 +105,7 @@ def test_forked_specs_collapse_to_one_row_per_name(tmp_path: Path) -> None:
     assert report.rows_deleted == len(names) * (len(INSTALLS) - 1)
     # Every survivor sits at the id the FIXED minter now produces, so the next
     # index updates it in place instead of adding a row beside it.
-    live = tmp_path / INSTALLS[0] / "Lib" / "site-packages" / "flow_sdk" / "system_projects" / "flowpad_assistant" / "agentic-assets" / "data_source"
+    live = tmp_path / INSTALLS[0] / "Lib" / "site-packages" / "flow_sdk" / "system_projects" / "flowpad_assistant" / "agentic-assets" / "data_driver"
     assert {rid for rid, _ in surviving} == {_expected_id(live / name) for name in names}
     assert not ({rid for rid, _ in surviving} & {i for ids in minted.values() for i in ids[1:]})
 

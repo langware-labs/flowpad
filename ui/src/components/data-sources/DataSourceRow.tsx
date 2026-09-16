@@ -16,7 +16,7 @@
  * dialog to the view (so N rows don't mount 2N of them).
  */
 import { useCallback, useMemo, useState } from 'react';
-import { DataSource, DataSourceCursor, type DataSourceSpec, QueryRequest } from '@sdk';
+import { DataDriver, DataSourceCursor, type DataDriverSpec, QueryRequest } from '@sdk';
 import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -32,18 +32,19 @@ import { sourceIcon } from './source-icon';
 import { SourceMenu } from './SourceMenu';
 import { SourceStreams } from './SourceStreams';
 import { useSourceToggle } from './use-source-toggle';
+import { useSourceVerify } from './use-source-verify';
 
 interface Props {
-  source: DataSource;
+  source: DataDriver;
   /** This source's spec. Passed in rather than queried here: the specs are one
    *  global query, and a card per source asking separately is N identical
    *  subscriptions to the same rows. The view already owns the grid — and it
    *  hands over the WHOLE spec, so a third field the card wants is not a third
    *  prop and a third lookup. */
-  spec?: DataSourceSpec | null;
-  onEdit: (source: DataSource) => void;
-  onReplay: (source: DataSource) => void;
-  onDelete: (source: DataSource) => void;
+  spec?: DataDriverSpec | null;
+  onEdit: (source: DataDriver) => void;
+  onReplay: (source: DataDriver) => void;
+  onDelete: (source: DataDriver) => void;
 }
 
 export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Props) {
@@ -96,32 +97,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
     }
   }, [source, t]);
 
-  /**
-   * Re-run the setup check. Idempotent, so it is safe to press after every
-   * attempt — which is the actual interaction: invite the bot, press, repeat
-   * for whatever is still listed.
-   */
-  const verify = useCallback(async () => {
-    setBusy(true);
-    try {
-      const result = await source.verify();
-      if (result.ready) {
-        notify.success({ title: source.name || source.provider, message: result.detail });
-      } else {
-        // Not an error — nothing failed, the user simply has one more step. A
-        // red toast here would send them looking for a broken thing.
-        notify.info({ title: t`Not ready yet`, message: result.detail });
-      }
-    } catch (error) {
-      notify.error({
-        title: t`Could not verify ${source.name || source.provider}`,
-        message: errorMessage(error, t`The check did not run.`),
-      });
-    } finally {
-      setBusy(false);
-    }
-  }, [source, t]);
-
+  const { verify, busy: verifying } = useSourceVerify(source);
   const { toggle: toggleEnabled } = useSourceToggle(source);
 
   // Active, but `is_due` will still refuse it. Without calling this out the
@@ -206,7 +182,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
               size="sm"
               variant="secondary"
               className="h-7 gap-1.5"
-              disabled={busy}
+              disabled={busy || verifying}
               data-testid={`source-verify-${source.id}`}
               onClick={() => void verify()}
             >

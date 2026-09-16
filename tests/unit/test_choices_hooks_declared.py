@@ -16,13 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.ingest.sources import source_type
+from flow_sdk.ingest.driver_types import driver_type
 from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 REPO = Path(__file__).resolve().parents[2]
-MANIFESTS = sorted((REPO / "flow_sdk" / "system_projects").rglob("data_source/*/data_source.json"))
+MANIFESTS = sorted((REPO / "flow_sdk" / "system_projects").rglob("data_driver/*/data_driver.json"))
 
 
 def test_the_shelf_of_manifests_is_actually_found():
@@ -37,7 +37,7 @@ def test_a_choosable_field_has_a_driver_that_can_list_it(path: Path):
     if not choosable:
         return  # nine of the twelve ask for an address the user already knows
 
-    driver = source_type(manifest.name)
+    driver = driver_type(manifest.name)
     assert driver is not None, f"{manifest.name} declares choices but registers no driver"
     assert driver.offers_choices, (
         f"{manifest.name} marks {choosable} choosable, but its source class can list none "

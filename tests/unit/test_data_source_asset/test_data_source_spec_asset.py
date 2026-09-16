@@ -31,9 +31,9 @@ RSS = {
 
 
 def _seed(root: Path, name: str, manifest: dict) -> Path:
-    folder = root / "agentic-assets" / "data_source" / name
+    folder = root / "agentic-assets" / "data_driver" / name
     folder.mkdir(parents=True)
-    (folder / "data_source.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (folder / "data_driver.json").write_text(json.dumps(manifest), encoding="utf-8")
     return folder
 
 

@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
-import { Agent, config, DataSource, Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
+import { Agent, config, DataDriver, Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
 import apiClient from '@sdk/client';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import {
@@ -29,7 +29,7 @@ import { useStagedAssets } from './useStagedAssets';
 import { useQuickCreatePick } from '@src/components/quick-create';
 
 /** Stable while loading — a fresh `[]` per render would re-run the row memo. */
-const NO_SOURCES: DataSource[] = [];
+const NO_SOURCES: DataDriver[] = [];
 
 /** Row label. `displayLabelForDescriptor` gives up at the raw typeid here (this
  *  pane never caches Skill entities); a skill's identity IS its folder, so the
@@ -190,11 +190,11 @@ export function AgentResourcesBody() {
 
   // The connected sources, read through the ONE named query the Data sources
   // view uses, so the two can't disagree about what exists. Not
-  // `useStagedAssets` like its three neighbours: a DataSource is a DB row and a
+  // `useStagedAssets` like its three neighbours: a DataDriver is a DB row and a
   // property of the INSTANCE (`scope: []`, see flow_sdk/builtin/data_source.py),
   // not a file the project-level path scan could find.
   const { data: sources = NO_SOURCES, isLoading: sourcesLoading, refetch: refetchSources } =
-    useEntitiesQuery<DataSource>(sourcesQuery);
+    useEntitiesQuery<DataDriver>(sourcesQuery);
 
   // The verb and its confirm copy are owned by `use-source-delete`, shared
   // with the Data Sources screen — this panel reuses them rather than
@@ -309,7 +309,7 @@ export function AgentResourcesBody() {
   return (
     <div className="flex flex-col py-1">
       {/* The CONNECTED sources — what an agent here can actually read from —
-          and never again the installed `DataSourceSpec` catalog this section
+          and never again the installed `DataDriverSpec` catalog this section
           used to list. That catalog was the nine provider types the machine
           *can* connect: neither viewable nor selectable, so every row was
           decoration. Same shape as the three sections below it: rows are what

@@ -1,4 +1,4 @@
-"""``DataSource.origin`` — WHERE a source's bytes come from, as a typed origin
+"""``DataDriver.origin`` — WHERE a source's bytes come from, as a typed origin
 the driver stamps; reflection reads it, and a non-local origin materializes
 through the ``FSOriginDriver`` registry."""
 from __future__ import annotations
@@ -9,11 +9,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
 from flow_sdk.ingest import reflect
-from flow_sdk.ingest.sources import source_type
+from flow_sdk.ingest.driver_types import driver_type
 from tests.unit.test_git_source.conftest import git_db  # noqa: F401 — an isolated driver
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -23,13 +23,13 @@ def test_each_tree_driver_derives_a_local_origin(tmp_path):
     root = tmp_path / "watched"
     root.mkdir()
     expected = local_origin_for_path(root.resolve())   # THE one LocalOrigin shape
-    folder = source_type("folder").origin_for(SimpleNamespace(config={"root": str(root)}))
+    folder = driver_type("folder").origin_for(SimpleNamespace(config={"root": str(root)}))
     assert isinstance(folder, LocalOrigin) and folder == expected
-    git = source_type("git").origin_for(SimpleNamespace(config={"repo": str(root)}))
+    git = driver_type("git").origin_for(SimpleNamespace(config={"repo": str(root)}))
     assert git == expected
-    assert source_type("git").origin_for(SimpleNamespace(config={})) is None
+    assert driver_type("git").origin_for(SimpleNamespace(config={})) is None
     cache = tmp_path / "cache"
-    gdrive = source_type("gdrive").origin_for(SimpleNamespace(config={"cache_root": str(cache)}, id="s"))
+    gdrive = driver_type("gdrive").origin_for(SimpleNamespace(config={"cache_root": str(cache)}, id="s"))
     assert gdrive == local_origin_for_path(cache.resolve())
 
 
@@ -43,7 +43,7 @@ async def test_local_root_reads_the_origin_not_a_config_key(tmp_path):
 async def test_save_stamps_the_origin_from_config(git_db, tmp_path):  # noqa: F811
     root = tmp_path / "w"
     root.mkdir()
-    src = DataSource(name="w", provider="folder", config={"root": str(root)})
+    src = DataDriver(name="w", provider="folder", config={"root": str(root)})
     await src.save()
     assert src.origin == local_origin_for_path(root.resolve())
     moved = tmp_path / "w2"

@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { FieldType, type DataSourceChoice, type DataSourceSpec, type SpecConfigField } from '@sdk';
+import { FieldType, type DataDriverChoice, type DataDriverSpec, type SpecConfigField } from '@sdk';
 
 /**
  * The create form's logic, over a manifest the BACKEND supplies.
@@ -41,15 +41,15 @@ export interface SourceDraft {
    * Empty for a field the user typed into instead — which is what makes the fallback work
    * with no mode flag anywhere in this file.
    */
-  picked: Record<string, DataSourceChoice[]>;
+  picked: Record<string, DataDriverChoice[]>;
 }
 
 /** `[key, field]` pairs in declaration order — the order the form renders. */
-export function specFields(spec?: DataSourceSpec): [string, SpecConfigField][] {
+export function specFields(spec?: DataDriverSpec): [string, SpecConfigField][] {
   return Object.entries(spec?.config ?? {});
 }
 
-export function emptyDraft(provider: string): SourceDraft {
+export function emptyDraft(provider: string, spec?: DataDriverSpec): SourceDraft {
   return {
     name: '',
     provider,
@@ -59,7 +59,12 @@ export function emptyDraft(provider: string): SourceDraft {
     enabled: true,
     poll_interval_seconds: 300,
     window_days: 7,
-    fields: {},
+    // A manifest `default` is what a new source starts with, not a hint the user must retype.
+    fields: Object.fromEntries(
+      specFields(spec)
+        .filter(([, field]) => field.default !== undefined && field.default !== null)
+        .map(([key, field]) => [key, Array.isArray(field.default) ? field.default.join('\n') : String(field.default)]),
+    ),
     picked: {},
   };
 }
@@ -72,7 +77,7 @@ export function emptyDraft(provider: string): SourceDraft {
  * carries an `id` is what the picker writes. Returns null for a shape this form does not
  * model, so a caller drops it rather than rendering `[object Object]` and saving it back.
  */
-export function choiceOf(raw: unknown): DataSourceChoice | null {
+export function choiceOf(raw: unknown): DataDriverChoice | null {
   if (typeof raw === 'string') return raw.trim() ? { id: raw.trim(), name: raw.trim() } : null;
   if (raw && typeof raw === 'object' && 'id' in raw) {
     const entry = raw as { id?: unknown; name?: unknown };
@@ -87,11 +92,11 @@ export function pickedFrom(
   key: string,
   field: SpecConfigField,
   config: Record<string, unknown>,
-): DataSourceChoice[] {
+): DataDriverChoice[] {
   if (!field.choices) return [];
   const raw = config?.[key];
   const entries = Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw];
-  return entries.map(choiceOf).filter((c): c is DataSourceChoice => c !== null);
+  return entries.map(choiceOf).filter((c): c is DataDriverChoice => c !== null);
 }
 
 /**
@@ -106,12 +111,12 @@ export function pickedIn(
   draft: SourceDraft,
   key: string,
   field: SpecConfigField,
-): DataSourceChoice[] {
+): DataDriverChoice[] {
   return field.choices ? (draft.picked[key] ?? []) : [];
 }
 
 /** What a picked choice is STORED as: a bare id when the name adds nothing. */
-const storedChoice = (c: DataSourceChoice): string | { id: string; name: string } =>
+const storedChoice = (c: DataDriverChoice): string | { id: string; name: string } =>
   c.name && c.name !== c.id ? { id: c.id, name: c.name } : c.id;
 
 const splitLines = (raw: string): string[] =>
@@ -145,7 +150,7 @@ function patternFor(pattern: string): RegExp {
  * `sync_source` writes both from the driver on the first poll, so a form-set
  * value is authoritative-looking, owned by nobody, and silently corrected later.
  */
-export function buildConfig(draft: SourceDraft, spec?: DataSourceSpec): Record<string, unknown> {
+export function buildConfig(draft: SourceDraft, spec?: DataDriverSpec): Record<string, unknown> {
   const config: Record<string, unknown> = {};
   for (const [key, field] of specFields(spec)) {
     // A pick wins over the text box: the two are never both filled, because hand-editing
@@ -176,7 +181,7 @@ export function buildConfig(draft: SourceDraft, spec?: DataSourceSpec): Record<s
  * is a plain edit. A spec with no `account_key` field has no account to name —
  * Slack's case, where the workspace belongs to the connection, not the form.
  */
-export function accountKeyFor(draft: SourceDraft, spec?: DataSourceSpec): string {
+export function accountKeyFor(draft: SourceDraft, spec?: DataDriverSpec): string {
   const explicit = draft.account_key.trim();
   if (explicit) return explicit;
   const named = specFields(spec).find(([, f]) => f.account_key);
@@ -199,7 +204,7 @@ export function accountKeyFor(draft: SourceDraft, spec?: DataSourceSpec): string
  * the same account, and that is allowed — the cost of a second poller is the
  * operator's call, not this form's.
  */
-export function validateDraft(draft: SourceDraft, spec?: DataSourceSpec): string[] {
+export function validateDraft(draft: SourceDraft, spec?: DataDriverSpec): string[] {
   const problems: string[] = [];
 
   if (!draft.name.trim()) problems.push('Name is required.');

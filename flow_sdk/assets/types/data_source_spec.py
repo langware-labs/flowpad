@@ -28,7 +28,7 @@ def data_source_spec_identity_key(ref: "FSRef | Path") -> str:
 
     ``name`` is already the type's unique key everywhere else — the source
     registry is a flat dict keyed by it (`ingest/sources.py`),
-    `DataSource` resolves its spec with ``get_one({"name": provider})``, and the
+    `DataDriver` resolves its spec with ``get_one({"name": provider})``, and the
     dialog keys its lookup map by it. Identity just agrees with that now.
 
     Read from the manifest, which owns the value the row carries; the folder name
@@ -38,7 +38,7 @@ def data_source_spec_identity_key(ref: "FSRef | Path") -> str:
     path = Path(getattr(ref, "_path", ref))
     root = path.parent if path.is_file() else path
     try:
-        manifest = json.loads((root / "data_source.json").read_text(encoding="utf-8"))
+        manifest = json.loads((root / "data_driver.json").read_text(encoding="utf-8"))
         name = str(manifest.get("name") or "").strip()
     except (OSError, TypeError, json.JSONDecodeError):
         name = ""

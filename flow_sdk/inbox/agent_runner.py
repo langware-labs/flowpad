@@ -79,16 +79,16 @@ def _admits(source, author: str) -> bool:
     help desk), under which an EMPTY list admits everyone; a non-empty list
     restricts either way, and a paused source admits nobody either way.
     """
-    from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import SourceStatus  # noqa: PLC0415
     from flow_sdk.builtin.email_inbox import sender_allowed  # noqa: PLC0415
-    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+    from flow_sdk.ingest.driver_types import driver_type  # noqa: PLC0415
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
         return False
     allowlist = [a for a in (getattr(source, "inbound_allowed_senders", None) or []) if str(a).strip()]
     if sender_allowed(allowlist, author):
         return True
-    driver = source_type(getattr(source, "provider", "") or "")
+    driver = driver_type(getattr(source, "provider", "") or "")
     return bool(driver is not None and driver.open_inbound and not allowlist)
 
 
@@ -104,7 +104,7 @@ def _is_own_outgoing(item, source) -> bool:
     return is_self_address(source, item.author_external_id or "")
 
 
-async def _reuse_or_spawn_agent_process(agent, conversation_id: str, workdir: str):
+async def _reuse_or_spawn_agent_process(agent, conversation_id: str, workdir: str, name: str = ""):
     """One headless process for this Agent deployment and conversation.
 
     The generic conversation runner creates a bare ``AgenticProcess``. Mail is
@@ -159,6 +159,9 @@ async def _reuse_or_spawn_agent_process(agent, conversation_id: str, workdir: st
 
     process = await agent.create_process(
         "",
+        # Created with no prompt, so without a name its run reads "<agent>: " — nothing says whose
+        # conversation it answers. The process is reused per conversation, so this names that.
+        name=name or None,
         deployment=deployment,
         target_typeid_str=target,
         workdir=workdir,
@@ -177,12 +180,12 @@ async def handle_inbound(item) -> bool:
     already been ingested and projected either way — the owner can see it.
     """
     from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply, conversation_turn_lock  # noqa: PLC0415
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
     from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
-    source = await DataSource.get_one({"id": item.data_source_id})
+    source = await DataDriver.get_one({"id": item.data_source_id})
     if source is None:
         return False
 
@@ -215,7 +218,10 @@ async def handle_inbound(item) -> bool:
     # that did overlap each captured the LATEST reply and sent it twice. It waits instead.
     async with conversation_turn_lock(conversation_id):
         workdir = await _workdir_for(agent)
-        ap = await _reuse_or_spawn_agent_process(agent, conversation_id, workdir)
+        who = getattr(item, "author_display", "") or item.author_external_id or ""
+        channel = getattr(source, "channel", "") or getattr(source, "provider", "")
+        run_name = " · ".join(part for part in (agent.name, channel, who) if part)
+        ap = await _reuse_or_spawn_agent_process(agent, conversation_id, workdir, name=run_name)
         prompt_result = await ap.prompt(body)
         if isinstance(prompt_result, ApiFailResponse):
             logger.warning(

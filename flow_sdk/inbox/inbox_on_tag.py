@@ -36,5 +36,5 @@ def emit_projected_tag(item) -> None:
         f"inbox.{item.provider or 'unknown'}.message.projected",
         target_of("source_item", item.id),
         {"entity_id": item.id, "source_id": item.data_source_id},
-        ctx={"scope": [target_of("data_source", item.data_source_id)]},
+        ctx={"scope": [target_of("data_driver", item.data_source_id)]},
     )

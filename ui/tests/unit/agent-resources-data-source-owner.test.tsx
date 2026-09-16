@@ -65,7 +65,7 @@ function makeSource(id: string, owner: string | null) {
     status: 'active',
     health: 'ok',
     owner,
-    typeId: new TypeId('data_source', id),
+    typeId: new TypeId('data_driver', id),
   };
 }
 

@@ -14,18 +14,19 @@
  * (`useSourceToggle`); the marks themselves never toggle.
  *
  * One component, two mounts, no knowledge of which owner it serves. Its rows
- * are exactly `DataSource.find_owned(owner)` ∩ MessageSource — the same
+ * are exactly `DataDriver.find_owned(owner)` ∩ MessageSource — the same
  * `sources` query the Data Sources screen and the row chip already share —
  * keyed on the spec's `sends`, not the row's `channel`, so a just-attached
  * source shows before its first poll.
  */
 import { type ReactNode, useMemo, useState } from 'react';
-import { DataSource, type DataSourceSpec, TypeId, User } from '@sdk';
+import { DataDriver, type DataDriverSpec, TypeId, User } from '@sdk';
 import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useSourceVerify } from '@src/components/data-sources/use-source-verify';
 import { ViewType } from '@src/types/ViewType';
 import { cn } from '@src/lib/utils';
 import { Button } from '@src/components/ui/button';
@@ -35,12 +36,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Switch } from '@src/components/ui/switch';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { sourceIcon } from '@src/components/data-sources/source-icon';
-import { isMessageSourceSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
+import { isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
 import { ownerOf } from './channel-owner';
 
-const EMPTY: DataSource[] = [];
+const EMPTY: DataDriver[] = [];
 
 /** The owner's message sources, in a stable order — plus the spec lookup the
  *  caller needs to draw them, so a mount holds ONE specs subscription. The
@@ -51,14 +52,14 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
   // `localUser.id`, not `userTypeId`: that alias is the `@local` pointer, and rows
   // carry the user's real id.
   const { localUser } = useContext();
-  const { data: sources = EMPTY } = useEntitiesQuery<DataSource>(sourcesQuery);
+  const { data: sources = EMPTY } = useEntitiesQuery<DataDriver>(sourcesQuery);
   const ownerKey = owner?.toString() ?? '';
   const localKey = localUser?.id ? new TypeId(User.type, localUser.id).toString() : '';
   const rows = useMemo(
     () =>
       ownerKey
         ? sources
-            .filter((s) => (ownerOf(s) ?? localKey) === ownerKey && isMessageSourceSpec(specFor(s.provider)))
+            .filter((s) => (ownerOf(s) ?? localKey) === ownerKey && isMessageDriverSpec(specFor(s.provider)))
             .sort((a, b) => (a.name || a.provider).localeCompare(b.name || b.provider))
         : EMPTY,
     [sources, specFor, ownerKey, localKey],
@@ -66,13 +67,13 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
   return { rows, specFor };
 }
 
-type SpecFor = (provider: string) => DataSourceSpec | undefined;
+type SpecFor = (provider: string) => DataDriverSpec | undefined;
 type ChannelState = 'on' | 'off' | 'parked';
-const stateOf = (s: DataSource): ChannelState => (s.needsAttention ? 'parked' : s.status === 'disabled' ? 'off' : 'on');
+const stateOf = (s: DataDriver): ChannelState => (s.needsAttention ? 'parked' : s.status === 'disabled' ? 'off' : 'on');
 
 /** The identity a mark draws: provider AND channel, because one transport
  *  (`agent`) reaches several channels and wears a different glyph for each. */
-export const channelKeyOf = (s: DataSource) => `${s.provider}|${s.channel}`;
+export const channelKeyOf = (s: DataDriver) => `${s.provider}|${s.channel}`;
 
 /** Sources of one channel kind, sharing a mark. Its state is the best of its
  *  members' — one listening source lights the mark; parked beats paused. */
@@ -80,11 +81,11 @@ interface ChannelGroup {
   key: string;
   provider: string;
   channel: string;
-  sources: DataSource[];
+  sources: DataDriver[];
   state: ChannelState;
 }
-export function groupChannels(rows: DataSource[]): ChannelGroup[] {
-  const groups = new Map<string, DataSource[]>();
+export function groupChannels(rows: DataDriver[]): ChannelGroup[] {
+  const groups = new Map<string, DataDriver[]>();
   for (const s of rows) {
     const list = groups.get(channelKeyOf(s));
     if (list) list.push(s);
@@ -103,7 +104,7 @@ interface Props {
   owner: TypeId;
   /** The owner's message sources and their spec lookup — from ONE
    *  `useAttachedChannels` in the mount, which also filters its list by them. */
-  rows: DataSource[];
+  rows: DataDriver[];
   specFor: SpecFor;
   /** Channel keys (`channelKeyOf`) the list is narrowed to; empty = everything. */
   selected: ReadonlySet<string>;
@@ -185,7 +186,7 @@ export function AttachedChannelsBar({ owner, rows, specFor, selected, onSelected
           </Popover>
         </>
       )}
-      {addOpen && <DataSourceDialog open onOpenChange={setAddOpen} owner={owner} only={isMessageSourceSpec} />}
+      {addOpen && <DataSourceDialog open onOpenChange={setAddOpen} owner={owner} only={isMessageDriverSpec} />}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(next) => !next && setDeleting(null)}
@@ -212,11 +213,11 @@ function ChannelMark({
   onDelete,
 }: {
   group: ChannelGroup;
-  spec: DataSourceSpec | undefined;
+  spec: DataDriverSpec | undefined;
   filtering: boolean;
   pressed: boolean;
   onClick: () => void;
-  onDelete: (source: DataSource) => void;
+  onDelete: (source: DataDriver) => void;
 }) {
   const { t } = useLingui();
   const Icon = sourceIcon(spec, group.channel);
@@ -280,9 +281,9 @@ export function ChannelList({
   footer,
 }: {
   title: string;
-  sources: DataSource[];
+  sources: DataDriver[];
   specFor: SpecFor;
-  onDelete: (source: DataSource) => void;
+  onDelete: (source: DataDriver) => void;
   footer?: ReactNode;
 }) {
   const { t } = useLingui();
@@ -299,13 +300,15 @@ export function ChannelList({
 }
 
 /** A spec already in hand, as the lookup `ChannelList` expects. */
-const specFor = (spec: DataSourceSpec | undefined): SpecFor => () => spec;
+const specFor = (spec: DataDriverSpec | undefined): SpecFor => () => spec;
 
 /** One line of a channel list: glyph, name, its setup note, the on/off switch
- *  and a delete. */
-function ChannelRow({ source, spec, onDelete }: { source: DataSource; spec: DataSourceSpec | undefined; onDelete: () => void }) {
+ *  and a delete. A parked row's setup note IS its verify control — pressing
+ *  the step it names re-runs the check. */
+function ChannelRow({ source, spec, onDelete }: { source: DataDriver; spec: DataDriverSpec | undefined; onDelete: () => void }) {
   const { t } = useLingui();
   const { toggle, busy } = useSourceToggle(source);
+  const { verify, busy: verifying } = useSourceVerify(source);
   const Icon = sourceIcon(spec, source.channel);
   const state = stateOf(source);
   return (
@@ -313,7 +316,18 @@ function ChannelRow({ source, spec, onDelete }: { source: DataSource; spec: Data
       <Icon className="size-4 shrink-0" />
       <span className="min-w-0 flex-1">
         <span className="block truncate">{source.name || source.provider}</span>
-        {state === 'parked' && source.setup_detail && <span className="block truncate text-[11px] text-amber-500">{source.setup_detail}</span>}
+        {state === 'parked' && source.setup_detail && (
+          <button
+            type="button"
+            onClick={() => void verify()}
+            disabled={verifying}
+            title={t`Verify: ${source.setup_detail}`}
+            className="block w-full truncate text-left text-[11px] text-amber-500 hover:underline disabled:opacity-60"
+            data-testid="attached-channel-verify"
+          >
+            {source.setup_detail}
+          </button>
+        )}
       </span>
       <Switch
         checked={state !== 'off'}

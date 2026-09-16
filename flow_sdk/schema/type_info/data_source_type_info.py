@@ -1,6 +1,6 @@
 """Type metadata for DATA_SOURCE and DATA_SOURCE_CURSOR.
 
-**DataSource is Tier B** — no placement fields, so the indexer can never reach
+**DataDriver is Tier B** — no placement fields, so the indexer can never reach
 it, but not ``db_only`` either: a configured source should be findable in search,
 and the metadata.json shadow is a forensic trail of a sync config.
 
@@ -31,7 +31,7 @@ class DataSourceMeta(BaseMeta):
 
 
 DATA_SOURCE = TypeInfo(
-    type_name=EntityType.DATA_SOURCE,
+    type_name=EntityType.DATA_DRIVER,
     icon="Antenna",
     display_name="Data sources",
     api_visible=True,

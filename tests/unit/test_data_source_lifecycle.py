@@ -11,9 +11,9 @@ import uuid
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource, SourceStatus
+from flow_sdk.builtin.data_driver import DataDriver, SourceStatus
+from flow_sdk.ingest.driver_types import DriverType, register_driver
 from flow_sdk.ingest.health import SourceHealth
-from flow_sdk.ingest.sources import SourceType, register_source
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.protocols import Verdict
 
@@ -34,15 +34,15 @@ class _NoSetup(Source):
 
 @pytest.fixture
 def sources():
-    register_source(SourceType(_NeedsSetup, kind="datasource.test.setup"))
-    register_source(SourceType(_NoSetup, kind="datasource.test.plain"))
+    register_driver(DriverType(_NeedsSetup, kind="datasource.test.setup"))
+    register_driver(DriverType(_NoSetup, kind="datasource.test.plain"))
     return _NeedsSetup, _NoSetup
 
 
-async def _source(**kw) -> DataSource:
+async def _source(**kw) -> DataDriver:
     base = dict(name="lifecycle", account_key=f"a-{uuid.uuid4().hex[:6]}")
     base.update(kw)
-    src = DataSource(**base)
+    src = DataDriver(**base)
     await src.save()
     return src
 
@@ -125,5 +125,5 @@ async def test_status_and_health_are_independent_axes(sources):
 async def test_legacy_rows_keep_the_pause_their_owner_set():
     """The one migration outcome worse than an error is a source someone deliberately paused
     quietly coming back."""
-    assert DataSource.model_validate({"name": "x", "provider": "rss", "enabled": False}).status == SourceStatus.DISABLED.value
-    assert DataSource.model_validate({"name": "x", "provider": "rss", "enabled": True}).status == SourceStatus.ACTIVE.value
+    assert DataDriver.model_validate({"name": "x", "provider": "rss", "enabled": False}).status == SourceStatus.DISABLED.value
+    assert DataDriver.model_validate({"name": "x", "provider": "rss", "enabled": True}).status == SourceStatus.ACTIVE.value

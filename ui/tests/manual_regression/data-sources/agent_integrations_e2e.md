@@ -5,7 +5,7 @@ id: 9b7e2c1a-4d5f-4a63-8e2b-1c0f7a9d3e21
 # From nothing to a streaming, specced, annotated source
 
 precondition: an instance is up (`scripts/instance_ctl.sh launch dev-3`) and its
-`agentic-assets/data_source/*` manifests are indexed. Run with
+`agentic-assets/data_driver/*` manifests are indexed. Run with
 `FLOW_INSTANCE=<name> npx playwright test --config tests/manual_regression/data-sources/playwright.config.ts agent_integrations_e2e`.
 
 What this proves: the whole curation loop the data-integrations persona drives,
@@ -26,7 +26,7 @@ test 2: Connect — an RSS source over the dialog, pointed at the loopback feed
 - [fixture] start a loopback feed server serving 3 entries dated now
 - [browser] Add data source → provider rss → name + feed URL → Add source
 - [browser] validate a card with data-provider="rss" and the name appears
-- [api] POST /graph/data_source/{id}/poll_now → {"status": "due"}
+- [api] POST /graph/data_driver/{id}/poll_now → {"status": "due"}
 
 test 3: Streaming — items land on the heartbeat
 - [api] sample GET /graph/source_item?data_source_id=… until count ≥ 2 (≤55 s;

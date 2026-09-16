@@ -1,8 +1,8 @@
-"""The one credential resolver: a manifest's ``auth`` and a ``DataSource`` row → ``Credentials``.
+"""The one credential resolver: a manifest's ``auth`` and a ``DataDriver`` row → ``Credentials``.
 
 A source never reads the environment, the secret store or the connection store itself; it declares
 in its manifest which of three shapes it reads with, and the application resolves that shape here.
-A row may BIND where it reads from (``DataSource.set_secret_store`` / ``set_connection``); what is
+A row may BIND where it reads from (``DataDriver.set_secret_store`` / ``set_connection``); what is
 bound is what it uses, and the binding is saved on the row so every background path sees it.
 
 * ``connector`` — the bound connection's provider, else the manifest's. Its APP token first when
@@ -58,7 +58,11 @@ async def resolve_credentials(auth: Optional[AuthSpec], row: Any) -> Credentials
 
 
 async def _declared(auth: AuthSpec, row: Any) -> Credentials:
-    from flow_sdk.builtin.credential_resolver import credentials_in_scope, declare, resolve_project_secrets  # noqa: PLC0415
+    from flow_sdk.builtin.credential_resolver import (  # noqa: PLC0415
+        credentials_in_scope,
+        declare,
+        resolve_project_secrets,
+    )
 
     project = await _owner_project(row)
     # Only the named credential's specs: another spec declaring the same variable must not win it.

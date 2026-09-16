@@ -67,6 +67,6 @@ def register_builtin_kinds() -> None:
 
 
 def _load_source_value_kinds() -> None:
-    from flow_sdk.ingest.source_registry import load_source_value_kinds  # noqa: PLC0415
+    from flow_sdk.ingest.driver_registry import load_driver_value_kinds  # noqa: PLC0415
 
-    load_source_value_kinds()
+    load_driver_value_kinds()

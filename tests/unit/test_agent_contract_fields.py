@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.ingest.source_registry import asset_module
+from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 accepted_fields = asset_module("agent", "transport").accepted_fields
