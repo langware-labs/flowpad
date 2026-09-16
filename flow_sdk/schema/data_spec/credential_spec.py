@@ -1,4 +1,4 @@
-"""``credential.json`` — the on-disk shape of a ``CredentialSpec``.
+"""``secret_pack.json`` — the on-disk shape of a ``SecretPack``.
 
 A credential is a named set of environment variables (a "secret pack"). The
 manifest declares them; it never carries a value. Where the values live is one
@@ -69,7 +69,7 @@ class CredentialVarSpec(DataSpec):
 class CredentialEnvironmentSpec(DataSpec):
     """How one environment differs from the credential's defaults.
 
-    Keyed by environment name in ``CredentialManifestSpec.environments``. The
+    Keyed by environment name in ``CredentialSpec.environments``. The
     list of environments is never declared here — it is ``development`` plus
     every Deployment's ``environment``; an entry only overrides.
     """
@@ -87,8 +87,8 @@ class CredentialEnvironmentSpec(DataSpec):
         return _normalize_store(value) if value else None
 
 
-class CredentialManifestSpec(DataSpec):
-    """``credential.json`` — the shape, with every authoring rule as a validator."""
+class CredentialSpec(DataSpec):
+    """``secret_pack.json`` — the shape, with every authoring rule as a validator."""
 
     model_config = ConfigDict(populate_by_name=True)  # extra="forbid" is DataSpec's
 
@@ -120,7 +120,7 @@ class CredentialManifestSpec(DataSpec):
         return {normalize_environment(name): spec for name, spec in (value or {}).items()}
 
     @model_validator(mode="after")
-    def _environment_rules(self) -> "CredentialManifestSpec":
+    def _environment_rules(self) -> "CredentialSpec":
         if self.environments and self.lm_provider:
             raise ValueError("an lm_provider credential has no environments; deployments are hub-funded")
         for name, spec in self.environments.items():
