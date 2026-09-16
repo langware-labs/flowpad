@@ -25,11 +25,14 @@ import html
 import json
 import re
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, ClassVar, Optional
+from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional, Union
+
+from pydantic import Field, StringConstraints
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import ChoiceEntry, SourceConfig
 from flow_sdk.sources.errors import (
     AccessDenied,
     InvalidCursor,
@@ -69,7 +72,15 @@ class TeamsMessageData(MessageData):
     raw: Optional[dict] = None
 
 
+class TeamsConfig(SourceConfig):
+    """What a teams source is configured with."""
+
+    channels: list[Union[Annotated[str, StringConstraints(pattern=r"^[^/\s]+/19:[^/\s]+$")], ChoiceEntry]] = Field(min_length=1)
+
+
 class TeamsSource(Source):
+
+    Config = TeamsConfig
     provider = "teams"
     durable_cursor = True
     page_size = MESSAGE_PAGE

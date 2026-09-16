@@ -48,37 +48,37 @@ fires. That silence is the contract the whole subsystem rests on.
 
 The config keys are the manifest's, one dict per provider:
 
-| provider      | config                                                               | account key             |
-| ------------- | -------------------------------------------------------------------- | ----------------------- |
-| `rss`         | `feed_urls: list[str]`                                               | —                       |
-| `hackernews`  | `types`, `min_score`, `base_url` (all optional)                      | —                       |
-| `folder`      | `root: str`                                                          | `root`                  |
-| `git`         | `repo: str`, `branch`                                                | `repo`                  |
-| `agentmail`   | `inbox`, `api_key`, `base_url`                                       | `inbox`                 |
-| `telegram`    | `bot_token`, `base_url`                                              | `bot_token`             |
-| `slack`       | `channels: list[str]`                                                | `channels` (membership) |
-| `gdrive`      | `drives`, `cache_root`, `base_url`                                   | —                       |
-| `gcs`         | `bucket`, `project`, `prefixes`, `cache_root`, `base_url`            | `bucket`                |
-| `gmail`       | `address`                                                            | `address`               |
-| `cloud_email` | `agent_id`, `address`                                                | `agent_id`              |
-| `agent`       | `connector`, `harness`, `segments`, `agent`, `subagent`, `max_items` | `connector`             |
+| provider      | config                                                               | account key             | secret (never config)                   |
+| ------------- | -------------------------------------------------------------------- | ----------------------- | --------------------------------------- |
+| `rss`         | `feed_urls: list[str]`                                               | —                       | —                                       |
+| `hackernews`  | `types`, `min_score`, `base_url` (all optional)                      | —                       | —                                       |
+| `folder`      | `root: str`                                                          | `root`                  | —                                       |
+| `git`         | `repo: str`, `branch`                                                | `repo`                  | —                                       |
+| `agentmail`   | `inbox`, `base_url`                                                  | `inbox`                 | machine secret `ingest_api.agentmail`   |
+| `telegram`    | `base_url`                                                           | stamped from `getMe`    | `telegram` pack: `TELEGRAM_BOT_TOKEN`   |
+| `slack`       | `channels: list[str]`                                                | `channels` (membership) | the Slack connection                    |
+| `gdrive`      | `drives`, `cache_root`, `base_url`                                   | —                       | the Google connection                   |
+| `gcs`         | `bucket`, `project`, `prefixes`, `cache_root`, `base_url`            | `bucket`                | the Google connection                   |
+| `gmail`       | `address`                                                            | `address`               | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`   |
+| `cloud_email` | `address` (`agent_id` is filled from the owner)                      | `agent_id`              | —                                       |
+| `agent`       | `connector`, `harness`, `segments`, `agent`, `subagent`, `max_items` | `connector`             | the harness's own                       |
 
-Values are coerced on `save()` (`"5"` becomes `5` for a `number` field), but
-`required` and `pattern` are enforced only by the UI form. Check them yourself
-when you build a row in code.
+Each driver declares its config as a typed `Config` in its `source.py`: `save()` of a new source
+validates it whole (`ValueError: config.feed_urls is required`) and shapes what you typed (`"5"`
+becomes `5`, a newline string a list). A secret is never config — `data_source.json` is a file a
+project may share — so it lives in the store the driver's `auth` names.
 
 ## 2. Reuse instead of duplicate
 
 A second source for the same account is a lookup, never a fresh row.
 
 ```python
+from flow_sdk.builtin.data_driver import DataDriver
+
 existing = await DataSource.find_for_account("agentmail", "inbox", "me@agentmail.to")
-src = existing or DataSource(
-    name="Inbox me@agentmail.to",
-    provider="agentmail",
-    config={"inbox": "me@agentmail.to", "api_key": KEY},
-)
-await src.save()
+driver = await DataDriver.get("agentmail")
+src = existing or driver.create_source({"inbox": "me@agentmail.to"}, name="Inbox me@agentmail.to")
+await src.save()  # the API key is the machine secret ingest_api.agentmail, never config
 ```
 
 The natural key is the config field the manifest marks `account_key: true`

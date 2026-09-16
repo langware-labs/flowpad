@@ -17,7 +17,7 @@ from flow_sdk.ingest import IngestMode, SourceItemSpec, ingest_items
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_projected_conversation_names_its_channel_and_source():
     tag = uuid.uuid4().hex[:8]
-    src = DataSource(provider="slack", channel="slack", account_key=f"T-{tag}", name=f"Chat {uuid.uuid4().hex[:8]}")
+    src = DataSource(provider="slack", channel="slack", account_key=f"T-{tag}", name=f"Chat {uuid.uuid4().hex[:8]}", config={"channels": ["C0123456789"]})
     await src.save()
     spec = SourceItemSpec(
         data_source_id=str(src.id), provider="slack", kind="content.message.chat", segment_key="C1",

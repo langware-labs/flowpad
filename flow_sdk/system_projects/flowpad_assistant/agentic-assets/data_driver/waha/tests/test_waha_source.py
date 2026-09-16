@@ -44,7 +44,25 @@ def sign(body: bytes, key: str = HMAC_KEY) -> str:
 
 
 def _config(base: str = "http://127.0.0.1:9", **extra) -> dict:
-    return {"base_url": base, "session": SESSION, "webhook_url": HOOK, "api_key": API_KEY, "webhook_hmac": HMAC_KEY, **extra}
+    return {"base_url": base, "session": SESSION, "webhook_url": HOOK, **extra}
+
+
+#: The ``waha`` credential's values (WAHA_API_KEY, WAHA_WEBHOOK_HMAC) — never config. A test that
+#: wants a wrong or missing one changes this dict.
+SECRETS = {"api_key": API_KEY, "webhook_hmac": HMAC_KEY}
+
+
+@pytest.fixture(autouse=True)
+def _credential(monkeypatch):
+    saved = dict(SECRETS)
+
+    async def resolve(_row):
+        return Credentials(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in SECRETS.items() if v})
+
+    monkeypatch.setattr(DataDriver.loaded("waha"), "credentials_for", resolve)
+    yield
+    SECRETS.clear()
+    SECRETS.update(saved)
 
 
 def _source(base: str = "http://127.0.0.1:9", **extra) -> DataSource:
@@ -251,13 +269,14 @@ async def test_a_paired_session_is_ready_and_stamps_the_number(serve):
 
 async def test_a_wrong_api_key_says_which_key(serve):
     _, base = serve()
-    verdict = await DataDriver.loaded("waha").verify(_source(base, api_key="wrong"))
+    SECRETS["api_key"] = "wrong"
+    verdict = await DataDriver.loaded("waha").verify(_source(base))
     assert verdict.ready is False and "WAHA_API_KEY" in verdict.detail
 
 
 async def test_a_source_with_no_api_key_asks_for_the_credential():
     source = _source()
-    source.config = {k: v for k, v in source.config.items() if k != "api_key"}
+    SECRETS.pop("api_key")
     verdict = await DataDriver.loaded("waha").verify(source)
     assert verdict.ready is False and "`waha` credential" in verdict.detail
 

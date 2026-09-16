@@ -21,11 +21,14 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, ClassVar, Optional
+from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional, Union
+
+from pydantic import Field, StringConstraints
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import ChoiceEntry, SourceConfig
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
@@ -60,7 +63,17 @@ class SlackMessageData(MessageData):
     raw: Optional[dict] = None
 
 
+class SlackConfig(SourceConfig):
+    """What a slack source is configured with."""
+
+    channels: list[Union[Annotated[str, StringConstraints(pattern=r"^[CGD][A-Z0-9]{6,}$")], ChoiceEntry]] = Field(min_length=1)
+    #: Who may drive the channel; the row keeps it as ``inbound_allowed_senders``.
+    allowed_senders: list[str] = []
+
+
 class SlackSource(Source):
+
+    Config = SlackConfig
     provider = "slack"
     durable_cursor = True
     page_size = HISTORY_PAGE

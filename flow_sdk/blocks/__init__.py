@@ -381,8 +381,10 @@ class Inbox:
         """``address`` is the mailbox/handle the block is ABOUT (an email
         address, a bot's @username); the provider decides what identifies the
         source (the driver's ``identity_config_key``). Provider-specific
-        credentials pass as keyword config (``api_key=...``,
-        ``bot_token=...``) and land on the DataSource verbatim.
+        config passes as keywords. A keyword the driver's ``auth`` names as a
+        secret (``api_key=...``, ``bot_token=...``) is saved to the current
+        project's secret store under its variable name — never into the
+        source's config, which is a file a project may share.
 
         ``owner`` says whose inbox this is — a user or Agent ``TypeId``, or an
         ``Agent`` entity. Omitted, the block is the local user's. ``agent_id=``
@@ -421,6 +423,8 @@ class Inbox:
 
         driver = DataDriver.loaded(self.provider)
         key = getattr(driver, "identity_config_key", "inbox") if driver else "inbox"
+        if not key:  # the driver names its account itself (a bot's getMe), not a config field
+            return "", self.address
         return key, str(self._config.get(key) or self.address).strip()
 
     async def ensure_source(self):
@@ -445,7 +449,11 @@ class Inbox:
 
         key, value = self._identity()
         owner = self._owner()
-        existing = await DataSource.find_for_account(self.provider, key, value, owner=owner)
+        config = await self._store_secrets(driver)
+        existing = (
+            await DataSource.find_for_account(self.provider, key, value, owner=owner)
+            if key else await DataSource.find_for_account_key(self.provider, value, owner=owner)
+        )
         if existing is not None:
             self._source = existing
             return existing
@@ -454,12 +462,25 @@ class Inbox:
         source = DataSource(
             name=f"Inbox {self.address} for {whose}" if whose else f"Inbox {self.address}",
             provider=self.provider,
-            config={key: value, **self._config},
+            config={key: value, **config} if key else config,
+            account_key="" if key else value,
             owner=owner,
         )
         await source.save()
         self._source = source
         return source
+
+    async def _store_secrets(self, driver) -> dict:
+        """The keyword config minus the secrets the driver's ``auth`` names; those are saved to the
+        default secret store (the current project's) under the name the resolver reads them by."""
+        auth = getattr(getattr(driver, "manifest", None), "auth", None)
+        names = {**{k: k for k in (auth.secrets if auth else {})}, **(dict(auth.vars) if auth else {})}
+        secrets = {names[k]: v for k, v in self._config.items() if k in names and v}
+        if secrets:
+            from flow_sdk.secrets import SecretStore  # noqa: PLC0415
+
+            await (await SecretStore.get()).save(secrets)
+        return {k: v for k, v in self._config.items() if k not in names}
 
     async def listen(
         self,

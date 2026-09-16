@@ -8,8 +8,12 @@ own tree and holds no credential.
 from __future__ import annotations
 
 import os
+from typing import Annotated
+
+from pydantic import StringConstraints
 
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.folder import FolderSource
 from flow_sdk.sources.protocols import Verdict
 
@@ -22,7 +26,15 @@ def _skipped(name: str) -> bool:
     return name.startswith(".") or name in DEPENDENCY_DIRS
 
 
+class FolderConfig(SourceConfig):
+    """What a folder source is configured with."""
+
+    root: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
 class WatchedFolderSource(FolderSource):
+
+    Config = FolderConfig
     provider = "folder"
     skip = staticmethod(_skipped)
 

@@ -20,11 +20,14 @@ Three more facts:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, ClassVar, Mapping, Optional
+from typing import Annotated, Any, ClassVar, Mapping, Optional
+
+from pydantic import StringConstraints
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import Credentials
 from flow_sdk.sources.errors import (
     AccessDenied,
@@ -59,7 +62,17 @@ class WhatsAppMessageData(MessageData):
     raw: Optional[dict] = None
 
 
+class WhatsAppConfig(SourceConfig):
+    """What a whatsapp source is configured with. Its secrets are the credential in auth, never here."""
+
+    phone_number_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    #: Any string you choose, pasted into Meta's webhook setup — it proves the callback URL is yours.
+    verify_token: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
 class WhatsAppSource(Source):
+
+    Config = WhatsAppConfig
     provider = "whatsapp"
     echoes_sends = False
     identity_config_key = "phone_number_id"

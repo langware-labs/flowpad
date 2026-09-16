@@ -16,12 +16,15 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, ClassVar, Optional
+from typing import Annotated, Any, ClassVar, Optional
 from xml.etree import ElementTree
+
+from pydantic import Field, StringConstraints
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import CollectionSource
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import InvalidCursor, Rejected
 from flow_sdk.sources.values._types import NonBlank
 from flow_sdk.sources.values.items import FeedItemData, SourceItemSpec
@@ -43,7 +46,15 @@ class FeedQuery(DataQuery):
     url: NonBlank
 
 
+class RssConfig(SourceConfig):
+    """What a rss source is configured with."""
+
+    feed_urls: list[Annotated[str, StringConstraints(pattern=r"^https?://")]] = Field(min_length=1)
+
+
 class RssSource(CollectionSource):
+
+    Config = RssConfig
     provider = "rss"
     durable_cursor = True
     supported_queries = (FeedQuery,)

@@ -18,10 +18,13 @@ import re
 import subprocess
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import AsyncGenerator, ClassVar, Optional
+from typing import Annotated, AsyncGenerator, ClassVar, Optional
+
+from pydantic import StringConstraints
 
 from flow_sdk.sources.base import Altitude, Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import InvalidCursor, Rejected, SourceError, SourceUnavailable, Unsupported
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
@@ -68,7 +71,16 @@ class _Change:
     previous: str = ""
 
 
+class GitConfig(SourceConfig):
+    """What a git source is configured with."""
+
+    repo: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    branch: str = "HEAD"
+
+
 class GitSource(Source):
+
+    Config = GitConfig
     provider = "git"
     altitude = Altitude.IN_PROCESS
     reflects = True

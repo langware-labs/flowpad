@@ -21,11 +21,14 @@ Four facts shape the class:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, ClassVar, Mapping, Optional
+from typing import Annotated, Any, ClassVar, Mapping, Optional
+
+from pydantic import StringConstraints
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import Credentials
 from flow_sdk.sources.errors import (
     AccessDenied,
@@ -59,7 +62,19 @@ class WahaMessageData(MessageData):
     raw: Optional[dict] = None
 
 
+class WahaConfig(SourceConfig):
+    """What a waha source is configured with."""
+
+    base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    session: str = "default"
+    webhook_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    #: Who may drive the number; the row keeps it as ``inbound_allowed_senders``.
+    allowed_senders: list[Annotated[str, StringConstraints(pattern=r"^([0-9]+|[^@\s]+@lid)$")]] = []
+
+
 class WahaSource(Source):
+
+    Config = WahaConfig
     provider = "waha"
     #: The same channel as the Cloud API source: one WhatsApp, whichever transport carries it.
     origin_kind = "whatsapp"

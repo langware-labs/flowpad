@@ -73,7 +73,7 @@ async def test_only_message_sources_count_toward_the_scope(mail_db, monkeypatch)
     monkeypatch.setattr(Agent, "get_one", AsyncMock(return_value=Agent(id=agent_id, name="Ada")))
     agent_tid = TypeId(type=EntityType.AGENT.value, id=agent_id)
 
-    feed = DataSource(name="rss", provider="rss", channel="", owner=agent_tid)
+    feed = DataSource(name="rss", provider="rss", channel="", owner=agent_tid, config={"feed_urls": ["http://127.0.0.1:1/feed"]})
     await feed.save()
     assert not is_message_source(feed), "no channel → not a message source"
     scope = await resolve_agent_inbox_scope(agent_id)

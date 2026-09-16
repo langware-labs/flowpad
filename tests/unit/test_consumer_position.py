@@ -25,7 +25,7 @@ def _name() -> str:
 
 
 async def _source() -> DataSource:
-    src = DataSource(name=f"feed {uuid.uuid4().hex[:8]}", provider="rss", config={"feeds": ["http://x/feed"]})
+    src = DataSource(name=f"feed {uuid.uuid4().hex[:8]}", provider="rss", config={"feed_urls": ["http://x/feed"]})
     await src.save()
     return src
 

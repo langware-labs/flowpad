@@ -197,7 +197,7 @@ async def test_6_an_external_store_is_a_consumer_of_both_kinds(in_project, monke
     """The real ``gcp_secret_manager`` store, against a loopback Secret Manager v1."""
     await _session_free("agentmail", monkeypatch)
     _catalogue(monkeypatch, connected=True, scopes=("https://www.googleapis.com/auth/cloud-platform",))
-    await _saved("agentmail", "agent inbox")
+    await _saved("agentmail", "agent inbox", config={"inbox": "agent@agentmail.to"})
 
     with serving_gcp_store(monkeypatch, tokens={"token-for-google"}) as gcp:
         gcp.put("acme-prod", "agentmail-production-api_key", "am-key")

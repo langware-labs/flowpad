@@ -17,6 +17,7 @@ from typing import Any, ClassVar, Optional
 from flow_sdk.sources import http
 from flow_sdk.sources.base import CollectionSource
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.values.items import FeedItemData, SourceItemSpec, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.segment import SegmentRef
@@ -35,7 +36,17 @@ class HackerNewsItemData(FeedItemData):
     raw: Optional[dict] = None
 
 
+class HackerNewsConfig(SourceConfig):
+    """What a hackernews source is configured with."""
+
+    types: list[str] = ["story"]
+    min_score: int = 0
+    base_url: str = ""
+
+
 class HackerNewsSource(CollectionSource):
+
+    Config = HackerNewsConfig
     provider = "hackernews"
 
     def __init__(self, binding: SourceBinding) -> None:

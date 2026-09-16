@@ -28,6 +28,7 @@ from typing import Any, AsyncGenerator, ClassVar, Optional, Protocol
 
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import (
     InvalidCursor,
@@ -72,7 +73,22 @@ class CloudEmailMessageData(EmailMessageData):
     raw: Optional[dict] = None
 
 
+class CloudEmailConfig(SourceConfig):
+    """What a cloud_email source is configured with."""
+
+    derived: ClassVar[tuple[str, ...]] = ("agent_id", "inbox_typeid", "provider_inbox_id")
+
+    address: str = ""
+    #: The agent the mailbox serves; ``configure`` fills it from the row's owner.
+    agent_id: str = ""
+    #: The hub mailbox row and the provider's id for it — the application's, written when the inbox is allocated.
+    inbox_typeid: str = ""
+    provider_inbox_id: str = ""
+
+
 class CloudEmailSource(EmailAddressing, Source):
+
+    Config = CloudEmailConfig
     provider = "cloud_email"
     origin_kind = CHANNEL
     durable_cursor = True

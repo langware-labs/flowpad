@@ -82,12 +82,13 @@ def mail():
 
 @pytest.fixture(autouse=True)
 def _no_store(monkeypatch):
-    monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: None)
+    """The key lives in the machine store; a test that wants none (or a wrong one) says so."""
+    monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: "am_test")
 
 
 def _row(mail, **config):
     return SimpleNamespace(id="ds-1", provider="agentmail", name="Agent mailbox", account_key="", account_identities=[],
-                           config={"inbox": INBOX, "api_key": "am_test", "base_url": mail.base, **config})
+                           config={"inbox": INBOX, "base_url": mail.base, **config})
 
 
 def _view(state=None):
@@ -166,8 +167,7 @@ class TestSend:
 
 
 class TestTheKey:
-    """A MACHINE credential (the SOD store), not a per-source form field — with the legacy config key
-    as the fallback for sources created before the move."""
+    """A MACHINE credential (the SOD store), never a per-source form field: a config is value-free."""
 
     async def _headers(self, mail, **config):
         await DataDriver.loaded("agentmail").traverse(_row(mail, **config), _view())
@@ -176,23 +176,24 @@ class TestTheKey:
     async def test_the_key_comes_from_the_store_without_a_project(self, mail, monkeypatch):
         seen = {}
         monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: seen.setdefault("name", name) and "am_test")
-        await DataDriver.loaded("agentmail").traverse(_row(mail, api_key=""), _view())
+        await DataDriver.loaded("agentmail").traverse(_row(mail), _view())
         assert seen["name"] == SECRET_NAME and mail.requests, "the store's key reached AgentMail"
 
-    async def test_the_store_wins_over_a_legacy_config_key(self, mail, monkeypatch):
-        monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: "am_test")
-        result = await DataDriver.loaded("agentmail").traverse(_row(mail, api_key="am_wrong"), _view())
-        assert result.items, "the store's key was used, so AgentMail answered"
-
-    async def test_a_legacy_config_key_still_works(self, mail):
-        assert (await DataDriver.loaded("agentmail").traverse(_row(mail), _view())).items
-
-    async def test_no_key_anywhere_names_the_store(self, mail):
+    async def test_a_key_in_the_config_is_never_read(self, mail, monkeypatch):
+        """A config is value-free: a key written there reaches nothing."""
+        monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: None)
         with pytest.raises(Exception) as caught:
-            await DataDriver.loaded("agentmail").traverse(_row(mail, api_key=""), _view())
+            await DataDriver.loaded("agentmail").traverse(_row(mail, api_key="am_test"), _view())
+        assert SECRET_NAME in str(caught.value)
+
+    async def test_no_key_anywhere_names_the_store(self, mail, monkeypatch):
+        monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: None)
+        with pytest.raises(Exception) as caught:
+            await DataDriver.loaded("agentmail").traverse(_row(mail), _view())
         assert SECRET_NAME in str(caught.value) and classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
 
-    async def test_a_refused_key_needs_a_person(self, mail):
+    async def test_a_refused_key_needs_a_person(self, mail, monkeypatch):
+        monkeypatch.setattr("flow_sdk.cli.auth.secrets.read_secret", lambda name: "am_wrong")
         with pytest.raises(Exception) as caught:
-            await DataDriver.loaded("agentmail").traverse(_row(mail, api_key="am_wrong"), _view())
+            await DataDriver.loaded("agentmail").traverse(_row(mail), _view())
         assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
