@@ -4624,6 +4624,10 @@ msgstr "Copy as log"
 msgid "Copy attachment id"
 msgstr "Copy attachment id"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Copy branch name"
+msgstr "Copy branch name"
+
 #: src/components/markdown-view.tsx
 msgid "Copy code"
 msgstr "Copy code"
@@ -4698,6 +4702,10 @@ msgstr "Copy prompt"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Provider ID"
 msgstr "Copy Provider ID"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Copy remote URL"
+msgstr "Copy remote URL"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Copy the full error"
@@ -5343,7 +5351,7 @@ msgid "Could not use {0}"
 msgstr "Could not use {0}"
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/use-source-verify.ts
 msgid "Could not verify {0}"
 msgstr "Could not verify {0}"
 
@@ -5462,6 +5470,10 @@ msgstr "Count"
 #: src/components/hooks-manager/index.tsx
 msgid "Count: {counter}"
 msgstr "Count: {counter}"
+
+#: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
+msgid "Country code"
+msgstr "Country code"
 
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -13281,7 +13293,7 @@ msgstr "Not published yet"
 msgid "not reachable"
 msgstr "not reachable"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/use-source-verify.ts
 msgid "Not ready yet"
 msgstr "Not ready yet"
 
@@ -13648,6 +13660,10 @@ msgstr "Open {0}"
 msgid "Open {0} in editor"
 msgstr "Open {0} in editor"
 
+#: src/components/conversation/MessageBubble.tsx
+msgid "Open {displayName}"
+msgstr "Open {displayName}"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
 msgstr "Open {label}"
@@ -13825,6 +13841,7 @@ msgstr "Open in a new browser tab"
 msgid "Open in a new tab"
 msgstr "Open in a new tab"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
@@ -14612,6 +14629,14 @@ msgstr "Personal"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Personal note, actionable item"
 msgstr "Personal note, actionable item"
+
+#: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
+msgid "Phone number"
+msgstr "Phone number"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Phone number — recorded on the agent's card, not yet used to route messages"
+msgstr "Phone number — recorded on the agent's card, not yet used to route messages"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -19605,7 +19630,7 @@ msgstr "The backend may have restarted. Click to reattach."
 msgid "The change was not saved."
 msgstr "The change was not saved."
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/use-source-verify.ts
 msgid "The check did not run."
 msgstr "The check did not run."
 
@@ -21530,6 +21555,11 @@ msgstr "Verify"
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Verify the setup first."
 msgstr "Verify the setup first."
+
+#. placeholder {0}: source.setup_detail
+#: src/components/inbox-view/AttachedChannelsBar.tsx
+msgid "Verify: {0}"
+msgstr "Verify: {0}"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Version-bump + commit the asset"
