@@ -101,6 +101,10 @@ describe('agentLoadProblem', () => {
     expect(agentLoadProblem({ notFound: false, error: { status: 503 } })).toBe('failed');
   });
 
+  it('still reports a failure the read flagged without an error object', () => {
+    expect(agentLoadProblem({ notFound: false, error: undefined, isError: true })).toBe('failed');
+  });
+
   it('is null when the agent loaded', () => {
     expect(agentLoadProblem({ notFound: false, error: null })).toBeNull();
   });

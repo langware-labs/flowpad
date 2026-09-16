@@ -1,8 +1,9 @@
 import { Agent, type GitOrigin, gitOriginFromUrl, TypeId } from '@sdk';
+import apiClient from '@sdk/client';
 import { gitOriginOf, isCompleteGitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { errorStatus } from '@src/lib/error-message';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 /**
  * What a `/launch` link points at: a repository (`?repo=`) or a published agent (`?agent=`).
@@ -66,13 +67,66 @@ export type AgentLoadProblem = 'unavailable' | 'session-expired' | 'failed';
  * the two identically (403 `target_not_found`) so an agent's existence cannot be probed, and a
  * message that told them apart would be guessing. 404 folds in for a backend that does send it.
  */
-export function agentLoadProblem(state: { notFound: boolean; error: unknown }): AgentLoadProblem | null {
+export function agentLoadProblem(state: {
+  notFound: boolean;
+  error: unknown;
+  isError?: boolean;
+}): AgentLoadProblem | null {
   if (state.notFound) return 'unavailable';
-  if (!state.error) return null;
+  // A read can report failure without carrying the error object; that is still a failure, and a
+  // card that says nothing at all is the one outcome this page must never show.
+  if (!state.error) return state.isError ? 'failed' : null;
   const status = errorStatus(state.error);
   if (status === 403 || status === 404) return 'unavailable';
   if (status === 401) return 'session-expired';
   return 'failed';
+}
+
+interface AnonymousAgentRead {
+  agent: Agent | null;
+  problem: AgentLoadProblem | null;
+  error: unknown;
+}
+
+const NOTHING_READ: AnonymousAgentRead = { agent: null, problem: null, error: null };
+
+/**
+ * The agent as the page may see it before the app counts the user as signed in.
+ *
+ * A public agent (the hub's visibility action stamps it readable by anyone) answers this read,
+ * which lets the sign-in card name it. A 401 is the EXPECTED answer for a private agent and a
+ * truly anonymous caller: logged to the console, never shown, and never the SDK's blocking 401
+ * alert (`expectUnauthorized`).
+ *
+ * A 403/404 is different. The hub only answers `target_not_found` to a caller it has identified —
+ * the browser is signed in to the hub even if the app has not caught up — so the agent really is
+ * missing or not theirs, and that is reported like the signed-in read reports it.
+ *
+ * Keyed on the id, so a result that belongs to a previous link is never returned for this one.
+ */
+function useAnonymousAgent(agentId: string | null): AnonymousAgentRead {
+  const [loaded, setLoaded] = useState<{ id: string; read: AnonymousAgentRead } | null>(null);
+  useEffect(() => {
+    if (!agentId) return;
+    let cancelled = false;
+    apiClient
+      .get<Partial<Agent> | null>(`/api/v1/graph/${Agent.type}/${agentId}`, { expectUnauthorized: true })
+      .then((data) => {
+        if (!cancelled && data) setLoaded({ id: agentId, read: { agent: new Agent(data), problem: null, error: null } });
+      })
+      .catch((error: unknown) => {
+        const status = errorStatus(error);
+        if (status === 403 || status === 404) {
+          if (!cancelled) setLoaded({ id: agentId, read: { agent: null, problem: 'unavailable', error } });
+          return;
+        }
+        console.log('[launch] agent is not readable before sign-in (expected unless it is public):', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId]);
+  return agentId && loaded?.id === agentId ? loaded.read : NOTHING_READ;
 }
 
 export interface LaunchTargetState {
@@ -91,11 +145,12 @@ export function useLaunchTarget(params: URLSearchParams, signedIn: boolean): Lau
   const target = useMemo(() => parseLaunchParams(new URLSearchParams(query)), [query]);
 
   const agentTypeId = target.kind === 'agent' ? target.agentTypeId : null;
-  // Signed in only. A private agent answers a signed-out read with 401, and the SDK client turns
-  // every 401 into a blocking alert — on a page whose whole job is to greet a stranger.
+  // Signed in: the ordinary entity read, whose failures ARE the user's business (reported below).
   const readAgent = signedIn && agentTypeId !== null;
   const agentQuery = useEntity<Agent>(agentTypeId, { enabled: readAgent });
-  const agent = readAgent ? (agentQuery.data ?? null) : null;
+  // Signed out: only the quiet read — a public agent answers it, a 401 is silent, a 403 is reported.
+  const anonymous = useAnonymousAgent(!signedIn && agentTypeId ? agentTypeId.id : null);
+  const agent = readAgent ? (agentQuery.data ?? null) : anonymous.agent;
 
   const repoOrigin = useMemo(
     () => (target.kind === 'repo' ? gitOriginFromUrl(target.repo, target.branch) : null),
@@ -110,7 +165,9 @@ export function useLaunchTarget(params: URLSearchParams, signedIn: boolean): Lau
     gitOrigin: target.kind === 'repo' ? repoOrigin : agentOrigin,
     agent,
     agentLoading: readAgent && agentQuery.isLoading,
-    agentProblem: readAgent ? agentLoadProblem({ notFound: agentQuery.notFound, error: agentQuery.error }) : null,
-    agentError: readAgent ? agentQuery.error : null,
+    agentProblem: readAgent
+      ? agentLoadProblem({ notFound: agentQuery.notFound, error: agentQuery.error, isError: agentQuery.isError })
+      : anonymous.problem,
+    agentError: readAgent ? agentQuery.error : anonymous.error,
   };
 }

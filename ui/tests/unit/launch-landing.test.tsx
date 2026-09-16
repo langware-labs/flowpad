@@ -4,12 +4,15 @@
  * `?repo=` is the pre-existing "try this repo" flow and must not move. `?agent=` is its own page:
  * sign in, then straight into a sandbox running the agent's repository, and a redirect to the
  * machine once it is up. Every agent case is really about when that launch may start: never while
- * signed out (the agent read is a blocking 401 alert in the SDK client), never before the agent's
- * repository is known, and exactly once.
+ * signed out, never before the agent's repository is known, and exactly once.
+ *
+ * Signed out, the page only makes a QUIET anonymous read (`apiClient.get` with
+ * `expectUnauthorized`): a public agent answers it and is named on the sign-in card; a private one
+ * is refused, which is expected and never shown. Signed in, `useEntity` is the seam for the hub
+ * read, so each case states exactly what the hub answered.
  *
  * `useSandboxes` keeps its real `plannedSteps` / `workspaceServiceUrl` (only the launch calls are
- * stubbed), and `useEntity` is the seam for the hub read, so each case states exactly what the hub
- * answered.
+ * stubbed).
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -21,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   launch: vi.fn(),
   createSandbox: vi.fn(),
   launchSandbox: vi.fn(),
+  /** The quiet signed-out agent read (`apiClient.get`). */
+  anonGet: vi.fn(),
   /** The setup rows `useSandboxes` reports; the agent page's percentage is read off them. */
   steps: [] as { id: string; label: string; status: string }[],
   login: vi.fn(),
@@ -77,6 +82,7 @@ vi.mock('@src/hooks/use-sandboxes', async (importOriginal) => {
 });
 
 const { Agent, gitOriginFromUrl } = await import('@sdk');
+const { default: apiClient } = await import('@sdk/client');
 const { workspaceServiceUrl } = await import('@src/hooks/use-sandboxes');
 const { default: LaunchLanding } = await import('@src/pages/entry/LaunchLanding');
 
@@ -107,8 +113,18 @@ const launchedOrigin = {
   rel_path: '.',
 };
 
-const publishedAgent = (over: Record<string, unknown> = {}) =>
-  new Agent({ id: AGENT_ID, name: 'q', title: 'Q the helper', git_origin: publishedOrigin, ...over });
+const agentRow = (over: Record<string, unknown> = {}) => ({
+  id: AGENT_ID,
+  name: 'q',
+  title: 'Q the helper',
+  git_origin: publishedOrigin,
+  ...over,
+});
+
+const publishedAgent = (over: Record<string, unknown> = {}) => new Agent(agentRow(over));
+
+/** How the hub refuses an anonymous read of a private agent. */
+const privateRefusal = () => Object.assign(new Error('Request failed with status code 401'), { response: { status: 401 } });
 
 const answered = (over: Record<string, unknown>) => ({
   data: null,
@@ -138,16 +154,19 @@ beforeEach(() => {
   mocks.launch = vi.fn();
   mocks.createSandbox = vi.fn().mockResolvedValue({ id: NODE_ID });
   mocks.launchSandbox = vi.fn().mockResolvedValue({ id: NODE_ID });
+  mocks.anonGet = vi.fn().mockRejectedValue(privateRefusal());
   mocks.steps = [];
   mocks.login = vi.fn();
   mocks.currentUser = { id: 'user-1' };
   mocks.entity = answered({});
   mocks.entityCalls = [];
+  vi.spyOn(apiClient, 'get').mockImplementation((...args: unknown[]) => mocks.anonGet(...args));
   sessionStorage.clear();
 });
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   sessionStorage.clear();
 });
 
@@ -164,6 +183,7 @@ describe('/launch?repo= — unchanged', () => {
     });
     // A repo link never asks the hub about an agent.
     expect(hubReads()).toHaveLength(0);
+    expect(mocks.anonGet).not.toHaveBeenCalled();
   });
 
   it('resumes the launch approved before sign-in, for the same link', async () => {
@@ -216,18 +236,67 @@ describe('/launch?agent=', () => {
     (window as unknown as { location: Location }).location = originalLocation;
   });
 
-  it('does not read the agent while signed out, and offers only sign-in', async () => {
+  it('signed out, private agent: generic sign-in line, the refusal is only logged', async () => {
     mocks.currentUser = null;
     mocks.entity = answered({ data: publishedAgent() });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     renderLanding(`?agent=${AGENT_ID}`);
 
+    expect(screen.getByTestId('launch-sign-in-title').textContent).toBe(
+      'Please sign in to flowpad to continue with the agent creation process.',
+    );
     expect(screen.queryByTestId('launch-signed-in')).toBeNull();
-    expect(screen.queryByTestId('launch-setting-up')).toBeNull();
+    // The signed-in read is never made while signed out — only the quiet one.
     expect(hubReads()).toHaveLength(0);
+    await waitFor(() =>
+      expect(mocks.anonGet).toHaveBeenCalledWith(`/api/v1/graph/agent/${AGENT_ID}`, { expectUnauthorized: true }),
+    );
+    await waitFor(() => expect(log).toHaveBeenCalled());
+    // An expected refusal is not the user's business.
+    expect(screen.queryByTestId('launch-agent-error')).toBeNull();
+    expect(screen.queryByTestId('launch-setting-up')).toBeNull();
+    expect(screen.getByTestId('launch-sign-in-title').textContent).toContain('agent creation process');
 
     fireEvent.click(screen.getByTestId('launch-sign-in'));
     expect(mocks.login).toHaveBeenCalledWith({ refresh: 'session' });
+    await settle();
+    expect(mocks.createSandbox).not.toHaveBeenCalled();
+  });
+
+  it('signed out in the app but known to the hub (403): says the agent cannot be launched', async () => {
+    mocks.currentUser = null;
+    // `target_not_found` is only ever the answer to a caller the hub has identified.
+    mocks.anonGet = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('Request failed with status code 403'), { response: { status: 403 } }));
+
+    renderLanding(`?agent=${AGENT_ID}`);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('launch-agent-error').textContent).toBe(
+        "Can't launch this agent: it doesn't exist, or you don't have access to it.",
+      ),
+    );
+    expect(screen.queryByTestId('launch-setting-up')).toBeNull();
+    await settle();
+    expect(mocks.createSandbox).not.toHaveBeenCalled();
+  });
+
+  it('signed out, public agent: names it on the sign-in card and starts nothing', async () => {
+    mocks.currentUser = null;
+    mocks.anonGet = vi.fn().mockResolvedValue(agentRow());
+
+    renderLanding(`?agent=${AGENT_ID}`);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('launch-sign-in-title').textContent).toBe(
+        'Please sign in to start the agent Q the helper…',
+      ),
+    );
+    expect(screen.getByTestId('launch-sign-in')).toBeTruthy();
+    expect(screen.queryByTestId('launch-setting-up')).toBeNull();
+    expect(screen.queryByTestId('launch-agent-no-repo')).toBeNull();
     await settle();
     expect(mocks.createSandbox).not.toHaveBeenCalled();
   });
@@ -250,6 +319,8 @@ describe('/launch?agent=', () => {
     expect(mocks.launchSandbox).toHaveBeenCalledWith({ id: NODE_ID }, { sandboxProject });
     // Never the new-tab launch: that ends in `window.open`, which is not where this page goes.
     expect(mocks.launch).not.toHaveBeenCalled();
+    // Signed in, the quiet anonymous read is never made.
+    expect(mocks.anonGet).not.toHaveBeenCalled();
   });
 
   it('shows setup progress as the share of finished steps, not a spinner', () => {
@@ -369,5 +440,6 @@ describe('/launch?agent=', () => {
     expect(screen.getByTestId('launch-invalid-link').textContent).toContain("doesn't point at an agent");
     expect(screen.queryByTestId('launch-approve')).toBeNull();
     expect(hubReads()).toHaveLength(0);
+    expect(mocks.anonGet).not.toHaveBeenCalled();
   });
 });
