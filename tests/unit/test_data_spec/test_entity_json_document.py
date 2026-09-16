@@ -11,26 +11,16 @@ import uuid
 from typing import Optional
 
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from flow_sdk.assets.identity_carrier import ABSENT, Found, JsonRoot, Sidecar, dump_json_document
 from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.serialization import read_asset_data, write_asset_tree
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.schema_registry import ENTITY_LAYOUT, TypeInfo, check_entity_layout
-from flow_sdk.schema.data_spec import Body, DataSpec
+from flow_sdk.fs_store.schema_registry import check_entity_layout
+from tests.unit._entity_document_probe import TYPE, info
 
 pytestmark = pytest.mark.timeout(5)  # do not increase without approval
-
-TYPE = "note_probe"
-
-
-class _NoteSpec(DataSpec):
-    model_config = ConfigDict(extra="ignore")
-
-    title: Optional[str] = None
-    tags: list[str] = []
-    text: Body = ""
 
 
 class _Note(BaseModel):
@@ -41,10 +31,7 @@ class _Note(BaseModel):
     text: str = ""
 
 
-INFO = TypeInfo(
-    type_name=TYPE, shape=Folder.entity_json(TYPE), asset_spec=_NoteSpec,
-    manifest_layout=ENTITY_LAYOUT, name_from_path=True, owns_main_ref=True,
-)
+INFO = info(owns_main_ref=True)
 
 
 def _note(**fields) -> _Note:
@@ -122,7 +109,6 @@ def test_the_entity_layout_defaults_its_carrier_and_is_checked_at_registration()
     assert isinstance(INFO.identity_carrier, JsonRoot) and INFO.body_file == "text"
     check_entity_layout(INFO)
     with pytest.raises(TypeError, match="note_probe.json"):
-        check_entity_layout(TypeInfo(type_name=TYPE, shape=Folder(main="note.md"), asset_spec=_NoteSpec, manifest_layout=ENTITY_LAYOUT))
+        check_entity_layout(info(shape=Folder(main="note.md")))
     with pytest.raises(TypeError, match="JsonRoot"):
-        check_entity_layout(TypeInfo(type_name=TYPE, shape=Folder.entity_json(TYPE), asset_spec=_NoteSpec,
-                                     manifest_layout=ENTITY_LAYOUT, identity_carrier=Sidecar()))
+        check_entity_layout(info(identity_carrier=Sidecar()))

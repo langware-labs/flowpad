@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from flow_sdk.assets.document import DocumentPatch, read_document, update_document
-from flow_sdk.assets.versioning import _asset_scope, _strip_version
+from flow_sdk.assets.versioning import _asset_scope, strip_version
 from flow_sdk.utils.git import _run_git, find_project_root, git_commit_file
 
 logger = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ async def _scope_changed_excluding_version(
         work_text = Path(repo_root, main_rel).read_text(encoding="utf-8")
     except OSError:
         return True
-    return _strip_version(head_text) != _strip_version(work_text)
+    return strip_version(head_text) != strip_version(work_text)
 
 
 async def _bump_version_and_commit(real_path: str, content: str) -> dict | None:

@@ -44,10 +44,14 @@ def _body_path(info: Any, main: Path) -> Optional[Path]:
 
 def _read(main: Path, info: Any) -> tuple[bytes, dict, bytes]:
     """The two files as they are on disk: raw main bytes, its parsed object, raw body bytes."""
-    from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415
+    import json  # noqa: PLC0415
 
     raw = main.read_bytes()
-    doc = load_json_dict(main)
+    try:  # the same tolerance as ``load_json_dict``: malformed or non-object reads as ``{}``
+        loaded = json.loads(raw)
+    except ValueError:
+        loaded = None
+    doc = loaded if isinstance(loaded, dict) else {}
     declared = doc.get("type")
     if declared not in (None, "", info.type_name):
         raise ValueError(f"{main} is a {declared!r} document, not a {info.type_name!r}")
@@ -77,7 +81,7 @@ def patch_entity_document(
     ``version_base`` is the committed ``<type>.json`` text (HEAD): when the fields or the body now differ
     from it (ignoring ``version``), the document's ``version`` is bumped, as a markdown asset's is."""
     from flow_sdk.assets.identity_carrier import dump_json_document  # noqa: PLC0415
-    from flow_sdk.assets.versioning import _strip_version  # noqa: PLC0415
+    from flow_sdk.assets.versioning import bumped_version, strip_version, strip_version_fields  # noqa: PLC0415
     from flow_sdk.capsules.atomic import atomic_write, capsule_lock  # noqa: PLC0415
 
     main = Path(path).resolve()
@@ -101,16 +105,15 @@ def patch_entity_document(
         spec_fields = info.asset_spec.model_fields
         info.asset_spec.model_validate({key: value for key, value in fields.items() if key in spec_fields})
         identity = {key: doc[key] for key in ("type", "id") if key in doc}
-        after = dump_json_document({"type": info.type_name, **identity, **fields}).encode("utf-8")
-        if version_base is not None and (body_changed or _strip_version(version_base) != _strip_version(after.decode("utf-8"))):
-            try:
-                fields["version"] = int(fields.get("version", 1)) + 1
-            except (TypeError, ValueError):
-                fields["version"] = 2
-            after = dump_json_document({"type": info.type_name, **identity, **fields}).encode("utf-8")
+        document = {"type": info.type_name, **identity, **fields}
+        # Decide the version against the dicts, then render once — the text is the OUTPUT, not a comparison key.
+        if version_base is not None and (body_changed or strip_version(version_base) != strip_version_fields(document)):
+            fields["version"] = document["version"] = bumped_version(fields.get("version", 1))
+        after = dump_json_document(document).encode("utf-8")
         # The bytes this call read are still the bytes on disk: nobody wrote between the lock and here.
-        if main.read_bytes() != raw:
-            raise DocumentConflict(main, content_revision(main.read_bytes() + b"\0" + body))
+        on_disk = main.read_bytes()
+        if on_disk != raw:
+            raise DocumentConflict(main, content_revision(on_disk + b"\0" + body))
         if after != raw:
             atomic_write(main, after)
         body_bytes = body

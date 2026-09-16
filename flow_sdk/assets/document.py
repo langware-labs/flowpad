@@ -207,12 +207,14 @@ def _save_document(path: str | Path, patch: DocumentPatch, *, expected_revision:
 
 
 def update_document(path: str | Path, patch: DocumentPatch, *, expected_revision: str | None = None,
-                    version_base: str | None = None) -> AssetDocument:
+                    version_base: str | None = None, info: Any = None) -> AssetDocument:
     """Patch an existing document under its shared writer lock. An entity document (``<type>.json``
-    and its body files) is patched as one document."""
+    and its body files) is patched as one document.
+
+    ``info`` is the caller's already-computed classification for ``path``; None means classify here."""
     from flow_sdk.assets.entity_document import entity_info_for, patch_entity_document  # noqa: PLC0415 — cycle
 
-    if (info := entity_info_for(path)) is not None:
+    if (info := info if info is not None else entity_info_for(path)) is not None:
         return patch_entity_document(path, patch, expected_revision=expected_revision, version_base=version_base, info=info)
     return _save_document(path, patch, expected_revision=expected_revision, version_base=version_base)
 

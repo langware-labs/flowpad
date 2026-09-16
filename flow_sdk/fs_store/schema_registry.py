@@ -13,7 +13,7 @@ import os
 import stat
 import uuid
 from dataclasses import MISSING, dataclass, field, fields
-from functools import cache, cached_property
+from functools import cache, cached_property, partial
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_origin
 
@@ -128,8 +128,6 @@ class TypeInfo:
         self.walk = (self.walk,) if isinstance(self.walk, Walk) else tuple(self.walk or ())
         if self.manifest_layout == ENTITY_LAYOUT:
             # An entity document carries its id in its own root and is fresh by its own files.
-            from functools import partial  # noqa: PLC0415
-
             from flow_sdk.assets.identity import entity_document_fingerprint, native_json_identity  # noqa: PLC0415
 
             if self.identity_carrier is None:
