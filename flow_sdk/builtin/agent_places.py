@@ -258,7 +258,7 @@ async def set_email_place(agent: "Agent", deployment_id: str) -> "Agent":
     source = await email_source_for_agent(agent.id)
     if source is not None and not deployment.is_local and source.status == SourceStatus.ACTIVE.value:
         source.status = SourceStatus.DISABLED.value
-        await source.save()
+        await source.save_runtime()
 
     await _write_header(agent, {"email_place": deployment.id}, ())
     agent.email_place = deployment.id
@@ -266,7 +266,7 @@ async def set_email_place(agent: "Agent", deployment_id: str) -> "Agent":
     if source is not None and deployment.is_local and source.status == SourceStatus.DISABLED.value:
         source.status = SourceStatus.ACTIVE.value
         source.next_poll_at = None
-        await source.save()
+        await source.save_runtime()
     return agent
 
 

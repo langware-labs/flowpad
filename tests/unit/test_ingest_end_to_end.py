@@ -41,7 +41,7 @@ async def test_fetch_copy_index_emit_then_a_silent_repeat(feed_server):
         provider="rss",
         kind="datasource.feed.rss",
         account_key=account,
-        name="Fixture feed",
+        name=f"Fixture feed {uuid.uuid4().hex[:8]}",
         config={"feed_urls": [url]},
     )
     await src.save()

@@ -192,6 +192,27 @@ async def kill_pty(shell: Shell) -> None:
 
 
 @pytest.fixture
+def fresh_user_scope(tmp_path, monkeypatch):
+    """The user scope rooted at ``tmp_path/home`` for one test. NON-autouse.
+
+    The session shares one home, and a data source is a folder named after its source there: a
+    test (or a doc snippet) that reuses a readable name collides with the folder an earlier test
+    left. Opt in where names are fixed; the folder goes away with ``tmp_path``.
+    """
+    import flow_sdk.builtin.asset_placement as placement
+    from flow_sdk.assets.placement import Scope
+
+    real = placement.root_for_scope
+    home = tmp_path / "home"
+
+    def root_for_scope(scope, *, project_mount=None):
+        return home if scope == Scope.USER else real(scope, project_mount=project_mount)
+
+    monkeypatch.setattr(placement, "root_for_scope", root_for_scope)
+    return home
+
+
+@pytest.fixture
 def tmp_records_root(tmp_path, monkeypatch):
     """Redirect the records root at every binding site. NON-autouse: files that
     want it opt in with a module-level ``autouse`` wrapper (so it does not apply

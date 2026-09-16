@@ -16,7 +16,8 @@ from flow_sdk.builtin.source_item import SourceItem
 from tests.unit._ingest_helpers import fixture_bytes, local_http_server
 from tests.utils.snippets import doc, fence_under, run_fence
 
-pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+# Doc snippets name their sources for a reader, so each runs in its own user scope.
+pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope")]  # do not increase timeout without approval
 
 DOC = "data-sources.md"
 REPO = Path(__file__).resolve().parents[2]

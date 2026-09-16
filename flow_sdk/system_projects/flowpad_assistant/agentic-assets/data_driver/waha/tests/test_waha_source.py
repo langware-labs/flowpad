@@ -8,14 +8,15 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import uuid
 
 import pytest
 from pydantic import SecretStr
 
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.testing import local_http_server
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
@@ -47,7 +48,7 @@ def _config(base: str = "http://127.0.0.1:9", **extra) -> dict:
 
 
 def _source(base: str = "http://127.0.0.1:9", **extra) -> DataSource:
-    return DataSource(provider="waha", name="WAHA test", config=_config(base, **extra))
+    return DataSource(provider="waha", name=f"WAHA test {uuid.uuid4().hex[:8]}", config=_config(base, **extra))
 
 
 def _binding(base: str = "http://127.0.0.1:9") -> SourceBinding:

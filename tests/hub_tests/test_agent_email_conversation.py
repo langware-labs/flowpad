@@ -219,7 +219,7 @@ async def _agent_mailbox(mailboxes, *, allow: list[str]) -> DataSource:
     await agent.save()
 
     source = DataSource(
-        name="agent mailbox",
+        name=f"agent mailbox {uuid.uuid4().hex[:8]}",
         provider="cloud_email",
         channel="email",
         config={"agent_id": mailboxes["agent_id"], "address": mailboxes["agent_address"]},

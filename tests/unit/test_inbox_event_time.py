@@ -40,7 +40,7 @@ YEAR_OLD = "2025-09-01T10:00:00+00:00"
 
 async def _source(**kw) -> DataSource:
     base = dict(
-        name="tg", provider="telegram", channel="telegram",
+        name=f"tg {uuid.uuid4().hex[:8]}", provider="telegram", channel="telegram",
         account_key=f"@b-{uuid.uuid4().hex[:6]}",
     )
     base.update(kw)

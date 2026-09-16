@@ -1,3 +1,5 @@
+import uuid
+
 """Shared setup for the git-source matrix.
 
 Two repositories, deliberately. The receiving project and the asset repository
@@ -121,7 +123,7 @@ def make_source(asset_repo, receiving, tmp_path, monkeypatch):
         await proj.save()
 
         src = DataSource(
-            name="asset-repo",
+            name=f"asset-repo {uuid.uuid4().hex[:8]}",
             provider="git",
             config={"repo": str(asset_repo), "branch": "main"},
             reflect=mode,

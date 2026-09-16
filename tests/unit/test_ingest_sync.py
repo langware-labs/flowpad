@@ -88,7 +88,7 @@ def _item(data_source_id, segment_key, n) -> SourceItemSpec:
 
 
 async def _source(**kw) -> DataSource:
-    fields = {"provider": "faketest", "account_key": f"acct-{uuid.uuid4().hex[:8]}", "name": "fake"}
+    fields = {"provider": "faketest", "account_key": f"acct-{uuid.uuid4().hex[:8]}", "name": f"fake {uuid.uuid4().hex[:8]}"}
     fields.update(kw)
     src = DataSource(**fields)
     await src.save()

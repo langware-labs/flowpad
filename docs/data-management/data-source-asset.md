@@ -19,6 +19,23 @@ agentic-assets/data_driver/my-source/
   references/      # optional — read by the wizard, never by the runtime
 ```
 
+That folder is the **driver**. Each configured instance of it is a `DataSource`, and it is an
+asset too — an entity document in the project it was created in (the user scope outside one):
+
+```
+agentic-assets/data_source/work_gmail/
+  data_source.json # {"type": "data_source", "id": ..., "name": "work gmail",
+                   #  "data_driver_name": "gmail", "data_driver_config": {...}, "owner": ...}
+```
+
+The file (`DataSourceSpec`) is what a person authors and nothing the engine writes: status,
+health, cursors, the next poll and discovered identities are row-only (`Persist.FALSE`), and the
+engine saves them with `save_runtime()`, which never touches the file. The config is value-free —
+a secret is a credential the driver declares. A folder that arrives by copy, clone or share
+indexes in `setup` ("Received — connect your own account, then press Verify."), and one owner
+watches one account once. Deleting the source removes its folder with the items it ingested; a
+row with no folder (one written before sources were files) is removed at boot.
+
 `agentic-assets/<family>/` is where a native asset lives (glossary), and the main
 file is named for its type — the same rule the bundle format follows with
 `flow_message.json` and `conversation.jsonl`. JSON rather than frontmatter: the
@@ -254,9 +271,8 @@ the upgrade — write a `source.py`. See "Porting a retired runtime" below.
 
 ### Porting a retired runtime
 
-`migration_2026_09_retired_asset_forms` moves an old folder into `data_driver/` and renames its
-manifest, but a `fetch.py` is code no migration can rewrite: the migration lists the folder under
-`needs_port`. The port is mechanical:
+A `fetch.py` driver moves into `agentic-assets/data_driver/<name>/` by hand: rename its manifest to
+`data_driver.json` and rewrite the code as a `source.py`. The port is mechanical:
 
 | `fetch.py` (retired) | `source.py` (current) |
 |---|---|

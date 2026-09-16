@@ -27,6 +27,7 @@ from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
     EXIT_INVALID_ARG,
+    data_source_create_path,
     discover_port,
     fail,
     get_graph_json,
@@ -119,8 +120,8 @@ def create(
         payload["reflect"] = reflect
     if window_days:
         payload["window_days"] = window_days
-    row = _post("data_source", payload) or {}
-    ok({"source": {k: row.get(k) for k in ("id", "name", "provider", "status", "health", "channel", "setup_detail")}})
+    row = _post(data_source_create_path(discover_port()), payload) or {}
+    ok({"source": {k: row.get(k) for k in ("id", "name", "provider", "status", "health", "channel", "setup_detail", "asset_ref")}})
 
 
 @source_app.command("verify", help="Re-run setup verification (connection, then the source's own check).")

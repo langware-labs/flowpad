@@ -50,6 +50,7 @@ from flow_sdk.utils.kind_registry import KindRegistry
 from flow_sdk.utils.serialization import iso_to_utc
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.source_item import MessageSpec
     from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
 
@@ -138,7 +139,7 @@ async def stamp_identity(row: Any, *, account_key: str, identities: list[str]) -
     posts to a stranger and a listening loop answers itself."""
     row.account_key = account_key
     row.account_identities = [v for v in identities if v]
-    await row.save()
+    await row.save_runtime()
 
 
 def ingest_run_context(row: Any) -> dict[str, str]:
@@ -359,6 +360,17 @@ class DriverType:
         from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
 
         return EmailMessageSpec
+
+    # ── instances ───────────────────────────────────────────────────────────
+    def create_source(self, config: Optional[dict] = None, *, name: str, **authored: Any) -> "DataSource":
+        """A configured instance of this driver, in memory: nothing is written until ``save()``.
+
+        ``await source.save()`` places ``data_source.json`` in the project scope (the request's
+        project, the owning agent's, else the working directory's) and checks the config.
+        """
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        return DataSource(provider=self.provider, name=name, kind=self.kind, config=dict(config or {}), **authored)
 
     # ── binding ─────────────────────────────────────────────────────────────
     async def credentials_for(self, row: Any) -> Credentials:

@@ -48,7 +48,7 @@ async def test_telegram_send_records_its_own_copy():
 
     marker = f"tg-send-{uuid.uuid4().hex[:8]}"
     source = DataSource(
-        name="Telegram send test",
+        name=f"Telegram send test {uuid.uuid4().hex[:8]}",
         provider="telegram",
         config={"bot_token": TOKEN},
     )

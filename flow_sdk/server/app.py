@@ -243,6 +243,7 @@ async def _on_server_startup():
     await _start_inbox_catchup()
     await _seed_service_triggers()
     await _prune_orphan_scheduler_jobs()
+    await _prune_fileless_data_sources()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
     await _start_system_content_index()
@@ -370,6 +371,18 @@ async def _prune_orphan_scheduler_jobs() -> None:
         print(f"  Scheduler jobstore: pruned {pruned} orphan job(s)")
     except Exception:
         logging.getLogger(__name__).exception("Scheduler jobstore: orphan prune failed")
+
+
+async def _prune_fileless_data_sources() -> None:
+    """A configured data source is an asset now; rows with no ``data_source.json`` go, with their records."""
+    try:
+        from flow_sdk.builtin.data_source import prune_fileless_data_sources
+
+        pruned = await prune_fileless_data_sources()
+        if pruned:
+            print(f"  Data sources: removed {pruned} source(s) with no data_source.json")
+    except Exception:
+        logging.getLogger(__name__).exception("Data sources: file-less prune failed")
 
 
 async def _seed_service_triggers() -> None:

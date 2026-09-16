@@ -255,7 +255,7 @@ async def _run_poll(source: DataSource, now: datetime) -> None:
         # pre-schedule can be skipped for it without losing the crash guard.
         try:
             source.schedule_next(now)
-            await source.save()
+            await source.save_runtime()
         except Exception:  # noqa: BLE001
             logger.debug("[ingest] could not pre-schedule %s", source.id, exc_info=True)
 

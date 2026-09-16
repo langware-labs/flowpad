@@ -5,6 +5,7 @@ Conversation + FlowMessage) is covered by the DB-backed tests below.
 """
 from __future__ import annotations
 
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -135,7 +136,6 @@ class TestConcurrentPlacement:
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_two_concurrent_projections_place_one_message(self):
         import asyncio
-        import uuid
 
         from flow_sdk.builtin.data_source import DataSource
         from flow_sdk.builtin.flow_message import FlowMessage
@@ -143,7 +143,7 @@ class TestConcurrentPlacement:
         from flow_sdk.inbox.projection import project_source_item
 
         source = DataSource(
-            name="race", provider="telegram", channel="telegram",
+            name=f"race {uuid.uuid4().hex[:8]}", provider="telegram", channel="telegram",
             account_key=f"@bot-{uuid.uuid4().hex[:8]}",
         )
         await source.save()
@@ -173,14 +173,13 @@ class TestConcurrentPlacement:
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_two_concurrent_projections_announce_once(self, monkeypatch):
         import asyncio
-        import uuid
 
         from flow_sdk.builtin.data_source import DataSource
         from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.inbox.projection import project_source_item
 
         source = DataSource(
-            name="race", provider="telegram", channel="telegram",
+            name=f"race {uuid.uuid4().hex[:8]}", provider="telegram", channel="telegram",
             account_key=f"@bot-{uuid.uuid4().hex[:8]}",
         )
         await source.save()
@@ -336,7 +335,6 @@ class TestProjectedAnnounce:
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_sweep_first_then_created_handler_announces_once(self, monkeypatch):
-        import uuid
         from types import SimpleNamespace
 
         import flow_sdk.inbox.inbox_on_tag as tags_mod
@@ -348,7 +346,7 @@ class TestProjectedAnnounce:
         monkeypatch.setattr(tags_mod, "emit_projected_tag", lambda item: announced.append(item.id))
 
         source = DataSource(
-            name="once", provider="telegram", channel="telegram",
+            name=f"once {uuid.uuid4().hex[:8]}", provider="telegram", channel="telegram",
             account_key=f"@bot-{uuid.uuid4().hex[:8]}",
         )
         await source.save()

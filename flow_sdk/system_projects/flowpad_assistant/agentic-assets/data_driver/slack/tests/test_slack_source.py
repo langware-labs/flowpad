@@ -8,6 +8,7 @@ page of one channel. A stubbed client would let all three pass while broken.
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from urllib.parse import parse_qs
@@ -16,9 +17,9 @@ import pytest
 from pydantic import SecretStr
 
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.driver_types import driver_type
+from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
@@ -34,7 +35,7 @@ CHANNEL = "C0123456789"
 
 
 def _source(**config) -> DataSource:
-    return DataSource(provider="slack", name="Slack test", config={"channels": [CHANNEL], **config})
+    return DataSource(provider="slack", name=f"Slack test {uuid.uuid4().hex[:8]}", config={"channels": [CHANNEL], **config})
 
 
 def _view(state: dict | None = None, window_start: str | None = None):
@@ -157,7 +158,7 @@ async def test_segments_key_on_the_channel_id_not_its_name():
 
 
 async def test_a_bare_string_channels_config_names_one_channel():
-    (segment,) = await driver_type("slack").segments(DataSource(provider="slack", name="s", config={"channels": CHANNEL}))
+    (segment,) = await driver_type("slack").segments(DataSource(provider="slack", name=f"s {uuid.uuid4().hex[:8]}", config={"channels": CHANNEL}))
     assert segment.key == CHANNEL
 
 

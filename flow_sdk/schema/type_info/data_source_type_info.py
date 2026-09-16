@@ -1,33 +1,27 @@
 """Type metadata for DATA_SOURCE and DATA_SOURCE_CURSOR.
 
-**DataSource is Tier B** — no placement fields, so the indexer can never reach
-it, but not ``db_only`` either: a configured source should be findable in search,
-and the metadata.json shadow is a forensic trail of a sync config.
+**DataSource is an asset** — an entity document at
+``<scope>/agentic-assets/data_source/<name>/data_source.json``: which data driver, with which config,
+owned by whom. The file holds only what a person authors (``DataSourceSpec``); what the engine
+learns while it runs (status, health, the next poll, identities) is row-only, so a poll never
+rewrites the file. The file is the truth: a row with no file is removed, with everything it
+ingested (``orphan_cascade_fn``).
 
 **DataSourceCursor is Tier C (``db_only``)** — it is written on every poll of
 every stream. Giving it a disk mirror would mean a filesystem write per stream
 per minute forever, for state no human reads and no search should return.
 """
-from typing import Optional
-
-from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.type_info.base_meta import BaseMeta
+from flow_sdk.assets.layout import Folder
+from flow_sdk.fs_store.schema_registry import ENTITY_LAYOUT, TypeInfo
+from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
 from flow_sdk.schema.types import EntityType
 
 
-class DataSourceMeta(BaseMeta):
-    kind: Optional[str] = None
-    provider: Optional[str] = None
-    channel: Optional[str] = None
-    account_key: Optional[str] = None
-    account_identities: Optional[list] = None
-    config: Optional[dict] = None
-    status: Optional[str] = None
-    poll_interval_seconds: Optional[int] = None
-    window_days: Optional[int] = None
-    segment_count: Optional[int] = None
-    required_capabilities: Optional[list] = None
-    health: Optional[str] = None
+async def _cascade_data_source(entity_id: str) -> None:
+    """What a data source ingested goes with it: records, cursors, positions, changes, projections."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415 — the type info loads before the class
+
+    await DataSource.delete_children_of(entity_id)
 
 
 DATA_SOURCE = TypeInfo(
@@ -42,7 +36,15 @@ DATA_SOURCE = TypeInfo(
     # is the "offer a New button" hint, not an authorization flag (see
     # `_uncreatable_reason`).
     index_fields=["name", "provider", "kind", "status", "health"],
-    meta_model=DataSourceMeta,
+    asset_class="repo",
+    family="data_source",
+    shape=Folder.entity_json(EntityType.DATA_SOURCE.value),
+    manifest_layout=ENTITY_LAYOUT,
+    asset_spec=DataSourceSpec,
+    # The entity is the authoring surface: an edit re-renders the document. Identical bytes are not
+    # rewritten, and runtime fields are not spec fields, so a poll never touches the file.
+    owns_main_ref=True,
+    orphan_cascade_fn=_cascade_data_source,
 )
 
 DATA_SOURCE_CURSOR = TypeInfo(

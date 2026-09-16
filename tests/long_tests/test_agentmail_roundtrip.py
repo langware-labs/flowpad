@@ -93,7 +93,7 @@ async def test_agentmail_roundtrip():
     assert watched, f"inbox create returned no address: {sorted(created)}"
     try:
         source = DataSource(
-            name="AgentMail roundtrip",
+            name=f"AgentMail roundtrip {uuid.uuid4().hex[:8]}",
             provider="agentmail",
             config={"inbox": watched, "api_key": KEY},
         )
