@@ -112,9 +112,7 @@ os.environ["SQLITE_DATABASE_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test.db")
 os.environ["FS_RECORD_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test_records")
 
 _TEST_HOME = _TEST_RUN_ROOT / "home"
-# ``AppData/*``: Windows resolves known folders (``SHGetFolderPath``, used by
-# ``appdirs``) under USERPROFILE and fails when they do not exist.
-for _sub in (".claude", ".codex", ".flow", "AppData/Local", "AppData/Roaming"):
+for _sub in (".claude", ".codex", ".flow"):
     (_TEST_HOME / _sub).mkdir(parents=True, exist_ok=True)
 # Stash the pre-sandbox HOME so child conftests can hand it to subprocess
 # environments that need real CLI auth (e.g. tests/long_tests/conftest.py
