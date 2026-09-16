@@ -43,10 +43,9 @@ shipped `agent` transport, configured per `references/mapping.md`. Read
   "description": "Pages from the team wiki.",
   "kind": "datasource.api.wiki",
   "icon_name": "BookOpen",
-  "auth": {"secrets": {"api_token": ""}},
+  "auth": {"secrets": {"api_token": "ingest_api.wiki"}},
   "config": {
-    "base_url": {"type": "text", "required": true, "label": "Wiki URL", "pattern": "^https?://"},
-    "api_token": {"type": "text", "required": true, "label": "API token"}
+    "base_url": {"type": "text", "label": "Wiki URL", "placeholder": "https://wiki.example.com"}
   }
 }
 ```
@@ -55,22 +54,35 @@ shipped `agent` transport, configured per `references/mapping.md`. Read
   shipped source — the shipped one wins and your folder reports a `load_error`.
 - `icon_name`, never `icon`.
 - `auth` is exactly ONE of `{connector, scopes}` (an OAuth connection),
-  `{env: [NAMES]}` (the operator's environment) or `{secrets: {value_key: machine
-  secret name or ""}}` (a row value, optionally kept as a machine secret). Never a
-  credential value. The source reads what it declares from `self.credentials`.
+  `{env: [NAMES]}` (the operator's environment), `{secrets: {value_key: machine
+  secret name}}` (a store or machine secret) or `{credential: pack, vars: {value_key: VAR}}`
+  (a SecretPack). Never a credential value, and never a config field: a config lands in
+  `data_source.json`. The source reads what it declares from `self.credentials`.
 - No `traits`, no `fetch.py`, no `FETCH.md` — all refused at load. Traits are
   ClassVars on the class.
-- `config` field `type` is one of `text` `lines` `csv` `number` `path`.
+- `config` holds FORM HINTS only — `type` (the widget: `text` `lines` `csv` `number` `path`),
+  `label`, `hint`, `placeholder`, `advanced`, `account_key`, `choices`. The rules (required,
+  pattern, default) are the class's `Config`, and the two must name the same fields.
 
 ## The class
 
 ```python
+from typing import Annotated
+
+from pydantic import StringConstraints
+
 from flow_sdk.sources import CollectionSource, FeedItemData, SourceItemSpec
 from flow_sdk.sources import http
+from flow_sdk.sources.config import SourceConfig
+
+
+class WikiConfig(SourceConfig):
+    base_url: Annotated[str, StringConstraints(pattern=r"^https?://")]   # required: no default
 
 
 class WikiSource(CollectionSource):
     provider = "wiki"            # = the manifest's name
+    Config = WikiConfig          # its fields = the manifest's config keys
     durable_cursor = False       # True only when the provider can resume from your cursor string
 
     async def _scan(self, query):

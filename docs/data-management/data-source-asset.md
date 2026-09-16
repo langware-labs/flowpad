@@ -126,7 +126,17 @@ title: RSS / Atom
 description: One segment per feed URL. No credentials.
 icon_name: Rss
 config:
-  feed_urls: { type: lines, pattern: '^https?://', required: true, label: Feed URLs }
+  feed_urls: { type: lines, label: Feed URLs }
+```
+
+and its `source.py` declares the rules for that field:
+
+```python
+class RssConfig(SourceConfig):
+    feed_urls: list[Annotated[str, StringConstraints(pattern=r"^https?://")]] = Field(min_length=1)
+
+class RssSource(CollectionSource):
+    Config = RssConfig
 ```
 
 ### `schema` and `requires`
@@ -160,7 +170,7 @@ because a source has one credential lifetime:
 ```yaml
 auth: { connector: slack, scopes: [channels:history] }
 auth: { env: [GMAIL_ADDRESS, GMAIL_APP_PASSWORD] }
-auth: { secrets: { api_key: ingest_api.agentmail, bot_token: "" } }
+auth: { secrets: { api_key: ingest_api.agentmail } }
 auth: { credential: whatsapp, vars: { access_token: FLOW_WHATSAPP_TOKEN, app_secret: FLOW_WHATSAPP_SECRET } }
 ```
 
@@ -168,18 +178,18 @@ auth: { credential: whatsapp, vars: { access_token: FLOW_WHATSAPP_TOKEN, app_sec
 is resolved for the row's OWNER the way a worker process resolves its secrets — the owning
 agent's project scope over the user scope, read from that scope's `.env.local` or vault — so
 an agent's channel is configured by declaring the credential in the agent's project, never by
-pasting a token into the source. A key the credential cannot supply falls back to the row's
-`config`. The SecretPack itself is declared in the project (`credentials/save`), not
-shipped beside the source.
+pasting a token into the source. The SecretPack itself is declared in the project
+(`credentials/save`) or shipped as a template (`agentic-assets/secret_pack/telegram/`), not beside
+the source.
 
 One resolver reads all four (`flow_sdk/ingest/credentials.py`) and hands the result to
 the source as `self.credentials` — a source never reads the environment, the secret
 store or the connection store itself. `connector` is this machine's connection to that
 OAuth provider, its app token first when the provider issues one (Slack's bot). `env`
 names are read from the operator's environment, each keyed by its own name. `secrets`
-maps a value key to a machine secret name: the named machine secret wins, and the row's
-own `config[value key]` is read otherwise (`""` names no machine secret). A value lifted
-into the credentials never also rides in the source's `config`.
+maps a value key to a name in the bound (or default) store, then to a machine secret. No
+shape ever reads the row's `config`: a config is value-free, and the loader refuses a `Config`
+field that is a secret or a key `auth` names.
 
 `scopes` is not decoration. `drive.readonly` and `drive` differ by a write grant,
 and two sources sharing a connector consent once — whoever authorises first wins,
@@ -200,28 +210,32 @@ two (`none, copy`).
 **`record` may not appear in a multi-element list.** A source lands its payload in
 the graph as a record or on disk as an asset; asking for both gets neither.
 
-### `config`
+### `config` — form hints; the rules are the driver's `Config`
 
-The user-facing form, and the single source of truth for it — the frontend holds no
-provider catalog.
+Two halves, one per owner. The manifest's `config` says how the form DRAWS each field; the
+source's `Config(SourceConfig)` in `source.py` says what a value must BE. The loader refuses a
+driver whose two halves name different fields (`derived` fields, which the application fills,
+are exempt) or whose `Config` holds a secret.
 
-| Key | Meaning |
+| Hint (`FieldHints`) | Meaning |
 |---|---|
-| `type` | `text` · `lines` · `csv` · `number` · `path` (`FieldType`; anything else is a load error) |
-| `required` | blocks save when empty |
+| `type` | the widget: `text` · `lines` · `csv` · `number` · `path` (`FieldType`) |
 | `label` · `hint` · `placeholder` | what the form renders |
-| `default` | applied when omitted; a real default, never `""` — a `csv`/`lines` default is a list (`["story"]`) |
 | `advanced` | collapsed behind "Advanced" |
-| `pattern` | regex, so a bad value fails at the form and not at Verify |
-| `account_key` | `true` on the ONE field whose value names the remote account. Descriptive only — ids are uuid4 and nothing dedupes on it |
-| `choices` | the source can list this field's legal values (the class is `Choosing`, or defines `choices_for`) |
+| `account_key` | `true` on the ONE field whose value names the remote account. Descriptive only |
+| `choices` | the source can list this field's legal values (the class is `Choosing`, or defines `choices_for`); a pick is stored as a `ChoiceEntry` (`{id, name}`) |
 
-Each field is a `FieldHints`, and its `type` is also a **coercion rule**:
-`DataSource.save()` runs `FieldHints.coerce` over any string-valued config
-(`lines` splits on newlines, `csv` on commas, `number` parses), so a URL an agent
-sent as a string where `lines` is declared becomes a one-element list. On create,
-`required` and `pattern` are enforced by `DataSource.save()` too, so the CLI, the API
-and an agent meet the same rules as the form.
+`required`, `pattern` and `default` are no longer hints (`extra="forbid"` refuses them): they
+are the `Config`'s fields, and `DataDriver.config_schema` (its JSON Schema) carries them to the
+form. Three readings of one `Config`:
+
+* **create** — `DataSource.save()` validates the whole config, after shaping what was typed
+  (`"5"` → `5`, a newline string → a list); a failure is `ValueError: config.<field> is required`
+  / `is not valid: <value>`, which the create route maps to a 400;
+* **a form in progress** — `Config.draft(raw)` keeps the known keys that validate;
+* **a stored row** — `Config.best_match(raw)`, what the binding hands the source: every key that
+  still validates, the default for one that does not. `Config.lift` adopts renamed keys (the agent
+  transport's `stream`/`streams` → `segments`).
 
 ### `setup_wiki` and `channel_icon_names`
 
