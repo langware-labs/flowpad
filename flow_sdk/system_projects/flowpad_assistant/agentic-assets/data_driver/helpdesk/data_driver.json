@@ -11,7 +11,6 @@
   "config": {
     "desk_project_id": {
       "type": "text",
-      "required": true,
       "account_key": true,
       "choices": true,
       "label": "Desk",

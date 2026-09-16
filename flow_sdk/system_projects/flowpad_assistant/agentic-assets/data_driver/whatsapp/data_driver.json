@@ -16,14 +16,12 @@
   "config": {
     "phone_number_id": {
       "type": "text",
-      "required": true,
       "label": "Phone number ID",
       "placeholder": "123456789012345",
       "hint": "From the Meta app's WhatsApp setup page — the ID, not the number itself. The free test number works and needs no business verification."
     },
     "verify_token": {
       "type": "text",
-      "required": true,
       "label": "Webhook verify token",
       "hint": "Any string you choose. Paste the same one into Meta's webhook configuration — it is what proves the callback URL is yours."
     }

@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec, ManifestError, Runtime
 
 RSS = {"schema": 1, "name": "rss", "title": "RSS / Atom",
-       "config": {"feed_urls": {"type": "lines", "required": True, "label": "Feed URLs"}}}
+       "config": {"feed_urls": {"type": "lines", "label": "Feed URLs"}}}
 
 
 def parse(data: dict, files: set[str] = frozenset({"data_driver.json", "source.py"})) -> tuple[DataDriverSpec, Runtime]:
@@ -25,7 +25,7 @@ def parse(data: dict, files: set[str] = frozenset({"data_driver.json", "source.p
 def test_the_simplest_source_parses():
     m, runtime = parse(RSS)
     assert (m.name, runtime, m.reflect) == ("rss", Runtime.SOURCE, ["record"])
-    assert m.config["feed_urls"].required is True
+    assert m.config["feed_urls"].type == "lines"
     assert m.manifest_schema == 1, "the file says `schema`, the row says `manifest_schema`"
 
 

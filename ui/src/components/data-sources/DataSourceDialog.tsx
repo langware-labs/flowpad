@@ -33,6 +33,7 @@ import {
   accountKeyFor,
   buildConfig,
   emptyDraft,
+  fieldRules,
   fieldValue,
   pickedFrom,
   pickedIn,
@@ -254,7 +255,7 @@ export function DataSourceDialog({
       <div key={key} className="space-y-1">
         <Label htmlFor={`ds-${key}`}>
           {field.label || key}
-          {field.required && <span className="ms-1 text-destructive">*</span>}
+          {fieldRules(spec, key).required && <span className="ms-1 text-destructive">*</span>}
         </Label>
         {/* A choosable field hands its own input over as the fallback, so the picker and
             the text box are one decision made in one place rather than two branches here

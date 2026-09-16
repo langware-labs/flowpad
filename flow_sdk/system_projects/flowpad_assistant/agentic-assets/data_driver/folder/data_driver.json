@@ -13,7 +13,6 @@
   "config": {
     "root": {
       "type": "path",
-      "required": true,
       "label": "Folder",
       "account_key": true,
       "hint": "Every file under it becomes an asset."

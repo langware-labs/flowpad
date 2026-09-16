@@ -57,7 +57,7 @@ def test_the_parsed_python_members_match_the_live_enum():
     assert _values(_PY_FILE, _PY_ENUM, "Python") == {member.value for member in FieldType}
 
 
-@pytest.mark.parametrize("flag", ["required", "advanced", "account_key", "choices"])
+@pytest.mark.parametrize("flag", ["advanced", "account_key", "choices"])
 def test_every_config_field_flag_exists_on_both_sides(flag: str):
     """A flag the form never receives is a feature that silently does not exist."""
     from flow_sdk.schema.data_spec.data_driver_spec import FieldHints

@@ -12,14 +12,12 @@
   "config": {
     "repo": {
       "type": "path",
-      "required": true,
       "label": "Repository",
       "account_key": true
     },
     "branch": {
       "type": "text",
-      "label": "Branch",
-      "default": "HEAD"
+      "label": "Branch"
     }
   }
 }

@@ -14,7 +14,6 @@
   "config": {
     "inbox": {
       "type": "text",
-      "required": true,
       "label": "Inbox",
       "placeholder": "you@agentmail.to",
       "account_key": true

@@ -28,16 +28,17 @@ export enum FieldType {
 }
 
 /** One field of the create form, as the manifest declares it. */
+/**
+ * How the form draws one config field — widget, words, placement. The field's RULES (required,
+ * pattern, default) are the driver's typed `Config`, delivered as `DataDriver.config_schema`;
+ * `fieldRules` in the source form reads them. Mirrors `FieldHints`.
+ */
 export interface SpecConfigField {
   type?: FieldType;
-  required?: boolean;
   label?: string;
   hint?: string;
   placeholder?: string;
-  default?: unknown;
   advanced?: boolean;
-  /** Regex the value must match — replaces the per-provider validators. */
-  pattern?: string;
   /** Marks the field naming the remote account. Descriptive only. */
   account_key?: boolean;
   /**
@@ -47,6 +48,18 @@ export interface SpecConfigField {
    * `lines` picks many. Mirrors `FieldHints.choices`.
    */
   choices?: boolean;
+}
+
+/** The JSON Schema of a driver's `Config` — the parts the form reads. */
+export interface ConfigSchemaProperty {
+  pattern?: string;
+  default?: unknown;
+  items?: ConfigSchemaProperty;
+  anyOf?: ConfigSchemaProperty[];
+}
+export interface ConfigSchema {
+  properties?: Record<string, ConfigSchemaProperty>;
+  required?: string[];
 }
 
 export interface IDataDriver extends IEntity {
@@ -67,8 +80,10 @@ export interface IDataDriver extends IEntity {
   /** Why the folder's source did not load, or empty. */
   load_error?: string;
   reflect?: string[];
-  /** The form's fields, under the manifest's own key. */
+  /** The form's fields, under the manifest's own key: how each is drawn. */
   config?: Record<string, SpecConfigField>;
+  /** The rules for those fields: the JSON Schema of the driver's `Config` (backend-validated). */
+  config_schema?: ConfigSchema;
   auth?: Record<string, unknown> | null;
   requires?: Record<string, string>;
   manifest_schema?: number;
