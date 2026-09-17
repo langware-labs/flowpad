@@ -208,7 +208,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
               }}
               onImageSelected={handleAvatarImage}
               color={profile.color}
-              onColorChange={(color) => save({ color: color ?? undefined })}
+              onColorChange={(color) => void save({ color: color ?? undefined })}
             />
           </PopoverContent>
         </Popover>
