@@ -18,6 +18,16 @@
       "placeholder": "you@gmail.com",
       "account_key": true,
       "hint": "Optional when GMAIL_ADDRESS is set. The app password is read only from GMAIL_APP_PASSWORD and is never stored on the source."
+    },
+    "imap_host": {
+      "type": "text",
+      "advanced": true,
+      "label": "IMAP host", "hint": "host[:port]; imap://host:port for a plain (non-TLS) connection"
+    },
+    "smtp_host": {
+      "type": "text",
+      "advanced": true,
+      "label": "SMTP host", "hint": "host[:port]; smtp://host:port for a plain (non-TLS) connection"
     }
   }
 }

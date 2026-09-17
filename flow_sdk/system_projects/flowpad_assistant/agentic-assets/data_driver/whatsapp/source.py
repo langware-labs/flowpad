@@ -43,7 +43,7 @@ from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 
-#: Graph's base. Overridable only so a test can point at a local double.
+#: Graph's base — the default when the config's ``base_url`` is empty; a test points it at a loopback double.
 GRAPH_API_BASE = "https://graph.facebook.com"
 #: Pinned: Meta versions the whole surface and deprecates on a schedule, so the version is a fact
 #: about this source, not a default to inherit from whatever Meta serves today.
@@ -67,6 +67,8 @@ class WhatsAppConfig(SourceConfig):
     phone_number_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     #: Any string you choose, pasted into Meta's webhook setup — it proves the callback URL is yours.
     verify_token: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    #: Where Graph is. Empty means Meta's own host; a test names a loopback double. Never a secret.
+    base_url: str = ""
 
 
 class WhatsAppSource(Source):
@@ -83,6 +85,10 @@ class WhatsAppSource(Source):
     @property
     def phone_number_id(self) -> str:
         return str(self.config.get("phone_number_id") or "").strip()
+
+    @property
+    def base_url(self) -> str:
+        return str(self.config.get("base_url") or GRAPH_API_BASE).rstrip("/")
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
         return super().origin(key, *(within or (MESSAGES_STREAM,)))
@@ -300,7 +306,7 @@ class WhatsAppSource(Source):
         token = self._token()
         if token is None:
             raise AccessDenied("This WhatsApp source has no access token.")
-        url, headers = f"{GRAPH_API_BASE}/{GRAPH_VERSION}/{path}", {"Authorization": f"Bearer {token}"}
+        url, headers = f"{self.base_url}/{GRAPH_VERSION}/{path}", {"Authorization": f"Bearer {token}"}
         refused = (400, 401, 403, 404)
         if self._client is not None:
             response = await http.request(self._client, verb, url, headers=headers, ok_statuses=refused, **kwargs)

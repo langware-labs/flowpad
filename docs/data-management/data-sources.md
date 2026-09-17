@@ -403,10 +403,17 @@ can overlap (see *Known gaps*).
    (`flow_sdk.sources.testing.checks_for`) over the class, plus its wire cases against a
    loopback server (`flow_sdk.ingest.testing.local_http_server`); import the class with
    `asset_module("<name>")`.
-9. Add `tests/matrix.py`: a `case(monkeypatch, tmp_path)` context manager yielding the
-   config, the provider doubles and the expectations. The data source matrix
-   (`tests/api/test_source_matrix.py`, `tests/api/test_source_cli_matrix.py`) drives it
-   through create, verify, sync, items, send, reply, disable and delete.
+9. Add `tests/matrix.py`: a `Double` — the provider over a loopback socket, `config` (with a
+   `base_url`/host seam the driver reads, empty = the real host), `secrets` keyed as the
+   manifest's `auth` names them, `deliver(text, sender=…)` for an inbound arriving now and
+   `sent()` for what went out — and a `case(monkeypatch, tmp_path)` context manager over it
+   yielding the config, the expectations and the double. The data source matrix
+   (`tests/api/test_source_matrix.py`, `tests/api/test_source_cli_matrix.py`) drives `case`
+   through create, verify, sync, items, send, reply, disable and delete; a message driver's
+   `Double` is also what the stream inbox channel matrix reads through, in-process
+   (`tests/unit/test_stream_inbox_channel_matrix.py`) and against a running backend
+   (`tests/e2e/channel_doubles.py` hosting every driver's double for the browser runbook
+   `ui/tests/manual_regression/stream-inbox/channel_matrix.md`).
 
 A shipped source and an authored one (the same folder in a project) load the same way;
 see [the data-source asset](data-source-asset.md).

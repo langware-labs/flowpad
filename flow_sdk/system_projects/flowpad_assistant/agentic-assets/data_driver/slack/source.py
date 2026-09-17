@@ -35,7 +35,7 @@ from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 from flow_sdk.sources.values.query import MessageQuery
 
-#: Slack's own base. Overridable only so a test can point at a local double.
+#: Slack's own base — the default when a row's ``base_url`` is empty.
 SLACK_API_BASE = "https://slack.com/api"
 #: Slack's ceiling per ``conversations.history`` call for a non-Marketplace app.
 HISTORY_PAGE = 15
@@ -69,6 +69,8 @@ class SlackConfig(SourceConfig):
     channel: Union[Annotated[str, StringConstraints(pattern=r"^[CGD][A-Z0-9]{6,}$")], ChoiceEntry]
     #: Who may drive the channel; the row keeps it as ``inbound_allowed_senders``.
     allowed_senders: list[str] = []
+    #: Empty is Slack itself; a test points a row at a local double. Never a secret.
+    base_url: str = ""
 
 
 class SlackSource(Source):
@@ -90,6 +92,10 @@ class SlackSource(Source):
     def resume_after(cls, ts: str) -> str:
         """The resume cursor that continues after message ``ts``."""
         return _RESUME + ts
+
+    @property
+    def base_url(self) -> str:
+        return str(self.config.get("base_url") or SLACK_API_BASE).rstrip("/")
 
     @property
     def channel(self) -> tuple[str, str]:
@@ -312,9 +318,9 @@ class SlackSource(Source):
         headers = {"Authorization": f"Bearer {self.credentials.token.get_secret_value()}"}
         shape = {"json": payload} if verb == "POST" else {"params": payload}
         if self._client is not None:
-            return await http.request_json(self._client, verb, f"{SLACK_API_BASE}/{method}", headers=headers, **shape)
+            return await http.request_json(self._client, verb, f"{self.base_url}/{method}", headers=headers, **shape)
         async with http.client() as client:
-            return await http.request_json(client, verb, f"{SLACK_API_BASE}/{method}", headers=headers, **shape)
+            return await http.request_json(client, verb, f"{self.base_url}/{method}", headers=headers, **shape)
 
     async def _call(self, method: str, *, verb: str = "GET", **payload: Any) -> dict:
         body = await self._api(method, payload, verb=verb)

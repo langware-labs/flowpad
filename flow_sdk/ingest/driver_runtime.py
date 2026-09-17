@@ -632,6 +632,9 @@ class DriverRuntime:
 
         A class that can prove a delivery came from its provider (``webhook_authentic``) must: the
         delivery is refused with ``Rejected`` before anything is read, whoever calls this."""
+        # Whoever calls this: the route hands over case-insensitive headers, an in-process caller a plain
+        # dict — a class that checks a signature reads them lowercased either way.
+        headers = {str(k).lower(): v for k, v in dict(headers or {}).items()}
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
 
         credentials = await self.credentials_for(row)

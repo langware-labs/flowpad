@@ -8,6 +8,8 @@ page of the channel. A stubbed client would let all three pass while broken.
 from __future__ import annotations
 
 import json
+import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -32,6 +34,8 @@ slack_source = asset_module("slack")
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 CHANNEL = "C0123456789"
+#: Where the test's Slack listens — set by the fixture that starts one, read into every row's ``base_url``.
+BASE = ""
 
 
 def _saved_channel() -> str:
@@ -41,7 +45,7 @@ def _saved_channel() -> str:
 
 
 def _source(**config) -> DataSource:
-    return DataSource(provider="slack", name=f"Slack test {uuid.uuid4().hex[:8]}", config={"channel": CHANNEL, **config})
+    return DataSource(provider="slack", name=f"Slack test {uuid.uuid4().hex[:8]}", config={"channel": CHANNEL, "base_url": BASE, **config})
 
 
 def _view(cursor: str | None = None, window_start: str | None = None):
@@ -82,7 +86,7 @@ def serve(monkeypatch, request):
     def _factory(replies: list[dict]) -> _Slack:
         slack = _Slack(replies)
         server = local_http_server(slack)
-        monkeypatch.setattr(slack_source, "SLACK_API_BASE", server.__enter__())
+        monkeypatch.setattr(sys.modules[__name__], "BASE", server.__enter__())
         request.addfinalizer(lambda: server.__exit__(None, None, None))
         return slack
 
@@ -93,11 +97,25 @@ def serve(monkeypatch, request):
 
 
 class _FakeSlack:
-    """Channel histories, posts appended with fresh ts, DMs opened on demand."""
+    """Channel histories, posts appended with fresh ts, DMs opened on demand. ``posts`` is every
+    ``chat.postMessage`` it accepted, in order; ``arrive`` is a message someone else wrote."""
 
     def __init__(self):
-        self.clock = 300
+        self.clock = 300.0
         self.channels = {"C1": [_message("100.000100", "root"), _message("150.000150", "in thread", thread_ts="100.000100"), _message("200.000200", "later")]}
+        self.posts: list[dict] = []
+
+    def fresh_ts(self) -> str:
+        """A ts later than every one handed out so far and never behind the wall clock, so a
+        message written now lands after a resume cursor taken a moment ago."""
+        self.clock = max(time.time(), self.clock + 0.000001)
+        return f"{self.clock:.6f}"
+
+    def arrive(self, channel: str, text: str, *, user: str, thread_ts: str | None = None) -> dict:
+        extra = {"thread_ts": thread_ts} if thread_ts else {}
+        message = {**_message(self.fresh_ts(), text, **extra), "user": user}
+        self.channels.setdefault(channel, []).append(message)
+        return message
 
     def __call__(self, path, headers):
         route, _, query = path.partition("?")
@@ -113,10 +131,10 @@ class _FakeSlack:
         if channel not in self.channels:
             return self._ok(ok=False, error="channel_not_found")
         if method == "chat.postMessage":
-            self.clock += 1
-            ts = f"{self.clock}.000000"
-            extra = {"thread_ts": body["thread_ts"]} if body.get("thread_ts") else {}
-            self.channels[channel].append(_message(ts, body["text"], **extra))
+            ts = self.fresh_ts()
+            thread = body.get("thread_ts") or None
+            self.channels[channel].append(_message(ts, body["text"], **({"thread_ts": thread} if thread else {})))
+            self.posts.append({"to": channel, "text": body["text"], "thread": thread, "external_id": ts})
             return self._ok(ts=ts, channel=channel)
         rows = sorted(self.channels[channel], key=lambda m: float(m["ts"]), reverse=True)
         if "latest" in params:
@@ -133,16 +151,17 @@ class _FakeSlack:
 
 
 @pytest.fixture
-def fake_slack(monkeypatch):
+def fake_slack():
     with local_http_server(_FakeSlack()) as base:
-        monkeypatch.setattr(slack_source, "SLACK_API_BASE", base)
-        yield
+        yield base
 
 
 @pytest.mark.parametrize("check", checks_for(SlackSource), ids=str)
 async def test_conformance(check, fake_slack):
     binding = SourceBinding(
-        account_key="T1", config={"channel": "C1"}, credentials=Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("xoxb-test"))
+        account_key="T1",
+        config={"channel": "C1", "base_url": fake_slack},
+        credentials=Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("xoxb-test")),
     )
     probe = SlackSource(binding)
     await check.run(Subject(
@@ -151,6 +170,38 @@ async def test_conformance(check, fake_slack):
         conversation=probe.origin("100.000100", "C1"),
         recipient=UserProfile(origin=probe.origin("U1"), name="Ada"),
     ))
+
+
+# ── the double, as the matrix and a doubles process use it ───────────────────
+
+
+async def test_the_double_delivers_after_the_source_exists_and_records_the_reply(monkeypatch):
+    from pathlib import Path
+
+    from flow_sdk.ingest.driver_registry import load_module
+
+    Double = load_module(Path(__file__).parent, "matrix").Double
+    with Double(channel=_saved_channel()) as double:
+        monkeypatch.setattr(DataDriver.loaded("slack"), "credentials_for", double.credentials)
+        source = _source(**double.config)
+        await source.save()
+        driver = DataDriver.loaded("slack")
+
+        first = await driver.traverse(source, _view())
+        assert first.items == [] and first.unchanged, "the double delivered before anyone asked it to"
+        assert first.cursor is None
+
+        delivered = double.deliver("anyone home?", sender="U42")
+        second = await driver.traverse(source, _view(first.cursor))
+        (item,) = second.items
+        assert (item.external_id, item.body, item.author_external_id) == (delivered["external_id"], "anyone home?", "U42")
+        assert delivered["thread"] == delivered["external_id"], "a top-level message is its own thread"
+
+        outcome = await driver.send(source, thread_key=item.thread_key, to=double.config["channel"], text="yes, here")
+        assert double.sent() == [{"to": double.config["channel"], "text": "yes, here", "thread": item.thread_key, "external_id": outcome.external_id}]
+
+        third = await driver.traverse(source, _view(second.cursor))
+        assert [i.body for i in third.items] == ["yes, here"], "the post did not land in the channel history"
 
 
 # ── the one channel ──────────────────────────────────────────────────────────

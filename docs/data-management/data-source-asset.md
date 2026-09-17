@@ -53,7 +53,7 @@ agentic-assets/data_driver/<name>/
   source.py                 # exactly one flow_sdk.sources.Source subclass — the source
   transport.py …            # optional helper modules, imported relatively (`from .transport import …`)
   tests/test_<name>_source.py   # conformance kit + wire cases, against flow_sdk.sources.testing doubles
-  tests/matrix.py           # its case in the data source matrix
+  tests/matrix.py           # its Double (loopback provider) and its case in the data source matrix
   tests/fixtures/…          # the responder packs those tests serve
   agentic-assets/webapp/editor/   # optional editor
   README.md                 # setup, credentials, live-validation notes

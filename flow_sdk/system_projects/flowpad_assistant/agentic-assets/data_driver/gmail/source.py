@@ -36,8 +36,10 @@ from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 from flow_sdk.sources.values.query import MessageQuery
 
 IMAP_HOST = "imap.gmail.com"
+IMAP_SSL_PORT = 993
 SMTP_HOST = "smtp.gmail.com"
 SMTP_SSL_PORT = 465
+#: A host here is reached in the clear: a test double on this machine, never Google.
 INBOX = "INBOX"
 ALL_MAIL = "[Gmail]/All Mail"
 #: One bounded prefix per page; the UID cursor resumes at the next message.
@@ -77,9 +79,12 @@ class LoginRefused(Exception):
 
 
 class GmailConfig(SourceConfig):
-    """What a gmail source is configured with."""
+    """What a gmail source is configured with. The hosts are ``host[:port]``; empty is Google's own
+    server over SSL, a loopback host is a local double reached without TLS."""
 
     address: str = ""
+    imap_host: str = ""
+    smtp_host: str = ""
 
 
 class GmailSource(EmailAddressing, Source):
@@ -134,7 +139,7 @@ class GmailSource(EmailAddressing, Source):
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         validity, floor = _decode(cursor)
         since = query.since if cursor is None else None
-        snapshot = await self._imap(list_inbox, self.address, self._password(), validity, floor, since, limit)
+        snapshot = await self._imap(list_inbox, self._mailbox(), validity, floor, since, limit)
         floor = floor if validity == snapshot.uid_validity else 0
         last = max((message.uid for message in snapshot.messages), default=floor)
         token = self.resume_at(snapshot.uid_validity, last) if last else None
@@ -157,7 +162,7 @@ class GmailSource(EmailAddressing, Source):
 
     async def find_reply(self, message_id: str) -> Optional[MessageItem]:
         """The newest inbox message whose ``In-Reply-To`` names ``message_id``, or ``None``."""
-        snapshot = await self._imap(find_reply_inbox, self.address, self._password(), message_id)
+        snapshot = await self._imap(find_reply_inbox, self._mailbox(), message_id)
         return self._item(snapshot.uid_validity, snapshot.messages[-1]) if snapshot.messages else None
 
     def _item(self, uid_validity: str, fetched: FetchedMessage) -> MessageItem:
@@ -190,7 +195,7 @@ class GmailSource(EmailAddressing, Source):
         if (data.conversation is None) == (not data.recipients):
             raise ValueError("address exactly one of a conversation or recipients")
         if data.conversation is not None:
-            latest = await self._imap(latest_in_thread, self.address, self._password(), self._thread_of(data.conversation))
+            latest = await self._imap(latest_in_thread, self._mailbox(), self._thread_of(data.conversation))
             if latest is None:
                 raise NotFound("no message in that Gmail thread to continue")
             return await self._reply_to(latest, data, None, conversation=data.conversation)
@@ -198,7 +203,7 @@ class GmailSource(EmailAddressing, Source):
             raise Unsupported("a Gmail send has exactly one recipient")
         recipient = data.recipients[0].address or data.recipients[0].origin.key
         sent = await self._smtp(recipient, data, subject=getattr(data, "subject", None) or "", in_reply_to="")
-        found = await self._imap(find_message, self.address, self._password(), sent.origin.key)
+        found = await self._imap(find_message, self._mailbox(), sent.origin.key)
         thread = found.thread_id if found is not None else ""
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"conversation": self.thread_origin(thread) if thread else None}))
 
@@ -207,7 +212,7 @@ class GmailSource(EmailAddressing, Source):
         _check_outgoing(data)
         if data.conversation is not None or data.recipients:
             raise ValueError("a reply is routed from the message it answers; leave conversation and recipients empty")
-        answered = await self._imap(find_message, self.address, self._password(), self._key_of(origin))
+        answered = await self._imap(find_message, self._mailbox(), self._key_of(origin))
         if answered is None:
             raise NotFound(f"no message {origin.key} in this mailbox", origin=origin)
         return await self._reply_to(answered, data, origin)
@@ -228,7 +233,7 @@ class GmailSource(EmailAddressing, Source):
     async def _smtp(self, recipient: str, data: MessageData, *, subject: str, in_reply_to: str) -> MessageItem:
         message = smtp_message(sender=self.address, recipient=recipient, text=data.text or "", subject=subject, in_reply_to=in_reply_to)
         try:
-            await self._blocking(send_smtp, self.address, self._password(), message)
+            await self._blocking(send_smtp, self.address, self._password(), message, str(self.config.get("smtp_host") or ""))
         except smtplib.SMTPAuthenticationError as exc:
             raise AccessDenied(f"Gmail refused the SMTP login: {exc}") from exc
         except smtplib.SMTPRecipientsRefused as exc:
@@ -239,6 +244,9 @@ class GmailSource(EmailAddressing, Source):
         return MessageItem(origin=self.origin(str(message["Message-ID"])), data=sent)
 
     # ── transport ───────────────────────────────────────────────────────────
+    def _mailbox(self) -> "Mailbox":
+        return Mailbox(self.address, self._password(), str(self.config.get("imap_host") or ""))
+
     def _password(self) -> str:
         """``GMAIL_APP_PASSWORD``, with presentation whitespace dropped — Google shows an app password
         in four spaced groups."""
@@ -273,8 +281,38 @@ class GmailSource(EmailAddressing, Source):
 # ── blocking IMAP / SMTP, run in a worker thread ────────────────────────────
 
 
-def list_inbox(address: str, password: str, saved_validity: str, floor: int, since: Optional[datetime], limit: int) -> Snapshot:
-    client, uid_validity = open_inbox(address, password)
+@dataclass(frozen=True)
+class Mailbox:
+    """One IMAP login: the account and where its server is (``""`` is Google's)."""
+
+    address: str
+    password: str
+    host: str = ""
+
+
+def endpoint(spec: str, default_host: str, default_port: int) -> tuple[str, int, bool]:
+    """``[scheme://]host[:port]`` → ``(host, port, tls)``. TLS unless the scheme says plain
+    (``imap://`` / ``smtp://``); empty parts take the defaults. The value decides the transport —
+    never the hostname, so a tunnelled mailbox on localhost still speaks TLS unless told otherwise."""
+    scheme, _, rest = str(spec or "").strip().rpartition("://")
+    host, _, port = rest.rpartition(":")
+    if not host:
+        host, port = port, ""
+    return host or default_host, int(port) if port.isdigit() else default_port, scheme.lower() not in ("imap", "smtp")
+
+
+def imap_client(host_spec: str = "") -> imaplib.IMAP4:
+    host, port, tls = endpoint(host_spec, IMAP_HOST, IMAP_SSL_PORT)
+    return imaplib.IMAP4_SSL(host, port) if tls else imaplib.IMAP4(host, port)
+
+
+def smtp_client(host_spec: str = "") -> smtplib.SMTP:
+    host, port, tls = endpoint(host_spec, SMTP_HOST, SMTP_SSL_PORT)
+    return smtplib.SMTP_SSL(host, port) if tls else smtplib.SMTP(host, port)
+
+
+def list_inbox(mailbox: Mailbox, saved_validity: str, floor: int, since: Optional[datetime], limit: int) -> Snapshot:
+    client, uid_validity = open_inbox(mailbox)
     try:
         floor = floor if saved_validity == uid_validity else 0
         if floor:
@@ -291,19 +329,19 @@ def list_inbox(address: str, password: str, saved_validity: str, floor: int, sin
         close_inbox(client)
 
 
-def find_reply_inbox(address: str, password: str, message_id: str) -> Snapshot:
-    client, uid_validity = open_inbox(address, password)
+def find_reply_inbox(mailbox: Mailbox, message_id: str) -> Snapshot:
+    client, uid_validity = open_inbox(mailbox)
     try:
         return Snapshot(uid_validity, _find_reply_messages(client, message_id))
     finally:
         close_inbox(client)
 
 
-def find_message(address: str, password: str, message_id: str) -> Optional[FetchedMessage]:
+def find_message(mailbox: Mailbox, message_id: str) -> Optional[FetchedMessage]:
     """The routing headers of one message in All Mail. The tail first — a message being answered is
     almost always recent, and Gmail's server-side HEADER search scans the whole mailbox (45s on a
     12k-message account) — then that search as the fallback."""
-    client, _ = open_inbox(address, password, ALL_MAIL)
+    client, _ = open_inbox(mailbox, ALL_MAIL)
     try:
         status, data = client.uid("SEARCH", None, "ALL")
         _require_ok(status, "list All Mail")
@@ -319,8 +357,8 @@ def find_message(address: str, password: str, message_id: str) -> Optional[Fetch
         close_inbox(client)
 
 
-def latest_in_thread(address: str, password: str, thread_id: str) -> Optional[FetchedMessage]:
-    client, _ = open_inbox(address, password, ALL_MAIL)
+def latest_in_thread(mailbox: Mailbox, thread_id: str) -> Optional[FetchedMessage]:
+    client, _ = open_inbox(mailbox, ALL_MAIL)
     try:
         status, data = client.uid("SEARCH", None, "X-GM-THRID", thread_id)
         _require_ok(status, "search thread")
@@ -336,12 +374,12 @@ def mailbox_arg(name: str) -> str:
     return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def open_inbox(address: str, password: str, mailbox: str = INBOX) -> tuple[imaplib.IMAP4_SSL, str]:
+def open_inbox(account: Mailbox, mailbox: str = INBOX) -> tuple[imaplib.IMAP4, str]:
     """Authenticate and select ``mailbox`` read-only, cleaning up a partial open."""
-    client = imaplib.IMAP4_SSL(IMAP_HOST)
+    client = imap_client(account.host)
     try:
         try:
-            client.login(address, password)
+            client.login(account.address, account.password)
         except imaplib.IMAP4.abort:
             raise
         except imaplib.IMAP4.error as exc:
@@ -354,7 +392,7 @@ def open_inbox(address: str, password: str, mailbox: str = INBOX) -> tuple[imapl
         raise
 
 
-def close_inbox(client: imaplib.IMAP4_SSL) -> None:
+def close_inbox(client: imaplib.IMAP4) -> None:
     # The mailbox is always selected read-only, so CLOSE has nothing to commit; Gmail sometimes
     # stalls on it, and LOGOUT leaves the selected state and the connection in one round trip.
     try:
@@ -363,7 +401,7 @@ def close_inbox(client: imaplib.IMAP4_SSL) -> None:
         pass
 
 
-def _find_reply_messages(client: imaplib.IMAP4_SSL, message_id: str) -> tuple[FetchedMessage, ...]:
+def _find_reply_messages(client: imaplib.IMAP4, message_id: str) -> tuple[FetchedMessage, ...]:
     """A response to a message just sent is at the tail: list UIDs, fetch one page of tiny
     ``In-Reply-To`` headers, compare locally, then hydrate the single newest match."""
     status, data = client.uid("SEARCH", None, "ALL")
@@ -374,12 +412,12 @@ def _find_reply_messages(client: imaplib.IMAP4_SSL, message_id: str) -> tuple[Fe
     return _fetch_messages(client, matches[-1:])
 
 
-def _fetch_messages(client: imaplib.IMAP4_SSL, uids: list[int]) -> tuple[FetchedMessage, ...]:
+def _fetch_messages(client: imaplib.IMAP4, uids: list[int]) -> tuple[FetchedMessage, ...]:
     """Fetch one UID page in one round trip."""
     return _fetch_message_parts(client, uids, _FULL)
 
 
-def _fetch_message_parts(client: imaplib.IMAP4_SSL, uids: list[int], query: str) -> tuple[FetchedMessage, ...]:
+def _fetch_message_parts(client: imaplib.IMAP4, uids: list[int], query: str) -> tuple[FetchedMessage, ...]:
     if not uids:
         return ()
     uid_set = ",".join(str(uid) for uid in uids)
@@ -399,8 +437,8 @@ def _fetch_message_parts(client: imaplib.IMAP4_SSL, uids: list[int], query: str)
     return tuple(sorted(messages, key=lambda message: message.uid))
 
 
-def send_smtp(address: str, password: str, message: EmailMessage) -> None:
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_SSL_PORT) as client:
+def send_smtp(address: str, password: str, message: EmailMessage, host: str = "") -> None:
+    with smtp_client(host) as client:
         client.login(address, password)
         client.send_message(message)
 
@@ -439,7 +477,7 @@ def message_date(message: Message) -> Optional[datetime]:
     return value if value is None or value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def _uid_validity(client: imaplib.IMAP4_SSL, mailbox: str) -> str:
+def _uid_validity(client: imaplib.IMAP4, mailbox: str) -> str:
     _, values = client.response("UIDVALIDITY")
     match = _UID_VALIDITY_RE.search(b" ".join(v for v in (values or []) if isinstance(v, bytes)))
     if match:
@@ -495,4 +533,4 @@ def _check_outgoing(data: object) -> None:
         raise ValueError("sender, in_reply_to, sent_at and attachments are assigned by the provider")
 
 
-__all__ = ["ALL_MAIL", "INBOX", "PAGE_LIMIT", "GmailMessageData", "GmailSource", "message_body", "message_date", "smtp_message"]
+__all__ = ["ALL_MAIL", "INBOX", "PAGE_LIMIT", "GmailMessageData", "GmailSource", "Mailbox", "endpoint", "message_body", "message_date", "smtp_message"]

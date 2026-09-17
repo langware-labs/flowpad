@@ -8,6 +8,7 @@ outbound spec's chat-targeted reply, and a token that never reaches an error mes
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from urllib.parse import parse_qs
 
@@ -16,7 +17,7 @@ from pydantic import SecretStr, ValidationError
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.source_item import TelegramMessageSpec
-from flow_sdk.ingest.driver_registry import asset_module
+from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, asset_module, load_module
 from flow_sdk.ingest.driver_runtime import SendStatus
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
@@ -249,3 +250,38 @@ class TestTelegramMessageSpec:
             reply.body = "changed"
         with pytest.raises(ValidationError):
             TelegramMessageSpec(to=["1"], body="x", subject="no such field")
+
+
+async def test_the_double_delivers_after_the_source_exists_and_records_the_reply(monkeypatch):
+    """The matrix double: nothing before a delivery, the delivered message on the next sync — even
+    past a committed offset — and a send through the source in ``sent()``."""
+    Double = load_module(SHIPPED_ROOT / "telegram" / "tests", "matrix").Double
+
+    recorded: list = []
+
+    async def _ingest(items, **_kw):
+        recorded.extend(items)
+
+    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", _ingest)
+    with Double() as double:
+        monkeypatch.setattr(DataDriver.loaded("telegram"), "credentials_for", double.credentials)
+        row = SimpleNamespace(id="ds-tg", provider="telegram", name="Telegram bot", config=double.config, **double.fields)
+        driver = DataDriver.loaded("telegram")
+
+        first = await driver.traverse(row, _view())
+        assert first.items == [] and double.sent() == []
+
+        delivered = double.deliver("are you there?", sender="555")
+        second = await driver.traverse(row, _view(first))
+        (item,) = second.items
+        assert (item.external_id, item.body, item.author_external_id, item.thread_key) == (f"555/{delivered['external_id']}", "are you there?", "555", "555")
+        assert item.occurred_at >= datetime.now(timezone.utc).replace(microsecond=0).isoformat()[:16]
+
+        # A delivery queued after a poll committed its offset lands above that offset.
+        later = double.deliver("still there?", sender="555")
+        third = await driver.traverse(row, _view(second))
+        assert [i.external_id for i in third.items] == [f"555/{later['external_id']}"]
+
+        out = await driver.send(row, thread_key="555", to="555", text="yes", in_reply_to=f"555/{delivered['external_id']}")
+        assert out.status == SendStatus.SENT
+        assert double.sent() == [{"to": "555", "text": "yes", "thread": int(delivered["external_id"]), "external_id": out.external_id.split("/")[1]}]
