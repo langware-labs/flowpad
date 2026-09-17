@@ -31,6 +31,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -139,6 +141,24 @@ def write_text_if_changed(path: Path, text: str) -> None:
         pass
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    """Write ``data`` as ``path``'s whole content in one step.
+
+    ``Entity`` saves metadata on a worker thread (``asyncio.to_thread``) while the
+    loop keeps reading records; a truncate-then-write let a read parse an empty
+    file. The temp file sits beside ``path`` so ``os.replace`` stays on one
+    filesystem, where the swap is atomic.
+    """
+    text = json.dumps(data, indent=2, ensure_ascii=False, default=_json_default)
+    tmp = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _get_default_records_root() -> Path:
@@ -394,10 +414,7 @@ class FSRecord(Generic[M]):
     def save(self) -> Path:
         """Write metadata.json into the shadow folder. Raises if the record has no id."""
         meta_path = self._meta_path_for_write("save()")
-        meta_path.write_text(
-            json.dumps(self.to_dict(), indent=2, ensure_ascii=False, default=_json_default),
-            encoding="utf-8",
-        )
+        _write_json_atomic(meta_path, self.to_dict())
         _bump_record_write_generation(self.type)
         return meta_path
 
@@ -433,10 +450,7 @@ class FSRecord(Generic[M]):
                 continue
             merged[k] = v
             self.__dict__[k] = v  # keep the in-memory view consistent
-        meta_path.write_text(
-            json.dumps(merged, indent=2, ensure_ascii=False, default=_json_default),
-            encoding="utf-8",
-        )
+        _write_json_atomic(meta_path, merged)
         _bump_record_write_generation(self.type)
         return meta_path
 
@@ -467,10 +481,7 @@ class FSRecord(Generic[M]):
                 removed = True
         if not removed:
             return None
-        meta_path.write_text(
-            json.dumps(merged, indent=2, ensure_ascii=False, default=_json_default),
-            encoding="utf-8",
-        )
+        _write_json_atomic(meta_path, merged)
         return meta_path
 
     @classmethod
