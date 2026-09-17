@@ -13,6 +13,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 import anyio
 import psutil
 
+from flow_sdk import toplog
 from flow_sdk.config import PLATFORM_DARWIN, PLATFORM_WIN32
 from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, RuntimeEnvironment, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import ComputeNodeInfo
@@ -893,7 +895,14 @@ class LocalComputeProvider(ComputeProvider):
                     raise
 
             try:
+                spawn_t0 = time.monotonic()
                 pty_process = await asyncio.to_thread(_resolve_and_spawn)
+                toplog.log(
+                    "pty",
+                    "spawn session=%s pid=%s backend_pid=%s argv0=%s size=%sx%s cwd=%s spawn_ms=%.0f",
+                    session_id, pty_process.pid, os.getpid(), final_spawn_args[0] if final_spawn_args else None,
+                    cols, rows, pty_working_dir, (time.monotonic() - spawn_t0) * 1000,
+                )
 
                 pty_session_running = {"value": True}
 
@@ -949,6 +958,10 @@ class LocalComputeProvider(ComputeProvider):
                                 exit_code = _pty_return_code(pty_process)
                         except Exception:
                             pass
+                        toplog.log(
+                            "pty", "reader_exit session=%s pid=%s exit_code=%s stopped=%s",
+                            session_id, pty_process.pid, exit_code, not pty_session_running["value"],
+                        )
                         if on_exit is not None:
                             try:
                                 on_exit(exit_code)

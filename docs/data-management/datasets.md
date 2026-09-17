@@ -68,8 +68,9 @@ configuration + metadata, in the two-section form:
     "data_layout": "io_folder",                    // "csv" | "io_folder" (default "csv")
     "field_spec": { "input": "question" },          // CSV column remap only (§2)
     "delimiter": ",",                               // CSV only
-    "spec": {                                       // a compact DataSpec (§ Spec)
-      "fields": { "category": "string" }
+    "spec": {                                       // a DatasetSpec authoring form (§ Spec)
+      "examples": [ { "input":  { "question": "string" },
+                      "output": { "category": "string" } } ]
     }
   },
   "data": {

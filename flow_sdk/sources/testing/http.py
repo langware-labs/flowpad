@@ -29,7 +29,10 @@ def local_http_server(respond: Responder) -> Iterator[str]:
             raw = self.rfile.read(length) if length else b""
             seen = {k: v for k, v in self.headers.items()}
             seen["_body"] = raw.decode("utf-8", "replace")
+            seen["_method"] = self.command
             self._answer(respond(self.path, seen))
+
+        do_PUT = do_POST  # noqa: N815 — a body-carrying verb; `_method` tells the responder which
 
         def _answer(self, reply):
             status, body, headers = reply

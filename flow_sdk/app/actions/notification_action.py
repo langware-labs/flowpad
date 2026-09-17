@@ -142,7 +142,7 @@ def _build_reply_flow_message(
             **({"kind": kind} if kind else {}),
             # The sender authored this message → it is read from their side. Without
             # this the sender's own outgoing message persists is_read=False and the
-            # inbox row's unread facet (``!latestMessage.is_read``, which does NOT
+            # stream inbox row's unread facet (``!latestMessage.is_read``, which does NOT
             # exclude own messages) shows the conversation as unread on send.
             "is_read": True,
         }
@@ -901,7 +901,7 @@ async def handle_add_message(
     ``delivery_status=pending_send`` with NO hub push; it stays in the
     conversation.jsonl outbox until ``Conversation.deliver_pending_messages``
     pushes it, from ``share()`` or from the hub-session transition in
-    ``flow_sdk.inbox.catchup`` (see that module's docstring).
+    ``flow_sdk.stream_inbox.catchup`` (see that module's docstring).
     """
     conversation_id = (body.get("conversation_id") or "").strip()
     # ``text`` is the field the SDK's ``Conversation.addMessage(text)`` sends;

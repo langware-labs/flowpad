@@ -13,7 +13,7 @@ import mimetypes
 import re
 import urllib.parse
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import AsyncIterator, List
 
 from starlette.datastructures import UploadFile
@@ -405,6 +405,9 @@ async def serve(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Response
             api_url_scheme=default_service_config.service_urls_config.api_url_scheme,
             fallback_index=False,
             cache_control="no-store",
+            # The display passes the process it shows this page beside, so the
+            # page's SDK can reach that process (displayContext, enqueue).
+            process_id=request_info.request.query_params.get("process"),
         )
     except AppNotBuilt:
         return ApiFailResponse(message="File not found", status_code=404)
@@ -709,7 +712,7 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
             storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else "", real_path=real_path
         )
 
-        # The file IS the record for a file-backed entity (agent.md, SKILL.md,
+        # The file IS the record for a file-backed entity (agent.json, SKILL.md,
         # a task's folder…), so a write here must land in the row too — else
         # every reader of the entity (an Agent's `system_prompt` at launch, the
         # card, search) keeps the pre-edit values until some sweep happens to
@@ -740,15 +743,24 @@ async def document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRe
 
     from flow_sdk.actions.fs.asset_versioning import _real_path, finish_document_version, prepare_document_version
     from flow_sdk.assets.document import DocumentConflict, DocumentPatch, read_document_bytes, update_document
+    from flow_sdk.assets.serialization import entity_body_path
 
     if request_info.method not in ("get", "post") or not fs_info.vpath.typeid:
         return ApiFailResponse(message="Document requires GET or POST and a target", status_code=400)
     try:
+        from flow_sdk.assets.entity_document import entity_info_for, read_entity_document
+
         storage = await _get_storage_for_entity(request_info)
         path = fs_info.vpath.abs_vfspath
+        local = _real_path(storage, path)
+        entity_info = entity_info_for(local) if local else None
         if request_info.method == "get":
-            raw = b"".join([chunk async for chunk in storage.stream(path)])
-            result = read_document_bytes(raw)
+            if entity_info is not None:
+                # An entity document is two files (``<type>.json`` + its body), read together.
+                result = await asyncio.to_thread(read_entity_document, local, entity_info)
+            else:
+                raw = b"".join([chunk async for chunk in storage.stream(path)])
+                result = read_document_bytes(raw)
         else:
             payload = await request_info.get_post_data()
             if not isinstance(payload, dict) or not isinstance(payload.get("expected_revision"), str):
@@ -756,21 +768,23 @@ async def document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRe
             values = dict(payload)
             expected = values.pop("expected_revision")
             patch = DocumentPatch.model_validate(values)
-            real_path = _real_path(storage, path)
+            real_path = local
             if real_path is None:
                 return ApiFailResponse(message="Storage does not support conditional document writes", status_code=501,
                                        data={"code": "conditional_write_unsupported"})
             version_context = await prepare_document_version(real_path)
             version_base = (version_context[4] if version_context is not None and
                             Path(version_context[3]).resolve() == Path(real_path).resolve() else None)
-            result = await asyncio.to_thread(update_document, real_path, patch,
-                                             expected_revision=expected, version_base=version_base)
+            result = await asyncio.to_thread(update_document, real_path, patch, expected_revision=expected,
+                                             version_base=version_base, info=entity_info)
             if result.revision != expected:
                 await finish_document_version(real_path, result, version_context)
                 await _resync_entity_from_disk(real_path)
         data = result.model_dump(mode="json")
-        data["body_ref"] = {"path": fs_info.vpath.entity_sub_path, "type_id": str(fs_info.vpath.typeid),
-                            "ref_type": "text", "read_only": False}
+        body_path = fs_info.vpath.entity_sub_path
+        if entity_info is not None and entity_info.body_file is not None:
+            body_path = str(entity_body_path(PurePosixPath(body_path).parent, entity_info.body_file))
+        data["body_ref"] = {"path": body_path, "type_id": str(fs_info.vpath.typeid), "ref_type": "text", "read_only": False}
         return ApiSuccessResponse(data=data)
     except DocumentConflict as exc:
         return ApiFailResponse(message=str(exc), status_code=409,

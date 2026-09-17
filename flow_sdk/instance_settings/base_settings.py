@@ -120,7 +120,7 @@ class BaseInstanceSettings:
     # ---- Logs ----
     logs_dir: Path
     monitor_log_path: Path
-    inbox_last_fetch_path: Path
+    stream_inbox_last_fetch_path: Path
     conversation_last_sync_path: Path
     transcript_cursors_path: Path
     worker_history_cache_path: Path
@@ -286,7 +286,7 @@ class BaseInstanceSettings:
             # monitor_log_path is also dead (see Phase B audit note); kept
             # as a placeholder under the canonical logs dir.
             monitor_log_path=instance_dir / "logs" / "monitor.log",
-            inbox_last_fetch_path=instance_dir / "inbox.json",
+            stream_inbox_last_fetch_path=instance_dir / "stream_inbox.json",
             conversation_last_sync_path=instance_dir / "conversation_sync.json",
             transcript_cursors_path=instance_dir / "transcript_cursors.json",
             worker_history_cache_path=instance_dir / "worker_history_cache.sqlite",

@@ -100,6 +100,31 @@ export function useSelectExistingProject(): ProjectLanding {
 }
 
 /**
+ * The sibling of `useCloneGitProjectAndOpen` for a project that ALREADY EXISTS
+ * locally as a row with no files — the shape a hub membership grant leaves
+ * behind. It materializes that row's own Git origin in place, so the recipient
+ * keeps the shared project id, and lands exactly where a fresh clone does.
+ *
+ * Deliberately WITHOUT the clone path's other two steps. `setup-from-git` does
+ * the desktop wiring server-side, so repeating it here only produced a failed
+ * save; and the locale seed belongs to a project you CREATE — a received
+ * project's language is the sender's property, not a blank to fill in.
+ */
+export function useInstallSharedProjectAndOpen(landing?: ProjectLanding) {
+  const selectExisting = useSelectExistingProject();
+  const land = landing ?? selectExisting;
+
+  return useCallback(
+    async (project: Project): Promise<Project> => {
+      const installed = await project.setupFromGitOrigin();
+      await land(installed);
+      return installed;
+    },
+    [land],
+  );
+}
+
+/**
  * Shared "clone a git repo into a fresh Project, then open it" step, used by
  * the QuickCreate "From git" flow, the Vibe home hero, and the
  * received-template `IncomingProjectDialog`. Centralizes the

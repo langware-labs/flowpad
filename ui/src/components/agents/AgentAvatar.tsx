@@ -19,14 +19,17 @@ interface AgentAvatarProps {
    * entity storage), everyone else lets the entity resolve it.
    */
   imageUrl?: string | null;
+  /** Caller-resolved circle color (hex). Defaults to `agent.color`; unset falls
+   *  back to the name-derived identity color. */
+  color?: string | null;
   /** Rendered when the agent has neither image nor glyph. Default: the name's initial. */
   fallback?: React.ReactNode;
   'data-testid'?: string;
 }
 
 /**
- * The one way an Agent's face is drawn: a circle in the agent's identity
- * color holding its uploaded image, its emoji/icon, or — when it has none —
+ * The one way an Agent's face is drawn: a circle in the agent's chosen color
+ * (or its name-derived identity color) holding its uploaded image, its emoji/icon, or — when it has none —
  * the initial of its display name. Used wherever an agent is named as an
  * actor: the pinned row of a process's asset list, the chat identity row.
  */
@@ -35,6 +38,7 @@ export function AgentAvatar({
   className,
   glyphClassName = 'h-3.5 w-3.5 text-sm',
   imageUrl = agent.avatarImageUrl,
+  color = agent.color,
   fallback,
   ...rest
 }: AgentAvatarProps) {
@@ -44,9 +48,10 @@ export function AgentAvatar({
     <span
       className={cn(
         'flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold text-white',
-        colorForIdentityKey(agent.name || agent.id),
+        !color && colorForIdentityKey(agent.name || agent.id),
         className,
       )}
+      style={color ? { backgroundColor: color } : undefined}
       data-testid={rest['data-testid']}
     >
       <AvatarValue

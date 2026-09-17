@@ -49,7 +49,7 @@ export enum RecordType {
   /** The per-project ledger of published assets (agentic-assets/project_manifest/). */
   PROJECT_MANIFEST = 'project_manifest',
   SUBAGENT = 'subagent',
-  /** The launchable agent (agentic-assets/agent/<name>/agent.md).
+  /** The launchable agent (agentic-assets/agent/<name>/agent.json).
    *  Distinct from SUBAGENT, the provider-owned .claude/agents/<name>.md. */
   AGENT = 'agent',
   COMMAND = 'command',

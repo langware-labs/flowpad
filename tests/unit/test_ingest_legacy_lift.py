@@ -8,17 +8,18 @@ from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.sources import CloudOrigin, EmailMessageData, FeedItemData, MessageData
 
 GMAIL = SimpleNamespace(channel="gmail", provider="agent", account_key="me@x.test")
+FEED = SimpleNamespace(provider="rss", account_key="https://f.test/x.xml")
 
 
 def _env(**kw) -> SourceItemSpec:
-    base = dict(data_source_id="ds", provider="agent", kind="content.message.email", segment_key="INBOX", external_id="m1")
+    base = dict(data_source_id="ds", provider="agent", kind="content.message.email", external_id="m1")
     return SourceItemSpec(**{**base, **kw})
 
 
 def test_the_channel_and_the_account_scope_the_origin():
-    assert origin_of(GMAIL, _env()) == CloudOrigin(kind="gmail", namespace="me@x.test/INBOX", key="m1")
-    feed = origin_of(None, _env(provider="rss", segment_key="https://f.test/x.xml"))
-    assert feed == CloudOrigin(kind="rss", namespace="https://f.test/x.xml", key="m1"), "no source row, no account"
+    assert origin_of(GMAIL, _env()) == CloudOrigin(kind="gmail", namespace="me@x.test", key="m1")
+    feed = origin_of(FEED, _env(provider="rss"))
+    assert feed == CloudOrigin(kind="rss", namespace="https://f.test/x.xml", key="m1"), "the provider names the kind when no channel is set"
 
 
 def test_an_email_keeps_its_thread_sender_and_subject():
@@ -36,7 +37,7 @@ def test_an_email_keeps_its_thread_sender_and_subject():
 
 def test_a_chat_is_a_message_and_anything_else_a_feed_item():
     assert type(lift(GMAIL, _env(kind="content.message.chat")).data) is MessageData
-    feed = lift(None, _env(kind="content.feed.item", name="T", author_display="Someone"))
+    feed = lift(FEED, _env(kind="content.feed.item", name="T", author_display="Someone"))
     assert isinstance(feed.data, FeedItemData) and feed.data.author is None and feed.data.byline == "Someone"
 
 

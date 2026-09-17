@@ -48,7 +48,7 @@ async def test_telegram_send_records_its_own_copy():
 
     marker = f"tg-send-{uuid.uuid4().hex[:8]}"
     source = DataSource(
-        name="Telegram send test",
+        name=f"Telegram send test {uuid.uuid4().hex[:8]}",
         provider="telegram",
         config={"bot_token": TOKEN},
     )
@@ -56,9 +56,9 @@ async def test_telegram_send_records_its_own_copy():
     assert source.channel == "telegram", "channel must be stamped at create"
     mark("source saved")
 
-    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-    outcome = await source_type("telegram").send(
+    outcome = await DataDriver.loaded("telegram").send(
         source,
         thread_key=CHAT_ID,
         to=CHAT_ID,
@@ -79,7 +79,7 @@ async def test_telegram_send_records_its_own_copy():
 
     # The recorded copy projects like any other message — the outbound half
     # of the conversation is in its thread.
-    from flow_sdk.inbox.projection import project_source_item  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
 
     await project_source_item(item, source=source, notify=False, announce=False)
     fm = await FlowMessage.get_one({"source_item_id": item.id})

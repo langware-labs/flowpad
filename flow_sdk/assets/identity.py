@@ -71,3 +71,22 @@ def main_file_mtime(ref: Any, filename: str) -> float:
         return (ref._path / filename).stat().st_mtime
     except OSError:
         return 0.0
+
+
+def entity_document_fingerprint(info: Any, ref: Any) -> float:
+    """Freshness of an ENTITY DOCUMENT folder: ``<type>.json`` and its body file
+    (``system_prompt.md``). Editing either re-indexes; anything else beside them does not.
+
+    ``info`` is the type itself, bound at registration — the hash of an asset is not a name lookup."""
+    from flow_sdk.assets.serialization import entity_body_path  # noqa: PLC0415
+
+    root = ref._path if ref._path.is_dir() else ref._path.parent
+    body = info.body_file
+    total = 0
+    for path in (root / info.shape.main, *(() if body is None else (entity_body_path(root, body),))):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        total += stat.st_mtime_ns + stat.st_size
+    return float(total)

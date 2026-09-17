@@ -1,14 +1,14 @@
 """Where an agent runs, and how it runs there.
 
 A *place* is a Deployment of the agent: this computer (the local placement) or
-a cloud machine. The definition (agent.md) is shared by every place; a place may
+a cloud machine. The definition (agent.json) is shared by every place; a place may
 override its launch settings, be switched off on its own, own schedules
 (``runs_on`` on the trigger) and be the one place that answers the agent's email
-(``email_place``). All of these live in agent.md keyed by Deployment id, so they
+(``email_place``). All of these live in agent.json keyed by Deployment id, so they
 travel with the definition and each machine applies only the entries naming a
 placement that runs there.
 
-A choice made here is written as a HEADER PATCH to agent.md through the same
+A choice made here is written as a FIELD PATCH to agent.json through the same
 revision-safe document writer the editor uses, then the row is re-read from disk.
 Never ``agent.save()``: the row does not carry every file-owned field (the
 system prompt body among them), and a full re-render from it erased the prompt.
@@ -61,11 +61,13 @@ async def _require_place(agent: "Agent", deployment_id: str) -> "Deployment":
 
 
 async def _write_header(agent: "Agent", set_fields: dict[str, Any], drop_fields: tuple[str, ...]) -> None:
-    """Patch agent.md's header in place and re-read the row from the file."""
+    """Patch the agent's document (its fields) in place and re-read the row from the file."""
     from flow_sdk.assets.document import DocumentPatch, update_document  # noqa: PLC0415
     from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
-    document = Path(agent_folder(agent)) / "agent.md"
+    document = Path(agent_folder(agent)) / SchemaRegistry.get(EntityType.AGENT.value).shape.main
     if not document.is_file():
         raise PlaceError(f"{document} does not exist", status_code=409)
     patch = DocumentPatch(set_fields=set_fields, drop_fields=drop_fields)
@@ -203,7 +205,7 @@ async def email_answers_here(agent_id: str) -> bool:
 
 
 async def _write_place(agent: "Agent", deployment_id: str, field: str, value: Any) -> "Agent":
-    """Set one field of one place's entry in agent.md; an entry left with nothing to say is dropped."""
+    """Set one field of one place's entry in agent.json; an entry left with nothing to say is dropped."""
     places = [p for p in agent.places or [] if p.deployment_id != deployment_id]
     current = agent.place_for(deployment_id)
     data = current.model_dump() if current is not None else {"deployment_id": deployment_id}
@@ -221,7 +223,7 @@ async def _write_place(agent: "Agent", deployment_id: str, field: str, value: An
 
 
 async def set_place_override(agent: "Agent", deployment_id: str, field: str, value: Any) -> "Agent":
-    """Set (or with ``value=None`` clear) one launch-setting override for one place; writes agent.md."""
+    """Set (or with ``value=None`` clear) one launch-setting override for one place; writes agent.json."""
     await _require_place(agent, deployment_id)
     if field not in PLACE_OVERRIDABLE_FIELDS:
         raise PlaceError(f"{field!r} cannot be overridden per place; one of {', '.join(PLACE_OVERRIDABLE_FIELDS)}")
@@ -236,7 +238,7 @@ async def set_place_override(agent: "Agent", deployment_id: str, field: str, val
 
 
 async def set_place_enabled(agent: "Agent", deployment_id: str, enabled: Any) -> "Agent":
-    """Switch the agent on or off on one place; ``None`` follows the definition's ``enabled``. Writes agent.md."""
+    """Switch the agent on or off on one place; ``None`` follows the definition's ``enabled``. Writes agent.json."""
     await _require_place(agent, deployment_id)
     if enabled is not None and not isinstance(enabled, bool):
         raise PlaceError("enabled must be true or false")
@@ -244,19 +246,19 @@ async def set_place_enabled(agent: "Agent", deployment_id: str, enabled: Any) ->
 
 
 async def set_email_place(agent: "Agent", deployment_id: str) -> "Agent":
-    """Make one place the only one answering this agent's email; writes agent.md.
+    """Make one place the only one answering this agent's email; writes agent.json.
 
     Stops this machine's poller first when the answer moves elsewhere, so the
     hand-over never has two machines answering.
     """
+    from flow_sdk.builtin.agent_mailbox import email_source_for_agent  # noqa: PLC0415
     from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
-    from flow_sdk.builtin.email_inbox import email_source_for_agent  # noqa: PLC0415
 
     deployment = await _require_place(agent, deployment_id)
     source = await email_source_for_agent(agent.id)
     if source is not None and not deployment.is_local and source.status == SourceStatus.ACTIVE.value:
         source.status = SourceStatus.DISABLED.value
-        await source.save()
+        await source.save_runtime()
 
     await _write_header(agent, {"email_place": deployment.id}, ())
     agent.email_place = deployment.id
@@ -264,7 +266,7 @@ async def set_email_place(agent: "Agent", deployment_id: str) -> "Agent":
     if source is not None and deployment.is_local and source.status == SourceStatus.DISABLED.value:
         source.status = SourceStatus.ACTIVE.value
         source.next_poll_at = None
-        await source.save()
+        await source.save_runtime()
     return agent
 
 

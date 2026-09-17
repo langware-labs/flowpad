@@ -133,7 +133,7 @@ api_keys, ai_config, hooks, artifacts, docs, plan, assistance, machine,
 explorer, triggers/cron, capabilities, execute_flow, **show**, **apps**,
 graph, k-browser, **lens** (9 sub-lenses), tasks (redirect), settings,
 preferences, desktop, search, workflows, agentic_process, **display** (vibe
-layout only), assets, project, inbox, conversation, spec, graph_context,
+layout only), assets, project, stream_inbox, conversation, spec, graph_context,
 diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 
 ## 4. Webapps & artifacts

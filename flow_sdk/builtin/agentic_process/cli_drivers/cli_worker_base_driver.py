@@ -1731,12 +1731,18 @@ class WorkerDriver(Protocol):
 
     @property
     def naming_adapter(self) -> "NamingAdapter":
-        """Provider observations; shared naming runtime owns state and watching."""
+        """Provider title observations, read on transcript events and lifecycle edges."""
         ...
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolved transcript path plus the native JSONL format metadata."""
         ...
+
+    # Optional ``transcript_is_final(process, path) -> bool``: True when ``path``
+    # is this session's own record, which a live turn only appends to, so its
+    # location may be remembered (``agentic_process.transcript_cache``). Read via
+    # ``getattr`` with a False default, so a vendor that does not declare it keeps
+    # resolving on every read.
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         """Where this driver's worker writes its JSONL/event log for the

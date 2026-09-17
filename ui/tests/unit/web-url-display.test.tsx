@@ -95,11 +95,12 @@ describe('WebUrlDisplay', () => {
     expect(screen.queryByTestId('web-url-warning')).toBeNull();
   });
 
-  it('puts a warning over a refused frame, and Open in browser leaves the app', async () => {
+  it('puts a warning over a refused frame, and Open in browser leaves the app and dismisses the pane', async () => {
     mocks.post.mockResolvedValue(
       status({ http_status: 404, frame_blocked: true, frame_block_reason: 'x-frame-options: DENY' }),
     );
-    render(<WebUrlDisplay url={URL_} />);
+    const onOpenedInBrowser = vi.fn();
+    render(<WebUrlDisplay url={URL_} onOpenedInBrowser={onOpenedInBrowser} />);
     const warning = await screen.findByTestId('web-url-warning');
     expect(warning.getAttribute('data-issue')).toBe('frame_blocked');
     expect(warning.textContent).toContain('github.com');
@@ -110,6 +111,7 @@ describe('WebUrlDisplay', () => {
 
     fireEvent.click(screen.getByTestId('web-url-open-in-browser'));
     expect(mocks.openExternal).toHaveBeenCalledWith(URL_);
+    expect(onOpenedInBrowser).toHaveBeenCalledTimes(1);
   });
 
   it('does not fetch the site again when the display remounts', async () => {

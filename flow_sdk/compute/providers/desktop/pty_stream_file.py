@@ -41,7 +41,10 @@ from __future__ import annotations
 import base64
 import json
 import threading
+import time
 from pathlib import Path
+
+from flow_sdk import toplog
 
 # Truncate down to this fraction of max when the cap is exceeded, so the
 # (read + rewrite) compaction amortizes instead of running on every write.
@@ -55,7 +58,7 @@ class PtyStreamFile:
         path: Filesystem path for the .pty file.
         cols/rows: Initial terminal size (header of a fresh file).
         max_size_bytes: Maximum file size before frame-boundary truncation
-            (default 10 MB on-disk, i.e. ~7.5 MB of raw output after base64).
+            (default 30 MB on-disk, i.e. ~22.5 MB of raw output after base64).
     """
 
     def __init__(
@@ -63,7 +66,7 @@ class PtyStreamFile:
         path: Path,
         cols: int = 80,
         rows: int = 24,
-        max_size_bytes: int = 10 * 1024 * 1024,
+        max_size_bytes: int = 30 * 1024 * 1024,
     ) -> None:
         self._path = path
         self._max_size_bytes = max_size_bytes
@@ -187,6 +190,7 @@ class PtyStreamFile:
         The header is rewritten to the winsize in effect at the first retained
         frame (tracked through any dropped resize frames).
         """
+        t0 = time.monotonic()
         target = int(self._max_size_bytes * _TRUNCATE_TO_FRACTION)
         raw = self._path.read_bytes()
         lines = raw.split(b"\n")
@@ -211,6 +215,12 @@ class PtyStreamFile:
         new_raw = new_header + b"\n" + b"\n".join(lines[drop:])
         self._path.write_bytes(new_raw)
         self._size = len(new_raw)
+        # Runs on the PTY reader thread holding the file lock; a resize from the
+        # event loop waits on the same lock for this long.
+        toplog.log(
+            "pty", "stream_truncate file=%s bytes_before=%s bytes_after=%s ms=%.0f",
+            self._path.name, len(raw), len(new_raw), (time.monotonic() - t0) * 1000,
+        )
 
     # ── reading ──────────────────────────────────────────────────────────────
 

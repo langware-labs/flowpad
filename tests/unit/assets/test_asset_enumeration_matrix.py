@@ -128,14 +128,14 @@ def test_skill_bundled_workflow_is_a_declared_child_but_readme_is_support(tmp_pa
 
 
 def test_nested_native_family_keeps_child_identity_and_support_ownership(tmp_path):
-    parent = _write(tmp_path, "data_source_spec")
+    parent = _write(tmp_path, "data_driver")
     child = _write(parent, "micro_app", name="editor")
     support = parent / "README.md"
     support.write_text("Supporting data-source documentation")
     assert Asset.containing(child / "webapp.json").path == child.resolve()
     assert Asset.containing(support).path == parent.resolve()
     assert {(asset.typeid.type, asset.path) for asset in AssetFolder(path=tmp_path, recursive=True).assets()} == {
-        ("data_source_spec", parent.resolve()), ("micro_app", child.resolve()),
+        ("data_driver", parent.resolve()), ("micro_app", child.resolve()),
     }
 
 

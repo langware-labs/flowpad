@@ -117,4 +117,23 @@ describe('project agent auto-launch redirect', () => {
     const response = await agentAutoLaunchRedirect(new Request(`http://flowpad.local/dock/project/${PROJECT_ID}`));
     expect(response).toBeNull();
   });
+
+  it('surfaces a refused launch instead of looking like a project with no agent', async () => {
+    // The backend answers a failed launch INSIDE a success envelope (an
+    // ApiFailResponse ships as HTTP 200 and the client unwraps it to
+    // undefined), so this payload — not a rejection — is the failure path.
+    mocks.post.mockResolvedValue({
+      agent_id: null,
+      process_id: null,
+      process_typeid: null,
+      prompt_queued: false,
+      cancelled: [],
+      error: 'no worker binary',
+    });
+
+    const response = await agentAutoLaunchRedirect(new Request(`http://flowpad.local/dock/project/${PROJECT_ID}`));
+
+    expect(response).toBeNull();
+    expect(takeAgentAutoLaunchWarning()).toEqual({ winner: '', cancelled: [], error: 'no worker binary' });
+  });
 });

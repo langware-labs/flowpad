@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -33,7 +34,7 @@ async def test_git_asset_record_and_fs_use_entity_relative_vfs(bootstrapped_clie
             "type_id": type_id,
         },
         "main_ref": {
-            "path": "agent.md",
+            "path": "agent.json",
             "ref_type": "file",
             "read_only": False,
             "type_id": type_id,
@@ -41,14 +42,15 @@ async def test_git_asset_record_and_fs_use_entity_relative_vfs(bootstrapped_clie
     }
 
     # ``asset_ref`` is the asset ROOT (the folder asserted as ``record`` above);
-    # the body is its main file, the same ``agent.md`` ``main_ref`` names.
-    source_path = Path(agent["asset_ref"]) / "agent.md"
-    source = source_path.read_text(encoding="utf-8")
-    updated = source.replace("title: QA manager", "title: QA manager — entity VFS")
+    # the document is its main file, the same ``agent.json`` ``main_ref`` names.
+    source_path = Path(agent["asset_ref"]) / "agent.json"
+    source = json.loads(source_path.read_text(encoding="utf-8"))
+    assert source["title"] == "QA manager"
+    updated = json.dumps({**source, "title": "QA manager — entity VFS"}, indent=2) + "\n"
     write_response = await bootstrapped_client.post(
-        f"/api/v1/graph/agent/{agent_id}/fs/write/agent.md",
+        f"/api/v1/graph/agent/{agent_id}/fs/write/agent.json",
         json={"content": updated},
     )
     assert write_response.status_code == 200, write_response.text
     assert source_path.read_text(encoding="utf-8") == updated
-    assert not (project_root / "agent.md").exists()
+    assert not (project_root / "agent.json").exists()

@@ -20,7 +20,6 @@ export async function prefetchStartupAssets(): Promise<void> {
     ...(!isHubOnly() ? [
       lazyAssets.prefetch(LazyAsset.IndexStatus, { scope }),
       lazyAssets.prefetch(LazyAsset.AssetStats, { scope }),
-      ...(dataContext.computeNode?.id ? [lazyAssets.prefetch(LazyAsset.DiscoveredProjects, { nodeId: dataContext.computeNode.id })] : []),
     ] : []),
   ]);
 }

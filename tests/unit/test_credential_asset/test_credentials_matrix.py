@@ -81,7 +81,7 @@ async def test_user_env_writes_the_home_env_file_without_a_gitignore(home, proje
 
     assert _env(home) == {"QA_USER": "u1"}
     assert not (home / ".gitignore").exists(), "a home folder that is not a repo gets no .gitignore"
-    assert Path(spec.asset_ref) == home / "agentic-assets" / "credential" / "personal"
+    assert Path(spec.asset_ref) == home / "agentic-assets" / "secret_pack" / "personal"
     assert spec.scope == "user" and spec.project_id is None
 
 
@@ -102,7 +102,7 @@ async def test_project_env_writes_the_project_env_file_and_gitignores_it(home, p
 
     assert _env(mount) == {"QA_PROJ": "p1"}
     assert ".env.local" in (mount / ".gitignore").read_text()
-    assert Path(spec.asset_ref) == mount / "agentic-assets" / "credential" / "team"
+    assert Path(spec.asset_ref) == mount / "agentic-assets" / "secret_pack" / "team"
     assert (spec.scope, spec.project_id) == ("project", str(project.id))
 
 
@@ -138,7 +138,7 @@ async def test_the_folder_is_a_real_asset_with_a_v4_id(home, project):
     spec = await save_credential(scope="user", manifest=_manifest("personal", "QA_USER", title="Personal"))
 
     folder = Path(spec.asset_ref)
-    manifest = json.loads((folder / "credential.json").read_text())
+    manifest = json.loads((folder / "secret_pack.json").read_text())
     capsule = json.loads((folder / ".flow" / "capsules" / "identity.json").read_text())
     assert manifest["title"] == "Personal" and manifest.get("value_store", "env") == "env"
     assert "id" not in manifest
@@ -317,7 +317,7 @@ async def test_editing_keeps_the_id_and_rewrites_the_manifest(home, project):
     )
 
     assert edited.id == spec.id and edited.name == "personal"
-    written = json.loads((Path(spec.asset_ref) / "credential.json").read_text())
+    written = json.loads((Path(spec.asset_ref) / "secret_pack.json").read_text())
     assert written["title"] == "Renamed"
     assert sorted(written["vars"]) == ["QA_EXTRA", "QA_USER"]
 
@@ -371,9 +371,9 @@ async def test_deleting_one_project_credential_leaves_another_projects_value(hom
 
 
 async def test_a_catalogue_template_is_read_only(home, project):
-    from flow_sdk.builtin.credential_spec import CredentialSpec
+    from flow_sdk.builtin.secret_pack import SecretPack
 
-    template = CredentialSpec(name="gmail", vars={"GMAIL_ADDRESS": {"label": "x"}})
+    template = SecretPack(name="gmail", vars={"GMAIL_ADDRESS": {"label": "x"}})
     template.scope = "system"
     await template.save()
 

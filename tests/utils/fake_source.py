@@ -15,8 +15,11 @@ from contextlib import contextmanager
 from dataclasses import replace
 from typing import AsyncGenerator, ClassVar, Iterable, Optional
 
+from pydantic import PrivateAttr
+
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.ingest.sources import SOURCES, SourceType
+from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.ingest.driver_runtime import DRIVERS
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import SourceBinding
@@ -24,10 +27,8 @@ from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import DataPage
-from flow_sdk.sources.values.segment import SegmentRef
 from flow_sdk.utils.serialization import iso_to_utc
 
-SEGMENT = "s"
 #: The flat record kind a scripted message is stored under.
 SCRIPTED_KIND = "message"
 
@@ -78,10 +79,7 @@ class ScriptedSource(Source):
     async def verify(self) -> Verdict:
         return Verdict(ready=True)
 
-    async def segments(self) -> list[SegmentRef]:
-        return [SegmentRef(key=SEGMENT, label="scripted")]
-
-    async def fetch(self, query=None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> DataPage:
+    async def fetch(self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow=None) -> DataPage:
         self._require_open()
         script = self.script
         script.fetches += 1
@@ -92,8 +90,8 @@ class ScriptedSource(Source):
             return DataPage(items=())
         return DataPage(items=tuple(self._item(m) for m in script.pages.popleft()))
 
-    async def iterate(self, query=None, *, page_size: Optional[int] = None) -> AsyncGenerator[MessageItem, None]:
-        for item in (await self.fetch(query)).items:
+    async def iterate(self, *, page_size: Optional[int] = None, narrow=None) -> AsyncGenerator[MessageItem, None]:
+        for item in (await self.fetch()).items:
             yield item
 
     async def send(self, data: MessageData) -> MessageItem:
@@ -126,16 +124,23 @@ class ScriptedSource(Source):
         return MessageItem(origin=self.origin(external_id), data=data)
 
 
-class _ScriptedType(SourceType):
-    """The scripted provider's type: a send the test replaced answers first."""
+class _ScriptedType(DataDriver):
+    """The scripted provider's driver: a send the test replaced answers first."""
+
+    _abstract: ClassVar[bool] = True  # a test double, not a second registered type
+    _script: Optional[Script] = PrivateAttr(None)
 
     def __init__(self, cls, script: Script, *, kind: str):
-        super().__init__(cls, kind=kind)
-        self.script = script
+        super().__init__(name=cls.provider, kind=kind)
+        self._cls, self._script = cls, script
+
+    @property
+    def script(self) -> Script:
+        return self._script
 
     async def traverse(self, row, position):
         """The scripted channel's records keep the flat kind the scripted driver always stamped
-        (``message``), which sits outside the inbox's ``content.message`` root — a fence about paging
+        (``message``), which sits outside the stream inbox's ``content.message`` root — a fence about paging
         or acks must not become a test of projecting one very long thread."""
         found = await super().traverse(row, position)
         if not found.items:
@@ -151,16 +156,16 @@ class _ScriptedType(SourceType):
 @contextmanager
 def scripted_provider(provider: str = "scripted", *, pages: Iterable[list[dict]] = ()):
     """Register a scripted source under *provider* for the block, restoring what was there."""
-    previous: Optional[SourceType] = SOURCES.get_or_none(provider)
+    previous: Optional[DataDriver] = DRIVERS.get_or_none(provider)
     script = Script(provider, pages)
     cls = type(f"Scripted_{provider}", (ScriptedSource,), {"provider": provider, "script_of": script})
-    SOURCES.register(_ScriptedType(cls, script, kind=f"datasource.api.{provider}"))
+    DRIVERS.register(_ScriptedType(cls, script, kind=f"datasource.api.{provider}"))
     try:
         yield script
     finally:
-        SOURCES.unregister(provider)
+        DRIVERS.unregister(provider)
         if previous is not None:
-            SOURCES.register(previous)
+            DRIVERS.register(previous)
 
 
-__all__ = ["SCRIPTED_KIND", "SEGMENT", "Script", "ScriptedSource", "scripted_provider"]
+__all__ = ["SCRIPTED_KIND", "Script", "ScriptedSource", "scripted_provider"]

@@ -89,6 +89,11 @@ class Folder:
 
     main: str | None = None
 
+    @classmethod
+    def entity_json(cls, type_name: str) -> "Folder":
+        """The folder of an ENTITY DOCUMENT: its fields live in ``<type>.json`` (``agent/q/agent.json``)."""
+        return cls(main=f"{type_name}.json")
+
     @property
     def ext(self) -> str | None:
         """The main document's suffix (``.md`` for ``SKILL.md``); None for a bare folder."""

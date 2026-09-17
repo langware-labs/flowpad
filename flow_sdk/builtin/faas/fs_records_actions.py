@@ -549,7 +549,7 @@ class FsRecordsActionsMixin:
             # Marker presence is the explicit enrollment signal: only UI paths
             # that represent a real edit call markEdit(). Registry visibility
             # keeps the projection constructible by clients, while db_only
-            # generically removes infrastructure rows (Tab/DataSourceCursor).
+            # generically removes infrastructure rows (Tab/ConsumerPosition).
             eligible_types = None
             if recent_activity:
                 from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
@@ -2072,7 +2072,7 @@ class FsRecordsActionsMixin:
 
     async def _materialize_main_body(self, rec, record_type: str) -> None:
         """Write a just-created asset to disk through the type's serializer
-        (``SKILL.md``, ``agent.md``…) so the new asset is discoverable by a
+        (``SKILL.md``, ``agent.json``…) so the new asset is discoverable by a
         disk-walking scan. Bridges the gap that ``sync_to_db`` (DB row +
         metadata shadow only) leaves for the FSRecord create path."""
         from pathlib import Path  # noqa: PLC0415

@@ -24,6 +24,12 @@ export function useProjectLocation() {
     // reference-only `project` dep would keep the workspace fallback forever.
   }, [workdir, project, project?.fs_storage_mount_path, workspacePath]);
 
+  // Only a REAL folder: ``projectPath`` falls back to a guessed
+  // ``<workspace>/<displayName>`` (then the bare name) while the full project row
+  // is still loading — fine for a label, but asking git about it is a wasted
+  // request followed by a second one once the mount path arrives.
+  const gitWorkdir = workdir || project?.fs_storage_mount_path || null;
+
   const openProjectFolder = useCallback(async () => {
     if (!computeNode?.typeId || !projectPath) return;
     try {
@@ -33,5 +39,5 @@ export function useProjectLocation() {
     }
   }, [computeNode?.typeId, projectPath]);
 
-  return { project, computeNode, projectPath, openProjectFolder };
+  return { project, computeNode, projectPath, gitWorkdir, openProjectFolder };
 }

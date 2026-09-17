@@ -57,17 +57,16 @@ MANIFEST = {
 }
 
 
-AGENT_MD = """---
-name: cloudnsite-support
-title: CloudNSite Support
-description: Grounded answers from CloudNSite's engineering method.
-avatar: ./avatar.png
-worker_type: claude
-enabled: true
----
-
-You are the CloudNSite support agent.
-"""
+AGENT_JSON = {
+    "type": "agent",
+    "name": "cloudnsite-support",
+    "title": "CloudNSite Support",
+    "description": "Grounded answers from CloudNSite's engineering method.",
+    "avatar": "./avatar.png",
+    "worker_type": "claude",
+    "enabled": True,
+}
+SYSTEM_PROMPT_MD = "You are the CloudNSite support agent.\n"
 
 
 def _make_vendor_repo(root: Path) -> Path:
@@ -82,7 +81,8 @@ def _make_vendor_repo(root: Path) -> Path:
 
     agent = root / "agentic-assets" / "agent" / "cloudnsite-support"
     agent.mkdir(parents=True)
-    (agent / "agent.md").write_text(AGENT_MD, encoding="utf-8")
+    (agent / "agent.json").write_text(json.dumps(AGENT_JSON, indent=2) + "\n", encoding="utf-8")
+    (agent / "system_prompt.md").write_text(SYSTEM_PROMPT_MD, encoding="utf-8")
 
     skill = root / ".claude" / "skills" / "triage-ticket"
     skill.mkdir(parents=True)
@@ -251,7 +251,7 @@ async def test_saving_a_vendor_agent_does_not_dirty_the_checkout(
     ``read_only`` is a construction-time flag on ``FSRef`` and is never
     serialized — ``meta_dict`` persists only the path — so every reload rebuilds
     the ref writable. For an ``owns_main_ref`` type that is enough to lose the
-    guard entirely: ``Agent`` re-renders ``agent.md`` on EVERY save, so one
+    guard entirely: ``Agent`` re-renders ``agent.json`` on EVERY save, so one
     ``save()`` after the attach (an Enabled toggle in the profile editor is
     enough) rewrites a tracked file in the vendor's checkout and their next
     ``git pull`` aborts on "local changes would be overwritten".
@@ -262,9 +262,9 @@ async def test_saving_a_vendor_agent_does_not_dirty_the_checkout(
     response = await project.add_context_dir_from_git(vendor_repo, scope="private")
     assert response.status == "SUCCESS", response
     checkout = Path(response.data["path"])
-    agent_md = checkout / "agentic-assets" / "agent" / "cloudnsite-support" / "agent.md"
+    agent_json = checkout / "agentic-assets" / "agent" / "cloudnsite-support" / "agent.json"
 
-    agents = [a for a in await Agent.get_all() if a.asset_ref == canonical_posix_path(str(agent_md.parent))]
+    agents = [a for a in await Agent.get_all() if a.asset_ref == canonical_posix_path(str(agent_json.parent))]
     assert agents, "indexing the clone should have discovered the vendor's agent"
     await agents[0].save()
 

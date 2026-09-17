@@ -60,13 +60,13 @@ def claude_session_id_from_file(ref: FSRef | Path) -> str | None:
 
 def extract_claude_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a JSONL session into a Record. Replaces ``ClaudeSessionRecord._from_fsref_sync``."""
-    return [extract_claude_session_from_path(ref._path, resolved_id=resolved_id)]
+    return [extract_claude_session_from_path(ref._path, include_content=True, resolved_id=resolved_id)]
 
 
 def extract_claude_session_from_path(
     path: str | Path,
     *,
-    include_content: bool = True,
+    include_content: bool = False,
     resolved_id: str | None = None,
 ) -> FSRecord:
     """Build a Record from a JSONL transcript path.
@@ -76,9 +76,10 @@ def extract_claude_session_from_path(
     incrementally thereafter, with explicit custom titles taking precedence. The searchable ``content`` (extractive transcript text for
     FTS) requires a full-transcript parse via ``worker_summary_log`` — this is
     gated by the indexer's skip-fresh check, so it only runs when the JSONL has
-    changed. Listing callers that hit many transcripts per request (e.g.
-    worker history) must pass ``include_content=False`` — they have no
-    skip-fresh gate, and the full parse per file starves the server.
+    changed, and it is the only caller that opts in (``include_content=True``).
+    Everything else — listings that hit many transcripts per request — keeps
+    the default: without a skip-fresh gate the full parse per file starves the
+    server.
     Stats are NOT populated here — call
     ``ensure_claude_session_stats(rec)`` to lazy-load them.
 

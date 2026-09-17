@@ -11,9 +11,9 @@ import uuid
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.ingest.health import SourceHealth
-from flow_sdk.ingest.sources import SourceType, register_source
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.protocols import Verdict
 
@@ -34,13 +34,13 @@ class _NoSetup(Source):
 
 @pytest.fixture
 def sources():
-    register_source(SourceType(_NeedsSetup, kind="datasource.test.setup"))
-    register_source(SourceType(_NoSetup, kind="datasource.test.plain"))
+    DataDriver.register(DataDriver.for_class(_NeedsSetup, kind="datasource.test.setup"))
+    DataDriver.register(DataDriver.for_class(_NoSetup, kind="datasource.test.plain"))
     return _NeedsSetup, _NoSetup
 
 
 async def _source(**kw) -> DataSource:
-    base = dict(name="lifecycle", account_key=f"a-{uuid.uuid4().hex[:6]}")
+    base = dict(name=f"lifecycle {uuid.uuid4().hex[:8]}", account_key=f"a-{uuid.uuid4().hex[:6]}")
     base.update(kw)
     src = DataSource(**base)
     await src.save()

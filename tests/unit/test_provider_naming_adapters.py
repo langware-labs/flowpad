@@ -1,7 +1,6 @@
 """Native title formats, real files/stores, no worker or browser needed."""
 import json
 import sqlite3
-from pathlib import Path
 from types import SimpleNamespace
 
 from flow_sdk.assets.types.claude_titles import read_claude_title
@@ -50,8 +49,8 @@ def test_codex_only_complete_latest_matching_record(tmp_path):
                {'id': 'test-session', 'thread_name': 'Second'}]
     path.write_text(''.join(json.dumps(r) + '\n' for r in records) + '{"id":')
     class Adapter(CodexNamingAdapter):
-        def watch_paths(self, process):
-            return (path,)
+        def _source_path(self, process):
+            return path
     item, = Adapter().read(_process())
     assert item.title == 'Second' and item.origin == NameOrigin.UNKNOWN
 
@@ -59,8 +58,8 @@ def test_codex_only_complete_latest_matching_record(tmp_path):
 def test_copilot_explicit_boolean_provenance_and_multiline(tmp_path):
     path = tmp_path / 'workspace.yaml'
     class Adapter(CopilotNamingAdapter):
-        def watch_paths(self, process):
-            return (path,)
+        def _source_path(self, process):
+            return path
     for flag, origin in [('true', NameOrigin.EXPLICIT_USER), ('false', NameOrigin.HARNESS_AUTO), ('null', NameOrigin.UNKNOWN)]:
         path.write_text(f'name: |-\n  A title:\n  with punctuation\nuser_named: {flag}\n')
         item, = Adapter().read(_process())
@@ -72,8 +71,8 @@ def test_copilot_explicit_boolean_provenance_and_multiline(tmp_path):
 def test_opencode_reads_committed_wal_and_filters_native_placeholder(tmp_path):
     path = tmp_path / 'opencode.db'
     class Adapter(OpenCodeNamingAdapter):
-        def watch_paths(self, process):
-            return (path, Path(str(path) + '-wal'))
+        def _source_path(self, process):
+            return path
     with sqlite3.connect(path) as db:
         db.execute('PRAGMA journal_mode=WAL')
         db.execute('CREATE TABLE session (id TEXT, title TEXT, time_updated INTEGER)')
@@ -86,15 +85,20 @@ def test_opencode_reads_committed_wal_and_filters_native_placeholder(tmp_path):
         assert item.title == 'A durable title' and item.origin == NameOrigin.UNKNOWN
 
 
-def test_claude_terminal_backup_is_filtered_and_preserves_uncertainty():
-    class Adapter(ClaudeNamingAdapter):
-        def read(self, process):
-            return []
-    adapter = Adapter()
-    assert adapter.terminal_observation(_process(), 'Claude Code') is None
-    assert adapter.terminal_observation(_process(), '⠋ Claude') is None
-    item = adapter.terminal_observation(_process(), '⠋ Fix Hebrew עברית')
-    assert item.title == 'Fix Hebrew עברית' and item.origin == NameOrigin.UNKNOWN
+def test_transcript_batches_gate_a_title_read_per_provider():
+    from flow_sdk.transcript_analyzer.entries.meta import MetaEntry
+
+    def meta(kind):
+        return MetaEntry(meta_kind=kind, payload={}, id=kind, session_id='test-session',
+                         timestamp='2026-09-16T00:00:00Z', worker='claude')
+
+    claude = ClaudeNamingAdapter()
+    assert claude.transcript_may_rename([meta('attachment'), meta('ai-title')])
+    assert claude.transcript_may_rename([meta('custom-title')])
+    assert not claude.transcript_may_rename([meta('attachment'), meta('last-prompt')])
+    assert not claude.transcript_may_rename([])
+    # Titles outside the transcript cannot be ruled out from the entries.
+    assert CodexNamingAdapter().transcript_may_rename([])
 
 
 def test_session_store_environment_matches_discovery_and_rejects_conflicts(tmp_path):
@@ -120,8 +124,8 @@ def test_codex_old_appended_timestamp_cannot_replace_newer_record(tmp_path):
                               for title, time in [('Newer', '2026-09-13T10:00:00Z'),
                                                   ('Older', '2026-09-12T10:00:00Z')]) + '\n')
     class Adapter(CodexNamingAdapter):
-        def watch_paths(self, process):
-            return (path,)
+        def _source_path(self, process):
+            return path
     assert Adapter().read(_process())[0].title == 'Newer'
 
 

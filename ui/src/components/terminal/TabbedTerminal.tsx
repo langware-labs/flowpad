@@ -134,9 +134,18 @@ function startProcessRuntime(process: AgenticProcess, cols: number, rows: number
     // initSdk connects FlowSync asynchronously. Preserve the former readiness
     // budget, but wait here after route commit so a cold socket cannot either
     // block the URL or make attach race the connection startup.
+    const tConnected = performance.now();
     try {
       await connectionManager.waitForConnected(5000);
+      toplog.log(
+        'agentic_process.load',
+        `startProcessRuntime waitForConnected took ${(performance.now() - tConnected).toFixed(0)}ms proc=${process.id.slice(0, 8)}`,
+      );
     } catch {
+      toplog.log(
+        'agentic_process.load',
+        `startProcessRuntime waitForConnected timed out proc=${process.id.slice(0, 8)}`,
+      );
       notify.error({
         title: t`No realtime connection`,
         message: t`Terminal may be unresponsive until the connection recovers.`,
@@ -264,15 +273,9 @@ const TerminalPanel: React.FC<{
 
   const handleTitleChange = (title: string): void => {
     if (tab.is_disabled) return;
-    if (isProcess) {
-      // The driver/backend owns title validation, provenance, pinning and tab
-      // synchronization. An OSC frame never writes a process name in the UI.
-      void activeProcess?.observeTitle(title).catch((error) => {
-        console.warn('[terminal] title observation failed', error);
-      });
-      return;
-    }
-    if (!shell || !shell.auto_rename) return; // user pinned this shell
+    // A process tab has no shell: the backend names a process from its
+    // transcript, and an OSC frame is never evidence for it.
+    if (!shell || !shell.auto_rename) return; // no shell, or user pinned this shell
     // Clean spinner frames / icons / ANSI off the raw OSC title, then gate on
     // real text and dedupe against the CLEANED name — so animation ticks that
     // reduce to the same title never fire a save.
@@ -384,7 +387,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       // Warm switch = the panel is already in the Set (visibility flip only);
       // cold = first visit mounts InteractiveTerminal (attach + replay).
       toplog.log(
-        'process_load',
+        ['process_load', 'pty', 'agentic_process.load'],
         `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`,
       );
       if (prev.has(activeKey)) return prev;

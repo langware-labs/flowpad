@@ -16,10 +16,10 @@ description: The browser's remembered project outranks everything; below it defa
 tag: breadcrumb.test.bootstrap_default_project.rules
 sites:
   - rel_path: "tests/api/test_default_project_once.py"
-    line: 142
+    line: 143
     note: "FAILING? read this tag's rules before editing \u2014 default_project has a strict source order and must stay per-caller, not cached"
   - rel_path: "ui/tests/api/setup_project_stale_memory.test.ts"
-    line: 54
+    line: 128
     note: "FAILING? read this tag's rules before editing \u2014 a dead browser memory must defer to default_project, never pick by list order"
 ```
 

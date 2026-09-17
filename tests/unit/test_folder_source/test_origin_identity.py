@@ -12,7 +12,7 @@ import pytest
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.ingest import reflect
 from flow_sdk.ingest.reflect import origin_id_for
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 
 from ._harness import id_at, poll, write_doc
 
@@ -40,14 +40,7 @@ async def test_re_observing_the_same_origin_keeps_one_entity(
     first = await id_at(landed)
     assert first is not None
 
-    from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-
-    cursor = await DataSourceCursor.get_one(
-        {"data_source_id": source.id, "segment_key": "root"}
-    )
-    cursor.state = {}
-    cursor.manifest = {}
-    await cursor.save()
+    await source.reset()
 
     await poll(source)
 
@@ -68,14 +61,7 @@ async def test_switching_reflect_mode_keeps_one_entity(
     source.reflect_into = ""
     await source.save()
 
-    from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-
-    cursor = await DataSourceCursor.get_one(
-        {"data_source_id": source.id, "segment_key": "root"}
-    )
-    cursor.state = {}
-    cursor.manifest = {}
-    await cursor.save()
+    await source.reset()
 
     await poll(source)
 

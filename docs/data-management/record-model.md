@@ -313,6 +313,7 @@ FTS reads are default readers over instance attrs — type-specific extractors p
 
 ```python
 from flow_sdk.fs_store.record_list import RecordList
+from flow_sdk.fs_store.scope import Scope
 
 lst = RecordList(type_name="claude_session", scope=Scope.USER)
 ```

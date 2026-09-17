@@ -46,7 +46,7 @@ from tests.api.conftest import (
 from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
 
 # do not increase timeout without approval
-pytestmark = pytest.mark.timeout(30)
+pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("usable_claude_source")]
 
 
 # ---------------------------------------------------------------------------

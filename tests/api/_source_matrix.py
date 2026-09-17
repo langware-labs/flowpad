@@ -13,21 +13,21 @@ import json
 
 from typer.testing import CliRunner
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.data_source_spec import DataSourceSpec
 from flow_sdk.cli.commands import _common, source_cmd
-from flow_sdk.ingest.source_registry import SHIPPED_ROOT, load_module, read_manifest
-from flow_sdk.ingest.sources import source_type
+from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module, read_manifest
 
-NAMES = sorted(p.name for p in SHIPPED_ROOT.iterdir() if (p / "data_source.json").is_file())
+NAMES = sorted(p.name for p in SHIPPED_ROOT.iterdir() if (p / "data_driver.json").is_file())
 
 
 async def spec_row(name: str) -> None:
     """The manifest as its spec row — what the indexer writes on an instance — so config coercion
     and the reflect-mode rule run as they do there."""
-    if await DataSourceSpec.get_one({"name": name}) is None:
+    # get_all, not get_one: the suite shares a DB, and an index pass may have added the shipped row too.
+    if not await DataDriver.get_all({"name": name}):
         manifest = read_manifest(SHIPPED_ROOT / name)
-        await DataSourceSpec(**manifest.model_dump(by_alias=False, exclude={"manifest_schema"})).save(notify=False)
+        await DataDriver(**manifest.model_dump(by_alias=False, exclude={"manifest_schema"})).save(notify=False)
 
 
 def _data(response) -> dict:
@@ -118,10 +118,14 @@ class CliDriver:
 
 
 async def run_case(name: str, driver, client, monkeypatch, tmp_path) -> None:
-    stype = source_type(name)
+    stype = DataDriver.loaded(name)
     assert stype is not None and stype.manifest is not None, f"{name} did not load"
     await spec_row(name)
     cases = load_module(SHIPPED_ROOT / name / "tests", "matrix")
+
+    # One source per account: a row another test left for the same account would refuse this create.
+    for leftover in await DataSource.get_all({"provider": name}):
+        await leftover.delete()
 
     with cases.case(monkeypatch, tmp_path) as case:
         source_id = await driver.create(name, case["config"], case.get("fields", {}))

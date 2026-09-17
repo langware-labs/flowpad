@@ -1,7 +1,7 @@
 /**
- * Real xterm OSC parsing must report process titles to the backend policy,
- * including startup frames. It must never PUT a process or label a tab itself.
- * Backend FSM tests own acceptance/provenance; this test owns the PTY → action seam.
+ * A process is named by the backend from its transcript. Real xterm OSC title
+ * frames - startup and tag titles alike - must neither reach the backend nor
+ * PUT a process or label a tab from the UI.
  */
 import '@testing-library/jest-dom/vitest';
 import { render, waitFor } from '@testing-library/react';
@@ -23,6 +23,7 @@ import {
   type ActionInfo,
   type TabRow,
 } from '@sdk';
+import { Terminal as XTerm } from '@xterm/xterm';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -95,7 +96,10 @@ describe('PTY title observations are backend-owned', () => {
   /** Every AgenticProcess name that reached the backend (PUT saves + Tab set_name). */
   let savedProcessNames: string[];
   let savedTabNames: string[];
-  let observedTitles: { title: string; session_id: string | null }[];
+  /** Any backend action whose payload carried a parsed title, whatever its name. */
+  let reportedTitles: unknown[];
+  /** Titles xterm itself parsed — the control proving the OSC frames were delivered. */
+  let parsedTitles: string[];
 
   beforeEach(async () => {
     Object.defineProperty(window, 'matchMedia', {
@@ -143,7 +147,18 @@ describe('PTY title observations are backend-owned', () => {
 
     savedProcessNames = [];
     savedTabNames = [];
-    observedTitles = [];
+    reportedTitles = [];
+    parsedTitles = [];
+    // `onTitleChange` is an event getter; wrap what it returns so every
+    // subscriber (the component's included) still receives the title.
+    const titleEvent = Object.getOwnPropertyDescriptor(XTerm.prototype, 'onTitleChange')!.get!;
+    vi.spyOn(XTerm.prototype, 'onTitleChange', 'get').mockImplementation(function (this: XTerm) {
+      const subscribe = titleEvent.call(this);
+      return (listener: (title: string) => void) => subscribe((title: string) => {
+        parsedTitles.push(title);
+        listener(title);
+      });
+    });
 
     // Seed the live entities the panel renders from. Constructing them
     // registers them in the dataManager cache (APIEntity self-registration);
@@ -233,9 +248,9 @@ describe('PTY title observations are backend-owned', () => {
       if (action.name === 'new_tab' && target === null) {
         return { tabs: [new Tab(tabRow())] } as never;
       }
-      if (action.name === 'observe-title' && target?.type === AgenticProcess.type) {
-        observedTitles.push(action.bodyParameters as { title: string; session_id: string | null });
-        return {} as never;
+      const payload = JSON.stringify(action.bodyParameters ?? null);
+      if (payload.includes(TAG_TITLE) || payload.includes('"claude"')) {
+        reportedTitles.push({ action: action.name, body: action.bodyParameters });
       }
       if (action.name === 'set_name' && target?.type === Tab.type) {
         savedTabNames.push(String((action.bodyParameters as { name?: string })?.name ?? ''));
@@ -290,7 +305,7 @@ describe('PTY title observations are backend-owned', () => {
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   });
 
-  it("reports raw OSC titles with session identity and leaves durable naming to the backend", async () => {
+  it('ignores OSC titles for a process: nothing reported, nothing saved', async () => {
     // Seed the tab store with the session's tab (what the route loader's
     // setupTab would have materialized) and navigate straight to it.
     tabManager.adoptGlobal([new Tab(tabRow())]);
@@ -320,10 +335,8 @@ describe('PTY title observations are backend-owned', () => {
     // 2. A conversation later produces a tag title (the control signal).
     shell.ptyConnection.routeOutput(btoa(oscTitle(TAG_TITLE)), 2);
 
-    await waitFor(() => expect(observedTitles).toEqual([
-      { title: 'claude', session_id: 'worker-session' },
-      { title: TAG_TITLE, session_id: 'worker-session' },
-    ]), { timeout: 10000 });
+    await waitFor(() => expect(parsedTitles).toEqual(['claude', TAG_TITLE]), { timeout: 10000 });
+    expect(reportedTitles).toEqual([]);
     expect(savedTabNames).toEqual([]);
     expect(savedProcessNames).toEqual([]);
     expect(proc.name).toBe(ORIGINAL_NAME);

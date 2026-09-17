@@ -1,0 +1,95 @@
+---
+id: d99de331-350d-410a-8198-79f961cf4761
+version: 1
+---
+# An agent on a channel — snippets
+
+How to put an agent on a messaging channel and answer people there, using WhatsApp as the
+channel. Two ways to "run" it: **the app runs it** (the source is the agent's, the backend answers
+every allowed message — nothing of yours stays running), or **your process runs the loop** (plain
+Python over the same SDK, for a worker or a policy of your own). Both need Flowpad running on the
+machine and an LLM source the harness can spend (Settings → LLM, or the `lm_keys` route).
+Everything below is run as written by `tests/unit/test_agents_on_channels_snippets.py` against the
+WhatsApp double; variant B is also proven in Docker by
+`tests/long_tests/test_whatsapp_agent_in_docker.py`.
+
+## 1. The credential, once
+
+A channel's secrets are a **credential** the driver declares (`auth.credential` in its manifest),
+never config. Declared once per machine (or per project), values in the vault; nothing lands in a
+file a project shares.
+
+```python
+from flow_sdk.builtin.credential_service import save_credential
+
+await save_credential(
+    scope="user",
+    manifest={"name": "whatsapp", "value_store": "vault",
+              "vars": {"FLOW_WHATSAPP_TOKEN": {"secret": True, "required": True},
+                       "FLOW_WHATSAPP_SECRET": {"secret": True, "required": True}}},
+    values={"FLOW_WHATSAPP_TOKEN": WHATSAPP_TOKEN, "FLOW_WHATSAPP_SECRET": WHATSAPP_APP_SECRET},
+)
+```
+
+## 2. Variant A — the app answers
+
+The agent owns the source; the backend turns every message from an allowed sender into a turn and
+sends the answer back on the channel. Nothing of yours keeps running.
+
+```python
+from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.data_driver import DataDriver
+
+agent = Agent(name="support-bot", worker_type="claude",
+              system_prompt="You answer WhatsApp messages for Acme support. One short paragraph.")
+await agent.save()
+
+whatsapp = await DataDriver.get("whatsapp")
+source = whatsapp.create_source(
+    whatsapp.create_config(phone_number_id=PHONE_NUMBER_ID, verify_token=VERIFY_TOKEN, **EXTRA_CONFIG),
+    name="Acme support line",
+    owner=agent.typeid,                        # the agent's stream inbox; the agent answers
+    inbound_allowed_senders=[CUSTOMER],        # who may drive it — empty admits nobody
+)
+await source.save()
+verdict = await source.verify()                # ACTIVE once the token works
+```
+
+Point Meta's webhook at `https://<this instance>/api/v1/data_source/webhook/whatsapp` with the same
+`VERIFY_TOKEN`; the thread is at `/dock/agent/<agent id>/stream_inbox`.
+
+## 3. Variant B — your process runs the loop
+
+The same agent and channel, but the loop is yours: a script that stays up, spawns the agent's
+worker per chat, and replies. `workflow(name)` makes the position durable — a restart resumes
+after the last reply.
+
+```python
+from flow_sdk.blocks import StreamInbox, workflow
+from flow_sdk.builtin.agent import Agent
+
+agent = Agent(name="support-bot-b", worker_type="claude",
+              system_prompt="You answer WhatsApp messages for Acme support. One short paragraph.")
+await agent.save()
+
+async with workflow("whatsapp-support"):
+    box = StreamInbox(PHONE_NUMBER_ID, provider="whatsapp", owner=agent,
+                      verify_token=VERIFY_TOKEN, senders=[CUSTOMER], **EXTRA_CONFIG)
+    async with agent.process_messages():
+        async for m in box.listen():
+            out = await agent.process_message(m)              # one session per chat
+            await m.reply(await m.reply_spec(body=out.text))  # send → record → ack
+```
+
+`box.listen()` polls the source through the poller's slot and drains what landed in ingest order;
+`m.reply` sends through the channel in the channel's own shape and acks only after the send is
+recorded. `senders` is the loop's allowlist: the loop acks (never answers) anyone else.
+
+## 4. How to use it
+
+- Text the business number from an allowed phone; the answer arrives in that chat.
+- Watch the conversation in the agent's stream inbox; a reply typed there goes out as the agent.
+- Change who may talk to it: `POST /api/v1/graph/agent/<id>/configure_mailbox {"allowed_senders": [...]}`
+  (variant A), or the `senders=` list (variant B).
+
+`EXTRA_CONFIG` is empty in production; a test passes the driver's loopback `base_url` through it.

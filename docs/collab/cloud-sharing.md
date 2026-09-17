@@ -83,7 +83,7 @@ evidence that a stored field is being removed.)
 
 ## Credentials: declarations travel with the repo, values never do
 
-A project's credentials are folder assets at `agentic-assets/credential/<name>/`
+A project's credentials are folder assets at `agentic-assets/secret_pack/<name>/`
 inside the project. The declaration — which environment variables the project
 needs — travels with the repository like any other asset. Values do not travel
 at all: they live in the project's `.env.local` (which Flowpad keeps excluded by

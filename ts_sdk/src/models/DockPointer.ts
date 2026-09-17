@@ -41,7 +41,7 @@ export class DockPointerData implements IDockPointer {
  * A dock that definitely addresses a target.
  *
  * `DockPointerData.pointer` is optional for good reason — `new
- * DockPointerData(ViewType.INBOX)` and `new DockPointerData(ViewType.SHELL)`
+ * DockPointerData(ViewType.STREAM_INBOX)` and `new DockPointerData(ViewType.SHELL)`
  * are real docks that address a VIEW rather than a row. But some getters
  * provably always build one (from a template literal, or from `typeId`, which
  * throws rather than returning nullish), and their callers should not have to

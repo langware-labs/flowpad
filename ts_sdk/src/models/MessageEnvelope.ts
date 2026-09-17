@@ -1,7 +1,7 @@
 /**
  * The header a cached message arrived with — mirrors `MessageEnvelope` and
  * `UserProfile` (flow_sdk/builtin/flow_message.py, flow_sdk/sources/values/items.py).
- * Written by the inbox projection; the UI renders it and derives nothing.
+ * Written by the stream inbox projection; the UI renders it and derives nothing.
  */
 import { ICloudOrigin } from './CloudOrigin';
 

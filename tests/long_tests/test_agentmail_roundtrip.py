@@ -1,4 +1,4 @@
-"""LIVE: the AgentMail source, back and forth with the Flowpad inbox.
+"""LIVE: the AgentMail source, back and forth with the Flowpad stream inbox.
 
 The pure-Python twin of the agent-transport live tests — no worker, no CLI, no
 ``live_backend``: the driver is in-process HTTP, so the whole loop (receive →
@@ -93,7 +93,7 @@ async def test_agentmail_roundtrip():
     assert watched, f"inbox create returned no address: {sorted(created)}"
     try:
         source = DataSource(
-            name="AgentMail roundtrip",
+            name=f"AgentMail roundtrip {uuid.uuid4().hex[:8]}",
             provider="agentmail",
             config={"inbox": watched, "api_key": KEY},
         )
@@ -118,7 +118,7 @@ async def test_agentmail_roundtrip():
 
         # The tag lanes belong to the backend process; this test asserts the
         # projection's OUTPUT, not the bus — same stance as the Slack twin.
-        from flow_sdk.inbox.projection import project_source_item  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
 
         await project_source_item(item, source=source, notify=False, announce=False)
         fm = await FlowMessage.get_one({"source_item_id": item.id})
@@ -129,9 +129,9 @@ async def test_agentmail_roundtrip():
 
         # ── reply: the driver's real send, threaded on the provider's id ──
         reply_marker = f"{marker}-reply"
-        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        outcome = await source_type("agentmail").send(
+        outcome = await DataDriver.loaded("agentmail").send(
             source,
             thread_key=item.thread_key or "",
             to=item.author_external_id or PROBE,
