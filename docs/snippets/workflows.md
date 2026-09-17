@@ -147,7 +147,33 @@ async with workflow("channel-helper"):
 * Slack allows one history read per channel per minute for a non-Marketplace
   app, so `listen()` on a busy channel samples it rather than mirroring it.
 
-## 4. Values only
+## 4. The same loop on every channel, for a user or an agent
+
+One body serves every channel and both owners. `OWNER` is `None` — the local user's stream
+inbox — or an `Agent`, whose stream inbox is its own (`/dock/agent/<id>/stream_inbox`) and whose
+replies go out as the agent. `m.reply_spec(body=…)` asks the channel who a reply is addressed to,
+so nothing here names a channel. Pinned by `tests/unit/test_workflows_snippets.py` over
+gmail, slack, whatsapp, telegram and agent email, for both owners.
+
+```python
+from flow_sdk.blocks import StreamInbox, workflow
+from flow_sdk.builtin.agent_registry import get_agent
+
+async with workflow("any-channel"):
+    stream_inbox = StreamInbox(ADDRESS, provider=CHANNEL, owner=OWNER)   # the channel's own id: a mailbox, a channel, a chat
+    agent = await get_agent("channel-helper")
+
+    async with agent.process_messages():
+        async for m in stream_inbox.listen():
+            out = await agent.process_message(m)
+            await m.reply(await m.reply_spec(body=out.text))          # addressed the way THIS channel replies
+```
+
+An agent email address (`cloud_email`) is an agent's by definition: there is no user-owned cell
+for it, and `StreamInbox("…", provider="cloud_email")` without an agent owner has no mailbox to
+adopt.
+
+## 5. Values only
 
 The unit pins in `tests/unit/test_blocks_email.py`. Useful when you want the
 shapes without a provider.
