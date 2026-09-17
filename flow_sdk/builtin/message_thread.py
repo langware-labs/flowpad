@@ -9,14 +9,21 @@ conversation id from the thread key: correct until the first merge, then
 unrecoverable.)
 
 **Identity is the natural key, looked up — not derived.** ``find_existing``
-resolves ``(channel, thread_key)`` to the row that already holds it (the key is
-declared once, in ``TypeInfo.natural_key``); the id itself is an ordinary uuid4
-minted on first sight. Same guarantee the old v5-derived id gave — a re-poll
-converges on one row — relocated from id arithmetic to a lookup, so fixing a
-channel value is an UPDATE of the key columns, never a re-mint that orphans
-read state. Keyed on CHANNEL, not provider: a Gmail thread ingested through the
-harness transport today and the API transport tomorrow must resolve to ONE
-thread (see ``cloud_origin.CloudOrigin``).
+resolves ``(channel, thread_key, owner, data_source_id)`` to the row that already
+holds it (the key is declared once, in ``TypeInfo.natural_key``); the id itself is
+an ordinary uuid4 minted on first sight. A re-poll converges on one row by lookup,
+so fixing a channel value is an UPDATE of the key columns, never a re-mint that
+orphans read state.
+
+**A thread belongs to the account that read it.** ``data_source_id`` is that account
+as the source reads it: without it two mailboxes of one owner on one channel resolve
+the same ``(channel, thread_key)`` whenever their keys match — always, for a provider
+that threads by subject — and ``Re: invoice`` from work and from personal mail become
+one conversation. The source row, not its ``account_key``, because that value is
+re-stamped when a source first verifies and a key built on it would fork every thread
+it had. The same mailbox read through two transports (the Gmail API and a harness
+connector) stays two threads: their thread ids are different encodings and their
+message ids different schemes, so no key could honestly merge them.
 
 **Why the count lives here and not on each message.** The conversation view
 loads a bounded window of messages (``CONVERSATION_MESSAGES_WINDOW``, 500) with
@@ -54,6 +61,10 @@ class MessageThread(ProjectedFields, Entity):
     # merge. `None` on rows written before the field existed; the projection
     # adopts those into the resolving owner on first touch rather than forking.
     owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # The source that read this thread — the account half of the natural key (see the
+    # module docstring). `None` on rows written before the field existed; the projection
+    # adopts those into the first source that resolves them rather than forking.
+    data_source_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
 
     # ── the many-to-one seam ───────────────────────────────────────────────
     # Which conversation shows this thread. Starts 1:1 with a freshly minted
@@ -75,43 +86,46 @@ class MessageThread(ProjectedFields, Entity):
 
     @classmethod
     async def find_existing(
-        cls, channel: str, thread_key: str, owner: "TypeId | None" = None
+        cls, channel: str, thread_key: str, owner: "TypeId | None", data_source_id: str
     ) -> "MessageThread | None":
         """THE identity lookup — the row for this natural key, or None.
 
         The key is declared once, on the type (``TypeInfo.natural_key``); this
         is its named single-row entry point, indexed by
-        ``ix_entities_message_thread_natural_key_v2``. Same shape as
+        ``ix_entities_message_thread_natural_key_v3``. Same shape as
         ``SourceItem.find_existing``.
-
-        ``owner`` narrows to that owner's thread. Omitted, the lookup is the
-        pre-owner one over ``(channel, thread_key)`` alone — what a caller that
-        has not yet resolved an owner (and every legacy row) needs.
         """
-        match: dict = {"channel": channel, "thread_key": thread_key}
+        match: dict = {"channel": channel, "thread_key": thread_key, "data_source_id": str(data_source_id)}
         if owner is not None:
             match["owner"] = str(owner)
         return await cls.get_one(match)
 
     @classmethod
-    async def find_unowned(cls, channel: str, thread_key: str) -> "MessageThread | None":
-        """The pre-owner row for this key, if one is still unclaimed.
+    async def find_unclaimed(cls, channel: str, thread_key: str, owner: "TypeId | None") -> "MessageThread | None":
+        """A row for this key written before its account (or owner) was part of the key.
 
-        Exactly ``owner IS NULL`` — a row written before ownership existed —
-        and NOT "any owner": the projection adopts the former into the owner
-        that resolves it, and must never adopt another owner's thread.
+        Exactly ``data_source_id IS NULL``, and owned by ``owner`` or by nobody — NOT
+        "any row on this key": the projection adopts it into the source and owner that
+        resolve it, and must never claim another account's or another owner's thread.
+        The owner's own row is preferred over an unowned one.
         """
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-        return await cls.get_one(
-            QueryFilter(
+        def legacy(owned: ExpressionNode) -> QueryFilter:
+            return QueryFilter(
                 match=ExpressionNode(
                     op=QueryOp.AND,
                     operands=[
                         ExpressionNode(op=QueryOp.EQ, operands=["channel", channel]),
                         ExpressionNode(op=QueryOp.EQ, operands=["thread_key", thread_key]),
-                        ExpressionNode(op=QueryOp.IS_NULL, operands=["owner"]),
+                        ExpressionNode(op=QueryOp.IS_NULL, operands=["data_source_id"]),
+                        owned,
                     ],
                 )
             )
-        )
+
+        if owner is not None:
+            mine = await cls.get_one(legacy(ExpressionNode(op=QueryOp.EQ, operands=["owner", str(owner)])))
+            if mine is not None:
+                return mine
+        return await cls.get_one(legacy(ExpressionNode(op=QueryOp.IS_NULL, operands=["owner"])))

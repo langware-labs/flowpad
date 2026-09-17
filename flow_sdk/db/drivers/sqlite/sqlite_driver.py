@@ -634,6 +634,18 @@ class SQLiteDBDriver(DBDriver):
                 "WHERE type = 'message_thread'"
             )
         )
+        # ...and its account: the source that read it (`MessageThread.data_source_id`).
+        # `_v3` for the same reason; v1/v2 stay for the pre-account adoption lookup.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key_v3 "
+                "ON entities(json_extract(data, '$.channel'), "
+                "json_extract(data, '$.thread_key'), "
+                "json_extract(data, '$.owner'), "
+                "json_extract(data, '$.data_source_id')) "
+                "WHERE type = 'message_thread'"
+            )
+        )
 
         # "Who owns this path" — `Entity.get_by_asset_ref`, and now every
         # identity resolution that recovers a wiped carrier instead of minting a
