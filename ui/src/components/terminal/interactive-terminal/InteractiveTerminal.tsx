@@ -869,8 +869,17 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         onTitleChange?.(title);
       });
 
+      const tFitScheduled = performance.now();
       fitTimeoutId = setTimeout(() => {
         if (!disposed) {
+          const tFitFired = performance.now();
+          // Fired far past its 50ms means the main thread was busy, not this work.
+          if (active) {
+            toplog.log(
+              'agentic_process.load',
+              `InteractiveTerminal fit timer fired after ${(tFitFired - tFitScheduled).toFixed(0)}ms (scheduled 50ms) shell=${sessionId}`,
+            );
+          }
           try {
             fit.fit();
             const h = container.offsetHeight;
@@ -887,6 +896,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             ptySyncRef.current.initSegments(Date.now(), Math.max(3, term.rows - 4), adapter?.getEvictionOffset() ?? 0);
 
             if (active) {
+              toplog.log(
+                'agentic_process.load',
+                `InteractiveTerminal fit + ptySync.initialize took ${(performance.now() - tFitFired).toFixed(0)}ms shell=${sessionId}`,
+              );
               perfLog('setTerminalReady(true) (active)');
             }
             setTerminalReady(true);
@@ -1127,14 +1140,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           const stream = await fetchPtyStream(ptyId);
           const tReplay = performance.now();
           toplog.log(
-            ['process_load', 'pty'],
+            ['process_load', 'pty', 'agentic_process.load'],
             `onConnected pty-stream fetch took ${(tReplay - tFetch).toFixed(1)}ms events=${stream?.events.length ?? 0} pty=${ptyId.slice(0, 8)}`,
           );
           if (gen !== connectGen) return superseded('fetch'); // don't burn a full replay for a dead attach
           if (stream) {
             const replay = await replayPtyStream(stream);
             toplog.log(
-              ['process_load', 'pty'],
+              ['process_load', 'pty', 'agentic_process.load'],
               `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0}`,
             );
             if (replay) {
@@ -1172,7 +1185,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           wrote = true;
         }
         toplog.log(
-          ['process_load', 'pty'],
+          ['process_load', 'pty', 'agentic_process.load'],
           `onConnected backlog processChunk loop took ${(performance.now() - tBacklog).toFixed(1)}ms chunks=${chunks.length} lastSeq=${historyLastSeq} shell=${sessionId}`,
         );
 

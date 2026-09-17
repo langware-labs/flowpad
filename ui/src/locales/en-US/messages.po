@@ -4124,6 +4124,7 @@ msgid "Collapse side window"
 msgstr "Collapse side window"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/color-picker.tsx
 msgid "Color"
 msgstr "Color"
@@ -7224,6 +7225,7 @@ msgid "Emitted, but nothing on the backend is subscribed to that tag."
 msgstr "Emitted, but nothing on the backend is subscribed to that tag."
 
 #: src/components/conversation/EmojiPicker.tsx
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Emoji"
@@ -9608,11 +9610,11 @@ msgid "I18n"
 msgstr "I18n"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
-#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Icon"
 msgstr "Icon"
 
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Icons"
 msgstr "Icons"
