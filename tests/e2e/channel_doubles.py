@@ -4,7 +4,7 @@ Every shipped message driver ships a ``Double`` in its ``tests/matrix.py`` (a lo
 inbound you can inject and the outbound it saw). This hosts them all for a browser test: it enters each
 Double, plants the credentials the backend will resolve them with, and serves a small control API::
 
-    FLOW_INSTANCE=mx-8 FLOWPAD_HUB_URL=http://localhost:8093 uv run python tests/e2e/channel_doubles.py --backend http://localhost:6009
+    FLOW_INSTANCE=mx-8 FLOWPAD_HUB_URL=http://localhost:8093 uv run python tests/e2e/channel_doubles.py --backend http://localhost:6009 [--channels whatsapp,slack]
 
     GET  /channels                          {provider: {config, fields, secret_store?, sender, agent_only}}
     POST /deliver   {channel, text, sender?} → the delivery (a webhook delivery is POSTed to the backend here)
@@ -43,8 +43,8 @@ CREDENTIALS = "/api/v1/graph/compute_node/@local/credentials"
 
 
 class Doubles:
-    def __init__(self, backend: str, tmp: Path) -> None:
-        self.backend, self.tmp = backend.rstrip("/"), tmp
+    def __init__(self, backend: str, tmp: Path, channels=CHANNELS, *, plant: bool = True) -> None:
+        self.backend, self.tmp, self.wanted, self.plants = backend.rstrip("/"), tmp, tuple(channels), plant
         self.doubles: dict[str, Any] = {}
         self.stores: dict[str, dict] = {}
         #: ``(kind, key)`` to undo at shutdown: a credential's typeid, a connector's name.
@@ -57,12 +57,13 @@ class Doubles:
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     def start(self) -> None:
-        for provider in CHANNELS:
+        for provider in self.wanted:
             module = load_module(SHIPPED_ROOT / provider / "tests", "matrix")
             if getattr(module.Double, "agent_only", False):
                 continue  # opened per agent, through /agent_mailbox
             self.doubles[provider] = module.Double().__enter__()
-        self.run(self.plant_all())
+        if self.plants:
+            self.run(self.plant_all())
 
     def stop(self) -> None:
         for kind, key in reversed(self.planted):
@@ -141,6 +142,8 @@ class Doubles:
         for provider, double in self.doubles.items():
             entry = {"config": dict(double.config), "fields": dict(getattr(double, "fields", {}) or {}),
                      "sender": double.sender, "agent_only": bool(getattr(double, "agent_only", False))}
+            if not self.plants:  # the caller declares the credential itself (a snippet does): it needs the values
+                entry["secrets"] = dict(getattr(double, "secrets", {}) or {})
             if provider in self.stores:
                 entry["secret_store"] = self.stores[provider]
             if hasattr(double, "handshake"):
@@ -204,8 +207,10 @@ def serve(doubles: Doubles) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", required=True)
+    parser.add_argument("--channels", default=",".join(CHANNELS), help="a subset of the matrix's channels, comma-separated")
+    parser.add_argument("--no-plant", action="store_true", help="do not plant credentials; /channels then carries the values")
     args = parser.parse_args()
-    doubles = Doubles(args.backend, Path(tempfile.mkdtemp(prefix="channel-doubles-")))
+    doubles = Doubles(args.backend, Path(tempfile.mkdtemp(prefix="channel-doubles-")), [c for c in args.channels.split(",") if c], plant=not args.no_plant)
     doubles.start()
     try:
         serve(doubles)

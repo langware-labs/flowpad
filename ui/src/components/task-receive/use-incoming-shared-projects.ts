@@ -1,4 +1,4 @@
-import { gitOriginOf, isCompleteGitOrigin } from '@sdk/models/GitOrigin';
+import { gitOriginOf, isSafeRelPath, type GitOrigin } from '@sdk/models/GitOrigin';
 import { useProjects } from '@src/hooks/use-projects';
 import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { useEffect, useRef } from 'react';
@@ -21,6 +21,14 @@ import { useEffect, useRef } from 'react';
  * Desktop only — installing writes files, and a hub-only runtime has nowhere to
  * put them. The caller decides that by not mounting this.
  */
+/** A PROJECT's origin is the repository itself, so its `rel_path` is empty —
+ *  `isCompleteGitOrigin` is the test for an ASSET *inside* a repo and rejects
+ *  exactly the shape a shared project has. Only a path pointing outside the
+ *  checkout is disqualifying here. */
+function installableOrigin(o: GitOrigin | null): o is GitOrigin {
+  return !!o && !!o.owner && !!o.name && (!o.rel_path || isSafeRelPath(o.rel_path));
+}
+
 export function useIncomingSharedProjects(): void {
   const setPendingProject = useIncomingProjectStore((s) => s.setPendingProject);
   const pendingProject = useIncomingProjectStore((s) => s.pendingProject);
@@ -42,7 +50,7 @@ export function useIncomingSharedProjects(): void {
         // A git origin is what makes this installable. Projects shared through a
         // conversation carry no origin, and offering to install them would open
         // a dialog whose only outcome is an error.
-        isCompleteGitOrigin(gitOriginOf(p)),
+        installableOrigin(gitOriginOf(p)),
     );
     const origin = gitOriginOf(waiting);
     if (!waiting || !origin) return;
