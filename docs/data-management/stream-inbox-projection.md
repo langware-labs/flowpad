@@ -17,8 +17,9 @@ read time from the `SourceItem` it references (`source_item_id`). An item edit
 changes nothing here, and there is no snapshot-refresh machinery to keep in
 step.
 
-Identity is looked up, never derived: thread by `(channel, thread_key)`
-(`MessageThread.find_existing`), conversation by the thread's
+Identity is looked up, never derived: thread by
+`(channel, thread_key, owner, data_source_id)` (`MessageThread.find_existing`),
+conversation by the thread's
 `conversation_id`, message by `source_item_id`. Ids are ordinary uuid4s minted
 on first sight, so re-projecting the whole corpus converges on the same rows —
 which is exactly what makes reindex a repair tool (below). Both the thread
@@ -42,9 +43,25 @@ for rows written before the field existed. `thread_key` is the driver's
 native handle (`SourceItem.thread_key` — Gmail `threadId`, Slack `thread_ts`)
 or, only when the driver gave none, `normalize_subject(name)` — a
 multilingual reply/forward-prefix strip applied to a fixed point, with the
-documented failure modes (two unrelated `Re: hello` threads collapse; a
-subject edited mid-thread forks). A chat thread born without a subject is
-titled by the root message's opening line, stamped once at birth.
+documented failure modes (two unrelated `Re: hello` threads in one mailbox
+collapse; a subject edited mid-thread forks). A chat thread born without a
+subject is titled by the root message's opening line, stamped once at birth.
+
+**A thread belongs to the account that read it.** `data_source_id` — the source
+row, the account as it reads it — is part of the thread key, so two mailboxes of
+one owner on one channel never share a thread: without it a subject-keyed
+`Re: invoice` from work mail and from personal mail were one conversation. The
+row, not `account_key`, because a source's `account_key` is re-stamped when it
+first verifies and a key built on it would fork every thread it had. A thread
+written before the field existed carries none; `resolve_thread` adopts it into
+the first source (and owner) that resolves it (`MessageThread.find_unclaimed`),
+and a second account mints its own. Messages already placed in a legacy thread
+move when their item next re-projects (`_place_message` heals `thread_id`). The
+same mailbox read through two transports — the Gmail driver and the harness
+`agent` transport — stays two threads with each message twice: their message
+ids (RFC `Message-ID` vs the Gmail API id) and thread ids (`address:decimal`
+`X-GM-THRID` vs hex `threadId`) share no identity, so no key merges them
+honestly. Don't watch one mailbox through two transports.
 
 **Attribution.** `_sender_for` maps an author that is one of the source's
 own addresses (`account_identities`, plus `account_key` for legacy rows,

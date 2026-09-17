@@ -46,7 +46,7 @@ async def test_backfill_counts_then_stamps_then_finds_nothing():
     conv.id = conv_id
     await conv.save(None, notify=False)
 
-    unowned_threads_before = await MessageThread.find_unowned("slack", thread.thread_key)
+    unowned_threads_before = await MessageThread.find_unclaimed("slack", thread.thread_key, None)
     assert unowned_threads_before is not None
 
     dry = await _repair(dry_run=True)

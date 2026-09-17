@@ -62,7 +62,7 @@ async def _conversation_id_for(item, source, owner) -> Optional[str]:
     """
     from flow_sdk.stream_inbox.projection import channel_of, find_thread, thread_key_for  # noqa: PLC0415
 
-    thread = await find_thread(channel_of(source), thread_key_for(item, item.name or ""), owner)
+    thread = await find_thread(channel_of(source), thread_key_for(item, item.name or ""), owner, str(source.id))
     return str(getattr(thread, "conversation_id", "") or "") or None
 
 

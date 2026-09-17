@@ -75,19 +75,19 @@ async def test_owner_serialises_as_the_plain_typeid_string_and_is_queryable():
 async def test_thread_lookup_narrows_by_owner_and_stays_pre_owner_without_it():
     a, b = _agent_tid(), _agent_tid()
     key = f"thread-{uuid.uuid4()}"
-    ta = MessageThread(id=str(uuid.uuid4()), channel="slack", thread_key=key, owner=a, conversation_id=str(uuid.uuid4()))
-    tb = MessageThread(id=str(uuid.uuid4()), channel="slack", thread_key=key, owner=b, conversation_id=str(uuid.uuid4()))
+    ta = MessageThread(id=str(uuid.uuid4()), channel="slack", thread_key=key, owner=a, data_source_id="src-1", conversation_id=str(uuid.uuid4()))
+    tb = MessageThread(id=str(uuid.uuid4()), channel="slack", thread_key=key, owner=b, data_source_id="src-1", conversation_id=str(uuid.uuid4()))
     await ta.save(notify=False)
     await tb.save(notify=False)
 
-    assert (await MessageThread.find_existing("slack", key, a)).id == ta.id
-    assert (await MessageThread.find_existing("slack", key, b)).id == tb.id
+    assert (await MessageThread.find_existing("slack", key, a, "src-1")).id == ta.id
+    assert (await MessageThread.find_existing("slack", key, b, "src-1")).id == tb.id
     # Owner omitted on a key two owners share: the pre-owner lookup must NOT
     # silently pick one — `get_one` refuses an ambiguous key. This is why the
     # projection's resolve-or-create always passes the owner, and why its
     # legacy fallback is scoped to `owner IS NULL` rather than "any owner".
     with pytest.raises(ValueError, match="Multiple"):
-        await MessageThread.find_existing("slack", key)
+        await MessageThread.find_existing("slack", key, None, "src-1")
 
 
 # ── Phase 2: writers stamp owner; the thread seam keeps owners apart ─────────
@@ -99,9 +99,9 @@ async def test_two_owners_on_one_key_get_two_threads_and_one_owner_gets_one():
 
     a, b = _agent_tid(), _agent_tid()
     key = f"ts-{uuid.uuid4()}"
-    ta1 = await resolve_thread("slack", key, a, title="t")
-    ta2 = await resolve_thread("slack", key, a, title="t")
-    tb = await resolve_thread("slack", key, b, title="t")
+    ta1 = await resolve_thread("slack", key, a, data_source_id="src-1", title="t")
+    ta2 = await resolve_thread("slack", key, a, data_source_id="src-1", title="t")
+    tb = await resolve_thread("slack", key, b, data_source_id="src-1", title="t")
     assert ta1.id == ta2.id, "the same owner must resolve one thread"
     assert tb.id != ta1.id, "a second owner on the same key must not merge into the first"
     assert ta1.conversation_id != tb.conversation_id
@@ -116,16 +116,16 @@ async def test_a_pre_owner_thread_is_adopted_by_the_first_owner_not_forked():
     await legacy.save(notify=False)  # owner is None: a row from before the field existed
 
     a = _agent_tid()
-    adopted = await resolve_thread("slack", key, a, title="t")
+    adopted = await resolve_thread("slack", key, a, data_source_id="src-1", title="t")
     assert adopted.id == legacy.id
     assert adopted.conversation_id == legacy.conversation_id
     assert (await MessageThread.get_one({"id": legacy.id})).owner == a
 
     # Once claimed, it is A's: a second owner mints its own rather than stealing it.
     b = _agent_tid()
-    other = await resolve_thread("slack", key, b, title="t")
+    other = await resolve_thread("slack", key, b, data_source_id="src-1", title="t")
     assert other.id != legacy.id
-    assert await MessageThread.find_unowned("slack", key) is None
+    assert await MessageThread.find_unclaimed("slack", key, None) is None
 
 
 async def test_find_for_account_narrows_by_owner_and_is_pre_owner_without_it():

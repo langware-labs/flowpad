@@ -222,6 +222,6 @@ async def _assert_reference_stream_inbox(src, ingested: dict) -> None:
         hydrated = await FlowMessage.get_by_id(raw[0].id)
         assert hydrated.text == (item.body or item.name or ""), "reads hydrate from the item"
 
-        thread = await MessageThread.find_existing("slack", item.thread_key or "")
-        assert thread is not None, "the thread resolves by (channel, thread_key) lookup"
+        thread = await MessageThread.find_existing("slack", item.thread_key or "", src.owner, str(src.id))
+        assert thread is not None, "the thread resolves by its natural key lookup"
         assert raw[0].thread_id == thread.id and raw[0].conversation_id == thread.conversation_id

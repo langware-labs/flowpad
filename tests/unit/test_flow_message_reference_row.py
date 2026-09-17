@@ -65,15 +65,15 @@ async def test_save_keeps_text_on_a_native_row():
 async def test_message_thread_resolves_by_natural_key():
     channel, key = "gmail", f"t-{uuid.uuid4().hex[:8]}"
     thread = MessageThread(
-        id=str(uuid.uuid4()), channel=channel, thread_key=key,
+        id=str(uuid.uuid4()), channel=channel, thread_key=key, data_source_id="src-1",
         conversation_id=str(uuid.uuid4()), name="Q3 planning",
     )
     await thread.save()
 
-    found = await MessageThread.find_existing(channel, key)
+    found = await MessageThread.find_existing(channel, key, None, "src-1")
     assert found is not None and found.id == thread.id
 
-    assert await MessageThread.find_existing("slack", key) is None, (
+    assert await MessageThread.find_existing("slack", key, None, "src-1") is None, (
         "the key is channel-scoped; another channel must not resolve this row"
     )
 

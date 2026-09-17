@@ -52,29 +52,29 @@ def _thread_lock():
     return loop_lock(_thread_locks)
 
 
-async def find_thread(channel: str, key: str, owner):
-    """The thread on this natural key, read-only: the owner's row, else the
-    pre-owner row a legacy install wrote (`resolve_thread` adopts that one;
-    a reader just answers from it)."""
+async def find_thread(channel: str, key: str, owner, data_source_id: str):
+    """The thread on this natural key, read-only: the source's own row, else the
+    row a pre-account install wrote (`resolve_thread` adopts that one; a reader
+    just answers from it)."""
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
-    thread = await MessageThread.find_existing(channel, key, owner)
-    return thread if thread is not None else await MessageThread.find_unowned(channel, key)
+    thread = await MessageThread.find_existing(channel, key, owner, data_source_id)
+    return thread if thread is not None else await MessageThread.find_unclaimed(channel, key, owner)
 
 
-async def resolve_thread(channel: str, key: str, owner, *, title: str, conversation_id: str = ""):
-    """The thread for ``(owner, channel, key)`` — found, adopted, or minted.
+async def resolve_thread(channel: str, key: str, owner, *, data_source_id: str, title: str, conversation_id: str = ""):
+    """The thread for ``(owner, channel, key)`` read by ``data_source_id`` — found, adopted, or minted.
 
-    Resolve-or-create, double-checked: the derived id used to absorb this race
-    for free, a lookup does not — two concurrent events on a brand-new thread
-    would each miss and fork it. The lock is taken only on a miss, so the
-    ~100% common already-exists case never serializes on it.
+    Resolve-or-create, double-checked: a lookup does not absorb the race a derived id
+    did — two concurrent events on a brand-new thread would each miss and fork it. The
+    lock is taken only on a miss, so the ~100% common already-exists case never
+    serializes on it.
 
-    Between the owner lookup and the mint sits the migration: a thread written
-    before ``owner`` existed has none, and it must become THIS owner's row
-    rather than be forked by a fresh one — the conversation it points at is
-    the one the user has been reading. Scoped to ``owner IS NULL``, never
-    "any owner", so a second owner on the same key mints its own thread.
+    Between the lookup and the mint sits the migration: a thread written before
+    ``owner`` or ``data_source_id`` existed has neither, and it must become THIS
+    source's row rather than be forked by a fresh one — the conversation it points at
+    is the one the user has been reading. Scoped to rows with no source and this owner
+    (or none), never "any row on the key", so a second account mints its own thread.
 
     ``conversation_id`` ADOPTS an existing conversation at birth instead of
     minting one — a channel whose threads already exist locally as hub-mirrored
@@ -83,14 +83,15 @@ async def resolve_thread(channel: str, key: str, owner, *, title: str, conversat
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
-    thread = await MessageThread.find_existing(channel, key, owner)
+    thread = await MessageThread.find_existing(channel, key, owner, data_source_id)
     if thread is not None:
         return thread
     async with _thread_lock():
-        thread = await find_thread(channel, key, owner)
+        thread = await find_thread(channel, key, owner, data_source_id)
         if thread is not None:
-            if not thread.owner:
-                thread.owner = owner
+            if not thread.owner or not thread.data_source_id:
+                thread.owner = thread.owner or owner
+                thread.data_source_id = data_source_id
                 await thread.save(notify=False)
             return thread
         # Both ids are ordinary uuid4s, minted here at birth and looked up ever
@@ -105,6 +106,7 @@ async def resolve_thread(channel: str, key: str, owner, *, title: str, conversat
             channel=channel,
             thread_key=key,
             owner=owner,
+            data_source_id=data_source_id,
             conversation_id=conversation_id or mint_uuid(),
             title=title,
             name=title,
@@ -139,9 +141,10 @@ def normalize_subject(subject: str) -> str:
     put it in ``SourceItem.thread_key``; this is what happens when it can't.
 
     Known and accepted failure modes, documented so nobody rediscovers them as
-    bugs: two unrelated ``Re: hello`` threads collapse into one, and editing a
-    subject mid-thread forks it. Both are why the native handle wins when it
-    exists, and why the key is also scoped by channel and account.
+    bugs: two unrelated ``Re: hello`` threads IN ONE MAILBOX collapse into one, and
+    editing a subject mid-thread forks it. Both are why the native handle wins when
+    it exists; the thread key is also scoped by channel, owner and the source that
+    read it, so the collapse never crosses accounts.
     """
     text = (subject or "").strip()
     while True:
@@ -254,6 +257,7 @@ async def project_source_item(
 
     thread = await resolve_thread(
         channel, key, owner,
+        data_source_id=str(source.id),
         title=subject or _thread_title(item) or key,
         conversation_id=str(getattr(item, "conversation_id", "") or ""),
     )
