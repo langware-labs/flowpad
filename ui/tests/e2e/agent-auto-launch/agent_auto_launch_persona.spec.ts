@@ -34,7 +34,7 @@ import * as path from 'path';
 const BE = `http://localhost:${process.env.AL_BE_PORT || '6001'}`;
 const GRAPH = `${BE}/api/v1/graph`;
 const AGENT_NAME = 'MAILBOT_PROBE';
-const SYSTEM_PROMPT = `You are ${AGENT_NAME}, an email assistant. Your job is to help the user stay on top of their inbox.`;
+const SYSTEM_PROMPT = `You are ${AGENT_NAME}, an email assistant. Your job is to help the user stay on top of their email.`;
 // vibe.md's own vocabulary — none of it belongs in a mail assistant's answer.
 const VIBE_PITCH = /display pane|websites|web apps?\b|slide decks?/i;
 
@@ -70,7 +70,7 @@ test.beforeAll(async () => {
     name: agentTitle,
     title: agentTitle,
     system_prompt: SYSTEM_PROMPT,
-    intro: "Hi, I'm your mail assistant. Tell me what you need done with your inbox.",
+    intro: "Hi, I'm your mail assistant. Tell me what you need done with your email.",
     auto_launch: true,
   });
   if (res?.status !== 'SUCCESS') throw new Error(`agent create failed: ${JSON.stringify(res).slice(0, 300)}`);
