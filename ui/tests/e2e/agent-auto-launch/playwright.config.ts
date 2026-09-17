@@ -25,5 +25,5 @@ export default defineConfig({
     headless: true,
     trace: 'retain-on-first-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], channel: process.env.AL_CHANNEL || undefined } }],
 });

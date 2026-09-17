@@ -43,7 +43,8 @@ export async function prepareAgentSession(processId: string): Promise<AgenticPro
     return null;
   }
   void proc.watch().catch((e) => console.warn('[agent-launcher] watch failed; live updates degraded', e));
-  await embedVibeSubagent(proc);
+  // A layer, not the persona: the agent's own system prompt is the identity.
+  await embedVibeSubagent(proc, { asPersona: false });
   return proc;
 }
 
