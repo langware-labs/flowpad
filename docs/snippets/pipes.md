@@ -14,9 +14,10 @@ Every snippet below is run as written by `tests/unit/test_pipes_snippets.py`.
 health, not thrown. The cursor advances only after the write lands.
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 
-source = DataSource(name="Notes", provider="folder", config={"root": "/src"})
+driver = await DataDriver.get("folder")
+source = driver.create_source(driver.create_config(root=SRC), name="Notes")
 await source.save()
 await source.verify()  # is the setup finished?
 report = await source.sync()  # one cycle, now
@@ -32,15 +33,17 @@ deletions all propagate, because the driver diffs `{rel_path: [mtime, size,
 inode]}` and so *observes* absence rather than guessing it.
 
 ```python
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 
-source = DataSource(
+driver = await DataDriver.get("folder")
+source = driver.create_source(
+    driver.create_config(root=SRC),
     name="Mirror notes",
-    provider="folder",
     reflect=ReflectMode.COPY.value,     # record | none | copy | symlink
-    reflect_into="/dest",               # absolute
-    config={"root": "/src"},
+    reflect_into=DEST,                  # absolute
 )
+await source.save()
 ```
 
 The same folder as a block, with the changes as a stream you can follow:
