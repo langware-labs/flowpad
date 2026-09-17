@@ -213,6 +213,11 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
                 toplog.log("agentic_process.load", "db writer lock waited ms=%.0f by=%s", wait_ms, _writer_label())
 
     def _on_release(conn):
+        # A connection invalidated mid-transaction (a task cancelled inside a write)
+        # raises PendingRollbackError on `.info` — from INSIDE its own rollback, which
+        # then never completes and leaves the session unusable. Nothing to time there.
+        if conn.invalidated:
+            return
         locked_at = conn.info.pop("flow_writer_locked_at", None)
         if locked_at is None:
             return
