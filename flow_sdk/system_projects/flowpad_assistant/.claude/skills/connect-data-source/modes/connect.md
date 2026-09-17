@@ -19,7 +19,7 @@ through the six gates and stop at the first that fails.
 1. **`SC specs`.** Never work from memory: the installed set is data, and a
    source added as an asset appears here without any release.
 2. **Map the request** using `references/mapping.md`. If nothing installed can
-   express what the user named as a *segment*, say so and offer `author` mode —
+   express the one stream the user named, say so and offer `author` mode —
    do not force a near-match. Pointing `rss` at a Notion export produces a
    source that syncs the wrong nouns and looks healthy.
 3. **Credential need** comes from the spec's `auth`:

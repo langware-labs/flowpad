@@ -11,7 +11,7 @@ read) carries the manifest's fields; a LOADED driver also holds its class, manif
 (``open``, ``traverse``, ``send``, ``verify``) come from ``DriverRuntime``::
 
     driver = await DataDriver.get("rss")
-    source = driver.create_source({"feed_urls": [url]}, name="news")  # unsaved
+    source = driver.create_source({"feed_url": url}, name="news")  # unsaved
     await source.save()                                               # writes data_source.json
 """
 from __future__ import annotations

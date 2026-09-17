@@ -113,7 +113,7 @@ def test_the_source_contract_imports_no_application_module():
             with tempfile.TemporaryDirectory() as root:
                 open(f'{root}/a.txt', 'wb').write(b'abc')
                 async with FolderSource.at(root) as s:
-                    (item,) = [i async for i in s.iterate(ObjectQuery(prefix='a'))]
+                    (item,) = [i async for i in s.iterate(narrow={'prefix': 'a'})]
                     assert item.data.size == 3
         asyncio.run(main())
         assert not any(name.startswith(blocked) for name in sys.modules)

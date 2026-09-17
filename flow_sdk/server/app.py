@@ -244,6 +244,7 @@ async def _on_server_startup():
     await _seed_service_triggers()
     await _prune_orphan_scheduler_jobs()
     await _prune_fileless_data_sources()
+    await _migrate_list_configs()
     await _prune_retired_type_rows()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
@@ -377,7 +378,7 @@ async def _prune_orphan_scheduler_jobs() -> None:
 #: Entity types renamed without a migration (0.2.170: data_driver, secret_pack; later: stream_inbox_manager):
 #: their folders re-index (or the singleton self-heals) under the new type, so a row still carrying the
 #: old string is dead weight no index sweep reaches.
-RETIRED_TYPES = ("data_source_spec", "credential_spec", "inbox_manager")
+RETIRED_TYPES = ("data_source_spec", "credential_spec", "inbox_manager", "data_source_cursor")
 
 
 async def _prune_retired_type_rows() -> None:
@@ -403,6 +404,18 @@ async def _prune_fileless_data_sources() -> None:
             print(f"  Data sources: removed {pruned} source(s) with no data_source.json")
     except Exception:
         logging.getLogger(__name__).exception("Data sources: file-less prune failed")
+
+
+async def _migrate_list_configs() -> None:
+    """One source reads one stream: a stored config listing N containers becomes N sources."""
+    try:
+        from flow_sdk.builtin.data_source import migrate_list_configs
+
+        split = await migrate_list_configs()
+        if split:
+            print(f"  Data sources: split {split} list config(s) into one source per entry")
+    except Exception:
+        logging.getLogger(__name__).exception("Data sources: list-config split failed")
 
 
 async def _seed_service_triggers() -> None:

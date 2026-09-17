@@ -22,7 +22,6 @@ from flow_sdk.sources.errors import InvalidCursor, NotFound, Unsupported
 from flow_sdk.sources.protocols import ByteStore, Drafting, Listable, Messaging, Mutable, Readable
 from flow_sdk.sources.values import (
     CloudOrigin,
-    DataQuery,
     DataSourceEvent,
     EventKind,
     FileData,
@@ -266,13 +265,9 @@ async def a_foreign_cursor_is_invalid(subject: Subject) -> None:
 
 
 @check(Listable)
-async def an_unsupported_query_family_is_refused(subject: Subject) -> None:
-    class _ForeignQuery(DataQuery):
-        pass
-
+async def a_narrowing_the_query_does_not_have_is_refused(subject: Subject) -> None:
     async with await _closing(subject) as s:
-        await _expect(Unsupported, s.fetch(_ForeignQuery()))  # type: ignore[attr-defined]
-        await _expect(TypeError, s.fetch("prefix"))  # type: ignore[attr-defined,arg-type]
+        await _expect(ValueError, s.fetch(narrow={"no_such_field": 1}))  # type: ignore[attr-defined]
 
 
 @check(Listable)

@@ -38,7 +38,7 @@ async def _mail(source: DataSource, subject: str) -> SourceItem:
     """A message with no native thread handle: the projection threads it by subject."""
     item = SourceItem(
         id=str(uuid.uuid4()), data_source_id=source.id, provider="agent", kind="content.message.email",
-        segment_key="INBOX", external_id=f"<{uuid.uuid4().hex[:8]}@x>", name=subject,
+        external_id=f"<{uuid.uuid4().hex[:8]}@x>", name=subject,
         body="see attached", author_external_id="billing@vendor.test",
     )
     await item.save(notify=False)

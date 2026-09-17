@@ -57,7 +57,7 @@ connection's token as one of its secrets.
 | `consumer.connections.names()`                 | the providers a data source or store needs                               |
 | `consumer.connections.scopes(provider)`        | the scopes it needs from that provider                                   |
 | `await source.set_connection(connection)`      | binds the account the source acts as, and saves it                       |
-| `await source.open()`                          | the configured source, with what is bound loaded in                      |
+| `await source.open()`                          | the source for reading (`live.pages()`, `live.items()`, `live.source`)   |
 
 One verb for lookups — `get` — on every class, always awaited. A credential is
 resolved by project, then the user scope ([§2](#how-get-resolves-a-name)); a data

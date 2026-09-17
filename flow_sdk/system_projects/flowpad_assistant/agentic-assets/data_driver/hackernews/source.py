@@ -1,4 +1,4 @@
-"""``HackerNewsSource`` — recently changed Hacker News items, one ``updates`` segment.
+"""``HackerNewsSource`` — recently changed Hacker News items, one ``updates`` stream.
 
 A changed-ids feed, the other shape beside RSS's conditional GET: ``/v0/updates`` names the
 items that moved, each is hydrated from ``/v0/item/<id>``, and nothing is diffed on our side.
@@ -20,11 +20,10 @@ from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.values.items import FeedItemData, SourceItemSpec, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
-from flow_sdk.sources.values.segment import SegmentRef
 
 BASE_URL = "https://hacker-news.firebaseio.com/v0"
 MAX_ITEMS_PER_PASS = 60
-#: HN has no per-channel partition: one segment.
+#: HN has no per-channel partition: every item is scoped under one stream.
 STREAM_KEY = "updates"
 
 
@@ -70,8 +69,9 @@ class HackerNewsSource(CollectionSource):
             await self._client.aclose()
             self._client = None
 
-    async def segments(self) -> list[SegmentRef]:
-        return [SegmentRef(key=STREAM_KEY, label="Hacker News updates")]
+    def query(self) -> None:
+        """The changed-ids feed takes no parameters: ``types`` and ``min_score`` filter what it hydrates."""
+        return None
 
     async def _lookup(self, key: str) -> Optional[dict]:
         """Within the recent changes this session sees — the same window the listing has."""

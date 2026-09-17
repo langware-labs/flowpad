@@ -42,9 +42,9 @@ from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
-from .delivery import Delivered
+from .delivery import Delivered, DeliveredPage
 from .folder_changes import FolderChange, FolderChanges
-from .merge import listen
+from .merge import listen, pages
 from .message_block import MessageBlock, MessageRequest, _MessageRequestExpired
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -52,6 +52,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 __all__ = [
     "Delivered",
+    "DeliveredPage",
     "EmailMessageSpec",
     "FolderChange",
     "FolderChanges",
@@ -62,6 +63,7 @@ __all__ = [
     "StreamInbox",
     "RunOutput",
     "listen",
+    "pages",
     "SlackMessageSpec",
     "TelegramMessageSpec",
     "workflow",
@@ -123,11 +125,13 @@ def _turns(ap) -> dict:
 
 
 def _turn_key(m: _AgentInput) -> str:
-    """One message, one key. The natural key when the message has one, else its own id."""
+    """One message, one key. The natural key (source + origin) when the message has one, else its own id."""
     source = getattr(m, "data_source_id", "") or ""
-    segment = getattr(m, "segment_key", "") or ""
     external = str(getattr(m, "external_id", "") or "")
-    return f"{source}:{segment}:{external}" if source else external
+    if not source:
+        return external
+    parts = (getattr(m, "origin_kind", ""), getattr(m, "origin_namespace", ""), getattr(m, "origin_key", "") or external)
+    return ":".join([source, *(str(p or "") for p in parts)])
 
 
 class _AgentRunner:
@@ -481,24 +485,26 @@ class StreamInbox:
             await (await SecretStore.get()).save(secrets)
         return {k: v for k, v in self._config.items() if k not in names}
 
-    async def listen(
+    async def pages(
         self,
         *,
+        size: int = 50,
         poll_every: "float | timedelta | None" = None,
-        page: int = 100,
-    ) -> AsyncIterator["Delivered[SourceItemSpec]"]:
-        """Async-iterate inbound messages as they arrive, each with an ``ack()``.
+    ) -> AsyncIterator["DeliveredPage"]:
+        """Async-iterate inbound messages as they arrive, ``size`` at a time, each page with an
+        ``ack()`` that commits it whole.
 
-        Each cycle polls the source through the poller's slot (a poll already in flight is
-        skipped, not stacked), then drains what landed in INGEST order from the consumer's
-        position. The position is durable inside a named ``workflow()`` — a restart resumes
-        from the last ``ack()`` and hands back anything that was in flight with
-        ``redelivered=True``. Outside a workflow it lives for the loop, as before.
+        THE drain — ``listen()`` is this, flattened. Each cycle polls the source through the
+        poller's slot (a poll already in flight is skipped, not stacked), then drains what landed
+        in INGEST order from the consumer's position, a page of rows at a time. The position is
+        durable inside a named ``workflow()`` — a restart resumes from the last ``ack()`` and hands
+        back anything that was in flight with ``redelivered=True``. Outside a workflow it lives
+        for the loop.
 
-        Items already present when a position is first created are the baseline: a stream
-        inbox yields arrivals, not history. Our own sent copies and senders outside ``senders``
-        are filtered — and ACKED, so a filtered row never becomes a gap the next drain
-        stops at.
+        Items already present when a position is first created are the baseline: a stream inbox
+        yields arrivals, not history. Our own sent copies and senders outside ``senders`` are
+        dropped from the page — and still covered by its ack, so a filtered row never becomes a
+        gap the next drain stops at. A page with nothing left is acked and skipped.
 
         ``poll_every`` defaults to the driver's attention cadence when it declares one, else
         3 s. The row's own ``poll_interval_seconds`` still governs the heartbeat; this is the
@@ -523,15 +529,14 @@ class StreamInbox:
         while True:
             await poll_source(source, datetime.now(timezone.utc))
             while True:
-                rows = await SourceItem.page_after(str(source.id), last_seen, limit=page)
+                rows = await SourceItem.page_after(str(source.id), last_seen, limit=max(1, int(size)))
                 if not rows:
                     break
+                handed: list[Delivered] = []
                 for item in rows:
                     key = key_of(item)
                     last_seen = key
                     redelivered = in_flight_at_start is not None and key <= in_flight_at_start
-                    if position.mark_in_flight(item):
-                        await position.commit()
                     # Place it in its conversation regardless of the filters below — the
                     # stream inbox UI shows everything; the LOOP only acts on what passes.
                     try:
@@ -542,14 +547,36 @@ class StreamInbox:
                     if is_self_address(source, item.author_external_id or "") or (
                         self.senders and sender not in self.senders
                     ):
-                        if position.advance_to(item):
+                        # Acked now while nothing in this page has been handed over — an ack is an
+                        # offset, so once something has, the page's own ack (or a later item's) covers it.
+                        if not handed and position.advance_to(item):
                             await position.commit()
                         continue
                     spec = SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
-                    yield Delivered(
+                    handed.append(Delivered(
                         spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered
-                    )
+                    ))
+                page = DeliveredPage(handed, position=position, source_id=str(source.id), last=rows[-1])
+                if not handed:
+                    await page.ack()          # nothing to hand over; the filtered rows are covered
+                    continue
+                # The in-flight stamp names the LAST row handed, so a restart redelivers the page.
+                if position.mark_in_flight(rows[-1]):
+                    await position.commit()
+                yield page
             await asyncio.sleep(cadence)
+
+    async def listen(
+        self,
+        *,
+        poll_every: "float | timedelta | None" = None,
+        page: int = 100,
+    ) -> AsyncIterator["Delivered[SourceItemSpec]"]:
+        """Async-iterate inbound messages as they arrive, each with an ``ack()`` — ``pages()``
+        flattened, one delivery at a time. ``page`` is the size of the read underneath."""
+        async for delivered_page in self.pages(size=page, poll_every=poll_every):
+            for m in delivered_page:
+                yield m
 
     def _driver(self):
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415

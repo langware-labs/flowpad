@@ -37,7 +37,7 @@ async def _received(owner=None) -> tuple[str, str]:
     await source.save()
     item = SourceItem(
         id=str(uuid.uuid4()), data_source_id=source.id, provider="agent", kind="content.message.email",
-        segment_key="INBOX", external_id=f"<{uuid.uuid4().hex[:8]}@x>", name=f"hello {uuid.uuid4().hex[:6]}",
+        external_id=f"<{uuid.uuid4().hex[:8]}@x>", name=f"hello {uuid.uuid4().hex[:6]}",
         body="hi", author_external_id="stranger@vendor.test", occurred_at="2026-09-17T10:00:00+00:00",
     )
     await item.save(notify=False)

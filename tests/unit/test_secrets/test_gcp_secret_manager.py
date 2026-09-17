@@ -245,7 +245,7 @@ async def test_a_data_source_loads_its_key_from_gcp_after_a_restart(home, keyed_
     fresh = await DataSource.get("keyed in gcp")  # a new object from the row: nothing held in process
     assert fresh is not source
     assert fresh.secret_store == remote.ref and fresh.secret_store.connection == "google"
-    live = await fresh.open()
+    live = (await fresh.open()).source
 
     assert isinstance(live, _GcpKeyedSource)
     assert live.credentials.values["KEYED_API_KEY"].get_secret_value() == "from-gcp"

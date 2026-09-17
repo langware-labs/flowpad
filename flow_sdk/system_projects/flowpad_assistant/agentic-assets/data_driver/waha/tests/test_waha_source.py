@@ -84,7 +84,7 @@ def _delivery(payload: dict, *, event: str = "message", session: str = SESSION) 
 
 def _items(delivery: dict):
     return [
-        envelope_of(e.item, data_source_id="ds-waha", provider="waha", segment_key=waha.MESSAGES_SEGMENT)
+        envelope_of(e.item, data_source_id="ds-waha", provider="waha")
         for e in WahaSource(_binding()).events_from_webhook(delivery)
     ]
 

@@ -20,10 +20,10 @@ async def _project(client, tmp_path) -> str:
 
 
 async def _source_with_items(client, n: int = 2) -> str:
-    resp = await client.post("/api/v1/graph/data_source", json={"name": f"feed {uuid.uuid4().hex[:8]}", "provider": "rss", "kind": "content.feed", "config": {"feed_urls": ["http://127.0.0.1:1/x"]}})
+    resp = await client.post("/api/v1/graph/data_source", json={"name": f"feed {uuid.uuid4().hex[:8]}", "provider": "rss", "kind": "content.feed", "config": {"feed_url": "http://127.0.0.1:1/x"}})
     assert resp.json().get("status") == "SUCCESS", resp.text
     sid = resp.json()["data"]["id"]
-    items = [{"data_source_id": sid, "provider": "rss", "kind": "content.feed.item", "segment_key": "http://127.0.0.1:1/x",
+    items = [{"data_source_id": sid, "provider": "rss", "kind": "content.feed.item",
               "external_id": f"e{i}", "name": f"Post {i}", "body": f"body {i}"} for i in range(n)]
     resp = await client.post("/api/v1/ingest/items", json={"items": items})
     assert resp.status_code == 200, resp.text

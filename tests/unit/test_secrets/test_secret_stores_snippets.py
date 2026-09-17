@@ -154,7 +154,7 @@ async def test_5_a_data_source_binds_the_default_store(in_project, monkeypatch):
 
     assert ns["names"] == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
     assert (await DataSource.get("work gmail")).secret_store == ns["store"].ref
-    assert ns["live"].credentials.values["GMAIL_APP_PASSWORD"].get_secret_value() == "app-pass"
+    assert ns["live"].source.credentials.values["GMAIL_APP_PASSWORD"].get_secret_value() == "app-pass"
 
 
 async def test_5_two_instances_keep_their_own_bindings(in_project):
@@ -190,7 +190,7 @@ async def test_6_a_data_source_binds_a_connection(in_project, monkeypatch, conne
     assert asked == reauthorized
     assert ns["providers"] == ["google"]
     assert (await DataSource.get("work drive")).connection == "google"
-    assert ns["live"].credentials.token.get_secret_value() == "token-for-google"
+    assert ns["live"].source.credentials.token.get_secret_value() == "token-for-google"
 
 
 async def test_6_an_external_store_is_a_consumer_of_both_kinds(in_project, monkeypatch):
@@ -207,5 +207,5 @@ async def test_6_an_external_store_is_a_consumer_of_both_kinds(in_project, monke
         assert ns["remote"].connection == "google"
         bound = (await DataSource.get("agent mailbox")).secret_store
         assert (bound.type, bound.config["gcp_project"], bound.connection) == ("gcp_secret_manager", "acme-prod", "google")
-        live = await (await DataSource.get("agent mailbox")).open()  # the row alone: what the heartbeat's sync has
+        live = (await (await DataSource.get("agent mailbox")).open()).source  # the row alone: what the heartbeat's sync has
         assert live.credentials.values["api_key"].get_secret_value() == "am-key"

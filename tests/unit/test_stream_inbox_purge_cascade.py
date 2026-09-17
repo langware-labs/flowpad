@@ -36,7 +36,6 @@ async def _projected_pair(tmp_path, monkeypatch):
         data_source_id=src.id,
         provider="agent",
         kind="content.message.email",
-        segment_key="INBOX",
         external_id=f"<{uuid.uuid4().hex[:8]}@x>",
         name="Q3 planning",
         body="hello there",

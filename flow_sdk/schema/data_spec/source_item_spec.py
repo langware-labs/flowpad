@@ -18,9 +18,8 @@ from flow_sdk.sources.values.items import Payload
 from flow_sdk.sources.values.origin import CloudOrigin
 
 #: A header component: each one feeds the natural key (``data_source_id`` plus the
-#: origin lifted from ``provider``/``segment_key``/``external_id``), and a blank
-#: component collapses every item of a segment onto one row — so blankness is
-#: refused by the type, not by a route.
+#: origin lifted from ``provider``/``external_id``), and a blank component collapses
+#: items onto one row — so blankness is refused by the type, not by a route.
 NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 #: Slack's ``ts`` shape and nothing else in the fleet: ten epoch digits, a dot,
@@ -34,7 +33,7 @@ class SourceItemSpec(DataSpec):
     """The ingestion envelope — header + body, in the network-message sense.
 
     What a driver hands the ingestor: a routing **header** (which source, which
-    segment, which record) plus the normalized **body** it stores. ``raw`` rides
+    record) plus the normalized **body** it stores. ``raw`` rides
     along uninterpreted so a mapping bug can be re-derived later without
     re-fetching. Field names are the ROW's — this is the type's ``asset_spec``,
     the model that selects which fields the medium persists.
@@ -51,7 +50,6 @@ class SourceItemSpec(DataSpec):
     data_source_id: NonBlank
     provider: NonBlank
     kind: NonBlank
-    segment_key: NonBlank
     external_id: NonBlank
 
     # ── body ──
@@ -116,7 +114,6 @@ class SourceItemSpec(DataSpec):
     # digested — they never change for a given record.
     conversation_id: Optional[str] = None
     message_id: Optional[str] = None
-    segment_label: str = ""
     #: Who else the message was addressed to, as the provider printed each one
     #: (``"Ada <ada@x.io>"`` or a bare address). Not digested.
     recipients: list[str] = []

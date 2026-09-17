@@ -18,20 +18,19 @@ import re
 import subprocess
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Annotated, AsyncGenerator, ClassVar, Optional
+from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional
 
 from pydantic import StringConstraints
 
 from flow_sdk.sources.base import Altitude, Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
-from flow_sdk.sources.errors import InvalidCursor, Rejected, SourceError, SourceUnavailable, Unsupported
+from flow_sdk.sources.errors import InvalidCursor, Rejected, SourceError, SourceUnavailable
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage, Move
-from flow_sdk.sources.values.query import DataQuery, ObjectQuery
-from flow_sdk.sources.values.segment import SegmentRef
+from flow_sdk.sources.values.query import ObjectQuery
 
 #: Git's empty tree: diffing against it yields everything committed, so the first traversal
 #: needs no separate listing path and the never-walk rule holds on the very first run.
@@ -96,10 +95,6 @@ class GitSource(Source):
 
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
-    def lift_cursor(cls, state: dict) -> Optional[str]:
-        return cls.resume_at(state["sha"]) if state.get("sha") else None
-
-    @classmethod
     def origin_id_for(cls, row: object, ref: str, root: object) -> str:
         """``GitOrigin.key()`` — the documented cross-machine handle, branch-independent, and computable
         for a path that no longer exists, so a deleted or renamed-from path still resolves to its row.
@@ -133,12 +128,9 @@ class GitSource(Source):
         self._diffs.clear()
 
     # ── listing ─────────────────────────────────────────────────────────────
-    async def segments(self) -> list[SegmentRef]:
-        """One per branch — never per directory, which a path can move between."""
-        raw = str(self.config.get("repo") or "")
-        if not raw:
-            return []
-        return [SegmentRef(key=str(self.config.get("branch") or "HEAD"), label=raw, query=ObjectQuery())]
+    def query(self) -> ObjectQuery:
+        """The whole repository — never a directory, which a path can move between."""
+        return ObjectQuery()
 
     async def get(self, origin: CloudOrigin) -> Optional[FileItem]:
         self._require_open()
@@ -148,15 +140,14 @@ class GitSource(Source):
         fields = mode_type_blob.split(" ")
         return self._item(key, fields[2]) if path == key and len(fields) == 3 and fields[1] == "blob" else None
 
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
-        if query is not None and not isinstance(query, ObjectQuery):
-            raise Unsupported(f"GitSource does not support {type(query).__name__}")
+        query = self.effective_query(narrow)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         before, after, offset = await self._position(cursor)
-        prefix = query.prefix if query is not None else ""
+        prefix = query.prefix
         changes = [c for c in await self._diff(before, after) if c.path.startswith(prefix) or c.previous.startswith(prefix or "\0")]
         page = changes[offset : offset + limit]
         items = tuple(self._item(c.path, c.blob) for c in page if c.code != "D")
@@ -166,10 +157,12 @@ class GitSource(Source):
             return ChangePage(items=items, removed=removed, moved=moved, next_cursor=f"{_DIFF}{before}:{after}:{offset + limit}")
         return ChangePage(items=items, removed=removed, moved=moved, resume_cursor=_AT + after)
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[FileItem, None]:
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[FileItem, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:

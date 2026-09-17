@@ -53,7 +53,7 @@ async def test_a_legacy_source_with_only_config_agent_id_is_that_agents():
 
 async def test_a_bare_row_is_the_local_users():
     local = await _local_user()
-    source = DataSource(name=f"s {uuid.uuid4().hex[:8]}", provider="rss", config={"feed_urls": ["http://127.0.0.1:1/feed"]})
+    source = DataSource(name=f"s {uuid.uuid4().hex[:8]}", provider="rss", config={"feed_url": "http://127.0.0.1:1/feed"})
     owner = await owner_of(source)
     assert owner == await default_owner()
     assert owner == TypeId(type=EntityType.USER.value, id=str(local.id))
@@ -63,7 +63,7 @@ async def test_a_bare_row_is_the_local_users():
 async def test_owner_serialises_as_the_plain_typeid_string_and_is_queryable():
     """Risk 1 from the plan: the field must be a filterable string on the wire."""
     tid = _agent_tid()
-    source = DataSource(name=f"owned {uuid.uuid4().hex[:8]}", provider="rss", owner=tid, config={"feed_urls": ["http://127.0.0.1:1/feed"]})
+    source = DataSource(name=f"owned {uuid.uuid4().hex[:8]}", provider="rss", owner=tid, config={"feed_url": "http://127.0.0.1:1/feed"})
     assert source.model_dump(mode="json")["owner"] == str(tid)
 
     await source.save(notify=False)
@@ -131,23 +131,23 @@ async def test_a_pre_owner_thread_is_adopted_by_the_first_owner_not_forked():
 async def test_find_for_account_narrows_by_owner_and_is_pre_owner_without_it():
     a, b = _agent_tid(), _agent_tid()
     channel = f"C{uuid.uuid4().hex[:8].upper()}"
-    sa = DataSource(name=f"a {uuid.uuid4().hex[:8]}", provider="slack", config={"channels": [channel]}, owner=a)
-    sb = DataSource(name=f"b {uuid.uuid4().hex[:8]}", provider="slack", config={"channels": [channel]}, owner=b)
+    sa = DataSource(name=f"a {uuid.uuid4().hex[:8]}", provider="slack", config={"channel": channel}, owner=a)
+    sb = DataSource(name=f"b {uuid.uuid4().hex[:8]}", provider="slack", config={"channel": channel}, owner=b)
     await sa.save(notify=False)
     await sb.save(notify=False)
 
-    assert (await DataSource.find_for_account("slack", "channels", channel, owner=a)).id == sa.id
-    assert (await DataSource.find_for_account("slack", "channels", channel, owner=b)).id == sb.id
+    assert (await DataSource.find_for_account("slack", "channel", channel, owner=a)).id == sa.id
+    assert (await DataSource.find_for_account("slack", "channel", channel, owner=b)).id == sb.id
     # Omitted: the pre-owner lookup returns the first match, as it always has.
-    assert (await DataSource.find_for_account("slack", "channels", channel)).id in {sa.id, sb.id}
+    assert (await DataSource.find_for_account("slack", "channel", channel)).id in {sa.id, sb.id}
 
 
 async def test_find_owned_includes_a_legacy_agent_row_and_filters_by_channel():
     agent_id = str(uuid.uuid4())
     tid = TypeId(type=EntityType.AGENT.value, id=agent_id)
-    owned = DataSource(name=f"o {uuid.uuid4().hex[:8]}", provider="rss", owner=tid, channel="rss", config={"feed_urls": ["http://127.0.0.1:1/feed"]})
+    owned = DataSource(name=f"o {uuid.uuid4().hex[:8]}", provider="rss", owner=tid, channel="rss", config={"feed_url": "http://127.0.0.1:1/feed"})
     legacy = DataSource(name=f"l {uuid.uuid4().hex[:8]}", provider="cloud_email", config={"agent_id": agent_id}, channel="agentmail")
-    stranger = DataSource(name=f"s {uuid.uuid4().hex[:8]}", provider="rss", owner=_agent_tid(), channel="rss", config={"feed_urls": ["http://127.0.0.1:1/feed"]})
+    stranger = DataSource(name=f"s {uuid.uuid4().hex[:8]}", provider="rss", owner=_agent_tid(), channel="rss", config={"feed_url": "http://127.0.0.1:1/feed"})
     for row in (owned, legacy, stranger):
         await row.save(notify=False)
     # The save choke-point must NOT overwrite a legacy row's implied owner with the local user.
@@ -160,7 +160,7 @@ async def test_find_owned_includes_a_legacy_agent_row_and_filters_by_channel():
 
 async def test_save_stamps_the_local_user_when_nothing_set_an_owner():
     local = await _local_user()
-    source = DataSource(name=f"mine {uuid.uuid4().hex[:8]}", provider="rss", config={"feed_urls": ["http://127.0.0.1:1/feed"]})
+    source = DataSource(name=f"mine {uuid.uuid4().hex[:8]}", provider="rss", config={"feed_url": "http://127.0.0.1:1/feed"})
     assert source.owner is None
     await source.save(notify=False)
     assert source.owner == TypeId(type=EntityType.USER.value, id=str(local.id))

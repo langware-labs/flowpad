@@ -49,7 +49,7 @@ async def test_the_driver_never_walks_the_filesystem(git_db, asset_repo, make_so
     real_walk = _os.walk
     monkeypatch.setattr(_os, "walk", lambda *a, **k: (walked.append(str(a[0])), real_walk(*a, **k))[1])
 
-    await DataDriver.loaded("git").traverse(source, position(segment_key="main", prior={}))
+    await DataDriver.loaded("git").traverse(source, position())
 
     assert walked == [], f"the driver walked: {walked}"
 

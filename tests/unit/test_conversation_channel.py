@@ -19,10 +19,10 @@ from flow_sdk.stream_inbox.projection import project_source_item
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_projected_conversation_names_its_channel_and_source():
     tag = uuid.uuid4().hex[:8]
-    src = DataSource(provider="slack", channel="slack", account_key=f"T-{tag}", name=f"Chat {uuid.uuid4().hex[:8]}", config={"channels": ["C0123456789"]})
+    src = DataSource(provider="slack", channel="slack", account_key=f"T-{tag}", name=f"Chat {uuid.uuid4().hex[:8]}", config={"channel": "C0123456789"})
     await src.save()
     spec = SourceItemSpec(
-        data_source_id=str(src.id), provider="slack", kind="content.message.chat", segment_key="C1",
+        data_source_id=str(src.id), provider="slack", kind="content.message.chat",
         external_id=f"m-{tag}", body="hi", thread_key=f"th-{tag}", author_external_id="U1",
     )
     report = await ingest_items([spec], mode=IngestMode.for_run(item_count=10_000))

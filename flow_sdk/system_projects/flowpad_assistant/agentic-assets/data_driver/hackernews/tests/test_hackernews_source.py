@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from flow_sdk.builtin.data_driver import DataDriver
-from flow_sdk.builtin.data_source_cursor import DataSourceCursor
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
@@ -65,8 +65,8 @@ def _row(base: str, **config):
     return make_data_source("hackernews", kind="datasource.api.hackernews", name="HN", config={"base_url": base, **config})
 
 
-def _view(state=None):
-    return position(segment_key=STREAM_KEY, prior=state or {}, window_start=(NOW - timedelta(days=7)).isoformat())
+def _view(prior=None):
+    return position(prior, window_start=(NOW - timedelta(days=7)).isoformat())
 
 
 @pytest.mark.parametrize("check", checks_for(HackerNewsSource), ids=str)
@@ -77,8 +77,12 @@ async def test_conformance(check, hn_server):
     ))
 
 
-async def test_hacker_news_has_exactly_one_segment(hn_server):
-    assert [ref.key for ref in await DataDriver.loaded("hackernews").segments(_row(hn_server))] == [STREAM_KEY]
+async def test_hacker_news_lists_one_stream_without_a_query(hn_server):
+    source = HackerNewsSource(SourceBinding(config={"base_url": hn_server}))
+    assert source.query() is None
+    async with source:
+        with pytest.raises(ValueError):
+            await source.fetch(narrow={"since": NOW})
 
 
 async def test_changed_ids_are_hydrated_and_filtered(hn_server):
@@ -115,7 +119,7 @@ async def test_a_second_provider_needs_no_change_to_the_shared_pipeline(hn_serve
     assert first.created == 2, first.as_counts()
     rows = await SourceItem.get_all({"data_source_id": src.id})
     assert {r.external_id for r in rows} == {"101", "102"} and any("narwhals" in (r.name or "") for r in rows)
-    assert (await DataSourceCursor.ensure_for(src.id, STREAM_KEY)).health == SourceHealth.OK.value
+    assert (await DataSource.get_one({"id": src.id})).health == SourceHealth.OK.value
 
     # `score` and `kids` ride the volatile echo, so a repeat poll is silent.
     second = await sync_source(src, now=NOW)

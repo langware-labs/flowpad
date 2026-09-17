@@ -38,7 +38,7 @@
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources",
-      "summary": "Data-source ingestion: segments, cursors, the poller/sync/ingestor pipeline, driver contract and traits, status versus health, record-or-asset destinations, origin identity, change envelope.",
+      "summary": "Data-source ingestion: one stream per source, the cursor, the poller/sync/ingestor pipeline, driver contract and traits, status versus health, record-or-asset destinations, origin identity, change envelope.",
       "content_hash": "c4db5941ebfadcfb0431f95ef70661ad76202d0d05f12a1151323d132679eb93",
       "size_bytes": 13937
     },

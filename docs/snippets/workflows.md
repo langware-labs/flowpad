@@ -136,10 +136,10 @@ async with workflow("channel-helper"):
 * The Slack token is the machine's connected Slack credential; there is no
   per-source key. `StreamInbox` checks `require("slack")` before it touches a row,
   so an unconnected instance fails on that line with the fix in the message
-  (see [connections](connections.md)). It reuses the source whose `channels`
-  list contains that id.
-* `SlackMessageSpec.reply_to(m, ...)` sets `to=[m.segment_key]` (the
-  channel) and carries `m.thread_key` through as `thread_ts`, so the answer
+  (see [connections](connections.md)). It reuses the source whose `channel`
+  is that id — one source per channel.
+* `SlackMessageSpec.reply_to(m, ...)` sets `to` to the channel the message's
+  origin names (the last part of `m.origin_namespace`) and carries `m.thread_key` through as `thread_ts`, so the answer
   lands in the thread. A top-level message is its own thread root.
 * The loop never answers itself: the first `send` stamps the bot's user id
   onto the source via `auth.test`, and `listen()` drops items whose author is
@@ -166,7 +166,7 @@ EmailMessageSpec(to=["a@b"], body="x", cc=["nope"])   # raises: extra="forbid"
 
 RunOutput(text="done", files=[])   # what a turn returns; files carry FileRef
 
-SlackMessageSpec.reply_to(m, body="x").to      # [m.segment_key] — the channel
+SlackMessageSpec.reply_to(m, body="x").to      # [channel id] — from m.origin_namespace
 TelegramMessageSpec.reply_to(m, body="x").to   # [chat id] — the leading part of thread_key
 ```
 

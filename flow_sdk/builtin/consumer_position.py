@@ -1,12 +1,12 @@
 """ConsumerPosition — how far ONE consumer has got through ONE source.
 
-The second cursor. ``DataSourceCursor`` answers "what has the source told us" and is owned
+The second cursor. ``DataSource.cursor`` answers "what has the source told us" and is owned
 by ``sync``; this row answers "what has *this workflow* dealt with" and is owned by ``ack()``.
 Same source, N workflows, N positions, one ingest. Collapsing them is how a consumer's crash
 would rewind the source, or a poll would mark a consumer's work done.
 
-**Per row, never a dict on the DataSource** — the rule ``DataSourceCursor`` states, for the
-same reason: concurrent advances of one row lose each other.
+**Per row, never a dict on the DataSource**: N consumers advance concurrently, and concurrent
+advances of one row lose each other.
 
 **The position is an offset, not a set.** ``advance_to(item)`` commits everything at or
 before that item's ``(created_date, id)``. That is the Kafka grain, settled deliberately:

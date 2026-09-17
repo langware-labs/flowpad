@@ -32,7 +32,7 @@ async def _desk_source() -> DataSource:
 async def _ticket_item(src: DataSource, ticket: str, fm_id: str, *, text="my printer is broken") -> SourceItem:
     item = SourceItem(
         kind="content.message.chat", provider="helpdesk", data_source_id=str(src.id),
-        segment_key=ticket, external_id=fm_id, thread_key=f"{src.config['desk_project_id']}:{ticket}",
+        external_id=fm_id, thread_key=f"{src.config['desk_project_id']}:{ticket}",
         body=text, occurred_at="2026-09-06T10:00:00+00:00",
         author_external_id="guest-1", author_display="Guest",
         conversation_id=ticket, message_id=fm_id,
@@ -106,7 +106,7 @@ async def test_a_record_without_hints_still_mints_as_before():
     await src.save()
     item = SourceItem(
         kind="content.message.chat", provider="telegram", data_source_id=str(src.id),
-        segment_key="updates", external_id="1/abc", thread_key="1", body="hi",
+        external_id="1/abc", thread_key="1", body="hi",
         occurred_at="2026-09-06T10:00:00+00:00", author_external_id="7",
     )
     await item.save()

@@ -7,7 +7,7 @@
 ## The decision, as one falsifiable question
 
 > **Is there an installed spec whose `name` resolves to a driver AND whose
-> `config` can express the thing the user named, as a segment?**
+> `config` can express the thing the user named, as one stream?** (Three feeds are three sources.)
 
 Yes → reuse it. No → `modes/author.md`. "Close enough" is not reuse.
 
@@ -38,19 +38,19 @@ the case where the three-way question becomes real.
 
 ```json
 {"provider": "agent", "config": {"connector": "gmail", "harness": "claude",
-                                 "segments": ["INBOX"]}}
+                                 "mailbox": "INBOX"}}
 ```
 
 Slack rides the same transport with a different connector — the worker reads
-the channels through the Slack connector the person already authorised in
+the channel through the Slack connector the person already authorised in
 their harness, so there is no OAuth round trip and no bot to invite:
 
 ```json
 {"provider": "agent", "config": {"connector": "slack", "harness": "claude",
-                                 "segments": ["C0123ABCD"]}}
+                                 "mailbox": "C0123ABCD"}}
 ```
 
-* `segments` are channel **IDs** (`C…`), never names, and for slack they are
+* `mailbox` is a channel **ID** (`C…`), never a name, and for slack it is
   **required** — a channel id cannot be guessed the way mail assumes `INBOX`.
   In Slack: click the channel name; the ID is at the bottom of the panel.
 
@@ -59,7 +59,7 @@ their harness, so there is no OAuth round trip and no bot to invite:
 * **`harness`** is the worker CLI that runs the fetch. Without a launchable one
   the source parks on `config_error`, which reads like a broken mailbox and is
   not one.
-* `segments` defaults to `INBOX`; `max_items` (advanced) caps a single run.
+* `mailbox` defaults to `INBOX`; one mailbox per source; `max_items` (advanced) caps a single run.
 
 Reach for `cloud_email` (Agent Email) only when the person wants the agent's own
 address, or when no harness is available — and allocate it with

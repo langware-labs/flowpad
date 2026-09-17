@@ -169,7 +169,7 @@ async def test_open_builds_the_source_with_what_is_bound(home, source_types):
     await store.save({"KEYED_API_KEY": "bound-value"})
     await row.set_secret_store(store)
 
-    live = await row.open()
+    live = (await row.open()).source
 
     assert isinstance(live, _KeyedSource)
     assert live.credentials.values["KEYED_API_KEY"].get_secret_value() == "bound-value"

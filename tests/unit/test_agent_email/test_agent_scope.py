@@ -34,7 +34,6 @@ async def _message(source: DataSource) -> FlowMessage:
         provider="cloud_email",
         kind="content.message.email",
         data_source_id=source.id,
-        segment_key="INBOX",
         external_id=mint_uuid(),
     )
     await item.save()

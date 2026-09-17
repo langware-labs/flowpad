@@ -45,7 +45,7 @@ def test_every_type_is_served_by_the_one_disk_serializer() -> None:
 
 def test_type_info_default_origin_kind_follows_db_only() -> None:
     assert SchemaRegistry.get("agent").default_origin_kind == "local"
-    assert SchemaRegistry.get("data_source_cursor").default_origin_kind == "db"
+    assert SchemaRegistry.get("consumer_position").default_origin_kind == "db"
 
 
 def test_an_explicit_origin_overrides_the_default() -> None:

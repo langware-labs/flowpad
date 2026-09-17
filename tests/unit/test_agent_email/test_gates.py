@@ -69,7 +69,6 @@ def _item(source_id: str, sender: str, body: str = "what is the status?") -> Sou
     return SourceItem(
         data_source_id=source_id,
         provider="cloud_email",
-        segment_key="agent-1",
         external_id="<msg-1@x>",
         name="Status?",
         body=body,
@@ -119,7 +118,7 @@ async def test_from_source_resolves_the_agent_from_owner_when_config_has_no_agen
         name="slack-q-agent",
         provider="slack",
         channel="slack",
-        config={"channels": [{"id": "C0123456789", "name": "test"}]},  # no agent_id key
+        config={"channel": {"id": "C0123456789", "name": "test"}},  # no agent_id key
         owner=TypeId(type="agent", id=agent_id),
         status=SourceStatus.ACTIVE.value,
         inbound_allowed_senders=["U0BP53L7Z5G"],

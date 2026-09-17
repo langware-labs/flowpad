@@ -1,7 +1,7 @@
 """The ``teams`` data source, against a real socket serving Microsoft Graph's own shapes.
 
 Graph breaks a different set of assumptions than Slack did: a channel is addressed only through
-its team, so a segment is composite; ``/messages`` returns ROOTS and the conversation lives in
+its team, so the source's channel is a composite; ``/messages`` returns ROOTS and the conversation lives in
 ``replies``; there is no ``$filter``, so "since" is decided here over whole reply chains; and
 message bodies are HTML even when someone typed one bare sentence.
 """
@@ -24,22 +24,22 @@ from flow_sdk.sources.credentials import AuthShape, Credentials
 from flow_sdk.sources.testing import Subject, checks_for
 
 TeamsSource = asset_module("teams").TeamsSource
-split_segment = asset_module("teams").split_segment
+split_channel = asset_module("teams").split_channel
 teams_source = asset_module("teams")
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 TEAM = "fbe2bf47-16c8-47cf-b4a5-4b9b187c508b"
 CHANNEL = "19:4a95f7d8db4c4e7fae857bcebe0623e6@thread.tacv2"
-SEGMENT = f"{TEAM}/{CHANNEL}"
+CONTAINER = f"{TEAM}/{CHANNEL}"
 
 
 def _source(**config) -> DataSource:
-    return DataSource(provider="teams", name=f"Teams test {uuid.uuid4().hex[:8]}", config={"channels": [SEGMENT], **config})
+    return DataSource(provider="teams", name=f"Teams test {uuid.uuid4().hex[:8]}", config={"channel": CONTAINER, **config})
 
 
-def _view(state: dict | None = None, window_start: str | None = None):
-    return position(segment_key=SEGMENT, prior=state or {}, window_start=window_start)
+def _view(cursor: str | None = None, window_start: str | None = None):
+    return position(cursor=cursor, window_start=window_start)
 
 
 def _message(message_id: str, text: str, *, created: str, **extra) -> dict:
@@ -148,26 +148,34 @@ def fake_graph(monkeypatch):
 
 @pytest.mark.parametrize("check", checks_for(TeamsSource), ids=str)
 async def test_conformance(check, fake_graph):
-    binding = SourceBinding(config={"channels": [SEGMENT]}, credentials=Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("t")))
+    binding = SourceBinding(config={"channel": CONTAINER}, credentials=Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("t")))
     probe = TeamsSource(binding)
     await check.run(Subject(
         source=lambda: TeamsSource(binding),
-        seeded=tuple(probe.origin(n, SEGMENT) for n in ("1", "2", "3")),
-        conversation=probe.origin("1", SEGMENT),
+        seeded=tuple(probe.origin(n, CONTAINER) for n in ("1", "2", "3")),
+        conversation=probe.origin("1", CONTAINER),
         recipient=UserProfile(origin=probe.origin("U2"), name="Ada"),
     ))
 
 
-# ── segments ─────────────────────────────────────────────────────────────────
+# ── the one channel ──────────────────────────────────────────────────────────
 
 
-async def test_a_segment_is_keyed_by_team_and_channel_together():
-    (segment,) = await DataDriver.loaded("teams").segments(_source())
-    assert segment.key == SEGMENT and split_segment(segment.key) == (TEAM, CHANNEL)
+def test_the_channel_is_keyed_by_team_and_channel_together():
+    source = TeamsSource(SourceBinding(config={"channel": {"id": CONTAINER, "name": "Engineering / General"}}))
+    assert source.channel == (CONTAINER, "Engineering / General") and split_channel(CONTAINER) == (TEAM, CHANNEL)
+    assert source.query().conversation == source.channel_origin(CONTAINER)
 
 
 def test_a_key_without_a_team_names_nothing():
-    assert split_segment(CHANNEL) == ("", "")
+    assert split_channel(CHANNEL) == ("", "")
+
+
+def test_a_stored_list_of_channels_splits_into_one_source_per_channel():
+    other = f"{TEAM}/19:other@thread.tacv2"
+    parts = TeamsSource.Config.split({"channels": [{"id": CONTAINER, "name": "Engineering / General"}, other]})
+    assert parts == [("Engineering / General", {"channel": {"id": CONTAINER, "name": "Engineering / General"}}), (other, {"channel": other})]
+    assert TeamsSource.Config.split({"channel": CONTAINER}) is None
 
 
 # ── fetch ────────────────────────────────────────────────────────────────────
@@ -194,15 +202,9 @@ async def test_messages_already_seen_are_not_ingested_again(serve):
         dict(_message("102", "new answer", created="2026-09-01T11:00:00Z"), replyToId="100"),
     ]
     serve([(200, {"value": [root]})])
-    result = await DataDriver.loaded("teams").traverse(_source(), _view(state={"cursor": TeamsSource.resume_after("2026-09-01T10:30:00Z")}))
+    result = await DataDriver.loaded("teams").traverse(_source(), _view(TeamsSource.resume_after("2026-09-01T10:30:00Z")))
     assert [i.external_id for i in result.items] == ["102"]
     assert result.cursor == TeamsSource.resume_after("2026-09-01T11:00:00Z")
-
-
-async def test_a_legacy_high_water_is_adopted(serve):
-    serve([(200, {"value": [_message("100", "old", created="2026-09-01T10:00:00Z")]})])
-    result = await DataDriver.loaded("teams").traverse(_source(), _view(state={"last_created": "2026-09-01T10:00:00Z"}))
-    assert result.unchanged is True and result.items == []
 
 
 async def test_system_events_are_not_messages_but_move_the_cursor(serve):
@@ -232,7 +234,7 @@ async def test_the_permalink_is_graphs_own(serve):
 
 async def test_a_reply_goes_under_the_thread_root(serve):
     graph = serve([(200, {"id": "999"}), (200, {"id": "ME", "userPrincipalName": "a@b.com"})])
-    outcome = await DataDriver.loaded("teams").send(_source(), thread_key="100", to=SEGMENT, text="answering")
+    outcome = await DataDriver.loaded("teams").send(_source(), thread_key="100", to=CONTAINER, text="answering")
     assert outcome.external_id == "999"
     assert graph.requests[0].endswith(f"/teams/{TEAM}/channels/{CHANNEL}/messages/100/replies")
     assert json.loads(graph.bodies[0]) == {"body": {"contentType": "text", "content": "answering"}}, "no agent persona: Graph posts as the user"
@@ -240,7 +242,7 @@ async def test_a_reply_goes_under_the_thread_root(serve):
 
 async def test_a_send_with_no_thread_is_a_new_root(serve):
     graph = serve([(200, {"id": "999"}), (200, {"id": "ME"})])
-    await DataDriver.loaded("teams").send(_source(), thread_key="", to=SEGMENT, text="opening", subject="Status")
+    await DataDriver.loaded("teams").send(_source(), thread_key="", to=CONTAINER, text="opening", subject="Status")
     assert graph.requests[0].endswith(f"/channels/{CHANNEL}/messages") and json.loads(graph.bodies[0])["subject"] == "Status"
 
 
@@ -252,16 +254,16 @@ async def test_a_send_without_a_team_refuses():
 async def test_a_refused_post_does_not_park_the_source(serve):
     serve([(403, {"error": {"code": "Forbidden", "message": "Missing ChannelMessage.Send"}})])
     with pytest.raises(ValueError, match="refused"):
-        await DataDriver.loaded("teams").send(_source(), thread_key="100", to=SEGMENT, text="hi")
+        await DataDriver.loaded("teams").send(_source(), thread_key="100", to=CONTAINER, text="hi")
 
 
 # ── verify ───────────────────────────────────────────────────────────────────
 
 
-async def test_verify_reads_every_channel_before_saying_yes(serve):
+async def test_verify_reads_the_channel_before_saying_yes(serve):
     graph = serve([(200, {"value": []}), (200, {"id": "me", "userPrincipalName": "a@b.com"})])
     verdict = await DataDriver.loaded("teams").verify(_source())
-    assert verdict.ready is True and "1 channel" in verdict.detail and "top=1" in graph.requests[0]
+    assert verdict.ready is True and CONTAINER in verdict.detail and "top=1" in graph.requests[0]
 
 
 async def test_a_missing_permission_says_which_one(serve):
@@ -273,14 +275,14 @@ async def test_a_missing_permission_says_which_one(serve):
 async def test_a_channel_we_cannot_see_is_pending_not_broken(serve):
     serve([(404, {"error": {"message": "NotFound"}}), (200, {"id": "me"})])
     verdict = await DataDriver.loaded("teams").verify(_source())
-    assert verdict.ready is False and verdict.pending == (SEGMENT,)
+    assert verdict.ready is False and verdict.pending == (CONTAINER,)
 
 
-async def test_a_source_with_no_channels_asks_for_one():
+async def test_a_source_with_no_channel_asks_for_one():
     source = _source()
-    source.config = {"channels": []}
+    source.config = {}
     verdict = await DataDriver.loaded("teams").verify(source)
-    assert verdict.ready is False and "No channels" in verdict.detail
+    assert verdict.ready is False and "No channel" in verdict.detail
 
 
 # ── choices and the outbound spec ────────────────────────────────────────────
@@ -288,8 +290,8 @@ async def test_a_source_with_no_channels_asks_for_one():
 
 async def test_the_picker_offers_the_composite_id(serve):
     serve([(200, {"value": [{"id": TEAM, "displayName": "Engineering"}]}), (200, {"value": [{"id": CHANNEL, "displayName": "General"}]})])
-    (offer,) = await DataDriver.loaded("teams").choices(_source(), "channels")
-    assert (offer.id, offer.name) == (SEGMENT, "Engineering / General")
+    (offer,) = await DataDriver.loaded("teams").choices(_source(), "channel")
+    assert (offer.id, offer.name) == (CONTAINER, "Engineering / General")
 
 
 async def test_a_reply_is_addressed_to_the_channel_not_the_author():
@@ -297,6 +299,7 @@ async def test_a_reply_is_addressed_to_the_channel_not_the_author():
 
     driver = DataDriver.loaded("teams")
     assert driver.outbound_spec(_source()) is TeamsMessageSpec
-    item = type("Item", (), {"segment_key": SEGMENT, "thread_key": "100", "external_id": "101"})()
+    ingested = TeamsSource(SourceBinding(account_key="tenant-1", config={"channel": CONTAINER})).origin("101", CONTAINER)
+    item = type("Item", (), {"origin_namespace": ingested.namespace, "thread_key": "100", "external_id": "101"})()
     spec = driver.outbound_spec(_source()).reply_to(item, body="answering")
-    assert (spec.to, spec.thread_key) == ([SEGMENT], "100")
+    assert (spec.to, spec.thread_key) == ([CONTAINER], "100")

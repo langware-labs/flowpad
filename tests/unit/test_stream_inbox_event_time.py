@@ -52,7 +52,7 @@ async def _source(**kw) -> DataSource:
 async def _item(src: DataSource, *, occurred_at: str = YEAR_OLD, thread: str = "1") -> SourceItem:
     item = SourceItem(
         kind="content.message.chat", provider=src.provider,
-        data_source_id=str(src.id), segment_key="updates",
+        data_source_id=str(src.id),
         external_id=f"{thread}/{uuid.uuid4().hex[:6]}", thread_key=thread,
         name="old", body="a year old message",
         occurred_at=occurred_at,
@@ -173,7 +173,7 @@ class TestEdgeNormalization:
     """One canonical dialect at the edge: aware-UTC `+00:00` ISO strings."""
 
     BASE = dict(data_source_id="d", provider="p", kind="content.message.chat",
-                segment_key="s", external_id="e")
+                external_id="e")
 
     @pytest.mark.parametrize(
         "raw",

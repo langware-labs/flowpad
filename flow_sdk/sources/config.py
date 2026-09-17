@@ -21,7 +21,7 @@ Three ways a config is read, because three callers want three different things:
 """
 from __future__ import annotations
 
-from typing import Any, ClassVar, Mapping, Union, get_args, get_origin
+from typing import Any, ClassVar, Mapping, Optional, Union, get_args, get_origin
 
 from pydantic import ConfigDict, TypeAdapter, ValidationError, model_validator
 from pydantic.fields import FieldInfo
@@ -80,11 +80,14 @@ class SourceConfig(DataSpec):
 
     #: Fields the application fills (``Source.configure``), never the form: exempt from the catalog.
     derived: ClassVar[tuple[str, ...]] = ()
+    #: ``(old list key, single key)`` when this config once read N containers and now reads one: a
+    #: stored config still holding the list is split into one source per entry (``split``).
+    retired_list: ClassVar[Optional[tuple[str, str]]] = None
 
     @classmethod
     def validated(cls, data: Mapping[str, Any]) -> "SourceConfig":
         """This config built from ``data``, every rule applied. A failure is a ``ValueError`` naming
-        the first field at fault (``config.feed_urls is not valid: ftp://x``) — the sentence a create
+        the first field at fault (``config.feed_url is not valid: ftp://x``) — the sentence a create
         route returns as a 400."""
         try:
             return cls.model_validate(data)
@@ -129,6 +132,24 @@ class SourceConfig(DataSpec):
             elif not field.is_required():
                 default = field.get_default(call_default_factory=True, validated_data=out)
                 out[name] = _adapter(cls, name).dump_python(default, mode="json")
+        return out
+
+    @classmethod
+    def split(cls, raw: Mapping[str, Any]) -> Optional[list[tuple[str, dict[str, Any]]]]:
+        """A stored config holding the ``retired_list`` key, as ``(label, config)`` per entry; ``None``
+        when there is nothing to split. An entry picked from a choice list keeps its name as the label."""
+        if cls.retired_list is None or cls.retired_list[0] not in (raw or {}):
+            return None
+        old, new = cls.retired_list
+        rest = {k: v for k, v in raw.items() if k != old}
+        entries = raw[old]
+        entries = coerce_value(cls.model_fields[new], entries) if isinstance(entries, str) else entries
+        out = []
+        for entry in entries if isinstance(entries, (list, tuple)) else [entries]:
+            value = entry.get("id") if isinstance(entry, Mapping) and not _one(cls, new, entry)[0] else entry
+            label = str((entry.get("name") or entry.get("id")) if isinstance(entry, Mapping) else entry or "")
+            if value:
+                out.append((label, {**rest, new: value}))
         return out
 
     @classmethod

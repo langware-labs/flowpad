@@ -247,20 +247,16 @@ class DataSource(Entity):
     next_poll_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
     last_synced_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 
-    #: How many streams this source has, rolled up with health so a list can
-    #: show it without querying the cursor table. Cursors are the highest-churn
-    #: rows on the instance (one write per stream per poll), so a UI that
-    #: watches them live to render a COUNT repaints on every tick for a number
-    #: that only changes when a stream is added or removed.
-    #:
-    #: Set by ``_roll_up``, so it reflects the last run that got far enough to
-    #: enumerate streams. A source that fails before that — unknown provider, a
-    #: missing capability — reads 0 even if it has cursors from an earlier life.
-    #: That is the honest reading: those failures happen before the driver is
-    #: ever asked what its streams are.
-    segment_count: int = APIField(default=0, persist=Persist.FALSE)
+    last_attempted_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 
-    # ── health, rolled up worst-of from this source's cursors ──
+    # ── position: the source's opaque cursor, advanced only after a page is written ──
+    cursor: Optional[str] = APIField(default=None, persist=Persist.FALSE)
+    #: A reflecting source's diff bookkeeping (path → digest), carried verbatim between passes.
+    manifest: dict = APIField(default_factory=dict, persist=Persist.FALSE)
+    high_water: Optional[str] = APIField(default=None, persist=Persist.FALSE, description="ISO-8601: the newest record seen")
+    consecutive_failures: int = APIField(default=0, persist=Persist.FALSE)
+
+    # ── health of the last pass ──
     health: str = APIField(default=SourceHealth.NEVER_SYNCED.value, persist=Persist.FALSE)
     error_code: Optional[str] = APIField(default=None, persist=Persist.FALSE)
     error_detail: Optional[str] = APIField(default=None, persist=Persist.FALSE)
@@ -386,13 +382,15 @@ class DataSource(Entity):
         await self.save()
 
     async def open(self, *, persona: bool = False):
-        """The configured source with what is bound loaded in — ``async with await source.open() as live``."""
+        """This source for reading, with what is bound loaded in — ``async with await source.open() as live``
+        (``live.pages()``, ``live.items(**narrow)``, ``live.source``)."""
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.ingest.session import SourceSession  # noqa: PLC0415
 
         stype = await DataDriver.get(self.provider or "")
         if stype is None:
             raise LookupError(f"no data source type {self.provider!r}")
-        return await stype.open(self, persona=persona)
+        return SourceSession(self, await stype.open(self, persona=persona))
 
     # ── the asset: where the file lands, and what may touch it ─────────────────
     async def _resolve_scope_project(self):
@@ -479,11 +477,8 @@ class DataSource(Entity):
 
         value = str(value or "").strip()
         for row in await cls.get_all({"provider": provider}):
-            current = (row.config or {}).get(key) if key else [row.account_key, *(row.account_identities or [])]
-            # A `lines` field (Slack's ``channels``) is a list; the source
-            # serves the account when the value is one of its entries.
-            members = current if isinstance(current, list) else [current]
-            if not any(str(m or "").strip() == value for m in members):
+            candidates = [(row.config or {}).get(key)] if key else [row.account_key, *(row.account_identities or [])]
+            if not any(str(c or "").strip() == value for c in candidates):
                 continue
             if owner is not None and await owner_of(row) != owner:
                 continue
@@ -645,10 +640,10 @@ class DataSource(Entity):
     # conflating them produces surprises:
     #
     #   poll_now       — go now, keep everything we know
-    #   reset_cursors  — forget our position, keep the records
+    #   reset          — forget our position, keep the records
     #   purge_items    — forget the records
     #
-    # `reset_cursors` ALONE looks broken, and that is not a bug in the action:
+    # `reset` ALONE looks broken, and that is not a bug in the action:
     # re-ingestion resolves each record by its natural key and the digest gate
     # suppresses a row whose content has not moved, so re-reading the same window
     # finds the same rows and the same digests and writes nothing.
@@ -731,29 +726,24 @@ class DataSource(Entity):
             ),
         })
 
-    @core_action.post(action_name="reset_cursors")
-    async def reset_cursors_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_source/{id}/reset_cursors — forget position.
+    @core_action.post(action_name="reset")
+    async def reset_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/reset — forget position.
 
-        Clears the normalized high-water mark AND the provider-opaque ``state``
-        (ETags, update pointers), so the next poll re-reads the whole window.
-        Cursor rows are kept rather than deleted: the row carries the stream's
-        health and attempt history, and a reset forgets the POSITION, not that
-        the stream has ever run.
+        Clears the cursor and the reflection manifest, so the next poll re-reads the whole window.
         """
-        streams = await self.reset_cursors()
+        await self.reset()
         return ApiSuccessResponse(data={
-            "status": "reset", "streams": streams,
+            "status": "reset",
             "detail": "position cleared; existing records still gate on content digest — "
                       "pair with purge_items for a visible re-fetch",
         })
 
-    async def reset_cursors(self) -> int:
-        """Forget every segment's position and make the source due. Returns streams reset."""
-        streams = await self._reset_cursors()
+    async def reset(self) -> None:
+        """Forget this source's position and make it due."""
+        self._forget_position()
         self.next_poll_at = None
         await self.save_runtime()
-        return streams
 
     @core_action.post(action_name="purge_items")
     async def purge_items_action(self) -> ApiResponse:
@@ -815,7 +805,7 @@ class DataSource(Entity):
     async def replay(self, *, since: Optional[datetime] = None) -> dict:
         """The replay body — see ``replay_action`` for what it means and why."""
         removed = await self.purge_records_of(self.id, since=since)
-        streams = await self._reset_cursors()
+        self._forget_position()
 
         widened = False
         if since is not None:
@@ -832,7 +822,6 @@ class DataSource(Entity):
         return {
             "status": "replaying",
             "removed": removed,
-            "streams": streams,
             "since": since.isoformat() if since else None,
             "window_days": self.window_days,
             "window_widened": widened,
@@ -841,8 +830,7 @@ class DataSource(Entity):
 
     # ── deletion cascades, on BOTH paths ──────────────────────────────────────
     #
-    # Nothing cascades on its own: cursors are separate rows (``reset_cursors``
-    # deliberately keeps them) and so are the records (only ``purge_items``
+    # Nothing cascades on its own: the records (only ``purge_items``
     # removes those). Deleting just this row leaves both orphaned, keyed to an id
     # that no longer resolves — invisible until someone counts rows.
     #
@@ -893,13 +881,11 @@ class DataSource(Entity):
 
     @classmethod
     async def delete_children_of(cls, source_id: str) -> None:
-        """Every row keyed to this source — the records AND the cursors."""
+        """Every row keyed to this source — the records and the consumer positions."""
         from flow_sdk.builtin.consumer_position import ConsumerPosition  # noqa: PLC0415
-        from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
         from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
 
         await cls.purge_records_of(source_id)
-        await DataSourceCursor.delete_for(source_id)
         await ConsumerPosition.delete_for(source_id)
         await SourceChange.delete_for(source_id)
 
@@ -1208,7 +1194,7 @@ class DataSource(Entity):
             order_by=[{"occurred_at": "desc"}, {"created_date": "desc"}],
             limit=max(limit, 0),
         )) or []
-        fields = ("id", "external_id", "kind", "name", "thread_key", "segment_key", "author_external_id", "author_display", "occurred_at")
+        fields = ("id", "external_id", "kind", "name", "thread_key", "author_external_id", "author_display", "occurred_at")
         return [{**{f: getattr(r, f, None) for f in fields}, "body": str(getattr(r, "body", "") or "")[:500]} for r in rows]
 
     @core_action.post(action_name="sync")
@@ -1299,18 +1285,16 @@ class DataSource(Entity):
             "status": self.status,
         }
 
-    async def sync(self, *, budget: int = 0):
+    async def sync(self):
         """Run one sync cycle now, returning an ``IngestReport``.
 
         Never raises — a failure is recorded as health, not thrown.
 
-        The verb belongs here; ``ingest.sync.sync_source`` stays the function the
-        POLLER calls, because it takes a budget and a clock the caller owns.
         Do not confuse this with ``poll_now``, which only marks the source due.
         """
-        from flow_sdk.ingest.sync import DEFAULT_SEGMENT_BUDGET, sync_source  # noqa: PLC0415
+        from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
 
-        return await sync_source(self, budget=budget or DEFAULT_SEGMENT_BUDGET)
+        return await sync_source(self)
 
     def _driver(self):
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
@@ -1356,37 +1340,19 @@ class DataSource(Entity):
     # ── shared bodies — the actions above are thin wrappers over these ────────
 
     async def _make_due(self) -> None:
-        """Make this source due on the next tick, clearing any error latch.
-
-        THE un-latch, and it has to cover BOTH latches: `is_due` refuses a
-        `config_error` source, and `_round_robin` skips a `config_error`
-        cursor. Clearing only the row would let an operator fix a credential,
-        press Sync now, and watch the segment sit out every tick while the
-        roll-up re-stamps the source from it. One copy, because a second one
-        diverges — the rule `SourceError.for_status` states in
-        `ingest/health.py`.
-        """
-        from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
-
+        """Make this source due on the next tick, clearing the ``config_error`` latch ``is_due`` refuses."""
         self.next_poll_at = None
         if self.health == SourceHealth.CONFIG_ERROR.value:
             self.health = SourceHealth.NEVER_SYNCED.value if self.last_synced_at is None \
                 else SourceHealth.OK.value
+            self.consecutive_failures = 0
         self.error_code = None
         self.error_detail = None
-        for cursor in await DataSourceCursor.get_all({"data_source_id": self.id}):
-            if cursor.health == SourceHealth.CONFIG_ERROR.value:
-                cursor.mark_ok()
-                cursor.error_code = None
-                cursor.error_detail = None
-                cursor.consecutive_failures = 0
-                await cursor.save()
 
-    async def _reset_cursors(self) -> int:
-        """Forget every segment's position; the cursor rows stay (see ``DataSourceCursor.reset_for``)."""
-        from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
-
-        return await DataSourceCursor.reset_for(self.id)
+    def _forget_position(self) -> None:
+        self.cursor = None
+        self.manifest = {}
+        self.high_water = None
 
 
 #: What the engine writes while a source runs: never in ``data_source.json``, only on the row
@@ -1412,6 +1378,45 @@ def remove_source_folder(asset_ref: Optional[str]) -> None:
     if Entity._scope_from_path(str(folder)) == "system":
         return
     shutil.rmtree(folder, ignore_errors=True)
+
+
+async def migrate_list_configs() -> int:
+    """Split every source whose config still lists N containers into one source per entry. One time:
+    a source reads one stream now. The original goes, with what it ingested; each new source re-reads
+    its window. A driver names its retired list key (``Config.retired_list``); a config that cannot
+    split stays, and its missing single field parks it with ``config.<field> is required``.
+    Returns how many sources were split."""
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec  # noqa: PLC0415
+
+    split = 0
+    retiring = [driver for _, driver in DRIVERS.items() if driver.config_cls is not None and driver.config_cls.retired_list]
+    rows = [(driver, row) for driver in retiring for row in await DataSource.get_all({"provider": driver.provider})]
+    for driver, row in rows:
+        parts = driver.config_cls.split(row.config or {})
+        if not parts:
+            continue
+        if len(parts) == 1:  # one entry: the same source, under the single key
+            row.config = parts[0][1]
+            await row.save()
+            split += 1
+            continue
+        authored = {
+            name: getattr(row, name) for name in DataSourceSpec.model_fields
+            if name not in ("name", "provider", "config") and getattr(row, name, None) is not None
+        }
+        try:
+            for label, config in parts:
+                await driver.create_source(
+                    config, name=f"{row.name} {label}".strip(), project_id=row.project_id, scope=row.scope,
+                    account_key=row.account_key, **authored,
+                ).save()
+        except Exception:  # noqa: BLE001 — the fallback is the park, never a failed boot
+            logger.warning("could not split data source %s", row.id, exc_info=True)
+            continue
+        await row.delete()
+        split += 1
+    return split
 
 
 async def prune_fileless_data_sources() -> int:

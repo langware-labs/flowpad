@@ -29,7 +29,7 @@ agentic-assets/data_source/work_gmail/
 ```
 
 The file (`DataSourceSpec`) is what a person authors and nothing the engine writes: status,
-health, cursors, the next poll and discovered identities are row-only (`Persist.FALSE`), and the
+health, the cursor, the next poll and discovered identities are row-only (`Persist.FALSE`), and the
 engine saves them with `save_runtime()`, which never touches the file. The config is value-free —
 a secret is a credential the driver declares. A folder that arrives by copy, clone or share
 indexes in `setup` ("Received — connect your own account, then press Verify."), and one owner
@@ -123,17 +123,17 @@ The simplest manifest is six keys:
 schema: 1
 name: rss
 title: RSS / Atom
-description: One segment per feed URL. No credentials.
+description: One feed URL. No credentials.
 icon_name: Rss
 config:
-  feed_urls: { type: lines, label: Feed URLs }
+  feed_url: { type: text, label: Feed URL }
 ```
 
 and its `source.py` declares the rules for that field:
 
 ```python
 class RssConfig(SourceConfig):
-    feed_urls: list[Annotated[str, StringConstraints(pattern=r"^https?://")]] = Field(min_length=1)
+    feed_url: Annotated[str, StringConstraints(pattern=r"^https?://")]
 
 class RssSource(CollectionSource):
     Config = RssConfig
@@ -234,8 +234,9 @@ form. Three readings of one `Config`:
   / `is not valid: <value>`, which the create route maps to a 400;
 * **a form in progress** — `Config.draft(raw)` keeps the known keys that validate;
 * **a stored row** — `Config.best_match(raw)`, what the binding hands the source: every key that
-  still validates, the default for one that does not. `Config.lift` adopts renamed keys (the agent
-  transport's `stream`/`streams` → `segments`).
+  still validates, the default for one that does not. `Config.lift` adopts renamed keys;
+  `Config.retired_list` names a list key that became one field, which boot splits into one
+  source per entry (`migrate_list_configs`).
 
 ### `setup_wiki` and `channel_icon_names`
 
@@ -259,7 +260,6 @@ never a frontend table.
 | `payload` | `reflect: record` means record; anything else means bytes |
 | `sends` | the class implements `Messaging` and `message_for`; the row computes it |
 | `needs_setup` | the class is `Verifiable` |
-| `segment_budget` | a consequence of the fetch code, not a preference |
 | `account_key` VALUE | lives on the `DataSource` row; the manifest only marks WHICH form field supplies it |
 | `id` | carried by the asset's identity carrier, never written into the manifest |
 | poll cadence | per-instance on `DataSource` — a big site wants six hours, a small one five minutes |
@@ -290,7 +290,7 @@ A `fetch.py` driver moves into `agentic-assets/data_driver/<name>/` by hand: ren
 
 | `fetch.py` (retired) | `source.py` (current) |
 |---|---|
-| `verb == "segments"` → `{"segments": [...]}` | omit for one stream (the runtime supplies a root segment); else `async def segments()` |
+| `verb == "segments"` → `{"segments": [...]}` | gone: a source reads one stream; `def query()` builds it from `self.config` |
 | `req["source"]["config"]` | `self.config` |
 | the printed `items` list | `_scan(query)` → sorted `[(key, raw), ...]`, and `_item(key, raw)` → `SourceItemSpec` |
 | `external_id` | the key; `self.origin(key)` builds the identity |

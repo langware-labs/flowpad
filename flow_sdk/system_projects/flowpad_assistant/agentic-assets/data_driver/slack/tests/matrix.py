@@ -25,7 +25,7 @@ def case(monkeypatch, tmp_path):
     with local_http_server(fake) as base:
         monkeypatch.setattr(slack_source, "SLACK_API_BASE", base)
         yield {
-            "config": {"channels": [CHANNEL]},
+            "config": {"channel": CHANNEL},
             "fields": {"account_key": "T1"},
             "min_items": 3,
             "send": {"to": CHANNEL, "text": "matrix send"},

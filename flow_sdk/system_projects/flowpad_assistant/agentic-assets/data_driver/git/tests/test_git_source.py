@@ -51,8 +51,8 @@ def _row(repo: Path):
     return SimpleNamespace(id="ds-git", provider="git", account_key="", config={"repo": str(repo), "branch": "main"})
 
 
-def _view(state: dict | None = None):
-    return position(segment_key="main", prior=state or {})
+def _view(prior=None, **given):
+    return position(prior, **given)
 
 
 @pytest.fixture(scope="module")
@@ -115,12 +115,12 @@ async def test_a_git_mv_is_a_move_never_a_tombstone(tmp_path):
     assert not second.tombstones and set(second.manifest) == {"keep.md", "renamed.md"}
 
 
-async def test_a_legacy_sha_cursor_resumes_there(tmp_path):
+async def test_a_sha_cursor_resumes_there(tmp_path):
     repo = _repo(tmp_path / "repo", {"a.md": "a"})
     seed = _git(repo, "rev-parse", "HEAD")
     (repo / "b.md").write_text("b")
     _commit(repo)
-    result = await DataDriver.loaded("git").traverse(_row(repo), _view({"sha": seed}))
+    result = await DataDriver.loaded("git").traverse(_row(repo), _view(cursor=GitSource.resume_at(seed)))
     assert [Path(r).name for r in result.refs] == ["b.md"]
 
 

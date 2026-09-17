@@ -24,7 +24,7 @@ from email import policy
 from email.message import EmailMessage, Message
 from email.parser import BytesParser
 from email.utils import formatdate, getaddresses, make_msgid, parseaddr, parsedate_to_datetime
-from typing import Any, AsyncGenerator, ClassVar, Optional
+from typing import Any, AsyncGenerator, ClassVar, Mapping, Optional
 
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.config import SourceConfig
@@ -33,8 +33,7 @@ from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejec
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
-from flow_sdk.sources.values.query import DataQuery, MessageQuery
-from flow_sdk.sources.values.segment import SegmentRef
+from flow_sdk.sources.values.query import MessageQuery
 
 IMAP_HOST = "imap.gmail.com"
 SMTP_HOST = "smtp.gmail.com"
@@ -98,10 +97,6 @@ class GmailSource(EmailAddressing, Source):
 
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
-    def lift_cursor(cls, state: dict) -> Optional[str]:
-        return cls.resume_at(state["uid_validity"], state.get("last_uid") or 0) if state.get("uid_validity") else None
-
-    @classmethod
     def permalink(cls, external_id: str, thread_key: str = "") -> str:
         """Gmail's own UI, by thread (else the message). A formula, never a model-composed string:
         the link is digested, so a URL formatted differently on the next poll would rewrite the corpus."""
@@ -124,19 +119,21 @@ class GmailSource(EmailAddressing, Source):
     def thread_origin(self, thread_id: str) -> CloudOrigin:
         return self.origin(f"{self.address.casefold()}:{thread_id}")
 
-    async def segments(self) -> list[SegmentRef]:
-        return [SegmentRef(key=INBOX, label=self.address, query=MessageQuery())]
-
     # ── read ────────────────────────────────────────────────────────────────
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    def query(self) -> MessageQuery:
+        """The inbox, whole."""
+        return MessageQuery()
+
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
-        if query is not None and (not isinstance(query, MessageQuery) or query.conversation is not None):
+        query = self.effective_query(narrow)
+        if query.conversation is not None:
             raise Unsupported("Gmail lists the inbox; it does not read one thread")
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         validity, floor = _decode(cursor)
-        since = query.since if query is not None and cursor is None else None
+        since = query.since if cursor is None else None
         snapshot = await self._imap(list_inbox, self.address, self._password(), validity, floor, since, limit)
         floor = floor if validity == snapshot.uid_validity else 0
         last = max((message.uid for message in snapshot.messages), default=floor)
@@ -147,10 +144,12 @@ class GmailSource(EmailAddressing, Source):
             resume_cursor=token,
         )
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[MessageItem, None]:
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[MessageItem, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:

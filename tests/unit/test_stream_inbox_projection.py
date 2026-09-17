@@ -26,7 +26,7 @@ class TestEnvelope:
         from flow_sdk.stream_inbox.projection import _envelope_of
 
         row = SimpleNamespace(
-            origin=None, data=None, provider="gmail", kind="content.message.email", segment_key="INBOX",
+            origin=None, data=None, provider="gmail", kind="content.message.email",
             external_id="m1", name="Hi", author_external_id="ada@x.test", author_display="Ada",
             recipients=["Bo <bo@x.test>"], occurred_at="2026-07-30T10:00:00+00:00",
         )
@@ -37,7 +37,7 @@ class TestEnvelope:
     def test_a_feed_item_has_no_envelope(self):
         from flow_sdk.stream_inbox.projection import _envelope_of
 
-        row = SimpleNamespace(origin=None, data=None, provider="rss", kind="content.feed.item", segment_key="f", external_id="e")
+        row = SimpleNamespace(origin=None, data=None, provider="rss", kind="content.feed.item", external_id="e")
         assert _envelope_of(row, None) is None
 
 
@@ -149,7 +149,7 @@ class TestConcurrentPlacement:
         await source.save()
         item = SourceItem(
             kind="content.message.chat", provider="telegram",
-            data_source_id=str(source.id), segment_key="updates",
+            data_source_id=str(source.id),
             external_id=f"1/{uuid.uuid4().hex[:8]}", thread_key="1",
             name="race", body="hello race",
             author_external_id="7", author_display="Someone",
@@ -185,7 +185,7 @@ class TestConcurrentPlacement:
         await source.save()
         item = SourceItem(
             kind="content.message.chat", provider="telegram",
-            data_source_id=str(source.id), segment_key="updates",
+            data_source_id=str(source.id),
             external_id=f"1/{uuid.uuid4().hex[:8]}", thread_key="1",
             name="race", body="hello race",
             author_external_id="7", author_display="Someone",
@@ -352,7 +352,7 @@ class TestProjectedAnnounce:
         await source.save()
         item = SourceItem(
             kind="content.message.chat", provider="telegram",
-            data_source_id=str(source.id), segment_key="updates",
+            data_source_id=str(source.id),
             external_id=f"1/{uuid.uuid4().hex[:8]}", thread_key="1",
             name="once", body="hello once",
             author_external_id="7", author_display="Someone",

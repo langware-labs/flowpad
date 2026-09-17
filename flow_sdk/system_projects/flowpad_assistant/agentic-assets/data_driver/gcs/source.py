@@ -12,7 +12,7 @@ through ``open`` and nothing writes back. Where the bytes land is the applicatio
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Optional
+from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional
 from urllib.parse import quote
 
 import httpx
@@ -22,21 +22,18 @@ from flow_sdk.sources import _paging, http
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
-from flow_sdk.sources.errors import AccessDenied, Rejected, SourceError, SourceUnavailable, Unsupported
+from flow_sdk.sources.errors import AccessDenied, Rejected, SourceError, SourceUnavailable
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, FileDataPage
-from flow_sdk.sources.values.query import DataQuery, ObjectQuery
-from flow_sdk.sources.values.segment import SegmentRef
+from flow_sdk.sources.values.query import ObjectQuery
 from flow_sdk.utils.serialization import iso_to_utc
 
 #: The JSON API root; ``config.base_url`` overrides it (a loopback server, an emulator).
 GCS_API_BASE = "https://storage.googleapis.com/storage/v1"
 #: The one scope read with — named here because ``verify`` repeats it to the person.
 GCS_SCOPE = "https://www.googleapis.com/auth/devstorage.read_only"
-#: The segment key of the whole bucket, when no prefix is configured.
-ROOT_SEGMENT = "/"
 #: Only what is read, so nothing can come to depend on a field the query never asked for.
 OBJECT_FIELDS = "name,generation,size,updated,contentType"
 DEFAULT_CHUNK_SIZE = 1 << 20
@@ -57,9 +54,12 @@ class GcsObjectData(FileData):
 class GcsConfig(SourceConfig):
     """What a gcs source is configured with."""
 
+    retired_list = ("prefixes", "prefix")
+
     bucket: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     project: str = ""
-    prefixes: list[str] = []
+    #: What the source lists; empty for the whole bucket. A prefix is a query, never a directory.
+    prefix: str = ""
     cache_root: str = ""
     base_url: str = ""
 
@@ -110,13 +110,10 @@ class GcsSource(Source):
             self._http = None
 
     # ── listing ─────────────────────────────────────────────────────────────
-    async def segments(self) -> list[SegmentRef]:
-        """One per configured prefix, else the whole bucket. A prefix is a query, never a
-        directory, so keying a cursor on one cannot fork an object's identity."""
-        prefixes = [str(p).strip() for p in self.config.get("prefixes") or [] if str(p).strip()]
-        if not prefixes:
-            return [SegmentRef(key=ROOT_SEGMENT, label=self.bucket, query=ObjectQuery())]
-        return [SegmentRef(key=p, label=p, query=ObjectQuery(prefix=p)) for p in prefixes]
+    def query(self) -> ObjectQuery:
+        """The configured prefix, else the whole bucket. A prefix is a query, never a directory, so
+        it cannot fork an object's identity."""
+        return ObjectQuery(prefix=str(self.config.get("prefix") or "").strip())
 
     async def get(self, origin: CloudOrigin) -> Optional[FileItem]:
         self._require_open()
@@ -124,18 +121,17 @@ class GcsSource(Source):
         response = await self._request(self._object_path(key), {"fields": OBJECT_FIELDS}, ok_statuses=(404,))
         return None if response.status_code == 404 else self._item(response.json())
 
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> FileDataPage:
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> FileDataPage:
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
-        if query is not None and not isinstance(query, ObjectQuery):
-            raise Unsupported(f"GcsSource does not support {type(query).__name__}")
+        query = self.effective_query(narrow)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         token = _paging.query_token(query)
         params = {"fields": f"nextPageToken,items({OBJECT_FIELDS})", "maxResults": str(limit)}
         if cursor is not None:
             params["pageToken"] = _paging.decode(cursor, token)
-        if query is not None and query.prefix:
+        if query.prefix:
             params["prefix"] = query.prefix
         body = (await self._request(self._bucket_path("/o"), params)).json()
         following = body.get("nextPageToken")
@@ -145,10 +141,12 @@ class GcsSource(Source):
             next_cursor=_paging.encode(following, token) if following else None,
         )
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[FileItem, None]:
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[FileItem, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:
@@ -249,4 +247,4 @@ def _bucket_name(config: dict) -> str:
     return str((config or {}).get("bucket") or "").strip().removeprefix("gs://").strip("/")
 
 
-__all__ = ["GCS_API_BASE", "GCS_SCOPE", "ROOT_SEGMENT", "GcsObjectData", "GcsSource"]
+__all__ = ["GCS_API_BASE", "GCS_SCOPE", "GcsObjectData", "GcsSource"]

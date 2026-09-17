@@ -32,8 +32,8 @@ def _row(**config):
     return SimpleNamespace(id="ds-folder", provider="folder", account_key="", config=config)
 
 
-def _view(state):
-    return position(segment_key="root", prior=state)
+def _view(prior=None):
+    return position(prior)
 
 
 @pytest.mark.parametrize("check", checks_for(WatchedFolderSource), ids=str)
@@ -63,7 +63,7 @@ async def test_setup_is_verified_in_the_words_a_person_acts_on(tmp_path):
 
 async def test_a_same_size_edit_is_a_change_and_a_rename_is_not_a_removal(root):
     driver, row, real = DataDriver.loaded("folder"), _row(root=str(root)), os.path.realpath(root)
-    first = await driver.traverse(row, _view({}))
+    first = await driver.traverse(row, _view())
 
     target = root / "a.txt"
     before = target.stat()

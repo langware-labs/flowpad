@@ -84,7 +84,7 @@ async def test_4_watch_a_folder_and_mirror_it(tmp_path):
 async def test_5_subscribe_to_arrivals(feed_server, capsys):
     ns = await _section("1.", {"FEED_URL": f"{feed_server}/atom"})
     await ns["src"].purge_items()          # so the subscribed sync has something to announce
-    await ns["src"].reset_cursors()
+    await ns["src"].reset()
     ns = await _section("5.", ns)
     assert "ingest.rss.item.created" in capsys.readouterr().out
 
@@ -94,7 +94,7 @@ async def test_7_operate_a_source(tmp_path):
     watched.mkdir()
     ns = await _section("4.", {"WATCHED": str(watched), "DESTINATION": str(dest)})
     src: DataSource = ns["src"]
-    await _section("7.", ns)                  # verify, poll_now, replay, reset_cursors, purge_items, delete
+    await _section("7.", ns)                  # verify, poll_now, replay, reset, purge_items, delete
     assert await DataSource.get_one({"id": src.id}) is None, "delete() cascades"
 
 
@@ -104,6 +104,60 @@ async def test_7_read_the_row_first(tmp_path):
     ns = await _section("4.", {"WATCHED": str(watched), "DESTINATION": str(dest)})
     ns = await _section("7.", ns, nth=1)
     assert ns["src"].status in {"new", "setup", "active"}
+
+
+async def test_11_consume_a_source_yourself(tmp_path):
+    watched, dest = tmp_path / "w", tmp_path / "d"
+    (watched / "notes").mkdir(parents=True)
+    (watched / "notes" / "a.md").write_text("# A\n")
+    (watched / "b.md").write_text("# B\n")
+    ns = await _section("4.", {"WATCHED": str(watched), "DESTINATION": str(dest)})
+    src: DataSource = ns["src"]
+    src.cursor = None
+    await src.save_runtime()
+
+    ns = await _section("11.", ns)
+
+    assert [item.origin.key for item in ns["notes"]] == ["notes/a.md"]
+    assert (await DataSource.get_one({"id": src.id})).cursor is None, "reset() forgets the position"
+
+
+async def _folder_source(name: str, root: Path):
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.ingest.reflect import ReflectMode
+
+    driver = await DataDriver.get("folder")
+    src = driver.create_source(driver.create_config(root=str(root)), name=name, reflect=ReflectMode.NONE.value)
+    await src.save()
+    return src
+
+
+async def test_12_read_two_sources_as_one(tmp_path):
+    for tree in ("notes", "docs"):
+        (tmp_path / tree / "2026").mkdir(parents=True)
+        (tmp_path / tree / "2026" / "a.md").write_text("# a\n")
+        (tmp_path / tree / "old.md").write_text("# old\n")
+    ns = await _section("12.", {
+        "notes": await _folder_source("notes", tmp_path / "notes"),
+        "docs": await _folder_source("docs", tmp_path / "docs"),
+    })
+    assert [item.origin.key for item in ns["recent"]] == ["2026/a.md", "2026/a.md"], "narrowed on both sources"
+    assert ns["owner"].name in {"notes", "docs"}
+    assert set(ns["seen"]) <= {"notes", "docs"}
+
+
+async def test_12_a_reply_goes_through_the_source_the_item_came_from():
+    from tests.utils.fake_source import scripted_provider
+
+    with scripted_provider("merge-support") as support, scripted_provider("merge-sales") as sales:
+        support.push({"body": "help", "author": "a@example.com"})
+        sales.push({"body": "quote?", "author": "b@example.com"})
+        rows = {}
+        for name, provider in (("support", "merge-support"), ("sales", "merge-sales")):
+            rows[name] = DataSource(name=f"{name} box", provider=provider, account_key=f"acct-{name}")
+            await rows[name].save()
+        await _section("12.", dict(rows), nth=1)
+    assert [s["text"] for s in support.sent] == ["on it"] and [s["text"] for s in sales.sent] == ["on it"]
 
 
 async def _gcs_spec():

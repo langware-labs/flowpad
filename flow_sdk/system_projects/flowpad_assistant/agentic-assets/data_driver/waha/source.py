@@ -43,10 +43,9 @@ from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
-from flow_sdk.sources.values.segment import SegmentRef
 
 #: One number, one webhook: every conversation is a chat under it.
-MESSAGES_SEGMENT = "messages"
+MESSAGES_STREAM = "messages"
 #: The only event the session subscribes to. ``message.any`` would echo our own sends.
 WEBHOOK_EVENTS = ("message",)
 #: Chat-id suffixes that name a phone number, so the sender key can be its digits.
@@ -94,14 +93,14 @@ class WahaSource(Source):
         return str(self.config.get("session") or "default").strip()
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
-        return super().origin(key, *(within or (MESSAGES_SEGMENT,)))
+        return super().origin(key, *(within or (MESSAGES_STREAM,)))
 
     def conversation_origin(self, chat: str) -> CloudOrigin:
         """The chat, which is the conversation."""
         return self.origin(chat)
 
     def message_origin(self, message_id: str, chat: str) -> CloudOrigin:
-        return self.origin(message_id, MESSAGES_SEGMENT, chat)
+        return self.origin(message_id, MESSAGES_STREAM, chat)
 
     @property
     def _scope_namespace(self) -> str:
@@ -156,9 +155,6 @@ class WahaSource(Source):
         if self._client is not None:
             await self._client.aclose()
             self._client = None
-
-    async def segments(self) -> list[SegmentRef]:
-        return [SegmentRef(key=MESSAGES_SEGMENT, label=self.session)]
 
     # ── inbound: the webhook ────────────────────────────────────────────────
     def events_from_webhook(self, payload: Any) -> list[DataSourceEvent]:
@@ -392,4 +388,4 @@ def _when(timestamp: Any) -> datetime:
     return datetime.fromtimestamp(value / 1000 if value > 10**12 else value, tz=timezone.utc)
 
 
-__all__ = ["MESSAGES_SEGMENT", "WEBHOOK_EVENTS", "WahaMessageData", "WahaSource", "chat_id", "digits", "sender_key"]
+__all__ = ["MESSAGES_STREAM", "WEBHOOK_EVENTS", "WahaMessageData", "WahaSource", "chat_id", "digits", "sender_key"]

@@ -74,7 +74,7 @@ test('slack: channel ids only — no account key in the form; a non-channel-id f
   const dialog = await openProvider(page, 'slack');
   await dialog.locator('#ds-name').fill('e2etest-slack-gate');
 
-  // `channels` is now a ChoiceField (`type: lines`, `choices: true`) — a picker,
+  // `channel` is a ChoiceField (`type: text`, `choices: true`) — a picker,
   // not a bare input. Its listing fires ON OPEN, not on mount, so the plain-input
   // fallback only appears once the picker has tried to list and been refused
   // (`fallsBackToTyping`). With no Slack connection on a QA instance that refusal

@@ -23,7 +23,6 @@ def _reply(source: DataSource, *, reply_to: str) -> SourceItem:
         data_source_id=source.id,
         provider=source.provider,
         kind="content.message.email",
-        segment_key="INBOX",
         external_id="<reply@example.com>",
         name="Re: Question",
         body="Answer",
@@ -212,7 +211,7 @@ class TestReplySpecAsksTheChannel:
         )
         item = SimpleNamespace(
             author_external_id="U06L8JSQJ1X",
-            segment_key="C08L1P4C95J",
+            origin_namespace="T0123/C08L1P4C95J",
             thread_key="100.000100",
             external_id="100.000100",
             name="hello",
@@ -232,7 +231,6 @@ class TestReplySpecAsksTheChannel:
         )
         item = SimpleNamespace(
             author_external_id="friend@example.com",
-            segment_key="INBOX",
             thread_key="t-1",
             external_id="<x@mail>",
             name="Question",

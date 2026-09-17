@@ -27,10 +27,8 @@ from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import DataPage
-from flow_sdk.sources.values.segment import SegmentRef
 from flow_sdk.utils.serialization import iso_to_utc
 
-SEGMENT = "s"
 #: The flat record kind a scripted message is stored under.
 SCRIPTED_KIND = "message"
 
@@ -81,10 +79,7 @@ class ScriptedSource(Source):
     async def verify(self) -> Verdict:
         return Verdict(ready=True)
 
-    async def segments(self) -> list[SegmentRef]:
-        return [SegmentRef(key=SEGMENT, label="scripted")]
-
-    async def fetch(self, query=None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> DataPage:
+    async def fetch(self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow=None) -> DataPage:
         self._require_open()
         script = self.script
         script.fetches += 1
@@ -95,8 +90,8 @@ class ScriptedSource(Source):
             return DataPage(items=())
         return DataPage(items=tuple(self._item(m) for m in script.pages.popleft()))
 
-    async def iterate(self, query=None, *, page_size: Optional[int] = None) -> AsyncGenerator[MessageItem, None]:
-        for item in (await self.fetch(query)).items:
+    async def iterate(self, *, page_size: Optional[int] = None, narrow=None) -> AsyncGenerator[MessageItem, None]:
+        for item in (await self.fetch()).items:
             yield item
 
     async def send(self, data: MessageData) -> MessageItem:
@@ -173,4 +168,4 @@ def scripted_provider(provider: str = "scripted", *, pages: Iterable[list[dict]]
             DRIVERS.register(previous)
 
 
-__all__ = ["SCRIPTED_KIND", "SEGMENT", "Script", "ScriptedSource", "scripted_provider"]
+__all__ = ["SCRIPTED_KIND", "Script", "ScriptedSource", "scripted_provider"]

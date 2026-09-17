@@ -59,7 +59,6 @@ const TYPE_LABELS: Record<string, MessageDescriptor> = {
   copilot_session: msg`Copilot Session`,
   cron_event: msg`Cron Event`,
   data_source: msg`Data sources`,
-  data_source_cursor: msg`Data Source Cursor`,
   dataset: msg`Dataset`,
   deck: msg`Decks`,
   deck_template: msg`Deck Template`,

@@ -28,8 +28,7 @@ from flow_sdk.sources.errors import AccessDenied, InvalidCursor, Rejected, Sourc
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
-from flow_sdk.sources.values.query import DataQuery, MessageQuery
-from flow_sdk.sources.values.segment import SegmentRef
+from flow_sdk.sources.values.query import MessageQuery
 
 _RESUME = "resume:"
 
@@ -38,12 +37,12 @@ _RESUME = "resume:"
 class ConnectorProfile:
     """Everything about this transport that varies BY CONNECTOR, in one row: the kind its items
     carry, the personas that fetch and send (the fetch/send split exists because the send persona's
-    prose forbids reading), what a segment is called, and whether one can be assumed."""
+    prose forbids reading), what the mailbox is called, and whether one can be assumed."""
 
     kind: str
-    segment_noun: str
-    #: Assumed when config names no segments. Empty = segments are REQUIRED.
-    default_segments: tuple[str, ...]
+    mailbox_noun: str
+    #: Assumed when config names no mailbox. Empty = the mailbox is REQUIRED.
+    default_mailbox: str
     agent: str
     subagent: str
     send_agent: str
@@ -52,11 +51,11 @@ class ConnectorProfile:
 
 CONNECTOR_PROFILES: dict[str, ConnectorProfile] = {
     "gmail": ConnectorProfile(
-        kind="content.message.email", segment_noun="mailbox", default_segments=("INBOX",),
+        kind="content.message.email", mailbox_noun="mailbox", default_mailbox="INBOX",
         agent="email-summarizer", subagent="email_analyzer", send_agent="emailer", send_subagent="email_sender",
     ),
     "slack": ConnectorProfile(
-        kind="content.message.chat", segment_noun="channel", default_segments=(),
+        kind="content.message.chat", mailbox_noun="channel", default_mailbox="",
         agent="slack-summarizer", subagent="slack_analyzer", send_agent="slack-poster", send_subagent="slack_sender",
     ),
 }
@@ -77,7 +76,7 @@ def profile_of(config: Mapping[str, Any]) -> ConnectorProfile:
 class WorkerTransport(Protocol):
     """A harness worker, as the application launches one."""
 
-    async def fetch(self, *, source_id: str, name: str, config: Mapping[str, Any], segment_key: str, since: str) -> dict:
+    async def fetch(self, *, source_id: str, name: str, config: Mapping[str, Any], mailbox: str, since: str) -> dict:
         """Run one fetch; the worker's receipt (``count``, ``high_water``, ``error``)."""
         ...
 
@@ -114,7 +113,11 @@ class AgentConfig(SourceConfig):
 
     connector: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     harness: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-    segments: list[str] = []
+    retired_list = ("segments", "mailbox")
+
+    #: The ONE mailbox (gmail label) or channel id (slack) this source walks. Empty = the
+    #: connector's default; a connector without one requires it.
+    mailbox: str = ""
     agent: str = ""
     subagent: str = ""
     max_items: Optional[int] = None
@@ -122,15 +125,6 @@ class AgentConfig(SourceConfig):
     send_subagent: str = ""
     deadline_seconds: int = 300
     send_deadline_seconds: int = 120
-
-    @classmethod
-    def lift(cls, raw):
-        """``streams`` / ``stream`` are what ``segments`` was called before the names converged."""
-        raw = dict(raw)
-        streams, stream = raw.pop("streams", None), raw.pop("stream", None)
-        if not raw.get("segments") and (streams or stream):
-            raw["segments"] = streams or [stream]
-        return raw
 
 
 class AgentSource(Source):
@@ -151,10 +145,6 @@ class AgentSource(Source):
         from .transport import HarnessWorker  # noqa: PLC0415
 
         return cls(binding, worker=HarnessWorker())
-
-    @classmethod
-    def lift_cursor(cls, state: Mapping[str, Any]) -> Optional[str]:
-        return cls.resume_after(state["high_water"]) if state.get("high_water") else None
 
     def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
         """The worker is handed the application's arguments as they are: it addresses the connector."""
@@ -180,34 +170,31 @@ class AgentSource(Source):
             raise SourceUnavailable("no harness worker reaches this source")
         return self._worker
 
-    def segment_origin(self, key: str) -> CloudOrigin:
-        return self.origin(key, key)
-
-    async def segments(self) -> list[SegmentRef]:
-        """What the source walks, one cursor each: ``segments``, else the connector's defaults. A row
-        written with ``streams`` / ``stream`` arrives renamed (``AgentConfig.lift``)."""
+    @property
+    def mailbox(self) -> str:
+        """The mailbox this source walks: ``config.mailbox``, else the connector's default."""
         profile = profile_of(self.config)
-        keys = self.config.get("segments") or list(profile.default_segments)
-        refs = [SegmentRef(key=str(k), label=str(k), query=MessageQuery(conversation=self.segment_origin(str(k)))) for k in keys if str(k or "").strip()]
-        if not refs:
-            raise Rejected(f"config.segments is required: name at least one {profile.segment_noun}")
-        return refs
+        mailbox = str(self.config.get("mailbox") or "").strip() or profile.default_mailbox
+        if not mailbox:
+            raise Rejected(f"config.mailbox is required: name the {profile.mailbox_noun}")
+        return mailbox
 
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    def query(self) -> MessageQuery:
+        """The mailbox's history. The mailbox is the container every item's origin joins."""
+        return MessageQuery(conversation=self.origin(self.mailbox, self.mailbox))
+
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
         if page_size is not None:
             positive_int(page_size, "page_size", MAX_PAGE_SIZE)
-        if query is not None and not isinstance(query, MessageQuery):
-            raise Unsupported(f"AgentSource does not support {type(query).__name__}")
         if cursor is not None and (not isinstance(cursor, str) or not cursor.startswith(_RESUME) or len(cursor) == len(_RESUME)):
             raise InvalidCursor("not an agent-transport cursor")
-        conversation = query.conversation if query is not None and query.conversation else None
-        segment = conversation.key if conversation is not None else (await self.segments())[0].key
-        since = cursor[len(_RESUME):] if cursor else (query.since.isoformat() if query is not None and query.since else "")
+        query = self.effective_query(narrow)
+        since = cursor[len(_RESUME):] if cursor else (query.since.isoformat() if query.since else "")
         receipt = await self.worker.fetch(
-            source_id=self.binding.source_id, name=self.binding.name, config=self.config, segment_key=segment, since=since
+            source_id=self.binding.source_id, name=self.binding.name, config=self.config, mailbox=query.conversation.key, since=since
         )
         reported = receipt.get("error")
         if reported:
@@ -218,8 +205,10 @@ class AgentSource(Source):
         # No items: the worker recorded them through the ingest route; returning them would ingest twice.
         return ChangePage(items=(), resume_cursor=_RESUME + high_water if high_water else cursor)
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[MessageItem, None]:
-        await self.fetch(query, page_size=page_size)
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[MessageItem, None]:
+        await self.fetch(page_size=page_size, narrow=narrow)
         return
         yield  # pragma: no cover — an async generator that yields nothing: the worker records
 

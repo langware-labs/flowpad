@@ -2,7 +2,8 @@
 
 A ticket is a hub conversation (``kind=helpdesk``): a guest opens it against a desk project, staff
 *pick it up* to join, and every reply is an ordinary hub message the hub masks to the desk's
-brand. The pool is the segment list, a ticket's messages are the records, a reply is ``send``.
+brand. The source is ONE desk-wide stream: the pool says which tickets moved, a ticket's messages
+are the records, a reply is ``send``.
 
 **Both writers, one row.** A ticket's messages also reach this machine through the hub mirror
 once the owner is a participant, so every record carries the hub's own ids
@@ -14,14 +15,20 @@ local-privacy gate belong to whoever holds the login, so the source takes a ``Hu
 rather than a credential: the application passes the one it already has; a source host hands over
 its backend's. Without one, every call is ``SourceUnavailable``.
 
-**No ``since`` on the hub's messages.** The cursor is a watermark on ``updated_date`` plus the ids
-seen AT it (a burst can share a second); an edited message re-arrives because its stamp moved.
+**One cursor for the desk.** Each pool row carries a change token (``message_count:updated_at``);
+the cursor remembers, per ticket, the token it was last read at and its own message resume point,
+plus the pool's watermark. A pass reads messages only of tickets whose token moved, and of tickets
+it has never seen — so an idle ticket costs no fetch.
+
+**No ``since`` on the hub's messages.** A ticket's resume point is a watermark on ``updated_date``
+plus the ids seen AT it (a burst can share a second); an edited message re-arrives because its
+stamp moved.
 """
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional, Protocol
+from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, Protocol
 
 from pydantic import StringConstraints
 
@@ -32,12 +39,11 @@ from flow_sdk.sources.errors import InvalidCursor, NotFound, OutcomeUnknown, Rej
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
-from flow_sdk.sources.values.query import DataQuery, MessageQuery
-from flow_sdk.sources.values.segment import SegmentRef
+from flow_sdk.sources.values.query import MessageQuery
 
 #: The channel a ticket is: half the thread key, so it names what a ticket IS.
 CHANNEL = "helpdesk"
-_MARK = "mark:"
+_DESK = "desk:"
 
 
 class HubTransport(Protocol):
@@ -86,9 +92,10 @@ class HelpdeskSource(Source):
         self._hub = hub
 
     @classmethod
-    def resume_at(cls, high_water: str, boundary_ids: list[str]) -> str:
-        """The cursor that continues after the messages stamped ``high_water`` with these ids."""
-        return _MARK + json.dumps({"high_water": high_water, "boundary_ids": list(boundary_ids)})
+    def resume_at(cls, watermark: str, tickets: Mapping[str, tuple[str, str, list[str]]]) -> str:
+        """The desk cursor: the pool's ``watermark`` and, per ticket, ``(change token, message
+        high-water, ids seen at it)``."""
+        return _DeskCursor(watermark, {t: _Mark(h, b, stamp=s) for t, (s, h, b) in tickets.items()}).encode()
 
     @property
     def hub(self) -> HubTransport:
@@ -112,10 +119,6 @@ class HelpdeskSource(Source):
         from .transport import AppHub  # noqa: PLC0415
 
         return cls(binding, hub=AppHub())
-
-    @classmethod
-    def lift_cursor(cls, state: dict) -> Optional[str]:
-        return cls.resume_at(state["high_water"], state.get("boundary_ids") or []) if state.get("high_water") else None
 
     @classmethod
     def outbound_spec(cls) -> type:
@@ -155,56 +158,85 @@ class HelpdeskSource(Source):
                 out.append(Choice(id=queue, name=str(getattr(desk, "display_name", "") or queue), detail="adopted desk"))
         return out
 
-    # ── the pool ────────────────────────────────────────────────────────────
-    async def segments(self) -> list[SegmentRef]:
-        """One segment per ticket in the pool, picked up or not, newest activity first. The pool
-        row says whether a ticket moved (``message_count:updated_at``), so an idle ticket costs no
-        fetch and a moved one is never queued behind idle ones."""
-        if not self.desk:
-            raise Rejected("This help-desk source needs its desk (config.desk_project_id).")
-        rows = _rows_of(await self.hub.get("project", self.desk, "helpdesk_conversations"))
-        refs = []
-        for row in sorted(rows, key=lambda r: str(r.get("updated_at") or ""), reverse=True):
-            ticket = str(row.get("conversation_id") or "").strip()
-            if not ticket:
-                continue
-            label = str(row.get("title") or row.get("preview") or "").strip()[:80] or ticket
-            stamp = f"{row.get('message_count') or 0}:{row.get('updated_at') or ''}"
-            refs.append(SegmentRef(key=ticket, label=label, stamp=stamp, query=MessageQuery(conversation=self.ticket_origin(ticket))))
-        return refs
+    # ── read: the desk ──────────────────────────────────────────────────────
+    def query(self) -> MessageQuery:
+        """The whole desk: no one ticket. ``narrow={"conversation": ticket}`` reads just that one."""
+        return MessageQuery()
 
-    # ── read: one ticket ────────────────────────────────────────────────────
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
+        """Walk the pool newest activity first; read messages only of a ticket whose change token
+        differs from the one the cursor holds for it (a new ticket has none). A ticket read to its
+        end takes the pool's token; one cut off by ``page_size`` keeps its old token and its advanced
+        resume point, so the next page carries on inside it."""
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
-        if query is not None and not isinstance(query, MessageQuery):
-            raise Unsupported(f"HelpdeskSource does not support {type(query).__name__}")
+        query = self.effective_query(narrow)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
-        mark = _Mark.decode(cursor)
-        if query is None or query.conversation is None:
-            return ChangePage(items=())  # a desk has no default ticket: name one
-        ticket = self._ticket_of(query.conversation)
-        children = _rows_of(await self.hub.get("conversation", ticket, "flow_message"))
-        fresh = [fm for fm in sorted(children, key=_stamp_of) if str(fm.get("id") or "").strip() and mark.is_new(_stamp_of(fm), str(fm["id"]).strip())]
-        page = fresh[:limit]
-        for fm in page:
-            mark.advance(_stamp_of(fm), str(fm["id"]).strip())
-        token = mark.encode()
-        return ChangePage(
-            items=tuple(self._item(ticket, fm) for fm in page),
-            next_cursor=token if len(fresh) > limit else None,
-            resume_cursor=token or cursor,
-        )
+        state = _DeskCursor.decode(cursor)
+        only = self._ticket_of(query.conversation) if query is not None and query.conversation is not None else None
+        since = query.since if query is not None else None
+        pool = await self._pool()
+        live = {ticket for ticket, _stamp, _at in pool}
+        if only is None:
+            state.tickets = {t: m for t, m in state.tickets.items() if t in live}  # a ticket gone from the pool drops out
+        items: list[MessageItem] = []
+        more = False
+        for ticket, stamp, updated_at in pool:
+            if only is not None and ticket != only:
+                continue
+            mark = state.tickets.get(ticket)
+            if mark is not None and mark.stamp == stamp:
+                continue  # the pool says nothing moved: no fetch
+            if len(items) >= limit:
+                more = True
+                break
+            if since is not None and (_when(updated_at) or since) < since:
+                state.tickets[ticket] = _Mark(stamp=stamp)  # quiet since before the window: nothing to read
+                continue
+            mark = mark or _Mark()
+            children = _rows_of(await self.hub.get("conversation", ticket, "flow_message"))
+            fresh = [fm for fm in sorted(children, key=_stamp_of) if str(fm.get("id") or "").strip() and mark.is_new(_stamp_of(fm), str(fm["id"]).strip())]
+            taken = fresh[: limit - len(items)]
+            for fm in taken:
+                mark.advance(_stamp_of(fm), str(fm["id"]).strip())
+                items.append(self._item(ticket, fm))
+            if len(taken) == len(fresh):
+                mark.stamp = stamp
+            else:
+                more = True
+            state.tickets[ticket] = mark
+            if more:
+                break
+        if only is None:
+            state.watermark = max((at for _t, _s, at in pool), default=state.watermark)
+        token = state.encode()
+        return ChangePage(items=tuple(items), next_cursor=token if more else None, resume_cursor=token)
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[MessageItem, None]:
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[MessageItem, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:
                 return
+
+    async def _pool(self) -> list[tuple[str, str, str]]:
+        """``(ticket, change token, updated_at)`` for every ticket in the pool, picked up or not,
+        newest activity first."""
+        if not self.desk:
+            raise Rejected("This help-desk source needs its desk (config.desk_project_id).")
+        rows = _rows_of(await self.hub.get("project", self.desk, "helpdesk_conversations"))
+        pool = []
+        for row in rows:
+            ticket = str(row.get("conversation_id") or "").strip()
+            if ticket:
+                updated_at = str(row.get("updated_at") or "")
+                pool.append((ticket, f"{row.get('message_count') or 0}:{updated_at}", updated_at))
+        return sorted(pool, key=lambda entry: (entry[2], entry[0]), reverse=True)
 
     def _item(self, ticket: str, fm: dict) -> MessageItem:
         fm_id, sender = str(fm["id"]).strip(), str(fm.get("sender_id") or "").strip()
@@ -278,25 +310,12 @@ class HelpdeskSource(Source):
 
 
 class _Mark:
-    """A high-water stamp plus the ids seen AT it. Walk ascending: ``is_new`` answers, ``advance``
-    moves the mark."""
+    """One ticket in the desk cursor: the pool change token it was last read at (``""`` while a read
+    of it is unfinished), and its message high-water stamp plus the ids seen AT it. Walk ascending:
+    ``is_new`` answers, ``advance`` moves the mark."""
 
-    def __init__(self, high_water: str = "", boundary_ids: Optional[list[str]] = None) -> None:
-        self.high_water, self.boundary_ids = high_water, list(boundary_ids or [])
-
-    @classmethod
-    def decode(cls, cursor: object) -> "_Mark":
-        if cursor is None:
-            return cls()
-        if not isinstance(cursor, str):
-            raise TypeError(f"cursor must be a string, got {type(cursor).__name__}")
-        try:
-            state = json.loads(cursor[len(_MARK):]) if cursor.startswith(_MARK) else None
-        except ValueError:
-            state = None
-        if not isinstance(state, dict) or not isinstance(state.get("high_water"), str):
-            raise InvalidCursor("not a help-desk cursor")
-        return cls(state["high_water"], [str(i) for i in state.get("boundary_ids") or []])
+    def __init__(self, high_water: str = "", boundary_ids: Optional[list[str]] = None, *, stamp: str = "") -> None:
+        self.high_water, self.boundary_ids, self.stamp = high_water, list(boundary_ids or []), stamp
 
     def is_new(self, stamp: str, entry_id: str) -> bool:
         if not (stamp and self.high_water):
@@ -309,8 +328,36 @@ class _Mark:
         elif stamp == self.high_water:
             self.boundary_ids.append(entry_id)
 
-    def encode(self) -> Optional[str]:
-        return HelpdeskSource.resume_at(self.high_water, self.boundary_ids) if self.high_water else None
+
+class _DeskCursor:
+    """The desk's one cursor: the pool watermark and a ``_Mark`` per ticket."""
+
+    def __init__(self, watermark: str = "", tickets: Optional[dict[str, _Mark]] = None) -> None:
+        self.watermark, self.tickets = watermark, dict(tickets or {})
+
+    @classmethod
+    def decode(cls, cursor: object) -> "_DeskCursor":
+        if cursor is None:
+            return cls()
+        if not isinstance(cursor, str):
+            raise TypeError(f"cursor must be a string, got {type(cursor).__name__}")
+        try:
+            state = json.loads(cursor[len(_DESK):]) if cursor.startswith(_DESK) else None
+        except ValueError:
+            state = None
+        tickets = state.get("tickets") if isinstance(state, dict) else None
+        if not isinstance(state, dict) or not isinstance(state.get("watermark"), str) or not isinstance(tickets, dict):
+            raise InvalidCursor("not a help-desk cursor")
+        marks = {}
+        for ticket, entry in tickets.items():
+            if not (isinstance(entry, list) and len(entry) == 3 and isinstance(entry[0], str) and isinstance(entry[1], str) and isinstance(entry[2], list)):
+                raise InvalidCursor("not a help-desk cursor")
+            marks[str(ticket)] = _Mark(entry[1], [str(i) for i in entry[2]], stamp=entry[0])
+        return cls(state["watermark"], marks)
+
+    def encode(self) -> str:
+        tickets = {t: [m.stamp, m.high_water, m.boundary_ids] for t, m in sorted(self.tickets.items())}
+        return _DESK + json.dumps({"watermark": self.watermark, "tickets": tickets}, sort_keys=True, separators=(",", ":"))
 
 
 def _rows_of(payload: Any) -> list[dict]:

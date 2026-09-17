@@ -85,6 +85,9 @@ class WikiSource(CollectionSource):
     Config = WikiConfig          # its fields = the manifest's config keys
     durable_cursor = False       # True only when the provider can resume from your cursor string
 
+    def query(self):             # the ONE stream this source reads, from its config
+        return None              # or a DataQuery built from self.config
+
     async def _scan(self, query):
         token = self.credentials.value("api_token")
         ...                      # list pages → [(key, raw), ...] sorted by key
@@ -93,10 +96,13 @@ class WikiSource(CollectionSource):
     def _item(self, key, raw) -> SourceItemSpec: ...
 ```
 
-Implement only the protocols the provider honours — `fetch`/`iterate` to list,
+One source reads one stream: a config names ONE feed, channel, drive or prefix,
+and a person watching three adds three sources. Implement only the protocols the
+provider honours — `fetch(cursor)`/`iterate()` to list (the query is `self.query()`,
+never an argument),
 `send`/`reply` plus `message_for` for a channel, `open` for bytes, `verify` for a
 setup step. Everything the application needs to know about THIS source is the
-class's own method (`build`, `configure`, `lift_cursor`, `origin_id_for`,
+class's own method (`build`, `configure`, `query`, `origin_id_for`,
 `permalink`, `webhook_*`) — never a table elsewhere. Import the public SDK
 (`flow_sdk.sources`, `flow_sdk.connections`, `token_for`), never another asset.
 

@@ -42,7 +42,6 @@ from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
-from flow_sdk.sources.values.segment import SegmentRef
 
 #: Graph's base. Overridable only so a test can point at a local double.
 GRAPH_API_BASE = "https://graph.facebook.com"
@@ -50,7 +49,7 @@ GRAPH_API_BASE = "https://graph.facebook.com"
 #: about this source, not a default to inherit from whatever Meta serves today.
 GRAPH_VERSION = "v23.0"
 #: A source is ABOUT one business number, and every conversation arrives through one webhook.
-MESSAGES_SEGMENT = "messages"
+MESSAGES_STREAM = "messages"
 #: Message types that are sentences someone wrote; a reaction or a system notice is not.
 TEXTUAL = frozenset({"text", "button", "interactive"})
 
@@ -86,14 +85,14 @@ class WhatsAppSource(Source):
         return str(self.config.get("phone_number_id") or "").strip()
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
-        return super().origin(key, *(within or (MESSAGES_SEGMENT,)))
+        return super().origin(key, *(within or (MESSAGES_STREAM,)))
 
     def conversation_origin(self, wa_id: str) -> CloudOrigin:
         """The person, who is the conversation."""
         return self.origin(wa_id)
 
     def message_origin(self, message_id: str, wa_id: str) -> CloudOrigin:
-        return self.origin(message_id, MESSAGES_SEGMENT, wa_id)
+        return self.origin(message_id, MESSAGES_STREAM, wa_id)
 
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
@@ -163,9 +162,6 @@ class WhatsAppSource(Source):
         if self._client is not None:
             await self._client.aclose()
             self._client = None
-
-    async def segments(self) -> list[SegmentRef]:
-        return [SegmentRef(key=MESSAGES_SEGMENT, label=self.phone_number_id)]
 
     # ── inbound: the webhook ────────────────────────────────────────────────
     def events_from_webhook(self, payload: Any) -> list[DataSourceEvent]:
@@ -366,4 +362,4 @@ def _list(value: Any) -> list:
     return value if isinstance(value, list) else []
 
 
-__all__ = ["GRAPH_API_BASE", "GRAPH_VERSION", "MESSAGES_SEGMENT", "TEXTUAL", "WhatsAppMessageData", "WhatsAppSource", "digits"]
+__all__ = ["GRAPH_API_BASE", "GRAPH_VERSION", "MESSAGES_STREAM", "TEXTUAL", "WhatsAppMessageData", "WhatsAppSource", "digits"]

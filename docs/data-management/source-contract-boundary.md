@@ -10,11 +10,13 @@ Two layers, one dependency direction. Read this before touching either.
 A **source** is an async session over one remote or local system:
 
 ```
-async with await source.open() as s:                 # a DataSource: its driver binds config + credentials
+async with await source.open() as live:              # a DataSource: its driver binds config + credentials
+    async for page in live.pages(): ...; await page.ack()   # from the row's cursor; ack moves it
+    s = live.source
                                                       # (in contract terms: SomeSource(SourceBinding(...)))
     item  = await s.get(origin)                       # SourceItemSpec | None — None only on confirmed absence
-    page  = await s.fetch(query, cursor=…, page_size=…)   # DataPage(items, next_cursor)
-    async for item in s.iterate(query): …
+    page  = await s.fetch(cursor, page_size=…, narrow=…)  # DataPage(items, next_cursor); the query is s.query()
+    async for item in s.iterate(narrow=…): …
     async with s.open(file) as chunks: …             # ByteStore
     await s.write(path, chunks)                       # ByteStore
     sent  = await s.send(MessageData(...))            # Messaging
@@ -43,8 +45,8 @@ Everything the contract deliberately refuses is an **application** concern, and 
 | Mechanism | Where | Why it is not in the contract |
 |---|---|---|
 | Polling and the attention fast lane | `ingest/poller.py`, the heartbeat | Scheduling is policy; the contract answers "what is there now" |
-| `_inflight` exclusion, segment budgets, round-robin | `ingest/poller.py`, `ingest/sync.py` | Concurrency across sources is the runtime's |
-| Per-segment cursor rows (`DataSourceCursor.cursor`) | `builtin/data_source_cursor.py` | Durable resumption is the runtime's; a source only hands back an opaque token where it documents durability |
+| `_inflight` exclusion | `ingest/poller.py`, `ingest/sync.py` | Concurrency across sources is the runtime's |
+| The source's position (`DataSource.cursor`, row-only) | `builtin/data_source.py`, `ingest/session.py` | Durable resumption is the runtime's; a source only hands back an opaque token where it documents durability |
 | Idempotent writes: natural key + content digest | `ingest/ingestor.py`, `fs_store/serializer/db.py` | The contract returns values and writes nothing |
 | Health and parking (`config_error` stops, `transient` retries) | `ingest/health.py` | The contract raises; classifying a raise into a verdict is policy |
 | Reflection (`none` / `copy` / `symlink`) and `reindex_paths` | `ingest/reflect.py` | Where bytes land is the source ROW's choice, not the provider's |

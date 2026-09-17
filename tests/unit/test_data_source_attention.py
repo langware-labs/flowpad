@@ -30,7 +30,7 @@ NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 
 async def _source(**kw) -> DataSource:
-    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"Feed {uuid.uuid4().hex[:8]}", config={"feed_urls": ["http://127.0.0.1:1/feed"]})
+    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"Feed {uuid.uuid4().hex[:8]}", config={"feed_url": "http://127.0.0.1:1/feed"})
     base.update(kw)
     src = DataSource(**base)
     await src.save()
@@ -272,7 +272,7 @@ class TestTickGridSchedule:
     def test_the_stamp_lands_on_the_minute_grid(self):
         # The RCA's switch: a stamp of :00.031 vs a tick firing :00.019 —
         # 12ms apart — cost a full minute. Flooring removes the coin flip.
-        src = DataSource(provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=60, config={"feed_urls": ["http://127.0.0.1:1/feed"]})
+        src = DataSource(provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=60, config={"feed_url": "http://127.0.0.1:1/feed"})
         jittered_now = NOW + timedelta(milliseconds=31)  # a real dispatch time
         due = src.schedule_next(jittered_now)
         assert due == NOW + timedelta(seconds=60)
@@ -282,7 +282,7 @@ class TestTickGridSchedule:
         # The next tick fires at :00 plus SMALLER jitter than the stamp's —
         # the exact losing coin flip. On the grid, it is always due.
         src = DataSource(
-            provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=60, config={"feed_urls": ["http://127.0.0.1:1/feed"]},
+            provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=60, config={"feed_url": "http://127.0.0.1:1/feed"},
             status=SourceStatus.ACTIVE.value,  # is_due gates on lifecycle first
         )
         src.schedule_next(NOW + timedelta(milliseconds=31))
@@ -290,6 +290,6 @@ class TestTickGridSchedule:
         assert src.is_due(next_tick) is True
 
     def test_longer_intervals_keep_their_cadence(self):
-        src = DataSource(provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=300, config={"feed_urls": ["http://127.0.0.1:1/feed"]})
+        src = DataSource(provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=300, config={"feed_url": "http://127.0.0.1:1/feed"})
         due = src.schedule_next(NOW + timedelta(seconds=3, milliseconds=200))
         assert due == NOW + timedelta(seconds=300), "mid-minute drift floors back to the grid"
