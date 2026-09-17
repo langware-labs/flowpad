@@ -79,7 +79,7 @@ async def test_telegram_send_records_its_own_copy():
 
     # The recorded copy projects like any other message — the outbound half
     # of the conversation is in its thread.
-    from flow_sdk.inbox.projection import project_source_item  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
 
     await project_source_item(item, source=source, notify=False, announce=False)
     fm = await FlowMessage.get_one({"source_item_id": item.id})

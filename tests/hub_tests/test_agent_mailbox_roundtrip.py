@@ -1,4 +1,4 @@
-"""The public Python SDK flow for enabling one Agent inbox on the local Hub."""
+"""The public Python SDK flow for enabling one Agent mailbox on the local Hub."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ import flow_sdk
 from flow_sdk import LoginRequired
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.agent_mailbox import AgentMailbox
+from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
-from flow_sdk.builtin.email_inbox import EmailInbox
-from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.ingest.driver_registry import asset_module
 
@@ -24,29 +24,29 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]
 async def test_agent_enables_email_once():
     await flow_sdk.auth.logout()
 
-    agent = Agent(name=f"inbox-sdk-{mint_uuid()[:8]}")
+    agent = Agent(name=f"mailbox-sdk-{mint_uuid()[:8]}")
     await agent.save()
     logged_in = False
     source = None
 
     try:
-        assert agent.inbox is None
+        assert agent.mailbox is None
         with pytest.raises(LoginRequired):
-            await agent.allocate_inbox()
+            await agent.allocate_mailbox()
         assert agent.remote is False
 
         login = await flow_sdk.auth.login()
         logged_in = True
         assert login["status"] == "logged_in"
 
-        inbox = await agent.allocate_inbox()
-        assert isinstance(inbox, EmailInbox)
-        assert agent.inbox is inbox
-        assert inbox.agent_typeid == agent.typeid
-        assert inbox.address and "@" in inbox.address
+        mailbox = await agent.allocate_mailbox()
+        assert isinstance(mailbox, AgentMailbox)
+        assert agent.mailbox is mailbox
+        assert mailbox.agent_typeid == agent.typeid
+        assert mailbox.address and "@" in mailbox.address
         assert agent.remote is True
-        assert inbox.is_active is True
-        assert inbox.newly_allocated is True, "the first call allocates the address"
+        assert mailbox.is_active is True
+        assert mailbox.newly_allocated is True, "the first call allocates the address"
 
         source = await DataSource.find_for_account(
             CloudEmailSource.provider,
@@ -54,17 +54,17 @@ async def test_agent_enables_email_once():
             agent.id,
         )
         assert source is not None
-        assert source.account_key == inbox.address
-        assert source.account_identities == [inbox.address]
+        assert source.account_key == mailbox.address
+        assert source.account_identities == [mailbox.address]
 
         agent.remote = False
-        same_inbox = await agent.allocate_inbox()
-        assert same_inbox.newly_allocated is False, "asking twice must never bill twice"
+        same_mailbox = await agent.allocate_mailbox()
+        assert same_mailbox.newly_allocated is False, "asking twice must never bill twice"
         assert agent.remote is True, "a retry must adopt an Agent already published to the Hub"
-        assert same_inbox is inbox
-        assert same_inbox.typeid == inbox.typeid
-        assert same_inbox.provider_inbox_id == inbox.provider_inbox_id
-        assert same_inbox.address == inbox.address
+        assert same_mailbox is mailbox
+        assert same_mailbox.typeid == mailbox.typeid
+        assert same_mailbox.provider_inbox_id == mailbox.provider_inbox_id
+        assert same_mailbox.address == mailbox.address
         same_source = await DataSource.find_for_account(
             CloudEmailSource.provider,
             CloudEmailSource.identity_config_key,
@@ -72,13 +72,13 @@ async def test_agent_enables_email_once():
         )
         assert same_source is not None and same_source.id == source.id
 
-        disabled_inbox = await inbox.disable()
-        assert disabled_inbox is not None
-        assert disabled_inbox.typeid == inbox.typeid
-        assert disabled_inbox.address == inbox.address
-        assert disabled_inbox.status == "disabled"
-        assert agent.inbox is disabled_inbox
-        assert disabled_inbox.is_active is False
+        disabled_mailbox = await mailbox.disable()
+        assert disabled_mailbox is not None
+        assert disabled_mailbox.typeid == mailbox.typeid
+        assert disabled_mailbox.address == mailbox.address
+        assert disabled_mailbox.status == "disabled"
+        assert agent.mailbox is disabled_mailbox
+        assert disabled_mailbox.is_active is False
         paused_source = await DataSource.find_for_account(
             CloudEmailSource.provider,
             CloudEmailSource.identity_config_key,
@@ -88,11 +88,11 @@ async def test_agent_enables_email_once():
         assert paused_source.id == source.id
         assert paused_source.status == SourceStatus.DISABLED.value
 
-        resumed_inbox = await agent.allocate_inbox()
-        assert resumed_inbox.newly_allocated is False, "re-allocating must adopt, never buy"
-        assert resumed_inbox.typeid == inbox.typeid
-        assert resumed_inbox.address == inbox.address
-        assert resumed_inbox.status == "active"
+        resumed_mailbox = await agent.allocate_mailbox()
+        assert resumed_mailbox.newly_allocated is False, "re-allocating must adopt, never buy"
+        assert resumed_mailbox.typeid == mailbox.typeid
+        assert resumed_mailbox.address == mailbox.address
+        assert resumed_mailbox.status == "active"
         resumed_source = await DataSource.find_for_account(
             CloudEmailSource.provider,
             CloudEmailSource.identity_config_key,
@@ -113,7 +113,7 @@ async def test_agent_enables_email_once():
                         # a broken cache must not strand a billable address.
                         # A second DELETE answers 404, so tolerate it.
                         with contextlib.suppress(Exception):
-                            await get_email_inbox_driver().delete_inbox(agent.id)
+                            await get_agent_mailbox_driver().delete_mailbox(agent.id)
                     finally:
                         await agent.unshare()
             finally:

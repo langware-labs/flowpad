@@ -2,10 +2,10 @@
 
 The third mail transport, and what makes it different is not the protocol: there is nothing to
 paste. The hub owns the provider credential and allocates the address; the application reaches it
-through its email-inbox driver family with the ordinary cloud login, so the source takes a
+through its agent-mailbox driver family with the ordinary cloud login, so the source takes a
 ``MailboxTransport`` rather than a credential.
 
-The hub addresses a mailbox by AGENT, never by address (one inbox per agent), so the agent id is
+The hub addresses a mailbox by AGENT, never by address (one mailbox per agent), so the agent id is
 the segment: immutable, and the thing without which nothing can poll. The channel is the medium —
 ``email`` — because it is half the thread key, and naming the transport would fork every thread
 the day a second transport reads the same mailbox.
@@ -76,14 +76,24 @@ class CloudEmailMessageData(EmailMessageData):
 class CloudEmailConfig(SourceConfig):
     """What a cloud_email source is configured with."""
 
-    derived: ClassVar[tuple[str, ...]] = ("agent_id", "inbox_typeid", "provider_inbox_id")
+    derived: ClassVar[tuple[str, ...]] = ("agent_id", "mailbox_typeid", "provider_inbox_id")
 
     address: str = ""
     #: The agent the mailbox serves; ``configure`` fills it from the row's owner.
     agent_id: str = ""
-    #: The hub mailbox row and the provider's id for it — the application's, written when the inbox is allocated.
-    inbox_typeid: str = ""
+    #: The hub mailbox row and the provider's id for it — the application's, written when the mailbox is allocated.
+    mailbox_typeid: str = ""
     provider_inbox_id: str = ""
+
+    @classmethod
+    def lift(cls, raw):
+        """``inbox_typeid`` is what ``mailbox_typeid`` was called before the agent's address became an
+        ``AgentMailbox``; a source written then still carries it."""
+        raw = dict(raw)
+        retired = raw.pop("inbox_typeid", None)
+        if retired and not raw.get("mailbox_typeid"):
+            raw["mailbox_typeid"] = retired
+        return raw
 
 
 class CloudEmailSource(EmailAddressing, Source):
@@ -116,7 +126,7 @@ class CloudEmailSource(EmailAddressing, Source):
     @classmethod
     def configure(cls, row: Any) -> dict:
         """The agent a mailbox row serves: its config, else the Agent that owns it."""
-        from flow_sdk.inbox.projection import agent_id_of  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import agent_id_of  # noqa: PLC0415
 
         agent = agent_id_of(row)
         return {"agent_id": agent} if agent else {}
@@ -129,7 +139,7 @@ class CloudEmailSource(EmailAddressing, Source):
 
     @staticmethod
     def thread_key(agent_id: str, thread_id: str) -> Optional[str]:
-        """The provider thread id SCOPED TO THIS MAILBOX. A provider's thread id is inbox-scoped,
+        """The provider thread id SCOPED TO THIS MAILBOX. A provider's thread id is mailbox-scoped,
         and every cloud mailbox reports the same channel, so a bare id would let two agents whose
         mailboxes agree on a thread id collapse onto one thread. ``None`` without a thread id, so the
         application falls back to the subject instead of threading strangers onto ``"<agent>:"``."""

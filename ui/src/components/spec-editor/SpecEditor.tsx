@@ -249,11 +249,11 @@ const PlanFileEditor: React.FC = () => {
   );
 
   // Cancel — discard dirty cache and navigate back. Prefer the owning process'
-  // terminal; fall back to the inbox when the plan was opened without a process
+  // terminal; fall back to the stream inbox when the plan was opened without a process
   // (bookmark / stale link) so Cancel is never a silent no-op.
   const handleCancel = useCallback(() => {
     if (filePath && fs) fs.invalidate(filePath, 'content');
-    navigation.openDock(agenticProcess ? agenticProcess.terminalDockPointer : DockPointer.forInbox());
+    navigation.openDock(agenticProcess ? agenticProcess.terminalDockPointer : DockPointer.forStreamInbox());
   }, [filePath, fs, agenticProcess, navigation]);
 
   // File path not yet known. In typeid form the loader already guaranteed the
@@ -543,8 +543,8 @@ const SpecEntityEditor: React.FC = () => {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => navigation.openDock(DockPointer.forInbox())}
-            title={isDirty ? t`Discard unsaved changes and go back to inbox` : t`Go back to inbox`}
+            onClick={() => navigation.openDock(DockPointer.forStreamInbox())}
+            title={isDirty ? t`Discard unsaved changes and go back to stream inbox` : t`Go back to stream inbox`}
           >
             <X className="me-2 h-4 w-4" />
             <Trans>Cancel</Trans>

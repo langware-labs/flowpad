@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Agent, type AgentInboxState, TypeId } from '@sdk';
+import { Agent, type AgentMailboxState, TypeId } from '@sdk';
 import { Loader2, Mail } from 'lucide-react';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -10,16 +10,16 @@ import { Button } from '@src/components/ui/button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
-import { useAllocateAgentInbox } from '@src/hooks/use-allocate-agent-inbox';
+import { useAllocateAgentMailbox } from '@src/hooks/use-allocate-agent-mailbox';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useAttachedChannels } from './AttachedChannelsBar';
-import { InboxView } from './InboxView';
+import { StreamInboxView } from './StreamInboxView';
 
 const MIN_REFRESH_SECONDS = 60;
 
-export function AgentInboxView() {
+export function AgentStreamInboxView() {
   const { t } = useLingui();
   const { currentDock } = useDockNavigation();
   const parsed = useMemo(
@@ -34,15 +34,15 @@ export function AgentInboxView() {
   const agentId = agent?.id ?? null;
   const agentRef = useRef<Agent | null>(null);
   agentRef.current = agent ?? null;
-  const allocateInbox = useAllocateAgentInbox();
-  const [state, setState] = useState<AgentInboxState | null>(null);
+  const allocateMailbox = useAllocateAgentMailbox();
+  const [state, setState] = useState<AgentMailboxState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [senders, setSenders] = useState('');
   const [refresh, setRefresh] = useState(String(MIN_REFRESH_SECONDS));
   const activeState = state?.agent_id === parsed.agentId ? state : null;
-  // The agent's channels — the inbox header's own rows, so "has an inbox at
-  // all" and what that header shows can never disagree.
+  // The agent's channels — the stream inbox header's own rows, so "has a
+  // channel at all" and what that header shows can never disagree.
   const { rows: channels } = useAttachedChannels(agentTypeId);
 
   const loadState = useCallback(async () => {
@@ -50,9 +50,9 @@ export function AgentInboxView() {
     if (!currentAgent || currentAgent.id !== agentId) return;
     setLoading(true);
     try {
-      const next = await currentAgent.inboxState();
+      const next = await currentAgent.mailboxState();
       setState(next);
-      setSenders((next.inbox?.allowed_senders ?? []).join('\n'));
+      setSenders((next.mailbox?.allowed_senders ?? []).join('\n'));
       setRefresh(String(next.source?.poll_interval_seconds ?? MIN_REFRESH_SECONDS));
     } catch {
       setState(null);
@@ -71,18 +71,18 @@ export function AgentInboxView() {
     if (!agent || saving) return;
     setSaving(true);
     try {
-      const next = await allocateInbox(agent);
+      const next = await allocateMailbox(agent);
       if (!next) return;
       setState(next);
-      setSenders((next.inbox?.allowed_senders ?? []).join('\n'));
+      setSenders((next.mailbox?.allowed_senders ?? []).join('\n'));
       setRefresh(String(next.source?.poll_interval_seconds ?? MIN_REFRESH_SECONDS));
     } finally {
       setSaving(false);
     }
-  }, [agent, allocateInbox, saving]);
+  }, [agent, allocateMailbox, saving]);
 
   const saveConfiguration = useCallback(async () => {
-    if (!agent || !activeState?.inbox || saving) return;
+    if (!agent || !activeState?.mailbox || saving) return;
     const seconds = Number.parseInt(refresh, 10);
     if (!Number.isInteger(seconds) || seconds < MIN_REFRESH_SECONDS) {
       notify.error({ title: t`Refresh interval must be at least 60 seconds`, forceToast: true });
@@ -94,20 +94,20 @@ export function AgentInboxView() {
       .filter(Boolean);
     setSaving(true);
     try {
-      setState(await agent.configureInbox({ allowed_senders, poll_interval_seconds: seconds }));
-      notify.success({ title: t`Inbox settings saved` });
+      setState(await agent.configureMailbox({ allowed_senders, poll_interval_seconds: seconds }));
+      notify.success({ title: t`Mailbox settings saved` });
     } catch (error) {
       notify.error({
-        title: t`Could not save inbox settings`,
-        message: errorMessage(error, t`Inbox settings could not be saved.`),
+        title: t`Could not save mailbox settings`,
+        message: errorMessage(error, t`Mailbox settings could not be saved.`),
         forceToast: true,
       });
     } finally {
       setSaving(false);
     }
-  }, [activeState?.inbox, agent, refresh, saving, senders, t]);
+  }, [activeState?.mailbox, agent, refresh, saving, senders, t]);
 
-  if (!parsed.agentId || parsed.view !== 'inbox') return null;
+  if (!parsed.agentId || parsed.view !== 'stream_inbox') return null;
   if (loading || !agent) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -117,24 +117,24 @@ export function AgentInboxView() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="agent-inbox-view">
-      <section className="shrink-0 border-b bg-muted/10 px-4 py-3" data-testid="agent-inbox-settings">
+    <div className="flex h-full min-h-0 flex-col" data-testid="agent-stream-inbox-view">
+      <section className="shrink-0 border-b bg-muted/10 px-4 py-3" data-testid="agent-mailbox-settings">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <Mail className="h-4 w-4 shrink-0" />
             <div className="min-w-0">
               <div className="text-sm font-semibold">
-                <Trans>Email inbox</Trans>
+                <Trans>Agent mailbox</Trans>
               </div>
-              {activeState?.inbox ? (
+              {activeState?.mailbox ? (
                 <div className="flex items-center gap-1 font-mono text-xs text-muted-foreground">
-                  <span className="truncate" data-testid="agent-inbox-address">
-                    {activeState.inbox.address}
+                  <span className="truncate" data-testid="agent-mailbox-address">
+                    {activeState.mailbox.address}
                   </span>
                   <CopyButton
-                    value={activeState.inbox.address}
+                    value={activeState.mailbox.address}
                     title={t`Copy email address`}
-                    testId="agent-inbox-copy"
+                    testId="agent-mailbox-copy"
                   />
                 </div>
               ) : (
@@ -151,7 +151,7 @@ export function AgentInboxView() {
             </div>
           </div>
         </div>
-        {activeState?.inbox && (
+        {activeState?.mailbox && (
           <div className="mt-3 grid gap-3 md:grid-cols-[minmax(12rem,1fr)_10rem_auto]">
             <label className="text-xs font-medium">
               <Trans>Allowed senders</Trans>
@@ -180,7 +180,7 @@ export function AgentInboxView() {
           </div>
         )}
         {activeState?.source && (
-          <div className="mt-2 text-xs text-muted-foreground" data-testid="agent-inbox-health">
+          <div className="mt-2 text-xs text-muted-foreground" data-testid="agent-mailbox-health">
             <Trans>Health:</Trans> {activeState.source.health} · <Trans>Last sync:</Trans>{' '}
             {activeState.source.last_synced_at
               ? new Date(activeState.source.last_synced_at).toLocaleString()
@@ -188,9 +188,9 @@ export function AgentInboxView() {
           </div>
         )}
       </section>
-      {activeState?.inbox || channels.length > 0 ? (
+      {activeState?.mailbox || channels.length > 0 ? (
         <div className="min-h-0 flex-1">
-          <InboxView agentId={parsed.agentId} />
+          <StreamInboxView agentId={parsed.agentId} />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">

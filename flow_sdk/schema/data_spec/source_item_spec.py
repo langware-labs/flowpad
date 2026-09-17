@@ -72,7 +72,7 @@ class SourceItemSpec(DataSpec):
         deterministic — so it wins, unconditionally: convergent for a correct
         caller (same instant), corrective for a sloppy one, and because
         ``occurred_at`` is digested, a corrected stamp re-ingests as an
-        update and re-projects, healing the inbox on the next sync.
+        update and re-projects, healing the stream inbox on the next sync.
         """
         if isinstance(data, dict):
             ext = str(data.get("external_id") or "")

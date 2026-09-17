@@ -1,6 +1,6 @@
 """Reply into the cloud thread a conversation caches.
 
-The inverse of ``flow_sdk/inbox/projection.py`` and deliberately much smaller,
+The inverse of ``flow_sdk/stream_inbox/projection.py`` and deliberately much smaller,
 because it does not write anything itself. It resolves *where* to send, hands
 the driver the message, and lets the reply come back in through the ordinary
 ingest route — the worker records the sent copy with ``flow record create``,
@@ -72,7 +72,7 @@ def _authored_here(message, local_id: str) -> bool:
     has written in this thread yet" — a thread full of strangers described as a
     thread full of us, which points debugging at the wrong half of the system.
     """
-    from flow_sdk.inbox.projection import is_agent_sender  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import is_agent_sender  # noqa: PLC0415
 
     sender = str(message.sender_id or "")
     return bool(sender) and (sender == local_id or is_agent_sender(sender))
@@ -143,7 +143,7 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
     if source is None:
         raise ChannelSendUnavailable("the data source this arrived through is gone")
     if source_id is not None and source.id != source_id:
-        raise ChannelSendUnavailable("this conversation does not belong to that Agent inbox")
+        raise ChannelSendUnavailable("this conversation does not belong to that Agent stream inbox")
     if item is None:
         # Distinct from "no sender address" below — collapsing the two made a
         # missing record report as a missing address.

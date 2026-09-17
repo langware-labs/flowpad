@@ -1,11 +1,11 @@
 """Two conversations must not trade places while their messages download.
 
-Captured from a real inbox: the two top rows visibly swapped during a hub-switch
+Captured from a real stream inbox: the two top rows visibly swapped during a hub-switch
 rebuild, right before the per-conversation message counters appeared — i.e. at the
 moment the messages started landing. The fixture is those two conversations and
 their nine messages, copied verbatim from the live DB (ids, both clocks, senders).
 
-Inbox order is ``conversation.updated_date`` descending. The final answer is not in
+Stream Inbox order is ``conversation.updated_date`` descending. The final answer is not in
 question — A's newest message is 11:43:05 and B's is 09:38:33, so A belongs above B
 and stays there. What this test pins is the PATH: a conversation is created from the
 hub list before any of its messages exist, and only takes its real recency once the
@@ -27,7 +27,7 @@ import pytest
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
 
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "inbox_swap_two_conversations.json"
+FIXTURE = Path(__file__).parent.parent / "fixtures" / "stream_inbox_swap_two_conversations.json"
 A = "f69ce445"  # 'Integrate Supabase…'  — newest message 11:43:05, belongs on top
 B = "d813eec8"  # 'Explain Z Campus…'    — newest message 09:38:33
 
@@ -112,7 +112,7 @@ async def test_two_conversations_never_trade_places_while_messages_arrive(record
             rank, ra, rb = await _rank()
             timeline.append((f"{key} +msg {m['id'][:8]} ({m['sender_name']})", rank, ra, rb))
 
-    print("\n--- inbox order at every step ---")
+    print("\n--- stream inbox order at every step ---")
     for label, rank, ra, rb in timeline:
         print(f"  {rank:<12} A={ra[:23] if ra else ra}  B={rb[:23] if rb else rb}   {label}")
 

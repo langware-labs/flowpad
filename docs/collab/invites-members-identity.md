@@ -32,7 +32,7 @@ helper shapes.
 - `target_url_path` (`:44`) — where accepting lands the recipient. For a
   conversation this is always `/conversation/<id>` (see below).
 - `accepted` (`:45`, default `False`) — flipped local-side once the hub accept
-  succeeds; the inbox/strip drops the pending row on its next refetch.
+  succeeds; the stream inbox/strip drops the pending row on its next refetch.
 - `sent` (`:47`) and `message` (`:48`) — delivery flag and optional note.
 - `expiration_at` (`:46`) — defaulted in `__init__` (`:58`) via
   `gen_expiration_at` (`:63`) to `now + invitation_expires_in_days`
@@ -40,7 +40,7 @@ helper shapes.
   `now > expiration_at` comparison.
 - `target_type` / `target_id` / `target_name` / `target_role` (`:53-56`) — the
   *membership* descriptor for organization/team invitations, which have **no**
-  backing conversation. `None` for conversation invitations. The inbox renders
+  backing conversation. `None` for conversation invitations. The stream inbox renders
   a generic "Organization/Team invitation" row from these, and accept knows
   what membership to materialize.
 
@@ -142,7 +142,7 @@ conversation or bundle.
 
 If a `linked_fm_id` was resolved (`:3328`), exactly that one FlowMessage's body
 bundle is downloaded and unpacked (`:3333`). This is deliberately *not* a full
-inbox resync — catching up on every other accessible bundle is the strip's
+stream inbox resync — catching up on every other accessible bundle is the strip's
 "Refresh" (`conversation-sync`) job, and doing it here would double latency
 (`:3080`).
 

@@ -1,8 +1,8 @@
 /**
- * Switch proof for the inbox FLICKER bug.
+ * Switch proof for the stream inbox FLICKER bug.
  *
- * Symptom: every time the inbox is opened it flashed a full-screen "Loading…"
- * spinner before the rows appeared. RCA cause: `<InboxView/>` fully
+ * Symptom: every time the stream inbox is opened it flashed a full-screen "Loading…"
+ * spinner before the rows appeared. RCA cause: `<StreamInboxView/>` fully
  * unmounts/remounts on every open, and `useEntitiesQuery` hard-reset its state to
  * `{ data: undefined, isLoading: true }` on every (re)subscribe — throwing away
  * the already-warm query cache and forcing a loading frame. The fix seeds the
@@ -14,7 +14,7 @@
  * populated through the real code path, not hand-forced.
  *
  * Faithful model of the app: the home `RecentConversationsStrip` stays mounted
- * and keeps the shared conversations query warm; the inbox opens, closes
+ * and keeps the shared conversations query warm; the stream inbox opens, closes
  * (unmounts), and reopens (remounts). The switch is proven both directions:
  *   - warm remount  → first committed snapshot already has rows, isLoading=false
  *   - cold request  → first committed snapshot is { isLoading:true, data:undefined }
@@ -45,7 +45,7 @@ afterEach(async () => {
   await dataManager.clearCache();
 });
 
-describe('useEntitiesQuery cache-seed (inbox flicker fix)', () => {
+describe('useEntitiesQuery cache-seed (stream inbox flicker fix)', () => {
   it('seeds a warm remount on the first frame; a cold request still shows the loading frame', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue([
       convJson('11111111-1111-4111-8111-111111111111', '2026-06-02T00:00:00Z'),
@@ -54,27 +54,27 @@ describe('useEntitiesQuery cache-seed (inbox flicker fix)', () => {
 
     // The persistent home strip: mounts once, loads, and stays mounted — keeping
     // the shared conversations query warm for everyone else (like the real app),
-    // so the inbox opening later is a warm remount.
+    // so the stream inbox opening later is a warm remount.
     const stripRequest = conversationsRequest('strip');
     const strip = renderHook(() => useEntitiesQuery<Conversation>(stripRequest));
     await waitFor(() => expect(strip.result.current.isSuccess).toBe(true));
     expect(strip.result.current.data).toHaveLength(2);
 
-    // Inbox opens (a brand-new mount — the scenario that flickered). We must
+    // Stream Inbox opens (a brand-new mount — the scenario that flickered). We must
     // inspect the FIRST committed frame, not the settled state: pre-fix the first
     // frame was { isLoading:true, data:undefined } (the "Loading…" flash) and then
     // resolved to data a microtask later — so asserting the settled state can't
     // tell the fix from the bug. Record every render and assert frame 0.
-    const inboxFrames: Array<{ isLoading: boolean; len: number | undefined }> = [];
-    const inboxRequest = conversationsRequest('inbox');
+    const streamInboxFrames: Array<{ isLoading: boolean; len: number | undefined }> = [];
+    const streamInboxRequest = conversationsRequest('stream_inbox');
     renderHook(() => {
-      const r = useEntitiesQuery<Conversation>(inboxRequest);
-      inboxFrames.push({ isLoading: r.isLoading, len: r.data?.length });
+      const r = useEntitiesQuery<Conversation>(streamInboxRequest);
+      streamInboxFrames.push({ isLoading: r.isLoading, len: r.data?.length });
       return r;
     });
     // THE SWITCH: with the cache seed the very first frame already has the rows
     // and is not loading. Without the seed this is { isLoading:true, len:undefined }.
-    expect(inboxFrames[0]).toEqual({ isLoading: false, len: 2 });
+    expect(streamInboxFrames[0]).toEqual({ isLoading: false, len: 2 });
 
     // Negative direction: a DIFFERENT request key that was never warmed shows the
     // loading frame first — confirming the seeded frame above comes from the warm

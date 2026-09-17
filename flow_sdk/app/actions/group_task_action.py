@@ -121,7 +121,7 @@ async def _resolve_group(body: dict) -> ContactsGroup:
 
 async def _invite_member(email: str, child: Task, parent: Task, message: str | None = None) -> None:
     """One invitation, two targets — the member task FIRST (the hub renders the
-    first non-conversation target as the inbox row), then the parent as guest.
+    first non-conversation target as the stream inbox row), then the parent as guest.
 
     ``message`` rides the invitation email; the default states the assignment.
     """

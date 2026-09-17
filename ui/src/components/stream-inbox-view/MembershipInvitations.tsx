@@ -20,7 +20,7 @@ import { notify } from '@src/notifications';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 
 /**
- * Inbox rows for entity-share invitations (organization, team, workspace,
+ * Stream inbox rows for entity-share invitations (organization, team, workspace,
  * project, skill, … — any shareable entity type).
  *
  * Unlike conversation invitations (which ride a ``remote=True`` Conversation
@@ -43,9 +43,9 @@ export function MembershipInvitations({
 }: {
   recipientEmail: string | null;
   /** Reports the rendered pending count so the parent's empty-state logic can
-   *  account for these rows (a membership-only inbox must not also say
+   *  account for these rows (a membership-only stream inbox must not also say
    *  "No unread conversations"). Rendering only — the numeric unread badge is
-   *  backend-owned (InboxManager.unread) and never derived from this list. */
+   *  backend-owned (StreamInboxManager.unread) and never derived from this list. */
   onPendingCount?: (count: number) => void;
 }) {
   // `isHubOnly()` reads its `[desk]` default until bootstrap resolves, so it is
@@ -78,7 +78,7 @@ export function MembershipInvitations({
     try {
       setFetched(await fetchPendingInvitations());
     } catch {
-      // A failed poll keeps the previous rows rather than blanking the inbox.
+      // A failed poll keeps the previous rows rather than blanking the stream inbox.
     }
   }, []);
   useEffect(() => {

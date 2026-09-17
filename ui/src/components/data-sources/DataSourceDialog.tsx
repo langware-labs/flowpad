@@ -13,7 +13,7 @@ import { Agent, DataSource, type SourceStatus } from '@sdk';
 import type { TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { useAllocateAgentInbox } from '@src/hooks/use-allocate-agent-inbox';
+import { useAllocateAgentMailbox } from '@src/hooks/use-allocate-agent-mailbox';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
@@ -114,7 +114,7 @@ export function DataSourceDialog({
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
   // shows up here with no frontend release.
   const { specs: installed, specFor } = useSourceSpecs();
-  const allocateInbox = useAllocateAgentInbox();
+  const allocateMailbox = useAllocateAgentMailbox();
   // A source is an asset: it is saved into the project open here (an agent's into the agent's project).
   const { project } = useDataContext();
   const ownerAgentId = owner?.type === Agent.type ? owner.id : null;
@@ -162,7 +162,7 @@ export function DataSourceDialog({
       if (provisioned) {
         // The one provisioned account today is the agent's mailbox; allocating wires
         // the local source itself.
-        if (await allocateInbox(new Agent({ id: provisioned }))) {
+        if (await allocateMailbox(new Agent({ id: provisioned }))) {
           notify.success({ title: t`${spec?.title} is ready` });
           onOpenChange(false);
         }

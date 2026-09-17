@@ -1,5 +1,5 @@
 """LIVE: a person types "sync my Slack channel C…" and gets a working source —
-and an inbox whose rows are references, not copies.
+and a stream inbox whose rows are references, not copies.
 
 The Slack twin of ``test_gmail_agent_source.py`` — same two-layer primitive
 (an AgenticProcess asks for the source; the source it builds fetches by
@@ -42,8 +42,8 @@ from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.inbox.projection import reconcile_source
 from flow_sdk.ingest.sync import sync_source
+from flow_sdk.stream_inbox.projection import reconcile_source
 from tests.long_tests._transcript_helpers import assert_prompt_ok, safe_exit
 from tests.test_settings import test_service_config
 
@@ -165,7 +165,7 @@ async def test_connect_my_slack_channel(assistant):
     assert ingested, "the fetch worker recorded nothing"
 
     _assert_matches_channel(expected, ingested, channel_id)
-    await _assert_reference_inbox(src, ingested)
+    await _assert_reference_stream_inbox(src, ingested)
 
 
 def _assert_matches_channel(expected: dict, ingested: dict, channel_id: str) -> None:
@@ -205,7 +205,7 @@ def _assert_matches_channel(expected: dict, ingested: dict, channel_id: str) -> 
         pytest.skip("recorded text drifted from the channel:\n  " + "\n  ".join(drift))
 
 
-async def _assert_reference_inbox(src, ingested: dict) -> None:
+async def _assert_reference_stream_inbox(src, ingested: dict) -> None:
     """The reference model, end to end: blank rows in the store, bodies on read.
 
     ``reconcile_source`` is called directly — the tag lanes belong to the

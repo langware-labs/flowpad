@@ -24,7 +24,7 @@ import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { TokenPlanCard } from '@src/components/token-plan/TokenPlanCard';
 import { HUB_HOME_CARD } from './card-style';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { MembershipInvitations } from '@src/components/inbox-view/MembershipInvitations';
+import { MembershipInvitations } from '@src/components/stream-inbox-view/MembershipInvitations';
 import {
   ArrowUpCircle,
   Building2,
@@ -226,7 +226,7 @@ function LoginLine({ loggedInUser, autoLogin }: { loggedInUser?: string | null; 
  * HubHome — the hub page's landing. Mirrors the desktop app HOME (`HomeLanding`)
  * look (centered greeting + a hero band + cards) but uses ONLY hub-served data
  * (projects plus the shared WorldView API). No desktop-only
- * surfaces (inbox/feed/scan/vibe-session), so nothing 404/422s against the hub.
+ * surfaces (stream inbox/feed/scan/vibe-session), so nothing 404/422s against the hub.
  *
  * URL: /dock/hub/home  (page=hub, viewType=home → routed here by ContentPanel).
  */
@@ -406,8 +406,8 @@ export function HubHome() {
         </div>
 
         {/* Pending invitations.
-            Lives here because the hub page has no Inbox: `renderHubBody`
-            (content-panel.tsx) has no ViewType.INBOX case, so `InboxView` — and
+            Lives here because the hub page has no Stream Inbox: `renderHubBody`
+            (content-panel.tsx) has no ViewType.STREAM_INBOX case, so `StreamInboxView` — and
             with it the usual home for `MembershipInvitations` — never renders
             under page=hub. Without this the rows are fetchable and have nowhere
             to appear. Above Sandboxes deliberately: a sandbox share is the

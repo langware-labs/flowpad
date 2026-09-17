@@ -3,7 +3,7 @@
   "name": "helpdesk",
   "title": "Help desk",
   "icon_name": "HelpDesk",
-  "description": "A hub help desk's tickets. Each ticket is a conversation you can answer from the inbox; an Agent can own the desk and answer for you.",
+  "description": "A hub help desk's tickets. Each ticket is a conversation you can answer from the stream inbox; an Agent can own the desk and answer for you.",
   "kind": "datasource.hub.helpdesk",
   "reflect": [
     "record"

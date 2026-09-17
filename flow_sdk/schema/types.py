@@ -30,8 +30,8 @@ class EntityType(StrEnum):
     # this may delegate to.
     AGENT = "agent"
     # The Hub's server-minted mailbox row. The value deliberately differs from
-    # the Agent action name ("email_inbox") so graph paths remain unambiguous.
-    EMAIL_INBOX = "agent_mailbox"
+    # the Agent action name ("mailbox") so graph paths remain unambiguous.
+    AGENT_MAILBOX = "agent_mailbox"
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"
@@ -230,9 +230,9 @@ class EntityType(StrEnum):
     MESSAGE_ATTACHMENT = "message_attachment"
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
-    # The @local singleton owning the inbox unread projection (see
-    # builtin/inbox_manager.py + flow_sdk/inbox). DB-only, not user-creatable.
-    INBOX_MANAGER = "inbox_manager"
+    # The @local singleton owning the stream inbox unread projection (see
+    # builtin/stream_inbox_manager.py + flow_sdk/stream_inbox). DB-only, not user-creatable.
+    STREAM_INBOX_MANAGER = "stream_inbox_manager"
     RUN = "run"
     # A file on disk outside the record store (DB-only; SemanticLock targets).
     FILE = "file"
@@ -241,7 +241,7 @@ class EntityType(StrEnum):
     TAB = "tab"
     # One record ingested from a cloud DataSource (a feed entry, a chat
     # message). Generic and discriminated by `kind`, NOT one type per provider
-    # — the inbox projection has to be one queryable table.
+    # — the stream inbox projection has to be one queryable table.
     SOURCE_ITEM = "source_item"
     # A configured remote system of record we sync from (flow_sdk/ingest).
     DATA_SOURCE = "data_source"

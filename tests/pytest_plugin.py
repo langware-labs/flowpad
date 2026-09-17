@@ -304,7 +304,7 @@ def _drop_leftover_bus_tasks():
     ``TagBus._dispatch`` keeps every async handler task in ``bus._INFLIGHT`` until
     it finishes (so it cannot be garbage-collected mid-flight). A handler still
     running when its test's loop closes never finishes, and never leaves the set.
-    It then poisons every later test that drains the set: the inbox projection
+    It then poisons every later test that drains the set: the stream inbox projection
     (armed process-wide once any test boots the app) answers a git source's
     ``sync.completed`` with an ``_on_sync`` reconcile against that test's own
     ``git_db``, the fixture closes the loop and the driver under it, and

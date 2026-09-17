@@ -311,7 +311,7 @@ async def test_send_posts_into_the_thread_and_returns_the_ts(serve):
 
 
 async def test_send_stamps_the_bots_own_identity_once(serve):
-    from flow_sdk.inbox.projection import is_self_address
+    from flow_sdk.stream_inbox.projection import is_self_address
 
     serve([{"ok": True, "ts": "1.1"}, {"ok": True, "user_id": "UBOT", "bot_id": "B1", "user": "flowpad"}])
     source = _source()

@@ -29,7 +29,7 @@ import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
 import { useShowTargetListener } from '@src/hooks/use-show-target-listener';
-import { useSyncOsBadge } from '@src/hooks/useInboxManager';
+import { useSyncOsBadge } from '@src/hooks/useStreamInboxManager';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { JourneyController } from '@src/journey/JourneyController';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
@@ -72,7 +72,7 @@ const GlobalEvents = () => {
   // calling process (never navigates). Vibe's own display surfaces own the
   // vibe branch, so this no-ops there.
   useShowTargetListener();
-  // OS dock/launcher badge = the backend-owned InboxManager.unread (state,
+  // OS dock/launcher badge = the backend-owned StreamInboxManager.unread (state,
   // not a notification event) — mounted once, next to the WS listeners.
   useSyncOsBadge();
   useDockViewModeOverrideSync();

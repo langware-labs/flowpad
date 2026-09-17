@@ -53,7 +53,6 @@ vi.mock('@src/pages/flow-page/content-panel/user-dropdown/user-dropdown', () => 
 // Rendering it here would make every rail-placement test depend on a hub aggregation.
 // Its own behaviour is covered by tests/unit/org-teams-button.test.tsx.
 vi.mock('@src/components/collapsed-sidebar/OrgTeamsButton', () => ({ OrgTeamsButton: () => null }));
-vi.mock('@src/store/use-inbox-store', () => ({ useInboxStore: () => ({ unreadCount: 0 }) }));
 vi.mock('@src/store/use-spotlight-store', () => ({
   useSpotlightStore: { getState: () => ({ openSpotlight: vi.fn() }) },
 }));
@@ -119,9 +118,9 @@ describe('rail — order and gates', () => {
     expect(renderRail().ids()).not.toContain('project');
   });
 
-  it('reveals Inbox on the first conversation', () => {
+  it('reveals Stream Inbox on the first conversation', () => {
     gates.conversations = true;
-    expect(renderRail().ids()).toEqual(['chats', 'inbox', 'credentials']);
+    expect(renderRail().ids()).toEqual(['chats', 'stream_inbox', 'credentials']);
   });
 
   it('Data sources appears at Advanced, not before, and needs no content gate', () => {

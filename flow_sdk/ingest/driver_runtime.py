@@ -6,7 +6,7 @@ and its manifest (``flow_sdk/ingest/driver_registry.py`` loads both). Everything
 sources the class or the manifest says — the credential shape (``auth``), the transport it is built
 over (``build``), how a send's arguments address its channel (``message_for``), how a cursor an older
 build left is adopted (``lift_cursor``), the identity a reflected file resolves on
-(``origin_id_for``). The sync engine, reflection and the inbox ask the type; nothing here, or
+(``origin_id_for``). The sync engine, reflection and the stream inbox ask the type; nothing here, or
 anywhere outside an asset folder, names a provider.
 
 **One segment's traversal** (``DataDriver.traverse``) is the engine step: a page chain capped by
@@ -137,7 +137,7 @@ def identity_stamped(row: Any) -> bool:
 
 
 async def stamp_identity(row: Any, *, account_key: str, identities: list[str]) -> None:
-    """Record the account a source reads and posts as: without it the inbox attributes our own
+    """Record the account a source reads and posts as: without it the stream inbox attributes our own
     posts to a stranger and a listening loop answers itself."""
     row.account_key = account_key
     row.account_identities = [v for v in identities if v]
@@ -260,7 +260,7 @@ def binding_of(row: Any, *, credentials: Optional[Credentials] = None, persona: 
 
 
 async def _persona_of(row: Any) -> Persona:
-    from flow_sdk.inbox.sender_identity import sender_identity  # noqa: PLC0415
+    from flow_sdk.stream_inbox.sender_identity import sender_identity  # noqa: PLC0415
 
     identity = await sender_identity(row)
     return Persona(name=identity.username, icon=identity.icon_emoji) if identity else Persona()

@@ -1,6 +1,6 @@
 /**
  * ONE rule from a source (or a bare channel) to its glyph name. It used to live
- * twice — on the card and in the inbox's channel attribution — and the
+ * twice — on the card and in the stream inbox's channel attribution — and the
  * attached-channels bar would have been the third copy.
  *
  *   1. the spec's `channel_icon_names[channel]` — a multi-channel transport

@@ -1,26 +1,4 @@
 import { ActionInfo, dataManager } from '@sdk';
-import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
-
-export type InboxAttachment = Attachment;
-
-export interface InboxMessage {
-  id: string;
-  text: string;
-  instruction?: string | null;
-  /** TypeId strings e.g. "task-abc123". Mirrors the wire-bound
-   *  ``shared_context_entities`` bucket on the entity — published context
-   *  that travels with the FlowMessage. */
-  shared_context_entities: string[];
-  attachment: InboxAttachment[];
-  sender_id?: string | null;
-  sender_name?: string | null;
-  receiver_address?: string | null;
-  /** ID of the parent Conversation; null on legacy messages predating the field. */
-  conversation_id?: string | null;
-  is_read: boolean;
-  is_archived: boolean;
-  created_date?: string | null;
-}
 
 export interface FetchResult {
   created: number;
@@ -37,21 +15,13 @@ export interface BulkUpdateResult {
   updated: number;
 }
 
-/** Load all non-archived FlowMessages from local DB */
-export async function listInboxMessages(agentId?: string): Promise<InboxMessage[]> {
-  const action = new ActionInfo('inbox-list', null, null, 'GET');
-  if (agentId) action.queryParameters = { agent_id: agentId };
-  const result = await dataManager.callAction<null, InboxMessage[]>(action);
-  return result ?? [];
-}
-
 /** Mark a single message read/unread or archived/unarchived */
 export async function updateMessage(
   messageId: string,
   patch: { is_read?: boolean; is_archived?: boolean },
   agentId?: string,
 ): Promise<UpdateResult | null> {
-  const action = new ActionInfo('inbox-update', 'flow_message', messageId, 'POST');
+  const action = new ActionInfo('stream-inbox-update', 'flow_message', messageId, 'POST');
   action.bodyParameters = { ...patch, ...(agentId ? { agent_id: agentId } : {}) };
   return dataManager.callAction<typeof patch, UpdateResult>(action);
 }
@@ -62,8 +32,8 @@ export interface OpenResult {
 }
 
 /** Materialize the task for a FlowMessage (downloads bundle if task missing locally). */
-export async function openInboxMessage(messageId: string): Promise<OpenResult | null> {
-  const action = new ActionInfo('inbox-open', 'flow_message', messageId, 'GET');
+export async function openStreamInboxMessage(messageId: string): Promise<OpenResult | null> {
+  const action = new ActionInfo('stream-inbox-open', 'flow_message', messageId, 'GET');
   return dataManager.callAction<null, OpenResult>(action);
 }
 
@@ -72,7 +42,7 @@ export async function openInboxMessage(messageId: string): Promise<OpenResult | 
  * The backend (`conversation-message-sync`) lists the conversation's child
  * FlowMessages in a single request and refreshes only the stale ones (LWW by
  * updated_date), so the local live query reflects the hub on resolve. Replaces
- * the old per-message backfill loop (one `openInboxMessage` per pointer).
+ * the old per-message backfill loop (one `openStreamInboxMessage` per pointer).
  */
 export async function syncConversationMessages(conversationId: string, agentId?: string): Promise<void> {
   const action = new ActionInfo('conversation-message-sync', null, null, 'POST');
@@ -86,22 +56,22 @@ export async function bulkUpdateMessages(
   patch: { is_read?: boolean; is_archived?: boolean },
   agentId?: string,
 ): Promise<BulkUpdateResult> {
-  const action = new ActionInfo('inbox-bulk-update', null, null, 'POST');
+  const action = new ActionInfo('stream-inbox-bulk-update', null, null, 'POST');
   action.bodyParameters = { ...patch, ...(agentId ? { agent_id: agentId } : {}) };
   const result = await dataManager.callAction<typeof patch, BulkUpdateResult>(action);
   return result ?? { updated: 0 };
 }
 
 /**
- * Full-inbox body search → conversation ids, server-side (`inbox-search`).
+ * Full stream-inbox body search → conversation ids, server-side (`stream-inbox-search`).
  *
  * Not a `$LIKE` entity query: under the reference model a channel message's
  * body lives on its SourceItem — the FlowMessage row stores `text: ""` — so a
  * client-side match over FlowMessage.text would go blind to every ingested
  * message. The action searches both residences and returns the union.
  */
-export async function searchInbox(q: string, agentId?: string): Promise<Set<string>> {
-  const action = new ActionInfo('inbox-search', null, null, 'POST');
+export async function searchStreamInbox(q: string, agentId?: string): Promise<Set<string>> {
+  const action = new ActionInfo('stream-inbox-search', null, null, 'POST');
   action.bodyParameters = { q, ...(agentId ? { agent_id: agentId } : {}) };
   const result = await dataManager.callAction<{ q: string }, { conversation_ids?: string[] }>(action);
   return new Set(result?.conversation_ids ?? []);

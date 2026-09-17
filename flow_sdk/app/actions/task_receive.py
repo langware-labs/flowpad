@@ -142,7 +142,7 @@ async def materialize_accepted_task_invitation(target_id: str, someone_typeid) -
     """Accept-side materialization for a member-task invitation.
 
     The invitation carries TWO task targets (member task + group parent) and
-    the hub resolves an arbitrary one as the inbox target — so handle both:
+    the hub resolves an arbitrary one as the stream inbox target — so handle both:
 
     - handed the CHILD (has ``parent_id``): pull + materialize the parent
       first (its asset_ref anchors the child's deduped folder), then the child;

@@ -1,6 +1,6 @@
 /**
  * Delete ONE source — the verb and its confirm copy, shared by the Data
- * Sources screen and the inbox's channel lists so the cascade sentence
+ * Sources screen and the stream inbox's channel lists so the cascade sentence
  * ("its streams and every record it ingested") exists once.
  */
 import { useCallback, useState } from 'react';

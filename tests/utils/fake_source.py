@@ -145,7 +145,7 @@ class _ScriptedType(DataDriver):
 
     async def traverse(self, row, position):
         """The scripted channel's records keep the flat kind the scripted driver always stamped
-        (``message``), which sits outside the inbox's ``content.message`` root — a fence about paging
+        (``message``), which sits outside the stream inbox's ``content.message`` root — a fence about paging
         or acks must not become a test of projecting one very long thread."""
         found = await super().traverse(row, position)
         if not found.items:

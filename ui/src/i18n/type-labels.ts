@@ -76,7 +76,7 @@ const TYPE_LABELS: Record<string, MessageDescriptor> = {
   graph_workflow_run: msg`Graph Workflow Run`,
   group: msg`Group`,
   helpdesk: msg`Help desks`,
-  inbox_manager: msg`Inbox Manager`,
+  stream_inbox_manager: msg`Stream Inbox Manager`,
   invitation: msg`Invitation`,
   journey: msg`Journeys`,
   journey_journal: msg`Journey Journal`,

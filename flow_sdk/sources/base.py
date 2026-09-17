@@ -70,7 +70,7 @@ class Source:
     #: Ceiling on segments synced per pass; ``None`` means the runtime's budget.
     segment_budget: ClassVar[Optional[int]] = None
     #: The config field naming WHICH remote account a row serves.
-    identity_config_key: ClassVar[str] = "inbox"
+    identity_config_key: ClassVar[str] = "address"
     #: The machine-level connection this source reads with, when the credential is not in the row.
     connection: ClassVar[Optional[str]] = None
     #: The payload is files placed on disk (reflection), not records in the graph.

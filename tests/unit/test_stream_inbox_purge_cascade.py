@@ -2,7 +2,7 @@
 
 Under the reference model this cascade is mandatory, not hygiene: a projected
 FlowMessage holds no body of its own, so a purge that left it behind would fill
-the inbox with blank rows pointing at nothing.
+the stream inbox with blank rows pointing at nothing.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.inbox.projection import project_source_item
+from flow_sdk.stream_inbox.projection import project_source_item
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 

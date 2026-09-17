@@ -157,7 +157,7 @@ class DataSource(Entity):
     # badge must key on the channel so both resolve to the same thread.
     channel: str = APIField(default="", description="User-facing channel: gmail | slack | jira", persist=Persist.FALSE)
     # The addresses/handles that are ME on this source. A record authored by
-    # one of them is mine, and the inbox projection must attribute it to the
+    # one of them is mine, and the stream inbox projection must attribute it to the
     # local user — otherwise my own Sent mail counts as unread mail from a
     # stranger, because both unread formulas gate on the sender.
     #
@@ -191,18 +191,18 @@ class DataSource(Entity):
     # ── ownership ──
     #
     # Whose source this is: the local user's, or an Agent's. A message source
-    # projects into ITS OWNER'S inbox and speaks with its owner's voice, so the
-    # owner is a key the inbox engine reads — which is why it is a field and
+    # projects into ITS OWNER'S stream inbox and speaks with its owner's voice, so the
+    # owner is a key the stream inbox engine reads — which is why it is a field and
     # not `config["agent_id"]`, the provider-opaque bag the engine promises not
     # to open (the same argument that pulled `reflect` out of it, below).
-    # `None` on rows written before the field existed; `inbox.projection.owner_of`
+    # `None` on rows written before the field existed; `stream_inbox.projection.owner_of`
     # is the ONE reader and resolves those (config.agent_id → that agent, else
     # the local user), so nothing depends on a backfill having run. PRIVATE: an
     # owner is a fact about this machine, never a thing that travels.
     owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
 
     # The mailbox allowlist, cached for the gate that runs on every inbound
-    # message (`EmailInbox.allowed`). The HUB owns this policy; this is a copy,
+    # message (`AgentMailbox.allowed`). The HUB owns this policy; this is a copy,
     # refreshed on every reconcile, and it is never read to answer "what is the
     # policy" — only to apply it without a network call.
     #
@@ -406,7 +406,7 @@ class DataSource(Entity):
         if scoped is not None or self.exist_in_db:
             return scoped  # placement happens once, at create; a poll's save never asks again
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.inbox.projection import owning_agent  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
 
         if getattr(self, "project_id", None):
             return await Project.get_by_id(str(self.project_id))
@@ -475,7 +475,7 @@ class DataSource(Entity):
         ``owner_of`` rather than the column, so a legacy row that only carries
         ``config.agent_id`` still answers.
         """
-        from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
 
         value = str(value or "").strip()
         for row in await cls.get_all({"provider": provider}):
@@ -498,7 +498,7 @@ class DataSource(Entity):
         (``owner`` absent), which ``owner_of`` resolves the same way every other
         reader does. The two are disjoint, so no row is counted twice.
         """
-        from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
 
         rows = list(await cls.get_all({"owner": str(owner)}))
         legacy = await cls.get_all(
@@ -533,7 +533,7 @@ class DataSource(Entity):
         """Deliver one outbound message through this source's driver.
 
         Message-shape validation belongs here rather than on each workflow
-        surface: a direct SDK caller and ``blocks.Inbox`` must reject the same
+        surface: a direct SDK caller and ``blocks.StreamInbox`` must reject the same
         unsupported attachment or recipient shape before provider I/O begins.
         """
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
@@ -882,11 +882,11 @@ class DataSource(Entity):
         for item in doomed:
             await item.destroy()
         if doomed:
-            # The inbox side of the purge. Under the reference model the
+            # The stream inbox side of the purge. Under the reference model the
             # projected FlowMessages hold no body of their own — leaving them
-            # behind would fill the inbox with blank rows, so the cascade is
+            # behind would fill the stream inbox with blank rows, so the cascade is
             # mandatory, not hygiene.
-            from flow_sdk.inbox.projection import remove_projection_for_items  # noqa: PLC0415
+            from flow_sdk.stream_inbox.projection import remove_projection_for_items  # noqa: PLC0415
 
             await remove_projection_for_items([i.id for i in doomed])
         return len(doomed)
@@ -927,7 +927,7 @@ class DataSource(Entity):
         without knowing it exists.
         """
         if self.owner is None:
-            from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+            from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
 
             self.owner = await owner_of(self)
         if _SUPPRESS_STORE.get():

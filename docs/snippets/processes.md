@@ -75,7 +75,7 @@ author time, not at spawn.
 ```python
 agent = await Agent.get_one({"name": "researcher"})
 
-proc = await agent.launch("Summarize today's inbox in three bullets.", wait=True)
+proc = await agent.launch("Summarize today's stream inbox in three bullets.", wait=True)
 ```
 
 * `agent.create_process(prompt, **options)` is the primitive: the process is

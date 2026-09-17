@@ -1,4 +1,4 @@
-"""``owner`` is the one key the inbox partitions by; ``owner_of`` is its one reader.
+"""``owner`` is the one key the stream inbox partitions by; ``owner_of`` is its one reader.
 
 Three rows can answer the question today — an explicit ``owner``, a legacy
 source that only carries ``config.agent_id``, and a bare row — and every
@@ -19,8 +19,8 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.user import User
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.inbox.projection import default_owner, is_agent_owner, owner_of
 from flow_sdk.schema.types import EntityType
+from flow_sdk.stream_inbox.projection import default_owner, is_agent_owner, owner_of
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -95,7 +95,7 @@ async def test_thread_lookup_narrows_by_owner_and_stays_pre_owner_without_it():
 
 async def test_two_owners_on_one_key_get_two_threads_and_one_owner_gets_one():
     """Enters through `resolve_thread`, the projection's real thread seam."""
-    from flow_sdk.inbox.projection import resolve_thread
+    from flow_sdk.stream_inbox.projection import resolve_thread
 
     a, b = _agent_tid(), _agent_tid()
     key = f"ts-{uuid.uuid4()}"
@@ -109,7 +109,7 @@ async def test_two_owners_on_one_key_get_two_threads_and_one_owner_gets_one():
 
 async def test_a_pre_owner_thread_is_adopted_by_the_first_owner_not_forked():
     """The conversation a user has been reading must survive the key change."""
-    from flow_sdk.inbox.projection import resolve_thread
+    from flow_sdk.stream_inbox.projection import resolve_thread
 
     key = f"ts-{uuid.uuid4()}"
     legacy = MessageThread(id=str(uuid.uuid4()), channel="slack", thread_key=key, conversation_id=str(uuid.uuid4()))

@@ -1,4 +1,4 @@
-"""The three rules that keep the inbox still while a backlog downloads.
+"""The three rules that keep the stream inbox still while a backlog downloads.
 
 Each was proven by toggling it against real data during a live hub switch, and
 each was then shipped without a test. This file is that debt: every test here
@@ -59,7 +59,7 @@ def test_messages_are_materialized_newest_first():
         {"id": "middle", "created_date": "2026-07-05T07:37:15+00:00"},
     ]
     assert [m["id"] for m in fetch_order(hub_messages)] == ["newest", "middle", "oldest"], (
-        "oldest-first ordering is back — the conversation will climb the inbox on "
+        "oldest-first ordering is back — the conversation will climb the stream inbox on "
         "every message instead of landing in place on the first"
     )
 
@@ -125,7 +125,7 @@ def test_hub_delivery_clock_beats_the_send_time_guess(tmp_path):
 async def test_a_conversation_with_no_messages_sorts_by_its_own_birth_time():
     """With no messages there is nothing to derive recency from. Falling back to
     ``now()`` re-stamps every empty conversation on every sync pass and floats it
-    above threads with real content — 21 of them sat at the top of a real inbox.
+    above threads with real content — 21 of them sat at the top of a real stream inbox.
     Its own creation time is the honest answer.
     """
     from flow_sdk.fs_store.operations.conversation import (
@@ -149,6 +149,6 @@ async def test_a_conversation_with_no_messages_sorts_by_its_own_birth_time():
     recency = Conversation._as_datetime(after.updated_date)
     assert recency == born, (
         f"an empty conversation was re-stamped to {recency} instead of keeping its own "
-        f"birth time {born} — it will float to the top of the inbox on every sync"
+        f"birth time {born} — it will float to the top of the stream inbox on every sync"
     )
     assert datetime.now(UTC) - recency > timedelta(days=1), "recency is the sync instant, not the birth time"

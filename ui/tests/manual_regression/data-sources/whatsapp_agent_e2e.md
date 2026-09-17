@@ -1,7 +1,7 @@
 ---
 id: a16f7ad9-19c9-41b7-88bb-8f06f3f27735
 ---
-# A WhatsApp agent, end to end — credential from `.env.local`, conversation in the inbox
+# A WhatsApp agent, end to end — credential from `.env.local`, conversation in the stream inbox
 
 precondition: an instance is up (`scripts/instance_ctl.sh launch dev-1`) with this checkout's
 project (`flowpad-oss`) indexed, and a public tunnel to its backend. The checkout's `.env.local`
@@ -16,7 +16,7 @@ the tester's own session, so this is a checklist run, not a Playwright spec. Rec
 What this proves: a message source's credential is DECLARED (a SecretPack in the agent's
 project) and FOUND (the project's `.env.local`) without being pasted into the source; a person on
 WhatsApp drives the agent through the agent's local deployment; the answer comes back on WhatsApp;
-and the agent's inbox holds the conversation with each side attributed correctly.
+and the agent's stream inbox holds the conversation with each side attributed correctly.
 
 test 1: The credential is declared, not pasted
 - [api] POST /graph/compute_node/@local/credentials/save {scope: project, project_id: <flowpad-oss>,
@@ -46,8 +46,8 @@ test 4: One turn
 - [api] the source's items: the inbound `alpha one` from the tester's number, the outbound reply
   from the business number
 
-test 5: The agent inbox attributes both sides
-- [browser] {APP_URL}/dock/agent/<agent id>/inbox → one WhatsApp conversation (WhatsApp glyph)
+test 5: The agent stream inbox attributes both sides
+- [browser] {APP_URL}/dock/agent/<agent id>/stream_inbox → one WhatsApp conversation (WhatsApp glyph)
 - [browser] open it: `alpha one` is from the tester (WhatsApp sender), the reply is from
   whatsapp-e2e (the agent), in that order
 - [api] FlowMessage rows of that conversation: sender `whatsapp:<tester>` then `agent:<agent id>`,
@@ -57,6 +57,6 @@ test 6: Ten turns, one conversation
 - [browser] send `turn two` … `turn ten` one at a time, each after the previous answer arrived
 - [browser] every answer echoes its own message as a key, and `turn <n>` counts 2…10 — the agent
   keeps one session per WhatsApp chat
-- [browser] the agent inbox still shows ONE conversation with 20 messages, alternating tester/agent
+- [browser] the agent stream inbox still shows ONE conversation with 20 messages, alternating tester/agent
 
 teardown: disable the source (keep the credential declaration; it holds no value).

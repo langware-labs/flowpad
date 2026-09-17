@@ -1,4 +1,4 @@
-"""Birth-time reconciliation for the two hub-mirrored inbox types.
+"""Birth-time reconciliation for the two hub-mirrored stream inbox types.
 
 ``Conversation`` and ``FlowMessage`` are the only entities whose rows mirror a hub
 counterpart closely enough that the hub owns their birth time. Everything else is
@@ -6,7 +6,7 @@ born locally, so this policy would be dead weight on the base ``Entity`` — hen
 plain functions here rather than methods someone might reach for by accident.
 
 The rule they encode is small but easy to get wrong, and getting it wrong is what
-produced the inbox-reshuffle bug: a locally re-created row is stamped ``now()``,
+produced the stream-inbox-reshuffle bug: a locally re-created row is stamped ``now()``,
 which makes it look NEWER than the hub, so any repair placed behind a staleness
 check is unreachable and the wrong value defends itself. Both callers must
 therefore consult these SEPARATELY from ``is_stale`` — never behind it.

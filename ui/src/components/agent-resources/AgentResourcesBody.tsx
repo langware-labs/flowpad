@@ -208,7 +208,7 @@ export function AgentResourcesBody() {
   // navigation, see this repo's own doctrine) already writes it there before
   // this pane renders. A source created here is that agent's, the same way
   // `AttachedChannelsBar` stamps `owner` for a channel added from the agent's
-  // Inbox view; before this, `owner` was never set at all and every source
+  // Stream Inbox view; before this, `owner` was never set at all and every source
   // created from this panel came back unowned regardless of which agent's
   // editor it was opened from.
   const { activeEntityTypeId } = useContext();

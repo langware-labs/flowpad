@@ -1,6 +1,6 @@
-"""Server-owned projection of the messages belonging to one Agent inbox.
+"""Server-owned projection of the messages belonging to one Agent stream inbox.
 
-An Agent's inbox is the rows it OWNS — sources, threads, conversations carry
+An Agent's stream inbox is the rows it OWNS — sources, threads, conversations carry
 an ``owner`` — so this is a filter, not a walk from one provider."""
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 
 
-class AgentInboxScopeError(ValueError):
-    """The requested Agent inbox scope cannot be resolved or does not own a target."""
+class AgentStreamInboxScopeError(ValueError):
+    """The requested Agent stream inbox scope cannot be resolved or does not own a target."""
 
     def __init__(self, message: str, *, status_code: int = 404):
         super().__init__(message)
@@ -19,8 +19,8 @@ class AgentInboxScopeError(ValueError):
 
 
 @dataclass(frozen=True)
-class AgentInboxScope:
-    """The local rows an Agent's inbox is made of."""
+class AgentStreamInboxScope:
+    """The local rows an Agent's stream inbox is made of."""
 
     agent_id: str
     source_id: str | None
@@ -44,11 +44,11 @@ class AgentInboxScope:
 
     def require_message(self, flow_message_id: str) -> None:
         if flow_message_id not in self.flow_message_ids:
-            raise AgentInboxScopeError("FlowMessage is not in this Agent inbox")
+            raise AgentStreamInboxScopeError("FlowMessage is not in this Agent stream inbox")
 
     def require_conversation(self, conversation_id: str) -> None:
         if conversation_id not in self.conversation_ids:
-            raise AgentInboxScopeError("Conversation is not in this Agent inbox")
+            raise AgentStreamInboxScopeError("Conversation is not in this Agent stream inbox")
 
 
 def is_message_source(source) -> bool:
@@ -61,8 +61,8 @@ def is_message_source(source) -> bool:
     return bool(driver is not None and getattr(driver, "sends", False))
 
 
-async def resolve_agent_inbox_scope(agent_id: str) -> AgentInboxScope:
-    """The rows in an Agent's inbox — a filter on ``owner``, not a walk.
+async def resolve_agent_stream_inbox_scope(agent_id: str) -> AgentStreamInboxScope:
+    """The rows in an Agent's stream inbox — a filter on ``owner``, not a walk.
 
     An Agent's message sources are the ones it OWNS (``DataSource.find_owned``,
     which also resolves rows written before ``owner`` existed). Its
@@ -72,7 +72,7 @@ async def resolve_agent_inbox_scope(agent_id: str) -> AgentInboxScope:
     and never loses a row the backfill has not reached. ``flow_message_ids``
     stays derived from the sources' items: the set of messages IN an
     agent-owned conversation is not provably the same set (the agent's own
-    turn may write rows that are not source-backed), and the inbox list keys
+    turn may write rows that are not source-backed), and the stream inbox list keys
     on this one.
     """
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
@@ -87,9 +87,9 @@ async def resolve_agent_inbox_scope(agent_id: str) -> AgentInboxScope:
 
     agent_id = str(agent_id or "").strip()
     if not is_valid_entity_id(agent_id):
-        raise AgentInboxScopeError("Invalid Agent id", status_code=400)
+        raise AgentStreamInboxScopeError("Invalid Agent id", status_code=400)
     if await Agent.get_one({"id": agent_id}) is None:
-        raise AgentInboxScopeError("Agent not found")
+        raise AgentStreamInboxScopeError("Agent not found")
 
     owner = TypeId(type=EntityType.AGENT.value, id=agent_id)
     sources = sorted(
@@ -113,7 +113,7 @@ async def resolve_agent_inbox_scope(agent_id: str) -> AgentInboxScope:
     thread_ids.update(str(t.id) for t in await MessageThread.get_all({"owner": str(owner)}))
     conversation_ids.update(str(c.id) for c in await Conversation.get_all({"owner": str(owner)}))
 
-    return AgentInboxScope(
+    return AgentStreamInboxScope(
         agent_id=agent_id,
         source_id=source_ids[0] if source_ids else None,
         source_ids=frozenset(source_ids),
@@ -124,4 +124,4 @@ async def resolve_agent_inbox_scope(agent_id: str) -> AgentInboxScope:
     )
 
 
-__all__ = ["AgentInboxScope", "AgentInboxScopeError", "resolve_agent_inbox_scope"]
+__all__ = ["AgentStreamInboxScope", "AgentStreamInboxScopeError", "resolve_agent_stream_inbox_scope"]

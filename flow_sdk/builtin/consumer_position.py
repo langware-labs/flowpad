@@ -100,7 +100,7 @@ class ConsumerPosition(Entity):
         """Get-or-create by ``(consumer, data_source_id)`` — a lookup, never a derived id.
 
         On CREATE the watermark starts at *baseline* (the newest existing row), so a fresh
-        listener yields arrivals, not history — today's ``Inbox.listen`` semantics. Pass
+        listener yields arrivals, not history — today's ``StreamInbox.listen`` semantics. Pass
         ``None`` to start from the beginning; a folder consumer does, because a search index
         has to see the tree once.
 

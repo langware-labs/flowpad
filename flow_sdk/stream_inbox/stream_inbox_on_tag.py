@@ -1,4 +1,4 @@
-"""What the inbox announces, and the grammar it announces it in.
+"""What the stream inbox announces, and the grammar it announces it in.
 
 Follows the ``<family>_on_tag.py`` convention (see ``flow_sdk/ingest/ingest_on_tag.py``
 and ``flow_sdk/db/entity_on_tag.py``): the family's tag strings are declared in
@@ -6,7 +6,7 @@ one file rather than invented at whichever call site needed one first.
 
 One tag lives here today::
 
-    inbox.<provider>.message.projected
+    stream_inbox.<provider>.message.projected
       target: source_item:<id>
       scope:  data_source:<id>
       data:   {entity_id, source_id}
@@ -33,7 +33,7 @@ def emit_projected_tag(item) -> None:
     from flow_sdk.tags import emit_tag, target_of  # noqa: PLC0415
 
     emit_tag(
-        f"inbox.{item.provider or 'unknown'}.message.projected",
+        f"stream_inbox.{item.provider or 'unknown'}.message.projected",
         target_of("source_item", item.id),
         {"entity_id": item.id, "source_id": item.data_source_id},
         ctx={"scope": [target_of("data_source", item.data_source_id)]},

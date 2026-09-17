@@ -53,6 +53,7 @@ class AgentMailSource(EmailAddressing, Source):
 
     Config = AgentMailConfig
     provider = "agentmail"
+    identity_config_key = "inbox"
     durable_cursor = True
     page_size = PAGE_LIMIT
     pages_per_pass = 1

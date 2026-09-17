@@ -1,4 +1,4 @@
-"""The inbox projection — lookup identity, subject threading, self-authorship.
+"""The stream inbox projection — lookup identity, subject threading, self-authorship.
 
 The pure half is table-tested here. The projection round-trip (SourceItem →
 Conversation + FlowMessage) is covered by the DB-backed tests below.
@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.inbox.projection import (
+from flow_sdk.stream_inbox.projection import (
     channel_of,
     is_message,
     normalize_subject,
@@ -23,7 +23,7 @@ class TestEnvelope:
     reads it from the item's payload, lifting a row the migration has not reached."""
 
     def test_an_unmigrated_email_row_yields_its_header(self):
-        from flow_sdk.inbox.projection import _envelope_of
+        from flow_sdk.stream_inbox.projection import _envelope_of
 
         row = SimpleNamespace(
             origin=None, data=None, provider="gmail", kind="content.message.email", segment_key="INBOX",
@@ -35,7 +35,7 @@ class TestEnvelope:
         assert [p.name for p in envelope.recipients] == ["Bo"] and envelope.sent_at.year == 2026
 
     def test_a_feed_item_has_no_envelope(self):
-        from flow_sdk.inbox.projection import _envelope_of
+        from flow_sdk.stream_inbox.projection import _envelope_of
 
         row = SimpleNamespace(origin=None, data=None, provider="rss", kind="content.feed.item", segment_key="f", external_id="e")
         assert _envelope_of(row, None) is None
@@ -97,8 +97,8 @@ class TestKindGate:
     """`kind` is what separates a message from a document.
 
     Regression: the first live run had no gate, so 344 Hacker News stories
-    were projected into the Inbox as conversations. A feed entry is an
-    article; only `content.message.*` belongs in an inbox.
+    were projected into the Stream Inbox as conversations. A feed entry is an
+    article; only `content.message.*` belongs in a stream inbox.
     """
 
     @pytest.mark.parametrize("kind", ["content.message.email", "content.message.chat",
@@ -117,7 +117,7 @@ class TestKindGate:
 
     @pytest.mark.asyncio
     async def test_a_feed_item_projects_to_nothing(self):
-        from flow_sdk.inbox.projection import project_source_item
+        from flow_sdk.stream_inbox.projection import project_source_item
 
         # Returns before touching the DB — no source lookup, no conversation.
         assert await project_source_item(
@@ -140,7 +140,7 @@ class TestConcurrentPlacement:
         from flow_sdk.builtin.data_source import DataSource
         from flow_sdk.builtin.flow_message import FlowMessage
         from flow_sdk.builtin.source_item import SourceItem
-        from flow_sdk.inbox.projection import project_source_item
+        from flow_sdk.stream_inbox.projection import project_source_item
 
         source = DataSource(
             name=f"race {uuid.uuid4().hex[:8]}", provider="telegram", channel="telegram",
@@ -176,7 +176,7 @@ class TestConcurrentPlacement:
 
         from flow_sdk.builtin.data_source import DataSource
         from flow_sdk.builtin.source_item import SourceItem
-        from flow_sdk.inbox.projection import project_source_item
+        from flow_sdk.stream_inbox.projection import project_source_item
 
         source = DataSource(
             name=f"race {uuid.uuid4().hex[:8]}", provider="telegram", channel="telegram",
@@ -193,7 +193,7 @@ class TestConcurrentPlacement:
         await item.save()
         projected = []
         monkeypatch.setattr(
-            "flow_sdk.inbox.inbox_on_tag.emit_projected_tag",
+            "flow_sdk.stream_inbox.stream_inbox_on_tag.emit_projected_tag",
             lambda projected_item: projected.append(str(projected_item.id)),
         )
 
@@ -216,19 +216,19 @@ class TestSenderMapping:
 
     @pytest.mark.asyncio
     async def test_an_external_sender_is_never_empty(self):
-        from flow_sdk.inbox.projection import _sender_for
+        from flow_sdk.stream_inbox.projection import _sender_for
 
         item = SimpleNamespace(author_external_id="ami@langware.ai", author_display="Ami")
         source = SimpleNamespace(account_key="me@example.com")
         sender_id, name = await _sender_for(item, source, "gmail")
-        # An EMPTY sender_id is never counted unread at all (inbox.count_unread
+        # An EMPTY sender_id is never counted unread at all (stream_inbox.count_unread
         # requires `latest.sender_id`), so the fallback must still be a string.
         assert sender_id == "gmail:ami@langware.ai"
         assert name == "Ami"
 
     @pytest.mark.asyncio
     async def test_an_unknown_author_still_yields_a_sender(self):
-        from flow_sdk.inbox.projection import _sender_for
+        from flow_sdk.stream_inbox.projection import _sender_for
 
         sender_id, _ = await _sender_for(
             SimpleNamespace(author_external_id=None, author_display=None),
@@ -238,7 +238,7 @@ class TestSenderMapping:
 
     @pytest.mark.asyncio
     async def test_our_own_address_maps_to_the_local_user(self, monkeypatch):
-        from flow_sdk.inbox import projection
+        from flow_sdk.stream_inbox import projection
 
         monkeypatch.setattr(
             "flow_sdk.builtin.user.User.get_local",
@@ -290,18 +290,18 @@ class TestPermalinkDerivation:
 
 class TestDisplayName:
     def test_a_name_is_extracted_from_the_rfc_form(self):
-        from flow_sdk.inbox.projection import display_name_of
+        from flow_sdk.stream_inbox.projection import display_name_of
 
         assert display_name_of('"Ada Lovelace" <ada@x.io>', "ada@x.io") == "Ada Lovelace"
         assert display_name_of("Ada Lovelace <ada@x.io>", "ada@x.io") == "Ada Lovelace"
 
     def test_a_bare_address_stays_the_address(self):
-        from flow_sdk.inbox.projection import display_name_of
+        from flow_sdk.stream_inbox.projection import display_name_of
 
         assert display_name_of("ada@x.io", "ada@x.io") == "ada@x.io"
 
     def test_an_empty_display_falls_back_to_the_address(self):
-        from flow_sdk.inbox.projection import display_name_of
+        from flow_sdk.stream_inbox.projection import display_name_of
 
         # Never render an empty byline.
         assert display_name_of("", "ada@x.io") == "ada@x.io"
@@ -309,7 +309,7 @@ class TestDisplayName:
 
 class TestSelfAddresses:
     def test_identities_and_the_legacy_account_key_both_count(self):
-        from flow_sdk.inbox.projection import self_addresses
+        from flow_sdk.stream_inbox.projection import self_addresses
 
         source = SimpleNamespace(
             account_identities=["Me@Example.com", "alias@example.com"],
@@ -320,14 +320,14 @@ class TestSelfAddresses:
     def test_an_alias_maps_to_the_local_user_too(self):
         # One mailbox commonly answers to several addresses; mail I sent from
         # an alias is still mine.
-        from flow_sdk.inbox.projection import self_addresses
+        from flow_sdk.stream_inbox.projection import self_addresses
 
         source = SimpleNamespace(account_identities=["a@x.io", "b@x.io"], account_key="")
         assert "b@x.io" in self_addresses(source)
 
 
 class TestProjectedAnnounce:
-    """`inbox.*.message.projected` means ARRIVAL. The reconcile sweep and the
+    """`stream_inbox.*.message.projected` means ARRIVAL. The reconcile sweep and the
     `.created` handler both reach `_place_message` for the same item; only the
     call that created the row may announce, or every message is announced
     twice and an agent mailbox answers it twice."""
@@ -337,10 +337,10 @@ class TestProjectedAnnounce:
     async def test_sweep_first_then_created_handler_announces_once(self, monkeypatch):
         from types import SimpleNamespace
 
-        import flow_sdk.inbox.inbox_on_tag as tags_mod
+        import flow_sdk.stream_inbox.stream_inbox_on_tag as tags_mod
         from flow_sdk.builtin.data_source import DataSource
         from flow_sdk.builtin.source_item import SourceItem
-        from flow_sdk.inbox.projection import _on_item, project_source_item
+        from flow_sdk.stream_inbox.projection import _on_item, project_source_item
 
         announced: list[str] = []
         monkeypatch.setattr(tags_mod, "emit_projected_tag", lambda item: announced.append(item.id))

@@ -2,10 +2,10 @@
 
 Creates a fresh hub project + conversation, seeds 8 messages that walk through
 a real-feeling incident together, attaches typed-entity chips + text. The
-conversation is reachable from both instances' inboxes:
+conversation is reachable from both instances' stream inboxes:
 
-  Alice: http://localhost:4098/dock/inbox  → click the new row
-  Bob:   http://localhost:4099/dock/inbox  → click the new row
+  Alice: http://localhost:4098/dock/stream_inbox  → click the new row
+  Bob:   http://localhost:4099/dock/stream_inbox  → click the new row
 
 Requires:
   - Local hub on $FLOWPAD_HUB_URL (default http://localhost:8093) — see
@@ -28,7 +28,6 @@ import time
 from typing import Any
 
 import httpx
-
 
 HUB = os.environ.get("FLOWPAD_HUB_URL", "http://localhost:8093")
 OSS_BE = os.environ.get("OSS_BE", "http://localhost:9008")

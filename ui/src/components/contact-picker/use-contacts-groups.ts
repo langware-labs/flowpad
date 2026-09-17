@@ -8,7 +8,7 @@ import { participantKey } from './use-contacts';
 /**
  * All contacts groups: computed groups (frontend-derived rosters like
  * "Project Members") pinned first, then the stored address-book groups
- * created from the inbox. Feeds the ContactPicker's group rows — selecting a
+ * created from the stream inbox. Feeds the ContactPicker's group rows — selecting a
  * group bulk-adds its members as individual participants.
  */
 export function useContactsGroups(enabled: boolean = true): { groups: ContactsGroup[]; refetch: () => void } {

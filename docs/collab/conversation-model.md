@@ -94,8 +94,8 @@ hidden *until* a `FlowMessage` newer than the timestamp lands, at which point ne
 activity revives the row.
 
 ```
-dismissed_at  → hides from the Recent Conversations STRIP only; Inbox ignores it.
-archived_at   → hides from BOTH the Inbox and the Recent strip.
+dismissed_at  → hides from the Recent Conversations STRIP only; Stream Inbox ignores it.
+archived_at   → hides from BOTH the Stream Inbox and the Recent strip.
 ```
 
 Per-message `FlowMessage.is_read` is orthogonal and unaffected by either.
@@ -243,10 +243,10 @@ conversation.jsonl  ◄── append FlowMessage pointer (source of truth)
 project_pointers_to_entity(rec)   ── ONLY writer of message_ids/count
         │   (via _set_projection + sentinel)
         ▼
-Conversation row  ── updated_date = max(message.updated_date) ── inbox order
+Conversation row  ── updated_date = max(message.updated_date) ── stream inbox order
         │
         ▼
-UI (Inbox / Recent strip)   ── dismissed_at / archived_at gate visibility
+UI (Stream Inbox / Recent strip)   ── dismissed_at / archived_at gate visibility
 ```
 
 Every arrow that mutates message state passes through the jsonl index and the

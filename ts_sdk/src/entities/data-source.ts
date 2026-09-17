@@ -104,7 +104,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   account_identities: string[] = [];
   /** Who may drive the owning agent from this channel — sender external ids
    *  (a Slack member id, an email address), one per provider's own namespace.
-   *  Empty admits nobody: see `EmailInbox.allowed`, the gate this backs for
+   *  Empty admits nobody: see `AgentMailbox.allowed`, the gate this backs for
    *  every channel-bound agent, not only an allocated mailbox. */
   inbound_allowed_senders: string[] = [];
   required_capabilities: string[] = [];

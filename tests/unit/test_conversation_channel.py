@@ -9,8 +9,8 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.inbox.projection import _stamp_channel, project_source_item
 from flow_sdk.ingest import IngestMode, SourceItemSpec, ingest_items
+from flow_sdk.stream_inbox.projection import _stamp_channel, project_source_item
 
 
 @pytest.mark.asyncio

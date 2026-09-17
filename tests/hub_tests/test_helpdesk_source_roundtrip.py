@@ -1,4 +1,4 @@
-"""A guest opens a ticket; the desk owner's inbox gets it as a message source
+"""A guest opens a ticket; the desk owner's stream inbox gets it as a message source
 and answers it — through the hub, end to end.
 
 Identities: THIS instance (alice, `hub_session`) owns the desk and polls it
@@ -24,9 +24,9 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.inbox.outbound import dispatch_channel_reply
-from flow_sdk.inbox.projection import reconcile_source
 from flow_sdk.ingest.sync import sync_source
+from flow_sdk.stream_inbox.outbound import dispatch_channel_reply
+from flow_sdk.stream_inbox.projection import reconcile_source
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -109,7 +109,7 @@ async def _await_hub_message(base, token, conv_id, *, containing: str, not_from:
 
 
 async def _poll(source: DataSource) -> None:
-    """One poll the way the server does it: the driver fetch, then the inbox
+    """One poll the way the server does it: the driver fetch, then the stream inbox
     projection's reconcile sweep (the lane a first, BACKFILL sync relies on —
     pytest never starts the bus lanes, so the sweep is called directly)."""
     await sync_source(source)
@@ -169,7 +169,7 @@ async def test_a_guest_ticket_reaches_the_desk_owner_as_a_message_source_and_the
         rows = await FlowMessage.get_all({"conversation_id": ticket})
         assert sorted(r.id for r in rows) == sorted([first["id"], reply["id"]])
         loaded = await DataSource.get_one({"id": source.id})
-        from flow_sdk.inbox.projection import self_addresses
+        from flow_sdk.stream_inbox.projection import self_addresses
         sent_item = await SourceItem.find_existing(source.id, origin_in_ticket(reply["id"]))
         assert sent_item is not None and sent_item.author_external_id == me, (sent_item.author_external_id, me)
         assert me in self_addresses(loaded), (loaded.account_identities, loaded.account_key)
@@ -224,10 +224,10 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
     our wiring broken; a process that said nothing is the CLI's availability."""
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.fs_store.type_id import TypeId
-    from flow_sdk.inbox import start_inbox
-    from flow_sdk.inbox.agent_scope import resolve_agent_inbox_scope
     from flow_sdk.schema.types import EntityType
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+    from flow_sdk.stream_inbox import start_stream_inbox
+    from flow_sdk.stream_inbox.agent_scope import resolve_agent_stream_inbox_scope
     from tests.hub_tests._hub_agent import create_hub_agent, delete_hub_agent
     from tests.hub_tests.test_agent_email_conversation import _ran_a_turn
 
@@ -235,7 +235,7 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
     await get_or_create_local_user()
     # The SAME call `server/app.py` makes: arms the projection lanes and the
     # agent runner, so a projected inbound message runs the turn.
-    start_inbox()
+    start_stream_inbox()
 
     agent_id = await create_hub_agent(base, token, f"desk-agent-{uuid.uuid4().hex[:8]}")
     agent = Agent(
@@ -267,8 +267,8 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
         await _poll(source)
         mine = await FlowMessage.get_one({"id": reply["id"]})
         assert mine is not None and mine.sender_id == f"agent:{agent_id}", mine.sender_id
-        scope = await resolve_agent_inbox_scope(agent_id)
-        assert ticket in scope.conversation_ids, "the ticket is in the agent's inbox, not the user's"
+        scope = await resolve_agent_stream_inbox_scope(agent_id)
+        assert ticket in scope.conversation_ids, "the ticket is in the agent's stream inbox, not the user's"
     finally:
         await source.delete()
         await agent.delete()

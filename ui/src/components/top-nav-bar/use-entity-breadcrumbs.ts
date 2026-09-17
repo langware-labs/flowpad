@@ -133,7 +133,7 @@ const PROJECT_HOME_CRUMB_LABEL = msg`Home`;
 /** The org graph addresses as "Organization › Graph" — see the crumb builder. */
 const ORGANIZATION_CRUMB_LABEL = msg`Organization`;
 const GRAPH_CRUMB_LABEL = msg`Graph`;
-const INBOX_CRUMB_LABEL = msg`Inbox`;
+const STREAM_INBOX_CRUMB_LABEL = msg`Stream Inbox`;
 
 /** Basename of an `asset_ref`, trailing separators ignored. */
 function basename(ref: string | null): string | null {
@@ -308,9 +308,9 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
 
   const crumbs = useMemo<Crumb[]>(() => {
     const out: Crumb[] = [];
-    const isAgentInbox = agentRoute?.view === 'inbox' && !!agentRoute.agentId;
+    const isAgentStreamInbox = agentRoute?.view === 'stream_inbox' && !!agentRoute.agentId;
     const isAgentConversation = dock?.viewType === ViewType.CONVERSATION && !!dock.agentScopeId;
-    const isAgentScoped = isAgentInbox || isAgentConversation;
+    const isAgentScoped = isAgentStreamInbox || isAgentConversation;
 
     // The project always leads — except on the hub, or in the transient window
     // where no project is selected, where there simply isn't one.
@@ -360,7 +360,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     }
 
     if (isAgentScoped && scopedAgentId && scopedAgentTypeId) {
-      const agentEntity = scopedAgent ?? (isAgentInbox ? (resolved.entity as Agent | null) : null);
+      const agentEntity = scopedAgent ?? (isAgentStreamInbox ? (resolved.entity as Agent | null) : null);
       out.push({
         key: `agent-${scopedAgentId}`,
         label: agentEntity ? entityLabel(agentEntity, scopedAgentTypeId) : labelForType(Agent.type),
@@ -371,13 +371,13 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         kind: 'ancestor',
       });
       out.push({
-        key: `agent-inbox-${scopedAgentId}`,
-        label: i18n._(INBOX_CRUMB_LABEL),
-        Icon: viewIcon(new DockPointer(ViewType.INBOX)),
-        pointer: isAgentInbox ? null : DockPointer.forAgentInbox(scopedAgentId),
-        kind: isAgentInbox ? 'current' : 'ancestor',
+        key: `agent-stream-inbox-${scopedAgentId}`,
+        label: i18n._(STREAM_INBOX_CRUMB_LABEL),
+        Icon: viewIcon(new DockPointer(ViewType.STREAM_INBOX)),
+        pointer: isAgentStreamInbox ? null : DockPointer.forAgentStreamInbox(scopedAgentId),
+        kind: isAgentStreamInbox ? 'current' : 'ancestor',
       });
-      if (isAgentInbox) return out;
+      if (isAgentStreamInbox) return out;
     }
 
     // The organization GRAPH is a lens on the People & teams screen, not a

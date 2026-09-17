@@ -5,9 +5,9 @@ process machinery. That is the property worth pinning: the gates are what stand
 between a public, permanent address and an agent holding tools, so they have to
 decide before anything expensive — or dangerous — happens.
 
-The file splits deliberately. The policy cases below build an ``EmailInbox``
+The file splits deliberately. The policy cases below build an ``AgentMailbox``
 directly and stay PURE — no row, no asset, no network — because
-``inbox.allowed()`` runs on every inbound message and must never reach the Hub.
+``mailbox.allowed()`` runs on every inbound message and must never reach the Hub.
 The rest drive ``handle_inbound`` and pin behaviour rather than shape.
 """
 from __future__ import annotations
@@ -15,23 +15,23 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.agent_mailbox import STATUS_ACTIVE, STATUS_DISABLED, AgentMailbox
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
-from flow_sdk.builtin.email_inbox import STATUS_ACTIVE, STATUS_DISABLED, EmailInbox
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.inbox.agent_runner import _is_own_outgoing, handle_inbound
+from flow_sdk.stream_inbox.agent_runner import _is_own_outgoing, handle_inbound
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 MAILBOX = "ada@agentmail.to"
 
 
-def _mailbox(*, status: str = STATUS_ACTIVE, allowed: list[str] | None = None) -> EmailInbox:
+def _mailbox(*, status: str = STATUS_ACTIVE, allowed: list[str] | None = None) -> AgentMailbox:
     """A mailbox projection. ``allowed()`` is pure, so this needs no row."""
-    return EmailInbox(
+    return AgentMailbox(
         address=MAILBOX,
         provider="agentmail",
-        provider_inbox_id="inbox-1",
+        provider_inbox_id="mbx-1",
         status=status,
         agent_typeid=TypeId(type="agent", id="00000000-0000-4000-8000-00000000abcd"),
         allowed_senders=list(allowed or []),
@@ -55,7 +55,7 @@ async def _source(agent_id: str, allowed: list[str] | None = None) -> DataSource
         config={
             "agent_id": agent_id,
             "address": MAILBOX,
-            "provider_inbox_id": "inbox-1",
+            "provider_inbox_id": "mbx-1",
         },
         account_key=MAILBOX,
         status=SourceStatus.ACTIVE.value,
@@ -105,7 +105,7 @@ async def test_listed_sender_is_admitted_case_and_space_insensitively():
 async def test_from_source_resolves_the_agent_from_owner_when_config_has_no_agent_id():
     """A channel `Agent.bind_channel` bound (Slack, Teams, …) carries no
     `config.agent_id` at all — that key belongs to the cloud-mailbox
-    (`allocate_inbox`) driver only. Its agent is the `owner`.
+    (`allocate_mailbox`) driver only. Its agent is the `owner`.
 
     Before the fix, `from_source` read only `config.get("agent_id")`, got
     `""`, and `TypeId(type="agent", id="")` raised — crashing
@@ -125,17 +125,17 @@ async def test_from_source_resolves_the_agent_from_owner_when_config_has_no_agen
         inbound_allowed_senders=["U0BP53L7Z5G"],
     )
 
-    inbox = EmailInbox.from_source(source)  # must not raise
+    mailbox = AgentMailbox.from_source(source)  # must not raise
 
-    assert inbox.agent_typeid == TypeId(type="agent", id=agent_id)
-    assert inbox.allowed("U0BP53L7Z5G") is True
+    assert mailbox.agent_typeid == TypeId(type="agent", id=agent_id)
+    assert mailbox.allowed("U0BP53L7Z5G") is True
 
 
 async def test_a_disabled_mailbox_overrides_the_list():
     """The switch is a kill switch — it must beat a populated allowlist."""
-    inbox = _mailbox(status=STATUS_DISABLED, allowed=["alice@example.com"])
-    assert inbox.is_active is False
-    assert inbox.allowed("alice@example.com") is False
+    mailbox = _mailbox(status=STATUS_DISABLED, allowed=["alice@example.com"])
+    assert mailbox.is_active is False
+    assert mailbox.allowed("alice@example.com") is False
 
 
 # ── the loop guard ────────────────────────────────────────────────────────────
@@ -188,9 +188,9 @@ async def test_a_listed_sender_passes_the_gate(mail_db):
     agent = await _agent("ada-admitted")
     source = await _source(agent.id, ["alice@example.com"])
 
-    inbox = EmailInbox.from_source(source)
-    assert inbox.allowed("alice@example.com") is True
-    assert inbox.allowed("stranger@x.com") is False
+    mailbox = AgentMailbox.from_source(source)
+    assert mailbox.allowed("alice@example.com") is True
+    assert mailbox.allowed("stranger@x.com") is False
 
 
 async def test_a_source_that_is_not_an_agents_mailbox_is_ignored(mail_db):

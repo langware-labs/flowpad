@@ -33,7 +33,7 @@ asset and runs in a source host, or is reached over REST from a worker — the c
 (`flow_sdk/sources/testing/`) is what makes that a gate rather than a claim.
 
 The contract package imports `flow_sdk.schema` and the standard library. It never imports
-`flow_sdk.builtin`, `ingest`, `inbox`, `blocks` or `server`; `tests/unit/assets/test_runtime_boundary.py`
+`flow_sdk.builtin`, `ingest`, `stream_inbox`, `blocks` or `server`; `tests/unit/assets/test_runtime_boundary.py`
 pins that in a fresh interpreter.
 
 ## The runtime: `flow_sdk/ingest/` and its neighbours
@@ -48,9 +48,9 @@ Everything the contract deliberately refuses is an **application** concern, and 
 | Idempotent writes: natural key + content digest | `ingest/ingestor.py`, `fs_store/serializer/db.py` | The contract returns values and writes nothing |
 | Health and parking (`config_error` stops, `transient` retries) | `ingest/health.py` | The contract raises; classifying a raise into a verdict is policy |
 | Reflection (`none` / `copy` / `symlink`) and `reindex_paths` | `ingest/reflect.py` | Where bytes land is the source ROW's choice, not the provider's |
-| Inbox projection, owner partition, reconcile lane, storm caps | `inbox/projection.py` | A message's placement in a person's inbox is a product rule |
-| Allowlists, `open_inbound`, self-address loop guards | `inbox/agent_runner.py`, `inbox/agent_scope.py` | Who may drive an agent is policy |
-| Pipes: `ConsumerPosition`, `page_after`, `Inbox.listen`, `FolderChanges.listen`, `Delivered.ack/reply` | `blocks/`, `builtin/consumer_position.py`, `builtin/ingest_order.py` | At-least-once consumption with a durable watermark is what the contract explicitly scrapped as an SDK feature |
+| Stream inbox projection, owner partition, reconcile lane, storm caps | `stream_inbox/projection.py` | A message's placement in a person's stream inbox is a product rule |
+| Allowlists, `open_inbound`, self-address loop guards | `stream_inbox/agent_runner.py`, `stream_inbox/agent_scope.py` | Who may drive an agent is policy |
+| Pipes: `ConsumerPosition`, `page_after`, `StreamInbox.listen`, `FolderChanges.listen`, `Delivered.ack/reply` | `blocks/`, `builtin/consumer_position.py`, `builtin/ingest_order.py` | At-least-once consumption with a durable watermark is what the contract explicitly scrapped as an SDK feature |
 | Hub relay, agent places, adoption hints | `builtin/agentic_process/*`, `builtin/agent_places.py` | Which machine holds the send-capable session is deployment |
 | Registry, source hosts, trust, venvs | `sources/registry.py`, `sources/runtime.py`, `sources/host/` | Loading and running a source is packaging, not the source's own contract |
 

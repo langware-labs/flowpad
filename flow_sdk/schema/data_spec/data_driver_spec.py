@@ -153,7 +153,7 @@ class DataDriverSpec(DataSpec):
     #: and throws on hydration.
     icon_name: str = ""
     #: Per-CHANNEL glyph names, for a spec that serves several channels through
-    #: one transport (the agent spec reaches gmail AND slack). The inbox chip
+    #: one transport (the agent spec reaches gmail AND slack). The stream inbox chip
     #: resolves `origin.kind` → the channel-named spec's `icon_name` first, then
     #: this map on the transport's spec — so a channel's icon stays an asset
     #: fact, never a frontend map.

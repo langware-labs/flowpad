@@ -13,7 +13,7 @@ import uuid
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
+from flow_sdk.blocks import EmailMessageSpec, StreamInbox, workflow
 from flow_sdk.builtin.consumer_position import ConsumerPosition
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.ingest.driver_runtime import SendOutcome, SendStatus
@@ -29,15 +29,15 @@ def _name() -> str:
     return f"w-{mint_uuid()}"
 
 
-async def _inbox(addr: str) -> tuple[Inbox, DataSource]:
+async def _stream_inbox(addr: str) -> tuple[StreamInbox, DataSource]:
     """A source that knows its own address, so a sent copy is recognised as ours."""
-    src = DataSource(name=f"pre {uuid.uuid4().hex[:8]}", provider="scripted", config={"inbox": addr}, account_key=ME)
+    src = DataSource(name=f"pre {uuid.uuid4().hex[:8]}", provider="scripted", config={"address": addr}, account_key=ME)
     await src.save()
-    return Inbox(addr, provider="scripted"), src
+    return StreamInbox(addr, provider="scripted"), src
 
 
-async def _one(inbox: Inbox):
-    agen = inbox.listen(poll_every=0)
+async def _one(stream_inbox: StreamInbox):
+    agen = stream_inbox.listen(poll_every=0)
     try:
         return await agen.__anext__()
     finally:
@@ -49,10 +49,10 @@ async def _one(inbox: Inbox):
 
 async def test_reply_sends_records_then_acks():
     with scripted_provider("scripted") as driver:
-        inbox, src = await _inbox(f"{mint_uuid()}@x")
+        stream_inbox, src = await _stream_inbox(f"{mint_uuid()}@x")
         driver.push({"body": "hi", "author": "alice@example.com", "thread_key": "t1"})
         async with workflow(_name()) as _:
-            m = await _one(inbox)
+            m = await _one(stream_inbox)
             outcome = await m.reply(EmailMessageSpec.reply_to(m, body="hello back"))
 
     assert outcome.external_id and len(driver.sent) == 1
@@ -65,7 +65,7 @@ async def test_reply_sends_records_then_acks():
 async def test_a_drafted_outcome_acks():
     """A draft reached nobody, but it is a real outcome — not a failure to retry."""
     with scripted_provider("scripted") as driver:
-        inbox, _ = await _inbox(f"{mint_uuid()}@x")
+        stream_inbox, _ = await _stream_inbox(f"{mint_uuid()}@x")
         driver.push({"body": "hi"})
 
         async def draft(source, **kw):
@@ -73,7 +73,7 @@ async def test_a_drafted_outcome_acks():
 
         driver.send = draft
         async with workflow(_name()):
-            m = await _one(inbox)
+            m = await _one(stream_inbox)
             outcome = await m.reply(EmailMessageSpec.reply_to(m, body="x"))
     assert outcome.drafted and m.acked
 
@@ -83,11 +83,11 @@ async def test_a_drafted_outcome_acks():
 
 async def test_a_crash_between_send_and_record_never_resends_when_the_copy_turns_up():
     with scripted_provider("scripted") as driver:
-        inbox, src = await _inbox(f"{mint_uuid()}@x")
+        stream_inbox, src = await _stream_inbox(f"{mint_uuid()}@x")
         name = _name()
         driver.push({"body": "hi", "external_id": "<m1>", "thread_key": "t1"})
         async with workflow(name):
-            m = await _one(inbox)                       # handed out; we "send" and die
+            m = await _one(stream_inbox)                       # handed out; we "send" and die
             position = await ConsumerPosition.ensure_for(name, str(src.id))
             position.replying_to = str(m._row.id)
             from datetime import datetime, timezone
@@ -97,7 +97,7 @@ async def test_a_crash_between_send_and_record_never_resends_when_the_copy_turns
         driver.push({"body": "hello back", "author": ME, "thread_key": "t1", "reply_to_external_id": "<m1>"})
 
         async with workflow(name):                      # restart
-            again = await _one(inbox)
+            again = await _one(stream_inbox)
             assert again.redelivered
             outcome = await again.reply(EmailMessageSpec.reply_to(again, body="hello back"))
     assert driver.sent == [], "the copy was found — nothing may be sent again"
@@ -109,18 +109,18 @@ async def test_a_crash_with_no_copy_to_be_found_acks_with_needs_review_and_says_
     off = on_tag("ingest.*.reply.needs_review", lambda e: seen.append(e.data))
     try:
         with scripted_provider("scripted") as driver:
-            inbox, src = await _inbox(f"{mint_uuid()}@x")
+            stream_inbox, src = await _stream_inbox(f"{mint_uuid()}@x")
             name = _name()
             driver.push({"body": "hi", "thread_key": "t1"})
             async with workflow(name):
-                m = await _one(inbox)
+                m = await _one(stream_inbox)
                 position = await ConsumerPosition.ensure_for(name, str(src.id))
                 position.replying_to = str(m._row.id)
                 from datetime import datetime, timezone
                 position.replying_started_at = datetime.now(timezone.utc)
                 await position.commit()
             async with workflow(name):
-                again = await _one(inbox)
+                again = await _one(stream_inbox)
                 outcome = await again.reply(EmailMessageSpec.reply_to(again, body="x"))
     finally:
         off()
@@ -133,24 +133,24 @@ async def test_a_crash_with_no_copy_to_be_found_acks_with_needs_review_and_says_
 
 async def test_a_crash_between_record_and_ack_only_owes_the_ack():
     with scripted_provider("scripted") as driver:
-        inbox, src = await _inbox(f"{mint_uuid()}@x")
+        stream_inbox, src = await _stream_inbox(f"{mint_uuid()}@x")
         name = _name()
         driver.push({"body": "hi"})
         async with workflow(name):
-            m = await _one(inbox)
+            m = await _one(stream_inbox)
             position = await ConsumerPosition.ensure_for(name, str(src.id))
             position.replying_to = str(m._row.id)
             position.replied_external_id = "<sent-once>"
             await position.commit()
         async with workflow(name):
-            again = await _one(inbox)
+            again = await _one(stream_inbox)
             outcome = await again.reply(EmailMessageSpec.reply_to(again, body="x"))
     assert driver.sent == [] and outcome.external_id == "<sent-once>" and again.acked
 
 
 async def test_a_send_that_raises_leaves_the_intent_so_the_retry_cannot_double():
     with scripted_provider("scripted") as driver:
-        inbox, src = await _inbox(f"{mint_uuid()}@x")
+        stream_inbox, src = await _stream_inbox(f"{mint_uuid()}@x")
         name = _name()
         driver.push({"body": "hi"})
 
@@ -159,7 +159,7 @@ async def test_a_send_that_raises_leaves_the_intent_so_the_retry_cannot_double()
 
         real_send, driver.send = driver.send, explode
         async with workflow(name):
-            m = await _one(inbox)
+            m = await _one(stream_inbox)
             with pytest.raises(ValueError):
                 await m.reply(EmailMessageSpec.reply_to(m, body="x"))
         position = (await ConsumerPosition.get_all({"data_source_id": str(src.id)}))[0]
@@ -167,7 +167,7 @@ async def test_a_send_that_raises_leaves_the_intent_so_the_retry_cannot_double()
 
         driver.send = real_send
         async with workflow(name):
-            again = await _one(inbox)
+            again = await _one(stream_inbox)
             assert again.redelivered
             outcome = await again.reply(EmailMessageSpec.reply_to(again, body="x"))
     assert outcome is None and driver.sent == [], "may or may not have sent: never resend"
@@ -177,11 +177,11 @@ async def test_a_send_that_raises_leaves_the_intent_so_the_retry_cannot_double()
 async def test_the_fallback_lookup_matches_a_thread_when_the_driver_stamps_no_reply_id():
     """Slack-shaped: the sent copy carries the thread, not the replied-to id."""
     with scripted_provider("scripted") as driver:
-        inbox, src = await _inbox(f"{mint_uuid()}@x")
+        stream_inbox, src = await _stream_inbox(f"{mint_uuid()}@x")
         name = _name()
         driver.push({"body": "hi", "thread_key": "t9"})
         async with workflow(name):
-            m = await _one(inbox)
+            m = await _one(stream_inbox)
             position = await ConsumerPosition.ensure_for(name, str(src.id))
             position.replying_to = str(m._row.id)
             from datetime import datetime, timedelta, timezone
@@ -189,6 +189,6 @@ async def test_the_fallback_lookup_matches_a_thread_when_the_driver_stamps_no_re
             await position.commit()
         driver.push({"body": "reply", "author": ME, "thread_key": "t9"})   # no reply_to_external_id
         async with workflow(name):
-            again = await _one(inbox)
+            again = await _one(stream_inbox)
             outcome = await again.reply(EmailMessageSpec.reply_to(again, body="reply"))
     assert driver.sent == [] and outcome is not None and outcome.recorded

@@ -3,7 +3,7 @@ import { DataSource, DataDriver, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /** The configured sources — ONE named query, shared by DataSourcesView and the
- *  inbox's channel attribution, so the cached result and any future shape
+ *  stream inbox's channel attribution, so the cached result and any future shape
  *  change stay in step between them. Global for the reason stated below. */
 export const sourcesQuery = new QueryRequest({
   type: DataSource.type,

@@ -6,7 +6,7 @@ application tiers for the traces a provider leaves when its KNOWLEDGE escapes it
 of provider code, a shipped source's class name, a query filtering rows by one source's name, or a
 per-source table row. It also requires every shipped asset to carry its own ``source.py``.
 
-Naming an asset to USE it — ``Inbox(provider="agentmail")``, ``DataDriver.loaded("cloud_email")`` — is
+Naming an asset to USE it — ``StreamInbox(provider="agentmail")``, ``DataDriver.loaded("cloud_email")`` — is
 not knowledge about it, the way opening a skill by name is not; what the machinery then needs, it
 asks the source for. ``EXCEPTIONS`` is the user's to grant.
 """

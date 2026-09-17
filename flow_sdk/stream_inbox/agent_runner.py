@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 async def _agent_for(owner) -> Optional[Any]:
     """The agent this source belongs to, or None when the owner is a user."""
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
-    from flow_sdk.inbox.projection import is_agent_owner  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import is_agent_owner  # noqa: PLC0415
 
     return await Agent.get_by_id(owner.id) if is_agent_owner(owner) else None
 
@@ -60,7 +60,7 @@ async def _conversation_id_for(item, source, owner) -> Optional[str]:
     threads repoints it — a second derivation here would answer with the
     pre-merge id and split the session.
     """
-    from flow_sdk.inbox.projection import channel_of, find_thread, thread_key_for  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import channel_of, find_thread, thread_key_for  # noqa: PLC0415
 
     thread = await find_thread(channel_of(source), thread_key_for(item, item.name or ""), owner)
     return str(getattr(thread, "conversation_id", "") or "") or None
@@ -70,7 +70,7 @@ def _admits(source, author: str) -> bool:
     """Whether `author` may drive the agent through this source.
 
     Answered from the SOURCE alone — its status and its cached allowlist —
-    not from an `EmailInbox` built out of it: that constructor needs a mailbox's
+    not from an `AgentMailbox` built out of it: that constructor needs a mailbox's
     `agent_id`, which a desk or a chat channel does not carry, and a gate that
     raises inside the bus handler reads as "the agent never answered".
 
@@ -79,9 +79,9 @@ def _admits(source, author: str) -> bool:
     help desk), under which an EMPTY list admits everyone; a non-empty list
     restricts either way, and a paused source admits nobody either way.
     """
+    from flow_sdk.builtin.agent_mailbox import sender_allowed  # noqa: PLC0415
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
     from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
-    from flow_sdk.builtin.email_inbox import sender_allowed  # noqa: PLC0415
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
         return False
@@ -99,7 +99,7 @@ def _is_own_outgoing(item, source) -> bool:
     a permitted sender, but "should never" is not a mechanism, and the failure
     mode here is an agent answering itself forever.
     """
-    from flow_sdk.inbox.projection import is_self_address  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import is_self_address  # noqa: PLC0415
 
     return is_self_address(source, item.author_external_id or "")
 
@@ -181,9 +181,9 @@ async def handle_inbound(item) -> bool:
     """
     from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply, conversation_turn_lock  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
-    from flow_sdk.inbox.projection import display_name_of, owner_of  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+    from flow_sdk.stream_inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import display_name_of, owner_of  # noqa: PLC0415
 
     source = await DataSource.get_one({"id": item.data_source_id})
     if source is None:
@@ -276,10 +276,10 @@ def subscribe() -> Callable[[], None]:
     """
     from flow_sdk.tags import on_tag  # noqa: PLC0415
 
-    # `inbox.*.message.projected`, NOT `ingest.*.item.created`. The trigger for
+    # `stream_inbox.*.message.projected`, NOT `ingest.*.item.created`. The trigger for
     # a turn is not "mail was ingested" but "mail became a conversation": this
     # handler reads the thread's `conversation_id`, which the projection writes.
     # Subscribing to the ingest tag put both handlers on the same emit, and Law
     # 3 detaches each one — so this raced the projection's write, read no
     # thread, and dropped the mail with a warning nobody sees.
-    return on_tag("inbox.*.message.projected", _on_item)
+    return on_tag("stream_inbox.*.message.projected", _on_item)

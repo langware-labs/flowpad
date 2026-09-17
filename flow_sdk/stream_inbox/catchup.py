@@ -1,11 +1,11 @@
-"""Hub inbox catch-up — the one-shot ``conversation-list`` sweep.
+"""Hub stream inbox catch-up — the one-shot ``conversation-list`` sweep.
 
 The hub's WebSocket fan-out is LIVE-ONLY: ``Conversation._fanout_message``
 pushes a frame to each participant's currently-open connections and drops it
 for anyone who isn't connected. There is no offline queue and no replay on
 (re)connect. So every transition from "no hub session" to "hub session" must
 pull the backlog explicitly, or messages that landed while we were away stay
-invisible until the user hits the Inbox's manual refresh.
+invisible until the user hits the stream inbox's manual refresh.
 
 Two transitions qualify, and both call :func:`start_hub_catchup`:
 
@@ -61,7 +61,7 @@ async def run_hub_catchup(reason: str) -> None:
     from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
 
     if not hub_auth_available():
-        logger.debug("[inbox] catch-up (%s) skipped — no cloud session", reason)
+        logger.debug("[stream-inbox] catch-up (%s) skipped — no cloud session", reason)
         return
     local_user = await User.get_one({"uname": "local"})
     if not local_user:
@@ -72,11 +72,11 @@ async def run_hub_catchup(reason: str) -> None:
 
     # ``announce_invitations=True``: nobody asked for this call, so no client
     # refetch follows it. Without the announce, an invitation materialized here
-    # lands in SQLite and stops there — invisible to an already-mounted Inbox.
+    # lands in SQLite and stops there — invisible to an already-mounted stream inbox.
     resp = await handle_conversation_list(local_user.typeid, announce_invitations=True)
     dispatched = (getattr(resp, "data", None) or {}).get("bg_fetch_dispatched") or []
     logger.info(
-        "[inbox] catch-up (%s): queued message fetch for %d conversation(s)",
+        "[stream-inbox] catch-up (%s): queued message fetch for %d conversation(s)",
         reason,
         len(dispatched),
     )
@@ -118,13 +118,13 @@ async def flush_pending_outbox(reason: str) -> None:
             flushed += 1
         except Exception:  # noqa: BLE001
             logger.info(
-                "[inbox] outbox flush (%s) failed for conversation %s",
+                "[stream-inbox] outbox flush (%s) failed for conversation %s",
                 reason,
                 conversation_id,
                 exc_info=True,
             )
     logger.info(
-        "[inbox] outbox flush (%s): pushed queued messages for %d of %d conversation(s)",
+        "[stream-inbox] outbox flush (%s): pushed queued messages for %d of %d conversation(s)",
         reason,
         flushed,
         len(conversation_ids),
@@ -142,9 +142,9 @@ def start_hub_catchup(reason: str) -> None:
         try:
             await run_hub_catchup(reason)
         except Exception:  # noqa: BLE001
-            logger.info("[inbox] catch-up (%s) skipped", reason, exc_info=True)
+            logger.info("[stream-inbox] catch-up (%s) skipped", reason, exc_info=True)
 
     try:
-        asyncio.get_running_loop().create_task(_run(), name=f"inbox-catchup:{reason}")
+        asyncio.get_running_loop().create_task(_run(), name=f"stream-inbox-catchup:{reason}")
     except RuntimeError:
-        logger.debug("[inbox] catch-up (%s) skipped — no running event loop", reason)
+        logger.debug("[stream-inbox] catch-up (%s) skipped — no running event loop", reason)

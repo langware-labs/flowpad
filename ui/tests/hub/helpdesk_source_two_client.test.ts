@@ -5,11 +5,11 @@
  *   dev-1 = GUEST (opens a ticket)   dev-2 = STAFF (owns a desk, attaches it)
  *
  * The sibling `helpdesk_two_client.test.ts` proves the pool + pickup contract.
- * This one proves the inbox contract that replaced the Help Desk pill:
+ * This one proves the stream inbox contract that replaced the Help Desk pill:
  *   1. Staff attach the desk as a `helpdesk` DataSource (the "+" on the
  *      channels line does the same create), owned by the staff user.
  *   2. The guest opens a ticket; after the staff source polls it, the ticket is
- *      an ORDINARY inbox conversation on the staff side — the hub conversation
+ *      an ORDINARY stream inbox conversation on the staff side — the hub conversation
  *      id itself, with the guest's message carrying `origin.kind === 'helpdesk'`.
  *   3. Staff reply the way the composer does — `sendToChannel` → send_external →
  *      the driver — which picks the ticket up and posts; the hub masks the
@@ -74,7 +74,7 @@ beforeEach((context: any) => {
 
 const messagesOf = (convId: string): Promise<any[]> => queryConversationMessages(staff, convId);
 describe('help desk as a message source', () => {
-  it('a guest ticket lands in the staff inbox as a conversation; the composer reply comes back masked', async () => {
+  it('a guest ticket lands in the staff stream inbox as a conversation; the composer reply comes back masked', async () => {
     const ts = Date.now();
 
     // 1. Staff attach the desk — the same create the "+" on the channels line does.
@@ -98,7 +98,7 @@ describe('help desk as a message source', () => {
       const conv: any = await pollUntil(
         () => staff.sdk.Conversation.getById(convId),
         15_000,
-        'ticket projected into the staff inbox as the hub conversation',
+        'ticket projected into the staff stream inbox as the hub conversation',
       );
       expect(conv.id).toBe(convId);
       const inbound: any = await pollUntil(

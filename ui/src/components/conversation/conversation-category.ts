@@ -4,11 +4,11 @@ import { Archive, ArchiveRestore, CheckSquare, LifeBuoy, Trash2 } from 'lucide-r
 import { Conversation, FlowMessage, FlowMessageKind, Invitation, isHelpdeskKind } from '@sdk';
 
 // ── Conversation category — the single source of truth ──────────────────────
-// The inbox "category" is NOT one axis: a conversation can be helpdesk AND
+// The stream inbox "category" is NOT one axis: a conversation can be helpdesk AND
 // archived AND unread at once, and two of the axes (unread, invitation) are
 // *viewer-relative* — the same thread is an "Accept" row for the recipient and
 // a normal row for the sender. So we derive a small facet struct (centralizing
-// what InboxView and RecentConversationsStrip each used to derive separately)
+// what StreamInboxView and RecentConversationsStrip each used to derive separately)
 // plus a priority-collapsed `primary` for the cases that need one value.
 //
 // This is derived view-model logic, NOT persisted state — `kind` and
@@ -77,11 +77,11 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   return { kind, isInvitation, isArchived, isUnread };
 }
 
-// ── Recency sort — shared by InboxView + RecentConversationsStrip ────────────
+// ── Recency sort — shared by StreamInboxView + RecentConversationsStrip ────────────
 // Newest `updated_date` first, with a STABLE `id` tiebreaker. Without the
 // tiebreaker, rows with equal or missing `updated_date` fall back to the input
 // order — which is the server's non-deterministic result order — so the list
-// re-shuffled between fetches (i.e. on every inbox open). The tiebreaker makes
+// re-shuffled between fetches (i.e. on every stream inbox open). The tiebreaker makes
 // the sort a total order, so equal-timestamp rows keep a fixed position.
 export function compareConversationsByRecency(a: Conversation, b: Conversation): number {
   const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
@@ -169,7 +169,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
         label: t`Accept`,
         onClick: ctx.onAccept,
         disabled: ctx.accepting || !ctx.invitationId,
-        testId: 'inbox-accept-invitation-button',
+        testId: 'stream-inbox-accept-invitation-button',
       },
     ];
     if (ctx.invitationId) {
@@ -180,7 +180,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
         tone: 'destructive',
         label: t`Decline (delete) invitation`,
         onClick: ctx.onDecline,
-        testId: 'inbox-invitation-delete-button',
+        testId: 'stream-inbox-invitation-delete-button',
       });
     }
     return specs;
@@ -199,9 +199,9 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
           key: 'unarchive',
           kind: 'icon',
           icon: ArchiveRestore,
-          label: t`Unarchive — back to Inbox`,
+          label: t`Unarchive — back to Stream Inbox`,
           onClick: ctx.onUnarchive,
-          testId: 'inbox-row-unarchive-button',
+          testId: 'stream-inbox-row-unarchive-button',
         }
       : {
           key: 'archive',
@@ -210,7 +210,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
           tone: 'destructive',
           label: t`Archive — moves to Archived, kept`,
           onClick: ctx.onArchive,
-          testId: 'inbox-row-archive-button',
+          testId: 'stream-inbox-row-archive-button',
         },
     {
       key: 'delete',
@@ -219,7 +219,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
       tone: 'destructive',
       label: ctx.deleteLabel,
       onClick: ctx.onDelete,
-      testId: 'inbox-row-delete-button',
+      testId: 'stream-inbox-row-delete-button',
     },
   ];
 }

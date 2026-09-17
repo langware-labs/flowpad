@@ -278,7 +278,7 @@ def test_the_two_egress_seams_now_agree():
             # from the item, and a hub LWW refresh must never blank it. `envelope`
             # is its projection-owned sibling (sender, recipients, subject).
             ["origin_local", "source_item_id", "sent_at", "envelope"],
-            # Per-device inbox state: travels outward, but a hub refresh must not reset it.
+            # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
                 "asset_ref",
@@ -355,7 +355,7 @@ def test_the_two_egress_seams_now_agree():
             {},
             # `message_ids` joined `message_count` as PRIVATE: both are projections
             # of the pointer log, rebuilt locally and never accepted from the hub.
-            # `owner`: whose inbox lists it — a fact about this machine's partition,
+            # `owner`: whose stream inbox lists it — a fact about this machine's partition,
             # never the hub's (that is the roster's `owner` role).
             # `channel_source_id`: the local DataSource behind a source-backed
             # conversation — a row id in OUR database.

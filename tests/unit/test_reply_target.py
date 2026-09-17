@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.source_item import EmailMessageSpec, SlackMessageSpec
-from flow_sdk.inbox.outbound import ChannelSendUnavailable, resolve_reply_target
+from flow_sdk.stream_inbox.outbound import ChannelSendUnavailable, resolve_reply_target
 
 LOCAL_USER_ID = "9f0b1c2d-3e4f-4a5b-8c7d-6e5f4a3b2c1d"
 AGENT_ID = "5a1c9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c"

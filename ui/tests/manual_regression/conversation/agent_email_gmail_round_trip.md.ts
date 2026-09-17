@@ -29,7 +29,7 @@ import flow_sdk
 import flow_sdk.ingest.drivers  # noqa: F401
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.email_inbox import EmailInbox, email_source_for_agent
+from flow_sdk.builtin.agent_mailbox import AgentMailbox, email_source_for_agent
 from flow_sdk.builtin.source_item import EmailMessageSpec
 from flow_sdk.ingest.drivers.gmail import GmailDriver
 
@@ -70,12 +70,12 @@ async def main():
     emit("ready", agent_id=agent.id, gmail_address=address, nonce=nonce, gmail_created="1" if gmail_created else "0")
 
     send_command = await command()
-    verb, inbox_address = send_command.split(" ", 1)
-    if verb != "SEND" or not inbox_address:
+    verb, mailbox_address = send_command.split(" ", 1)
+    if verb != "SEND" or not mailbox_address:
         raise RuntimeError("expected SEND <address>")
     sent = await gmail.send(
         EmailMessageSpec(
-            to=[inbox_address],
+            to=[mailbox_address],
             subject=f"Pirate UI {nonce}",
             body=f"Where is the treasure? Request code: {nonce}",
         )
@@ -88,9 +88,9 @@ async def main():
         raise RuntimeError("expected CLEANUP")
     current = await Agent.get_one({"id": agent.id}) or agent
     try:
-        inbox = await EmailInbox.for_agent(current)
-        if inbox is not None:
-            await inbox.release()
+        mailbox = await AgentMailbox.for_agent(current)
+        if mailbox is not None:
+            await mailbox.release()
     except Exception:
         pass
     cloud_source = await email_source_for_agent(current.id)
@@ -150,16 +150,16 @@ import sys
 import flow_sdk
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.email_inbox import EmailInbox
+from flow_sdk.builtin.agent_mailbox import AgentMailbox
 
 async def main():
     await flow_sdk.auth.login()
     agent = await Agent.get_one({"id": sys.argv[1]})
     if agent is not None:
         try:
-            inbox = await EmailInbox.for_agent(agent)
-            if inbox is not None:
-                await inbox.release()
+            mailbox = await AgentMailbox.for_agent(agent)
+            if mailbox is not None:
+                await mailbox.release()
         except Exception:
             pass
         source = await DataSource.find_for_account("cloud_email", "agent_id", agent.id)
@@ -187,7 +187,7 @@ async function cleanup(agentId: string, gmailCreated: string, env: NodeJS.Proces
   });
 }
 
-async function openAgentInbox(page: Page, agentId: string): Promise<void> {
+async function openAgentStreamInbox(page: Page, agentId: string): Promise<void> {
   await page.addInitScript(() => {
     try {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -195,8 +195,8 @@ async function openAgentInbox(page: Page, agentId: string): Promise<void> {
       /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
     }
   });
-  await page.goto(`/dock/agent/${agentId}/inbox`);
-  await expect(page.getByTestId('agent-inbox-view')).toBeVisible();
+  await page.goto(`/dock/agent/${agentId}/stream_inbox`);
+  await expect(page.getByTestId('agent-stream-inbox-view')).toBeVisible();
 }
 
 test.afterEach(async () => {
@@ -234,28 +234,28 @@ test('enable email, receive Gmail, and show the pirate reply in UI and Gmail', a
     fallbackAgentId = agentId;
     fallbackGmailCreated = gmailCreated;
     fallbackEnv = childEnv;
-    await openAgentInbox(page, ready.agent_id);
+    await openAgentStreamInbox(page, ready.agent_id);
 
     await page.getByRole('button', { name: 'Create email for agent', exact: true }).click();
-    await expect(page.getByTestId('agent-inbox-address')).toBeVisible();
-    const inboxAddress = (await page.getByTestId('agent-inbox-address').textContent())?.trim() ?? '';
-    expect(inboxAddress).toContain('@');
+    await expect(page.getByTestId('agent-mailbox-address')).toBeVisible();
+    const mailboxAddress = (await page.getByTestId('agent-mailbox-address').textContent())?.trim() ?? '';
+    expect(mailboxAddress).toContain('@');
 
     await page.getByTestId('agent-email-allowed-senders').fill(ready.gmail_address);
-    await page.getByTestId('agent-inbox-settings').getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText('Inbox settings saved')).toBeVisible();
+    await page.getByTestId('agent-mailbox-settings').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('Mailbox settings saved')).toBeVisible();
 
-    harness.send(`SEND ${inboxAddress}`);
+    harness.send(`SEND ${mailboxAddress}`);
     expect((await harness.next()).kind).toBe('sent');
 
-    const row = page.getByTestId('inbox-conversation-row').filter({ hasText: `Pirate UI ${ready.nonce}` });
+    const row = page.getByTestId('stream-inbox-conversation-row').filter({ hasText: `Pirate UI ${ready.nonce}` });
     await expect(row).toBeVisible();
     await row.click();
     await expect(page.getByText(`Where is the treasure? Request code: ${ready.nonce}`, { exact: false })).toBeVisible();
 
     const reply = await harness.next();
     expect(reply.kind).toBe('reply');
-    expect(reply.author).toBe(inboxAddress);
+    expect(reply.author).toBe(mailboxAddress);
     expect(reply.body.toLowerCase()).toContain('arr');
     expect(reply.body).toContain(ready.nonce);
     await expect(page.getByText(/arr/i).last()).toBeVisible();

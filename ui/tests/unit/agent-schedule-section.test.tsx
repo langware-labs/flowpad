@@ -98,11 +98,11 @@ describe('the agent schedule tab', () => {
   });
 
   it('pre-fills a new schedule with the auto-launch prompt and writes through the agent', async () => {
-    const agent = renderSection('Summarize the inbox');
+    const agent = renderSection('Summarize the stream inbox');
     const add = vi.spyOn(agent, 'addSchedule').mockResolvedValue({} as never);
 
     fireEvent.click(screen.getByTestId('agent-schedule-add'));
-    expect(screen.getByTestId('agent-schedule-prompt')).toHaveValue('Summarize the inbox');
+    expect(screen.getByTestId('agent-schedule-prompt')).toHaveValue('Summarize the stream inbox');
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => expect(add).toHaveBeenCalledTimes(1));
@@ -110,7 +110,7 @@ describe('the agent schedule tab', () => {
       name: 'Scheduled run',
       every: 'cron',
       expr: '0 9 * * *',
-      prompt: 'Summarize the inbox',
+      prompt: 'Summarize the stream inbox',
       enabled: true,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });

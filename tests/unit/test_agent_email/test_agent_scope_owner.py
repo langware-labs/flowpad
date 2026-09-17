@@ -1,4 +1,4 @@
-"""The Agent inbox scope is a filter on ``owner`` and answers exactly as the walk did.
+"""The Agent stream inbox scope is a filter on ``owner`` and answers exactly as the walk did.
 
 One instance, two owners: the local user's Gmail source and an Agent's cloud
 mailbox. The Agent's scope must contain its rows and none of the user's; the
@@ -18,8 +18,8 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.inbox.agent_scope import is_message_source, resolve_agent_inbox_scope
 from flow_sdk.schema.types import EntityType
+from flow_sdk.stream_inbox.agent_scope import is_message_source, resolve_agent_stream_inbox_scope
 
 pytestmark = pytest.mark.asyncio
 
@@ -33,7 +33,7 @@ async def _source(provider: str, channel: str, **config) -> DataSource:
 async def _message(source: DataSource) -> FlowMessage:
     item = SourceItem(
         name="m", provider=source.provider, kind="content.message.email",
-        data_source_id=source.id, segment_key="inbox", external_id=mint_uuid(),
+        data_source_id=source.id, segment_key="INBOX", external_id=mint_uuid(),
     )
     await item.save()
     message = FlowMessage(text="", source_item_id=item.id, conversation_id=mint_uuid(), thread_id=mint_uuid())
@@ -57,7 +57,7 @@ async def test_agent_scope_is_its_owned_rows_and_none_of_the_users(mail_db, monk
     mine = await _message(agents)
     theirs = await _message(users)
 
-    scope = await resolve_agent_inbox_scope(agent_id)
+    scope = await resolve_agent_stream_inbox_scope(agent_id)
     assert scope.source_id == agents.id
     assert scope.source_ids == frozenset({agents.id})
     assert scope.flow_message_ids == frozenset({mine.id})
@@ -76,5 +76,5 @@ async def test_only_message_sources_count_toward_the_scope(mail_db, monkeypatch)
     feed = DataSource(name="rss", provider="rss", channel="", owner=agent_tid, config={"feed_urls": ["http://127.0.0.1:1/feed"]})
     await feed.save()
     assert not is_message_source(feed), "no channel → not a message source"
-    scope = await resolve_agent_inbox_scope(agent_id)
+    scope = await resolve_agent_stream_inbox_scope(agent_id)
     assert scope.source_id is None and scope.source_ids == frozenset()

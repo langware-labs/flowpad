@@ -33,8 +33,8 @@ import { CollaborationPage, LiveSessionView } from '@src/components/collaboratio
 import { CredentialsView } from '@src/components/credentials-view/CredentialsView';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
-import { InboxView } from '@src/components/inbox-view/InboxView';
-import { AgentInboxView } from '@src/components/inbox-view/AgentInboxView';
+import { StreamInboxView } from '@src/components/stream-inbox-view/StreamInboxView';
+import { AgentStreamInboxView } from '@src/components/stream-inbox-view/AgentStreamInboxView';
 import { TabbedTerminal } from '@src/components/terminal';
 import { AppDisplayViewer } from '../app-display-viewer';
 import { WebappViewer } from '@src/components/webapp-viewer';
@@ -516,10 +516,10 @@ function ContentPanelBody({
         const { roomId } = DockPointer.parseProjectPointer(currentDock?.pointer);
         return roomId ? <CollaborationPage /> : <AssetsPage />;
       }
-      case ViewType.INBOX:
-        return <InboxView />;
+      case ViewType.STREAM_INBOX:
+        return <StreamInboxView />;
       case ViewType.AGENT:
-        return <AgentInboxView />;
+        return <AgentStreamInboxView />;
       case ViewType.CONVERSATION:
         return <ConversationRoute />;
       case ViewType.SPEC:

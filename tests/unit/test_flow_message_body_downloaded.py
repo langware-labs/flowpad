@@ -201,7 +201,7 @@ def test_partial_bundle_reports_missing_files_without_exposing_stale_paths(recor
 @pytest.mark.asyncio
 @pytest.mark.parametrize("header_name", ["header.json", "flow_message.json"])
 async def test_header_only_body_unpacks_into_existing_message(records_root, tmp_path, header_name):
-    """The reported failure: existing inbox header + bundle with no asset payload."""
+    """The reported failure: existing stream inbox header + bundle with no asset payload."""
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.flow_message_bundle import unpack_bundle
 

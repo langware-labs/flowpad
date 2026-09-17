@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, Optional
 from weakref import WeakValueDictionary
 
-from flow_sdk import inbox
+from flow_sdk import stream_inbox
 from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
 from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk
@@ -42,15 +42,15 @@ from flow_sdk.fs_store.operations.conversation import (
 from flow_sdk.fs_store.pointer import Pointer
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.inbox.agent_scope import (
-    AgentInboxScope,
-    AgentInboxScopeError,
-    resolve_agent_inbox_scope,
-)
-from flow_sdk.inbox.hub_clock import adopt_hub_created_date, hub_created_drift
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.stream_inbox.agent_scope import (
+    AgentStreamInboxScope,
+    AgentStreamInboxScopeError,
+    resolve_agent_stream_inbox_scope,
+)
+from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_created_drift
 from flow_sdk.utils.hub import HubError, hub_base_url, hub_get, hub_post
 
 logger = logging.getLogger(__name__)
@@ -66,10 +66,10 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.invitation import Invitation
 
 
-async def _optional_agent_inbox_scope(agent_id: object) -> AgentInboxScope | None:
+async def _optional_agent_stream_inbox_scope(agent_id: object) -> AgentStreamInboxScope | None:
     """Resolve an explicitly requested Agent scope; blank preserves legacy behavior."""
     value = str(agent_id or "").strip()
-    return await resolve_agent_inbox_scope(value) if value else None
+    return await resolve_agent_stream_inbox_scope(value) if value else None
 
 
 def _body_status_value(status: str | BodyStatus | None) -> str | None:
@@ -584,8 +584,8 @@ async def handle_create_project_conversation(
 
 async def handle_conversation_dismiss(conversation_id: str, someone_typeid: str) -> ApiResponse:
     """Stamp ``Conversation.dismissed_at = now()`` so the Recent strip hides
-    this row until a FlowMessage newer than the stamp arrives. The Inbox
-    ignores ``dismissed_at`` — Inbox dismissal is a separate concept driven
+    this row until a FlowMessage newer than the stamp arrives. The stream
+    inbox ignores ``dismissed_at`` — stream inbox dismissal is a separate concept driven
     by per-message ``is_archived``.
     """
     conversation_id = (conversation_id or "").strip()
@@ -626,7 +626,7 @@ async def handle_conversation_archive(
 ) -> ApiResponse:
     """Stamp ``Conversation.archived_at = now()``.
 
-    Both Inbox and Recent strip hide the row when set; a FlowMessage newer
+    Both the stream inbox and the Recent strip hide the row when set; a FlowMessage newer
     than the stamp auto-revives it. Conversation-level archive — does NOT
     touch ``FlowMessage.is_read`` (those are per-message and remain
     independent). Idempotent: re-archiving already-archived row is a
@@ -637,13 +637,13 @@ async def handle_conversation_archive(
     if not conversation_id:
         return ApiFailResponse(message="conversation_id required")
     if allowed_conversation_ids is not None and conversation_id not in allowed_conversation_ids:
-        return ApiFailResponse(message="Conversation is not in this Agent inbox", status_code=404)
+        return ApiFailResponse(message="Conversation is not in this Agent stream inbox", status_code=404)
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         return ApiFailResponse(message="Conversation not found")
     conv.archived_at = datetime.now(UTC)
     await conv.save(someone_typeid)
-    inbox.touch("conversation-archive")
+    stream_inbox.touch("conversation-archive")
     return ApiSuccessResponse(
         data={
             "conversation_id": conversation_id,
@@ -669,13 +669,13 @@ async def handle_conversation_unarchive(
     if not conversation_id:
         return ApiFailResponse(message="conversation_id required")
     if allowed_conversation_ids is not None and conversation_id not in allowed_conversation_ids:
-        return ApiFailResponse(message="Conversation is not in this Agent inbox", status_code=404)
+        return ApiFailResponse(message="Conversation is not in this Agent stream inbox", status_code=404)
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         return ApiFailResponse(message="Conversation not found")
     conv.archived_at = None
     await conv.save(someone_typeid)
-    inbox.touch("conversation-unarchive")
+    stream_inbox.touch("conversation-unarchive")
     return ApiSuccessResponse(
         data={
             "conversation_id": conversation_id,
@@ -708,7 +708,7 @@ async def handle_conversation_archive_all(
         conv.archived_at = now
         await conv.save(someone_typeid)
         archived += 1
-    inbox.touch("conversation-archive-all")
+    stream_inbox.touch("conversation-archive-all")
     return ApiSuccessResponse(
         data={
             "archived": archived,
@@ -726,13 +726,13 @@ async def conversation_archive() -> ApiResponse:
             return ApiFailResponse(message="Authentication required")
         body = await request_info.get_post_data() or {}
         conv_id = (body.get("conversation_id") or "").strip()
-        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
         return await handle_conversation_archive(
             conv_id,
             request_info.someone_typeid,
             allowed_conversation_ids=scope.conversation_ids if scope else None,
         )
-    except AgentInboxScopeError as e:
+    except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-archive error: %s", e, exc_info=True)
@@ -747,13 +747,13 @@ async def conversation_unarchive() -> ApiResponse:
             return ApiFailResponse(message="Authentication required")
         body = await request_info.get_post_data() or {}
         conv_id = (body.get("conversation_id") or "").strip()
-        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
         return await handle_conversation_unarchive(
             conv_id,
             request_info.someone_typeid,
             allowed_conversation_ids=scope.conversation_ids if scope else None,
         )
-    except AgentInboxScopeError as e:
+    except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-unarchive error: %s", e, exc_info=True)
@@ -767,12 +767,12 @@ async def conversation_archive_all() -> ApiResponse:
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
         body = await request_info.get_post_data() or {}
-        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
         return await handle_conversation_archive_all(
             request_info.someone_typeid,
             allowed_conversation_ids=scope.conversation_ids if scope else None,
         )
-    except AgentInboxScopeError as e:
+    except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-archive-all error: %s", e, exc_info=True)
@@ -1072,12 +1072,12 @@ async def conversation_delete_archived() -> ApiResponse:
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
         body = await request_info.get_post_data() or {}
-        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
         return await handle_conversation_delete_archived(
             request_info.someone_typeid,
             allowed_conversation_ids=scope.conversation_ids if scope else None,
         )
-    except AgentInboxScopeError as e:
+    except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-delete-archived error: %s", e, exc_info=True)
@@ -1107,7 +1107,7 @@ async def handle_conversation_delete(
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
     if allowed_conversation_ids is not None and conversation_id not in allowed_conversation_ids:
-        return ApiFailResponse(message="Conversation is not in this Agent inbox", status_code=404)
+        return ApiFailResponse(message="Conversation is not in this Agent stream inbox", status_code=404)
 
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
@@ -1159,14 +1159,14 @@ async def conversation_delete() -> ApiResponse:
         body = await request_info.get_post_data() or {}
         conv_id = (body.get("conversation_id") or "").strip()
         mode = (body.get("mode") or "").strip()
-        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
         return await handle_conversation_delete(
             conv_id,
             mode,
             request_info.someone_typeid,
             allowed_conversation_ids=scope.conversation_ids if scope else None,
         )
-    except AgentInboxScopeError as e:
+    except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
         logger.error("[flow_message_action] conversation-delete error: %s", e, exc_info=True)
@@ -1950,12 +1950,12 @@ async def helpdesk_tickets_list() -> ApiResponse:
 
 
 # ---------------------------------------------------------------------------
-# Inbox actions
+# Stream inbox actions
 # ---------------------------------------------------------------------------
 
 
 def _last_fetch_path() -> Path:
-    return get_instance_settings().inbox_last_fetch_path
+    return get_instance_settings().stream_inbox_last_fetch_path
 
 
 def _load_last_fetch() -> Optional[str]:
@@ -2001,7 +2001,7 @@ async def _download_and_unpack_bundle(
     SINGLE backend gate: when it's anything other than READY there is no bundle
     on the hub to pull (``na`` = none was ever uploaded, ``uploading`` = not yet
     landed), so we skip the GET entirely rather than 404. Every implicit caller
-    (open / inbox-open / conversation-sync / invitation-accept / catch-up / the
+    (open / stream-inbox-open / conversation-sync / invitation-accept / catch-up / the
     eager-pull bridge) forwards what it already read from the hub payload; the
     explicit ``download_body`` path forwards its own READY status. ``None`` means
     "caller did not supply a status" and proceeds unchanged (back-compat).
@@ -2127,51 +2127,6 @@ async def _download_and_unpack_bundle_locked(
         tmp_path.unlink(missing_ok=True)
 
 
-async def handle_inbox_list(*, scope: AgentInboxScope | None = None) -> ApiResponse:
-    """Return non-archived received FlowMessages whose Conversation exists locally, newest first.
-
-    FMs whose ``conversation_id`` does not resolve to a locally-known Conversation
-    are filtered out so the sidebar badge stays aligned with what InboxView can
-    actually render (which iterates Conversation entities). Without this gate the
-    badge counted orphan FMs the user had no way to open or dismiss.
-    """
-    from flow_sdk.db.drivers.query import QueryFilter
-
-    # Self-sent exclusion must check BOTH the cloud and local user ids —
-    # sends stamp the cloud id when logged in, the local id otherwise.
-    # Comparing against the local id alone let cloud-stamped self-sends
-    # through, inflating the sidebar badge on every message the user sent.
-    self_ids = await User.self_ids()
-    flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
-    all_messages = await FlowMessage.get_all(flt)
-    conv_flt = QueryFilter(type=BuiltinEntityType.CONVERSATION.value)
-    known_conv_ids = {c.id for c in await Conversation.get_all(conv_flt)}
-    messages = [
-        m
-        for m in all_messages
-        if not m.is_archived
-        and m.sender_id not in self_ids
-        and m.conversation_id in known_conv_ids
-        and (scope is None or m.id in scope.flow_message_ids)
-    ]
-    messages.sort(key=lambda m: m.created_date or "", reverse=True)
-    return ApiSuccessResponse(data=[m.model_dump(mode="json") for m in messages])
-
-
-@action.get(action_name="inbox-list", types=None)
-async def inbox_list() -> ApiResponse:
-    try:
-        request_info = get_current_request_info()
-        agent_id = request_info.request.query_params.get("agent_id") if request_info else None
-        scope = await _optional_agent_inbox_scope(agent_id)
-        return await handle_inbox_list(scope=scope)
-    except AgentInboxScopeError as e:
-        return ApiFailResponse(message=str(e), status_code=e.status_code)
-    except Exception as e:
-        logger.error("[flow_message_action] inbox-list error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to list inbox: {str(e)}")
-
-
 async def _fetch_raw_messages_from_hub(since: str | None) -> list[dict] | None:
     """Call hub for FlowMessages newer than `since`.
 
@@ -2220,7 +2175,7 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                 fm_id,
                 attachment_filename,
                 body_status=raw.get("body_status"),
-                # The hub's own ``updated_date`` — the delivery clock the inbox
+                # The hub's own ``updated_date`` — the delivery clock the stream inbox
                 # sorts on. Handing it to the unpack means a legacy bundle's row
                 # is born with the right recency instead of being stamped with
                 # the send-time and corrected a beat later, which is what made
@@ -2244,7 +2199,7 @@ async def _process_single_hub_message(raw: dict) -> str | None:
             # HEADER from the hub payload (metadata only, no body), exactly like
             # the bundle-less/text branch below. Without this an artifact- or
             # git-share message's latest FlowMessage never resolves locally
-            # pre-body, so the inbox's latest-pointer gate hides the whole
+            # pre-body, so the stream inbox's latest-pointer gate hides the whole
             # invitation row and previews/ordering break — while a plain text
             # message (no attachment_filename) materialized its header fine. The
             # body stays un-downloaded (is_body_downloaded()=False), so the next
@@ -2388,7 +2343,7 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     return fm_id
 
 
-async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
+async def handle_stream_inbox_fetch(someone_typeid: str) -> ApiResponse:
     """**Deprecated** — prefer ``conversation-list``.
 
     Still wired up for the in-process ``notification_scanner`` background
@@ -2411,16 +2366,16 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
             if processed_id:
                 created_ids.append(processed_id)
         except Exception as e:
-            logger.warning("[inbox-fetch] failed to process fm=%s: %s", (raw.get("id") or "?"), e)
+            logger.warning("[stream-inbox-fetch] failed to process fm=%s: %s", (raw.get("id") or "?"), e)
 
     _save_last_fetch(fetch_started)
     return ApiSuccessResponse(data={"created": len(created_ids), "ids": created_ids})
 
 
-async def handle_inbox_open(fm_id: str) -> ApiResponse:
+async def handle_stream_inbox_open(fm_id: str) -> ApiResponse:
     """Materialise the task for a FlowMessage and return {task_id, conversation_id}."""
 
-    # Prefer local FM (reply messages are local-only); hub is fallback for inbox messages.
+    # Prefer local FM (reply messages are local-only); hub is fallback for stream inbox messages.
     local_fm = await FlowMessage.get_one({"id": fm_id})
     hub_updated = None
     if local_fm:
@@ -2455,33 +2410,33 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
     return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})
 
 
-@action.get(action_name="inbox-open", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def inbox_open() -> ApiResponse:
+@action.get(action_name="stream-inbox-open", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def stream_inbox_open() -> ApiResponse:
     """Materialize the task referenced by a FlowMessage (downloads bundle if needed)."""
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.target_entity_typeid:
             return ApiFailResponse(message="No request info found", status_code=400)
-        return await handle_inbox_open(str(request_info.target_entity_typeid.id))
+        return await handle_stream_inbox_open(str(request_info.target_entity_typeid.id))
     except Exception as e:
-        logger.error("[flow_message_action] inbox-open error: %s", e, exc_info=True)
+        logger.error("[flow_message_action] stream-inbox-open error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Open failed: {str(e)}")
 
 
-@action.post(action_name="inbox-fetch", types=None)
-async def inbox_fetch() -> ApiResponse:
+@action.post(action_name="stream-inbox-fetch", types=None)
+async def stream_inbox_fetch() -> ApiResponse:
     """Fetch new FlowMessages from hub since last check."""
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
-        return await handle_inbox_fetch(request_info.someone_typeid)
+        return await handle_stream_inbox_fetch(request_info.someone_typeid)
     except Exception as e:
-        logger.error("[flow_message_action] inbox-fetch error: %s", e, exc_info=True)
+        logger.error("[flow_message_action] stream-inbox-fetch error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Fetch failed: {str(e)}")
 
 
-async def handle_inbox_update(fm_id: str, patch: dict, someone_typeid: str) -> ApiResponse:
+async def handle_stream_inbox_update(fm_id: str, patch: dict, someone_typeid: str) -> ApiResponse:
     """Apply is_read / is_archived patch to a single FlowMessage."""
     fm = await FlowMessage.get_one({"id": fm_id})
     if not fm:
@@ -2491,13 +2446,13 @@ async def handle_inbox_update(fm_id: str, patch: dict, someone_typeid: str) -> A
     if "is_archived" in patch:
         fm.is_archived = bool(patch["is_archived"])
     await fm.save(someone_typeid)
-    inbox.touch("inbox-update")
+    stream_inbox.touch("stream-inbox-update")
     return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
 
 
-@action.post(action_name="inbox-search", types=None)
-async def inbox_search() -> ApiResponse:
-    """Full-inbox body search → conversation ids. Body: ``{"q": "<substring>"}``.
+@action.post(action_name="stream-inbox-search", types=None)
+async def stream_inbox_search() -> ApiResponse:
+    """Full-stream-inbox body search → conversation ids. Body: ``{"q": "<substring>"}``.
 
     Two lanes because bodies live in two places under the reference model:
     a channel message's text is on its SourceItem (the FlowMessage row is a
@@ -2510,7 +2465,7 @@ async def inbox_search() -> ApiResponse:
         if not request_info:
             return ApiFailResponse(message="No request info")
         body = await request_info.get_post_data() or {}
-        scope = await _optional_agent_inbox_scope(body.get("agent_id"))
+        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
         needle = str(body.get("q") or "").strip()
         if not needle:
             return ApiSuccessResponse(data={"conversation_ids": []})
@@ -2554,15 +2509,15 @@ async def inbox_search() -> ApiResponse:
         if scope is not None:
             conversation_ids &= scope.conversation_ids
         return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})
-    except AgentInboxScopeError as e:
+    except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
-        logger.error("[flow_message_action] inbox-search error: %s", e, exc_info=True)
+        logger.error("[flow_message_action] stream-inbox-search error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Search failed: {str(e)}")
 
 
-@action.post(action_name="inbox-update", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def inbox_update() -> ApiResponse:
+@action.post(action_name="stream-inbox-update", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def stream_inbox_update() -> ApiResponse:
     """Update is_read / is_archived on a single FlowMessage."""
     try:
         request_info = get_current_request_info()
@@ -2572,14 +2527,14 @@ async def inbox_update() -> ApiResponse:
             return ApiFailResponse(message="Authentication required")
         fm_id = str(request_info.target_entity_typeid.id)
         patch = await request_info.get_post_data() or {}
-        scope = await _optional_agent_inbox_scope(patch.pop("agent_id", None))
+        scope = await _optional_agent_stream_inbox_scope(patch.pop("agent_id", None))
         if scope is not None:
             scope.require_message(fm_id)
-        return await handle_inbox_update(fm_id, patch, request_info.someone_typeid)
-    except AgentInboxScopeError as e:
+        return await handle_stream_inbox_update(fm_id, patch, request_info.someone_typeid)
+    except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
-        logger.error("[flow_message_action] inbox-update error: %s", e, exc_info=True)
+        logger.error("[flow_message_action] stream-inbox-update error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Update failed: {str(e)}")
 
 
@@ -2743,7 +2698,7 @@ async def send_draft() -> ApiResponse:
         return ApiFailResponse(message=f"Send draft failed: {str(e)}")
 
 
-async def handle_inbox_bulk_update(
+async def handle_stream_inbox_bulk_update(
     patch: dict,
     someone_typeid: str,
     *,
@@ -2768,28 +2723,28 @@ async def handle_inbox_bulk_update(
         if changed:
             await fm.save(someone_typeid)
             count += 1
-    inbox.touch("inbox-bulk-update")
+    stream_inbox.touch("stream-inbox-bulk-update")
     return ApiSuccessResponse(data={"updated": count})
 
 
-@action.post(action_name="inbox-bulk-update", types=None)
-async def inbox_bulk_update() -> ApiResponse:
+@action.post(action_name="stream-inbox-bulk-update", types=None)
+async def stream_inbox_bulk_update() -> ApiResponse:
     """Bulk update is_read / is_archived across all FlowMessages."""
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
         patch = await request_info.get_post_data() or {}
-        scope = await _optional_agent_inbox_scope(patch.pop("agent_id", None))
-        return await handle_inbox_bulk_update(
+        scope = await _optional_agent_stream_inbox_scope(patch.pop("agent_id", None))
+        return await handle_stream_inbox_bulk_update(
             patch,
             request_info.someone_typeid,
             allowed_flow_message_ids=scope.flow_message_ids if scope else None,
         )
-    except AgentInboxScopeError as e:
+    except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
     except Exception as e:
-        logger.error("[flow_message_action] inbox-bulk-update error: %s", e, exc_info=True)
+        logger.error("[flow_message_action] stream-inbox-bulk-update error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Bulk update failed: {str(e)}")
 
 
@@ -2854,7 +2809,7 @@ async def _materialize_membership_invitation(
 
     The target may be ANY shareable entity type (organization, team,
     workspace, project, skill, …). Unlike conversation invitations, these
-    have no backing conversation: the inbox renders a generic row straight
+    have no backing conversation: the stream inbox renders a generic row straight
     off the Invitation's ``target_*`` fields. We also mirror the target
     entity locally so the row can show its name/icon and so accept resolves
     a real entity.
@@ -2941,7 +2896,7 @@ async def _materialize_invitation(
     # Conversation-less invitations carry a ``target`` descriptor — ANY
     # shareable entity type (organization, team, workspace, project, a
     # message, a skill, …). Materialize the Invitation with its target
-    # metadata so the inbox renders a generic "<inviter> invited you to
+    # metadata so the stream inbox renders a generic "<inviter> invited you to
     # <Name>" row. Gated on the ABSENCE of an embedded conversation: a
     # conversation-backed invitation always rides the thread path below, and
     # its riding asset grants must not hijack it (the hub already keeps
@@ -3028,7 +2983,7 @@ async def _materialize_invitation(
     # button. notify=False here too — the explicit CREATE ops below
     # announce the FlowMessage and Conversation together, in load-bearing
     # order, only once the conversation already carries its
-    # invitation-kind first message. Without this the strip/inbox briefly
+    # invitation-kind first message. Without this the strip/stream inbox briefly
     # render a navigable row.
     preview = hub_inv.get("preview_message")
     invitation_typeid = f"{LocalInvitation.get_type()}-{inv_id}"
@@ -3133,7 +3088,7 @@ async def _materialize_invitation(
 
     # Announce to the UI in load-bearing order — FlowMessage CREATE first so
     # the bubble row exists, then the Conversation CREATE. The conversation
-    # now already carries its kind='invitation' pointer, so the strip/inbox
+    # now already carries its kind='invitation' pointer, so the strip/stream inbox
     # render it as a gated invitation row on the very first paint (no
     # navigable window before the Accept gate appears).
     if notify:
@@ -3167,7 +3122,7 @@ async def _materialize_invitation(
 # ---------------------------------------------------------------------------
 # Unified conversation-list pipeline
 #
-# Single endpoint replacing the prior `conversation-sync` + `inbox-fetch` split.
+# Single endpoint replacing the prior `conversation-sync` + `stream-inbox-fetch` split.
 # Reads local SQLite first (instant), pulls hub conversations + invitations in
 # parallel, upserts hub metadata locally, and fans out per-conversation
 # background message fetches keyed off the `message_count` delta. The hub WS
@@ -3845,7 +3800,7 @@ async def _upsert_hub_conversation_metadata(
     ``notify=False`` saves the row without broadcasting the entity op — used
     by the invitation pipeline, which must materialize the conversation's
     ``kind='invitation'`` first message *before* the UI ever sees the
-    conversation (otherwise the strip/inbox briefly render it as a normal,
+    conversation (otherwise the strip/stream inbox briefly render it as a normal,
     navigable row). The caller emits the CREATE op itself once the row is
     fully formed.
     """
@@ -4003,7 +3958,7 @@ async def _upsert_hub_conversation_metadata(
 def fetch_order(hub_messages: list[dict]) -> list[dict]:
     """Order a conversation's hub messages for materializing: NEWEST first.
 
-    A conversation's inbox recency is ``max(message.updated_date)``, so the newest
+    A conversation's stream inbox recency is ``max(message.updated_date)``, so the newest
     message alone decides its position. Materialize that one first and the row
     lands in its final slot on the first write; every older message that follows
     leaves the max untouched and moves nothing.
@@ -4091,8 +4046,8 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     ``announce_invitations`` says whether a client refetch rides behind this
     call. The UI action path leaves it False: the caller refetches its own
     query once when the response lands, so broadcasting each materialized
-    invitation individually would only churn the Inbox order mid-catch-up.
-    The backend-initiated sweeps (``inbox.catchup``) have no such refetch —
+    invitation individually would only churn the stream inbox order mid-catch-up.
+    The backend-initiated sweeps (``stream_inbox.catchup``) have no such refetch —
     nobody asked for this call — so they pass True and the invitation rows
     reach the already-mounted UI.
 
@@ -4121,7 +4076,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # Logged out → every hub conversation/invitation call would 401 and surface
     # a "Cloud Request Failed" warning (and feed the hub-error suppression
     # window). Return local-only with auth_required, exactly like
-    # _start_inbox_catchup skips the same calls at startup.
+    # _start_stream_inbox_catchup skips the same calls at startup.
     from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
 
     if not hub_auth_available():
@@ -4209,7 +4164,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
         # Same converging watermark as the fetch gate. With ``is_stale`` here the
         # local metadata write also re-fired on every call for every already-synced
         # conversation — a save + a WS ``data_op`` per conversation per call, which
-        # is what made the client re-list the whole Inbox dozens of times per login.
+        # is what made the client re-list the whole stream inbox dozens of times per login.
         if existing is None or not existing.remote or _clock_moved or _created_drift:
             try:
                 await _upsert_hub_conversation_metadata(
@@ -4235,7 +4190,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
             # On the UI path the HTTP response is followed by one local query
             # refetch, so per-entity broadcasts are suppressed while reconciling
             # the batch: emitting every historical invitation one by one
-            # continuously reorders Inbox rows and can make an otherwise enabled
+            # continuously reorders stream inbox rows and can make an otherwise enabled
             # action physically unclickable until the catch-up finishes. A
             # backend-initiated sweep has no refetch behind it — see
             # ``announce_invitations``.
@@ -4272,7 +4227,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
 
     # (f) one unread reconcile for the whole batch — invitations materialized
     # in (d) and conversations pruned in (e) both change the projection.
-    inbox.touch("conversation-list")
+    stream_inbox.touch("conversation-list")
 
     # return the freshly-merged list.
     merged = await Conversation.get_all({})
@@ -4357,15 +4312,15 @@ async def _announce_new_invitations(fresh_invitations: list) -> None:
     The Layer-2 invitation consumer of the generic notification service: a
     pending invite rides the invitation op — it never reaches the inbound
     flow_message notify path. One banner per new invite; clicking opens the
-    Inbox (where Accept lives). Re-syncs of already-known invitations stay
+    stream inbox (where Accept lives). Re-syncs of already-known invitations stay
     silent (callers pass only newly-materialized rows). Failure-isolated:
     a notify hiccup never fails the sync that discovered the invitation.
     """
     if not fresh_invitations:
         return
     with contextlib.suppress(Exception):
-        from flow_sdk.inbox import invitation_is_pending, viewer_email
         from flow_sdk.notifications import notify_desktop
+        from flow_sdk.stream_inbox import invitation_is_pending, viewer_email
 
         email = viewer_email()
         now = datetime.now(UTC)
@@ -4381,7 +4336,7 @@ async def _announce_new_invitations(fresh_invitations: list) -> None:
                 "invitation",
                 title=f"{inviter} invited you",
                 body=body,
-                click_target={"view_type": "inbox"},
+                click_target={"view_type": "stream_inbox"},
             )
 
 
@@ -4405,11 +4360,11 @@ def _invitation_matches_target(hub_inv: dict, target_id: str | None) -> bool:
 
 
 async def handle_invitation_sync(someone_typeid: str, *, target_id: str | None = None) -> ApiResponse:
-    """Pull pending invitations only — no inbox-fetch.
+    """Pull pending invitations only — no stream-inbox-fetch.
 
     Realtime callers (vitest ping-pong, mobile poll-then-accept) need to
     discover a fresh invitation quickly. ``conversation-sync`` also runs the
-    cursor-based inbox-fetch, which retries 404'd bundle downloads from
+    cursor-based stream-inbox-fetch, which retries 404'd bundle downloads from
     prior FlowMessages and adds seconds of latency. This variant skips
     that, returning the moment invitations are mirrored.
     """
@@ -4443,7 +4398,7 @@ async def handle_invitation_sync(someone_typeid: str, *, target_id: str | None =
         except Exception as e:
             logger.warning("[invitation-sync] upsert failed: %s", e)
     await _prune_expired_invitations()
-    inbox.touch("invitation-sync")
+    stream_inbox.touch("invitation-sync")
 
     await _announce_new_invitations(fresh_invitations)
     return ApiSuccessResponse(data={"invitations": inv_count})
@@ -4454,7 +4409,7 @@ async def _prune_expired_invitations() -> None:
 
     The hub keeps expired Invitation rows as an audit trail but no longer
     returns them from ``pending``, so nothing ever updates the local mirror
-    again — without this prune a dead invitation sits in the inbox forever
+    again — without this prune a dead invitation sits in the stream inbox forever
     (the v0.2.9x "10 phantom Organization invitations" incident). Only
     ``remote`` (hub-mirrored) rows are touched: the hub's audit copy stays;
     accepted rows are memberships now and are never invitations to prune.
@@ -4557,7 +4512,7 @@ async def invitation_sync() -> ApiResponse:
 async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiResponse:
     """Accept a pending invitation on the hub and download just the unlocked bundle.
 
-    Three steps, no broad inbox sync:
+    Three steps, no broad stream inbox sync:
       1. POST hub ``/members/accept`` — grants reader role on the linked FlowMessage.
       2. Mark the local Invitation as accepted so the strip's pending block
          drops the row on its next refetch.
@@ -4804,7 +4759,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     membership_target: Optional["Invitation"] = None
     try:
         from flow_sdk.builtin.invitation import Invitation as LocalInvitation
-        from flow_sdk.inbox import accept_mark_preview_read
+        from flow_sdk.stream_inbox import accept_mark_preview_read
 
         existing = await LocalInvitation.get_one({"id": inv_id})
         if existing:

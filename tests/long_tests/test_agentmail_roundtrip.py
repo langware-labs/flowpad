@@ -1,4 +1,4 @@
-"""LIVE: the AgentMail source, back and forth with the Flowpad inbox.
+"""LIVE: the AgentMail source, back and forth with the Flowpad stream inbox.
 
 The pure-Python twin of the agent-transport live tests — no worker, no CLI, no
 ``live_backend``: the driver is in-process HTTP, so the whole loop (receive →
@@ -118,7 +118,7 @@ async def test_agentmail_roundtrip():
 
         # The tag lanes belong to the backend process; this test asserts the
         # projection's OUTPUT, not the bus — same stance as the Slack twin.
-        from flow_sdk.inbox.projection import project_source_item  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
 
         await project_source_item(item, source=source, notify=False, announce=False)
         fm = await FlowMessage.get_one({"source_item_id": item.id})

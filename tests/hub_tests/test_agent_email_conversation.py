@@ -5,14 +5,14 @@ one for the agent under test, one for the correspondent who writes to it — and
 against the AgentMail provider those are genuine, permanent, publicly writable
 addresses that cost money. Against the hub's ``local`` provider they are
 in-process and free, and the round trip is still real: that provider allocates
-addresses, stores messages, delivers between local inboxes and implements the
+addresses, stores messages, delivers between local mailboxes and implements the
 actual threading rules, which is what makes an agent-to-agent exchange work
 offline. Either way both are released by fixture finalizers, so a failed
 assertion still gives them back.
 
 Run it free with a hub started as::
 
-    EMAIL_INBOX_ENABLED=true EMAIL_INBOX_PROVIDER=local ...
+    AGENT_MAILBOX_ENABLED=true AGENT_MAILBOX_PROVIDER=local ...
 
 and point the tier at it with ``FLOWPAD_HUB_URL``. The turn itself spawns a real
 ``claude`` CLI, so ``FLOWPAD_CLAUDE_HOME=$HOME/.claude`` is also required — see
@@ -20,7 +20,7 @@ and point the tier at it with ``FLOWPAD_HUB_URL``. The turn itself spawns a real
 
 The correspondent is a second real mailbox rather than a human with a mail
 client. That is the same substitution the hub's own live validation made
-(`docs/agent-email-inbox.md`: "Inbound from a real external mailbox"), and it
+(`docs/agent-agent-mailbox.md`: "Inbound from a real external mailbox"), and it
 buys the thing a manual check cannot — this runs unattended and fails loudly.
 The final test uses the first-class Gmail source for the public-domain leg. It
 is credential-gated and requires the Hub's publicly routable AgentMail provider;
@@ -43,8 +43,8 @@ import pytest
 
 import flow_sdk
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver
 from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItem
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.schema.data_spec import DataSpec
@@ -77,16 +77,16 @@ async def mailboxes(hub_base_url, hub_login_payload):
     DUPLICATE" is not "gives the first one back".
     """
     token = login_as(hub_login_payload)
-    driver = get_email_inbox_driver()
+    driver = get_agent_mailbox_driver()
 
     agent_id = await create_hub_agent(hub_base_url, token, f"mail-agent-{uuid.uuid4().hex[:8]}")
     outsider_id = await create_hub_agent(hub_base_url, token, f"mail-outsider-{uuid.uuid4().hex[:8]}")
 
     allocated: list[str] = []
     try:
-        agent_box = await driver.create_inbox(agent_id)
+        agent_box = await driver.create_mailbox(agent_id)
         allocated.append(agent_id)
-        outsider_box = await driver.create_inbox(outsider_id)
+        outsider_box = await driver.create_mailbox(outsider_id)
         allocated.append(outsider_id)
         yield {
             "agent_id": agent_id,
@@ -100,7 +100,7 @@ async def mailboxes(hub_base_url, hub_login_payload):
         # about and a stranded agent row is a leak nobody sees.
         for released in allocated:
             try:
-                await driver.delete_inbox(released)
+                await driver.delete_mailbox(released)
             except Exception:  # noqa: BLE001 — a second DELETE answers 404
                 pass
         async with httpx.AsyncClient(timeout=20) as client:
@@ -177,11 +177,11 @@ async def armed_agent_runner():
     entry point production uses, so a change to what startup arms reaches this
     test instead of leaving it asserting against a half-wired process.
     """
-    from flow_sdk.inbox import start_inbox
+    from flow_sdk.stream_inbox import start_stream_inbox
 
     # The SAME call `server/app.py` makes — the lane order is a production
     # contract, so the test asserts against it rather than restating it.
-    start_inbox()
+    start_stream_inbox()
 
     # The turn spawns a real CLI, and the driver resolves it from the discovered
     # harness capability rather than from PATH — the backend's service PATH is
@@ -241,7 +241,7 @@ async def _await_reply(outsider_id: str, *, from_address: str) -> dict | None:
     goes green without an agent, and the gate test goes red without a leak. Both
     failure directions are silent, which is why this matches identity instead.
     """
-    driver = get_email_inbox_driver()
+    driver = get_agent_mailbox_driver()
     wanted = (from_address or "").strip().lower()
     deadline = asyncio.get_event_loop().time() + REPLY_DEADLINE_SECONDS
     while asyncio.get_event_loop().time() < deadline:
@@ -261,7 +261,7 @@ async def test_an_outsider_emails_the_agent_and_gets_an_answer(mailboxes):
     arrived would pass on an auto-responder; requiring the nonce proves the
     reply came from a model that read the question.
     """
-    driver = get_email_inbox_driver()
+    driver = get_agent_mailbox_driver()
     source = await _agent_mailbox(mailboxes, allow=[mailboxes["outsider_address"]])
     nonce = f"okra{uuid.uuid4().hex[:8]}"
 
@@ -313,7 +313,7 @@ async def _ran_a_turn() -> bool:
 
 async def test_an_unlisted_sender_is_ignored(mailboxes):
     """The gate is what stands between a public address and an agent with tools."""
-    driver = get_email_inbox_driver()
+    driver = get_agent_mailbox_driver()
     source = await _agent_mailbox(mailboxes, allow=["nobody@example.com"])
 
     await driver.send(
@@ -349,7 +349,7 @@ async def _sync_until_message(
 
 
 async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
-    """The public SDK snippet: Gmail → Agent inbox → real Agent → Gmail."""
+    """The public SDK snippet: Gmail → Agent mailbox → real Agent → Gmail."""
     gmail_address = str(os.environ.get("GMAIL_ADDRESS") or "").strip().lower()
     if not gmail_address or not os.environ.get("GMAIL_APP_PASSWORD"):
         pytest.skip("set GMAIL_ADDRESS and GMAIL_APP_PASSWORD in .env.local")
@@ -376,22 +376,22 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
         await flow_sdk.auth.login()
         # The allowlist is the mailbox's, declared in the one call that makes it —
         # the same shape docs/snippets/agent-email.md advertises.
-        inbox = await pirate.allocate_inbox(allowed_senders=[gmail.account_key])
-        if inbox.provider != "agentmail":
+        mailbox = await pirate.allocate_mailbox(allowed_senders=[gmail.account_key])
+        if mailbox.provider != "agentmail":
             pytest.skip(
                 "Gmail delivery requires the local Hub to run with "
-                "EMAIL_INBOX_PROVIDER=agentmail"
+                "AGENT_MAILBOX_PROVIDER=agentmail"
             )
 
         agent_source = await DataSource.find_for_account("cloud_email", "agent_id", pirate.id)
-        assert agent_source is not None, "allocate_inbox() did not create the polling source"
+        assert agent_source is not None, "allocate_mailbox() did not create the polling source"
         # Establish an empty committed cursor before the public message arrives.
         await sync_source(agent_source)
 
         nonce = f"doubloon-{uuid.uuid4().hex[:8]}"
         sent = await gmail.send(
             EmailMessageSpec(
-                to=[pirate.inbox.address],
+                to=[pirate.mailbox.address],
                 subject=f"Treasure {nonce}",
                 body=f"Where is the treasure? Include {nonce} in your answer.",
             )
@@ -408,12 +408,12 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
         stored_reply = await SourceItem.find_existing(gmail.id, origin_of(gmail, reply))
         assert stored_reply is not None, "Gmail reply was returned but not ingested"
         assert stored_reply.provider == "gmail"
-        assert reply.author_external_id.lower() == pirate.inbox.address.lower()
+        assert reply.author_external_id.lower() == pirate.mailbox.address.lower()
         assert nonce in reply.body
         assert "arr" in reply.body.lower()
     finally:
-        if pirate.inbox is not None:
-            await (pirate.inbox).release()
+        if pirate.mailbox is not None:
+            await (pirate.mailbox).release()
         if pirate.remote:
             await pirate.unshare()
         await pirate.delete()

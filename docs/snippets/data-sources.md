@@ -77,7 +77,7 @@ from flow_sdk.builtin.data_driver import DataDriver
 
 existing = await DataSource.find_for_account("agentmail", "inbox", "me@agentmail.to")
 driver = await DataDriver.get("agentmail")
-src = existing or driver.create_source({"inbox": "me@agentmail.to"}, name="Inbox me@agentmail.to")
+src = existing or driver.create_source({"inbox": "me@agentmail.to"}, name="agentmail me@agentmail.to")
 await src.save()  # the API key is the machine secret ingest_api.agentmail, never config
 ```
 
@@ -236,7 +236,7 @@ reply.body
 
 For a typed reply that threads correctly per channel, use the
 [workflows](workflows.md) surface: `EmailMessageSpec.reply_to(item, body=...)`
-and `Inbox.send(...)`.
+and `StreamInbox.send(...)`.
 
 ## 9. Ask a provider what you can pick
 
