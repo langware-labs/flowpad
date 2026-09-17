@@ -138,11 +138,15 @@ async def resolve_local_stream_inbox_scope() -> AgentStreamInboxScope:
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-    from flow_sdk.stream_inbox import in_stream_inbox_of  # noqa: PLC0415
     from flow_sdk.stream_inbox.projection import default_owner  # noqa: PLC0415
 
     owner = await default_owner()
-    conversation_ids = sorted(str(c.id) for c in await Conversation.get_all({}) if in_stream_inbox_of(c, owner))
+    # `in_stream_inbox_of`'s rule, as the query: unowned, or owned by the local user.
+    unowned = ExpressionNode(op=QueryOp.IS_NULL, operands=["owner"])
+    mine = unowned if owner is None else ExpressionNode(
+        op=QueryOp.OR, operands=[unowned, ExpressionNode(operands=["owner", str(owner)])],
+    )
+    conversation_ids = sorted(str(c.id) for c in await Conversation.get_all(QueryFilter(match=mine)))
     messages = await FlowMessage.get_all(
         QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["conversation_id", conversation_ids])),
         hydrate=False,
