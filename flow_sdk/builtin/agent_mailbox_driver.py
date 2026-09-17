@@ -1,4 +1,4 @@
-"""EmailInbox driver registry — where an agent's mailbox actually lives.
+"""AgentMailbox driver registry — where an agent's mailbox actually lives.
 
 The behaviour side of a mailbox, the same way ``ComputeProvider`` is the
 behaviour side of a node. Callers name *an agent*; the driver decides where the address is
@@ -12,7 +12,7 @@ action, the ingest driver, the UI — knows the hub is involved. A second member
 (a directly-held IMAP account, say) is then a file.
 
 The method surface is deliberately the hub's own ABC
-(``flowpad/hub/external_apis/email_inbox/providers/email_inbox_provider.py``),
+(``flowpad/hub/external_apis/mailbox/providers/agent_mailbox_provider.py``),
 so the same names mean the same things at both tiers.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ from flow_sdk.cloud_client.shared.errors import HubErrorCode
 from flow_sdk.utils.kind_registry import KindRegistry
 
 
-class EmailInboxErrorCode(str, Enum):
+class AgentMailboxErrorCode(str, Enum):
     """Backend-neutral mailbox failure markers.
 
     Pinned to the hub's spelling so the hub driver can copy ``code`` across
@@ -40,7 +40,7 @@ class EmailInboxErrorCode(str, Enum):
     FOREIGN_TARGET = "foreign_target"
 
 
-class EmailInboxError(Exception):
+class AgentMailboxError(Exception):
     """A mailbox backend refused or could not be reached.
 
     The family's own failure type, so callers above it never import a backend's.
@@ -55,34 +55,34 @@ class EmailInboxError(Exception):
         self.status_code = status_code
         self.reason = reason
         self.code = code
-        super().__init__(f"email inbox error {status_code}: {reason}")
+        super().__init__(f"agent mailbox error {status_code}: {reason}")
 
 
 @runtime_checkable
-class EmailInboxDriver(Protocol):
+class AgentMailboxDriver(Protocol):
     """One mailbox backend.
 
-    Every method takes the AGENT id, never an address: one inbox per agent is the
+    Every method takes the AGENT id, never an address: one mailbox per agent is the
     model, and the address is an allocated attribute of the mailbox rather than
-    its key. That is also why ``create_inbox`` is idempotent — asking twice for
+    its key. That is also why ``create_mailbox`` is idempotent — asking twice for
     an agent's mailbox must not allocate (and bill for) a second one.
     """
 
     kind: str
 
-    async def create_inbox(self, agent_id: str, **options: Any) -> dict:
+    async def create_mailbox(self, agent_id: str, **options: Any) -> dict:
         """Allocate this agent's mailbox, or return the one it already has."""
         ...
 
-    async def enable_inbox(self, agent_id: str) -> dict:
+    async def enable_mailbox(self, agent_id: str) -> dict:
         """Activate this agent's allocation, provisioning it when absent."""
         ...
 
-    async def disable_inbox(self, agent_id: str) -> dict:
+    async def disable_mailbox(self, agent_id: str) -> dict:
         """Pause this agent's allocation without releasing its address."""
         ...
 
-    async def configure_inbox(self, agent_id: str, settings: dict) -> dict:
+    async def configure_mailbox(self, agent_id: str, settings: dict) -> dict:
         """Set the mailbox's own policy — its allowlist and its read defaults.
 
         The backend is authoritative for both: an allowlist a client could hold
@@ -91,11 +91,11 @@ class EmailInboxDriver(Protocol):
         """
         ...
 
-    async def get_inbox(self, agent_id: str) -> Optional[dict]:
+    async def get_mailbox(self, agent_id: str) -> Optional[dict]:
         """The agent's non-deleted mailbox descriptor, or None when unallocated."""
         ...
 
-    async def delete_inbox(self, agent_id: str) -> bool:
+    async def delete_mailbox(self, agent_id: str) -> bool:
         """Release the address. False when there was nothing to release."""
         ...
 
@@ -114,10 +114,10 @@ class EmailInboxDriver(Protocol):
         ...
 
 
-def _build_default_registry(registry: "KindRegistry[EmailInboxDriver]") -> None:
-    from flow_sdk.builtin.drivers.hub_email_inbox_driver import HubEmailInboxDriver
+def _build_default_registry(registry: "KindRegistry[AgentMailboxDriver]") -> None:
+    from flow_sdk.builtin.drivers.hub_agent_mailbox_driver import HubAgentMailboxDriver
 
-    registry.register(HubEmailInboxDriver())  # the hub — it holds the credential
+    registry.register(HubAgentMailboxDriver())  # the hub — it holds the credential
 
 
 #: Spellings that mean the hub.
@@ -126,17 +126,17 @@ HUB_KIND_ALIASES = {
     "flowpad_hub": "flowpad-hub",
 }
 
-EMAIL_INBOX_DRIVERS: "KindRegistry[EmailInboxDriver]" = KindRegistry(
-    "email inbox", aliases=HUB_KIND_ALIASES, builder=_build_default_registry
+AGENT_MAILBOX_DRIVERS: "KindRegistry[AgentMailboxDriver]" = KindRegistry(
+    "agent mailbox", aliases=HUB_KIND_ALIASES, builder=_build_default_registry
 )
 
 
 
 
-def get_email_inbox_driver(kind: Optional[str] = None) -> EmailInboxDriver:
+def get_agent_mailbox_driver(kind: Optional[str] = None) -> AgentMailboxDriver:
     """The configured mailbox backend.
 
-    ``kind`` defaults to ``ServiceConfig.email_inbox_provider``. Deliberately
+    ``kind`` defaults to ``ServiceConfig.agent_mailbox_provider``. Deliberately
     NOT ``email_provider``: that one names the system SENDER, and the hub keeps
     the same two apart for the same reason — one field with two meanings makes a
     value that is valid for one a hard failure for the other.
@@ -144,5 +144,5 @@ def get_email_inbox_driver(kind: Optional[str] = None) -> EmailInboxDriver:
     if not kind:
         from flow_sdk.config import default_service_config  # noqa: PLC0415
 
-        kind = default_service_config.email_inbox_provider
-    return EMAIL_INBOX_DRIVERS.get(kind)
+        kind = default_service_config.agent_mailbox_provider
+    return AGENT_MAILBOX_DRIVERS.get(kind)

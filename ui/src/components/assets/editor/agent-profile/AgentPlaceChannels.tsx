@@ -8,13 +8,13 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { isMessageDriverSpec } from '@src/components/data-sources/use-source-specs';
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
-import { ChannelList, useAttachedChannels } from '@src/components/inbox-view/AttachedChannelsBar';
+import { ChannelList, useAttachedChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /**
  * Every message source this agent is connected to — email, Slack, … — with its
- * on/off switch and delete. The same rows as the inbox's channel marks, owned by
+ * on/off switch and delete. The same rows as the stream inbox's channel marks, owned by
  * the agent; "Add channel" attaches a new one to it.
  */
 export function AgentPlaceChannels({ agent }: { agent: Agent }) {
@@ -36,11 +36,11 @@ export function AgentPlaceChannels({ agent }: { agent: Agent }) {
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => navigation.openDock(DockPointer.forAgentInbox(agent.id))}
-          data-testid="agent-place-open-inbox"
+          onClick={() => navigation.openDock(DockPointer.forAgentStreamInbox(agent.id))}
+          data-testid="agent-place-open-stream-inbox"
         >
           <Inbox className="me-1.5 h-3.5 w-3.5" />
-          <Trans>Inbox</Trans>
+          <Trans>Stream Inbox</Trans>
         </Button>
       </div>
       {addOpen && <DataSourceDialog open onOpenChange={setAddOpen} owner={owner} only={isMessageDriverSpec} />}

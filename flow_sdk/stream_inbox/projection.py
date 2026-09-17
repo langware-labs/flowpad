@@ -1,4 +1,4 @@
-"""The inbox projection — ingested cloud records become Inbox conversations.
+"""The stream inbox projection — ingested cloud records become stream inbox conversations.
 
 ``SourceItem`` is the CACHE of a mutable cloud object; ``FlowMessage`` is how it
 is rendered in a conversation. This module is the one-way projection between
@@ -38,7 +38,7 @@ import re
 from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.inbox._locks import loop_lock, new_registry
+from flow_sdk.stream_inbox._locks import loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ async def resolve_thread(channel: str, key: str, owner, *, title: str, conversat
         # after. `conversation_id` is authoritative from this moment: a merge
         # repoints it, which is the whole reason nothing re-derives it from the
         # key. A mail thread titles by subject. A chat message has none, and
-        # falling back to the KEY put raw Slack ts digits in the inbox; the
+        # falling back to the KEY put raw Slack ts digits in the stream inbox; the
         # root message's opening is what Slack itself titles a thread by.
         # Stamped at birth only, so it never churns.
         thread = MessageThread(
@@ -160,14 +160,14 @@ def thread_key_for(item, subject: str) -> str:
 
 #: The ontology subtree this projection accepts. `SourceItem.kind` is what
 #: separates a MESSAGE from a document: `content.message.email` and
-#: `content.message.chat` belong in an inbox, `content.feed.item` (an RSS entry,
+#: `content.message.chat` belong in a stream inbox, `content.feed.item` (an RSS entry,
 #: a Hacker News story) emphatically does not — it is an article, and projecting
-#: it produced a 300-row inbox of news headlines the first time this ran.
+#: it produced a 300-row stream inbox of news headlines the first time this ran.
 MESSAGE_KIND_ROOT = "content.message"
 
 
 def is_message(item) -> bool:
-    """Whether an ingested record belongs in the Inbox at all.
+    """Whether an ingested record belongs in the stream inbox at all.
 
     Hierarchy match, not a prefix compare — `tag_is_within` is the shared
     dot-taxonomy owner and is lenient about case/whitespace, so an untrusted
@@ -240,11 +240,11 @@ async def project_source_item(
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
     if not is_message(item):
-        return None  # a feed article is not inbox material — see MESSAGE_KIND_ROOT
+        return None  # a feed article is not stream inbox material — see MESSAGE_KIND_ROOT
     if source is None:
         source = await DataSource.get_one({"id": item.data_source_id})
     if source is None:
-        logger.debug("[inbox] item %s has no DataSource — skipped", item.id)
+        logger.debug("[stream-inbox] item %s has no DataSource — skipped", item.id)
         return None
 
     channel = channel_of(source)
@@ -426,7 +426,7 @@ async def _place_message(
             try:
                 await existing_fm.save(notify=False)
             except Exception:  # noqa: BLE001 — healing must not break placement
-                logger.exception("[inbox] projection heal failed for %s", fm_id)
+                logger.exception("[stream-inbox] projection heal failed for %s", fm_id)
     else:
         # A record that names the hub's own message id lands on it, so the
         # mirror's later copy of the same message updates this row.
@@ -482,7 +482,7 @@ async def _place_message(
     if recount:
         await recompute_thread_projection(thread_id, thread=thread, notify=notify)
     if announce and first_placement:
-        from flow_sdk.inbox.inbox_on_tag import emit_projected_tag  # noqa: PLC0415
+        from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_projected_tag  # noqa: PLC0415
 
         emit_projected_tag(item)
     return fm_id, thread_id
@@ -535,7 +535,7 @@ async def _sender_for(item, source, channel: str) -> tuple[str, str]:
     """``(sender_id, sender_name)`` — mapping our own account to the local user.
 
     Load-bearing, not cosmetic. Both unread formulas gate on the sender
-    (``inbox.count_unread``, and ``conversationFacets`` on the frontend), so an
+    (``stream_inbox.count_unread``, and ``conversationFacets`` on the frontend), so an
     item WE authored — every message in a Sent folder, and every reply we send
     once Part 2 lands — would otherwise count as unread mail from a stranger.
 
@@ -778,7 +778,7 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
     if not announce:
         # Said out loud: a silent cap reads downstream as "nothing arrived".
         logger.info(
-            "[inbox] %d items exceed the %d/min cap — projecting %s without per-item events",
+            "[stream-inbox] %d items exceed the %d/min cap — projecting %s without per-item events",
             len(missing),
             STORM_CAP_PER_MINUTE,
             data_source_id,
@@ -806,10 +806,10 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
                 projected += unplaced
                 touched.add(result[1])
         except Exception:  # noqa: BLE001 — one bad record must not stall the sweep
-            logger.exception("[inbox] reconcile failed for source_item %s", item.id)
+            logger.exception("[stream-inbox] reconcile failed for source_item %s", item.id)
     for thread_id in touched:
         await recompute_thread_projection(thread_id)
-    logger.info("[inbox] reconciled %d/%d items for source %s", projected, len(missing), data_source_id)
+    logger.info("[stream-inbox] reconciled %d/%d items for source %s", projected, len(missing), data_source_id)
     return projected
 
 
@@ -818,7 +818,7 @@ async def remove_projection_for_items(item_ids, *, notify: bool = True) -> int:
 
     Mandatory under the reference model, where it was merely hygiene under the
     copy: an orphaned reference renders BLANK, not stale-but-readable, so a
-    purge that left the messages behind would fill the inbox with empty rows.
+    purge that left the messages behind would fill the stream inbox with empty rows.
 
     Per doomed message: destroy the row, prune its conversation pointer. Then
     per touched thread: recount, or delete it when nothing remains; a
@@ -851,14 +851,14 @@ async def remove_projection_for_items(item_ids, *, notify: bool = True) -> int:
         try:
             await fm.destroy()
         except Exception:  # noqa: BLE001 — one stuck row must not stall the purge
-            logger.exception("[inbox] purge: destroy failed for flow_message %s", fm.id)
+            logger.exception("[stream-inbox] purge: destroy failed for flow_message %s", fm.id)
             continue
         if conv_id:
             try:
                 rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
                 await prune_message_pointer(rec, str(fm.id), notify=notify)
             except Exception:  # noqa: BLE001
-                logger.exception("[inbox] purge: pointer prune failed fm=%s conv=%s", fm.id, conv_id)
+                logger.exception("[stream-inbox] purge: pointer prune failed fm=%s conv=%s", fm.id, conv_id)
 
     # Grouped, not per-row: a whole-source purge touches hundreds of threads,
     # and 2-3 point queries each turns one purge into a query storm. One IN
@@ -908,7 +908,7 @@ async def remove_projection_for_items(item_ids, *, notify: bool = True) -> int:
 _started = False
 
 
-def start_inbox_projection() -> None:
+def start_stream_inbox_projection() -> None:
     """Arm both lanes. Idempotent; called at server startup."""
     global _started
     if _started:
@@ -919,7 +919,7 @@ def start_inbox_projection() -> None:
     on_tag("ingest.*.item.created", _on_item)
     on_tag("ingest.*.item.updated", _on_item)
     on_tag("ingest.*.sync.completed", _on_sync)
-    logger.info("[inbox] projection armed (item + reconcile lanes)")
+    logger.info("[stream-inbox] projection armed (item + reconcile lanes)")
 
 
 async def _on_item(event) -> None:
@@ -943,7 +943,7 @@ async def _on_item(event) -> None:
         await project_source_item(item, announce=first_placement)
         _touch()
     except Exception:  # noqa: BLE001 — never fail the ingest that triggered us
-        logger.exception("[inbox] projection failed for source_item %s", entity_id)
+        logger.exception("[stream-inbox] projection failed for source_item %s", entity_id)
 
 
 async def _on_sync(event) -> None:
@@ -954,18 +954,18 @@ async def _on_sync(event) -> None:
         if await reconcile_source(source_id):
             _touch()
     except Exception:  # noqa: BLE001
-        logger.exception("[inbox] reconcile failed for source %s", source_id)
+        logger.exception("[stream-inbox] reconcile failed for source %s", source_id)
 
 
 def _touch() -> None:
     """Republish the unread badge.
 
-    ``inbox.touch`` and NOT ``recompute_unread``: the awaited form is for
+    ``stream_inbox.touch`` and NOT ``recompute_unread``: the awaited form is for
     callers that must observe the fresh value, and a full recompute is a
     whole-table scan under a global lock. Awaiting one per item event would
     put up to STORM_CAP_PER_MINUTE of those on the ingest handler's critical
     path; the fire-and-forget form is what every other mutation site uses.
     """
-    from flow_sdk import inbox  # noqa: PLC0415
+    from flow_sdk import stream_inbox  # noqa: PLC0415
 
-    inbox.touch("inbox-projection")
+    stream_inbox.touch("stream-inbox-projection")

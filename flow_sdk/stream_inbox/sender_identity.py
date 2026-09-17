@@ -11,7 +11,7 @@ shows one identity for an agent, not one in Flowpad and another in Slack.
 is why nothing here is threaded through ``IngestDriver.send``: that signature is
 keyword-only with six implementations and no ``**kwargs``, so a new parameter
 would touch every mail driver to serve one chat one. Resolving from the source
-also covers ``DataSource.send`` — the SDK / ``blocks.Inbox`` path — which a value
+also covers ``DataSource.send`` — the SDK / ``blocks.StreamInbox`` path — which a value
 carried on the reply target would have missed.
 """
 
@@ -32,7 +32,7 @@ class SenderIdentity:
     ``DataSpec``. The repo's rule is that a shape which TRAVELS (a launch
     payload, a file header, an agent's input/output) is a spec; this value is
     built and consumed inside one process, never serialized, and registering a
-    kind for it would also make the schema layer import the inbox layer.
+    kind for it would also make the schema layer import the stream inbox layer.
 
     Both fields are the provider's vocabulary deliberately: Slack takes a
     ``username`` and an ``icon_emoji``, and a driver that cannot honour one
@@ -114,7 +114,7 @@ async def sender_identity(source: Any) -> Optional[SenderIdentity]:
     only the debug log below tells them apart. Never raises: an unreadable Agent
     row costs a name, not a message.
     """
-    from flow_sdk.inbox.projection import agent_id_of  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import agent_id_of  # noqa: PLC0415
 
     agent_id = agent_id_of(source)
     if not agent_id:

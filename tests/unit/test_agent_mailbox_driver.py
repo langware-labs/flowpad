@@ -1,4 +1,4 @@
-"""The email-inbox driver family, and the agent verb on top of it.
+"""The agent-mailbox driver family, and the agent verb on top of it.
 
 Offline: the hub transport is monkeypatched, so nothing here allocates an
 address. The live round trip lives in ``tests/hub_tests/`` because provisioning
@@ -13,15 +13,15 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.builtin.drivers.hub_email_inbox_driver import HubEmailInboxDriver
-from flow_sdk.builtin.email_inbox import EmailInbox
-from flow_sdk.builtin.email_inbox_driver import (
-    EMAIL_INBOX_DRIVERS,
-    EmailInboxDriver,
-    EmailInboxError,
-    EmailInboxErrorCode,
-    get_email_inbox_driver,
+from flow_sdk.builtin.agent_mailbox import AgentMailbox
+from flow_sdk.builtin.agent_mailbox_driver import (
+    AGENT_MAILBOX_DRIVERS,
+    AgentMailboxDriver,
+    AgentMailboxError,
+    AgentMailboxErrorCode,
+    get_agent_mailbox_driver,
 )
+from flow_sdk.builtin.drivers.hub_agent_mailbox_driver import HubAgentMailboxDriver
 from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode
 
 AGENT_ID = "22222222-2222-4222-8222-222222222222"
@@ -37,24 +37,24 @@ DESCRIPTOR = {
 
 class TestTheFamily:
     def test_the_hub_member_is_registered(self):
-        assert "flowpad-hub" in EMAIL_INBOX_DRIVERS.kinds()
+        assert "flowpad-hub" in AGENT_MAILBOX_DRIVERS.kinds()
 
     def test_hub_has_one_spelling_across_families(self):
         """The hub member is addressed as `flowpad-hub`."""
-        assert HubEmailInboxDriver.kind == "flowpad-hub"
+        assert HubAgentMailboxDriver.kind == "flowpad-hub"
 
     def test_the_bare_alias_resolves(self):
-        assert EMAIL_INBOX_DRIVERS.normalize("hub") == "flowpad-hub"
-        assert get_email_inbox_driver("hub").kind == "flowpad-hub"
+        assert AGENT_MAILBOX_DRIVERS.normalize("hub") == "flowpad-hub"
+        assert get_agent_mailbox_driver("hub").kind == "flowpad-hub"
 
     def test_an_unknown_kind_names_itself(self):
         with pytest.raises(KeyError, match="nonesuch"):
-            get_email_inbox_driver("nonesuch")
+            get_agent_mailbox_driver("nonesuch")
 
     def test_the_hub_driver_satisfies_the_protocol(self):
         """`runtime_checkable` only compares method NAMES, so this catches a
         rename, not a signature change — which is exactly the drift it is for."""
-        assert isinstance(HubEmailInboxDriver(), EmailInboxDriver)
+        assert isinstance(HubAgentMailboxDriver(), AgentMailboxDriver)
 
 
 class TestTheHubMember:
@@ -68,48 +68,48 @@ class TestTheHubMember:
             return DESCRIPTOR
 
         monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", fake_post)
-        driver = HubEmailInboxDriver()
+        driver = HubAgentMailboxDriver()
 
-        await driver.enable_inbox(AGENT_ID)
-        await driver.disable_inbox(AGENT_ID)
+        await driver.enable_mailbox(AGENT_ID)
+        await driver.disable_mailbox(AGENT_ID)
 
         assert seen == [("enable", {}), ("disable", {})]
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
-    async def test_get_inbox_unwraps_the_envelope(self, monkeypatch):
-        """The hub wraps this one (`{"inbox": …|null}`) because a bare null does
+    async def test_get_mailbox_unwraps_the_envelope(self, monkeypatch):
+        """The hub wraps this one (`{"mailbox": …|null}`) because a bare null does
         not survive its envelope. Callers should see a descriptor or nothing."""
 
         async def fake_get(*_a, **_k):
-            return {"inbox": DESCRIPTOR}
+            return {"mailbox": DESCRIPTOR}
 
         monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
 
-        assert (await HubEmailInboxDriver().get_inbox(AGENT_ID))["address"] == DESCRIPTOR["address"]
+        assert (await HubAgentMailboxDriver().get_mailbox(AGENT_ID))["address"] == DESCRIPTOR["address"]
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_no_mailbox_reads_as_nothing_not_as_an_empty_dict(self, monkeypatch):
         async def fake_get(*_a, **_k):
-            return {"inbox": None}
+            return {"mailbox": None}
 
         monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
 
-        assert await HubEmailInboxDriver().get_inbox(AGENT_ID) is None
+        assert await HubAgentMailboxDriver().get_mailbox(AGENT_ID) is None
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_deleting_a_mailbox_that_is_gone_is_false_not_an_error(self, monkeypatch):
         """Teardown should not care whether it is the first or second attempt —
-        the backend answers 404 for an agent with no active inbox."""
+        the backend answers 404 for an agent with no active mailbox."""
 
         async def fake_delete(*_a, **_k):
-            raise HubError(404, "agent has no inbox")
+            raise HubError(404, "agent has no mailbox")
 
         monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_delete", fake_delete)
 
-        assert await HubEmailInboxDriver().delete_inbox(AGENT_ID) is False
+        assert await HubAgentMailboxDriver().delete_mailbox(AGENT_ID) is False
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -124,8 +124,8 @@ class TestTheHubMember:
 
         # Re-raised as the FAMILY's error, not the hub's: callers above the
         # driver are supposed to work against any backend.
-        with pytest.raises(EmailInboxError):
-            await HubEmailInboxDriver().delete_inbox(AGENT_ID)
+        with pytest.raises(AgentMailboxError):
+            await HubAgentMailboxDriver().delete_mailbox(AGENT_ID)
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -135,10 +135,10 @@ class TestTheHubMember:
 
         monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
 
-        with pytest.raises(EmailInboxError) as caught:
-            await HubEmailInboxDriver().get_inbox(AGENT_ID)
+        with pytest.raises(AgentMailboxError) as caught:
+            await HubAgentMailboxDriver().get_mailbox(AGENT_ID)
 
-        assert caught.value.code == EmailInboxErrorCode.TARGET_NOT_FOUND
+        assert caught.value.code == AgentMailboxErrorCode.TARGET_NOT_FOUND
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -152,10 +152,10 @@ class TestTheHubMember:
         monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
         monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.get_user", valid_user)
 
-        with pytest.raises(EmailInboxError) as caught:
-            await HubEmailInboxDriver().get_inbox(AGENT_ID)
+        with pytest.raises(AgentMailboxError) as caught:
+            await HubAgentMailboxDriver().get_mailbox(AGENT_ID)
 
-        assert caught.value.code == EmailInboxErrorCode.TARGET_NOT_FOUND
+        assert caught.value.code == AgentMailboxErrorCode.TARGET_NOT_FOUND
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -170,9 +170,9 @@ class TestTheHubMember:
 
         monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake_get)
 
-        await HubEmailInboxDriver().get_message(AGENT_ID, "<abc@mail.example>")
+        await HubAgentMailboxDriver().get_message(AGENT_ID, "<abc@mail.example>")
 
-        assert seen["action"] == "email_inbox"
+        assert seen["action"] == "mailbox"
         assert seen["sub_path"] == "messages/%3Cabc%40mail.example%3E"
 
 
@@ -190,10 +190,10 @@ class TestTheAgentVerb:
 
         allocated = _patch_mailbox(monkeypatch, existing=DESCRIPTOR)
 
-        inbox = await Agent(id=AGENT_ID, name="mailer", remote=True).allocate_inbox()
+        mailbox = await Agent(id=AGENT_ID, name="mailer", remote=True).allocate_mailbox()
 
-        assert inbox.newly_allocated is False
-        assert inbox.address == DESCRIPTOR["address"]
+        assert mailbox.newly_allocated is False
+        assert mailbox.address == DESCRIPTOR["address"]
         assert allocated == [], "a second address was allocated for an agent that had one"
 
     @pytest.mark.asyncio
@@ -203,10 +203,10 @@ class TestTheAgentVerb:
 
         _patch_mailbox(monkeypatch, existing=None)
 
-        inbox = await Agent(id=AGENT_ID, name="mailer", remote=True).allocate_inbox()
+        mailbox = await Agent(id=AGENT_ID, name="mailer", remote=True).allocate_mailbox()
 
-        assert inbox.newly_allocated is True
-        assert inbox.address == DESCRIPTOR["address"]
+        assert mailbox.newly_allocated is True
+        assert mailbox.address == DESCRIPTOR["address"]
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -221,7 +221,7 @@ class TestTheAgentVerb:
         allocated = _patch_mailbox(monkeypatch, existing=None, logged_in=False)
 
         with pytest.raises(LoginRequired):
-            await Agent(id=AGENT_ID, name="mailer", remote=True).allocate_inbox()
+            await Agent(id=AGENT_ID, name="mailer", remote=True).allocate_mailbox()
         assert allocated == []
 
     def test_the_action_is_routable_and_declares_no_parameters(self):
@@ -233,10 +233,10 @@ class TestTheAgentVerb:
         from flow_sdk.actions.action_registry import action as registry
         from flow_sdk.builtin.agent import Agent
 
-        assert "agent.allocate_inbox" in registry.function_registry
+        assert "agent.allocate_mailbox" in registry.function_registry
 
-        params = set(inspect.signature(Agent.allocate_inbox_action).parameters) - {"self", "cls"}
-        assert not params, f"allocate_inbox_action declares {sorted(params)}"
+        params = set(inspect.signature(Agent.allocate_mailbox_action).parameters) - {"self", "cls"}
+        assert not params, f"allocate_mailbox_action declares {sorted(params)}"
 
 
 def _patch_mailbox(monkeypatch, *, existing, logged_in=True):
@@ -251,16 +251,16 @@ def _patch_mailbox(monkeypatch, *, existing, logged_in=True):
     class _Driver:
         kind = "flowpad-hub"
 
-        async def get_inbox(self, agent_id):
+        async def get_mailbox(self, agent_id):
             return existing
 
-        async def enable_inbox(self, agent_id, **_options):
+        async def enable_mailbox(self, agent_id, **_options):
             if not existing:
                 allocated.append(agent_id)
             return DESCRIPTOR
 
     monkeypatch.setattr(
-        "flow_sdk.builtin.email_inbox_driver.get_email_inbox_driver", lambda *_a, **_k: _Driver()
+        "flow_sdk.builtin.agent_mailbox_driver.get_agent_mailbox_driver", lambda *_a, **_k: _Driver()
     )
     monkeypatch.setattr(
         "flow_sdk.cli.auth.hub_login.hub_auth_available", lambda *_a, **_k: logged_in
@@ -269,5 +269,5 @@ def _patch_mailbox(monkeypatch, *, existing, logged_in=True):
     async def _no_source(self):
         return None
 
-    monkeypatch.setattr(EmailInbox, "ensure_source", _no_source)
+    monkeypatch.setattr(AgentMailbox, "ensure_source", _no_source)
     return allocated

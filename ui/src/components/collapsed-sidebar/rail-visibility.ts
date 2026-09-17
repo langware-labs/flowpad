@@ -34,7 +34,7 @@ import { ViewMode } from '@src/contexts/view-mode-context';
 /** Every icon slot on the DESK rail — the ids RAIL_ITEMS may place. */
 export type RailItemId =
   | 'chats'
-  | 'inbox'
+  | 'stream_inbox'
   /** OAuth connections, API-key credentials and the FlowPad login — one screen. */
   | 'credentials'
   | 'discover'
@@ -52,7 +52,7 @@ export type RailItemId =
  * Hub-page rail ids (page=hub). A SEPARATE union, not more members of
  * {@link RailItemId}: the hub rail is a fixed list that bypasses the mode matrix
  * entirely, so keeping the two apart is what stops a hub id being written into
- * RAIL_ITEMS (where it would resolve to a silent `null` at render). `inbox`
+ * RAIL_ITEMS (where it would resolve to a silent `null` at render). `stream_inbox`
  * exists on both surfaces and means a different thing on each — another reason
  * not to share one union. `tasks` is likewise hub-only: the desk rail dropped it
  * (task assets are reached through the project), and the hub's `tasks` is a
@@ -62,7 +62,7 @@ export type RailItemId =
 export type HubRailItemId =
   | 'world'
   | 'organization'
-  | 'inbox'
+  | 'stream_inbox'
   | 'tasks'
   | 'docs'
   | 'token-plan'
@@ -111,8 +111,8 @@ export const MODE_CHAIN = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, 
  */
 export const RAIL_ITEMS: readonly RailSpec[] = [
   { id: 'chats', from: ViewMode.Vibe, placement: 'top' },
-  { id: 'inbox', from: ViewMode.Vibe, placement: 'top', gate: 'conversations' },
-  // Vibe, beside the inbox rather than down with `hooks` and `llm-sources`:
+  { id: 'stream_inbox', from: ViewMode.Vibe, placement: 'top', gate: 'conversations' },
+  // Vibe, beside the stream inbox rather than down with `hooks` and `llm-sources`:
   // connecting Gmail or Slack is what makes a source or an agent work at all, so
   // it is not a settings destination you visit once. Ungated for the same reason
   // `data-sources` and `rag` are — this screen is where the FIRST connection is

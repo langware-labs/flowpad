@@ -17,7 +17,7 @@ one, and shows whether each is actually alive. Everything lives under
 | `SourceMenu.tsx` | The "more" menu: pause/resume, edit, replay, open a spec-shipped editor app, Events, Runs, delete. |
 | `SourceStreams.tsx` | Rows for the source's `DataSourceCursor`s (segment label, health, failure count, last sync). |
 | `ReplayDialog.tsx` | Optional `since` date, then `source.replay(since)`. |
-| `use-source-specs.ts` | `sourcesQuery` (shared with the inbox) and `useSourceSpecs()` → `{ specs, specFor(provider) }`. |
+| `use-source-specs.ts` | `sourcesQuery` (shared with the stream inbox) and `useSourceSpecs()` → `{ specs, specFor(provider) }`. |
 | `source-form.ts` | Pure draft/validation helpers (`emptyDraft`, `specFields`, `validateDraft`, `buildConfig`, `accountKeyFor`); unit-tested in `ui/tests/unit/data-source-form.test.ts`. |
 | `status-style.ts`, `health-style.ts` | Chip label/colour tables keyed by `SourceStatus` and `SourceHealth`. |
 | `useAttentionPolling.ts` | Used by `ConversationView`, not by this screen: while a conversation bound to a source is the selected dock, calls `source.requestPoll()` every 25 s. |
@@ -30,7 +30,7 @@ call is an entity query or an entity action.
 **Queries** (`useEntitiesQuery` over a `QueryRequest`, all `scope: []` because a
 source is a property of the instance, not of a project):
 
-- `data-sources:list` — `DataSource.type` (in `use-source-specs.ts`, shared with the inbox's channel attribution).
+- `data-sources:list` — `DataSource.type` (in `use-source-specs.ts`, shared with the stream inbox's channel attribution).
 - `data-sources:specs` — `DataDriver.type`, the installed definitions. This replaced a hardcoded provider catalog: a spec added as an asset appears with no frontend release.
 - `data-sources:cursors:<id>` — `DataSourceCursor.type` filtered by `data_source_id`, created per card but `enabled` only while the card is expanded, so a collapsed grid watches nothing.
 

@@ -7,7 +7,7 @@ import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { IDeployment } from './deployment';
 import { DataSource, type IDataSource } from './data-source';
-import { EmailInbox, type IEmailInbox } from './email-inbox';
+import { AgentMailbox, type IAgentMailbox } from './agent-mailbox';
 import { Trigger } from './trigger';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
@@ -323,10 +323,10 @@ export class Agent extends APIEntity<Agent> {
    *
    * An Agent HOLDS a mailbox; it is not one. These five are the whole of the
    * Agent's mail surface — everything else about a mailbox (its allowlist, its
-   * lifecycle) belongs to `EmailInbox`, which this hydrates.
+   * lifecycle) belongs to `AgentMailbox`, which this hydrates.
    */
-  async inboxState(): Promise<AgentInboxState> {
-    return normalizeAgentInboxState(await this.get<AgentInboxStateWire>('inbox_state'));
+  async mailboxState(): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.get<AgentMailboxStateWire>('mailbox_state'));
   }
 
   /**
@@ -336,30 +336,30 @@ export class Agent extends APIEntity<Agent> {
    * asking twice never buys twice. It also wires the local source and turns both
    * on — there is no separate "enable".
    */
-  async allocateInbox(options: InboxAllocation = {}): Promise<AgentInboxState> {
-    return normalizeAgentInboxState(await this.post<AgentInboxStateWire>('allocate_inbox', { ...options }));
+  async allocateMailbox(options: MailboxAllocation = {}): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('allocate_mailbox', { ...options }));
   }
 
   /** Pause the mailbox. Reversible — the address and the cursor survive. */
-  async disableInbox(): Promise<AgentInboxState> {
-    return normalizeAgentInboxState(await this.post<AgentInboxStateWire>('disable_inbox'));
+  async disableMailbox(): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('disable_mailbox'));
   }
 
-  async configureInbox(options: InboxConfiguration): Promise<AgentInboxState> {
-    return normalizeAgentInboxState(await this.post<AgentInboxStateWire>('configure_inbox', { ...options }));
+  async configureMailbox(options: MailboxConfiguration): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('configure_mailbox', { ...options }));
   }
 
   /** Release the address for good. Distinct from disabling, on purpose. */
-  async releaseInbox(): Promise<{ agent_id: string; released: boolean }> {
-    return this.post<{ agent_id: string; released: boolean }>('release_inbox');
+  async releaseMailbox(): Promise<{ agent_id: string; released: boolean }> {
+    return this.post<{ agent_id: string; released: boolean }>('release_mailbox');
   }
 
-  async inboxScope(): Promise<AgentInboxScope> {
-    return this.get<AgentInboxScope>('inbox_scope');
+  async streamInboxScope(): Promise<AgentStreamInboxScope> {
+    return this.get<AgentStreamInboxScope>('stream_inbox_scope');
   }
 }
 
-export interface InboxConfiguration {
+export interface MailboxConfiguration {
   /** Who may drive the agent through this mailbox. Empty admits nobody. Hub-stored. */
   allowed_senders?: string[];
   /** Standing read defaults, in the Hub's wire vocabulary. Hub-stored. */
@@ -368,33 +368,33 @@ export interface InboxConfiguration {
   poll_interval_seconds?: number;
 }
 
-export interface InboxAllocation {
+export interface MailboxAllocation {
   allowed_senders?: string[];
   display_name?: string;
   username?: string;
 }
 
-interface AgentInboxStateWire {
+interface AgentMailboxStateWire {
   agent_id: string;
   enabled: boolean;
-  inbox: (Omit<Partial<IEmailInbox>, 'agent_typeid'> & { typeid?: string; agent_typeid: TypeId | string }) | null;
+  mailbox: (Omit<Partial<IAgentMailbox>, 'agent_typeid'> & { typeid?: string; agent_typeid: TypeId | string }) | null;
   source: (Partial<IDataSource> & { id?: string; typeid?: string }) | null;
   /** Every message source the agent owns; the mailbox is one of them. */
   sources?: (Partial<IDataSource> & { id?: string; typeid?: string })[];
 }
 
-export interface AgentInboxState {
+export interface AgentMailboxState {
   agent_id: string;
   enabled: boolean;
   /** The mailbox channel's own row and source — kept for readers that predate
    *  an agent holding more than one channel. */
-  inbox: EmailInbox | null;
+  mailbox: AgentMailbox | null;
   source: DataSource | null;
   /** Every message source the agent owns (the mailbox included). */
   sources: DataSource[];
 }
 
-export interface AgentInboxScope {
+export interface AgentStreamInboxScope {
   agent_id: string;
   source_id: string | null;
   conversation_ids: string[];
@@ -407,21 +407,21 @@ function entityId(value: { id?: string; typeid?: string } | null): string | unde
   return value.id ?? (value.typeid ? new TypeId(value.typeid).id : undefined);
 }
 
-function normalizeAgentInboxState(state: AgentInboxStateWire): AgentInboxState {
-  const inboxId = entityId(state.inbox);
+function normalizeAgentMailboxState(state: AgentMailboxStateWire): AgentMailboxState {
+  const mailboxId = entityId(state.mailbox);
   const sourceId = entityId(state.source);
   return {
     agent_id: state.agent_id,
     enabled: state.enabled,
-    inbox:
-      state.inbox && inboxId
-        ? new EmailInbox({
-            ...state.inbox,
-            id: inboxId,
+    mailbox:
+      state.mailbox && mailboxId
+        ? new AgentMailbox({
+            ...state.mailbox,
+            id: mailboxId,
             agent_typeid:
-              typeof state.inbox.agent_typeid === 'string'
-                ? new TypeId(state.inbox.agent_typeid)
-                : state.inbox.agent_typeid,
+              typeof state.mailbox.agent_typeid === 'string'
+                ? new TypeId(state.mailbox.agent_typeid)
+                : state.mailbox.agent_typeid,
           })
         : null,
     source: state.source && sourceId ? new DataSource({ ...state.source, id: sourceId }) : null,

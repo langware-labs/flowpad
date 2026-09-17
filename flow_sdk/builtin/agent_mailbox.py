@@ -1,9 +1,10 @@
 """The Agent's mailbox — a functional entity, not a descriptor.
 
 The Hub allocates one mailbox per Agent and owns its formal identity: the
-provider, the provider's opaque inbox id, the public address, and the lifecycle
-status. This module is the SDK's side of that mailbox, and it owns the *verbs* —
-who may drive it, whether it is on, what polls it, how a message is sent.
+provider, the provider's opaque id for it (``provider_inbox_id``), the public
+address, and the lifecycle status. This module is the SDK's side of that
+mailbox, and it owns the *verbs* — who may drive it, whether it is on, what
+polls it, how a message is sent.
 
 **A transient projection, not a local row.** Same shape as ``LLMEndpoint``
 (``flow_sdk/builtin/llm_endpoint.py``): ``_api_visible`` is False and
@@ -13,14 +14,14 @@ Behaviour does not require storage, and a local copy of the Hub's row could only
 drift from it.
 
 **Why the verbs live here and not on ``Agent``.** A mailbox's policy is the
-mailbox's: ``inbox.allowed(address)`` says what it means, where the old
+mailbox's: ``mailbox.allowed(address)`` says what it means, where the old
 ``agent.may_email(address)`` read as outbound permission and meant the opposite.
-An Agent holds an inbox; it is not one. ``Agent`` keeps exactly two things — the
-``inbox`` accessor and the one idempotent ``allocate_inbox()`` call.
+An Agent holds a mailbox; it is not one. ``Agent`` keeps exactly two things — the
+``mailbox`` accessor and the one idempotent ``allocate_mailbox()`` call.
 
 **Three verbs, and they are genuinely distinct.**
 
-* **allocate** — idempotent (see :meth:`EmailInbox.allocate`). Allocates at the
+* **allocate** — idempotent (see :meth:`AgentMailbox.allocate`). Allocates at the
   Hub *or adopts what is already allocated*, wires the ``cloud_email`` source,
   turns both on. There is no separate "enable": enabling a mailbox you do not
   have and re-enabling one you do are the same request, and one less state for a
@@ -31,7 +32,7 @@ An Agent holds an inbox; it is not one. ``Agent`` keeps exactly two things — t
 * **release** — terminal. The address is gone and mail to it bounces.
 
 **``allowed`` is pure and synchronous, and that is load-bearing.** It runs on
-every inbound message in ``flow_sdk/inbox/agent_runner.py``, so it must never
+every inbound message in ``flow_sdk/stream_inbox/agent_runner.py``, so it must never
 reach the Hub or the database — which is why :meth:`from_source` exists and why
 ``allowed_senders`` rides on the projection as a runtime-only field. That is
 also what lets its storage move to the Hub later without this file's callers or
@@ -67,7 +68,7 @@ _HUB_FIELDS = ("address", "display_name", "provider", "provider_inbox_id", "stat
 
 
 async def email_source_for_agent(agent_id: str) -> "Optional[DataSource]":
-    """The local ``cloud_email`` source for an agent, inbox or no inbox.
+    """The local ``cloud_email`` source for an agent, mailbox or no mailbox.
 
     A module function rather than a method because the two callers that need it
     most — reporting state, and disabling — have to work when there is no
@@ -86,9 +87,17 @@ async def email_source_for_agent(agent_id: str) -> "Optional[DataSource]":
     )
 
 
-def _inbox_id_from(config: Mapping[str, Any]) -> str:
-    """The inbox id stamped in a source's config, or ``""`` when absent/unparseable."""
-    raw = str(config.get("inbox_typeid") or "").strip()
+def _mailbox_id_from(config: Mapping[str, Any]) -> str:
+    """The mailbox id stamped in a source's config, or ``""`` when absent/unparseable.
+
+    Read through the ``cloud_email`` driver's ``lift`` so a source stamped under a retired key
+    still names its mailbox before the next ``ensure_source`` rewrites it.
+    """
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    driver = DataDriver.loaded("cloud_email")
+    lifted = driver.cls.Config.lift(config) if driver is not None else config
+    raw = str(lifted.get("mailbox_typeid") or "").strip()
     if not raw:
         return ""
     try:
@@ -111,13 +120,13 @@ def sender_allowed(allowlist, address: str) -> bool:
     return bool(candidate) and any(candidate == normalize_email(str(a)) for a in allowlist or [])
 
 
-class EmailInbox(Entity):
+class AgentMailbox(Entity):
     """One Agent's mailbox: Hub-owned identity, SDK-owned behaviour."""
 
     _api_visible: ClassVar[bool] = False
     _hub_only: ClassVar[bool] = True
 
-    type: str = APIField(default=EntityType.EMAIL_INBOX.value)
+    type: str = APIField(default=EntityType.AGENT_MAILBOX.value)
     address: str = APIField()
     display_name: str | None = APIField(default=None)
     provider: str = APIField()
@@ -159,7 +168,7 @@ class EmailInbox(Entity):
     async def save(self, *args, **kwargs):  # noqa: D401 — a guard, not a verb
         """Refuse: the Hub's row is the mailbox, and there is no local copy."""
         raise ValueError(
-            "an EmailInbox is the hub's row — it has no local copy to save; "
+            "an AgentMailbox is the hub's row — it has no local copy to save; "
             "use allocate / disable / release / configure"
         )
 
@@ -204,8 +213,8 @@ class EmailInbox(Entity):
         *,
         agent_typeid: TypeId,
         allowed_senders: Sequence[str] = (),
-    ) -> "EmailInbox":
-        """Adopt and validate the Hub identity carried by an inbox descriptor.
+    ) -> "AgentMailbox":
+        """Adopt and validate the Hub identity carried by a mailbox descriptor.
 
         Policy comes from the descriptor: the Hub row owns the allowlist and the
         read defaults, so what a client shows and what the Hub enforces cannot
@@ -213,13 +222,13 @@ class EmailInbox(Entity):
         carry it — never as an override, because a local answer to "who may drive
         this agent" is exactly the second source of truth this removed.
         """
-        inbox_typeid = TypeId(str(descriptor.get("typeid") or ""))
+        mailbox_typeid = TypeId(str(descriptor.get("typeid") or ""))
         if (
-            inbox_typeid.type != EntityType.EMAIL_INBOX.value
-            or not inbox_typeid.id
-            or not is_valid_entity_id(inbox_typeid.id)
+            mailbox_typeid.type != EntityType.AGENT_MAILBOX.value
+            or not mailbox_typeid.id
+            or not is_valid_entity_id(mailbox_typeid.id)
         ):
-            raise ValueError(f"Invalid Hub EmailInbox TypeId: {inbox_typeid}")
+            raise ValueError(f"Invalid Hub AgentMailbox TypeId: {mailbox_typeid}")
 
         linked_agent = TypeId(str(descriptor.get("agent_typeid") or ""))
         if (
@@ -228,10 +237,10 @@ class EmailInbox(Entity):
             or not is_valid_entity_id(linked_agent.id)
             or linked_agent != agent_typeid
         ):
-            raise ValueError(f"EmailInbox belongs to {linked_agent}, expected {agent_typeid}")
+            raise ValueError(f"AgentMailbox belongs to {linked_agent}, expected {agent_typeid}")
 
         return cls(
-            id=inbox_typeid.id,
+            id=mailbox_typeid.id,
             address=descriptor.get("address"),
             display_name=descriptor.get("display_name"),
             provider=descriptor.get("provider"),
@@ -243,7 +252,7 @@ class EmailInbox(Entity):
         )
 
     @classmethod
-    def from_source(cls, source: "DataSource") -> "EmailInbox":
+    def from_source(cls, source: "DataSource") -> "AgentMailbox":
         """The mailbox as the INBOUND path sees it — no Hub call, no DB read.
 
         ``handle_inbound`` already holds the DataSource and runs per message, so
@@ -265,13 +274,13 @@ class EmailInbox(Entity):
         ``TypeId(..., id="")`` below raised on every single one of them.
         """
         from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
-        from flow_sdk.inbox.projection import agent_id_of  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import agent_id_of  # noqa: PLC0415
 
         config = getattr(source, "config", None) or {}
         listening = getattr(source, "status", None) == SourceStatus.ACTIVE.value
         agent_id = agent_id_of(source)
         return cls(
-            id=_inbox_id_from(config) or agent_id,
+            id=_mailbox_id_from(config) or agent_id,
             address=str(config.get("address") or getattr(source, "account_key", "") or ""),
             provider=str(getattr(source, "provider", "") or ""),
             provider_inbox_id=str(config.get("provider_inbox_id") or ""),
@@ -281,36 +290,36 @@ class EmailInbox(Entity):
         )
 
     @classmethod
-    async def for_agent(cls, agent) -> "Optional[EmailInbox]":
+    async def for_agent(cls, agent) -> "Optional[AgentMailbox]":
         """Refresh this Agent's mailbox projection from the Hub.
 
         ``None`` when the Agent was never published — asking the Hub about a row
         it has never seen is a round trip that can only answer "no".
         """
-        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
+        from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
 
         if not getattr(agent, "remote", False):
-            agent._inbox = None
+            agent._mailbox = None
             return None
-        descriptor = await get_email_inbox_driver().get_inbox(agent.id)
+        descriptor = await get_agent_mailbox_driver().get_mailbox(agent.id)
         if not descriptor:
-            agent._inbox = None
+            agent._mailbox = None
             return None
         return cls._adopt_onto(agent, descriptor)
 
     @classmethod
-    def _adopt_onto(cls, agent, descriptor: Mapping[str, Any]) -> "EmailInbox":
+    def _adopt_onto(cls, agent, descriptor: Mapping[str, Any]) -> "AgentMailbox":
         """Refresh the Agent's cached projection in place, keeping the object.
 
-        Callers hold ``agent.inbox`` across a lifecycle call, so identity has to
-        survive it — ``assert agent.inbox is allocated`` is a property the
+        Callers hold ``agent.mailbox`` across a lifecycle call, so identity has to
+        survive it — ``assert agent.mailbox is allocated`` is a property the
         snippet relies on.
         """
         fresh = cls.from_hub_descriptor(descriptor, agent_typeid=agent.typeid)
-        current = getattr(agent, "_inbox", None)
+        current = getattr(agent, "_mailbox", None)
         adopted = fresh if (current is None or current.id != fresh.id) else current._adopt(descriptor)
         adopted._owner = agent
-        agent._inbox = adopted  # every adopt path caches, so allocate() does too
+        agent._mailbox = adopted  # every adopt path caches, so allocate() does too
         return adopted
 
     # ── lifecycle ─────────────────────────────────────────────────────────
@@ -322,7 +331,7 @@ class EmailInbox(Entity):
         *,
         allowed_senders: "Sequence[str] | None" = None,
         **options: Any,
-    ) -> "EmailInbox":
+    ) -> "AgentMailbox":
         """Allocate this Agent's mailbox, or adopt the one it already has.
 
         Idempotent, and that is not tidiness: an address is billable and
@@ -334,28 +343,28 @@ class EmailInbox(Entity):
         this deliberately does not require a Project, GitHub, or a Git publish.
         """
         from flow_sdk.auth import LoginRequired  # noqa: PLC0415
-        from flow_sdk.builtin.email_inbox_driver import (  # noqa: PLC0415
-            EmailInboxError,
-            EmailInboxErrorCode,
-            get_email_inbox_driver,
+        from flow_sdk.builtin.agent_mailbox_driver import (  # noqa: PLC0415
+            AgentMailboxError,
+            AgentMailboxErrorCode,
+            get_agent_mailbox_driver,
         )
         from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
 
         if not hub_auth_available():
-            raise LoginRequired("FlowPad cloud login required to allocate an inbox")
-        driver = get_email_inbox_driver()
+            raise LoginRequired("FlowPad cloud login required to allocate a mailbox")
+        driver = get_agent_mailbox_driver()
 
         # One probe, one 401 rule. Splitting it by ``agent.remote`` meant the same
-        # 401 raised ``LoginRequired`` on one path and a bare ``EmailInboxError``
+        # 401 raised ``LoginRequired`` on one path and a bare ``AgentMailboxError``
         # on the other, and cost a second round trip for a published agent.
         existing = None
         try:
-            existing = await driver.get_inbox(agent.id)
-        except EmailInboxError as exc:
-            if exc.code == EmailInboxErrorCode.TARGET_NOT_FOUND and not agent.remote:
+            existing = await driver.get_mailbox(agent.id)
+        except AgentMailboxError as exc:
+            if exc.code == AgentMailboxErrorCode.TARGET_NOT_FOUND and not agent.remote:
                 existing = await cls._publish_then_probe(agent, driver)
             elif exc.status_code == 401:
-                raise LoginRequired("FlowPad cloud login required to allocate an inbox") from exc
+                raise LoginRequired("FlowPad cloud login required to allocate a mailbox") from exc
             else:
                 raise
         else:
@@ -364,10 +373,10 @@ class EmailInbox(Entity):
             agent.remote = True
 
         try:
-            descriptor = await driver.enable_inbox(agent.id, **options)
-        except EmailInboxError as exc:
+            descriptor = await driver.enable_mailbox(agent.id, **options)
+        except AgentMailboxError as exc:
             if exc.status_code == 401:
-                raise LoginRequired("FlowPad cloud login required to allocate an inbox") from exc
+                raise LoginRequired("FlowPad cloud login required to allocate a mailbox") from exc
             raise
 
         # PERSIST the `remote` flip before returning. `share()` sets
@@ -376,31 +385,31 @@ class EmailInbox(Entity):
         # request loads a FRESH Agent row, so an unpersisted flip reads back
         # `False` — and `for_agent()` short-circuits on exactly that before it ever
         # asks the Hub. The symptom was: allocate succeeds and the address renders,
-        # then the very next `configure_inbox` answers 404 "this agent has no
-        # inbox". Proven from the backend log: the failing request logged NO hub
-        # `GET .../email_inbox` at all, i.e. it never reached the driver.
+        # then the very next `configure_mailbox` answers 404 "this agent has no
+        # mailbox". Proven from the backend log: the failing request logged NO hub
+        # `GET .../mailbox` at all, i.e. it never reached the driver.
         if getattr(agent, "remote", False):
             try:
                 await agent.save()
             except Exception:  # noqa: BLE001 - the mailbox exists either way
-                logging.exception("EmailInbox.allocate: could not persist agent.remote")
+                logging.exception("AgentMailbox.allocate: could not persist agent.remote")
 
-        inbox = cls._adopt_onto(agent, descriptor)
-        inbox.newly_allocated = not existing
+        mailbox = cls._adopt_onto(agent, descriptor)
+        mailbox.newly_allocated = not existing
         # The source first: it is where the gate's cache lives, so it has to
         # exist before any policy can be cached onto it.
-        await inbox.ensure_source()
+        await mailbox.ensure_source()
         if allowed_senders is not None:
             # After the mailbox exists, because the policy is the MAILBOX's — the
             # Hub has nothing to attach it to until then.
-            await inbox.set_policy(allowed_senders=allowed_senders)
+            await mailbox.set_policy(allowed_senders=allowed_senders)
         else:
-            await inbox._cache_policy()
-        return inbox
+            await mailbox._cache_policy()
+        return mailbox
 
     @classmethod
     async def _publish_then_probe(cls, agent, driver):
-        """Resolve what ``target_not_found`` actually meant, and return the inbox.
+        """Resolve what ``target_not_found`` actually meant, and return the mailbox.
 
         ``HubErrorCode.TARGET_NOT_FOUND`` is deliberately ambiguous — its own
         definition says so: *"the target entity doesn't exist OR the caller holds
@@ -418,9 +427,9 @@ class EmailInbox(Entity):
         "a conflicting record already exists", which describes a database
         constraint rather than anything the reader can act on.
         """
-        from flow_sdk.builtin.email_inbox_driver import (  # noqa: PLC0415
-            EmailInboxError,
-            EmailInboxErrorCode,
+        from flow_sdk.builtin.agent_mailbox_driver import (  # noqa: PLC0415
+            AgentMailboxError,
+            AgentMailboxErrorCode,
         )
 
         try:
@@ -436,28 +445,28 @@ class EmailInbox(Entity):
         except (ValueError, RuntimeError):
             agent.remote = True
             try:
-                return await driver.get_inbox(agent.id)
-            except EmailInboxError as still_hidden:
+                return await driver.get_mailbox(agent.id)
+            except AgentMailboxError as still_hidden:
                 agent.remote = False
-                raise EmailInboxError(
+                raise AgentMailboxError(
                     403,
                     "this agent already exists on the hub under another account, so its "
                     "mailbox cannot be allocated from here — allocate it from the account "
                     "that owns the agent, or use an agent of your own",
-                    code=EmailInboxErrorCode.FOREIGN_TARGET,
+                    code=AgentMailboxErrorCode.FOREIGN_TARGET,
                 ) from still_hidden
         return None
 
-    async def disable(self) -> "EmailInbox":
+    async def disable(self) -> "AgentMailbox":
         """Turn the mailbox off, keeping the address and the source's cursor.
 
         A later :meth:`allocate` resumes from the last committed position, so a
         pause costs no mail.
         """
+        from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
         from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
-        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
 
-        self._adopt(await get_email_inbox_driver().disable_inbox(self.agent_id))
+        self._adopt(await get_agent_mailbox_driver().disable_mailbox(self.agent_id))
         source = await self.source()
         if source is not None and source.status != SourceStatus.DISABLED.value:
             source.status = SourceStatus.DISABLED.value
@@ -471,10 +480,10 @@ class EmailInbox(Entity):
         the mailbox's public identity, and dropping it has consequences off this
         machine — mail to it starts bouncing. It stays an explicit verb.
         """
+        from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
         from flow_sdk.builtin.data_source import SourceStatus  # noqa: PLC0415
-        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
 
-        released = await get_email_inbox_driver().delete_inbox(self.agent_id)
+        released = await get_agent_mailbox_driver().delete_mailbox(self.agent_id)
         if released:
             self.status = STATUS_DELETED
             source = await self.source()
@@ -485,7 +494,7 @@ class EmailInbox(Entity):
                 await source.save_runtime()
         owner = self._owner
         if owner is not None:
-            owner._inbox = None
+            owner._mailbox = None
         return released
 
     async def configure(
@@ -512,7 +521,7 @@ class EmailInbox(Entity):
                 raise ValueError(f"poll_interval_seconds must be at least {MIN_POLL_INTERVAL_SECONDS}")
             source = await self.source()
             if source is None:
-                raise ValueError("allocate the inbox before configuring its refresh interval")
+                raise ValueError("allocate the mailbox before configuring its refresh interval")
             if source.poll_interval_seconds != poll_interval_seconds:
                 source.poll_interval_seconds = poll_interval_seconds
                 await source.save()
@@ -523,14 +532,14 @@ class EmailInbox(Entity):
         *,
         allowed_senders: "Sequence[str] | None" = None,
         filters: "dict | None" = None,
-    ) -> "EmailInbox":
+    ) -> "AgentMailbox":
         """Write the Hub-owned half of the settings. Returns self.
 
         Separate from :meth:`configure` because writing policy and rendering the
         UI's state are different jobs: ``allocate`` wants the first without
         paying for the second.
         """
-        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
+        from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
 
         settings: dict = {}
         if allowed_senders is not None:
@@ -540,7 +549,7 @@ class EmailInbox(Entity):
         if settings:
             # Adopt what the Hub STORED, not what we sent: it normalizes, so the
             # two would disagree the moment anybody types a capital letter.
-            self._adopt(await get_email_inbox_driver().configure_inbox(self.agent_id, settings))
+            self._adopt(await get_agent_mailbox_driver().configure_mailbox(self.agent_id, settings))
             await self._cache_policy()
         return self
 
@@ -558,7 +567,7 @@ class EmailInbox(Entity):
         and lets the projection recognize the Agent's own sent copies.
 
         Writes only when something actually changed — this runs on every read of
-        the inbox state, and an unconditional save put a row write on a poll.
+        the mailbox state, and an unconditional save put a row write on a poll.
         """
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
@@ -568,7 +577,7 @@ class EmailInbox(Entity):
         config = {
             CloudEmailDriver.identity_config_key: self.agent_id,
             "address": self.address,
-            "inbox_typeid": str(self.typeid),
+            "mailbox_typeid": str(self.typeid),
             "provider_inbox_id": self.provider_inbox_id,
         }
         from flow_sdk.builtin.agent_places import email_answers_here  # noqa: PLC0415
@@ -579,7 +588,7 @@ class EmailInbox(Entity):
         source = await self.source()
         if source is None:
             source = DataSource(
-                name=f"Inbox {self.address}",
+                name=f"Mailbox {self.address}",
                 status=wanted_status,
                 provider=CloudEmailDriver.provider,
                 kind=CloudEmailDriver.kind,
@@ -592,7 +601,8 @@ class EmailInbox(Entity):
             return source
 
         wanted = {
-            "config": {**(source.config or {}), **config},
+            # Through the driver's own ``lift``, so a key it has retired leaves the row on this save.
+            "config": CloudEmailDriver.cls.Config.lift({**(source.config or {}), **config}),
             "owner": self.agent_typeid,
             "kind": CloudEmailDriver.kind,
             "account_key": self.address,
@@ -624,7 +634,7 @@ class EmailInbox(Entity):
         return data
 
     async def state(self) -> dict:
-        """The narrow projection the Agent Inbox UI renders."""
+        """The narrow projection the agent mailbox settings UI renders."""
         return await _state_payload(self.agent_id, self, await self.source())
 
     @classmethod
@@ -644,16 +654,16 @@ class EmailInbox(Entity):
         if not hub_auth_available():
             raise LoginRequired("FlowPad cloud login required to load agent email")
 
-        inbox = await cls.for_agent(agent)
-        if inbox is not None and inbox.is_active:
-            source = await inbox.ensure_source()
-            await inbox._cache_policy(source)
+        mailbox = await cls.for_agent(agent)
+        if mailbox is not None and mailbox.is_active:
+            source = await mailbox.ensure_source()
+            await mailbox._cache_policy(source)
         else:
             source = await email_source_for_agent(agent.id)
             if source is not None and source.status != SourceStatus.DISABLED.value:
                 source.status = SourceStatus.DISABLED.value
                 await source.save_runtime()
-        return await _state_payload(agent.id, inbox, source)
+        return await _state_payload(agent.id, mailbox, source)
 
     # ── messages ──────────────────────────────────────────────────────────
 
@@ -664,32 +674,32 @@ class EmailInbox(Entity):
         ``to``, ``subject``, ``labels``, ``before``, ``after``, ``ascending``.
         ``from`` is a Python keyword, so pass it as ``**{"from": ...}``.
         """
-        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
+        from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
 
-        return await get_email_inbox_driver().list_messages(self.agent_id, **filters)
+        return await get_agent_mailbox_driver().list_messages(self.agent_id, **filters)
 
     async def message(self, message_id: str) -> dict:
         """One message, body included — :meth:`messages` carries only a preview."""
-        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
+        from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
 
-        return await get_email_inbox_driver().get_message(self.agent_id, message_id)
+        return await get_agent_mailbox_driver().get_message(self.agent_id, message_id)
 
     async def send(self, body: dict) -> dict:
-        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
+        from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
 
-        return await get_email_inbox_driver().send(self.agent_id, body)
+        return await get_agent_mailbox_driver().send(self.agent_id, body)
 
     async def reply(self, message_id: str, body: dict) -> dict:
-        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
+        from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
 
-        return await get_email_inbox_driver().reply(self.agent_id, message_id, body)
+        return await get_agent_mailbox_driver().reply(self.agent_id, message_id, body)
 
     # ── internals ─────────────────────────────────────────────────────────
 
-    def _adopt(self, descriptor: "Mapping[str, Any] | None") -> "EmailInbox":
+    def _adopt(self, descriptor: "Mapping[str, Any] | None") -> "AgentMailbox":
         """Refresh identity and policy in place from a Hub descriptor.
 
-        In place, keeping this object: callers hold ``agent.inbox`` across a
+        In place, keeping this object: callers hold ``agent.mailbox`` across a
         lifecycle call, so a replacement would leave them pointing at the state
         before it. The one adopter for every verb the Hub answers with a
         descriptor — ``disable`` and ``configure`` differ in what they ask for,
@@ -697,7 +707,7 @@ class EmailInbox(Entity):
         """
         if not descriptor:
             return self
-        fresh = EmailInbox.from_hub_descriptor(
+        fresh = AgentMailbox.from_hub_descriptor(
             descriptor, agent_typeid=self.agent_typeid, allowed_senders=self.allowed_senders
         )
         for field in _HUB_FIELDS:
@@ -737,7 +747,7 @@ class EmailInbox(Entity):
 
 
 def _source_summary(source) -> dict:
-    """The compact row the inbox state carries for one DataSource."""
+    """The compact row the mailbox state carries for one DataSource."""
     return {
         "id": source.id,
         "typeid": str(source.typeid),
@@ -752,7 +762,7 @@ def _source_summary(source) -> dict:
     }
 
 
-async def _state_payload(agent_id: str, inbox: "Optional[EmailInbox]", source) -> dict:
+async def _state_payload(agent_id: str, mailbox: "Optional[AgentMailbox]", source) -> dict:
     """The one shape both state readers return.
 
     ``enabled`` is DERIVED, never stored: the Hub says whether the address is
@@ -764,7 +774,7 @@ async def _state_payload(agent_id: str, inbox: "Optional[EmailInbox]", source) -
     row for the readers that predate an agent holding more than one channel.
     """
     from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
-    from flow_sdk.inbox.agent_scope import is_message_source  # noqa: PLC0415
+    from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
 
     owned = await DataSource.find_owned(TypeId(type=EntityType.AGENT.value, id=str(agent_id)))
     sources_data = [_source_summary(s) for s in sorted(owned, key=lambda s: str(s.id)) if is_message_source(s)]
@@ -787,15 +797,15 @@ async def _state_payload(agent_id: str, inbox: "Optional[EmailInbox]", source) -
         "agent_id": agent_id,
         "sources": sources_data,
         "enabled": bool(
-            inbox is not None and inbox.is_active and source is not None and source.status == SourceStatus.ACTIVE.value
+            mailbox is not None and mailbox.is_active and source is not None and source.status == SourceStatus.ACTIVE.value
         ),
-        "inbox": inbox.descriptor() if inbox is not None else None,
+        "mailbox": mailbox.descriptor() if mailbox is not None else None,
         "source": source_data,
     }
 
 
 __all__ = [
-    "EmailInbox",
+    "AgentMailbox",
     "STATUS_ACTIVE",
     "STATUS_DELETED",
     "STATUS_DISABLED",

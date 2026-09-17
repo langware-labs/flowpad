@@ -75,7 +75,7 @@ async def _declared(auth: AuthSpec, row: Any) -> Credentials:
 async def _owner_project(row: Any) -> Any:
     """The owning agent's project; None (the user scope alone) for a user-owned row."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.inbox.projection import owning_agent  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
 
     project_id = str(getattr(await owning_agent(row), "project_id", "") or "")
     return await Project.get_by_id(project_id) if project_id else None

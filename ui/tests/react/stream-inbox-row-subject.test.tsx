@@ -1,5 +1,5 @@
 /**
- * Behavioural lock for the Inbox row subject (`ConversationListRow`).
+ * Behavioural lock for the Stream Inbox row subject (`ConversationListRow`).
  *
  * Regression: a conversation that carries a user-set / hub-synced ``title`` but
  * has NO linked task rendered the literal "(no subject)" placeholder, because
@@ -37,7 +37,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   }),
 }));
 
-import { ConversationListRow } from '@src/components/inbox-view/InboxView';
+import { ConversationListRow } from '@src/components/stream-inbox-view/StreamInboxView';
 
 function renderRow(conv: Conversation) {
   return render(
@@ -46,7 +46,7 @@ function renderRow(conv: Conversation) {
       <ConversationListRow
         conv={conv}
         isFocused={false}
-        viewMode="inbox"
+        viewMode="all"
         searchActive={false}
         onArchive={vi.fn()}
         onUnarchive={vi.fn()}
@@ -54,7 +54,7 @@ function renderRow(conv: Conversation) {
         onRequestDelete={vi.fn()}
         cloudUserId="me-id"
         onVisibilityChange={vi.fn()}
-        // Required by the row since the channels line landed; InboxView supplies it
+        // Required by the row since the channels line landed; StreamInboxView supplies it
         // from useChannelAttribution. These cases assert invitation/subject rendering,
         // not attribution, so "nothing resolved" is the honest value.
         attributionFor={() => null}
@@ -65,7 +65,7 @@ function renderRow(conv: Conversation) {
   );
 }
 
-describe('Inbox row subject', () => {
+describe('Stream Inbox row subject', () => {
   it('shows the conversation title when there is no linked task', () => {
     // A titled, task-less conversation — exactly the shape that regressed to
     // "(no subject)". No message pointers so the row is not in a loading state.
@@ -78,7 +78,7 @@ describe('Inbox row subject', () => {
 
     renderRow(conv);
 
-    const subjectLine = screen.getByTestId('inbox-row-subject-line');
+    const subjectLine = screen.getByTestId('stream-inbox-row-subject-line');
     expect(subjectLine).toHaveTextContent('My Important Discussion');
     expect(subjectLine).not.toHaveTextContent('(no subject)');
   });
@@ -92,6 +92,6 @@ describe('Inbox row subject', () => {
 
     renderRow(conv);
 
-    expect(screen.getByTestId('inbox-row-subject-line')).toHaveTextContent('(no subject)');
+    expect(screen.getByTestId('stream-inbox-row-subject-line')).toHaveTextContent('(no subject)');
   });
 });

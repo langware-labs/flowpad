@@ -286,7 +286,7 @@ credential declares, so one store serves both.
 ### Two instances of one source
 
 A data source row is an **instance**: a source type, its config, and its
-bindings. Two Gmail inboxes — or two Drives with different folders — are two rows,
+bindings. Two Gmail accounts — or two Drives with different folders — are two rows,
 and each keeps its own:
 
 ```python
@@ -343,7 +343,7 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.connections import Connection
 from flow_sdk.secrets import SecretStore
 
-agentmail = await DataSource.get("agent inbox")
+agentmail = await DataSource.get("agent mailbox")
 remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "agentmail-production-"})
 
 google = await Connection.get("google")  # remote.connections.names() → ["google"]

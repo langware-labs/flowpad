@@ -202,15 +202,15 @@ class Conversation(ProjectedFields, Entity):
     # sentinel). Ownership for display/authz resolves from the participant
     # roster's ``owner`` role; all ``created_by ==`` checks are null-safe.
     created_by: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
-    # Whose inbox lists this conversation — the local user's or an Agent's. Not
+    # Whose stream inbox lists this conversation — the local user's or an Agent's. Not
     # ``created_by`` (the hub's creator mirror, a bare user uuid) and not the
     # roster's ``owner`` role (hub-side authz): this is the LOCAL partition key
-    # the inbox filters by, set from the thread that minted the conversation.
-    # `None` on rows written before the field existed; `inbox.projection.owner_of`
+    # the stream inbox filters by, set from the thread that minted the conversation.
+    # `None` on rows written before the field existed; `stream_inbox.projection.owner_of`
     # resolves those to the local user. PRIVATE — never travels.
     owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
     # The channel a source-backed conversation replies through (``gmail``, ``slack``)
-    # and the local DataSource feeding it, stamped by the inbox projection when it
+    # and the local DataSource feeding it, stamped by the stream inbox projection when it
     # places the first message. ``channel`` travels so a peer renders the badge —
     # HUB_WRITE, so a hub refresh that lacks it never blanks it; ``channel_source_id``
     # is a row id in OUR database, so it is PRIVATE.
@@ -279,9 +279,9 @@ class Conversation(ProjectedFields, Entity):
         return cls._as_datetime(local.hub_updated_date) != hub_updated
     # Strip-only dismissal. When set, the Recent Conversations strip hides
     # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
-    # (auto-revive on new activity). The Inbox ignores this field entirely.
+    # (auto-revive on new activity). The stream inbox ignores this field entirely.
     dismissed_at: Optional[datetime] = APIField(default=None)
-    # Conversation-level archive. Honored by **both** Inbox and Recent strip
+    # Conversation-level archive. Honored by **both** stream inbox and Recent strip
     # — the conversation is hidden everywhere UNTIL a FlowMessage newer than
     # ``archived_at`` lands (auto-revive on new activity, same comparison
     # pattern as ``dismissed_at``). Per-message ``FlowMessage.is_read``
@@ -571,7 +571,7 @@ class Conversation(ProjectedFields, Entity):
 
         Two callers, because there are two ways to end up holding one: ``share()``
         below, when a local conversation first gets its hub row, and
-        ``flow_sdk.inbox.catchup`` on every hub-session transition (its module
+        ``flow_sdk.stream_inbox.catchup`` on every hub-session transition (its module
         docstring explains why both are needed).
 
         Reuses the SAME send pipeline a normal reply uses — there is no separate
@@ -689,7 +689,7 @@ class Conversation(ProjectedFields, Entity):
         references parsed from the ``message_ids`` projection.
 
         The ONE reader of the projection's JSON shape — the landing path, the
-        inbox unread count, and any future consumer resolve messages through
+        stream inbox unread count, and any future consumer resolve messages through
         here. Skips non-FlowMessage/corrupt entries; empty list when the
         projection is missing or unparseable.
 
@@ -730,7 +730,7 @@ class Conversation(ProjectedFields, Entity):
         were sent, which stops being true the moment anything backfills: an
         ingested mailbox hands its history back newest-first, so the LAST
         pointer is the OLDEST mail. Reading ``refs[-1]`` there silently
-        corrupts the unread count, the inbox preview line and the archive
+        corrupts the unread count, the stream inbox preview line and the archive
         auto-revive comparison at once.
 
         Refs whose timestamp is missing/unparseable sort oldest, so they can

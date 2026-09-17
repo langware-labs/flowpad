@@ -30,7 +30,7 @@ interface ConversationParticipantsProps {
 }
 
 /**
- * Read-only participant summary for compact surfaces (e.g. the home Inbox row
+ * Read-only participant summary for compact surfaces (e.g. the home Stream Inbox row
  * footer). Renders a short name list when the room allows names and the roster
  * is small, otherwise overlapping initials-avatars. Click opens a popover with
  * the full {name, role} roster. For an EDITABLE roster (invite / role / remove)

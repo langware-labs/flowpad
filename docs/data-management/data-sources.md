@@ -176,7 +176,7 @@ application reads, so the engine asks the type rather than probing.
 | `pages_per_pass` | `None` | Page chain cap per traversal |
 | `attention_poll_seconds` | `None` | Sub-tick cadence while watched (see *Attention*). Telegram declares 5 |
 | `stamps_identity` | `True` | Whether this source's bytes are ours to write to |
-| `identity_config_key` | `inbox` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.Inbox`) matches on to reuse a source |
+| `identity_config_key` | `address` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.StreamInbox`) matches on to reuse a source |
 | `connection` | `None` | The machine connection it reads with (`google`, `slack`), checked before a row exists |
 | `open_inbound` | `False` | Strangers are the point (a help desk): an empty allowlist admits everyone |
 | `echoes_sends` | `False` | The provider returns our own sends on the next read, so a send is not recorded twice |
@@ -249,7 +249,7 @@ make the source due, the heartbeat does the work within a minute):
 | `poll_now` | make due | **the only un-latch** for `config_error` besides `replay` (`_make_due`) |
 | `request_poll` | make due, arm the fast lane | never un-latches, never wakes `disabled`/`setup` — see *Attention* |
 | `reset_cursors` | clear `cursor`, `manifest`, legacy `state` and `high_water`, keep the rows | alone it is invisible: the digest gate suppresses re-delivery. Rows are kept so `last_synced_at` survives and the next run is not a silent `BACKFILL` |
-| `purge_items` | destroy the source's `SourceItem`s and their inbox projection | rebuilt rows are **new** entities; `read`/`starred` are lost |
+| `purge_items` | destroy the source's `SourceItem`s and their stream inbox projection | rebuilt rows are **new** entities; `read`/`starred` are lost |
 | `replay` | `purge_items` (optionally `since=`) + `reset_cursors` + make due | widens `window_days` to cover `since`, never shrinks it; undated rows survive a bounded replay |
 | `verify` | the two-layer setup check above | |
 
@@ -370,7 +370,7 @@ it, or the producer stops being interchangeable and the single envelope has no
 point.
 
 Handlers are driven directly by tests and wired to the bus by `subscribe()`,
-which `server/app.py` calls at startup right after arming the inbox lanes. The
+which `server/app.py` calls at startup right after arming the stream inbox lanes. The
 bus does not await consumers, so an emitted event reaches a detached task —
 asserting an outcome straight after an emit races it. Note that
 `handle_change` calls `sync_source` directly, outside the poller's

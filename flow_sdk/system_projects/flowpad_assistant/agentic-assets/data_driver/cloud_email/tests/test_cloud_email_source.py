@@ -1,7 +1,7 @@
 """The ``cloud_email`` data source: a hub-held mailbox in, SourceItems out.
 
 Offline by construction: the source is handed a fake mailbox, and the application adapter is
-proven against the real email-inbox driver with the hub seam patched. Three are about traps:
+proven against the real agent-mailbox driver with the hub seam patched. Three are about traps:
 
 * the body is the hydrated ``text``, never the list call's ``preview`` — ``body`` is digested;
 * the hub's ``after`` is EXCLUSIVE, so a message sharing the boundary second must not be dropped;
@@ -32,7 +32,7 @@ AppMailbox = asset_module("cloud_email", "transport").AppMailbox
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 AGENT_ID = "11111111-1111-4111-8111-111111111111"
-ADDRESS = "agent-7@inbox.flowpad.ai"
+ADDRESS = "agent-7@mail.flowpad.ai"
 LIST_ITEM = {
     "message_id": "<abc@mail.example>", "thread_id": "t-1", "inbox_id": ADDRESS,
     "sender": {"address": "joe@example.com", "name": "Joe Example"}, "to": [{"address": ADDRESS, "name": None}],
@@ -210,7 +210,7 @@ class TestCursor:
 
 
 class TestTheAppMailbox:
-    """The adapter over the real email-inbox driver: the hub seam is the only thing patched."""
+    """The adapter over the real agent-mailbox driver: the hub seam is the only thing patched."""
 
     @staticmethod
     def _hub(monkeypatch, *, error=None, calls=None):
@@ -228,15 +228,15 @@ class TestTheAppMailbox:
         self._hub(monkeypatch, calls=calls)
         await AppMailbox().list_messages(AGENT_ID, limit="25", ascending="true")
         await AppMailbox().get_message(AGENT_ID, "<abc@mail.example>")
-        assert calls[0] == (AGENT_ID, "email_inbox", "messages")
+        assert calls[0] == (AGENT_ID, "mailbox", "messages")
         assert calls[1][2] == "messages/%3Cabc%40mail.example%3E", "a Message-ID carries brackets and rides in the path"
 
     @pytest.mark.parametrize("error,health", [
-        (HubError(404, "agent has no inbox"), SourceHealth.CONFIG_ERROR),
+        (HubError(404, "agent has no mailbox"), SourceHealth.CONFIG_ERROR),
         (HubError(401, "unauthorized"), SourceHealth.CONFIG_ERROR),
         (HubError(0, "hub not configured"), SourceHealth.CONFIG_ERROR),
         (HubError(0, "connection reset"), SourceHealth.TRANSIENT_ERROR),
-        (HubError(503, "email inbox capability is disabled"), SourceHealth.TRANSIENT_ERROR),
+        (HubError(503, "agent mailbox capability is disabled"), SourceHealth.TRANSIENT_ERROR),
         (HubError(429, "slow down"), SourceHealth.TRANSIENT_ERROR),
     ])
     async def test_a_hub_failure_maps_to_the_right_health(self, monkeypatch, error, health):
@@ -253,3 +253,13 @@ class TestTheDigestGateHolds:
         assert first.created == 1
         second = await ingest_items((await DataDriver.loaded("cloud_email").traverse(row, _view())).items)
         assert (second.unchanged, second.created, second.updated) == (1, 0, 0), "the mapping is not deterministic"
+
+
+def test_a_source_stamped_under_the_retired_key_still_names_its_mailbox():
+    """``inbox_typeid`` was ``mailbox_typeid`` before the agent's address became an AgentMailbox."""
+    from flow_sdk.builtin.agent_mailbox import _mailbox_id_from
+
+    config_cls = DataDriver.loaded("cloud_email").cls.Config
+    stamped = "agent_mailbox-3f1c2a4b-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+    assert config_cls.lift({"agent_id": "a", "inbox_typeid": stamped}) == {"agent_id": "a", "mailbox_typeid": stamped}
+    assert _mailbox_id_from({"inbox_typeid": stamped}) == "3f1c2a4b-5d6e-4f70-8a9b-0c1d2e3f4a5b"

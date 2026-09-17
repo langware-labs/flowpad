@@ -32,7 +32,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 
 class _Mailbox(Source):
     provider = "asset-mailbox-test"
-    identity_config_key = "inbox"
+    identity_config_key = "address"
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def _document(source: DataSource) -> dict:
 
 
 async def _saved(name: str = "work mail", **config) -> DataSource:
-    source = DataSource(name=name, provider=_Mailbox.provider, config={"inbox": "me@x.test", **config})
+    source = DataSource(name=name, provider=_Mailbox.provider, config={"address": "me@x.test", **config})
     await source.save()
     return source
 
@@ -64,7 +64,7 @@ async def test_the_file_holds_the_authored_fields_and_nothing_the_engine_writes(
     document = _document(source)
     assert (document["type"], document["id"]) == ("data_source", str(source.id))
     assert (document["name"], document["data_driver_name"]) == ("work mail", _Mailbox.provider)
-    assert document["data_driver_config"] == {"inbox": "me@x.test"}
+    assert document["data_driver_config"] == {"address": "me@x.test"}
     assert not set(document) & set(RUNTIME_FIELDS)
 
 
@@ -93,7 +93,7 @@ async def test_a_copied_folder_arrives_parked_until_its_owner_verifies(scope):
     folder = scope / "agentic-assets" / "data_source" / "received"
     folder.mkdir(parents=True)
     document = {"type": "data_source", "id": str(uuid.uuid4()), "name": "received",
-                "data_driver_name": _Mailbox.provider, "data_driver_config": {"inbox": "them@x.test"}}
+                "data_driver_name": _Mailbox.provider, "data_driver_config": {"address": "them@x.test"}}
     (folder / "data_source.json").write_text(json.dumps(document), encoding="utf-8")
 
     await index_path("data_source", folder)
@@ -122,7 +122,7 @@ async def test_a_secret_in_the_config_is_refused():
 
 async def test_removing_an_orphan_row_takes_what_hangs_off_it(scope):
     source = await _saved()
-    await DataSourceCursor(data_source_id=str(source.id), segment_key="inbox").save()
+    await DataSourceCursor(data_source_id=str(source.id), segment_key="stream").save()
 
     assert await remove_orphan_row(str(source.id), "data_source")
 
@@ -133,9 +133,9 @@ async def test_removing_an_orphan_row_takes_what_hangs_off_it(scope):
 async def test_boot_prunes_rows_with_no_file_and_keeps_the_rest(scope):
     kept = await _saved("kept")
     # A row from before sources were files: written straight to the table, with no folder.
-    fileless = DataSource(name="legacy", provider=_Mailbox.provider, config={"inbox": "old@x.test"})
+    fileless = DataSource(name="legacy", provider=_Mailbox.provider, config={"address": "old@x.test"})
     await DBEntity.save(fileless)
-    await DataSourceCursor(data_source_id=str(fileless.id), segment_key="inbox").save()
+    await DataSourceCursor(data_source_id=str(fileless.id), segment_key="stream").save()
 
     assert await prune_fileless_data_sources() >= 1
 

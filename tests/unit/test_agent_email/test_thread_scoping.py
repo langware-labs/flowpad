@@ -1,7 +1,7 @@
-"""A thread id from the provider is inbox-scoped. Ours must be too.
+"""A thread id from the provider is mailbox-scoped. Ours must be too.
 
 The hub's own notes are explicit: AgentMail's `thread_id` is scoped to the
-mailbox it came from — "never use it as a cross-agent key". The inbox
+mailbox it came from — "never use it as a cross-agent key". The stream inbox
 projection resolves a MessageThread by `(channel, thread_key)` alone, and
 every cloud mailbox reports the same channel, so a bare provider id would let
 two agents collapse onto one thread.

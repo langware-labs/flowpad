@@ -37,7 +37,7 @@ import {
   unarchiveConversation,
   conversationRowMessageIds,
   latestPointer,
-  type AgentInboxScope,
+  type AgentStreamInboxScope,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
@@ -50,7 +50,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
-import { updateMessage, bulkUpdateMessages, searchInbox } from './inbox-api';
+import { updateMessage, bulkUpdateMessages, searchStreamInbox } from './stream-inbox-api';
 import { type ChannelAttribution, SourceChip, sourceForOrigin, useChannelAttribution } from '@src/components/conversation/channel-attribution';
 import { AttachedChannelsBar, channelKeyOf, useAttachedChannels } from './AttachedChannelsBar';
 import { channelsOwnerFor } from './channel-owner';
@@ -91,16 +91,16 @@ function formatGmailTime(iso?: string | Date | null): string {
 // Single line: [sender(s)] [subject — snippet…] [time]
 // Click anywhere on the row opens the conversation via its dockPointer.
 
-type InboxViewMode = 'inbox' | 'unread' | 'archived';
+type StreamInboxViewMode = 'all' | 'unread' | 'archived';
 
 interface ConversationListRowProps {
   conv: Conversation;
   isFocused: boolean;
-  /** Active inbox view:
-   *  - 'inbox'    → hide archived rows (default)
+  /** Active stream inbox view:
+   *  - 'all'      → hide archived rows (default)
    *  - 'unread'   → show only non-archived rows whose latest FlowMessage is unread
    *  - 'archived' → show ONLY archived rows */
-  viewMode: InboxViewMode;
+  viewMode: StreamInboxViewMode;
   /** Text search is engaged — the parent already narrowed the list to
    *  matching conversations, so the row must NOT apply the per-mode hide
    *  rule (search spans archived/read rows regardless of the active pill). */
@@ -110,7 +110,7 @@ interface ConversationListRowProps {
    *  arrives. */
   onArchive: (convId: string) => void;
   /** Conversation-level unarchive — clears ``archived_at`` so the row returns
-   *  to the Inbox. */
+   *  to the stream inbox. */
   onUnarchive: (convId: string) => void;
   onToggleRead: (messageId: string, isRead: boolean) => void;
   /** Whether this row is currently ticked for a bulk (multi-select) action.
@@ -120,7 +120,7 @@ interface ConversationListRowProps {
   /** Toggle this row's membership in the multi-select set. Optional — see
    *  ``selected``. */
   onToggleSelect?: (convId: string) => void;
-  /** True while the inbox is in multi-select mode (≥1 row ticked, toolbar
+  /** True while the stream inbox is in multi-select mode (≥1 row ticked, toolbar
    *  showing). In this mode a body click toggles selection instead of opening
    *  the conversation — so the user can build up / trim the set without
    *  navigating away. Clearing the selection restores open-on-click. */
@@ -220,7 +220,7 @@ export function ConversationListRow({
 
   // The facets are intrinsic to the conversation; the *hide* rule combines them
   // with the active view + search (view-state, not category):
-  //   - 'inbox'     → hide archived rows (default)
+  //   - 'all'       → hide archived rows (default)
   //   - 'archived'  → show ONLY archived rows
   //   - 'unread'    → only non-archived unread rows
   //   - search      → span everything; only half-materialized rows stay hidden
@@ -294,7 +294,7 @@ export function ConversationListRow({
 
   const senderLabel = participantNames.join(', ');
   const count = pointers.length;
-  // The inbox subject is the conversation's own user-set / hub-synced title
+  // The stream inbox subject is the conversation's own user-set / hub-synced title
   // (NewConversationDialog at creation; carried in the bundle on cross-user
   // send). A task that happens to sit in the conversation's shared context is
   // there to drive cwd/project_root and the task-gated chips — it is NOT a
@@ -328,8 +328,8 @@ export function ConversationListRow({
     if (!conv.id) return;
     // URL-first: the click ONLY navigates. The Gmail-style auto-mark-read
     // moved to the mounted ConversationView (open-to-read effect), so direct
-    // links, banner clicks, and Inbox clicks all behave identically and the
-    // backend reconciles InboxManager.unread after the mutation.
+    // links, banner clicks, and Stream Inbox clicks all behave identically and the
+    // backend reconciles StreamInboxManager.unread after the mutation.
     navigation.openDock(DockPointer.forConversation(conv.id, { agentId }));
   };
 
@@ -342,7 +342,7 @@ export function ConversationListRow({
       if (isInvitationGoneError(e)) {
         notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
       } else {
-        console.error('[InboxView] acceptInvitation failed', e);
+        console.error('[StreamInboxView] acceptInvitation failed', e);
       }
     } finally {
       setAccepting(false);
@@ -352,7 +352,7 @@ export function ConversationListRow({
   return (
     <div
       ref={refSetter}
-      data-testid="inbox-conversation-row"
+      data-testid="stream-inbox-conversation-row"
       data-conversation-id={conv.id ?? ''}
       data-focused={isFocused ? 'true' : 'false'}
       data-unread={isUnread ? 'true' : 'false'}
@@ -373,12 +373,12 @@ export function ConversationListRow({
           checked={!!selected}
           onCheckedChange={() => convId && onToggleSelect?.(convId)}
           aria-label={t`Select conversation`}
-          data-testid="inbox-row-select"
+          data-testid="stream-inbox-row-select"
           className="h-3.5 w-3.5 border-muted-foreground/30 opacity-50 transition-opacity hover:opacity-100 data-[state=checked]:border-primary data-[state=checked]:opacity-100"
         />
       </span>
       <span
-        data-testid="inbox-row-sender"
+        data-testid="stream-inbox-row-sender"
         // ``title`` doubles as the trim-overflow tooltip. Browsers only show
         // the native tooltip when the user hovers, so always setting it is
         // cheap; when the visible label already shows the full list, the
@@ -392,7 +392,7 @@ export function ConversationListRow({
           <span className="ms-1 shrink-0 font-normal text-muted-foreground">({count})</span>
         )}
       </span>
-      <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
+      <span className="min-w-0 flex-1 truncate" data-testid="stream-inbox-row-subject-line">
         {/* Channel conversations carry exactly one compact source chip; hub
             rows have no origin and render none — absence means "ours". A
             source-backed ticket wears the source chip alone: the kind chip is
@@ -441,16 +441,16 @@ export function ConversationListRow({
   );
 }
 
-// ── InboxView ───────────────────────────────────────────────────────────────
+// ── StreamInboxView ───────────────────────────────────────────────────────────────
 
-export function InboxView({ agentId }: { agentId?: string } = {}) {
+export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
   const { t } = useLingui();
   const [fetching, setFetching] = useState(false);
-  // 'inbox' (default) shows active conversations; 'archived' shows only
+  // 'all' (default) shows active conversations; 'archived' shows only
   // rows whose ``archived_at`` is set and not yet revived by newer activity.
   // "Delete all" is gated behind the 'archived' view — a destructive op only
   // exposed once the user has explicitly archived rows.
-  const [viewMode, setViewMode] = useState<InboxViewMode>('inbox');
+  const [viewMode, setViewMode] = useState<StreamInboxViewMode>('all');
   // Set of conv ids whose row currently chose to render. Driven by row-level
   // `onVisibilityChange` callbacks so the header badge and empty-state both
   // reflect exactly what the user sees (rows hide themselves when their latest
@@ -461,7 +461,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   const [membershipPendingCount, setMembershipPendingCount] = useState(0);
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const { cloudUser } = useAuth();
-  // Whose channels the header line shows: the agent's on an agent inbox, else
+  // Whose channels the header line shows: the agent's on an agent stream inbox, else
   // the local user's — absent until that typeid is known, so no empty bar flashes.
   // `localUser.id`, not `userTypeId`: that alias resolves to the `@local` pointer,
   // and rows carry the user's real id.
@@ -501,10 +501,10 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading, isSuccess } = useEntitiesQuery<Conversation>(request);
-  const [agentScope, setAgentScope] = useState<AgentInboxScope | null>(null);
+  const [agentScope, setAgentScope] = useState<AgentStreamInboxScope | null>(null);
   const refreshAgentScope = useCallback(async () => {
     if (!agentId) return;
-    const scope = await new Agent({ id: agentId }).inboxScope();
+    const scope = await new Agent({ id: agentId }).streamInboxScope();
     setAgentScope(scope);
   }, [agentId]);
   useEffect(() => {
@@ -545,7 +545,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   if (isSuccess) hasLoadedOnce.current = true;
   const initialLoading = (isLoading && !hasLoadedOnce.current) || (agentId !== undefined && agentScope === null);
 
-  // Text search over message bodies — server-side, via the `inbox-search`
+  // Text search over message bodies — server-side, via the `stream-inbox-search`
   // action rather than a `$LIKE` entity query: under the reference model a
   // channel message's body lives on its SourceItem (the FlowMessage row stores
   // `text: ""`), so the backend searches BOTH residences and hands back
@@ -559,7 +559,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
     if (!searchActive) return;
     let stale = false;
     const timer = setTimeout(() => {
-      void searchInbox(needle, agentId).then((ids) => {
+      void searchStreamInbox(needle, agentId).then((ids) => {
         if (!stale) setMatchIds(ids);
       });
     }, 200);
@@ -610,7 +610,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
 
   const visibleCount = visibleIds.size;
 
-  // Unread pip/badge: backend-owned (InboxManager.unread, reflected live via
+  // Unread pip/badge: backend-owned (StreamInboxManager.unread, reflected live via
   // the entity channel) — no client-side recount here anymore.
 
   const handleRefresh = useCallback(async () => {
@@ -649,7 +649,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   );
 
   const handleMarkAllRead = useCallback(async () => {
-    // No optimistic zero: the backend reconciles InboxManager.unread after the
+    // No optimistic zero: the backend reconciles StreamInboxManager.unread after the
     // bulk update (pending invitations legitimately keep it > 0).
     await bulkUpdateMessages({ is_read: true }, agentId);
     void refetch();
@@ -914,7 +914,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
     [agentId, refetch, t],
   );
 
-  const setView = useCallback((next: InboxViewMode) => {
+  const setView = useCallback((next: StreamInboxViewMode) => {
     setViewMode((cur) => {
       if (cur === next) return cur;
       // Visible-ids tracks the previous mode's rows; reset so the count
@@ -928,10 +928,10 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
 
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
-  // Segmented view pill — Inbox | Unread | Archived. Active mode is filled,
+  // Segmented view pill — All | Unread | Archived. Active mode is filled,
   // inactive is ghost. Count badge sits inside the active pill so it
   // reflects exactly what the user is looking at.
-  const renderViewPill = (mode: InboxViewMode, label: string, Icon: typeof InboxIcon) => {
+  const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
     const active = viewMode === mode;
     return (
       <button
@@ -940,7 +940,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
         className={`flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors ${
           active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
         }`}
-        data-testid={`inbox-view-${mode}`}
+        data-testid={`stream-inbox-view-${mode}`}
         aria-pressed={active}
       >
         <Icon className="h-3.5 w-3.5" />
@@ -962,7 +962,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
     <div className="relative flex h-full flex-col">
       {!cloudUser && (
         <LoginRequiredOverlay
-          description={t`Sign in to your Flowpad Cloud account to view your inbox and conversations.`}
+          description={t`Sign in to your Flowpad Cloud account to view your stream inbox and conversations.`}
         />
       )}
       <div className="flex shrink-0 items-center border-b px-3 py-1.5">
@@ -971,10 +971,10 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
           <div
             className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
             role="tablist"
-            aria-label={t`Inbox view`}
-            data-testid="inbox-view-bar"
+            aria-label={t`Stream inbox view`}
+            data-testid="stream-inbox-view-bar"
           >
-            {renderViewPill('inbox', t`Inbox`, InboxIcon)}
+            {renderViewPill('all', t`All`, InboxIcon)}
             {renderViewPill('unread', t`Unread`, MailPlus)}
             {renderViewPill('archived', t`Archived`, Archive)}
           </div>
@@ -988,7 +988,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t`Search messages`}
                 className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                data-testid="inbox-search-input"
+                data-testid="stream-inbox-search-input"
                 aria-label={t`Search messages`}
               />
               {searchActive && (
@@ -997,7 +997,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                   onClick={() => setSearchQuery('')}
                   className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
                   aria-label={t`Clear search`}
-                  data-testid="inbox-search-clear"
+                  data-testid="stream-inbox-search-clear"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -1011,7 +1011,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             size="sm"
             className="h-7 text-xs"
             onClick={() => setShowNewConversation(true)}
-            data-testid="inbox-new-conversation-button"
+            data-testid="stream-inbox-new-conversation-button"
             title={t`Start a new conversation`}
           >
             <SquarePen className="me-1 h-3.5 w-3.5" />
@@ -1022,7 +1022,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
             size="sm"
             className="h-7 text-xs"
             onClick={() => setShowNewContactsGroup(true)}
-            data-testid="inbox-new-contacts-group-button"
+            data-testid="stream-inbox-new-contacts-group-button"
             title={t`Create a contacts group — add its members to any conversation in one click`}
           >
             <UsersRound className="me-1 h-3.5 w-3.5" />
@@ -1030,10 +1030,10 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
           </Button>
         </div>}
         {/* RIGHT — actions for the current view */}
-        <div className="flex flex-1 items-center justify-end gap-1" data-testid="inbox-action-bar">
+        <div className="flex flex-1 items-center justify-end gap-1" data-testid="stream-inbox-action-bar">
           {selectedCount > 0 ? (
-            <div className="flex items-center gap-1" data-testid="inbox-selection-bar">
-              <span className="me-1 text-xs text-muted-foreground" data-testid="inbox-selection-count">
+            <div className="flex items-center gap-1" data-testid="stream-inbox-selection-bar">
+              <span className="me-1 text-xs text-muted-foreground" data-testid="stream-inbox-selection-count">
                 <Trans>{selectedCount} selected</Trans>
               </span>
               <Button
@@ -1041,7 +1041,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                 size="sm"
                 className="h-7 text-xs"
                 onClick={() => void handleBulkMarkRead(true)}
-                data-testid="inbox-selection-mark-read"
+                data-testid="stream-inbox-selection-mark-read"
               >
                 <MailOpen className="me-1 h-3.5 w-3.5" />
                 <Trans>Read</Trans>
@@ -1051,7 +1051,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                 size="sm"
                 className="h-7 text-xs"
                 onClick={() => void handleBulkMarkRead(false)}
-                data-testid="inbox-selection-mark-unread"
+                data-testid="stream-inbox-selection-mark-unread"
               >
                 <Mail className="me-1 h-3.5 w-3.5" />
                 <Trans>Unread</Trans>
@@ -1062,7 +1062,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                   size="sm"
                   className="h-7 text-xs"
                   onClick={() => void handleBulkArchive()}
-                  data-testid="inbox-selection-archive"
+                  data-testid="stream-inbox-selection-archive"
                 >
                   <Archive className="me-1 h-3.5 w-3.5" />
                   <Trans>Archive</Trans>
@@ -1073,7 +1073,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                 size="sm"
                 className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => void handleBulkDelete()}
-                data-testid="inbox-selection-delete"
+                data-testid="stream-inbox-selection-delete"
               >
                 <Trash2 className="me-1 h-3.5 w-3.5" />
                 <Trans>Delete</Trans>
@@ -1084,7 +1084,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                 className="h-7 w-7"
                 onClick={clearSelection}
                 title={t`Clear selection`}
-                data-testid="inbox-selection-clear"
+                data-testid="stream-inbox-selection-clear"
               >
                 <X className="h-3.5 w-3.5" />
               </Button>
@@ -1111,7 +1111,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                   className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => void handleArchiveAll()}
                   disabled={isLoading || visibleCount === 0}
-                  data-testid="inbox-archive-all-button"
+                  data-testid="stream-inbox-archive-all-button"
                 >
                   <Trans>Archive all</Trans>
                 </Button>
@@ -1123,7 +1123,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                   className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => void handleDeleteArchived()}
                   disabled={isLoading || visibleCount === 0}
-                  data-testid="inbox-delete-archived-button"
+                  data-testid="stream-inbox-delete-archived-button"
                 >
                   <Trash2 className="me-1 h-3.5 w-3.5" />
                   <Trans>Delete all</Trans>
@@ -1151,7 +1151,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
         {!initialLoading && (
           <div
             className="flex min-h-10 items-center gap-3 border-b border-border/40 bg-muted/20 px-3"
-            data-testid="inbox-select-all-row"
+            data-testid="stream-inbox-select-all-row"
           >
             {visibleCount > 0 && (
               <>
@@ -1159,7 +1159,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
                   checked={allVisibleSelected ? true : selectedCount > 0 ? 'indeterminate' : false}
                   onCheckedChange={toggleSelectAll}
                   aria-label={t`Select all conversations`}
-                  data-testid="inbox-select-all"
+                  data-testid="stream-inbox-select-all"
                   className="h-3.5 w-3.5"
                 />
                 <span className="text-xs text-muted-foreground">
@@ -1305,7 +1305,7 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
           {
             label: t`Invitations — dismiss`,
             count: selectedBuckets.invitationCount,
-            description: t`Hidden from your inbox`,
+            description: t`Hidden from your stream inbox`,
           },
           {
             label: t`Local only — permanent`,

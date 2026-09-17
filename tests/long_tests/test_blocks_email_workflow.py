@@ -3,10 +3,10 @@
 The conversation's canonical program, run for real:
 
     async with workflow("blocks-e2e"):
-        inbox  = Inbox(watched, api_key=KEY)
+        stream_inbox = StreamInbox(watched, api_key=KEY)
         agent = await get_agent("email-summarizer")
         async with agent.process_messages():
-            async for m in inbox.listen():
+            async for m in stream_inbox.listen():
                 out = await agent.process_message(m)
                 await m.reply(EmailMessageSpec.reply_to(m, body=out.text))
 
@@ -34,7 +34,7 @@ import uuid
 
 import pytest
 
-from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
+from flow_sdk.blocks import EmailMessageSpec, StreamInbox, workflow
 from flow_sdk.builtin.agent_registry import get_agent
 from tests.test_settings import test_service_config
 
@@ -101,12 +101,12 @@ async def test_blocks_snippet_receives_and_replies(local_project):
 
         # ── the snippet, verbatim shape ──────────────────────────────────────
         async with workflow("blocks-e2e"):
-            inbox = Inbox(watched, api_key=KEY)
+            stream_inbox = StreamInbox(watched, api_key=KEY)
             agent = await get_agent("email-summarizer")
             assert agent is not None
 
             async with agent.process_messages():
-                async for m in inbox.listen():
+                async for m in stream_inbox.listen():
                     mark("received (listen yielded)")
                     assert marker in m.name, f"unexpected message: {m.name!r}"
                     assert m.thread_key, "AgentMail supplies a native thread id"

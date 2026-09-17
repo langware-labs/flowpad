@@ -585,7 +585,7 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
 | wiki page                                                                  | `forWiki(name, …, wikiRef)`          | indirect — resolves to an asset `TypeId` at view time | A (resolves at view time)                |
 | diff / checkpoint                                                          | `forCheckpoint(hash)`                | no — git hash                                    | C                                        |
 | webapp preview                                                             | port                                 | no                                               | C                                        |
-| scan page / llm-indexers / graph / lens / settings / inbox / search / home | page pointers                        | no                                               | C                                        |
+| scan page / llm-indexers / graph / lens / settings / stream_inbox / search / home | page pointers                        | no                                               | C                                        |
 
 ## 3. The three buckets
 
@@ -604,7 +604,7 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
   to their target entity at view time (Markdown, Skill, or another registered
   asset type) → fold into A.
 - **(C) Inherently transient — never persisted.** Diff hashes, webapp ports,
-  scan page, lens/transcripts, settings/inbox/search/home. These are the
+  scan page, lens/transcripts, settings/stream_inbox/search/home. These are the
   **URL-dock transient tab**: present while the URL points at them, target
   optional, gone on navigation. `VIEWER_REGISTRY.canAddAsTab:false` is
   effectively today's bucket-C marker.

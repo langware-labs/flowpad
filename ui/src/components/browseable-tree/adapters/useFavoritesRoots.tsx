@@ -265,7 +265,7 @@ export function useFavoritesRoots(opts?: {
       const allChildren = folder.id ? childrenOf(folder.id) : [];
       const children = allChildren.filter(isVisible);
       // The badge counts only what's NEVER been opened, so an all-opened folder
-      // carries no badge (like a fully-read inbox); the tooltip still reports
+      // carries no badge (like a fully-read stream inbox); the tooltip still reports
       // full membership.
       const leaves = folder.id ? leavesUnder(folder.id) : [];
       const unopened = leaves.filter(isUnopened).length;

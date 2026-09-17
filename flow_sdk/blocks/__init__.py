@@ -13,13 +13,13 @@ its own.
 The canonical program::
 
     async with workflow("mail-concierge"):
-        inbox  = Inbox("me@agentmail.to", api_key=KEY)
-        agent  = await get_agent("email-summarizer")
+        stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY)
+        agent        = await get_agent("email-summarizer")
 
         async with agent.process_messages():
-            async for m in inbox.listen():                # m: SourceItemSpec
+            async for m in stream_inbox.listen():         # m: SourceItemSpec
                 out   = await agent.process_message(m)    # out: RunOutput
-                await inbox.send(await inbox.reply_spec(m, body=out.text))
+                await stream_inbox.send(await stream_inbox.reply_spec(m, body=out.text))
 
 Verbs live on their owners (``listen``, ``process_message``, ``send``);
 control flow — allow lists, branches, errors, prints — is never configuration,
@@ -59,7 +59,7 @@ __all__ = [
     "MessageSpec",
     "MessageRequest",
     "MessageBlock",
-    "Inbox",
+    "StreamInbox",
     "RunOutput",
     "listen",
     "SlackMessageSpec",
@@ -360,12 +360,12 @@ def _cadence(poll_every, driver) -> float:
     return float(declared) if declared else 3.0
 
 
-class Inbox:
+class StreamInbox:
     """One watched mailbox: the conversation surface of a message source.
 
     A view over the existing pair — the ``DataSource`` that watches the
     address (connected or reused here) and the projection that turns its
-    items into conversations. No third "inbox" thing is created.
+    items into conversations. No third "stream inbox" thing is created.
     """
 
     def __init__(
@@ -386,7 +386,7 @@ class Inbox:
         project's secret store under its variable name — never into the
         source's config, which is a file a project may share.
 
-        ``owner`` says whose inbox this is — a user or Agent ``TypeId``, or an
+        ``owner`` says whose stream inbox this is — a user or Agent ``TypeId``, or an
         ``Agent`` entity. Omitted, the block is the local user's. ``agent_id=``
         in the config keeps working as the compatibility alias: it is the
         cloud mailbox driver's identity key and implies ``owner`` when none is
@@ -422,7 +422,7 @@ class Inbox:
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
         driver = DataDriver.loaded(self.provider)
-        key = getattr(driver, "identity_config_key", "inbox") if driver else "inbox"
+        key = getattr(driver, "identity_config_key", "address") if driver else "address"
         if not key:  # the driver names its account itself (a bot's getMe), not a config field
             return "", self.address
         return key, str(self._config.get(key) or self.address).strip()
@@ -457,7 +457,7 @@ class Inbox:
         # The name is the asset folder, and the user and an agent may each watch one account.
         whose = getattr(self._owner_arg, "name", "") or (owner.id[:8] if owner is not None else "")
         source = DataSource(
-            name=f"Inbox {self.address} for {whose}" if whose else f"Inbox {self.address}",
+            name=f"{self.provider} {self.address} for {whose}" if whose else f"{self.provider} {self.address}",
             provider=self.provider,
             config={key: value, **config} if key else config,
             account_key="" if key else value,
@@ -495,8 +495,8 @@ class Inbox:
         from the last ``ack()`` and hands back anything that was in flight with
         ``redelivered=True``. Outside a workflow it lives for the loop, as before.
 
-        Items already present when a position is first created are the baseline: an inbox
-        yields arrivals, not history. Our own sent copies and senders outside ``senders``
+        Items already present when a position is first created are the baseline: a stream
+        inbox yields arrivals, not history. Our own sent copies and senders outside ``senders``
         are filtered — and ACKED, so a filtered row never becomes a gap the next drain
         stops at.
 
@@ -506,8 +506,8 @@ class Inbox:
         """
         from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-        from flow_sdk.inbox.projection import is_self_address, project_source_item  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import is_self_address, project_source_item  # noqa: PLC0415
 
         source = await self.ensure_source()
         position = await ConsumerPosition.ensure_for(
@@ -533,7 +533,7 @@ class Inbox:
                     if position.mark_in_flight(item):
                         await position.commit()
                     # Place it in its conversation regardless of the filters below — the
-                    # inbox UI shows everything; the LOOP only acts on what passes.
+                    # stream inbox UI shows everything; the LOOP only acts on what passes.
                     try:
                         await project_source_item(item, source=source, announce=False)
                     except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
@@ -557,7 +557,7 @@ class Inbox:
         return DataDriver.loaded(self.provider)
 
     async def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
-        """The reply to ``item``, in this inbox's own channel shape — the rule
+        """The reply to ``item``, in this stream inbox's own channel shape — the rule
         and the reason are ``DataSource.reply_spec``'s."""
         source = await self.ensure_source()
         return source.reply_spec(item, body=body, attachments=attachments)

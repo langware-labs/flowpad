@@ -1,10 +1,10 @@
-"""Drop the hub's copy of the inbox from this machine.
+"""Drop the hub's copy of the stream inbox from this machine.
 
 Logout has always cleared the CREDENTIALS and nothing else, so everything the
 hub pulled onto the disk outlived the session it belonged to: conversations,
 their messages, the org rows ``materialize_remote_organization`` writes at
-login. Nothing scopes an inbox read by the logged-in account, so the next
-account to log into the same instance inherited the previous one's inbox.
+login. Nothing scopes a stream inbox read by the logged-in account, so the next
+account to log into the same instance inherited the previous one's stream inbox.
 
 **The type list below is an allowlist, and that is the safety property — do not
 generalize it to "every row with ``remote=True``".** ``remote`` means "this row
@@ -16,7 +16,7 @@ purge that keyed off the flag alone would delete the user's own shared projects.
 Only the types named here are ones the hub alone ever puts on this disk.
 
 Within those types the flag still does the scoping, and it deliberately spares
-the rest of the inbox: a conversation projected from a connected gmail/slack
+the rest of the stream inbox: a conversation projected from a connected gmail/slack
 source is ``remote=False``, its source is still authenticated after a hub
 logout, and its consumer position has already advanced past those items —
 deleting the projection would leave a hole nothing ever refills.
@@ -55,12 +55,12 @@ async def _destroy_all(rows) -> int:
             await row.destroy()
             destroyed += 1
         except Exception:  # noqa: BLE001
-            logger.warning("[inbox] clear: failed to destroy %s", getattr(row, "typeid", row), exc_info=True)
+            logger.warning("[stream-inbox] clear: failed to destroy %s", getattr(row, "typeid", row), exc_info=True)
     return destroyed
 
 
-async def clear_inbox() -> None:
-    """Delete the hub-derived inbox.
+async def clear_stream_inbox() -> None:
+    """Delete the hub-derived stream inbox.
 
     Idempotent — a second pass finds nothing and does nothing. Worth having:
     the disconnect action and ``POST /logout`` are two doors onto the same
@@ -77,7 +77,7 @@ async def clear_inbox() -> None:
     from flow_sdk.builtin.team import Team  # noqa: PLC0415
     from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-    from flow_sdk.inbox import recompute_unread  # noqa: PLC0415
+    from flow_sdk.stream_inbox import recompute_unread  # noqa: PLC0415
 
     conversations = await Conversation.get_all({"remote": True})
     conversation_ids = [str(c.id) for c in conversations if c.id]
@@ -115,7 +115,7 @@ async def clear_inbox() -> None:
         removed += await _destroy_all(await cls.get_all({"remote": True}))
 
     if removed:
-        logger.info("[inbox] clear: removed %d hub-derived row(s)", removed)
+        logger.info("[stream-inbox] clear: removed %d hub-derived row(s)", removed)
         # Only when something went: local conversations survive and can still be
         # unread, so this is a real recount, not a write of a known 0 — and on the
         # idempotent second pass the ``logged_out`` touch already covers it.

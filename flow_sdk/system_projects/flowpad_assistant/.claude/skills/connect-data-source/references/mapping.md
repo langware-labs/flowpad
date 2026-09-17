@@ -63,7 +63,7 @@ their harness, so there is no OAuth round trip and no bot to invite:
 
 Reach for `cloud_email` (Agent Email) only when the person wants the agent's own
 address, or when no harness is available — and allocate it with
-`POST /agent/<id>/allocate_inbox`, never by filling its form. `agentmail` is the
+`POST /agent/<id>/allocate_mailbox`, never by filling its form. `agentmail` is the
 vendor the cloud uses behind Agent Email: it is not offered to people, so never
 answer "give my agent an email" with it. `references/process-sdk.md` has
 what else is true of a source whose fetch is a process — in particular why its

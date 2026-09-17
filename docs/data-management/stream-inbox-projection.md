@@ -2,11 +2,11 @@
 id: fbe83c6d-65fb-4299-9d53-bd17dd9b7570
 ---
 
-# Inbox projection — ingested messages become conversations
+# Stream inbox projection — ingested messages become conversations
 
-The one-way projection from ingested cloud records to Inbox conversations, and
-the module that owns it: `flow_sdk/inbox/projection.py`. Nothing else in the
-system knows both halves.
+The one-way projection from ingested cloud records to stream inbox
+conversations, and the module that owns it: `flow_sdk/stream_inbox/projection.py`.
+Nothing else in the system knows both halves.
 
 ## The reference model
 
@@ -23,7 +23,7 @@ Identity is looked up, never derived: thread by `(channel, thread_key)`
 on first sight, so re-projecting the whole corpus converges on the same rows —
 which is exactly what makes reindex a repair tool (below). Both the thread
 fork and the message placement run under one per-loop dedupe lock
-(`inbox/_locks.py`, keyed by the running loop so per-test loops cannot strand
+(`stream_inbox/_locks.py`, keyed by the running loop so per-test loops cannot strand
 it): the two lanes (the item-tag handler and the reconcile sweep) race in
 production, and an unlocked lookup-then-create minted the same message twice.
 The lock is taken only on a miss, so the already-placed re-poll never
@@ -31,7 +31,7 @@ serializes on it.
 
 **What is admitted.** Only a `SourceItem` whose `kind` sits under
 `MESSAGE_KIND_ROOT = "content.message"` (`content.message.email`,
-`content.message.chat`) is inbox material; `content.feed.item` is an article
+`content.message.chat`) is stream inbox material; `content.feed.item` is an article
 and is refused by `is_message` (a `tag_is_within` hierarchy match, not a
 prefix compare). The reconcile sweep pushes the same gate into its query as
 a `LIKE 'content.message.%'` so a mixed source cannot burn its batch on rows
@@ -65,7 +65,7 @@ bubble renders it and derives nothing.
 A message has an **EVENT time** (when the human sent it: Slack `ts`, Telegram
 `date`, an email's `Date:`) and **PROCESSING times** (when our rows were
 written or edited: `created_date` / `updated_date`). Rendering the second as
-the first is how a year-old Slack backfill once read "11h ago" in the inbox.
+the first is how a year-old Slack backfill once read "11h ago" in the stream inbox.
 The law:
 
 * **Event time is first-class.** Drivers normalize it ONCE at the edge —
@@ -78,7 +78,7 @@ The law:
   created_date` (mirrored as `eventTime` in ts_sdk). A channel-projected
   message is pinned to its `sent_at`; an authored message keeps its own
   clocks (an edit bumps recency); a hub-synced copy uses its adopted hub
-  `created_date` (`flow_sdk/inbox/hub_clock.py`).
+  `created_date` (`flow_sdk/stream_inbox/hub_clock.py`).
 * **Every derivation reads `event_time`** — the conversation pointer `ts`,
   message order, and recency (`conv.updated_date = max(event_time)`) are all
   computed in `project_pointers_to_entity`
@@ -97,8 +97,8 @@ and the pointer/recency rebuild then re-derives from the healed rows. The
 reconcile sweep (`reconcile_source`, run after every sync) picks up not only
 un-projected items but also placed items whose message lacks `sent_at`.
 
-Consequence, and the promise this doc exists to keep: **mis-dated inbox data
-is repaired by the standard paths** — a sync, a "Pull changes", a replay — with
+Consequence, and the promise this doc exists to keep: **mis-dated stream inbox
+data is repaired by the standard paths** — a sync, a "Pull changes", a replay — with
 no bespoke migration, for today's legacy rows and for any future corruption of
 the same shape.
 
@@ -112,15 +112,15 @@ backfill announces nothing (storm caps in `IngestMode`). Both funnel into
 and [data-sources.md](data-sources.md#the-pipeline) for the ingest side of the
 fence.
 
-Both lanes are armed by `start_inbox_projection`, which `flow_sdk.inbox.start_inbox`
+Both lanes are armed by `start_stream_inbox_projection`, which `flow_sdk.stream_inbox.start_stream_inbox`
 calls at server startup **before** subscribing the agent runner — the runner
 keys off the projection's own announcement, so the order is a contract.
 The item handler re-reads the `SourceItem` row (the event carries an id, not
 a body) and re-projects idempotently on `.updated`.
 
 **The announcement.** A placed message is announced as
-`inbox.<provider>.message.projected` (target `source_item:<id>`, scope
-`data_source:<id>`; `inbox/inbox_on_tag.py`) — a different fact from
+`stream_inbox.<provider>.message.projected` (target `source_item:<id>`, scope
+`data_source:<id>`; `stream_inbox/stream_inbox_on_tag.py`) — a different fact from
 `ingest.*.item.created`, because a thread's `conversation_id` does not exist
 until the projection has committed, and a consumer on the ingest tag would be
 racing that write. Whether to announce is decided by the **lane**, not by
@@ -142,7 +142,7 @@ model, not hygiene: an orphaned reference renders blank. Hub-native messages
 never carry `source_item_id`, so a mixed conversation loses only its channel
 half.
 
-## The rest of `flow_sdk/inbox/`
+## The rest of `flow_sdk/stream_inbox/`
 
 * `__init__.py` — the unread projection: `touch(reason)` is the fire-and-forget
   recompute every mutation site (including this projection) calls;
@@ -152,7 +152,7 @@ half.
   *where* a reply goes and hands it to the driver's `send`; the sent copy
   re-enters through ingest and projects like any other item.
 * `agent_runner.py` — mail to an agent's own mailbox becomes a turn in one
-  headless process per conversation; subscribed on `inbox.*.message.projected`.
+  headless process per conversation; subscribed on `stream_inbox.*.message.projected`.
   The allowlist is also the loop breaker for the agent's own ingested replies.
 * `catchup.py` — the hub-side one-shot `conversation-list` sweep on startup and
   cloud login, because the hub's WebSocket fan-out is live-only.

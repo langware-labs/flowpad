@@ -54,7 +54,7 @@ ATTENTION_LEASE_SECONDS = 35.0
 
 #: source id → {"expiry": monotonic, "cadence": seconds, "next": monotonic}
 _attention: dict[str, dict] = {}
-# Keyed by the RUNNING loop, weakly — the `inbox/_locks.py` idiom. A plain
+# Keyed by the RUNNING loop, weakly — the `stream_inbox/_locks.py` idiom. A plain
 # dict pinned every test's torn-down loop (and its task) forever.
 _attention_tasks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Task]" = (
     weakref.WeakKeyDictionary()

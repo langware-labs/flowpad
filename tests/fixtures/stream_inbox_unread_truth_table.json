@@ -1,5 +1,5 @@
 {
-  "comment": "Shared truth table for the inbox unread formula. Consumed by tests/unit/test_inbox_unread_truth_table.py (backend count_unread) and ui/tests/react/inbox-unread-truth-table.test.ts (frontend conversationFacets) so the scalar projection and the rendered Unread rows can never drift. One conversation contributes at most one; pending standalone invitations contribute one each.",
+  "comment": "Shared truth table for the stream inbox unread formula. Consumed by tests/unit/test_stream_inbox_unread_truth_table.py (backend count_unread) and ui/tests/react/stream-inbox-unread-truth-table.test.ts (frontend conversationFacets) so the scalar projection and the rendered Unread rows can never drift. One conversation contributes at most one; pending standalone invitations contribute one each.",
   "viewer": {
     "email": "me@local.test",
     "cloud_user_id": "me-cloud",

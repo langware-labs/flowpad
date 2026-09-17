@@ -46,7 +46,7 @@ from flow_sdk.sources.values.origin import CloudOrigin
 
 
 class MessageSpec(DataSpec):
-    """An OUTBOUND message, as a value — what a script hands ``Inbox.send``.
+    """An OUTBOUND message, as a value — what a script hands ``StreamInbox.send``.
 
     The channel-generic base of the outbound hierarchy — outbound only,
     deliberately. Inbound messages keep arriving as ``SourceItemSpec`` until
@@ -220,7 +220,7 @@ class SourceItem(Entity):
     segment_key: str = APIField(default="", description="Feed URL, channel id — the cursor's unit")
     segment_label: str = APIField(default="")
     external_id: str = APIField(default="", description="Provider-native stable id")
-    thread_key: Optional[str] = APIField(default=None, description="Grouping axis for the inbox projection")
+    thread_key: Optional[str] = APIField(default=None, description="Grouping axis for the stream inbox projection")
     # The provider's id for the record this replies to. Provenance for quoting
     # and for repairing a thread whose parent arrives late — NOT how threading
     # is decided (`thread_key` is). Deliberately absent from DIGESTED_FIELDS:
@@ -335,7 +335,7 @@ class SourceItem(Entity):
         Eventually consistent for the four senders that do not record their own copy; the
         caller syncs first and treats "not found" as "do not resend".
         """
-        from flow_sdk.inbox.projection import is_self_address  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import is_self_address  # noqa: PLC0415
 
         def mine(row: "SourceItem") -> bool:
             return is_self_address(source, row.author_external_id or "")

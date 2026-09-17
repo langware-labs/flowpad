@@ -31,9 +31,9 @@ from pydantic import PrivateAttr
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.auth import LoginRequired
+from flow_sdk.builtin.agent_mailbox import AgentMailbox
+from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError
 from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
-from flow_sdk.builtin.email_inbox import EmailInbox
-from flow_sdk.builtin.email_inbox_driver import EmailInboxError
 from flow_sdk.core import Entity, action
 from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for
 from flow_sdk.fs_store.type_id import TypeId
@@ -112,7 +112,7 @@ class AutoLaunchOutcome:
 
 
 
-def _inbox_failures(verb: str):
+def _mailbox_failures(verb: str):
     """Translate a mailbox failure into the action envelope, once.
 
     Five actions were each carrying the identical three-arm ladder, so a change
@@ -128,7 +128,7 @@ def _inbox_failures(verb: str):
                 return await fn(self)
             except LoginRequired as exc:
                 return ApiFailResponse(message=str(exc), status_code=401)
-            except EmailInboxError as exc:
+            except AgentMailboxError as exc:
                 return ApiFailResponse(message=exc.reason, status_code=exc.status_code or 503)
             except Exception as exc:  # noqa: BLE001 — the UI gets a stable action failure
                 return ApiFailResponse(message=f"could not {verb}: {exc}")
@@ -144,7 +144,7 @@ class Agent(Entity):
     and the folder names the agent is ``TypeInfo``'s (the serializer's)."""
 
     type: str = APIField(default=EntityType.AGENT.value)
-    _inbox: EmailInbox | None = PrivateAttr(default=None)
+    _mailbox: AgentMailbox | None = PrivateAttr(default=None)
 
     # ── identity / presentation ───────────────────────────────────────────
     # `name` / `title` / `uname` come from Entity. `name` is the addressable
@@ -222,7 +222,7 @@ class Agent(Entity):
     #
     # An Agent HOLDS a mailbox; it is not one. Everything about the mailbox —
     # its policy, its lifecycle, the source that polls it, and the local cache
-    # the gate reads — lives on ``EmailInbox`` (``flow_sdk/builtin/email_inbox.py``)
+    # the gate reads — lives on ``AgentMailbox`` (``flow_sdk/builtin/agent_mailbox.py``)
     # and the ``cloud_email`` ``DataSource`` it owns. Nothing about mail is a
     # field here: an Agent holds a mailbox, it is not one.
     #
@@ -626,37 +626,37 @@ class Agent(Entity):
     # ── the mailbox ───────────────────────────────────────────────────────
 
     @property
-    def inbox(self) -> EmailInbox | None:
+    def mailbox(self) -> AgentMailbox | None:
         """The mailbox projection resolved for this Agent in this SDK process.
 
         A plain accessor. It is ``None`` until something resolves one — 
-        :meth:`allocate_inbox`, or ``EmailInbox.for_agent(self)`` — because an
+        :meth:`allocate_mailbox`, or ``AgentMailbox.for_agent(self)`` — because an
         Agent that was never given a mailbox does not have one, and a property
         that silently reached the Hub would make every attribute read a network
         call.
         """
-        return self._inbox
+        return self._mailbox
 
-    async def allocate_inbox(self, **options) -> EmailInbox:
+    async def allocate_mailbox(self, **options) -> AgentMailbox:
         """Give this Agent a mailbox, or hand back the one it already has.
 
-        The Agent's whole mail surface, beside :attr:`inbox`. See
-        :meth:`EmailInbox.allocate` for the contract; everything afterwards is
+        The Agent's whole mail surface, beside :attr:`mailbox`. See
+        :meth:`AgentMailbox.allocate` for the contract; everything afterwards is
         the mailbox's own.
         """
-        return await EmailInbox.allocate(self, **options)
+        return await AgentMailbox.allocate(self, **options)
 
     async def bind_channel(self, *, provider: str, channel: str, allowed_senders: "Sequence[str]" = ()) -> "DataSource":
         """Make ``channel`` on ``provider`` reach THIS agent, and answer as it.
 
-        The channel sibling of :meth:`allocate_inbox`. A mailbox is *allocated* —
+        The channel sibling of :meth:`allocate_mailbox`. A mailbox is *allocated* —
         the hub mints an address nobody had. A channel already exists and someone
         already connected the provider, so binding is a lookup plus an owner: the
         source that watches this channel becomes the agent's, and everything
         downstream (the turn, ``agent_id_of``, the outbound persona) keys on that
         owner.
 
-        The adoption itself is ``Inbox.ensure_source`` — the same seam the SDK
+        The adoption itself is ``StreamInbox.ensure_source`` — the same seam the SDK
         block uses, NOT a second copy of it, so a binding gets its
         connection precheck (``NotConnected`` naming the fix, rather than a row
         that parks on its first poll) and its idempotency for free. Binding twice
@@ -668,9 +668,9 @@ class Agent(Entity):
 
         Binding does not make the source listen. A provider with a setup step
         lands in ``SETUP`` and answers no one until it is verified — the same
-        rule ``EmailInbox.allowed`` enforces for a mailbox.
+        rule ``AgentMailbox.allowed`` enforces for a mailbox.
         """
-        from flow_sdk.blocks import Inbox  # noqa: PLC0415
+        from flow_sdk.blocks import StreamInbox  # noqa: PLC0415
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
         channel = str(channel or "").strip()
@@ -684,7 +684,7 @@ class Agent(Entity):
             # never answer — which is the whole point of the binding.
             raise ValueError(f"the {provider} driver cannot send, so an agent cannot converse on it")
 
-        source = await Inbox(channel, provider=provider, owner=self).ensure_source()
+        source = await StreamInbox(channel, provider=provider, owner=self).ensure_source()
         senders = [t for t in (str(s).strip() for s in allowed_senders) if t]
         # Only on change: re-binding is the documented common case, and
         # `DataSource.save` is a spec read plus a write.
@@ -694,11 +694,11 @@ class Agent(Entity):
         return source
 
     @action.post(action_name="bind_channel")
-    @_inbox_failures("bind a channel")
+    @_mailbox_failures("bind a channel")
     async def bind_channel_action(self):
         """`POST /agent/<id>/bind_channel` — ``{provider, channel, allowed_senders?}``.
 
-        Declares no parameters, for the reason ``allocate_inbox_action`` gives:
+        Declares no parameters, for the reason ``allocate_mailbox_action`` gives:
         this module carries ``from __future__ import annotations`` and the
         dispatcher resolves an annotated ``request`` by identity.
         """
@@ -723,21 +723,21 @@ class Agent(Entity):
             }
         )
 
-    @action.get(action_name="inbox_state")
-    @_inbox_failures("load the inbox")
-    async def inbox_state_action(self):
+    @action.get(action_name="mailbox_state")
+    @_mailbox_failures("load the mailbox")
+    async def mailbox_state_action(self):
         """Browser projection of the mailbox and its local DataSource.
 
         The one action that reconciles: it is the only one that may find no
         mailbox at all, so it goes through ``state_for_agent`` rather than
-        rendering an inbox it already holds.
+        rendering a mailbox it already holds.
         """
-        return ApiSuccessResponse(data=await EmailInbox.state_for_agent(self))
+        return ApiSuccessResponse(data=await AgentMailbox.state_for_agent(self))
 
-    @action.post(action_name="allocate_inbox")
-    @_inbox_failures("allocate an inbox")
-    async def allocate_inbox_action(self):
-        """`POST /agent/<id>/allocate_inbox` — allocate (or adopt) the mailbox.
+    @action.post(action_name="allocate_mailbox")
+    @_mailbox_failures("allocate a mailbox")
+    async def allocate_mailbox_action(self):
+        """`POST /agent/<id>/allocate_mailbox` — allocate (or adopt) the mailbox.
 
         Declares NO parameters. This module carries ``from __future__ import
         annotations`` and the dispatcher resolves an annotated ``request`` by
@@ -748,25 +748,25 @@ class Agent(Entity):
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required", status_code=401)
         body = await request_info.get_post_data() or {}
-        inbox = await self.allocate_inbox(**body)
-        return ApiSuccessResponse(data=await inbox.state())
+        mailbox = await self.allocate_mailbox(**body)
+        return ApiSuccessResponse(data=await mailbox.state())
 
-    @action.post(action_name="disable_inbox")
-    @_inbox_failures("disable the inbox")
-    async def disable_inbox_action(self):
+    @action.post(action_name="disable_mailbox")
+    @_mailbox_failures("disable the mailbox")
+    async def disable_mailbox_action(self):
         """Pause the mailbox and its local source without releasing the address."""
         request_info = get_current_request_info()
         if await request_info.get_post_data() if request_info else False:
-            return ApiFailResponse(message="disable_inbox does not accept settings", status_code=400)
-        inbox = await EmailInbox.for_agent(self)
-        if inbox is None:
-            return ApiFailResponse(message="this agent has no inbox", status_code=404)
-        await inbox.disable()
-        return ApiSuccessResponse(data=await inbox.state())
+            return ApiFailResponse(message="disable_mailbox does not accept settings", status_code=400)
+        mailbox = await AgentMailbox.for_agent(self)
+        if mailbox is None:
+            return ApiFailResponse(message="this agent has no mailbox", status_code=404)
+        await mailbox.disable()
+        return ApiSuccessResponse(data=await mailbox.state())
 
-    @action.post(action_name="configure_inbox")
-    @_inbox_failures("configure the inbox")
-    async def configure_inbox_action(self):
+    @action.post(action_name="configure_mailbox")
+    @_mailbox_failures("configure the mailbox")
+    async def configure_mailbox_action(self):
         """Update the mailbox's policy and the paired DataSource cadence.
 
         Only the LOCAL half is validated here. ``allowed_senders`` and
@@ -779,7 +779,7 @@ class Agent(Entity):
         unknown = sorted(set(body) - {"allowed_senders", "filters", "poll_interval_seconds"})
         if unknown:
             return ApiFailResponse(
-                message=f"unknown inbox setting(s): {', '.join(unknown)}", status_code=400
+                message=f"unknown mailbox setting(s): {', '.join(unknown)}", status_code=400
             )
         interval = body.get("poll_interval_seconds")
         if interval is not None:
@@ -789,45 +789,45 @@ class Agent(Entity):
                 interval = int(interval)
             except (TypeError, ValueError):
                 return ApiFailResponse(message="poll_interval_seconds must be an integer")
-        inbox = await EmailInbox.for_agent(self)
-        if inbox is None:
-            return ApiFailResponse(message="this agent has no inbox", status_code=404)
+        mailbox = await AgentMailbox.for_agent(self)
+        if mailbox is None:
+            return ApiFailResponse(message="this agent has no mailbox", status_code=404)
         return ApiSuccessResponse(
-            data=await inbox.configure(
+            data=await mailbox.configure(
                 allowed_senders=body.get("allowed_senders"),
                 filters=body.get("filters"),
                 poll_interval_seconds=interval,
             )
         )
 
-    @action.post(action_name="release_inbox")
-    @_inbox_failures("release the inbox")
-    async def release_inbox_action(self):
+    @action.post(action_name="release_mailbox")
+    @_mailbox_failures("release the mailbox")
+    async def release_mailbox_action(self):
         """Release the address for good. Distinct from disabling, on purpose."""
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required", status_code=401)
-        inbox = await EmailInbox.for_agent(self)
-        released = await inbox.release() if inbox is not None else False
+        mailbox = await AgentMailbox.for_agent(self)
+        released = await mailbox.release() if mailbox is not None else False
         return ApiSuccessResponse(data={"agent_id": self.id, "released": released})
 
-    @action.get(action_name="inbox_scope")
-    async def inbox_scope_action(self):
-        """IDs admitted to this Agent's local Inbox and Conversation views.
+    @action.get(action_name="stream_inbox_scope")
+    async def stream_inbox_scope_action(self):
+        """IDs admitted to this Agent's local Stream Inbox and Conversation views.
 
         About the Agent's own views, not about the mailbox — which is why it
         stays here while every mailbox verb moved.
         """
-        from flow_sdk.inbox.agent_scope import (  # noqa: PLC0415
-            AgentInboxScopeError,
-            resolve_agent_inbox_scope,
-        )
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.stream_inbox.agent_scope import (  # noqa: PLC0415
+            AgentStreamInboxScopeError,
+            resolve_agent_stream_inbox_scope,
+        )
 
         try:
-            scope = await resolve_agent_inbox_scope(self.id)
+            scope = await resolve_agent_stream_inbox_scope(self.id)
             return ApiSuccessResponse(data=scope.as_dict())
-        except AgentInboxScopeError as exc:
+        except AgentStreamInboxScopeError as exc:
             return ApiFailResponse(message=str(exc), status_code=exc.status_code)
 
     # ── deploy to the cloud ───────────────────────────────────────────────

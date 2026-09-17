@@ -26,7 +26,7 @@ What it demonstrates, on the real packs:
 |---|---|
 | The packs | carried vs. declared families; a bundle pack lists nothing |
 | Sub-icons | `@restore` composed from `sub: { restore: 'lucide:history' }`, plus ad-hoc badges |
-| Chips | the glyph with its label, as an inbox row wears it — full and compact |
+| Chips | the glyph with its label, as a stream inbox row wears it — full and compact |
 | Colour on a bundle glyph | a lucide mask taking any colour, incl. the terminal strip's per-vendor tints |
 | Tinting | `tintable` picks mask vs `<img>`; a mask follows `currentColor`, an image cannot |
 | Declared colour | a brand's own hex, in the pack instead of at the call site |

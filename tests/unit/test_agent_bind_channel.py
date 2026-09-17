@@ -102,7 +102,7 @@ async def test_a_bound_channel_names_its_agent_to_every_reader(connected):
     """`agent_id_of` is what the turn, the attribution and the outbound persona
     all ask. A binding writes only `owner`, so if that reader did not honour it
     the channel would ingest and then answer as nobody."""
-    from flow_sdk.inbox.projection import agent_id_of
+    from flow_sdk.stream_inbox.projection import agent_id_of
 
     agent = await _agent("binder-named")
 
@@ -112,7 +112,7 @@ async def test_a_bound_channel_names_its_agent_to_every_reader(connected):
 
 
 async def test_an_unconnected_provider_is_refused_before_a_row_exists(monkeypatch):
-    """The precheck `Inbox.ensure_source` carries: a source minted without a
+    """The precheck `StreamInbox.ensure_source` carries: a source minted without a
     connection looks bound and then parks on its first poll, so the honest
     failure is at the binding, naming the fix."""
     from flow_sdk.connections import NotConnected

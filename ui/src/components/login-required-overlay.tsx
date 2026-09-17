@@ -12,7 +12,7 @@ interface LoginRequiredOverlayProps {
 
 /**
  * Soft, non-error login CTA. Rendered ON TOP of a surface that needs cloud
- * login (inbox, conversation) when the user isn't signed in. The host must be
+ * login (stream inbox, conversation) when the user isn't signed in. The host must be
  * `position: relative` — this fills it (`absolute inset-0`) with a translucent,
  * blurred scrim so the content stays visible behind the call-to-action.
  *

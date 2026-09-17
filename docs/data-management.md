@@ -161,9 +161,9 @@ A data source as a **folder asset**: `data_driver.json` is the manifest and ever
 
 ***
 
-### [Inbox Projection](data-management/inbox-projection.md)
+### [Stream Inbox Projection](data-management/stream-inbox-projection.md)
 
-The one-way projection from ingested cloud records (`SourceItem`) to Inbox conversations (`FlowMessage` reference rows whose `text` is hydrated at read time), owned by `flow_sdk/inbox/projection.py`.
+The one-way projection from ingested cloud records (`SourceItem`) to stream inbox conversations (`FlowMessage` reference rows whose `text` is hydrated at read time), owned by `flow_sdk/stream_inbox/projection.py`.
 
 ***
 

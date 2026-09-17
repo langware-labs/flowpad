@@ -1,4 +1,4 @@
-/** The three-step glyph rule shared by the card, the inbox chip and the channels bar. */
+/** The three-step glyph rule shared by the card, the stream inbox chip and the channels bar. */
 import { describe, expect, it } from 'vitest';
 import { sourceIconName } from '@src/components/data-sources/source-icon';
 

@@ -23,7 +23,7 @@ import { isViewer } from './conversation-category';
 import { ThreadStack } from './ThreadStack';
 import { channelLabel } from './channel-attribution';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
-import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
+import { syncConversationMessages, updateMessage } from '@src/components/stream-inbox-view/stream-inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { SessionEventLine } from './SessionEventLine';
@@ -79,7 +79,7 @@ interface ConversationViewProps {
   /** Open a thread (id) or return to the packed list (null). URL-first — the
    *  view never filters itself, it asks the host to navigate. */
   onThreadNavigate?: (threadId: string | null) => void;
-  /** Restrict this view and every mutation to one Agent's formal inbox. */
+  /** Restrict this view and every mutation to one Agent's formal stream inbox. */
   agentId?: string | null;
 }
 
@@ -132,14 +132,14 @@ export function ConversationView({
   const { members: memberRoster, ready: rosterReady, refresh: refreshMembers } = useMembers(conversationTypeId);
   const participants = memberRoster;
 
-  const [agentScope, setAgentScope] = useState<Awaited<ReturnType<Agent['inboxScope']>> | null>(null);
+  const [agentScope, setAgentScope] = useState<Awaited<ReturnType<Agent['streamInboxScope']>> | null>(null);
   const refreshAgentScope = useCallback(async () => {
     if (!agentId) {
       setAgentScope(null);
       return;
     }
     try {
-      setAgentScope(await new Agent({ id: agentId }).inboxScope());
+      setAgentScope(await new Agent({ id: agentId }).streamInboxScope());
     } catch {
       setAgentScope({ agent_id: agentId, source_id: null, conversation_ids: [], thread_ids: [], flow_message_ids: [] });
     }
@@ -270,7 +270,7 @@ export function ConversationView({
   const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
 
   // A source-backed conversation names its own channel and the source feeding
-  // it — the inbox projection stamps both when it places the first message.
+  // it — the stream inbox projection stamps both when it places the first message.
   const channel = conversation?.channel || undefined;
 
   // Attention-driven polling: while this source-backed conversation is the
@@ -281,12 +281,12 @@ export function ConversationView({
     : conversation?.channel_source_id ?? undefined;
   useAttentionPolling(attentionSourceId, conversationId);
 
-  // The ingest sync boundary is too early: inbox projection runs as a detached
+  // The ingest sync boundary is too early: stream inbox projection runs as a detached
   // subscriber and writes the FlowMessage + conversation pointer afterward.
   // Refresh on the existing post-projection event instead, scoped to this
   // Agent's DataSource so another active source cannot disturb this thread.
   useOnTag(
-    'inbox.*.message.projected',
+    'stream_inbox.*.message.projected',
     () => {
       if (!agentId || !attentionSourceId) return;
       void Promise.all([
@@ -528,10 +528,10 @@ export function ConversationView({
       (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
 
   // Open-to-read (URL-first): viewing a conversation marks its latest received
-  // message read — the mutation lives HERE, on the mounted view, so the Inbox
+  // message read — the mutation lives HERE, on the mounted view, so the Stream Inbox
   // row click / banner click / direct link only navigate (single writer:
   // navigation → view → action; the backend then reconciles
-  // InboxManager.unread). Focus-gated: a message arriving while the window is
+  // StreamInboxManager.unread). Focus-gated: a message arriving while the window is
   // backgrounded must stay unread (it drives the badge) until the user
   // actually returns — hence the re-run on window focus.
   const readMarkedRef = useRef<string | null>(null);

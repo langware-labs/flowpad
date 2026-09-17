@@ -1,16 +1,16 @@
 /**
- * Frontend half of the shared inbox-unread truth table.
+ * Frontend half of the shared stream-inbox-unread truth table.
  *
  * Consumes the SAME fixture as the backend formula test
- * (`tests/unit/test_inbox_unread_truth_table.py` over `flow_sdk.inbox.count_unread`)
+ * (`tests/unit/test_stream_inbox_unread_truth_table.py` over `flow_sdk.stream_inbox.count_unread`)
  * and asserts `conversationFacets` — the function that decides which rows the
  * Unread view renders — agrees case-by-case. Catches semantic drift between
- * the backend scalar (`InboxManager.unread`) and the rendered list.
+ * the backend scalar (`StreamInboxManager.unread`) and the rendered list.
  */
 import { describe, expect, it } from 'vitest';
 import type { Conversation, FlowMessage, Invitation } from '@sdk';
 import { conversationFacets } from '@src/components/conversation/conversation-category';
-import table from '../../../tests/fixtures/inbox_unread_truth_table.json';
+import table from '../../../tests/fixtures/stream_inbox_unread_truth_table.json';
 
 interface FixtureCase {
   name: string;
@@ -42,7 +42,7 @@ const viewer = {
 
 const facetCases = (table.cases as FixtureCase[]).filter((c) => c.facets);
 
-describe('inbox unread truth table — conversationFacets parity', () => {
+describe('stream inbox unread truth table — conversationFacets parity', () => {
   it.each(facetCases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
     const conv = c.conversations.find((x) => x.id === c.facets!.conversation)!;
     const firstFm = conv.pointers[0] ? c.messages[conv.pointers[0].fm] : undefined;

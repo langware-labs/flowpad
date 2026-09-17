@@ -1,14 +1,14 @@
-"""InboxManager — the @local singleton that owns the inbox unread projection.
+"""StreamInboxManager — the @local singleton that owns the stream inbox unread projection.
 
 A data-only projection entity: ``unread`` is the ONE number every unread surface
 (sidebar pip, Unread pill, OS dock/launcher badge) renders. It is recomputed and
-published exclusively by ``flow_sdk.inbox.recompute_unread`` (mutation sites
-call ``inbox.touch(reason)``) — nothing else writes it, and the frontend never
+published exclusively by ``flow_sdk.stream_inbox.recompute_unread`` (mutation sites
+call ``stream_inbox.touch(reason)``) — nothing else writes it, and the frontend never
 computes, increments, or resets it.
 
 Deliberately knows nothing about FlowMessages, Conversations, or Invitations:
-the counting formula lives in ``flow_sdk/inbox`` — this class is only the
-reflected state (backend Entity → data_op → frontend ``useInboxManager()``).
+the counting formula lives in ``flow_sdk/stream_inbox`` — this class is only the
+reflected state (backend Entity → data_op → frontend ``useStreamInboxManager()``).
 """
 
 import logging
@@ -25,8 +25,8 @@ _LOCAL_UNAME = "local"
 logger = logging.getLogger(__name__)
 
 
-class InboxManager(Entity):
-    type: str = APIField(default=EntityType.INBOX_MANAGER.value)
+class StreamInboxManager(Entity):
+    type: str = APIField(default=EntityType.STREAM_INBOX_MANAGER.value)
     # The final unread count: active conversations whose latest message is
     # unread-received (one per conversation) + pending standalone invitations.
     unread: int = APIField(default=0, ge=0)
@@ -41,11 +41,11 @@ class InboxManager(Entity):
         """Deterministic per-machine id (uuid5 via the shared @local minter)."""
         from flow_sdk.utils.machine_id import local_entity_id  # noqa: PLC0415
 
-        return local_entity_id(EntityType.INBOX_MANAGER.value)
+        return local_entity_id(EntityType.STREAM_INBOX_MANAGER.value)
 
     @classmethod
-    async def get_local(cls, *, create: bool = True) -> "InboxManager | None":
-        """Return the singleton @local inbox manager (self-heals when missing).
+    async def get_local(cls, *, create: bool = True) -> "StreamInboxManager | None":
+        """Return the singleton @local stream inbox manager (self-heals when missing).
 
         Resolution order mirrors ``ComputeNode.get_local``: deterministic stable
         id → legacy ``uname='local'`` row → mint. With ``create=True`` this never
@@ -66,12 +66,12 @@ class InboxManager(Entity):
         return manager
 
     @classmethod
-    async def create_local(cls) -> "InboxManager":
+    async def create_local(cls) -> "StreamInboxManager":
         """Mint (or, under a race, adopt) the singleton @local row."""
         manager = cls(
             id=cls._local_id(),
             uname=_LOCAL_UNAME,
-            name="Inbox",
+            name="Stream Inbox",
             visitor_role="owner",
         )
         try:

@@ -1,9 +1,9 @@
 /**
- * X2 regression lock: the Inbox hydrates every row's first+latest FlowMessage
+ * X2 regression lock: the Stream Inbox hydrates every row's first+latest FlowMessage
  * through ONE batched ``$IN`` query (warming the shared cache) instead of one
  * ``getByTypeId`` GET per row (N+1).
  *
- * The test drives the REAL ``InboxView`` + real entity-hooks over a spied
+ * The test drives the REAL ``StreamInboxView`` + real entity-hooks over a spied
  * ``dataManager``: ``watchQuery`` serves the conversation list and records the
  * batch query; ``getByTypeIdFromCache`` serves the pre-warmed FlowMessages so
  * the rows resolve from cache; ``getByTypeId`` (the per-row GET) is counted and
@@ -35,17 +35,12 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   }),
 }));
 
-vi.mock('@src/store/use-inbox-store', () => ({
-  useInboxStore: () => ({ unreadCount: 0, setUnreadCount: vi.fn() }),
-}));
-
-vi.mock('@src/components/inbox-view/inbox-api', () => ({
-  listInboxMessages: vi.fn(async () => []),
+vi.mock('@src/components/stream-inbox-view/stream-inbox-api', () => ({
   updateMessage: vi.fn(async () => {}),
   bulkUpdateMessages: vi.fn(async () => {}),
 }));
 
-vi.mock('@src/components/inbox-view/MembershipInvitations', () => ({
+vi.mock('@src/components/stream-inbox-view/MembershipInvitations', () => ({
   MembershipInvitations: () => null,
 }));
 
@@ -54,7 +49,7 @@ vi.mock('@src/components/new-conversation-dialog/NewConversationDialog', () => (
 }));
 
 // Keep @sdk real (Conversation/FlowMessage/dataManager) but neutralise the
-// network actions InboxView fires on mount.
+// network actions StreamInboxView fires on mount.
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
   return {
@@ -64,7 +59,7 @@ vi.mock('@sdk', async (importOriginal) => {
   };
 });
 
-import { InboxView } from '@src/components/inbox-view/InboxView';
+import { StreamInboxView } from '@src/components/stream-inbox-view/StreamInboxView';
 
 const N = 5; // conversations → 2N (=10) first+latest FlowMessage pointer ids
 
@@ -105,7 +100,7 @@ function makeConversations() {
   return { convs, messages };
 }
 
-describe('Inbox batch FlowMessage hydration (X2)', () => {
+describe('Stream Inbox batch FlowMessage hydration (X2)', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('issues ONE FlowMessage $IN query for N rows and no per-row GETs', async () => {
@@ -145,14 +140,14 @@ describe('Inbox batch FlowMessage hydration (X2)', () => {
     render(
       <I18nProvider i18n={i18n}>
         <TooltipProvider>
-          <InboxView />
+          <StreamInboxView />
         </TooltipProvider>
       </I18nProvider>,
     );
 
     // Wait until the rows have rendered from the conversation list.
     await waitFor(() => {
-      expect(screen.getAllByTestId('inbox-conversation-row').length).toBe(N);
+      expect(screen.getAllByTestId('stream-inbox-conversation-row').length).toBe(N);
     });
 
     const fmWatches = watchRequests.filter((r) => r.type === FlowMessage.type);

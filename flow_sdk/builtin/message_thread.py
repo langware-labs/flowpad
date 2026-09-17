@@ -24,7 +24,7 @@ no pagination, so counting a thread client-side is silently wrong for any real
 mailbox. One row per thread, one writer, counted from the store.
 
 Tier B: no placement fields, so the indexer can never walk it; written only by
-the inbox projector.
+the stream inbox projector.
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class MessageThread(ProjectedFields, Entity):
     # better. Stored (not just hashed into the id) so a mis-threaded row is
     # debuggable and so a future re-keying can find its inputs.
     thread_key: str = APIField(default="")
-    # Whose inbox this thread belongs to — the local user's or an Agent's. The
+    # Whose stream inbox this thread belongs to — the local user's or an Agent's. The
     # third half of the natural key: without it two owners watching the same
     # channel resolve the same `(channel, thread_key)` and their conversations
     # merge. `None` on rows written before the field existed; the projection
@@ -65,7 +65,7 @@ class MessageThread(ProjectedFields, Entity):
     title: str = APIField(default="")
 
     # ── projection — derived from the messages carrying this thread's id ───
-    # Written only by `recompute_thread_projection` (inbox/projection.py); the
+    # Written only by `recompute_thread_projection` (stream_inbox/projection.py); the
     # ProjectedFields guard refuses a direct assignment.
     message_count: int = APIField(default=0, sharing=Sharing.PRIVATE)
 

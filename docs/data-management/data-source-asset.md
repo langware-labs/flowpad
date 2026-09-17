@@ -244,7 +244,7 @@ for you (Slack: inviting the bot). It is display only: the source class decides
 whether it has a setup step (it is `Verifiable`).
 
 `channel_icon_names` is a per-CHANNEL glyph map for a transport that serves
-several channels (`agent`: `gmail → Mail`, `slack → Slack`). The inbox chip
+several channels (`agent`: `gmail → Mail`, `slack → Slack`). The stream inbox chip
 resolves a record's channel to the channel-named spec's `icon_name` first, then
 to this map on the transport's spec — so a channel's icon stays an asset fact,
 never a frontend table.

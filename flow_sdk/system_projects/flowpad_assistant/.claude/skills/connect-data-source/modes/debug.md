@@ -54,7 +54,7 @@ destroys the only record of why it parked. Snapshot, then reason.
    `last_synced_at`, cursors advanced, no items. In order: (a) `window_days`
    excludes everything the provider has; (b) there is genuinely nothing new;
    (c) the user is looking in the wrong place — only `content.message.*` kinds
-   reach the Inbox, so an RSS item is a record, not mail. Check `SC items`
+   reach the Stream Inbox, so an RSS item is a record, not mail. Check `SC items`
    before believing "nothing arrived".
 
 8. **Files-mode sources** — `reflect` is `copy`/`symlink` but `reflect_into` is

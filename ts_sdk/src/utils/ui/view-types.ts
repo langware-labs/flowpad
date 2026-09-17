@@ -107,8 +107,8 @@ export enum ViewType {
   CRON = 'cron', // Scheduled cron jobs manager
   ASSETS = 'assets', // Assets - unified docs/skills/workflows tree
   PROJECT = 'project', // Collaboration on a project — meet, share tabs/docs/plans
-  AGENT = 'agent', // Agent-owned surfaces — /dock/agent/<agent-id>/inbox
-  INBOX = 'inbox', // Inbox — received FlowMessages from hub
+  AGENT = 'agent', // Agent-owned surfaces — /dock/agent/<agent-id>/stream_inbox
+  STREAM_INBOX = 'stream_inbox', // Stream Inbox — received FlowMessages from hub
   CONVERSATION = 'conversation', // Single Conversation viewer (avatar bubbles + composer)
   SPEC = 'spec', // Single Spec viewer (shows spec metadata, plan link, generated tasks)
   GRAPH_CONTEXT = 'graph_context', // Frozen-context viewer - /dock/graph_context/<id>

@@ -41,7 +41,7 @@ async def test_a_mailbox_becomes_its_own_cursor_label():
 
 
 @pytest.mark.asyncio
-async def test_inbox_when_nothing_is_named():
+async def test_stream_inbox_when_nothing_is_named():
     assert [s.key for s in await DataDriver.loaded("agent").segments(_source())] == ["INBOX"]
 
 

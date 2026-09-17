@@ -1,6 +1,6 @@
 """The mailbox's policy is the Hub's, and the local copy is only a cache.
 
-Step 2 moved the allowlist onto the Hub's ``EmailInbox`` row. What has to hold
+Step 2 moved the allowlist onto the Hub's ``AgentMailbox`` row. What has to hold
 afterwards is narrow but load-bearing: the descriptor is where policy comes
 from, a write goes to the Hub and adopts what the Hub stored (not what we sent),
 and the local mirror exists solely so the per-message gate needs no network.
@@ -11,7 +11,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.email_inbox import EmailInbox
+from flow_sdk.builtin.agent_mailbox import AgentMailbox
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -23,7 +23,7 @@ def _descriptor(agent: Agent, **overrides) -> dict:
         "address": "ada@agentmail.to",
         "display_name": "Ada",
         "provider": "agentmail",
-        "provider_inbox_id": f"inbox-{mint_uuid()}",
+        "provider_inbox_id": f"mbx-{mint_uuid()}",
         "status": "active",
     }
     base.update(overrides)
@@ -39,7 +39,7 @@ class _Hub:
         self.descriptor = dict(descriptor)
         self.configured: list[dict] = []
 
-    async def configure_inbox(self, agent_id, settings):
+    async def configure_mailbox(self, agent_id, settings):
         self.configured.append(settings)
         if "allowed_senders" in settings:
             # The Hub normalizes; that is the whole reason the caller adopts the
@@ -51,16 +51,16 @@ class _Hub:
             self.descriptor["filters"] = dict(settings["filters"])
         return dict(self.descriptor)
 
-    async def enable_inbox(self, agent_id, **_options):
+    async def enable_mailbox(self, agent_id, **_options):
         return dict(self.descriptor)
 
-    async def get_inbox(self, agent_id):
+    async def get_mailbox(self, agent_id):
         return dict(self.descriptor)
 
 
 def _patch(monkeypatch, hub: _Hub, *, wire_source: bool = False) -> None:
     monkeypatch.setattr(
-        "flow_sdk.builtin.email_inbox_driver.get_email_inbox_driver", lambda *_a, **_k: hub
+        "flow_sdk.builtin.agent_mailbox_driver.get_agent_mailbox_driver", lambda *_a, **_k: hub
     )
     monkeypatch.setattr(
         "flow_sdk.cli.auth.hub_login.hub_auth_available", lambda *_a, **_k: True
@@ -72,30 +72,30 @@ def _patch(monkeypatch, hub: _Hub, *, wire_source: bool = False) -> None:
     async def _no_source(self):
         return None
 
-    monkeypatch.setattr(EmailInbox, "ensure_source", _no_source)
+    monkeypatch.setattr(AgentMailbox, "ensure_source", _no_source)
 
 
 async def test_policy_comes_from_the_descriptor():
     """The Hub row owns the allowlist, so the descriptor is where it is read."""
     agent = Agent(name="ada-policy")
-    inbox = EmailInbox.from_hub_descriptor(
+    mailbox = AgentMailbox.from_hub_descriptor(
         _descriptor(agent, allowed_senders=["boss@corp.com"], filters={"labels": "received"}),
         agent_typeid=agent.typeid,
     )
 
-    assert inbox.allowed_senders == ["boss@corp.com"]
-    assert inbox.filters == {"labels": "received"}
-    assert inbox.allowed("boss@corp.com") is True
-    assert inbox.allowed("stranger@corp.com") is False
+    assert mailbox.allowed_senders == ["boss@corp.com"]
+    assert mailbox.filters == {"labels": "received"}
+    assert mailbox.allowed("boss@corp.com") is True
+    assert mailbox.allowed("stranger@corp.com") is False
 
 
 async def test_a_hub_without_policy_yields_a_closed_mailbox():
     """An older Hub carries no allowlist. That must read as CLOSED, never open."""
     agent = Agent(name="ada-old-hub")
-    inbox = EmailInbox.from_hub_descriptor(_descriptor(agent), agent_typeid=agent.typeid)
+    mailbox = AgentMailbox.from_hub_descriptor(_descriptor(agent), agent_typeid=agent.typeid)
 
-    assert inbox.allowed_senders == []
-    assert inbox.allowed("anyone@corp.com") is False
+    assert mailbox.allowed_senders == []
+    assert mailbox.allowed("anyone@corp.com") is False
 
 
 async def test_configure_writes_the_hub_and_adopts_what_it_stored(mail_db, monkeypatch):
@@ -104,15 +104,15 @@ async def test_configure_writes_the_hub_and_adopts_what_it_stored(mail_db, monke
     hub = _Hub(_descriptor(agent))
     _patch(monkeypatch, hub)
 
-    inbox = await EmailInbox.for_agent(agent)
-    await inbox.configure(allowed_senders=["  Boss@Corp.com "], filters={"labels": "received"})
+    mailbox = await AgentMailbox.for_agent(agent)
+    await mailbox.configure(allowed_senders=["  Boss@Corp.com "], filters={"labels": "received"})
 
     assert hub.configured == [
         {"allowed_senders": ["  Boss@Corp.com "], "filters": {"labels": "received"}}
     ], "the write must reach the Hub"
     # Adopted from the Hub's response, not from what we sent.
-    assert inbox.allowed_senders == ["boss@corp.com"]
-    assert inbox.filters == {"labels": "received"}
+    assert mailbox.allowed_senders == ["boss@corp.com"]
+    assert mailbox.filters == {"labels": "received"}
 
 
 async def test_the_local_copy_is_a_cache_the_gate_reads_without_a_network_call(
@@ -127,18 +127,18 @@ async def test_the_local_copy_is_a_cache_the_gate_reads_without_a_network_call(
     hub = _Hub(_descriptor(agent))
     _patch(monkeypatch, hub, wire_source=True)
 
-    inbox = await EmailInbox.for_agent(agent)
-    await inbox.ensure_source()
-    await inbox.configure(allowed_senders=["boss@corp.com"])
+    mailbox = await AgentMailbox.for_agent(agent)
+    await mailbox.ensure_source()
+    await mailbox.configure(allowed_senders=["boss@corp.com"])
 
     source = await DataSource.find_for_account("cloud_email", "agent_id", agent.id)
     assert source.inbound_allowed_senders == ["boss@corp.com"], "the cache follows the Hub"
     # And the gate reads it back with no agent and no network.
-    assert EmailInbox.from_source(source).allowed("boss@corp.com") is True
+    assert AgentMailbox.from_source(source).allowed("boss@corp.com") is True
 
 
 async def test_allocating_with_an_allowlist_declares_it_at_the_hub(mail_db, monkeypatch):
-    """`allocate_inbox(allowed_senders=…)` is one call to the caller, and the
+    """`allocate_mailbox(allowed_senders=…)` is one call to the caller, and the
     policy still lands on the Hub — the mailbox has to exist before it can carry
     one, so the order is allocate then configure."""
     agent = Agent(name=f"ada-allocate-{mint_uuid()[:8]}", remote=True)
@@ -146,10 +146,10 @@ async def test_allocating_with_an_allowlist_declares_it_at_the_hub(mail_db, monk
     hub = _Hub(_descriptor(agent))
     _patch(monkeypatch, hub)
 
-    inbox = await agent.allocate_inbox(allowed_senders=["boss@corp.com"])
+    mailbox = await agent.allocate_mailbox(allowed_senders=["boss@corp.com"])
 
     assert hub.configured == [{"allowed_senders": ["boss@corp.com"]}]
-    assert inbox.allowed("boss@corp.com") is True
+    assert mailbox.allowed("boss@corp.com") is True
 
 
 # --- what "target_not_found" actually meant ---------------------------------
@@ -169,8 +169,8 @@ class _HiddenAgentHub:
         self.visible_after_publish = visible_after_publish
         self.probes = 0
 
-    async def get_inbox(self, agent_id):
-        from flow_sdk.builtin.email_inbox_driver import EmailInboxError, EmailInboxErrorCode
+    async def get_mailbox(self, agent_id):
+        from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError, AgentMailboxErrorCode
 
         self.probes += 1
         if self.probes > 1 and self.visible_after_publish:
@@ -179,20 +179,20 @@ class _HiddenAgentHub:
                 "agent_typeid": self._agent_typeid,
                 "address": "ada@agentmail.to",
                 "provider": "agentmail",
-                "provider_inbox_id": "inbox-1",
+                "provider_inbox_id": "mbx-1",
                 "status": "active",
             }
-        exc = EmailInboxError(401, "Target entity not found")
-        exc.code = EmailInboxErrorCode.TARGET_NOT_FOUND
+        exc = AgentMailboxError(401, "Target entity not found")
+        exc.code = AgentMailboxErrorCode.TARGET_NOT_FOUND
         raise exc
 
-    async def enable_inbox(self, agent_id, **_options):
+    async def enable_mailbox(self, agent_id, **_options):
         return {
             "typeid": f"agent_mailbox-{mint_uuid()}",
             "agent_typeid": self._agent_typeid,
             "address": "ada@agentmail.to",
             "provider": "agentmail",
-            "provider_inbox_id": "inbox-1",
+            "provider_inbox_id": "mbx-1",
             "status": "active",
         }
 
@@ -219,19 +219,19 @@ async def test_an_agent_owned_by_someone_else_says_so(mail_db, monkeypatch):
     "a conflicting record already exists", which describes a constraint rather
     than anything they can do.
     """
-    from flow_sdk.builtin.email_inbox_driver import EmailInboxError, EmailInboxErrorCode
+    from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError, AgentMailboxErrorCode
 
     hub = _HiddenAgentHub(visible_after_publish=False)
     agent = await _agent_that_cannot_publish(monkeypatch, hub)
 
-    with pytest.raises(EmailInboxError) as raised:
-        await agent.allocate_inbox()
+    with pytest.raises(AgentMailboxError) as raised:
+        await agent.allocate_mailbox()
 
     # The CODE, not the sentence: the sentence is product copy on its way to a
     # toast, so asserting it would go red on a rewording and — worse — a
     # "conflicting record not in message" check passes vacuously the day the hub
     # rewords its own 409.
-    assert raised.value.code == EmailInboxErrorCode.FOREIGN_TARGET
+    assert raised.value.code == AgentMailboxErrorCode.FOREIGN_TARGET
     assert raised.value.status_code == 403
     assert agent.remote is False, "a failed adoption must not leave the agent marked published"
 
@@ -242,8 +242,8 @@ async def test_an_agent_published_from_another_instance_is_adopted(mail_db, monk
     hub = _HiddenAgentHub(visible_after_publish=True)
     agent = await _agent_that_cannot_publish(monkeypatch, hub)
 
-    inbox = await agent.allocate_inbox()
+    mailbox = await agent.allocate_mailbox()
 
-    assert inbox.address == "ada@agentmail.to"
+    assert mailbox.address == "ada@agentmail.to"
     assert agent.remote is True
     assert hub.probes == 2, "the second probe is what resolved the ambiguity"

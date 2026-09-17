@@ -143,7 +143,7 @@ interface FlowMessageBubbleProps {
    *  query (one request for all messages, replacing the per-bubble fetch).
    *  When omitted the bubble falls back to fetching by id. */
   fm?: FlowMessage | null;
-  /** Show the original email envelope the inbox projection stamped on the message. */
+  /** Show the original email envelope the stream inbox projection stamped on the message. */
   showEmailHeaders?: boolean;
   timestamp: string;
   task?: ITask | null;

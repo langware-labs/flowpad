@@ -1,7 +1,7 @@
 /**
- * Switch proof for the inbox REORDER bug.
+ * Switch proof for the stream inbox REORDER bug.
  *
- * Symptom: the inbox (and the home RecentConversationsStrip) re-shuffled the
+ * Symptom: the stream inbox (and the home RecentConversationsStrip) re-shuffled the
  * conversation order on every open. RCA cause: both surfaces sorted by
  * `updated_date` descending with NO tiebreaker, so rows with equal or missing
  * timestamps fell back to the server's result order — which is not stable across
@@ -25,7 +25,7 @@ const ID_NEW = '44444444-4444-4444-8444-444444444444';
 const conv = (id: string, updated_date?: string) =>
   new Conversation({ id, updated_date, message_ids: '[]' });
 
-describe('compareConversationsByRecency (inbox / strip shared sort)', () => {
+describe('compareConversationsByRecency (stream inbox / strip shared sort)', () => {
   it('orders the most recently updated conversation first', () => {
     const older = conv(ID_A, '2026-06-01T00:00:00Z');
     const newer = conv(ID_B, '2026-06-02T00:00:00Z');

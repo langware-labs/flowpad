@@ -3,21 +3,21 @@ import { normalizeEmail } from '../utils/utils';
 import { EntityMerge, IEntity } from '../IEntity';
 import type { TypeId } from '../models/TypeId';
 
-export type EmailInboxStatus = 'active' | 'disabled' | 'deleted';
+export type AgentMailboxStatus = 'active' | 'disabled' | 'deleted';
 
-export interface IEmailInbox extends IEntity {
+export interface IAgentMailbox extends IEntity {
   address: string;
   display_name?: string | null;
   provider: string;
   provider_inbox_id: string;
-  status: EmailInboxStatus;
+  status: AgentMailboxStatus;
   agent_typeid: TypeId;
   allowed_senders?: string[];
   filters?: Record<string, string>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface EmailInbox extends EntityMerge<IEmailInbox> {}
+export interface AgentMailbox extends EntityMerge<IAgentMailbox> {}
 
 /**
  * The mailbox allocated to an Agent.
@@ -28,20 +28,20 @@ export interface EmailInbox extends EntityMerge<IEmailInbox> {}
  * admits NOBODY, and a mailbox that is not active refuses everyone.
  */
 @registerEntity
-export class EmailInbox extends APIEntity<EmailInbox> implements IEmailInbox {
+export class AgentMailbox extends APIEntity<AgentMailbox> implements IAgentMailbox {
   static type: string = 'agent_mailbox';
 
   address = '';
   display_name: string | null = null;
   provider = '';
   provider_inbox_id = '';
-  status: EmailInboxStatus = 'active';
+  status: AgentMailboxStatus = 'active';
   agent_typeid!: TypeId;
   allowed_senders: string[] = [];
   /** Standing read defaults, in the Hub's wire vocabulary. Defaults, not constraints. */
   filters: Record<string, string> = {};
 
-  constructor(entity: Partial<IEmailInbox> = {}) {
+  constructor(entity: Partial<IAgentMailbox> = {}) {
     super(entity);
     this.address = entity.address ?? this.address;
     this.display_name = entity.display_name ?? this.display_name;

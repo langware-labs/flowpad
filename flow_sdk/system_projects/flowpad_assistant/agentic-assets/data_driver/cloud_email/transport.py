@@ -1,6 +1,6 @@
 """``AppMailbox`` — an agent's hub mailbox as the cloud email source reaches it on this machine.
 
-The email-inbox driver family and the ordinary cloud login, with its failures as the contract errors
+The agent-mailbox driver family and the ordinary cloud login, with its failures as the contract errors
 that decide polling. Built by ``CloudEmailSource.build``; a test hands the source its own.
 """
 from __future__ import annotations
@@ -23,11 +23,11 @@ class AppMailbox:
 
     @staticmethod
     async def _call(verb, *args, **kwargs):
-        from flow_sdk.builtin.email_inbox_driver import EmailInboxError, get_email_inbox_driver  # noqa: PLC0415
+        from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError, get_agent_mailbox_driver  # noqa: PLC0415
 
         try:
-            return await getattr(get_email_inbox_driver(), verb)(*args, **kwargs) or {}
-        except EmailInboxError as exc:
+            return await getattr(get_agent_mailbox_driver(), verb)(*args, **kwargs) or {}
+        except AgentMailboxError as exc:
             raise mailbox_refusal(exc) from exc
 
 
@@ -42,7 +42,7 @@ def mailbox_refusal(exc):
     status = int(getattr(exc, "status_code", 0) or 0)
     if status == 0:
         if "not configured" in reason:
-            return Rejected(f"The email inbox backend is not configured on this instance ({reason}).")
+            return Rejected(f"The agent mailbox backend is not configured on this instance ({reason}).")
         return SourceUnavailable(f"the mailbox could not be reached: {reason}")
     if status == 404:
         return NotFound(reason or "This agent has no mailbox.")

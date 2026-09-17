@@ -1,6 +1,6 @@
-"""Truth-table test for the inbox unread formula (``flow_sdk.inbox.count_unread``).
+"""Truth-table test for the stream inbox unread formula (``flow_sdk.stream_inbox.count_unread``).
 
-Table-driven over the SHARED fixture ``tests/fixtures/inbox_unread_truth_table.json``
+Table-driven over the SHARED fixture ``tests/fixtures/stream_inbox_unread_truth_table.json``
 — the same file the frontend ``conversationFacets`` vitest consumes — so the
 backend scalar and the rendered Unread rows cannot drift. Pure: plain
 namespaces in, an int out; no DB, no mocks.
@@ -14,9 +14,9 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.inbox import count_unread
+from flow_sdk.stream_inbox import count_unread
 
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "inbox_unread_truth_table.json"
+FIXTURE = Path(__file__).parent.parent / "fixtures" / "stream_inbox_unread_truth_table.json"
 TABLE = json.loads(FIXTURE.read_text())
 
 

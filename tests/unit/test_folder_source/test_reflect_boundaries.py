@@ -56,7 +56,7 @@ async def test_the_driver_produces_refs_and_never_items(folder_db, watched, make
 
     ``ingest_items`` stays the single chokepoint for ``SourceItem`` writes. A
     file source that emitted items would route filesystem assets through the
-    message path and land them in the inbox projection's neighbourhood, which is
+    message path and land them in the stream inbox projection's neighbourhood, which is
     the failure this separation exists to prevent.
     """
     from tests.unit._ingest_helpers import position

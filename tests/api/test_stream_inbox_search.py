@@ -1,4 +1,4 @@
-"""C5 — inbox-search finds bodies in both residences.
+"""C5 — stream-inbox-search finds bodies in both residences.
 
 Under the reference model a channel message's body lives on its SourceItem
 (the FlowMessage row is a blank reference) while a hub-native message's lives
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 async def _search(client, needle: str) -> list[str]:
-    response = await client.post("/api/v1/graph/inbox-search", json={"q": needle})
+    response = await client.post("/api/v1/graph/stream-inbox-search", json={"q": needle})
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "SUCCESS", body

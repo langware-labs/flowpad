@@ -1,5 +1,5 @@
 /**
- * Behavioural lock for the Inbox pending-invitation row (`ConversationListRow`)
+ * Behavioural lock for the Stream Inbox pending-invitation row (`ConversationListRow`)
  * when a LATER message's FlowMessage entity is unresolved locally.
  *
  * Regression (RCA debug_log.md #14, git_artifact_share_wizard test 2): the row's
@@ -79,7 +79,7 @@ vi.mock('@src/hooks/entity-hooks', () => ({
   useEntitiesQuery: () => ({ data: [], isLoading: false }),
 }));
 
-import { ConversationListRow } from '@src/components/inbox-view/InboxView';
+import { ConversationListRow } from '@src/components/stream-inbox-view/StreamInboxView';
 
 function invitationConvWithUnresolvedLatest(): Conversation {
   return new Conversation({
@@ -99,7 +99,7 @@ function renderRow(conv: Conversation, onVisibilityChange = vi.fn()) {
       <ConversationListRow
         conv={conv}
         isFocused={false}
-        viewMode="inbox"
+        viewMode="all"
         searchActive={false}
         onArchive={vi.fn()}
         onUnarchive={vi.fn()}
@@ -107,7 +107,7 @@ function renderRow(conv: Conversation, onVisibilityChange = vi.fn()) {
         onRequestDelete={vi.fn()}
         cloudUserId="me-id"
         onVisibilityChange={onVisibilityChange}
-        // Required by the row since the channels line landed; InboxView supplies it
+        // Required by the row since the channels line landed; StreamInboxView supplies it
         // from useChannelAttribution. These cases assert invitation/subject rendering,
         // not attribution, so "nothing resolved" is the honest value.
         attributionFor={() => null}
@@ -118,15 +118,15 @@ function renderRow(conv: Conversation, onVisibilityChange = vi.fn()) {
   return onVisibilityChange;
 }
 
-describe('Inbox invitation row with an unresolved latest message (RCA #14)', () => {
+describe('Stream Inbox invitation row with an unresolved latest message (RCA #14)', () => {
   it('renders the row + testid + data-kind=invitation + Accept CTA even though the latest FlowMessage is unresolved', () => {
     renderRow(invitationConvWithUnresolvedLatest());
 
-    const row = screen.getByTestId('inbox-conversation-row');
+    const row = screen.getByTestId('stream-inbox-conversation-row');
     expect(row).toBeInTheDocument();
     expect(row).toHaveAttribute('data-kind', 'invitation');
     // The Accept CTA must be present and actionable (the invitation id resolved).
-    const accept = screen.getByTestId('inbox-accept-invitation-button');
+    const accept = screen.getByTestId('stream-inbox-accept-invitation-button');
     expect(accept).toBeInTheDocument();
     expect(accept).toHaveTextContent('Accept');
   });

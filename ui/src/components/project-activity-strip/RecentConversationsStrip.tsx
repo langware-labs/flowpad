@@ -105,7 +105,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   }, [conversations]);
 
   // Resolve channel attribution ONCE for the whole strip and hand each row its
-  // answer — same contract as the main inbox list, so a row never holds its own
+  // answer — same contract as the main stream inbox list, so a row never holds its own
   // sources/specs query watchers.
   const { attributionFor } = useChannelAttribution();
 
@@ -174,7 +174,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     setDismissingAll(true);
     try {
       // Dismiss every live (non-hidden) conversation. Dismiss — not archive —
-      // hides it from this list but keeps it in the full Inbox and lets it
+      // hides it from this list but keeps it in the full Stream Inbox and lets it
       // reappear when a new message arrives, matching the per-row EyeOff action.
       const targets = sorted.filter((c) => c.id && !hiddenIds.has(c.id));
       await Promise.all(targets.map((c) => dismissConversation({ conversation_id: c.id })));
@@ -264,7 +264,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
         <div className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs font-medium">
-            <Trans>Inbox</Trans>
+            <Trans>Stream Inbox</Trans>
           </span>
           {visibleCountActual > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
@@ -385,7 +385,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
           <button
             type="button"
             className="flex flex-1 items-center justify-center gap-1.5 border-s px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            onClick={() => navigation.openDock(DockPointer.forInbox())}
+            onClick={() => navigation.openDock(DockPointer.forStreamInbox())}
             data-testid="open-all-conversations"
           >
             <MessageSquare className="h-3.5 w-3.5" />
@@ -481,7 +481,7 @@ function ConversationRow({
   const isInvitationRow = facets.isInvitation;
 
   // The row's channel glyph, resolved off the LATEST message's origin — the
-  // same signal the main inbox row uses. Hub-native rows resolve to null and
+  // same signal the main stream inbox row uses. Hub-native rows resolve to null and
   // render nothing: absence means "ours".
   const attribution = attributionFor(latestMessage?.origin, latestMessage?.origin_local);
 
@@ -512,7 +512,7 @@ function ConversationRow({
   // The row label is the conversation's own title (derived via the canonical
   // helper: conv.title → name → participants). A task in the conversation's
   // shared context is NOT a title source — it surfaces only as the amber task
-  // chip below. Mirrors the inbox row fix.
+  // chip below. Mirrors the stream inbox row fix.
   const derivedTitle = deriveConversationTitle(conv);
   const title = isInvitationRow ? t`Invitation` : isTypeId(derivedTitle) ? t`Conversation` : derivedTitle;
   const taskFirstWord = taskTitle ? taskTitle.split(/\s+/)[0] : null;
@@ -575,7 +575,7 @@ function ConversationRow({
               <MailPlus className="h-3 w-3 flex-shrink-0 text-violet-500" aria-label={t`invitation`} />
             )}
             {/* Icon-only here: the strip is too narrow to spend a word on the
-                channel name, which the main inbox can afford. */}
+                channel name, which the main stream inbox can afford. */}
             <SourceChip attribution={attribution} iconOnly />
             <span className="truncate">{fromName ?? title}</span>
           </span>
@@ -641,7 +641,7 @@ function ConversationRow({
             onClick={() => onDismiss(conv.id)}
             disabled={dismissingId === conv.id}
             className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground disabled:opacity-40 group-hover:opacity-100"
-            title={t`Hide from Recent — still visible in Inbox; reappears when a new message arrives`}
+            title={t`Hide from Recent — still visible in Stream Inbox; reappears when a new message arrives`}
             aria-label={t`Hide from Recent conversations`}
             data-testid="dismiss-conversation-button"
           >

@@ -21,7 +21,7 @@ export interface ConversationMessage {
  */
 /**
  * The newest pointer by `ts`, or null for an empty list. Exported so the
- * surfaces that hold a raw pointer array (the inbox list, the recent strip)
+ * surfaces that hold a raw pointer array (the stream inbox list, the recent strip)
  * all share one rule — there must be exactly one definition of "latest" in
  * the app, and it must agree with `Conversation.latest_message_ref()` on the
  * backend, which computes the unread BADGE while this computes the unread ROW.
@@ -131,7 +131,7 @@ export interface IConversation extends IEntity {
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
   /** The channel a source-backed conversation replies through (``gmail``,
-   *  ``slack``); stamped by the inbox projection. Null = a Flowpad conversation. */
+   *  ``slack``); stamped by the stream inbox projection. Null = a Flowpad conversation. */
   channel?: string | null;
   /** The local DataSource feeding this conversation; never leaves the machine. */
   channel_source_id?: string | null;
@@ -150,10 +150,10 @@ export interface IConversation extends IEntity {
    */
   git_sharing_enabled?: boolean;
   /** Strip-only dismissal timestamp. Recent strip hides the row when set;
-   *  auto-revives when a FlowMessage newer than this stamp arrives. Inbox
-   *  ignores this field. Null = not dismissed. */
+   *  auto-revives when a FlowMessage newer than this stamp arrives.
+   *  Stream Inbox ignores this field. Null = not dismissed. */
   dismissed_at?: string | Date | null;
-  /** Conversation-level archive timestamp. Both Inbox and Recent strip hide
+  /** Conversation-level archive timestamp. Both Stream Inbox and Recent strip hide
    *  the row when set; auto-revives when a FlowMessage newer than this stamp
    *  arrives. Per-message ``FlowMessage.is_read`` remains independent. */
   archived_at?: string | Date | null;
@@ -249,9 +249,9 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   // arrives over the wire ready to render.
 
   /** Always open conversations in the conversation view — every entry point
-   *  (inbox, recent strip, chips, deep links) lands on the same URL. */
+   *  (stream inbox, recent strip, chips, deep links) lands on the same URL. */
   override get dockPointer(): DockPointerData {
-    if (!this.id) return new DockPointerData(ViewType.INBOX);
+    if (!this.id) return new DockPointerData(ViewType.STREAM_INBOX);
     return new DockPointerData(ViewType.CONVERSATION, this.id);
   }
 
@@ -544,7 +544,7 @@ export interface ListHelpdeskTicketsResult {
 }
 
 /** Staff triage queue: list the helpdesk project's tickets, including ones the
- *  caller hasn't picked up (which don't otherwise appear in their inbox).
+ *  caller hasn't picked up (which don't otherwise appear in their stream inbox).
  *  Members-only on the hub. */
 /**
  * Tickets for a desk. Two callers, opposite questions:
@@ -639,7 +639,7 @@ export interface DismissConversationResult {
 
 /** Strip-only dismiss: stamps ``dismissed_at = now()`` on the conversation so
  *  the Recent strip hides it. The row auto-revives when a FlowMessage newer
- *  than the stamp arrives. Inbox ignores this field. */
+ *  than the stamp arrives. Stream Inbox ignores this field. */
 export async function dismissConversation(
   params: DismissConversationParams,
 ): Promise<DismissConversationResult> {
@@ -665,8 +665,8 @@ export interface ArchiveAllConversationsResult {
   archived_at: string;
 }
 
-/** Conversation-level archive: stamps ``archived_at = now()``. Both Inbox
- *  and Recent strip hide the row when set; auto-revives when a FlowMessage
+/** Conversation-level archive: stamps ``archived_at = now()``.
+ *  Both Stream Inbox and Recent strip hide the row when set; auto-revives when a FlowMessage
  *  newer than the stamp arrives. Per-message ``FlowMessage.is_read`` is
  *  independent and not touched. */
 export async function archiveConversation(

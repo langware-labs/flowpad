@@ -6,7 +6,7 @@ version: 2
 
 Use the process-local message block when all you need is prompt/reply: one
 side sends a string, and one listener produces its answer. This block has no
-address, provider, inbox, or persisted rows.
+address, provider, stream inbox, mailbox, or persisted rows.
 
 ```python
 from flow_sdk.blocks import MessageBlock

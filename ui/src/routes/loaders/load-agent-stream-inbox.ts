@@ -4,13 +4,13 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { DockLoadError } from './dock-load-error';
 
 /** Resolve only route identity. Polling and Hub email state belong to the mounted view. */
-export async function loadAgentInboxRoute(pointer: string | undefined): Promise<void> {
+export async function loadAgentStreamInboxRoute(pointer: string | undefined): Promise<void> {
   const { agentId, view } = DockPointer.parseAgentPointer(pointer);
-  if (!agentId || view !== 'inbox') {
+  if (!agentId || view !== 'stream_inbox') {
     throw new DockLoadError(
-      'malformed_agent_inbox_pointer',
+      'malformed_agent_stream_inbox_pointer',
       'hard',
-      { action: 'render_error', title: t`Agent inbox not found`, message: t`This Agent inbox URL is malformed.` },
+      { action: 'render_error', title: t`Agent stream inbox not found`, message: t`This Agent stream inbox URL is malformed.` },
       'agent',
     );
   }
@@ -19,9 +19,9 @@ export async function loadAgentInboxRoute(pointer: string | undefined): Promise<
     typeId = new TypeId(Agent.type, agentId);
   } catch (error) {
     throw new DockLoadError(
-      'malformed_agent_inbox_pointer',
+      'malformed_agent_stream_inbox_pointer',
       'hard',
-      { action: 'render_error', title: t`Agent inbox not found`, message: t`This Agent inbox URL is malformed.` },
+      { action: 'render_error', title: t`Agent stream inbox not found`, message: t`This Agent stream inbox URL is malformed.` },
       'agent',
       error,
     );

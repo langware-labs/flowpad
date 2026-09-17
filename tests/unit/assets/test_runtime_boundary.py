@@ -99,7 +99,7 @@ def test_the_source_contract_imports_no_application_module():
     run_isolated('''
         import sys, asyncio, tempfile
         blocked = ('flow_sdk.builtin', 'flow_sdk.core', 'flow_sdk.db', 'flow_sdk.server', 'flow_sdk.app',
-                   'flow_sdk.ingest', 'flow_sdk.inbox', 'flow_sdk.blocks', 'flow_sdk.config', 'flow_sdk.instance_settings')
+                   'flow_sdk.ingest', 'flow_sdk.stream_inbox', 'flow_sdk.blocks', 'flow_sdk.config', 'flow_sdk.instance_settings')
         class Boundary:
             def find_spec(self, name, path=None, target=None):
                 if name.startswith(blocked):

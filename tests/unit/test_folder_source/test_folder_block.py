@@ -1,4 +1,4 @@
-"""``FolderChanges.listen()`` — the object-shaped sibling of ``Inbox.listen()``.
+"""``FolderChanges.listen()`` — the object-shaped sibling of ``StreamInbox.listen()``.
 
 Same contract: one yield per page, ``ack()`` commits an offset, a page handed out and never
 acked comes back after a restart flagged, and a folder consumer starts from the beginning

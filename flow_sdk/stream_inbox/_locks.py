@@ -1,4 +1,4 @@
-"""One per-event-loop lock idiom, shared by the inbox lanes.
+"""One per-event-loop lock idiom, shared by the stream inbox lanes.
 
 An ``asyncio.Lock`` is loop-scoped, and a single module-level Lock breaks under
 per-test event loops: a loop torn down while a fire-and-forget task holds the

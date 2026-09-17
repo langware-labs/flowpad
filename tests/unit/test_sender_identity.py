@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.inbox.sender_identity import SenderIdentity, emoji_shortcode, sender_identity
+from flow_sdk.stream_inbox.sender_identity import SenderIdentity, emoji_shortcode, sender_identity
 
 
 class TestTheAvatarTable:

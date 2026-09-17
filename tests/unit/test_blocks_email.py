@@ -2,7 +2,7 @@
 
 Fast pins for `flow_sdk.blocks`: the outbound spec is a correct pure value,
 the runner's session_key semantics hold with a stubbed spawner, and
-`Inbox.send` maps a spec onto the driver contract without loss. The live
+`StreamInbox.send` maps a spec onto the driver contract without loss. The live
 end-to-end lives in tests/long_tests/test_blocks_email_workflow.py.
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 import flow_sdk.blocks as blocks
-from flow_sdk.blocks import EmailMessageSpec, Inbox, RunOutput, _AgentRunner
+from flow_sdk.blocks import EmailMessageSpec, RunOutput, StreamInbox, _AgentRunner
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource
 
@@ -317,19 +317,19 @@ class TestAgentMessageProcessing:
         assert not hasattr(blocks, "AgentRunner")
 
 
-class TestInboxSend:
+class TestStreamInboxSend:
     @pytest.fixture
-    def inbox(self, monkeypatch):
-        ib = Inbox("me@agentmail.to", api_key="k")
+    def stream_inbox(self, monkeypatch):
+        ib = StreamInbox("me@agentmail.to", api_key="k")
         ib._source = DataSource(
-            name=f"Inbox me@agentmail.to {uuid.uuid4().hex[:8]}",
+            name=f"agentmail me@agentmail.to {uuid.uuid4().hex[:8]}",
             provider="agentmail",
             config={"inbox": "me@agentmail.to"},
         )
         return ib
 
     @pytest.mark.asyncio
-    async def test_the_spec_maps_onto_the_driver_contract(self, inbox, monkeypatch):
+    async def test_the_spec_maps_onto_the_driver_contract(self, stream_inbox, monkeypatch):
         calls = {}
 
         class _Driver:
@@ -341,7 +341,7 @@ class TestInboxSend:
 
         monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.loaded", lambda p: _Driver())
         spec = EmailMessageSpec.reply_to(_inbound(), body="yes!")
-        sent = await inbox.send(spec)
+        sent = await stream_inbox.send(spec)
         assert sent == "<sent@provider>"
         assert calls == {
             "thread_key": "thr-1",
@@ -352,19 +352,19 @@ class TestInboxSend:
         }
 
     @pytest.mark.asyncio
-    async def test_attachments_refuse_loudly_rather_than_dropping(self, inbox):
+    async def test_attachments_refuse_loudly_rather_than_dropping(self, stream_inbox):
         from flow_sdk.schema.data_spec.dataset_spec import FileRef
 
         spec = EmailMessageSpec(
             to=["a@b.to"], body="x", attachments=[FileRef(path="report.pdf")]
         )
         with pytest.raises(NotImplementedError):
-            await inbox.send(spec)
+            await stream_inbox.send(spec)
 
     @pytest.mark.asyncio
-    async def test_exactly_one_recipient_for_now(self, inbox):
+    async def test_exactly_one_recipient_for_now(self, stream_inbox):
         with pytest.raises(ValueError):
-            await inbox.send(EmailMessageSpec(to=["a@b", "c@d"], body="x"))
+            await stream_inbox.send(EmailMessageSpec(to=["a@b", "c@d"], body="x"))
 
 
 def test_run_output_is_a_value():
@@ -372,24 +372,24 @@ def test_run_output_is_a_value():
     assert out.text == "hi" and out.files == []
 
 
-# ── owner: the block says whose inbox it is; `agent_id=` stays as the alias ──
+# ── owner: the block says whose stream inbox it is; `agent_id=` stays as the alias ──
 
 
-def test_inbox_owner_is_implied_by_the_agent_id_alias():
+def test_stream_inbox_owner_is_implied_by_the_agent_id_alias():
     from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.schema.types import EntityType
 
     agent_id = "5a1c9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c"
-    inbox = blocks.Inbox("pirate@agentmail.to", provider="cloud_email", agent_id=agent_id)
-    assert inbox._owner() == TypeId(type=EntityType.AGENT.value, id=agent_id)
+    stream_inbox = blocks.StreamInbox("pirate@agentmail.to", provider="cloud_email", agent_id=agent_id)
+    assert stream_inbox._owner() == TypeId(type=EntityType.AGENT.value, id=agent_id)
     # The alias still lands on the source config: it is cloud_email's identity key.
-    assert inbox._config["agent_id"] == agent_id
+    assert stream_inbox._config["agent_id"] == agent_id
 
 
-def test_inbox_explicit_owner_wins_and_a_plain_inbox_is_the_local_users():
+def test_stream_inbox_explicit_owner_wins_and_a_plain_stream_inbox_is_the_local_users():
     from flow_sdk.fs_store.type_id import TypeId
 
     tid = TypeId(type="agent", id="3c1d9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c")
-    assert blocks.Inbox("me@agentmail.to", api_key="k", owner=tid, agent_id="ignored")._owner() == tid
+    assert blocks.StreamInbox("me@agentmail.to", api_key="k", owner=tid, agent_id="ignored")._owner() == tid
     # None here means "the DataSource stamps the local user on save", not "nobody".
-    assert blocks.Inbox("me@agentmail.to", api_key="k")._owner() is None
+    assert blocks.StreamInbox("me@agentmail.to", api_key="k")._owner() is None

@@ -368,7 +368,7 @@ class RunAgentActionHandler(TriggerActionHandler):
         changes: Optional[list["ChangeEvent"]] = None,
     ) -> Any:
         from flow_sdk.builtin.agent import Agent  # noqa: PLC0415 — entity layer imports this module
-        from flow_sdk.inbox.agent_runner import _workdir_for  # noqa: PLC0415
+        from flow_sdk.stream_inbox.agent_runner import _workdir_for  # noqa: PLC0415
 
         prompt = str(getattr(action, "prompt", "") or "").strip()
         if not prompt:

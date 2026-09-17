@@ -35,7 +35,7 @@ export class MessageThread extends APIEntity<MessageThread> implements IMessageT
 
   channel: string = '';
   thread_key: string = '';
-  /** Whose inbox this thread belongs to — a user or agent typeid string. */
+  /** Whose stream inbox this thread belongs to — a user or agent typeid string. */
   owner: string | null = null;
   conversation_id: string = '';
   title: string = '';

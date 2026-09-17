@@ -63,10 +63,10 @@ async def test_1_control_flow_acks_what_it_ignores(worker):
             {"name": "URGENT: prod", "body": "help", "author": "boss@corp.com", "thread_key": "t2"},
         )
         # The variant assumes §1's imports and agent are in scope.
-        from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
+        from flow_sdk.blocks import EmailMessageSpec, StreamInbox, workflow
         from flow_sdk.builtin.agent_registry import get_agent
 
-        ns = {"KEY": "k", "EmailMessageSpec": EmailMessageSpec, "Inbox": Inbox, "workflow": workflow,
+        ns = {"KEY": "k", "EmailMessageSpec": EmailMessageSpec, "StreamInbox": StreamInbox, "workflow": workflow,
               "agent": await get_agent("email-summarizer")}
         await _run("1.", "agentmail", ns, mail, nth=1)
     assert worker.received_prompts == ["help"], "the newsletter never reached the agent"

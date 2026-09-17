@@ -1,6 +1,6 @@
 /**
- * The attached channels of ONE owner — the local user's inbox or an agent's —
- * on the inbox's header line, as a row of round marks with a status dot
+ * The attached channels of ONE owner — the local user's stream inbox or an agent's —
+ * on the stream inbox's header line, as a row of round marks with a status dot
  * (presence-row pattern): green dot = listening, dashed ring = paused, "!" =
  * parked. ONE mark per channel kind (provider + channel, the identity a
  * glyph draws): several sources of one kind share a mark that carries their
@@ -45,7 +45,7 @@ const EMPTY: DataSource[] = [];
 
 /** The owner's message sources, in a stable order — plus the spec lookup the
  *  caller needs to draw them, so a mount holds ONE specs subscription. The
- *  inbox calls this once and hands the rows to the line; an agent view calls
+ *  stream inbox calls this once and hands the rows to the line; an agent view calls
  *  it to ask "does this owner have any channel at all". */
 export function useAttachedChannels(owner: TypeId | null | undefined) {
   const { specFor } = useSourceSpecs();

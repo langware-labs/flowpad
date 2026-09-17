@@ -138,7 +138,7 @@ msgstr "(لا توجد حقول)"
 msgid "(no repo given)"
 msgstr "(لم يتم تحديد مستودع)"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "(no subject)"
 msgstr "(بلا موضوع)"
 
@@ -784,8 +784,8 @@ msgstr "تمت إزالة {removed} أصل."
 msgid "{replyCount, plural, one {# reply} other {# replies}}"
 msgstr ""
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "{selectedCount} selected"
 msgstr "{selectedCount} محددة"
 
@@ -801,7 +801,7 @@ msgstr "{stepsLeft} خطوات متبقية"
 msgid "{suppressed} hub errors were suppressed in the current window."
 msgstr "تم قمع {suppressed} من أخطاء Hub في النافذة الحالية"
 
-#: src/components/inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "{targetLabel} is now available in your workspace."
 msgstr "أصبح {targetLabel} متاحاً الآن في مساحة عملك."
 
@@ -1162,7 +1162,7 @@ msgstr ""
 msgid "Accept"
 msgstr "قبول"
 
-#: src/components/inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "Accept failed"
 msgstr "فشل القبول"
 
@@ -1333,7 +1333,7 @@ msgstr "إضافة ملاحظة شخصية..."
 msgid "Add a personal note…"
 msgstr "إضافة ملاحظة شخصية…"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Add a source"
 msgstr ""
 
@@ -1671,22 +1671,26 @@ msgstr "تمويل الوكيل"
 msgid "Agent Hook"
 msgstr "خطاف الوكيل"
 
-#: src/routes/loaders/load-agent-inbox.ts
-#: src/routes/loaders/load-agent-inbox.ts
-msgid "Agent inbox not found"
-msgstr ""
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Agent mailbox"
+msgstr "صندوق بريد الوكيل"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "Agent name"
 #~ msgstr "اسم الوكيل"
 
-#: src/routes/loaders/load-agent-inbox.ts
+#: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "Agent not found"
 msgstr ""
 
 #: src/components/agent-resources/AgentResourcesNavigator.tsx
 msgid "Agent resources"
 msgstr ""
+
+#: src/routes/loaders/load-agent-stream-inbox.ts
+#: src/routes/loaders/load-agent-stream-inbox.ts
+msgid "Agent stream inbox not found"
+msgstr "لم يتم العثور على صندوق التدفق الوارد للوكيل"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -1765,6 +1769,7 @@ msgstr "الكل"
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/hooks/useClaudeErrorRecords.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "All"
@@ -1919,7 +1924,7 @@ msgstr "السماح بالأوامر غير المعزولة"
 msgid "Allowed Domains"
 msgstr "النطاقات المسموح بها"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Allowed senders"
 msgstr ""
 
@@ -2286,8 +2291,8 @@ msgid "Apps"
 msgstr "تطبيقات"
 
 #: src/components/account/system-log.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Archive"
 msgstr "أرشفة"
 
@@ -2295,7 +2300,7 @@ msgstr "أرشفة"
 msgid "Archive — moves to Archived, kept"
 msgstr "أرشفة — تُنقل إلى الأرشيف وتبقى محفوظة"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Archive all"
 msgstr "أرشفة الكل"
 
@@ -2316,7 +2321,7 @@ msgid "Archive this run and start the record fresh. It stays approved to run."
 msgstr ""
 
 #: src/components/conversation/conversation-category.ts
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Archived"
 msgstr "الأرشيف"
 
@@ -2547,7 +2552,7 @@ msgstr ""
 msgid "Attached assets"
 msgstr ""
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Attached channels"
 msgstr ""
 
@@ -2737,14 +2742,14 @@ msgstr "العودة إلى الرسم البياني الكامل"
 msgid "Back to home"
 msgstr "العودة إلى الرئيسية"
 
-#: src/components/conversation/ConversationRoute.tsx
-#: src/components/conversation/ConversationRoute.tsx
-msgid "Back to inbox"
-msgstr "العودة إلى البريد الوارد"
-
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Back to repositories"
 msgstr "العودة إلى المستودعات"
+
+#: src/components/conversation/ConversationRoute.tsx
+#: src/components/conversation/ConversationRoute.tsx
+msgid "Back to stream inbox"
+msgstr "العودة إلى صندوق التدفق الوارد"
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
@@ -3174,7 +3179,6 @@ msgstr ""
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -3203,6 +3207,7 @@ msgstr ""
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -3345,13 +3350,13 @@ msgstr "التغييرات"
 msgid "Changes committed and pushed"
 msgstr "تم تثبيت التغييرات ودفعها"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channel details"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceChannels.tsx
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channels"
 msgstr ""
 
@@ -3396,7 +3401,7 @@ msgstr "المحادثات"
 msgid "Check again"
 msgstr "إعادة التحقق"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Check for new messages"
 msgstr "التحقق من الرسائل الجديدة"
 
@@ -3718,8 +3723,8 @@ msgstr "مسح مرشح المجلد"
 msgid "Clear Index"
 msgstr "مسح الفهرس"
 
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear search"
 msgstr "مسح البحث"
 
@@ -3730,9 +3735,9 @@ msgstr "مسح فهرس البحث؟"
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear selection"
 msgstr "مسح التحديد"
 
@@ -3987,9 +3992,9 @@ msgstr ""
 msgid "Cloud access denied"
 msgstr "تم رفض الوصول إلى السحابة"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Cloud disconnected"
 msgstr "انقطع الاتصال بالسحابة"
 
@@ -4536,8 +4541,8 @@ msgstr "التحكم في مستوى جهد الاستدلال"
 msgid "Conversation"
 msgstr "محادثة"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Conversation deleted"
 msgstr "تم حذف المحادثة"
 
@@ -4650,7 +4655,7 @@ msgstr "نسخ المحتوى إلى الحافظة"
 msgid "Copy diagnosis to clipboard"
 msgstr "نسخ التشخيص إلى الحافظة"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Copy email address"
 msgstr ""
 
@@ -4788,9 +4793,9 @@ msgstr ""
 msgid "Could not add the help desk."
 msgstr ""
 
-#: src/hooks/use-allocate-agent-inbox.ts
-msgid "Could not allocate an inbox"
-msgstr ""
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "Could not allocate a mailbox"
+msgstr "تعذّر تخصيص صندوق بريد"
 
 #: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
@@ -5179,9 +5184,9 @@ msgstr "تعذّر تشغيل الاختبار"
 #~ msgid "Could not save agent"
 #~ msgstr "تعذر حفظ الوكيل"
 
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Could not save inbox settings"
-msgstr ""
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Could not save mailbox settings"
+msgstr "تعذّر حفظ إعدادات صندوق البريد"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Could not save schedule"
@@ -5528,7 +5533,7 @@ msgstr ""
 msgid "Create a brand-new repository"
 msgstr "إنشاء مستودع جديد من الصفر"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Create a contacts group — add its members to any conversation in one click"
 msgstr "إنشاء مجموعة جهات اتصال — إضافة أعضائها إلى أي محادثة بنقرة واحدة"
 
@@ -5578,7 +5583,7 @@ msgstr "إنشاء كلوحة بيضاء"
 msgid "Create bookmark on the recipient's desktop"
 msgstr "إنشاء اختصار على سطح مكتب المستلم"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Create email for agent"
 msgstr "إنشاء بريد إلكتروني للوكيل"
 
@@ -5901,7 +5906,7 @@ msgstr "معلن على بطاقة الوكيل. لم يُطبَّق على ال
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Decline"
 msgstr "الرفض"
 
@@ -5909,11 +5914,11 @@ msgstr "الرفض"
 msgid "Decline (delete) invitation"
 msgstr "رفض الدعوة (حذف)"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Decline (notifies the inviter)"
 msgstr "رفض (إخطار صاحب الدعوة)"
 
-#: src/components/inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "Decline failed"
 msgstr "فشل الرفض"
 
@@ -6024,9 +6029,6 @@ msgstr "يفوّض إلى"
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 #: src/components/helpdesk/HelpdeskResetButton.tsx
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -6039,12 +6041,15 @@ msgstr "يفوّض إلى"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Delete"
 msgstr "حذف"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete — removes permanently"
 msgstr "حذف — إزالة نهائية"
 
@@ -6088,7 +6093,7 @@ msgstr "حذف {0}؟"
 msgid "Delete {label}"
 msgstr "حذف {label}"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete {selectedCount} conversations"
 msgstr "حذف {selectedCount} محادثة"
 
@@ -6096,18 +6101,18 @@ msgstr "حذف {selectedCount} محادثة"
 msgid "Delete {selectedCount} item(s)?"
 msgstr "هل تريد حذف {selectedCount} عنصر؟"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete 1 conversation"
 msgstr "حذف محادثة واحدة"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete all"
 msgstr "حذف الكل"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete all failed"
 msgstr "فشل حذف الكل"
 
@@ -6115,7 +6120,7 @@ msgstr "فشل حذف الكل"
 msgid "Delete API Key"
 msgstr "حذف مفتاح API"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete archived conversations"
 msgstr "حذف المحادثات المؤرشفة"
 
@@ -6162,7 +6167,7 @@ msgstr "حذف بيانات الاعتماد"
 msgid "Delete diagnosis"
 msgstr "حذف التشخيص"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete failed"
 msgstr "فشل الحذف"
 
@@ -6178,12 +6183,12 @@ msgstr "حذف المجلد"
 msgid "Delete folder (children move up)"
 msgstr "حذف المجلد (نقل العناصر الفرعية إلى المستوى الأعلى)"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete for everyone"
 msgstr "حذف للجميع"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete for everyone — permanent"
 msgstr "حذف للجميع — نهائي"
 
@@ -6254,7 +6259,7 @@ msgstr "حذف هذه المحادثة"
 msgid "Delete this chat?"
 msgstr "حذف هذه المحادثة؟"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete this conversation"
 msgstr "حذف هذه المحادثة"
 
@@ -6290,19 +6295,19 @@ msgstr "حذف هذا الملف الجديد — لم يُحفظ في Git بع�
 msgid "Delete this step"
 msgstr ""
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Deleted {ok} conversations"
 msgstr "تم حذف {ok} محادثة"
 
 #. placeholder {0}: failed.length
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Deleted {ok}, {0} failed"
 msgstr "تم حذف {ok}، وفشل {0}"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Deleted 1 conversation"
 msgstr "تم حذف محادثة واحدة"
 
@@ -6704,8 +6709,8 @@ msgid "Discard this draft?"
 msgstr "تجاهل هذه المسودة؟"
 
 #: src/components/spec-editor/SpecEditor.tsx
-msgid "Discard unsaved changes and go back to inbox"
-msgstr "تجاهل التغييرات غير المحفوظة والعودة إلى الصندوق الوارد"
+msgid "Discard unsaved changes and go back to stream inbox"
+msgstr "تجاهل التغييرات غير المحفوظة والعودة إلى صندوق التدفق الوارد"
 
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/LiveSessionView.tsx
@@ -6770,7 +6775,7 @@ msgstr "إخفاء الشريط (يظل الخطأ قائمًا — هذا ال�
 msgid "Dismiss download error"
 msgstr ""
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Dismiss failed"
 msgstr "تجاهل الخطأ"
 
@@ -7184,10 +7189,6 @@ msgstr ""
 msgid "Email {0} an invitation to {teamName}"
 msgstr ""
 
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Email inbox"
-msgstr ""
-
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "Email is now answered here"
 #~ msgstr ""
@@ -7196,7 +7197,7 @@ msgstr ""
 #~ msgid "Email not moved."
 #~ msgstr ""
 
-#: src/hooks/use-allocate-agent-inbox.ts
+#: src/hooks/use-allocate-agent-mailbox.ts
 msgid "Email settings could not be saved."
 msgstr ""
 
@@ -8225,7 +8226,7 @@ msgstr "عنصر الخلاصة"
 msgid "Fetch"
 msgstr "جلب"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Fetch new messages from hub"
 msgstr "جلب الرسائل الجديدة من Hub"
 
@@ -9041,8 +9042,8 @@ msgid "Go back"
 msgstr "رجوع"
 
 #: src/components/spec-editor/SpecEditor.tsx
-msgid "Go back to inbox"
-msgstr "رجوع إلى الصندوق الوارد"
+msgid "Go back to stream inbox"
+msgstr "العودة إلى صندوق التدفق الوارد"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Go to Console"
@@ -9052,10 +9053,6 @@ msgstr "الانتقال إلى وحدة التحكم"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Go to Homepage"
 msgstr "الانتقال إلى الصفحة الرئيسية"
-
-#: src/routes/loaders/load-conversation.ts
-msgid "Go to inbox"
-msgstr "الذهاب إلى الوارد"
 
 #: src/components/ui/pagination.tsx
 msgid "Go to next page"
@@ -9069,6 +9066,10 @@ msgstr "الانتقال إلى الصفحة السابقة"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Go to session"
 msgstr "الانتقال إلى الجلسة"
+
+#: src/routes/loaders/load-conversation.ts
+msgid "Go to stream inbox"
+msgstr "الانتقال إلى صندوق التدفق الوارد"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Go up"
@@ -9241,7 +9242,7 @@ msgstr "عنوان 3"
 msgid "Health"
 msgstr "الحالة الصحية"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Health:"
 msgstr ""
 
@@ -9287,9 +9288,9 @@ msgstr "مرحباً <0>{firstName}</0>"
 msgid "Hidden files"
 msgstr "الملفات المخفية"
 
-#: src/components/inbox-view/InboxView.tsx
-msgid "Hidden from your inbox"
-msgstr "مخفي عن صندوق الوارد"
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Hidden from your stream inbox"
+msgstr "مخفي من صندوق التدفق الوارد الخاص بك"
 
 #. placeholder {0}: header.title
 #: src/components/navigator-panel/NavigatorPanel.tsx
@@ -9326,8 +9327,8 @@ msgid "Hide filters & limits"
 msgstr ""
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-msgid "Hide from Recent — still visible in Inbox; reappears when a new message arrives"
-msgstr "إخفاء من الأخيرة — يبقى ظاهراً في الصندوق الوارد؛ يظهر مجدداً عند وصول رسالة جديدة"
+msgid "Hide from Recent — still visible in Stream Inbox; reappears when a new message arrives"
+msgstr "إخفاء من الأخيرة — لا يزال مرئيًا في صندوق التدفق الوارد؛ يظهر مجددًا عند وصول رسالة جديدة"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Hide from Recent conversations"
@@ -9774,31 +9775,6 @@ msgstr "داخل التطبيق فقط"
 msgid "Inactive"
 msgstr "غير نشط"
 
-#: src/components/assets/editor/agent-profile/AgentPlaceChannels.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
-#: src/types/ViewType.ts
-msgid "Inbox"
-msgstr "البريد الوارد"
-
-#: src/i18n/type-labels.ts
-msgid "Inbox Manager"
-msgstr "مدير البريد الوارد"
-
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Inbox settings could not be saved."
-msgstr ""
-
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Inbox settings saved"
-msgstr ""
-
-#: src/components/inbox-view/InboxView.tsx
-msgid "Inbox view"
-msgstr "عرض صندوق الوارد"
-
 #: src/components/assets/AddContextFolderDialog.tsx
 msgid "Include another folder in this project's context."
 msgstr "تضمين مجلد آخر ضمن سياق هذا المشروع."
@@ -10111,28 +10087,28 @@ msgstr "مسار المحادثة المسجلة غير صالح"
 msgid "invitation"
 msgstr "دعوة"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/i18n/type-labels.ts
 msgid "Invitation"
 msgstr "دعوة"
 
-#: src/components/inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "Invitation accepted"
 msgstr "تم قبول الدعوة"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Invitation declined"
 msgstr "تم رفض الدعوة"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Invitation dismissed"
 msgstr "تم تجاهل الدعوة"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/MembershipInvitations.tsx
-#: src/components/inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Invitation no longer valid"
 msgstr "لم تعد الدعوة صالحة"
 
@@ -10142,11 +10118,11 @@ msgstr "لم تعد الدعوة صالحة"
 msgid "Invitation sent"
 msgstr "تم إرسال الدعوة"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Invitations — decline"
 msgstr "الدعوات — المرفوضة"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Invitations — dismiss"
 msgstr "الدعوات — المتجاهلة"
 
@@ -10440,7 +10416,7 @@ msgstr ""
 msgid "Last successful sync"
 msgstr "آخر مزامنة ناجحة"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Last sync:"
 msgstr ""
 
@@ -10524,11 +10500,11 @@ msgstr "التعرف على بياناتك"
 msgid "Learn more"
 msgstr "معرفة المزيد"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave"
 msgstr "مغادرة"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave conversation"
 msgstr "مغادرة المحادثة"
 
@@ -10536,11 +10512,11 @@ msgstr "مغادرة المحادثة"
 msgid "Leave empty to keep"
 msgstr ""
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
 msgstr "مغادرة هذه المحادثة؟"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Left conversation"
 msgstr "تمت مغادرة المحادثة"
 
@@ -10716,11 +10692,11 @@ msgid "Listed twice"
 msgstr ""
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Listen on {0}"
 msgstr ""
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "listening"
 msgstr ""
 
@@ -11088,7 +11064,6 @@ msgstr "جاري التحميل..."
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
@@ -11096,6 +11071,7 @@ msgstr "جاري التحميل..."
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
@@ -11128,8 +11104,8 @@ msgstr "الرسم البياني المحلي:"
 msgid "Local only"
 msgstr "محلي فقط"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Local only — permanent"
 msgstr "محلي فقط — دائم"
 
@@ -11240,6 +11216,14 @@ msgstr "أسرار الجهاز"
 msgid "Machine size"
 msgstr ""
 
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Mailbox settings could not be saved."
+msgstr "تعذّر حفظ إعدادات صندوق البريد."
+
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Mailbox settings saved"
+msgstr "تم حفظ إعدادات صندوق البريد"
+
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Make a todo app"
 msgstr "إنشاء تطبيق قائمة مهام"
@@ -11297,7 +11281,7 @@ msgstr "يجب ربط هذه المحادثة بمشروع محلي أولاً."
 msgid "Mapping"
 msgstr "الربط"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Mark all read"
 msgstr "تحديد الكل كمقروء"
 
@@ -11908,7 +11892,7 @@ msgstr ""
 msgid "Needs a look"
 msgstr "يتطلب مراجعة"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "needs attention"
 msgstr ""
 
@@ -11933,7 +11917,7 @@ msgstr ""
 msgid "never"
 msgstr ""
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Never"
 msgstr ""
 
@@ -11945,18 +11929,18 @@ msgstr "لم تُفهرس أبداً"
 msgid "never run"
 msgstr "لم يتم التشغيل أبداً"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Never synced to cloud"
 msgstr "لم تتم المزامنة مع السحابة أبدًا"
 
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/quick-create/DesktopSurface.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -12067,7 +12051,7 @@ msgstr "مجلد جديد في {0}"
 msgid "New folder name"
 msgstr "اسم المجلد الجديد"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "New group"
 msgstr "مجموعة جديدة"
 
@@ -12248,7 +12232,7 @@ msgstr "لا يوجد تحليل بعد — يمكن إجراء تحليل لإ�
 msgid "No annotations yet"
 msgstr "لا توجد تعليقات حتى الآن"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No archived conversations"
 msgstr "لا توجد محادثات مؤرشفة"
 
@@ -12331,11 +12315,11 @@ msgstr "لا توجد تغييرات لعرضها"
 msgid "No changes to show."
 msgstr "لا توجد تغييرات لعرضها."
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "No channel is attached yet."
 msgstr ""
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "No channel reaches this Agent yet. Give it an email address to start."
 msgstr ""
 
@@ -12408,8 +12392,8 @@ msgstr "لم يتم تحديد محادثة."
 msgid "No conversation yet."
 msgstr "لا توجد محادثة بعد."
 
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No conversations"
 msgstr "لا توجد محادثات"
 
@@ -12465,7 +12449,7 @@ msgstr ""
 msgid "no edges"
 msgstr "لا توجد حواف"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "No email address — create one"
 msgstr ""
 
@@ -12681,7 +12665,7 @@ msgstr "لم يتم العثور على تطابقات في قاعدة بيان�
 msgid "No matches."
 msgstr "لا توجد نتائج متطابقة."
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No matching conversations"
 msgstr "لا توجد محادثات مطابقة"
 
@@ -13158,7 +13142,7 @@ msgstr "لا توجد أنواع تطابق التصفية"
 msgid "No uncommitted changes"
 msgstr "لا توجد تغييرات غير مؤودعة"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No unread conversations"
 msgstr "لا توجد محادثات غير مقروءة"
 
@@ -13507,7 +13491,7 @@ msgstr "إشعار"
 msgid "Notifications"
 msgstr "الإشعارات"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Notifies the inviter"
 msgstr "إخطار مُرسل الدعوة"
 
@@ -13619,7 +13603,7 @@ msgstr ""
 msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 msgstr "مصدر واحد لكل خلاصة أو حساب بعيد. يقوم النظام بمزامنة كل مصدر عند كل نبضة، ويحوّل ما يجده إلى سجلات يمكن البحث فيها وقراءتها وبناء التدفقات عليها."
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "one@example.com"
 msgstr ""
 
@@ -13914,10 +13898,6 @@ msgstr "فتح في المحطة الطرفية"
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Open in Worktree"
 msgstr "فتح في بيئة العمل"
-
-#: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-#~ msgid "Open inbox"
-#~ msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Open it now"
@@ -14550,7 +14530,7 @@ msgstr ""
 msgid "Pause this machine"
 msgstr "إيقاف هذا الجهاز مؤقتاً"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "paused"
 msgstr ""
 
@@ -14605,7 +14585,7 @@ msgstr ""
 msgid "People you add here can see this organization. An admin can run its teams and divide its budget; only the owner can change the organization's own total, its provider key, or its name."
 msgstr ""
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Permanently delete?"
 msgstr "حذف نهائي؟"
 
@@ -14706,7 +14686,7 @@ msgstr "يُرجى اختيار مجلد المشروع المحلي الذي ي
 msgid "Pick up"
 msgstr "استلام"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Pick what to do with this invitation."
 msgstr "يُرجى تحديد الإجراء المطلوب لهذه الدعوة."
 
@@ -15596,7 +15576,7 @@ msgid "Re-scan now"
 msgstr "إعادة الفحص الآن"
 
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Read"
 msgstr "تم قراءتها"
 
@@ -15734,12 +15714,12 @@ msgstr "إعادة الاتصال"
 msgid "Reconnect needed"
 msgstr "يلزم إعادة الاتصال"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Reconnect to the cloud to delete shared conversations."
 msgstr "يجب إعادة الاتصال بالسحابة لحذف المحادثات المشتركة."
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Reconnect to the cloud to delete this conversation."
 msgstr "يجب إعادة الاتصال بالسحابة لحذف هذه المحادثة."
 
@@ -15862,7 +15842,7 @@ msgstr "تحديث التوثيق"
 msgid "Refresh document"
 msgstr "تحديث المستند"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Refresh every (seconds)"
 msgstr ""
 
@@ -15878,7 +15858,7 @@ msgstr "تحديث من فهرس الوسوم"
 msgid "Refresh index"
 msgstr "تحديث الفهرس"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Refresh interval must be at least 60 seconds"
 msgstr ""
 
@@ -15957,7 +15937,7 @@ msgstr "إزالة"
 
 #. placeholder {0}: source.name
 #. placeholder {0}: source.name || source.provider
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
 msgstr "إزالة {0}"
@@ -16070,17 +16050,17 @@ msgstr ""
 msgid "Removed"
 msgstr "محذوف"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for all participants"
 msgstr "تمت الإزالة لجميع المشاركين"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for all participants on the cloud"
 msgstr "تمت الإزالة من السحابة لجميع المشاركين"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for you; other members keep it"
 msgstr "تمت الإزالة لك فقط؛ الأعضاء الآخرون يحتفظون بها"
 
@@ -16096,7 +16076,7 @@ msgstr ""
 msgid "Removed vibe agent"
 msgstr "تمت إزالة وكيل vibe"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "حذفها من كل مكان"
 
@@ -16969,13 +16949,13 @@ msgstr "الصناديق"
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
-#: src/components/inbox-view/AgentInboxView.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
@@ -17316,8 +17296,8 @@ msgstr ""
 msgid "Search languages…"
 msgstr "البحث عن اللغات…"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Search messages"
 msgstr "البحث في الرسائل"
 
@@ -17432,7 +17412,7 @@ msgstr "تم تفعيل الأسرار"
 msgid "See all {0} results →"
 msgstr "عرض كل النتائج ({0}) →"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "See all sources"
 msgstr ""
 
@@ -17508,11 +17488,11 @@ msgstr "يُرجى اختيار الإصدار المراد تثبيته:"
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Select all"
 msgstr "تحديد الكل"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Select all conversations"
 msgstr "تحديد جميع المحادثات"
 
@@ -17528,7 +17508,7 @@ msgstr "يمكن اختيار Harness متاح، أو تثبيت واحد من �
 msgid "Select capability…"
 msgstr "اختر القدرة…"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Select conversation"
 msgstr "تحديد المحادثة"
 
@@ -18155,7 +18135,7 @@ msgstr "عرض شريط تقدم في الطرفية"
 msgid "Show all"
 msgstr "عرض الكل"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Show all channels"
 msgstr ""
 
@@ -18388,9 +18368,9 @@ msgstr ""
 msgid "Sign in to your Flowpad Cloud account to view and reply to this conversation."
 msgstr "يرجى تسجيل الدخول إلى حساب Flowpad Cloud لعرض هذه المحادثة والرد عليها."
 
-#: src/components/inbox-view/InboxView.tsx
-msgid "Sign in to your Flowpad Cloud account to view your inbox and conversations."
-msgstr "تسجيل الدخول إلى حساب Flowpad Cloud لعرض صندوق الوارد والمحادثات."
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Sign in to your Flowpad Cloud account to view your stream inbox and conversations."
+msgstr "سجّل الدخول إلى حساب Flowpad Cloud لعرض صندوق التدفق الوارد والمحادثات."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in with {account}"
@@ -18841,7 +18821,7 @@ msgstr "بدء معالجة السياق لهذا العنصر"
 msgid "Start a conversation"
 msgstr "بدء محادثة"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Start a new conversation"
 msgstr "بدء محادثة جديدة"
 
@@ -19090,6 +19070,22 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "stored line"
 msgstr "سطر محفوظ"
+
+#: src/components/assets/editor/agent-profile/AgentPlaceChannels.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
+#: src/types/ViewType.ts
+msgid "Stream Inbox"
+msgstr "صندوق التدفق الوارد"
+
+#: src/i18n/type-labels.ts
+msgid "Stream Inbox Manager"
+msgstr "مدير صندوق التدفق الوارد"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Stream inbox view"
+msgstr "عرض صندوق التدفق الوارد"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/llm-endpoints/FiltersEditor.tsx
@@ -19934,8 +19930,8 @@ msgstr "توجد تعارضات في الدمج ضمن <0>{localPath}</0>. ير�
 msgid "These agents are added on top of the standard vibe agent, in the order shown, every vibe session."
 msgstr "تُضاف هذه الوكلاء بالإضافة إلى وكيل vibe القياسي، بالترتيب الظاهر، في كل جلسة vibe."
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "These conversations exist only on this device."
 msgstr "هذه المحادثات موجودة على هذا الجهاز فقط"
 
@@ -19986,14 +19982,14 @@ msgstr ""
 #~ msgid "This agent has no email address yet."
 #~ msgstr ""
 
-#: src/routes/loaders/load-agent-inbox.ts
-#: src/routes/loaders/load-agent-inbox.ts
-msgid "This Agent inbox URL is malformed."
-msgstr ""
-
-#: src/routes/loaders/load-agent-inbox.ts
+#: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent no longer exists."
 msgstr ""
+
+#: src/routes/loaders/load-agent-stream-inbox.ts
+#: src/routes/loaders/load-agent-stream-inbox.ts
+msgid "This Agent stream inbox URL is malformed."
+msgstr "عنوان URL لصندوق التدفق الوارد الخاص بالوكيل غير صالح."
 
 #: src/navigation/record-type-nav.ts
 msgid "This app is no longer available."
@@ -20048,13 +20044,13 @@ msgstr "جاءت هذه المحادثة من مشروع باسم \"{remoteProje
 msgid "This conversation came from a project on another machine. Pick the local project folder it should map to."
 msgstr "جاءت هذه المحادثة من مشروع على جهاز آخر. يُرجى اختيار المجلد المحلي الذي يجب ربطه به."
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "This conversation is local-only. It will be removed from this device."
 msgstr "هذه المحادثة محلية فقط. سيتم حذفها من هذا الجهاز."
 
 #: src/components/conversation/ConversationRoute.tsx
-msgid "This conversation is not in this Agent inbox."
-msgstr ""
+msgid "This conversation is not in this Agent stream inbox."
+msgstr "هذه المحادثة ليست في صندوق التدفق الوارد لهذا الوكيل."
 
 #: src/hooks/use-history-load-alert.ts
 msgid "This conversation is still saved, but part of it could not be read, so the chat is showing empty. Reloading may help. Details: {detail}"
@@ -20350,8 +20346,8 @@ msgstr "لم يتم تشغيل هذا الرمل بعد"
 msgid "This sandbox loads code from a private repository."
 msgstr "هذا Sandbox يحمّل الكود من مستودع خاص."
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "This sends a cloud action per conversation:"
 msgstr "سيتم إرسال إجراء سحابة منفصل لكل محادثة:"
 
@@ -20977,8 +20973,8 @@ msgid "Unable to fetch branches. Please check your repository permissions."
 msgstr "تعذر جلب الفروع. يُرجى التحقق من صلاحيات المستودع."
 
 #: src/components/conversation/conversation-category.ts
-msgid "Unarchive — back to Inbox"
-msgstr "إلغاء الأرشفة — العودة إلى البريد الوارد"
+msgid "Unarchive — back to Stream Inbox"
+msgstr "إلغاء الأرشفة — العودة إلى صندوق التدفق الوارد"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -21031,7 +21027,7 @@ msgid "unknown"
 msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Unknown"
 msgstr "غير معروف"
 
@@ -21097,8 +21093,8 @@ msgstr "تغييرات لم يتم دفعها"
 msgid "Unreachable"
 msgstr "غير قابل للوصول"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Unread"
 msgstr "غير مقروءة"
 
@@ -21564,7 +21560,7 @@ msgid "Verify the setup first."
 msgstr "يجب التحقق من الإعداد أولاً."
 
 #. placeholder {0}: source.setup_detail
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Verify: {0}"
 msgstr "التحقق: {0}"
 
@@ -22187,12 +22183,12 @@ msgstr "لا تتوفر الصلاحية اللازمة لتنفيذ هذا ال
 msgid "You must be logged in"
 msgstr "تسجيل الدخول مطلوب"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You own — delete for everyone"
 msgstr "أنت المالك — حذفها للجميع"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You own this conversation — pick how you want to leave."
 msgstr "أنت مالك هذه المحادثة — يُرجى اختيار طريقة المغادرة."
 
@@ -22204,12 +22200,12 @@ msgstr ""
 msgid "You type a short code into the provider's site"
 msgstr "يتم إدخال رمز قصير في موقع المزود"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You will leave"
 msgstr "سيتم إخراجك من المحادثة"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You'll be removed from the participant list. Other members keep the conversation."
 msgstr "سيتم حذفك من قائمة المشاركين. الأعضاء الآخرون يحتفظون بالمحادثة."
 
@@ -22229,9 +22225,9 @@ msgstr "تم تسجيل الدخول بنجاح، وكل شيء جاهز للب�
 msgid "You're the only participant in this conversation — no one else will see this message."
 msgstr "أنت المشارك الوحيد في هذه المحادثة — لن يرى أحد آخر هذه الرسالة."
 
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You've been invited to a conversation"
 msgstr "تمت دعوتك إلى محادثة"
 

@@ -58,8 +58,8 @@ of last-writer-wins: the hub re-stamps `updated_date` on bare touches (a body
 re-materialize, an unchanged re-emit), so a strictly-newer hub clock is
 confirmed against an actual content delta — it serializes local vs. merged
 candidate (excluding `_STALE_IGNORE_FIELDS`) and treats byte-identical payloads
-as **not** stale. This stops a pure touch from dragging the conversation's inbox
-recency forward.
+as **not** stale. This stops a pure touch from dragging the conversation's stream
+inbox recency forward.
 
 ### FlowMessageKind
 
@@ -228,7 +228,7 @@ mints its proposed bundle id through `TypeInfo` after the path exists.
 `body_status == READY` — receivers must wait for the hub's body_status UPDATE
 first. It then reuses the standard `unpack_bundle` path, so every attachment kind
 (FILE, PROMPT-file, TYPE_ID, file-backed records) restores **identically** to the
-receive-on-inbox flow; file-backed assets land in the conversation's mapped
+receive-in-stream-inbox flow; file-backed assets land in the conversation's mapped
 project. In git mode this same path performs the git lifecycle first and then
 indexes from the checkout; there is no bundle-to-project copy phase for the
 git-backed bytes. It propagates `FlowMessageExistsError` (collision; re-invoke with
@@ -434,4 +434,4 @@ the hub: share → accept → download → auto-installed MA + received row).
 See `./hub-fanout-and-loader.md` for the fan-out mechanics behind the
 `set_body_status` and `mark_received` UPDATEs, `./sharing-and-sync.md` for
 `clone_for_forward` provenance and bundle packaging, and
-`./conversation-model.md` for how `message_ids` projects these rows into an inbox.
+`./conversation-model.md` for how `message_ids` projects these rows into a stream inbox.

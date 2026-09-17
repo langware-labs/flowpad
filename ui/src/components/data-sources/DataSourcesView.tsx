@@ -10,7 +10,7 @@
  * This owns both per-card dialogs — replay and delete are one instance each,
  * driven by the selected source, rather than 2N mounted with the grid. That
  * "list holds a nullable pending target, rows hold no dialog" shape is the
- * house pattern (connections-manager, chats-navigator, inbox-view, …).
+ * house pattern (connections-manager, chats-navigator, stream-inbox-view, …).
  *
  * It deliberately does NOT query cursors. Watching that type live would put a
  * permanent subscription on the highest-churn rows on the instance — one write

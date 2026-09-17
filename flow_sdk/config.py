@@ -195,16 +195,16 @@ class EmailProviderType(StrEnum):
     MOCK = "mock"
 
 
-class EmailInboxProviderType(StrEnum):
+class AgentMailboxProviderType(StrEnum):
     """Where an AGENT's own mailbox lives.
 
     Separate from :class:`EmailProviderType` for the reason the hub states on
-    its own matching pair: the system sender and an agent's inbox are different
+    its own matching pair: the system sender and an agent's mailbox are different
     capabilities, configured independently. Collapsing them means one field with
     two meanings, and a value valid for one is a hard failure for the other.
 
     Each value must be a REGISTERED driver kind in
-    ``flow_sdk/builtin/email_inbox_driver.py`` — an unregistered one raises at
+    ``flow_sdk/builtin/agent_mailbox_driver.py`` — an unregistered one raises at
     the first mailbox call, not at startup. ``flowpad-hub`` matches
     ``HubSecretDriver``'s kind so the two families spell "the hub" the same way.
     """
@@ -758,7 +758,7 @@ class ServiceConfig(BaseSettings):
     # Email (stub for desktop)
     email_provider: str = EmailProviderType.MOCK.value
     #: Where an agent's mailbox is allocated — NOT the system sender above.
-    email_inbox_provider: str = EmailInboxProviderType.HUB.value
+    agent_mailbox_provider: str = AgentMailboxProviderType.HUB.value
     no_reply_email: str = "no-reply@example.com"
     flowpad_hub_url: str | None = None
 

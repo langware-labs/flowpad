@@ -111,16 +111,16 @@ mechanism (a viewer's lease) and `listen()` deliberately does not use it.
 ## 5. An agent on several sources
 
 ```python
-from flow_sdk.blocks import EmailMessageSpec, FolderChange, FolderChanges, Inbox, listen, workflow
+from flow_sdk.blocks import EmailMessageSpec, FolderChange, FolderChanges, StreamInbox, listen, workflow
 from flow_sdk.builtin.agent_registry import get_agent
 
 async with workflow("triage"):
-    inbox = Inbox("me@agentmail.to", api_key=KEY)
-    docs  = FolderChanges(SRC)
+    stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY)
+    docs = FolderChanges(SRC)
     agent = await get_agent("triager")
 
     async with agent.process_messages():
-        async for item in listen(inbox, docs):        # merged; each item carries ITS source's ack
+        async for item in listen(stream_inbox, docs): # merged; each item carries ITS source's ack
             if isinstance(item.item, FolderChange):
                 await item.ack()                      # a folder page: acknowledged, not answered
                 continue

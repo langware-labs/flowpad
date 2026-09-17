@@ -2,7 +2,7 @@
 
 The bug family this fences off (RCA-proven live): the pointer/recency rebuild
 stamped every message with ``created_date`` (when WE ingested it), so a
-year-old Slack backfill read "11h ago" in the inbox. The fence:
+year-old Slack backfill read "11h ago" in the stream inbox. The fence:
 
 * ``FlowMessage.sent_at`` — projection-owned event time, stamped from the
   item's ``occurred_at`` on every (re)projection;
@@ -31,8 +31,8 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.inbox.projection import project_source_item, reconcile_source
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
+from flow_sdk.stream_inbox.projection import project_source_item, reconcile_source
 from flow_sdk.utils.serialization import iso_to_utc
 
 YEAR_OLD = "2025-09-01T10:00:00+00:00"
@@ -91,7 +91,7 @@ class TestEventTimeSurvivesEveryLayer:
         conv = await _conv_for(thread_id)
         ptrs = _pointers(conv)
         assert ptrs and iso_to_utc(ptrs[0]["ts"]) == want, "the pointer renders it (bubble time)"
-        assert iso_to_utc(conv.updated_date) == want, "recency orders the inbox by it"
+        assert iso_to_utc(conv.updated_date) == want, "recency orders the stream inbox by it"
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -142,7 +142,7 @@ class TestReindexHeals:
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_the_reconcile_sweep_finds_and_heals_unstamped_rows(self):
         # The sweep runs after EVERY sync — this is what makes "Pull changes"
-        # alone fix a mis-dated inbox, with no bespoke script.
+        # alone fix a mis-dated stream inbox, with no bespoke script.
         src = await _source()
         item = await _item(src)
         fm_id, _ = await project_source_item(item, source=src, notify=False, announce=False)
@@ -188,7 +188,7 @@ class TestEdgeNormalization:
         # worker derives occurred_at BY HAND and an LLM's timezone arithmetic
         # drifted by arbitrary half-hours (observed live) — the deterministic
         # epoch wins, and a corrected stamp re-digests as an update, so the
-        # next refetch heals the inbox on its own.
+        # next refetch heals the stream inbox on its own.
         spec = SourceItemSpec(**{
             **self.BASE,
             "provider": "slack",
