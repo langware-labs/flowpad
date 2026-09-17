@@ -1,19 +1,35 @@
-import { cloudManager, gitOriginFromUrl } from '@sdk';
+import { cloudManager } from '@sdk';
 import { formatGitOrigin, gitOriginCloneUrl } from '@sdk/models/GitOrigin';
 import { Button } from '@src/components/ui/button';
 import { plannedSteps, useSandboxes } from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
 import { ExternalLink, GitBranch, LogIn } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useAuth } from '@sdk/react/hooks';
+import AgentLaunchLanding from './AgentLaunchLanding';
+import { parseLaunchParams, useLaunchTarget } from './launch-target';
 
 /** Where the approval survives the sign-in reload. */
 const INTENT_KEY = 'flowpad_launch_intent';
 
 /**
- * Remember that this repo was already approved, across a possible reload.
+ * The link an approval is for: every query param that decides WHAT launches.
+ *
+ * Keyed by the RAW params rather than the parsed origin: an approval is for one repo at one
+ * branch, and an intent recorded for one link must never be spent launching another.
+ */
+function linkIdentity(params: URLSearchParams): string {
+  return JSON.stringify({
+    repo: params.get('repo') ?? '',
+    branch: params.get('branch') ?? '',
+    agent: params.get('agent') ?? '',
+  });
+}
+
+/**
+ * Remember that this link was already approved, across a possible reload.
  *
  * The popup sign-in adopts the session in place (`refresh: 'session'`), so on the
  * happy path this page is never reloaded. It still can be: a blocked popup falls
@@ -22,13 +38,11 @@ const INTENT_KEY = 'flowpad_launch_intent';
  * in, and be asked to approve the very same repository again — the second ask
  * carrying no information the first did not.
  *
- * `sessionStorage`, so it dies with the tab, and keyed by the RAW params rather
- * than the parsed origin: an approval is for one repo at one branch, and an
- * intent recorded for one link must never be spent launching another.
+ * `sessionStorage`, so it dies with the tab.
  */
-function rememberLaunchIntent(repo: string, branch: string) {
+function rememberLaunchIntent(link: string) {
   try {
-    sessionStorage.setItem(INTENT_KEY, JSON.stringify({ repo, branch }));
+    sessionStorage.setItem(INTENT_KEY, link);
   } catch {
     // Private mode: the user gets the approve control a second time, which is
     // the pre-existing behaviour and not a failure.
@@ -37,20 +51,33 @@ function rememberLaunchIntent(repo: string, branch: string) {
 
 /** Consume the approval, if it was for THIS link. One-shot: cleared on read, so
  *  a reload can never spend it twice. */
-function takeLaunchIntent(repo: string, branch: string): boolean {
+function takeLaunchIntent(link: string): boolean {
   try {
     const raw = sessionStorage.getItem(INTENT_KEY);
     sessionStorage.removeItem(INTENT_KEY);
-    if (!raw) return false;
-    const saved = JSON.parse(raw) as { repo?: string; branch?: string };
-    return saved?.repo === repo && saved?.branch === branch;
+    return raw === link;
   } catch {
     return false;
   }
 }
 
 /**
- * `/launch?repo=<git url>` — the one-click entry point for "try this repo".
+ * `/launch?repo=<git url>` or `/launch?agent=<agent id>` — the one-click entry point
+ * for "try this repo" / "try this agent".
+ *
+ * The two are different pages behind one route. An agent link goes to
+ * `AgentLaunchLanding`: sign in, then straight into a sandbox, no approve step.
+ * Everything else — a repo link, and a link that is not valid as either — stays on
+ * the repo card below. Decided from the raw query (`parseLaunchParams`), before any
+ * hook that only one of the two pages needs.
+ */
+export default function LaunchLanding() {
+  const [params] = useSearchParams();
+  return parseLaunchParams(params).kind === 'agent' ? <AgentLaunchLanding params={params} /> : <RepoLaunchLanding />;
+}
+
+/**
+ * `/launch?repo=<git url>` — "try this repo".
  *
  * A link anyone can share: opening it lands here, and because the link came
  * from OUTSIDE the app, launching a cloud sandbox on its say-so is never
@@ -59,6 +86,9 @@ function takeLaunchIntent(repo: string, branch: string): boolean {
  * create the box → wait for FlowPad + sign-in → open it ON its clone landing,
  * where the box clones the repo into a fresh indexed Project. The repo's own
  * auto-launch journey then greets the user inside.
+ *
+ * A link naming both `repo` and `agent`, or an `agent` that is not an agent id,
+ * lands here too and is refused.
  *
  * One of the few routes that RENDERS for a stranger (`routes/anonymous-entry.ts`):
  * it has to be able to show the repository before it can ask anyone to sign in
@@ -77,30 +107,18 @@ function takeLaunchIntent(repo: string, branch: string): boolean {
  * in, launch sandbox" (starts the pipeline) — and nothing else; whether it is
  * clickable says whether the launch has started. The two never mix, so greying
  * it out never changes what it says, and every phase keeps its place on the
- * card for the whole run. Signed out, approving is one click that both records the
- * approval and opens the sign-in popup — a popup needs the activation a click
- * carries, and it is the only sign-in that leaves the user on this URL.
+ * card for the whole run. Signed out, approving is one click that both records
+ * the approval and opens the sign-in popup — a popup needs the activation a
+ * click carries, and it is the only sign-in that leaves the user on this URL.
  * Everything after it is the signed-in path, resumed once.
  *
  * `?name=` overrides the project/desktop name, `?branch=` the branch.
  */
-export default function LaunchLanding() {
+function RepoLaunchLanding() {
   const { t } = useLingui();
   const [params] = useSearchParams();
   const { launch, steps, launchUrl } = useSandboxes();
   const [declined, setDeclined] = useState(false);
-
-  const repo = params.get('repo') ?? '';
-  const branch = params.get('branch') ?? '';
-  const gitOrigin = useMemo(() => (repo ? gitOriginFromUrl(repo, branch) : null), [repo, branch]);
-  const name = (params.get('name') || gitOrigin?.name || '').trim();
-
-  // Once launching has started, the approve control is disabled for good — it
-  // stays on the card as the completed phase 1, but a step that fails must leave
-  // its error on the row, not re-arm a button that would start a second,
-  // overlapping attempt.
-  const [started, setStarted] = useState(false);
-  const failed = steps.some((s) => s.status === 'error');
 
   // Reactive, because signing in no longer reloads this page: the session is
   // adopted in place, and `useAuth` re-renders on the CONTEXT_CHANGED that
@@ -109,6 +127,17 @@ export default function LaunchLanding() {
   // both); in desk mode the local user keeps the meaning it had here before.
   const { currentUser } = useAuth();
   const signedIn = !!currentUser;
+
+  const { target, gitOrigin } = useLaunchTarget(params, signedIn);
+  const name = (params.get('name') || gitOrigin?.name || '').trim();
+  const link = useMemo(() => linkIdentity(params), [params]);
+
+  // Once launching has started, the approve control is disabled for good — it
+  // stays on the card as the completed phase 1, but a step that fails must leave
+  // its error on the row, not re-arm a button that would start a second,
+  // overlapping attempt.
+  const [started, setStarted] = useState(false);
+  const failed = steps.some((s) => s.status === 'error');
 
   const onLaunch = () => {
     if (!gitOrigin) return;
@@ -122,16 +151,15 @@ export default function LaunchLanding() {
   /**
    * Approve and sign in, in one click.
    *
-   * The click is load-bearing twice over: it records the approval, and it is the
-   * transient activation `loginPopup` needs — a popup is the only sign-in that
-   * leaves the user on this URL, and this URL's `?repo=` is the entire payload.
-   * `cloudManager.login()` falls back to the full-page navigation when the popup
-   * is blocked, and `resolveLoginCallbackUrl` has already recorded where to come
-   * back to, so the blocked path still lands here.
+   * The click is load-bearing twice over: it records the approval (the repository
+   * is already on the card), and it is the transient activation `loginPopup` needs
+   * — a popup is the only sign-in that leaves the user on this URL, and this URL's
+   * query is the entire payload. `cloudManager.login()` falls back to the full-page
+   * navigation when the popup is blocked, and `resolveLoginCallbackUrl` has already
+   * recorded where to come back to, so the blocked path still lands here.
    */
-  const onSignInAndLaunch = () => {
-    if (!gitOrigin) return;
-    rememberLaunchIntent(repo, branch);
+  const onSignIn = () => {
+    if (target.kind === 'repo' && gitOrigin) rememberLaunchIntent(link);
     // Opt in to the in-place refresh: `signedIn` flips true without a reload,
     // and the resume effect below starts the launch on this same mount.
     void cloudManager.login({ refresh: 'session' });
@@ -143,15 +171,15 @@ export default function LaunchLanding() {
   // would be the app forgetting rather than the user reconsidering.
   const resumed = useRef(false);
   useEffect(() => {
-    if (resumed.current || !signedIn || !gitOrigin || started) return;
-    if (!takeLaunchIntent(repo, branch)) return;
+    if (resumed.current || !signedIn || !gitOrigin || started || target.kind !== 'repo') return;
+    if (!takeLaunchIntent(link)) return;
     resumed.current = true;
     onLaunch();
     // `onLaunch` is stable for the life of this page (it reads state it also
     // sets, and the guard above makes it once-only), so the deps are the facts
     // that decide whether to resume, not the closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signedIn, gitOrigin, started, repo, branch]);
+  }, [signedIn, gitOrigin, started, target.kind, link]);
 
   // Phase 2's rows. Live once a launch is under way; before that, the SAME
   // planner `useSandboxes` is about to call, so what the user is shown up front
@@ -163,7 +191,45 @@ export default function LaunchLanding() {
   // pinned the preview to those three rows and the card jumped from three to
   // nine the moment it was clicked. `started` is the real question being asked
   // here: are these rows live yet, or still a plan?
-  const setupSteps = started ? steps : gitOrigin ? plannedSteps({ gitOrigin, name }) : steps;
+  //
+  // A refused link has no plan to preview, so it shows none rather than the stub.
+  const setupSteps = started
+    ? steps
+    : gitOrigin
+      ? plannedSteps({ gitOrigin, name })
+      : target.kind === 'repo' || (target.kind === 'invalid' && target.reason === 'none')
+        ? steps
+        : null;
+
+  const showApprove = target.kind === 'repo' && !!gitOrigin;
+
+  const invalidMessage =
+    target.kind === 'invalid' && target.reason === 'both'
+      ? t`This link names both a repository and an agent. Ask for a link that names just one.`
+      : target.kind === 'invalid' && target.reason === 'bad-agent-id'
+        ? t`This link doesn't point at an agent.`
+        : null;
+
+  let description: ReactNode = null;
+  if (invalidMessage) {
+    description = null;
+  } else if (!gitOrigin) {
+    description = <Trans>This link doesn't name a repository we can launch.</Trans>;
+  } else if (started) {
+    description = launchUrl ? (
+      <Trans>Your sandbox is ready.</Trans>
+    ) : failed ? (
+      <Trans>Couldn't finish preparing your sandbox.</Trans>
+    ) : (
+      <Trans>Preparing your sandbox…</Trans>
+    );
+  } else if (signedIn) {
+    description = <Trans>Launching runs the steps below against your account.</Trans>;
+  } else {
+    description = (
+      <Trans>Signing in opens a window on top of this page — you stay right here — then runs the steps below.</Trans>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -188,25 +254,16 @@ export default function LaunchLanding() {
               )}
             </div>
 
-            <p className="mb-3 text-xs text-muted-foreground">
-              {!gitOrigin ? (
-                <Trans>This link doesn't name a repository we can launch.</Trans>
-              ) : started ? (
-                launchUrl ? (
-                  <Trans>Your sandbox is ready.</Trans>
-                ) : failed ? (
-                  <Trans>Couldn't finish preparing your sandbox.</Trans>
-                ) : (
-                  <Trans>Preparing your sandbox…</Trans>
-                )
-              ) : signedIn ? (
-                <Trans>Launching runs the steps below against your account.</Trans>
-              ) : (
-                <Trans>
-                  Signing in opens a window on top of this page — you stay right here — then runs the steps below.
-                </Trans>
-              )}
-            </p>
+            {description && <p className="mb-3 text-xs text-muted-foreground">{description}</p>}
+
+            {invalidMessage && (
+              <p
+                className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs"
+                data-testid="launch-invalid-link"
+              >
+                {invalidMessage}
+              </p>
+            )}
 
             {gitOrigin ? (
               <div className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2.5">
@@ -221,9 +278,11 @@ export default function LaunchLanding() {
                 </p>
               </div>
             ) : (
-              <p className="mb-4 break-all rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-xs">
-                {repo || t`(no repo given)`}
-              </p>
+              !invalidMessage && (
+                <p className="mb-4 break-all rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-xs">
+                  {params.get('repo') || t`(no repo given)`}
+                </p>
+              )
             )}
 
             {/* Phase 1: full-width like the phase 3 button, and permanent like
@@ -236,10 +295,10 @@ export default function LaunchLanding() {
                 a popup sign-in `signedIn` flips true in place, so the label
                 moves to the signed-in wording at the same moment the resume
                 effect greys it — both now true. */}
-            {gitOrigin && (
+            {showApprove && (
               <Button
                 size="sm"
-                onClick={signedIn ? onLaunch : onSignInAndLaunch}
+                onClick={signedIn ? onLaunch : onSignIn}
                 disabled={started}
                 className="mb-3 w-full gap-1.5"
                 data-testid="launch-approve"
@@ -259,7 +318,7 @@ export default function LaunchLanding() {
                 not revealed a piece at a time. An untouched row is already
                 `idle` (grey, no checkmark), which is what makes "later phases
                 wait for earlier ones" visible without a separate locked style. */}
-            <StepList steps={setupSteps} testIdPrefix="launch" className="flex flex-col gap-1.5" />
+            {setupSteps && <StepList steps={setupSteps} testIdPrefix="launch" className="flex flex-col gap-1.5" />}
 
             {/* Phase 3. Visible and disabled from the first paint too, same
                 reasoning as every row above it: a control that only appears once
