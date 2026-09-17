@@ -10,6 +10,8 @@ import { useWebpageStatus } from './useWebpageStatus';
 export interface WebUrlDisplayProps {
   url: string;
   testId?: string;
+  /** Called after the page was handed to the real browser -- the pane is stale from then on. */
+  onOpenedInBrowser?: () => void;
 }
 
 function hostOf(url: string): string {
@@ -27,16 +29,21 @@ function hostOf(url: string): string {
  * replacing it: the check is a best guess from the backend, and if it is wrong
  * the page is still there underneath. When it is right, the user sees why the
  * pane is empty and gets one button that works -- open the page in their real
- * browser.
+ * browser, which also lets the host close the now-stale tab.
  */
 export const WebUrlDisplay = forwardRef<PersistentIframeHandle, WebUrlDisplayProps>(function WebUrlDisplay(
-  { url, testId },
+  { url, testId, onOpenedInBrowser },
   ref,
 ) {
   const frameRef = useRef<PersistentIframeHandle>(null);
   const { status, recheck } = useWebpageStatus(url);
   const issue = classifyWebpageStatus(status);
   const host = hostOf(url);
+
+  const openInBrowser = useCallback(() => {
+    openExternal(url);
+    onOpenedInBrowser?.();
+  }, [url, onOpenedInBrowser]);
 
   const refresh = useCallback(() => {
     recheck();
@@ -96,7 +103,7 @@ export const WebUrlDisplay = forwardRef<PersistentIframeHandle, WebUrlDisplayPro
               </code>
             )}
             <div className="flex items-center gap-2 pt-1">
-              <Button size="sm" onClick={() => openExternal(url)} data-testid="web-url-open-in-browser">
+              <Button size="sm" onClick={openInBrowser} data-testid="web-url-open-in-browser">
                 <ExternalLink className="me-1.5 h-3.5 w-3.5" />
                 <Trans>Open in browser</Trans>
               </Button>
