@@ -90,6 +90,35 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     void loadVersion();
   }, [loadVersion, agent.updated_date]);
 
+  // Has this agent already used its once-per-project auto-launch? Local only:
+  // the mark lives on this computer, beside the project.
+  const [autoLaunched, setAutoLaunched] = useState<boolean | null>(null);
+  const [resettingLaunch, setResettingLaunch] = useState(false);
+  useEffect(() => {
+    if (hub) return setAutoLaunched(null);
+    let live = true;
+    agentRef.current
+      .autoLaunchState()
+      .then((state) => live && setAutoLaunched(state.launched))
+      .catch(() => live && setAutoLaunched(null));
+    return () => {
+      live = false;
+    };
+  }, [hub, agent.id]);
+
+  const resetAutoLaunch = useCallback(async () => {
+    setResettingLaunch(true);
+    try {
+      await agentRef.current.resetAutoLaunch();
+      setAutoLaunched(false);
+      notify.success({ title: t`Auto-launch reset`, message: t`It runs again the next time the project opens.` });
+    } catch (e) {
+      notify.error({ title: t`Could not reset auto-launch`, message: errorMessage(e, t`Reset failed.`) });
+    } finally {
+      setResettingLaunch(false);
+    }
+  }, [t]);
+
   const save = useCallback((patch: AgentDocumentPatch): Promise<boolean> => {
     const current = contentRef.current;
     for (const [key, value] of Object.entries(patch)) {
@@ -433,6 +462,29 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                       </Trans>
                     </p>
                   )}
+                  {autoLaunched !== null ? (
+                    <div className="mt-2 flex items-center justify-between gap-2" data-testid="agent-auto-launch-status">
+                      <span className="text-xs text-muted-foreground">
+                        {autoLaunched ? (
+                          <Trans>Already launched in this project</Trans>
+                        ) : (
+                          <Trans>Not launched yet in this project</Trans>
+                        )}
+                      </span>
+                      {autoLaunched ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={resettingLaunch}
+                          onClick={() => void resetAutoLaunch()}
+                          data-testid="agent-auto-launch-reset"
+                        >
+                          {resettingLaunch ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                          <Trans>Reset</Trans>
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
                   <span className="text-sm">

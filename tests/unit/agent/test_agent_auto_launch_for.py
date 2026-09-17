@@ -144,3 +144,20 @@ async def test_empty_prompt_opens_the_session_without_a_first_turn(tmp_path, use
 async def test_unknown_project_is_a_no_op(used):
     assert await Agent.auto_launch_for("00000000-0000-4000-8000-00000000dead") is None
     assert used == []
+
+
+async def test_reset_lets_the_agent_launch_again_and_keeps_other_marks(tmp_path, used):
+    root = tmp_path / "p6"
+    project = await _project(root)
+    now = datetime.now(timezone.utc)
+    first = await _agent(root, "first", when=now - timedelta(days=1), auto_launch=True, auto_launch_prompt="go")
+    second = await _agent(root, "second", when=now, auto_launch=True)
+    assert await Agent.auto_launch_for(project.id) is not None
+    assert set(Agent.auto_launched_ids(project.id)) == {first.id, second.id}
+
+    await Agent.reset_auto_launch(project.id, first.id)
+
+    assert Agent.auto_launched_ids(project.id) == [second.id]
+    outcome = await Agent.auto_launch_for(project.id)
+    assert outcome is not None and outcome.agent.id == first.id
+    assert len(used) == 2
