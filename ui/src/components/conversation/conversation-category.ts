@@ -2,6 +2,7 @@ import { t } from '@lingui/core/macro';
 import type { LucideIcon } from 'lucide-react';
 import { Archive, ArchiveRestore, CheckSquare, LifeBuoy, Trash2 } from 'lucide-react';
 import { Conversation, FlowMessage, FlowMessageKind, Invitation, isHelpdeskKind } from '@sdk';
+import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 
 // ── Conversation category — the single source of truth ──────────────────────
 // The stream inbox "category" is NOT one axis: a conversation can be helpdesk AND
@@ -74,7 +75,7 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   // read projection yet (docs/hub-rest-consolidation.md §1): its rows arrive without
   // the field and fall back to the latest message. Invitation rows carry a CTA, so
   // they are unread either way.
-  const hubUnread = latestMessage ? !latestMessage.is_read && !isViewer(latestMessage.sender_id ?? null, viewer) : false;
+  const hubUnread = latestMessage ? !latestMessage.is_read && !authoredBy(senderOf(latestMessage), [viewer.cloudUserId, viewer.localUserId]) : false;
   const isUnread = isInvitation || (conv.is_unread ?? hubUnread);
 
   return { kind, isInvitation, isArchived, isUnread };

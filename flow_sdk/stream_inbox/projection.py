@@ -413,7 +413,7 @@ async def _place_message(
         # The typed author is projection-owned too: the hub's copy of an agent's reply
         # names the authenticated person, and only this machine knows it was the agent.
         if existing_fm.sender != sender:
-            existing_fm.sender = sender
+            existing_fm.sender, existing_fm.sender_id = sender, sender.wire_id
             dirty = True
         if existing_fm.origin is None:
             existing_fm.origin, existing_fm.origin_local = _origins(item, source, channel, key)
