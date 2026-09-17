@@ -32,6 +32,7 @@ from flow_sdk.capsules.atomic import atomic_write
 from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import Persona, SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import Credentials
 from flow_sdk.sources.errors import Rejected, SourceError
 from flow_sdk.sources.protocols import (
@@ -382,14 +383,31 @@ class DriverRuntime:
         return EmailMessageSpec
 
     # ── instances ───────────────────────────────────────────────────────────
-    def create_source(self, config: Optional[dict] = None, *, name: str, **authored: Any) -> "DataSource":
+    def create_config(self, **fields: Any) -> SourceConfig:
+        """This driver's config, typed and validated: its ``Config`` built from ``fields``. Raises
+        ``ValueError`` naming the first field at fault (``config.feed_urls is not valid: ftp://x``)."""
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.sources.config import config_error  # noqa: PLC0415
+
+        if self.cls.Config is None:
+            raise TypeError(f"the {self.provider} driver declares no Config")
+        try:
+            return self.cls.Config(**fields)
+        except ValidationError as exc:
+            raise ValueError(config_error(exc)) from None
+
+    def create_source(self, config: "SourceConfig | dict | None" = None, *, name: str, **authored: Any) -> "DataSource":
         """A configured instance of this driver, in memory: nothing is written until ``save()``.
 
+        ``config`` is what ``create_config`` returned, or a plain dict ``save()`` validates the same way.
         ``await source.save()`` places ``data_source.json`` in the project scope (the request's
-        project, the owning agent's, else the working directory's) and checks the config.
+        project, the owning agent's, else the working directory's).
         """
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
+        if isinstance(config, SourceConfig):
+            config = config.model_dump(mode="json", exclude_unset=True)
         return DataSource(provider=self.provider, name=name, kind=self.kind, config=dict(config or {}), **authored)
 
     # ── binding ─────────────────────────────────────────────────────────────
