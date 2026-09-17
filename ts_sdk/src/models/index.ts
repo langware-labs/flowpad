@@ -6,6 +6,7 @@ export * from './ActionInfo';
 export * from './project-manifest';
 export * from './CloudOrigin';
 export * from './ChannelSpec';
+export * from './MessageSender';
 export * from './BootstrapInfo';
 export * from './JobItem';
 export * from './LabelInfo';

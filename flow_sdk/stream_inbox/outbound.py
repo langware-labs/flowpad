@@ -54,28 +54,20 @@ class ReplyTarget:
     in_reply_to: str
 
 
-def _authored_here(message, local_id: str) -> bool:
+def _authored_here(message, self_ids) -> bool:
     """Did something on THIS machine write that message?
 
-    We have two outbound identities, not one. ``_sender_for`` stamps a message
-    we authored with the local user's id, EXCEPT on an agent's own mailbox,
-    where it stamps ``agent:<id>`` so the owner does not appear to have written
-    replies they never saw. External senders are always ``<channel>:<address>``.
+    We have two outbound identities, not one: our user (local or cloud id — a reply we
+    sent through the hub mirror comes back with the cloud one), and an Agent speaking on
+    its own source. Both have to be recognised here, because this predicate chooses who
+    the reply is ADDRESSED to (`to` is the target message's sender). Knowing only the
+    user, an agent's own ingested sent copy reads as a stranger and the agent mails itself.
 
-    Both of ours have to be recognised here, because this predicate chooses who
-    the reply is ADDRESSED to (`to` is the target message's sender). Knowing
-    only the user id, an agent's own ingested sent copy reads as a stranger and
-    the agent mails itself.
-
-    An unknown local user is "we cannot identify ourselves", NOT "everything is
-    ours". Folding those together made a missing user row report as "no one else
-    has written in this thread yet" — a thread full of strangers described as a
-    thread full of us, which points debugging at the wrong half of the system.
+    A message naming nobody is not ours — "we cannot identify the author" must not
+    read as "we wrote it", which would describe a thread of strangers as a thread of us.
     """
-    from flow_sdk.stream_inbox.projection import is_agent_sender  # noqa: PLC0415
-
-    sender = str(message.sender_id or "")
-    return bool(sender) and (sender == local_id or is_agent_sender(sender))
+    sender = message.sender
+    return bool(sender) and sender.authored_by(self_ids)
 
 
 async def resolve_reply_target(conversation_id: str, *, source_id: str | None = None) -> ReplyTarget:
@@ -114,12 +106,10 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
     # Reply to the last person who wrote to US, not simply to the last message.
     # Our own sent copies are ingested back into the thread, so the newest
     # message is frequently our own — and addressing that one mails the reply
-    # to ourselves. `_sender_for` already resolved this at projection time: a
-    # message we authored carries the local user's id, an external one carries
-    # `<channel>:<address>`. So this is an exact test, not a heuristic.
-    local = await User.get_local()
-    local_id = str(getattr(local, "id", "") or "")
-    target = next((m for m in channel_messages if not _authored_here(m, local_id)), None)
+    # to ourselves. `_sender_for` already resolved this at projection time into a
+    # typed `MessageSender`, so this is an exact test, not a heuristic.
+    self_ids = await User.self_ids()
+    target = next((m for m in channel_messages if not _authored_here(m, self_ids)), None)
     if target is None:
         # Every message here is ours — a thread we started and nobody answered.
         # The original recipient is not recorded anywhere, and guessing one is

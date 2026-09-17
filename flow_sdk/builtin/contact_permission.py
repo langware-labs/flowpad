@@ -7,7 +7,7 @@ on the session itself; this row only answers "does a session from this person
 start approved?".
 
 Keyed by the contact (``contact_user_id`` — the cross-machine-stable key, since
-``FlowMessage.sender_id`` is always a user id — with ``contact_email`` as a
+a person's ``FlowMessage.sender`` is always a user id — with ``contact_email`` as a
 human-stable fallback) and a project (``project_id`` None = global / all
 projects). Stored locally only; this is the receiver's decision and is never
 pushed to the hub.

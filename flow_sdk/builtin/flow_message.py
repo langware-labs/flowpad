@@ -23,6 +23,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import UserProfile
 from flow_sdk.tags.envelope import parse_target
@@ -406,8 +407,14 @@ class FlowMessage(Entity):
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
     attachment: list[Attachment] = APIField(default_factory=list)
+    # The wire form of the author — what travels to the hub and in bundles. Read `sender`.
     sender_id: Optional[str] = APIField(None)
     sender_name: Optional[str] = APIField(None)
+    # Who wrote this message, typed (`MessageSender`: a user, an Agent, or someone on a
+    # channel) — the field every reader tests, instead of parsing `sender_id`. PRIVATE:
+    # a hub-native author is always a user, and an Agent or channel author is a fact
+    # only this machine's projection knows, which a hub refresh must never reset.
+    sender: Optional[MessageSender] = APIField(None, sharing=Sharing.PRIVATE)
     receiver_address: Optional[str] = APIField(None)
     receiver_address_type: Optional[str] = APIField(None)  # "email"|"id"|"slack"|...
     attachment_filename: Optional[str] = APIField(None)  # original .flowmsg filename stored on hub
@@ -474,6 +481,27 @@ class FlowMessage(Entity):
         sharing=Sharing.PRIVATE,
         description="Sender, recipients, subject and event time of the cached record",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_sender(cls, data):
+        """``sender`` from ``sender_id`` wherever this machine did not type it.
+
+        A row with no ``sender`` — written before the field, received from the hub, or built
+        by any writer that only knows the wire id — takes the sender that id names. A USER
+        sender follows its wire id (a send flushed after login is re-stamped with the cloud
+        id). An AGENT or EXTERNAL sender was typed by the projection and stands: the hub's
+        copy of an agent's reply carries the authenticated person's id, and taking it would
+        turn the agent back into that person.
+        """
+        if not isinstance(data, dict) or "sender_id" not in data:
+            return data
+        wire = MessageSender.from_wire(data.get("sender_id"))
+        current = data.get("sender")
+        kind = (current.get("kind") if isinstance(current, dict) else getattr(current, "kind", None)) if current else None
+        if current is None or (kind == SenderKind.USER and wire is not None and wire.kind is SenderKind.USER):
+            data = {**data, "sender": wire}
+        return data
 
     @model_validator(mode="before")
     @classmethod

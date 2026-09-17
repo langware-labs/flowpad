@@ -38,6 +38,7 @@ import re
 from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
 from flow_sdk.stream_inbox._locks import loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
@@ -278,7 +279,7 @@ async def project_source_item(
     if conversation.adopt_channel(channel, str(source.id)):
         await conversation.save(notify=False)
 
-    sender_id, sender_name = await _sender_for(item, source, channel)
+    sender, sender_name = await _sender_for(item, source, channel)
     # The message row is resolved by its reference column. FIRST placement
     # runs under the shared lock: two lanes (sync ingest + the projected-tag
     # handler) can otherwise both prove "no row" before either inserts — that
@@ -296,13 +297,13 @@ async def project_source_item(
                 # First placement stays UNDER the lock — the birth is the race.
                 return await _place_message(
                     item, source, channel, subject, key, thread, thread_id,
-                    conversation_id, sender_id, sender_name, None,
+                    conversation_id, sender, sender_name, None,
                     notify=notify, recount=recount, announce=announce,
                 )
     # Already placed: idempotent re-projection, no lock needed.
     return await _place_message(
         item, source, channel, subject, key, thread, thread_id,
-        conversation_id, sender_id, sender_name, existing_fm,
+        conversation_id, sender, sender_name, existing_fm,
         notify=notify, recount=recount, announce=announce,
     )
 
@@ -367,7 +368,7 @@ async def _placed_message(item):
 
 async def _place_message(
     item, source, channel, subject, key, thread, thread_id,
-    conversation_id, sender_id, sender_name, existing_fm,
+    conversation_id, sender, sender_name, existing_fm,
     *, notify, recount, announce,
 ):
     """Write the message row + pointers for one resolved message.
@@ -409,6 +410,11 @@ async def _place_message(
         if existing_fm.thread_id != thread_id:
             existing_fm.thread_id = thread_id
             dirty = True
+        # The typed author is projection-owned too: the hub's copy of an agent's reply
+        # names the authenticated person, and only this machine knows it was the agent.
+        if existing_fm.sender != sender:
+            existing_fm.sender = sender
+            dirty = True
         if existing_fm.origin is None:
             existing_fm.origin, existing_fm.origin_local = _origins(item, source, channel, key)
             dirty = True
@@ -440,7 +446,8 @@ async def _place_message(
         # re-projects its item (a sync's reconcile sweep, an .updated tag, a
         # replay): reindex fixes the data "as is", by design.
         "sent_at": item.occurred_at or None,
-        "sender_id": sender_id,
+        "sender": sender.model_dump(mode="json"),
+        "sender_id": sender.wire_id,
         "sender_name": sender_name,
         "thread_id": thread_id,
         "origin": origin.model_dump(),
@@ -524,16 +531,14 @@ def display_name_of(raw: str, address: str) -> str:
     return name or text or address
 
 
-async def _sender_for(item, source, channel: str) -> tuple[str, str]:
-    """``(sender_id, sender_name)`` — mapping our own account to the local user.
+async def _sender_for(item, source, channel: str) -> tuple[MessageSender, str]:
+    """``(sender, sender_name)`` — who wrote this item, typed, and what to call them.
 
-    Load-bearing, not cosmetic. Both unread formulas gate on the sender
-    (``stream_inbox.count_unread``, and ``conversationFacets`` on the frontend), so an
-    item WE authored — every message in a Sent folder, and every reply we send
-    once Part 2 lands — would otherwise count as unread mail from a stranger.
-
-    External senders get ``<channel>:<address>``: non-empty (an empty sender_id
-    is never counted unread at all) and never a self id.
+    Load-bearing, not cosmetic. The unread rule gates on the sender
+    (``stream_inbox.conversation_is_unread``), so an item WE authored — every
+    message in a Sent folder, and every reply we send — would otherwise count as
+    unread mail from a stranger. Our own address is the local user; on an agent's
+    own source it is that Agent; anyone else is EXTERNAL on this channel.
     """
     from flow_sdk.builtin.user import User  # noqa: PLC0415
 
@@ -550,30 +555,8 @@ async def _sender_for(item, source, channel: str) -> tuple[str, str]:
             return agent_sender[0], agent_sender[1] or display or "Agent"
         local = await User.get_local()
         if local and local.id:
-            return str(local.id), display or "You"
-    return (f"{channel}:{address}" if address else f"{channel}:unknown"), display or channel
-
-
-#: Sender-id prefix for a hosted agent. Deliberately NOT a bare entity id: a
-#: sender id is compared against user ids, and an agent that looked like one
-#: would be indistinguishable from a person in every consumer.
-AGENT_SENDER_PREFIX = "agent"
-
-
-def agent_sender_id(agent_id: str) -> str:
-    return f"{AGENT_SENDER_PREFIX}:{agent_id}"
-
-
-def is_agent_sender(sender_id: str) -> bool:
-    """Was this message written by an agent whose mailbox we hold?
-
-    The prefix IS the answer — that is the whole reason `agent_sender_id` uses
-    one instead of a bare entity id. Consumers that instead enumerate agent rows
-    to build a set get a different answer over time: an agent whose mail is
-    later switched off drops out of the set, and its past replies start counting
-    as unread mail from a stranger.
-    """
-    return (sender_id or "").startswith(f"{AGENT_SENDER_PREFIX}:")
+            return MessageSender.user(str(local.id)), display or "You"
+    return MessageSender.external(channel, address), display or channel
 
 
 def agent_id_of(source) -> str:
@@ -666,8 +649,8 @@ def is_self_address(source, address: str) -> bool:
     return bool(folded) and _fold(folded) in self_addresses(source)
 
 
-async def _agent_sender_for(source) -> "tuple[str, str] | None":
-    """``(sender_id, display)`` when this source is an agent's own mailbox."""
+async def _agent_sender_for(source) -> "tuple[MessageSender, str] | None":
+    """``(sender, display)`` when this source is an agent's own mailbox."""
     owner = await owner_of(source)
     if not is_agent_owner(owner):
         return None
@@ -675,7 +658,7 @@ async def _agent_sender_for(source) -> "tuple[str, str] | None":
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
 
     agent = await Agent.get_by_id(agent_id)
-    return agent_sender_id(agent_id), str(getattr(agent, "name", "") or "")
+    return MessageSender.agent(agent_id), str(getattr(agent, "name", "") or "")
 
 
 async def recompute_thread_projection(thread_id: str, *, thread=None, notify: bool = True) -> None:
