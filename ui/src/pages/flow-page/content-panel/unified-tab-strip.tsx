@@ -23,6 +23,7 @@ import { TabStrip } from '@src/components/tabs/TabStrip';
 import { isTypeIdLikeName } from '@src/components/terminal/rename-rules';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { globalHomeDock } from '@src/tabs/project-entry';
+import { useTabCloser } from '@src/tabs/tab-close-request';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
@@ -282,6 +283,9 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     },
     [tabByKey, projectId],
   );
+
+  // Content asking to close the tab it is shown in closes it the same way the X does.
+  useTabCloser(tabByKey, handleClose);
 
   // Keyboard shortcuts (the strip owns them): mod+W close active, mod+T new
   // terminal, mod+PgUp/PgDn cycle. Mac=Ctrl, Windows=Meta, Linux=Alt.
