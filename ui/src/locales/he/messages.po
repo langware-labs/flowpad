@@ -1963,6 +1963,10 @@ msgstr "כבר מותקן גלובלית — יש להסיר קודם"
 msgid "Already installed in a project — uninstall first"
 msgstr "כבר מותקן בפרויקט — יש להסיר קודם"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Already launched in this project"
+msgstr ""
+
 #. placeholder {0}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Already on {0}"
@@ -2657,6 +2661,10 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Auto-launch prompt"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Auto-launch reset"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
@@ -5148,6 +5156,10 @@ msgstr "לא ניתן להפעיל את {0} מחדש."
 #: src/components/account/system-diagnoses.tsx
 msgid "Could not report diagnosis"
 msgstr "לא היה ניתן לדווח על הדיאגנוזה"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Could not reset auto-launch"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Could not resolve compute node or home directory"
@@ -10192,6 +10204,10 @@ msgstr ""
 msgid "It may be only partly removed."
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "It runs again the next time the project opens."
+msgstr ""
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr ""
@@ -13282,6 +13298,10 @@ msgstr ""
 #~ msgid "Not installed"
 #~ msgstr "לא מותקן"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Not launched yet in this project"
+msgstr ""
+
 #: src/i18n/cli-messages.ts
 msgid "Not logged in"
 msgstr "לא מחוברים"
@@ -16367,6 +16387,7 @@ msgstr "סורקים מחדש…"
 
 #: src/components/account/settings-section.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset"
@@ -16379,6 +16400,10 @@ msgstr "איפוס"
 #: src/components/account/settings-section.tsx
 msgid "Reset failed"
 msgstr "איפוס נכשל"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Reset failed."
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset to default"
