@@ -455,9 +455,14 @@ def isolated_records_root(tmp_path, monkeypatch):
     """
     from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
 
+    from flow_sdk.builtin.agentic_process import transcript_cache  # noqa: PLC0415
+
     monkeypatch.setenv("FS_RECORD_PATH", str(tmp_path / "records"))
     reset_instance_settings()
+    # Transcript locations remembered by one test are paths under ITS tmp dir.
+    transcript_cache.clear()
     yield tmp_path / "records"
+    transcript_cache.clear()
     reset_instance_settings()
 
 
