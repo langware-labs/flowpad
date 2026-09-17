@@ -126,6 +126,7 @@ class DataContext extends EventEmitter {
   }
 
   private _workspaceRevision = 0;
+  private _projectRevision = 0;
 
   private _contextEntitiesMap = observable.map<ContextEntitiesEnum, TypeId | null | undefined>([
     [ContextEntitiesEnum.CurrentWorkspaceTypeId, null],
@@ -840,6 +841,11 @@ class DataContext extends EventEmitter {
   }
 
   async setContextEntityTypeId(entityKey: ContextEntitiesEnum, newTypeId: TypeId | null): Promise<void> {
+    // Latest CALL wins for the project, not the latest to finish loading. Bumped
+    // before the equality short-circuit: re-selecting the committed project while
+    // another switch is still loading must still supersede that switch.
+    const projectRevision = entityKey === ContextEntitiesEnum.CurrentProjectTypeId
+      ? ++this._projectRevision : undefined;
     const existingTypeId = this._contextEntitiesMap.get(entityKey);
     if (!existingTypeId && !newTypeId) {
       return;
@@ -863,6 +869,7 @@ class DataContext extends EventEmitter {
     }
 
     if (workspaceRevision !== undefined && workspaceRevision !== this._workspaceRevision) return;
+    if (projectRevision !== undefined && projectRevision !== this._projectRevision) return;
 
     // Update observable AFTER ensuring entity is loaded with proper expansions
     runInAction(() => {
@@ -874,17 +881,23 @@ class DataContext extends EventEmitter {
     if (entityKey === ContextEntitiesEnum.CurrentWorkspaceTypeId && newTypeId) {
       defineGlobal('workspace', this.workspace);
     }
-    // Load compute node when project is set
-    if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId && newTypeId) {
-      void this.refreshProject();
-      // Open-recency stamp: `Project.last_active_at` (server clock, epoch-ms)
-      // via the generic `activate` action — the project pickers' primary sort
-      // key. This is the single choke point every "user is now in this
-      // project" path funnels through (loaders, pickers, quick-create,
-      // startup restore), and the equality guard above means it fires only on
-      // an actual project switch — never on same-project re-navigation.
-      // Fire-and-forget: context writes must stay fast.
-      void Project.activateById(newTypeId.id).catch(() => {});
+    if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId) {
+      // The workdir belongs to the project: a switch re-points it at the new
+      // project's folder. Callers with a narrower cwd (a shell, a process) set
+      // it after the switch, as they already do.
+      this.setWorkdir(this.project?.fs_storage_mount_path ?? null);
+      // Load compute node when project is set
+      if (newTypeId) {
+        void this.refreshProject();
+        // Open-recency stamp: `Project.last_active_at` (server clock, epoch-ms)
+        // via the generic `activate` action — the project pickers' primary sort
+        // key. This is the single choke point every "user is now in this
+        // project" path funnels through (loaders, pickers, quick-create,
+        // startup restore), and the equality guard above means it fires only on
+        // an actual project switch — never on same-project re-navigation.
+        // Fire-and-forget: context writes must stay fast.
+        void Project.activateById(newTypeId.id).catch(() => {});
+      }
     }
 
     // Emit CONTEXT_CHANGED event AFTER observable update so components get the updated values
