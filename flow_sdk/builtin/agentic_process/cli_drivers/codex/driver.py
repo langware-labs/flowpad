@@ -361,6 +361,11 @@ class CodexDriver:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
 
+    def transcript_is_final(self, process: "AgenticProcess", path: Path) -> bool:
+        """Only the rollout named for this session id is final: the stdout tee is
+        superseded once it appears, and a cwd/launch-time match is a guess."""
+        return bool(process.session_id) and path.name.endswith(f"-{process.session_id}.jsonl")
+
     async def available_assets(self, process: "AgenticProcess"):
         from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
         from flow_sdk.builtin.agentic_process.cli_drivers.codex.asset_inventory import available_assets

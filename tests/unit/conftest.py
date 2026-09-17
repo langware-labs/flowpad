@@ -284,6 +284,28 @@ def claude_projects(tmp_path, monkeypatch) -> Path:
     return proj
 
 
+@pytest.fixture
+def worker_session_stores(claude_projects, tmp_path, monkeypatch):
+    """Isolated session stores for all four workers: Claude (``claude_repo``, the
+    ``claude_projects`` dir), Codex and Copilot (under ``settings``), OpenCode (``opencode_db``)."""
+    from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
+
+    from .test_opencode_live_transcript_freshness import _make_store
+
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("FLOWPAD_COPILOT_HOME", str(tmp_path / "copilot"))
+    monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(tmp_path / "sandbox"))
+    reset_instance_settings()
+    opencode_db = tmp_path / "opencode.db"
+    _make_store(opencode_db)
+    monkeypatch.setattr(
+        "flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history.opencode_db_path",
+        lambda: opencode_db,
+    )
+    yield SimpleNamespace(claude_repo=claude_projects, settings=get_instance_settings(), opencode_db=opencode_db)
+    reset_instance_settings()
+
+
 @pytest.fixture(autouse=True)
 def _clean_activity_monitor():
     """Empty the activity monitor around every unit test.

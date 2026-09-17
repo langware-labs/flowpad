@@ -71,6 +71,7 @@ from flow_sdk.builtin.agentic_process.display_context import (
     with_display_context,
     without_stale_display_context,
 )
+from flow_sdk.builtin.agentic_process import transcript_cache
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
     is_process_startable,
@@ -4687,8 +4688,11 @@ class AgenticProcess(Entity):
 
     @property
     def transcript_path(self) -> Path | None:
-        descriptor = self.transcript
-        return descriptor.path if descriptor else None
+        try:
+            return transcript_cache.transcript_path(self)
+        except Exception:
+            logger.debug("AgenticProcess %s transcript_path: driver lookup failed", self.id, exc_info=True)
+            return None
 
     def _load_transcript(self, descriptor=None) -> "AgentTranscriptFile | None":
         """Worker-agnostic transcript loader.
@@ -5965,6 +5969,7 @@ class AgenticProcess(Entity):
         if delete_chats and not self.hub_route:  # a route row owns no transcript here
             self._delete_session_transcript()
         result = await super().delete()
+        transcript_cache.invalidate(self.id)
         clear_process_hook_callbacks(str(self.id))
         # The dedup key outlives the instance by design (module-level, keyed by
         # process id), so the row has to be dropped explicitly here or it leaks
@@ -6304,7 +6309,7 @@ class AgenticProcess(Entity):
         try:
             from flow_sdk.transcript_analyzer.worker_status import tail_status_detail
 
-            path = self.driver.transcript_path(self)
+            path = transcript_cache.transcript_path(self)
             return tail_status_detail(path) if path else None
         except Exception:
             logger.debug("worker_status_detail lookup failed", exc_info=True)
@@ -6337,7 +6342,7 @@ class AgenticProcess(Entity):
         """
         if getattr(self, "_post_tool_idle_complete", False):
             return WorkerStatus.COMPLETE
-        path = self.driver.transcript_path(self)
+        path = transcript_cache.transcript_path(self)
         if path is None:
             # No transcript on disk yet. Report the raw boot state (INITIALIZING)
             # only while the lifecycle is STARTING; a RUNNING worker with no
