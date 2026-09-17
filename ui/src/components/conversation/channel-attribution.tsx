@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { MessageSquare } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DataSource } from '@sdk';
-import type { ICloudOrigin, ICloudOriginLocal } from '@sdk';
+import type { IChannelSpec, ICloudOrigin, ICloudOriginLocal } from '@sdk';
 import { Badge } from '@src/components/ui/badge';
 import { sourceIconName } from '@src/components/data-sources/source-icon';
 import { sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
@@ -71,7 +71,11 @@ export function useChannelAttribution() {
     (
       origin: ICloudOrigin | null | undefined,
       originLocal?: ICloudOriginLocal | null,
+      channelSpec?: IChannelSpec | null,
     ): ChannelAttribution | null => {
+      // The conversation's channel says whether its rows wear a chip — Flowpad's own chat
+      // declares none. A hub runtime has no spec and keeps the origin rule.
+      if (channelSpec && !channelSpec.chip) return null;
       if (!origin?.kind) return null;
       const kind = origin.kind.trim().toLowerCase();
       // The spec's own title when one is installed ("Help desk", not
@@ -95,10 +99,10 @@ const COMPACT = 'gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-m
 // a category's and keeps its brand colour — the text stays quiet.
 const SOURCE_CHIP = cn(COMPACT, 'gap-1 border-border bg-muted ps-1 pe-1.5 py-px text-[10px] font-semibold text-muted-foreground');
 
-/** The per-row source chip: icon + channel, only for channel conversations.
+/** The per-row source chip: icon + channel, for channels whose spec wears one.
  *  Presentational: the LIST resolves attribution once (`useChannelAttribution`)
  *  and hands each row its answer, so 300 rows do not hold 600 query watchers.
- *  Hub-native rows have no attribution and render nothing — absence means "ours".
+ *  Flowpad's own chat declares `chip: false` and renders nothing.
  *
  *  `iconOnly` drops the label for surfaces too narrow to spend a word on it
  *  (the home brief strip) — same resolver, same glyph, label on hover. */

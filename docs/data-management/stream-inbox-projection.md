@@ -38,6 +38,16 @@ prefix compare). The reconcile sweep pushes the same gate into its query as
 a `LIKE 'content.message.%'` so a mixed source cannot burn its batch on rows
 it would drop.
 
+**Every conversation has a channel.** `Conversation.channel` is born `flowpad` —
+Flowpad's own chat (`flow_sdk/builtin/conversation_channel.py`), declared beside the
+conversation rather than as a data driver, since native messages arrive live through
+the hub mirror and there is nothing to poll. The projection's `Conversation.adopt_channel`
+replaces that home channel with the source's channel when it places the first message (a
+help desk ticket is born `flowpad` and becomes `helpdesk`); a source channel is never
+overwritten. What a channel IS — chip, transport, attachments, sessions — is
+`Conversation.channel_spec` (`ChannelSpec`, `schema/data_spec/channel_spec.py`); surfaces
+read those traits and never test the channel's name or treat a missing channel as "ours".
+
 **The keys.** `channel` is `DataSource.channel`, falling back to `provider`
 for rows written before the field existed. `thread_key` is the driver's
 native handle (`SourceItem.thread_key` — Gmail `threadId`, Slack `thread_ts`)

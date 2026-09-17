@@ -4,12 +4,16 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
+from pydantic import computed_field, model_validator
+
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
 from flow_sdk.db.drivers.db_base_record import TypeId
+from flow_sdk.schema.data_spec.channel_spec import ChannelSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.tags.envelope import parse_target
 
@@ -209,12 +213,15 @@ class Conversation(ProjectedFields, Entity):
     # `None` on rows written before the field existed; `stream_inbox.projection.owner_of`
     # resolves those to the local user. PRIVATE — never travels.
     owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
-    # The channel a source-backed conversation replies through (``gmail``, ``slack``)
-    # and the local DataSource feeding it, stamped by the stream inbox projection when it
-    # places the first message. ``channel`` travels so a peer renders the badge —
-    # HUB_WRITE, so a hub refresh that lacks it never blanks it; ``channel_source_id``
-    # is a row id in OUR database, so it is PRIVATE.
-    channel: Optional[str] = APIField(default=None, sharing=Sharing.HUB_WRITE)
+    # The channel this conversation replies through. Every conversation has one: born
+    # ``flowpad`` (Flowpad's own chat, `conversation_channel.HOME_CHANNEL`), and adopted by
+    # a data source's channel (``gmail``, ``slack``, ``helpdesk``) when the stream inbox
+    # projection places its first message there (`adopt_channel`). What the channel IS —
+    # chip, transport, attachments — is `channel_spec`, never a test of this string.
+    # ``channel`` travels so a peer renders the badge — HUB_WRITE, so a hub refresh that
+    # lacks it never blanks it; ``channel_source_id`` is a row id in OUR database, so it
+    # is PRIVATE.
+    channel: str = APIField(default=HOME_CHANNEL, sharing=Sharing.HUB_WRITE)
     channel_source_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
@@ -300,6 +307,39 @@ class Conversation(ProjectedFields, Entity):
     # ``conv.first_context_of_type('task', bucket='shared')`` to read it back.
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str | None] = "MessageSquare"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_home_channel(cls, data):
+        """A row written before every conversation had a channel carries none — it is
+        Flowpad's own chat. Read-side only; the row heals on its next save."""
+        if isinstance(data, dict) and not (data.get("channel") or "").strip():
+            data = {**data, "channel": HOME_CHANNEL}
+        return data
+
+    @computed_field(json_schema_extra={"sharing": str(Sharing.PRIVATE)})
+    @property
+    def channel_spec(self) -> ChannelSpec:
+        """What this conversation's channel is — the traits every surface reads."""
+        return channel_spec(self.channel)
+
+    def adopt_channel(self, channel: str, source_id: str) -> bool:
+        """Name the data source channel this conversation replies through. Returns whether
+        anything changed (the caller saves).
+
+        The channel is replaced only while the current one is the HOME channel: a help desk
+        ticket is born ``flowpad`` and becomes ``helpdesk`` when its first message is
+        projected, but a source channel is never overwritten — a twin source projecting
+        into the same thread must not make it flap. The source id is set once, while empty.
+        """
+        changed = False
+        if channel and channel != self.channel and self.channel_spec.home:
+            self.channel = channel
+            changed = True
+        if source_id and not self.channel_source_id:
+            self.channel_source_id = source_id
+            changed = True
+        return changed
 
     @classmethod
     async def resolve_project_id(

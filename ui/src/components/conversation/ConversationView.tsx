@@ -15,6 +15,7 @@ import {
   QueryRequest,
   TypeId,
   latestPointer,
+  ChannelTransport,
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
@@ -269,9 +270,12 @@ export function ConversationView({
 
   const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
 
-  // A source-backed conversation names its own channel and the source feeding
-  // it — the stream inbox projection stamps both when it places the first message.
-  const channel = conversation?.channel || undefined;
+  // What this conversation's channel is — the backend's `channel_spec`. A reply goes out
+  // through a data source only when the channel's transport says so; Flowpad's own chat is
+  // a channel too, not the absence of one. A hub runtime carries no spec: its rows are the
+  // hub's own conversations, which never reply through a local source.
+  const channelSpec = conversation?.channel_spec ?? null;
+  const channel = channelSpec?.transport === ChannelTransport.Source ? channelSpec.name : undefined;
 
   // Attention-driven polling: while this source-backed conversation is the
   // SELECTED dock, keep its DataSource due (request_poll on an interval) so
@@ -751,7 +755,7 @@ export function ConversationView({
           ordinary ingest route once it exists. */}
       {sendingText && (
         <SessionEventLine
-          text={t`Sending in ${channelLabel(channel)}: “${sendingText}”`}
+          text={t`Sending in ${channelSpec?.title ?? channelLabel(channel)}: “${sendingText}”`}
         />
       )}
       <MessageComposer
@@ -760,9 +764,9 @@ export function ConversationView({
         // A source-backed conversation replies into its channel, not the hub.
         channel={channel}
         onChannelSent={setSendingText}
-        placeholder={channel ? t`Reply in ${channelLabel(channel)}` : undefined}
+        placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
         agentId={agentId ?? undefined}
-        sessionHost={channel ? null : sessionHost}
+        sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
       />
     </div>
   );
