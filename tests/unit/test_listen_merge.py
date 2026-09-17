@@ -78,3 +78,22 @@ async def test_a_single_source_is_passed_straight_through():
         a.push({"body": "only"})
         (item,) = await _take(listen(StreamInbox(f"{mint_uuid()}@a", provider="alpha"), poll_every=0), 1)
     assert item.body == "only"
+
+
+async def test_pages_from_two_sources_are_each_one_sources_and_ack_only_their_own_position():
+    from flow_sdk.blocks import pages
+
+    with scripted_provider("alpha-pages") as a, scripted_provider("beta-pages") as b:
+        a.push({"body": "a1"}, {"body": "a2"})
+        b.push({"body": "b1"})
+        one, two = StreamInbox(f"{mint_uuid()}@a", provider="alpha-pages"), StreamInbox(f"{mint_uuid()}@b", provider="beta-pages")
+        name = _name()
+        async with workflow(name):
+            got = await _take(pages(one, two, size=50, poll_every=0), 2)
+            by_source = {p.source_id: [m.body for m in p] for p in got}
+            src_a, src_b = await one.ensure_source(), await two.ensure_source()
+            assert by_source == {str(src_a.id): ["a1", "a2"], str(src_b.id): ["b1"]}
+
+            await next(p for p in got if p.source_id == str(src_b.id)).ack()
+            assert (await ConsumerPosition.ensure_for(name, str(src_b.id))).watermark() is not None
+            assert (await ConsumerPosition.ensure_for(name, str(src_a.id))).watermark() is None

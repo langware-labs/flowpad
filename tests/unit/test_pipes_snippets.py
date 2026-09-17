@@ -103,7 +103,7 @@ def _pipes_doc(name: str) -> str:
     from flow_sdk.api.api_types.identifier import mint_uuid
 
     text = doc("pipes.md")
-    for wf in ("mirror", "triage", "docs-rag"):
+    for wf in ("mirror", "triage", "docs-rag", "digest"):
         text = text.replace(f'workflow("{wf}")', f'workflow("{wf}-{mint_uuid()}")')
     return text
 
@@ -186,3 +186,20 @@ async def test_snippet_6_keep_a_search_index_level(tmp_path, monkeypatch):
     assert ns["report"].embedded > 0
     hits = await ns["index"].search("which directories does the walker skip", top_k=1)
     assert hits and hits[0].doc_ref.endswith("walk.md")
+
+
+async def test_snippet_7_pages_fifty_at_a_time(monkeypatch):
+    """Two inboxes on one loop, a page at a time: the first ack commits a whole page of one source."""
+    from flow_sdk.builtin.consumer_position import ConsumerPosition
+    from tests.utils.fake_source import scripted_provider
+    from tests.utils.snippets import fence_under, run_fence_until
+
+    acked = await _acked_signal(monkeypatch)
+    with scripted_provider("agentmail") as mail:
+        mail.push(*({"body": f"m{i:03d}", "author": "alice@example.com", "thread_key": f"t{i}"} for i in range(120)))
+        ns = await run_fence_until(
+            fence_under(_pipes_doc("pipes.md"), "7."), {"KEY": "k"}, acked, filename="pipes.md §7"
+        )
+    assert len(ns["digest"]) == 50, "the first page is 50 deliveries"
+    positions = [p for p in await ConsumerPosition.get_all({}) if p.consumer.startswith("digest-") and p.acked_count]
+    assert len(positions) == 1 and positions[0].acked_count == 1, "one page, one write, one source's position"

@@ -164,3 +164,26 @@ ack and move on, the heartbeat pass catches up.
 `await index.search("how does the walk decide what to skip")` asks it — SEMANTIC
 retrieval over chunks. Not to be confused with `SourceItem.search(...)`, which is
 FTS5 keyword matching over rows; both are useful and they are not the same thing.
+
+## 7. Pages, 50 at a time
+
+`listen()` hands out one delivery at a time. `pages()` is the same drain, a page at a time,
+with ONE ack per page — and `pages(*sources)` merges several the way `listen(*sources)` does:
+a page is always one source's (`page.source_id`), so acking it moves only that position.
+
+```python
+from flow_sdk.blocks import StreamInbox, pages, workflow
+
+async with workflow("digest"):
+    support = StreamInbox("support@agentmail.to", api_key=KEY)
+    sales = StreamInbox("sales@agentmail.to", api_key=KEY)
+
+    async for page in pages(support, sales, size=50):   # up to 50 deliveries, all from one source
+        digest = [m.body for m in page]
+        await page.ack()                                # one write: the page's last row
+```
+
+A page's ack commits everything up to its last row, filtered rows included, so a page never
+leaves a gap. Each delivery inside still has its own `ack()` for a consumer that wants the
+finer grain. A restart under the same workflow name hands an un-acked page back whole, its
+items marked `redelivered`.
