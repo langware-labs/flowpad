@@ -1,66 +1,73 @@
 /**
- * The agent visibility panel's Share button actually GRANTS access — real
- * browser for the share, everything else via API.
+ * The agent visibility panel's Share button grants a HUB role on the agent —
+ * real browser for the share, everything else via API.
  *
- * dev-1 (alice) owns a brand-new agent; dev-2 (bob) has no relationship to it
- * yet. The test proves the whole before/after:
- *   1. deny   — bob's own backend has no row for alice's agent (404)
- *   2. share  — alice clicks the new "Share with specific people" button in
- *               AgentPublicVisibilitySection and drives the real
- *               ShareToConversationDialog (Playwright), picking bob
- *   3. receive — bob syncs his assignment and maps the conversation to a
- *               project; the shared agent (a file-backed asset, packed the
- *               same generic way workflow/whiteboard/skill are —
- *               flow_message_bundle.py) then materializes on his own backend
- *               automatically, with no separate download/install click needed
- *               for a direct one-recipient share
- *   4. allow  — bob's backend now serves that exact agent id, and re-opening
- *               the SAME editor URL that 404'd in step 1 now actually mounts
+ * alice (INST_1) owns an agent that is on the hub; bob (INST_2) has no
+ * relationship to it. The before/after:
+ *   1. deny  — bob cannot read the agent on the hub
+ *   2. share — alice clicks Share in AgentVisibilitySection, invites bob's email
+ *              in ShareAgentDialog (Playwright) → `POST agent/<id>/members`
+ *   3. allow — bob reads the same agent on the hub, holding `reader`
  *
- * Setup (both users, the agent) is driven entirely through the backend API —
- * no browser involved until step 2, which is the one thing under test.
+ * Setup stands in for a real publish: `publish_git_asset` needs a connected
+ * GitHub account and a github.com origin, which a local-hub run can't have.
+ * Instead alice registers the agent on the hub under the same id and her local
+ * row is marked published (`remote` + a git origin) — the two facts the panel
+ * gates Share on and the invite's hub reflection needs.
  *
- * Requires the explicit SHARE_INST_1/SHARE_INST_2 pair with live frontends and
- * the cycle-owned FLOWPAD_HUB_URL. Skips when the hub or instances aren't up:
  *   scripts/instance_ctl.sh launch hub-2 --hub http://localhost:8094
  *   scripts/instance_ctl.sh launch hub-3 --hub http://localhost:8094
  *   cd ui && FLOWPAD_HUB_URL=http://localhost:8094 SHARE_INST_1=hub-2 SHARE_INST_2=hub-3 \
  *     ALICE_EMAIL=hub-2@local.test ALICE_PW=hub-2-pw-1234 \
  *     BOB_EMAIL=hub-3@local.test BOB_PW=hub-3-pw-1234 \
  *     FLOW_INSTANCE=hub-2 npx vitest run --project hub agent_share_access
+ * Skips when the hub or instances aren't up.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
 import { testEntityName } from '../_cleanup';
-import { hubAvailable } from './_hub';
+import { HUB_URL, hubAvailable, hubJson, hubLogin } from './_hub';
+import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
-  getInstance,
   instanceAvailable,
-  type ResolvedInstance,
+  jsonApi,
+  resolveLaunchedInstance,
+  type LaunchedInstance,
 } from './_instances';
-import {
-  driveShareDialog,
-  launchBrowser,
-  mapConversationToProject,
-  openAssignedConversationInUI,
-  openInstancePage,
-  type InstancePage,
-} from './_browser';
+import { launchBrowser, openInstancePage, type InstancePage } from './_browser';
 
 let skipReason: string | null = null;
-let alice: ResolvedInstance;
-let bob: ResolvedInstance;
+let alice: LaunchedInstance;
+let bob: LaunchedInstance;
+let aliceToken = '';
+let bobToken = '';
 let browser: Browser;
 let alicePage: InstancePage;
-let bobPage: InstancePage;
 
-const ts = Date.now();
 const agentName = testEntityName('agent');
-const convTitle = testEntityName('conv');
 let agentId = '';
-let convId = '';
+
+/** A git origin shaped like a real publish receipt — what `version.published` reads. */
+const publishedOrigin = () => ({
+  kind: 'git',
+  provider: 'github',
+  owner: 'e2e',
+  name: 'agents',
+  branch: 'flow-cloud',
+  head_commit: 'e2e0000000000000000000000000000000000000',
+  rel_path: `agentic-assets/agent/${agentName}`,
+});
+
+/** bob's view of the agent on the hub: status + his roles on it. */
+async function bobHubRead(): Promise<{ status: number; roles: string[] }> {
+  const r = await fetch(`${HUB_URL}/api/v1/graph/agent/${agentId}?expand=permissions`, {
+    headers: { Authorization: `Bearer ${bobToken}` },
+  });
+  const body = await r.json().catch(() => ({}));
+  return { status: r.status, roles: body?.data?.expand?.roles ?? [] };
+}
 
 beforeAll(async () => {
   const hub = await hubAvailable();
@@ -68,32 +75,21 @@ beforeAll(async () => {
   if (!instanceAvailable(INST_1) || !instanceAvailable(INST_2)) {
     return void (skipReason = `launch ${INST_1} + ${INST_2} (with frontends) via scripts/instance_ctl.sh`);
   }
-  alice = await getInstance(INST_1);
-  bob = await getInstance(INST_2);
+  alice = resolveLaunchedInstance(INST_1)!;
+  bob = resolveLaunchedInstance(INST_2)!;
+  aliceToken = (await hubLogin(alice.email, alice.env.FLOWPAD_CLOUD_USER_PASSWORD)).token;
+  bobToken = (await hubLogin(bob.email, bob.env.FLOWPAD_CLOUD_USER_PASSWORD)).token;
   browser = await launchBrowser();
   alicePage = await openInstancePage(browser, INST_1);
-  bobPage = await openInstancePage(browser, INST_2);
 }, 60_000);
 
 afterAll(async () => {
   await browser?.close().catch(() => undefined);
-  if (skipReason) return;
-
-  // Full-purge the agent off BOTH machines (alice's original, bob's installed
-  // copy shares the same id) and the conversation off alice (owner cascade).
-  for (const inst of [alice, bob]) {
-    if (!inst || !agentId) continue;
-    await fetch(`${inst.apiUrl}/api/v1/graph/compute_node/@local/fs-records/agent/${agentId}`, {
-      method: 'DELETE',
-    }).catch(() => undefined);
-  }
-  if (alice && convId) {
-    await fetch(`${alice.apiUrl}/api/v1/graph/conversation-delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversation_id: convId, mode: 'delete_for_all' }),
-    }).catch(() => undefined);
-  }
+  if (skipReason || !agentId) return;
+  await hubJson(aliceToken, `/graph/agent/${agentId}`, undefined, 'DELETE').catch(() => undefined);
+  await fetch(`${alice.apiUrl}/api/v1/graph/compute_node/@local/fs-records/agent/${agentId}`, {
+    method: 'DELETE',
+  }).catch(() => undefined);
 });
 
 beforeEach((ctx: any) => {
@@ -103,85 +99,67 @@ beforeEach((ctx: any) => {
   }
 });
 
-/** Resolve a just-created conversation by its unique title, on the sender's backend. */
-async function conversationIdByTitle(inst: ResolvedInstance, title: string): Promise<string> {
-  const deadline = Date.now() + 20_000;
-  for (;;) {
-    const rows = (await inst.sdk.Conversation.query(
-      new inst.sdk.QueryRequest({ type: 'conversation', query: { title }, name: 'conversation by title (agent share)' }),
-      true,
-    ).catch(() => [])) as Array<{ id: string; title?: string }>;
-    const hit = rows.find((c) => c.title === title);
-    if (hit) return hit.id;
-    if (Date.now() > deadline) throw new Error(`no conversation titled "${title}" on ${inst.name}`);
-    await new Promise((res) => setTimeout(res, 500));
-  }
-}
-
-describe('agent visibility panel Share button grants access', () => {
-  it('0 setup — alice creates an agent bob has no relationship to', async () => {
-    const created = await fetch(`${alice.apiUrl}/api/v1/graph/agent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: agentName }),
-    }).then((r) => r.json());
+describe('agent visibility panel Share button grants a hub role', () => {
+  it('0 setup — alice has a published agent bob has no relationship to', async () => {
+    const created = await jsonApi(alice.apiUrl, '/graph/agent', 'POST', { name: agentName });
     agentId = created?.data?.id;
     expect(agentId, JSON.stringify(created)).toBeTruthy();
-  });
 
-  it('1 deny — bob has no access to the agent yet', async () => {
-    const resp = await fetch(`${bob.apiUrl}/api/v1/graph/agent/${agentId}`);
-    expect(resp.status).toBe(404);
-  });
+    await hubJson(aliceToken, '/graph/agent', { id: agentId, name: agentName });
 
-  it('2 share — alice shares it with bob from the agent panel\'s Share button', async () => {
-    await alicePage.page.goto(
-      `${alicePage.feUrl}/dock/assets/editor/agent/typeid/agent-${agentId}?viewMode=advanced`,
-      { waitUntil: 'domcontentloaded' },
-    );
-    await alicePage.page.getByTestId('agent-share-with-people').click({ timeout: 20_000 });
-    await driveShareDialog(alicePage.page, {
-      recipientEmail: bob.email,
-      note: `sharing my agent ${ts}`,
-      title: convTitle,
+    const marked = await jsonApi(alice.apiUrl, `/graph/agent/${agentId}`, 'PUT', {
+      remote: true,
+      origin: publishedOrigin(),
     });
-    convId = await conversationIdByTitle(alice, convTitle);
-    expect(convId).toBeTruthy();
-  });
+    expect(marked?.status, JSON.stringify(marked)).toBe('SUCCESS');
 
-  it('3 receive — bob syncs the assignment; the shared agent materializes on his backend', async () => {
-    await openAssignedConversationInUI(bobPage, convId);
-    await mapConversationToProject(bobPage, convId);
-
-    // Verified live (no chip click / staged-review round-trip needed here): once
-    // the conversation is mapped to a project, a direct one-recipient share's
-    // attached asset downloads and installs on its own.
-    let resp: Response | null = null;
-    const deadline = Date.now() + 22_000;
-    while (Date.now() < deadline) {
-      resp = await fetch(`${bob.apiUrl}/api/v1/graph/agent/${agentId}`);
-      if (resp.status === 200) break;
-      await bobPage.page.waitForTimeout(500);
-    }
-    expect(resp?.status).toBe(200);
-  });
-
-  it('4 allow — bob\'s own backend now serves the agent, and his editor opens it', async () => {
-    const resp = await fetch(`${bob.apiUrl}/api/v1/graph/agent/${agentId}`);
-    expect(resp.status).toBe(200);
-    const body = await resp.json();
-    expect(body?.data?.id).toBe(agentId);
-    expect(body?.data?.name).toBe(agentName);
-
-    // Retry, for real, through the UI: the SAME URL that had nothing to show
-    // bob in step 1 now mounts his own copy of the agent editor.
-    await bobPage.page.goto(
-      `${bobPage.feUrl}/dock/assets/editor/agent/typeid/agent-${agentId}?viewMode=advanced`,
-      { waitUntil: 'domcontentloaded' },
+    // The panel gates Share on this exact read.
+    await pollUntil(
+      async () => (await jsonApi(alice.apiUrl, `/graph/agent/${agentId}/version`))?.data?.published === true,
+      10_000,
+      'local agent reads as published',
     );
-    await bobPage.page
-      .locator('[data-testid="agent-definition-fields"]')
-      .first()
-      .waitFor({ state: 'attached', timeout: 15_000 });
+  });
+
+  it('1 deny — bob cannot read the agent on the hub', async () => {
+    const { status } = await bobHubRead();
+    expect([403, 404]).toContain(status);
+  });
+
+  it("2 share — alice invites bob from the agent panel's Share button", async () => {
+    const { page, feUrl } = alicePage;
+    await page.goto(`${feUrl}/dock/assets/editor/agent/typeid/agent-${agentId}?viewMode=advanced`, {
+      waitUntil: 'domcontentloaded',
+    });
+    const share = page.getByTestId('agent-share-with-people');
+    await share.waitFor({ state: 'visible', timeout: 20_000 });
+    await expect.poll(() => share.isEnabled(), { timeout: 15_000 }).toBe(true);
+    await share.click();
+
+    const dialog = page.getByTestId('share-agent-dialog');
+    await dialog.waitFor({ state: 'visible', timeout: 10_000 });
+    // The testid is on the picker's <input>. The dialog's open animation and focus
+    // trap swallow early keystrokes — click, settle, type, verify the value landed.
+    const contact = dialog.getByTestId('share-agent-input');
+    await contact.click();
+    await page.waitForTimeout(500);
+    await contact.pressSequentially(bob.email, { delay: 15 });
+    if ((await contact.inputValue()) !== bob.email) await contact.fill(bob.email);
+    await contact.press('Enter');
+
+    await dialog.getByTestId('share-agent-submit').click();
+    // The dialog closes only when every address was granted; a failure stays open and names it.
+    await dialog.waitFor({ state: 'detached', timeout: 25_000 }).catch(async () => {
+      const alert = await dialog.getByRole('alert').textContent().catch(() => '');
+      throw new Error(`share dialog did not close: ${alert || '(no error shown)'}`);
+    });
+  });
+
+  it('3 allow — bob reads the same agent on the hub, as reader', async () => {
+    const seen = await pollUntil(async () => {
+      const read = await bobHubRead();
+      return read.status === 200 ? read : null;
+    }, 15_000, 'bob can read the agent on the hub');
+    expect(seen.roles).toContain('reader');
   });
 });
