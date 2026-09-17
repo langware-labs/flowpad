@@ -94,8 +94,12 @@ msgstr "\"{0}\" חורג מ-{MAX_FILE_SIZE_LABEL} ולא צורף."
 
 #. placeholder {0}: deleting?.name || deleting?.provider || ''
 #: src/components/data-sources/use-source-delete.ts
-msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
-msgstr "\"{0}\" יוסר יחד עם הזרמים שלו וכל רשומה שנקלטה בו. לא ניתן לבטל פעולה זו."
+msgid "\"{0}\" will be removed along with every record it ingested. This cannot be undone."
+msgstr ""
+
+#: src/components/data-sources/use-source-delete.ts
+#~ msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
+#~ msgstr "\"{0}\" יוסר יחד עם הזרמים שלו וכל רשומה שנקלטה בו. לא ניתן לבטל פעולה זו."
 
 #. placeholder {0}: deleting?.name ?? ''
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
@@ -213,10 +217,9 @@ msgstr ""
 msgid "{0, plural, one {# person} other {# people}}"
 msgstr ""
 
-#. placeholder {0}: source.segment_count
 #: src/components/data-sources/DataSourceRow.tsx
-msgid "{0, plural, one {# stream} other {# streams}}"
-msgstr "{0, plural, one {# זרם} other {# זרמים}}"
+#~ msgid "{0, plural, one {# stream} other {# streams}}"
+#~ msgstr "{0, plural, one {# זרם} other {# זרמים}}"
 
 #. placeholder {0}: teams.length
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -1114,8 +1117,12 @@ msgid "a server someone else hosts"
 msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
-msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
-msgstr "מקור הוא חשבון מרחוק אחד או קבוצת הזנות אחת. הסנכרון מתבצע בכל דופק."
+#~ msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+#~ msgstr "מקור הוא חשבון מרחוק אחד או קבוצת הזנות אחת. הסנכרון מתבצע בכל דופק."
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "about"
@@ -2652,6 +2659,10 @@ msgstr "הפעלה אוטומטית של כל שרתי ה-MCP ברמת הפרו�
 
 #: src/agents/agent-auto-launch-warning.ts
 msgid "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
+msgstr ""
+
+#: src/agents/agent-auto-launch-warning.ts
+msgid "Auto-launch failed: {reason}. Open the project again to retry."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -5841,8 +5852,8 @@ msgid "Data privacy mode"
 msgstr "מצב פרטיות הנתונים"
 
 #: src/i18n/type-labels.ts
-msgid "Data Source Cursor"
-msgstr "סמן מקור נתונים"
+#~ msgid "Data Source Cursor"
+#~ msgstr "סמן מקור נתונים"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -6998,10 +7009,13 @@ msgid "Drop items here"
 msgstr "ניתן לשחרר פריטים כאן"
 
 #. placeholder {0}: result.removed
-#. placeholder {1}: result.streams
 #: src/components/data-sources/ReplayDialog.tsx
-msgid "Dropped {0} records across {1} streams"
-msgstr "הוסרו {0} רשומות ב-{1} זרמים"
+msgid "Dropped {0} records"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+#~ msgid "Dropped {0} records across {1} streams"
+#~ msgstr "הוסרו {0} רשומות ב-{1} זרמים"
 
 #. placeholder {0}: result.removed
 #: src/components/data-sources/ReplayDialog.tsx
@@ -13084,8 +13098,8 @@ msgid "No spec specified."
 msgstr "לא צוין spec."
 
 #: src/components/data-sources/SourceStreams.tsx
-msgid "No streams yet — this source has not polled."
-msgstr "אין זרימות עדיין — מקור זה טרם ביצע סריקה."
+#~ msgid "No streams yet — this source has not polled."
+#~ msgstr "אין זרימות עדיין — מקור זה טרם ביצע סריקה."
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "No sub-teams yet."
@@ -19191,8 +19205,8 @@ msgid "Streaming must be allow, require or deny."
 msgstr ""
 
 #: src/components/data-sources/DataSourcesView.tsx
-msgid "Streams"
-msgstr "זרמים"
+#~ msgid "Streams"
+#~ msgstr "זרמים"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Structure"
@@ -19660,6 +19674,10 @@ msgstr ""
 #: src/hooks/useContextProcess.ts
 msgid "That project has no local workdir"
 msgstr "לפרויקט זה אין ספריית עבודה מקומית"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "That project is no longer available."
+msgstr ""
 
 #: src/components/assets/editor/skill/skill-eval-analysis.ts
 msgid "The \"{attachSkillName}\" skill is not installed."
@@ -20414,6 +20432,10 @@ msgstr "כתובת ה-URL של כרטיסיית הפרויקט אינה תקינ
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "this project uses"
+msgstr ""
+
+#: src/agents/agent-auto-launch-warning.ts
+msgid "This project's agent could not start"
 msgstr ""
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx

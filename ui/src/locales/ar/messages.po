@@ -94,8 +94,12 @@ msgstr "\"{0}\" يتجاوز {MAX_FILE_SIZE_LABEL} ولم يُرفَق."
 
 #. placeholder {0}: deleting?.name || deleting?.provider || ''
 #: src/components/data-sources/use-source-delete.ts
-msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
-msgstr "سيتم حذف \"{0}\" مع تدفقاته وكل السجلات التي استقبلها. لا يمكن التراجع عن هذا الإجراء."
+msgid "\"{0}\" will be removed along with every record it ingested. This cannot be undone."
+msgstr ""
+
+#: src/components/data-sources/use-source-delete.ts
+#~ msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
+#~ msgstr "سيتم حذف \"{0}\" مع تدفقاته وكل السجلات التي استقبلها. لا يمكن التراجع عن هذا الإجراء."
 
 #. placeholder {0}: deleting?.name ?? ''
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
@@ -213,10 +217,9 @@ msgstr ""
 msgid "{0, plural, one {# person} other {# people}}"
 msgstr ""
 
-#. placeholder {0}: source.segment_count
 #: src/components/data-sources/DataSourceRow.tsx
-msgid "{0, plural, one {# stream} other {# streams}}"
-msgstr "{0, plural, one {# تدفق} other {# تدفقات}}"
+#~ msgid "{0, plural, one {# stream} other {# streams}}"
+#~ msgstr "{0, plural, one {# تدفق} other {# تدفقات}}"
 
 #. placeholder {0}: teams.length
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -1114,8 +1117,12 @@ msgid "a server someone else hosts"
 msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
-msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
-msgstr "المصدر هو حساب بعيد واحد أو مجموعة موجزات. تقوم آلية المسح بمزامنته مع كل نبضة."
+#~ msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+#~ msgstr "المصدر هو حساب بعيد واحد أو مجموعة موجزات. تقوم آلية المسح بمزامنته مع كل نبضة."
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "about"
@@ -2652,6 +2659,10 @@ msgstr "تفعيل جميع خوادم MCP على مستوى المشروع تل
 
 #: src/agents/agent-auto-launch-warning.ts
 msgid "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
+msgstr ""
+
+#: src/agents/agent-auto-launch-warning.ts
+msgid "Auto-launch failed: {reason}. Open the project again to retry."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -5841,8 +5852,8 @@ msgid "Data privacy mode"
 msgstr "وضع خصوصية البيانات"
 
 #: src/i18n/type-labels.ts
-msgid "Data Source Cursor"
-msgstr "مؤشر مصدر البيانات"
+#~ msgid "Data Source Cursor"
+#~ msgstr "مؤشر مصدر البيانات"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -6998,10 +7009,13 @@ msgid "Drop items here"
 msgstr "إفلات العناصر هنا"
 
 #. placeholder {0}: result.removed
-#. placeholder {1}: result.streams
 #: src/components/data-sources/ReplayDialog.tsx
-msgid "Dropped {0} records across {1} streams"
-msgstr "تم حذف {0} سجل عبر {1} تدفق"
+msgid "Dropped {0} records"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+#~ msgid "Dropped {0} records across {1} streams"
+#~ msgstr "تم حذف {0} سجل عبر {1} تدفق"
 
 #. placeholder {0}: result.removed
 #: src/components/data-sources/ReplayDialog.tsx
@@ -13084,8 +13098,8 @@ msgid "No spec specified."
 msgstr "لم يتم تحديد المواصفات."
 
 #: src/components/data-sources/SourceStreams.tsx
-msgid "No streams yet — this source has not polled."
-msgstr "لا توجد تدفقات بعد — لم يتم استطلاع هذا المصدر بعد."
+#~ msgid "No streams yet — this source has not polled."
+#~ msgstr "لا توجد تدفقات بعد — لم يتم استطلاع هذا المصدر بعد."
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "No sub-teams yet."
@@ -19191,8 +19205,8 @@ msgid "Streaming must be allow, require or deny."
 msgstr ""
 
 #: src/components/data-sources/DataSourcesView.tsx
-msgid "Streams"
-msgstr "التدفقات"
+#~ msgid "Streams"
+#~ msgstr "التدفقات"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Structure"
@@ -19660,6 +19674,10 @@ msgstr ""
 #: src/hooks/useContextProcess.ts
 msgid "That project has no local workdir"
 msgstr "هذا المشروع ليس له مجلد عمل محلي"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "That project is no longer available."
+msgstr ""
 
 #: src/components/assets/editor/skill/skill-eval-analysis.ts
 msgid "The \"{attachSkillName}\" skill is not installed."
@@ -20414,6 +20432,10 @@ msgstr "عنوان URL لعلامة تبويب المشروع غير صالح."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "this project uses"
+msgstr ""
+
+#: src/agents/agent-auto-launch-warning.ts
+msgid "This project's agent could not start"
 msgstr ""
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
