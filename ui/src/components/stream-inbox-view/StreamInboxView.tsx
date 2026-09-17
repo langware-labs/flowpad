@@ -135,7 +135,7 @@ interface ConversationListRowProps {
   /** Set while the list is narrowed to some channels: does this message's source pass? */
   channelMatch?: (message: FlowMessage) => boolean;
   /** The list resolves attribution once and hands each row its answer. */
-  attributionFor: (origin: FlowMessage['origin']) => ChannelAttribution | null;
+  attributionFor: (origin: FlowMessage['origin'], channelSpec?: Conversation['channel_spec']) => ChannelAttribution | null;
   refSetter: (el: HTMLDivElement | null) => void;
   agentId?: string;
 }
@@ -199,7 +199,7 @@ export function ConversationListRow({
     invitation,
     viewer: { email: myEmail, cloudUserId, localUserId: currentUser?.id ?? null },
   });
-  const attribution = attributionFor(latestMessage?.origin);
+  const attribution = attributionFor(latestMessage?.origin, conv.channel_spec);
   // Alias kept so the existing invitation-row rendering reads cleanly below.
   const isInvitationRow = facets.isInvitation;
 
@@ -466,7 +466,10 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
   const channelsOwner = useMemo(() => channelsOwnerFor(agentId, localUserId), [agentId, localUserId]);
   const { rows: ownerChannels, specFor } = useAttachedChannels(channelsOwner);
   const { attributionFor: attributionForOrigin } = useChannelAttribution();
-  const attributionFor = useCallback((origin: FlowMessage['origin']) => attributionForOrigin(origin), [attributionForOrigin]);
+  const attributionFor = useCallback(
+    (origin: FlowMessage['origin'], channelSpec?: Conversation['channel_spec']) => attributionForOrigin(origin, null, channelSpec),
+    [attributionForOrigin],
+  );
   const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
   const channelMatch = useMemo(
     () =>

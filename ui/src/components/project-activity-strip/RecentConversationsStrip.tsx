@@ -426,6 +426,7 @@ interface ConversationRowProps {
   attributionFor: (
     origin: FlowMessage['origin'],
     originLocal?: FlowMessage['origin_local'],
+    channelSpec?: Conversation['channel_spec'],
   ) => ChannelAttribution | null;
   acceptingId: string | null;
   dismissingId: string | null;
@@ -494,9 +495,9 @@ function ConversationRow({
   const isInvitationRow = facets.isInvitation;
 
   // The row's channel glyph, resolved off the LATEST message's origin — the
-  // same signal the main stream inbox row uses. Hub-native rows resolve to null and
-  // render nothing: absence means "ours".
-  const attribution = attributionFor(latestMessage?.origin, latestMessage?.origin_local);
+  // same signal the main stream inbox row uses — and suppressed when the
+  // conversation's channel declares no chip (Flowpad's own chat).
+  const attribution = attributionFor(latestMessage?.origin, latestMessage?.origin_local, conv.channel_spec);
 
   // ``dismissed_at`` is a strip-only "Hide from Recent" (EyeOff) flag — NOT part
   // of the shared category, so it stays local. Same auto-revive pattern: compare

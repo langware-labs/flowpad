@@ -360,7 +360,8 @@ def test_the_two_egress_seams_now_agree():
             # `channel_source_id`: the local DataSource behind a source-backed
             # conversation — a row id in OUR database.
             # `is_unread`: this viewer's unread, projected by `stream_inbox.recompute_unread`.
-            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread"],
+            # `channel_spec`: the channel's traits, derived locally from `channel` — never travels.
+            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "channel_spec"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.

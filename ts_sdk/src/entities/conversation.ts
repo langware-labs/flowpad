@@ -1,6 +1,7 @@
 import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import type { IChannelSpec } from '../models/ChannelSpec';
 import { DockPointerData } from '../models/DockPointer';
 import { ConnectionManager, DataOp } from '../websocket';
 import { Callable } from '../types';
@@ -130,9 +131,12 @@ export interface IConversation extends IEntity {
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
-  /** The channel a source-backed conversation replies through (``gmail``,
-   *  ``slack``); stamped by the stream inbox projection. Null = a Flowpad conversation. */
+  /** The channel this conversation replies through: ``flowpad`` (Flowpad's own chat) or a
+   *  data source channel (``gmail``, ``slack``, ``helpdesk``). Test ``channel_spec``, never this. */
   channel?: string | null;
+  /** The channel's traits (chip, transport, attachments), computed by the backend. Absent on a
+   *  hub runtime, which has no such projection. */
+  channel_spec?: IChannelSpec | null;
   /** The local DataSource feeding this conversation; never leaves the machine. */
   channel_source_id?: string | null;
   /** Hub role roster — inherited from the Entity base as ``members``. The wire
@@ -184,6 +188,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   message_count?: number;
   message_ids?: string | null;
   channel?: string | null;
+  channel_spec?: IChannelSpec | null;
   channel_source_id?: string | null;
   // ``members`` (the hub role roster) is inherited from the Entity base.
   title?: string | null;
@@ -204,6 +209,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
     this.channel = entity.channel ?? null;
+    this.channel_spec = entity.channel_spec ?? null;
     this.channel_source_id = entity.channel_source_id ?? null;
     this.title = entity.title;
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
