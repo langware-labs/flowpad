@@ -354,7 +354,6 @@ async def conversation_send_external() -> ApiResponse:
         return ApiFailResponse(message="send_external: an empty message is not a reply")
 
     agent_id = str((body or {}).get("agent_id") or "").strip()
-    source_id = None
     if agent_id:
         from flow_sdk.stream_inbox.agent_scope import (  # noqa: PLC0415
             AgentStreamInboxScopeError,
@@ -366,12 +365,11 @@ async def conversation_send_external() -> ApiResponse:
             scope.require_conversation(request_info.target_entity_typeid.id)
         except AgentStreamInboxScopeError as exc:
             return ApiFailResponse(message=str(exc), status_code=exc.status_code)
-        if scope.source_id is None:
+        if not scope.source_ids:
             return ApiFailResponse(message="Agent stream inbox has no message source", status_code=404)
-        source_id = scope.source_id
 
-    return await dispatch_channel_reply(
-        request_info.target_entity_typeid.id,
-        text=text,
-        source_id=source_id,
-    )
+    # The source is the conversation's own — the one its messages arrived through — never the
+    # agent's "first" source: an agent with a mailbox AND a channel answers each on its channel.
+    # The scope check above is what makes an agent's send legitimate: a conversation in the
+    # agent's stream inbox came through a source the agent owns.
+    return await dispatch_channel_reply(request_info.target_entity_typeid.id, text=text)
