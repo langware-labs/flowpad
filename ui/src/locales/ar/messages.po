@@ -16227,7 +16227,7 @@ msgstr ""
 msgid "Reply awaiting your review"
 msgstr ""
 
-#. placeholder {0}: channelLabel(channel)
+#. placeholder {0}: channelSpec.title
 #: src/components/conversation/ConversationView.tsx
 msgid "Reply in {0}"
 msgstr "الرد في {0}"
@@ -17664,7 +17664,7 @@ msgstr "إرسال الرسالة"
 msgid "Send one minimal call through this endpoint"
 msgstr ""
 
-#. placeholder {0}: channelLabel(channel)
+#. placeholder {0}: channelSpec?.title ?? channelLabel(channel)
 #: src/components/conversation/ConversationView.tsx
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "جارٍ الإرسال في {0}: \"{sendingText}\""
