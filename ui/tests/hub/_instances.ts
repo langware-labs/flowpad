@@ -58,23 +58,6 @@ function normalizeUrl(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\/$/, '') : '';
 }
 
-/**
- * `instance_ctl.sh` computes `REPO_ROOT` via bash `pwd` and writes it verbatim
- * into `launcher.json`'s `env_file`. Under Git Bash on Windows that is an MSYS
- * path (`/c/Users/...`), which `path.resolve` does not understand — it treats
- * the leading `/` as "root of the current drive" and produces `C:\c\Users\...`,
- * so the identity check below always failed closed on Windows. Rewrite a
- * single-letter-drive MSYS path to its native form first; every other OS's
- * `pwd` output already starts with a real `/`, so this is a no-op there.
- */
-function resolveNativePath(value: string): string {
-  const msys = /^\/([A-Za-z])\/(.*)$/.exec(value);
-  if (process.platform === 'win32' && msys) {
-    return path.resolve(`${msys[1].toUpperCase()}:/${msys[2]}`);
-  }
-  return path.resolve(value);
-}
-
 function pidIsLive(value: unknown): boolean {
   const pid = Number(value);
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -130,7 +113,7 @@ export function resolveLaunchedInstance(name: string): LaunchedInstance | null {
   }
 
   const expectedEnvFile = path.join(WORKTREE_ROOT, `.env.${name}.local`);
-  const launcherEnvFile = typeof launcher.env_file === 'string' ? resolveNativePath(launcher.env_file) : '';
+  const launcherEnvFile = typeof launcher.env_file === 'string' ? path.resolve(launcher.env_file) : '';
   if (
     launcher.name !== name ||
     Number(launcher.backend_port) !== Number(backendPort) ||
