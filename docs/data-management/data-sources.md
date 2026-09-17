@@ -161,7 +161,7 @@ query narrowed, the position untouched). `sync()` is the same loop with
 verbs: a page is always one source's and acks that source's cursor, `items(**narrow)`
 interleaves by event time, `reply(item, body=…)` goes back through the source whose scope owns
 the item's origin; nothing is stored and there is no `send`. On the ingested side the same
-shape is `StreamInbox.pages(size=…)` and `blocks.pages(*inboxes)` over `ConsumerPosition`s.
+shape is `StreamInbox.pages(size=…)` and `blocks.pages(*stream_inboxes)` over `ConsumerPosition`s.
 
 ### Traits
 

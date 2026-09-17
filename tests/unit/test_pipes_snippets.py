@@ -189,7 +189,7 @@ async def test_snippet_6_keep_a_search_index_level(tmp_path, monkeypatch):
 
 
 async def test_snippet_7_pages_fifty_at_a_time(monkeypatch):
-    """Two inboxes on one loop, a page at a time: the first ack commits a whole page of one source."""
+    """Two stream inboxes on one loop, a page at a time: the first ack commits a whole page of one source."""
     from flow_sdk.builtin.consumer_position import ConsumerPosition
     from tests.utils.fake_source import scripted_provider
     from tests.utils.snippets import fence_under, run_fence_until
@@ -201,5 +201,7 @@ async def test_snippet_7_pages_fifty_at_a_time(monkeypatch):
             fence_under(_pipes_doc("pipes.md"), "7."), {"KEY": "k"}, acked, filename="pipes.md §7"
         )
     assert len(ns["digest"]) == 50, "the first page is 50 deliveries"
+    # The fence is cancelled on the first ack; the other source's page may or may not have been
+    # acked by then. Whatever was: one page is one write on ITS source's position.
     positions = [p for p in await ConsumerPosition.get_all({}) if p.consumer.startswith("digest-") and p.acked_count]
-    assert len(positions) == 1 and positions[0].acked_count == 1, "one page, one write, one source's position"
+    assert 1 <= len(positions) <= 2 and {p.acked_count for p in positions} == {1}, "one page, one write, one source's position"

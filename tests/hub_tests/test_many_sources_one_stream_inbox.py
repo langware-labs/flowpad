@@ -2,7 +2,7 @@
 through the hub, alice/bob style.
 
 Identities: THIS instance (alice, ``hub_session``) owns the sources. Bob (``bob_token``) opens
-tickets over raw hub HTTP, the way a requester's app would. ``blocks.pages(*inboxes)`` delivers
+tickets over raw hub HTTP, the way a requester's app would. ``blocks.pages(*stream_inboxes)`` delivers
 them a page per source; each projected ``FlowMessage`` names its own source; a page's ack moves
 only its own position; a reply through each delivery lands back on the hub for bob.
 
@@ -105,13 +105,13 @@ async def test_two_desks_one_loop_attribution_resolves_by_source(hub_session, bo
         ticket_b = await _open_ticket(base, bob_token, desk_b, f"invoice question {ts}")
         bob = str((await _hub_messages(base, hub_session["api_key"], ticket_a))[0]["sender_id"])
 
-        inbox_a, inbox_b = StreamInbox(desk_a, provider="helpdesk"), StreamInbox(desk_b, provider="helpdesk")
+        box_a, box_b = StreamInbox(desk_a, provider="helpdesk"), StreamInbox(desk_b, provider="helpdesk")
         name = f"two-desks-{mint_uuid()}"
         sources: list[DataSource] = []
         try:
             async with workflow(name):
-                got = await _take(pages(inbox_a, inbox_b, size=50, poll_every=0), 2)
-                source_a, source_b = await inbox_a.ensure_source(), await inbox_b.ensure_source()
+                got = await _take(pages(box_a, box_b, size=50, poll_every=0), 2)
+                source_a, source_b = await box_a.ensure_source(), await box_b.ensure_source()
                 sources = [source_a, source_b]
                 by_source = {page.source_id: page for page in got}
                 assert set(by_source) == {str(source_a.id), str(source_b.id)}, "one page per source"
@@ -185,12 +185,12 @@ async def test_a_desk_and_a_mailbox_one_loop_attribution_resolves_by_channel_and
             ticket = await _open_ticket(base, bob_token, desk, f"printer is broken {ts}")
             await driver.send(mailbox["outsider_id"], {"to": mailbox["agent_address"], "subject": "Ping", "text": f"invoice question {ts}"})
 
-            desk_inbox = StreamInbox(desk, provider="helpdesk")
-            mail_inbox = StreamInbox(mailbox["agent_id"], provider="cloud_email", owner=agent, address=mailbox["agent_address"])
+            desk_box = StreamInbox(desk, provider="helpdesk")
+            mail_box = StreamInbox(mailbox["agent_id"], provider="cloud_email", owner=agent, address=mailbox["agent_address"])
             name = f"desk-and-mail-{mint_uuid()}"
             async with workflow(name):
-                got = await _take(pages(desk_inbox, mail_inbox, size=50, poll_every=0), 2)
-                desk_source, mail_source = await desk_inbox.ensure_source(), await mail_inbox.ensure_source()
+                got = await _take(pages(desk_box, mail_box, size=50, poll_every=0), 2)
+                desk_source, mail_source = await desk_box.ensure_source(), await mail_box.ensure_source()
                 sources = [desk_source, mail_source]
                 by_source = {page.source_id: page for page in got}
                 assert set(by_source) == {str(desk_source.id), str(mail_source.id)}
