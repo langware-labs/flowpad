@@ -41,7 +41,7 @@ import {
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
-import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
+import { EntityBatchHydrator, useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
@@ -584,23 +584,10 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
   // calls then hit ``getByTypeIdFromCache`` and issue no network at all. The
   // single ``watchQuery`` subscription replaces the would-be per-row watches.
   const flowMessageIds = useMemo(() => conversationRowMessageIds(sorted), [sorted]);
-  const flowMessageBatchRequest = useMemo(
-    () =>
-      new QueryRequest({
-        type: FlowMessage.type,
-        query: { match: { op: '$IN', operands: ['id', flowMessageIds] } },
-        name: 'inbox row hydration',
-      }),
-    [flowMessageIds],
-  );
-  // The warming query is fire-and-forget for the rows, but we also read its
-  // result here to discover which first-messages carry an invitation context —
-  // those ids drive a SECOND batch ``$IN`` so the per-row
-  // ``useEntity<Invitation>`` also resolves from cache instead of one GET each.
-  const { data: batchedMessages = [] } = useEntitiesQuery<FlowMessage>(
-    flowMessageBatchRequest,
-    { enabled: flowMessageIds.length > 0 },
-  );
+  // The same batch also yields the messages here, to discover which first-messages
+  // carry an invitation context — those ids drive a SECOND batch ``$IN`` so the
+  // per-row ``useEntity<Invitation>`` also resolves from cache instead of one GET each.
+  const batchedMessages = useEntityBatch<FlowMessage>(FlowMessage.type, flowMessageIds);
   const invitationIds = useMemo(() => {
     const ids = new Set<string>();
     for (const msg of batchedMessages) {
@@ -1225,7 +1212,6 @@ export function InboxView({ agentId }: { agentId?: string } = {}) {
 
         {/* Start the row batches in the layout phase so the rows' own reads wait
             for them instead of each firing a GET (see EntityBatchHydrator). */}
-        <EntityBatchHydrator type={FlowMessage.type} ids={flowMessageIds} />
         <EntityBatchHydrator type={Invitation.type} ids={invitationIds} />
         {
           !initialLoading &&
