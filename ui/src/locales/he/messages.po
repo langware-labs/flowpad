@@ -17689,7 +17689,7 @@ msgstr "שלח הודעה"
 msgid "Send one minimal call through this endpoint"
 msgstr ""
 
-#. placeholder {0}: channelSpec?.title ?? channelLabel(channel)
+#. placeholder {0}: channelSpec?.title
 #: src/components/conversation/ConversationView.tsx
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "שולח ב{0}: \"{sendingText}\""
