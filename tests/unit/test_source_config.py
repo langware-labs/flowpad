@@ -6,6 +6,7 @@ from typing import Annotated, Optional
 import pytest
 from pydantic import Field, SecretStr, StringConstraints, ValidationError
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import DriverLoadError, check_config
 from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
 from flow_sdk.sources.base import Source
@@ -92,8 +93,6 @@ def test_a_secret_in_a_config_is_refused_by_type_and_by_auth_name():
 
 
 def test_a_driver_creates_its_config_and_a_source_from_it():
-    from flow_sdk.builtin.data_driver import DataDriver
-
     driver = DataDriver.for_class(_Source)
     config = driver.create_config(urls=["http://a"], min_score="3")
     assert isinstance(config, _Config) and config.min_score == 3

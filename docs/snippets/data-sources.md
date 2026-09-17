@@ -76,8 +76,7 @@ from flow_sdk.builtin.data_source import DataSource
 
 existing = await DataSource.find_for_account("agentmail", "inbox", "me@agentmail.to")
 driver = await DataDriver.get("agentmail")
-config = driver.create_config(inbox="me@agentmail.to")  # the driver's Config, validated
-src = existing or driver.create_source(config, name="agentmail me@agentmail.to")
+src = existing or driver.create_source(driver.create_config(inbox="me@agentmail.to"), name="agentmail me@agentmail.to")
 await src.save()  # the API key is the machine secret ingest_api.agentmail, never config
 ```
 

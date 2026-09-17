@@ -162,6 +162,13 @@ class DataDriver(DriverRuntime, Entity):
         driver = self._loaded()
         return getattr(driver.cls, "Config", None) if driver is not None else None
 
+    def create_config(self, **fields) -> SourceConfig:
+        """This driver's config, typed and validated (``Config.validated``): a ``ValueError`` names the
+        field at fault. Optional before ``create_source``, which also takes a plain dict."""
+        if self.config_cls is None:
+            raise TypeError(f"the {self.name} driver declares no Config")
+        return self.config_cls.validated(fields)
+
     def coerce_config(self, config: dict) -> dict:
         """A config as a person typed it, shaped by the ``Config``: what validates replaces what was typed."""
         return {**config, **self.config_cls.draft(config)} if self.config_cls is not None else dict(config)

@@ -45,7 +45,7 @@ def feed_server():
         yield url
 
 
-async def _section(heading: str, ns: dict, *, nth: int = 0) -> dict:
+async def _section(heading: str, ns: dict | None = None, *, nth: int = 0) -> dict:
     return await run_fence(fence_under(doc(DOC), heading, nth=nth), ns, filename=f"{DOC} § {heading}")
 
 
@@ -60,9 +60,9 @@ async def test_1_connect_a_feed_and_sync_it_once(feed_server):
 
 
 async def test_2_reuse_instead_of_duplicate():
-    ns = await _section("2.", {})
+    ns = await _section("2.")
     first = ns["src"]
-    ns = await _section("2.", {})
+    ns = await _section("2.")
     assert ns["src"].id == first.id, "the second run must find the row, not mint a twin"
 
 

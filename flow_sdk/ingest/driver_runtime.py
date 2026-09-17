@@ -383,20 +383,6 @@ class DriverRuntime:
         return EmailMessageSpec
 
     # ── instances ───────────────────────────────────────────────────────────
-    def create_config(self, **fields: Any) -> SourceConfig:
-        """This driver's config, typed and validated: its ``Config`` built from ``fields``. Raises
-        ``ValueError`` naming the first field at fault (``config.feed_urls is not valid: ftp://x``)."""
-        from pydantic import ValidationError  # noqa: PLC0415
-
-        from flow_sdk.sources.config import config_error  # noqa: PLC0415
-
-        if self.cls.Config is None:
-            raise TypeError(f"the {self.provider} driver declares no Config")
-        try:
-            return self.cls.Config(**fields)
-        except ValidationError as exc:
-            raise ValueError(config_error(exc)) from None
-
     def create_source(self, config: "SourceConfig | dict | None" = None, *, name: str, **authored: Any) -> "DataSource":
         """A configured instance of this driver, in memory: nothing is written until ``save()``.
 
