@@ -94,8 +94,12 @@ msgstr "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 
 #. placeholder {0}: deleting?.name || deleting?.provider || ''
 #: src/components/data-sources/use-source-delete.ts
-msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
-msgstr "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
+msgid "\"{0}\" will be removed along with every record it ingested. This cannot be undone."
+msgstr "\"{0}\" will be removed along with every record it ingested. This cannot be undone."
+
+#: src/components/data-sources/use-source-delete.ts
+#~ msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
+#~ msgstr "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
 
 #. placeholder {0}: deleting?.name ?? ''
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
@@ -213,10 +217,9 @@ msgstr "{0, plural, one {# person on this team has no email address, so they can
 msgid "{0, plural, one {# person} other {# people}}"
 msgstr "{0, plural, one {# person} other {# people}}"
 
-#. placeholder {0}: source.segment_count
 #: src/components/data-sources/DataSourceRow.tsx
-msgid "{0, plural, one {# stream} other {# streams}}"
-msgstr "{0, plural, one {# stream} other {# streams}}"
+#~ msgid "{0, plural, one {# stream} other {# streams}}"
+#~ msgstr "{0, plural, one {# stream} other {# streams}}"
 
 #. placeholder {0}: teams.length
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -1114,8 +1117,12 @@ msgid "a server someone else hosts"
 msgstr "a server someone else hosts"
 
 #: src/components/data-sources/DataSourceDialog.tsx
-msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
-msgstr "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+#~ msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+#~ msgstr "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+msgstr "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "about"
@@ -2653,6 +2660,10 @@ msgstr "Auto-enable all project-level MCP servers"
 #: src/agents/agent-auto-launch-warning.ts
 msgid "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
 msgstr "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
+
+#: src/agents/agent-auto-launch-warning.ts
+msgid "Auto-launch failed: {reason}. Open the project again to retry."
+msgstr "Auto-launch failed: {reason}. Open the project again to retry."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -5841,8 +5852,8 @@ msgid "Data privacy mode"
 msgstr "Data privacy mode"
 
 #: src/i18n/type-labels.ts
-msgid "Data Source Cursor"
-msgstr "Data Source Cursor"
+#~ msgid "Data Source Cursor"
+#~ msgstr "Data Source Cursor"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -6998,10 +7009,13 @@ msgid "Drop items here"
 msgstr "Drop items here"
 
 #. placeholder {0}: result.removed
-#. placeholder {1}: result.streams
 #: src/components/data-sources/ReplayDialog.tsx
-msgid "Dropped {0} records across {1} streams"
-msgstr "Dropped {0} records across {1} streams"
+msgid "Dropped {0} records"
+msgstr "Dropped {0} records"
+
+#: src/components/data-sources/ReplayDialog.tsx
+#~ msgid "Dropped {0} records across {1} streams"
+#~ msgstr "Dropped {0} records across {1} streams"
 
 #. placeholder {0}: result.removed
 #: src/components/data-sources/ReplayDialog.tsx
@@ -13084,8 +13098,8 @@ msgid "No spec specified."
 msgstr "No spec specified."
 
 #: src/components/data-sources/SourceStreams.tsx
-msgid "No streams yet — this source has not polled."
-msgstr "No streams yet — this source has not polled."
+#~ msgid "No streams yet — this source has not polled."
+#~ msgstr "No streams yet — this source has not polled."
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "No sub-teams yet."
@@ -19191,8 +19205,8 @@ msgid "Streaming must be allow, require or deny."
 msgstr "Streaming must be allow, require or deny."
 
 #: src/components/data-sources/DataSourcesView.tsx
-msgid "Streams"
-msgstr "Streams"
+#~ msgid "Streams"
+#~ msgstr "Streams"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Structure"
@@ -19660,6 +19674,10 @@ msgstr "That looks like an {0} key. This endpoint calls {1}, whose keys start wi
 #: src/hooks/useContextProcess.ts
 msgid "That project has no local workdir"
 msgstr "That project has no local workdir"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "That project is no longer available."
+msgstr "That project is no longer available."
 
 #: src/components/assets/editor/skill/skill-eval-analysis.ts
 msgid "The \"{attachSkillName}\" skill is not installed."
@@ -20415,6 +20433,10 @@ msgstr "This project tab URL is malformed."
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "this project uses"
 msgstr "this project uses"
+
+#: src/agents/agent-auto-launch-warning.ts
+msgid "This project's agent could not start"
+msgstr "This project's agent could not start"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "this project's own desk"
