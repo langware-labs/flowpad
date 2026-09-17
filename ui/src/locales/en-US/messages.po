@@ -3131,6 +3131,10 @@ msgstr "Calls"
 msgid "Can’t find what you need? Send us a question and a person will get back to you."
 msgstr "Can’t find what you need? Send us a question and a person will get back to you."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Can't launch this agent: it doesn't exist, or you don't have access to it."
+msgstr "Can't launch this agent: it doesn't exist, or you don't have access to it."
+
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
 msgstr "Can't open terminal"
@@ -5381,6 +5385,10 @@ msgstr "Couldn't finish preparing your workspace"
 msgid "Couldn't load {0}… ({1}) — opened {fallbackPointer} instead."
 msgstr "Couldn't load {0}… ({1}) — opened {fallbackPointer} instead."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't load this agent."
+msgstr "Couldn't load this agent."
+
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "Couldn’t load transcript"
@@ -5446,6 +5454,11 @@ msgstr "Couldn’t resolve this process."
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
 msgstr "Couldn't set up the project"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't set up the sandbox."
+msgstr "Couldn't set up the sandbox."
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Couldn't start GitHub connection."
@@ -11032,6 +11045,10 @@ msgstr "Loading task context…"
 msgid "Loading tasks..."
 msgstr "Loading tasks..."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Loading the agent…"
+msgstr "Loading the agent…"
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading transcript data..."
 msgstr "Loading transcript data..."
@@ -14804,6 +14821,14 @@ msgstr "Please sign in"
 msgid "Please sign in again to keep using cloud features."
 msgstr "Please sign in again to keep using cloud features."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Please sign in to flowpad to continue with the agent creation process."
+msgstr "Please sign in to flowpad to continue with the agent creation process."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Please sign in to start the agent {agentName}…"
+msgstr "Please sign in to start the agent {agentName}…"
+
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
 msgstr "Please try again."
@@ -17901,6 +17926,10 @@ msgstr "Set values"
 #~ msgid "Set{0}"
 #~ msgstr "Set{0}"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Setting up your {agentName} on a new sandbox…"
+msgstr "Setting up your {agentName} on a new sandbox…"
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Setting up your project…"
 msgstr "Setting up your project…"
@@ -18292,6 +18321,7 @@ msgstr "Sigma graph view"
 msgid "Sign in"
 msgstr "Sign in"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Sign In"
 msgstr "Sign In"
@@ -18400,6 +18430,7 @@ msgstr "Sign-in not confirmed"
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "Signed in"
@@ -19950,6 +19981,10 @@ msgstr "This action cannot be undone."
 msgid "This agent"
 msgstr "This agent"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+#~ msgid "This agent doesn't exist, or you don't have access to it."
+#~ msgstr "This agent doesn't exist, or you don't have access to it."
+
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "This agent has no email address yet."
 #~ msgstr "This agent has no email address yet."
@@ -19958,6 +19993,10 @@ msgstr "This agent"
 #: src/routes/loaders/load-agent-inbox.ts
 msgid "This Agent inbox URL is malformed."
 msgstr "This Agent inbox URL is malformed."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "This agent isn't published from a git repository, so there's nothing to launch."
+msgstr "This agent isn't published from a git repository, so there's nothing to launch."
 
 #: src/routes/loaders/load-agent-inbox.ts
 msgid "This Agent no longer exists."
@@ -20120,6 +20159,10 @@ msgstr "This link does not point at a sandbox."
 msgid "This link doesn't name a repository we can launch."
 msgstr "This link doesn't name a repository we can launch."
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link doesn't point at an agent."
+msgstr "This link doesn't point at an agent."
+
 #: src/navigation/NavigationActions.ts
 msgid "This link has no available viewer"
 msgstr "This link has no available viewer"
@@ -20127,6 +20170,10 @@ msgstr "This link has no available viewer"
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
 msgstr "This link is missing the sandbox it should open."
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link names both a repository and an agent. Ask for a link that names just one."
+msgstr "This link names both a repository and an agent. Ask for a link that names just one."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."
@@ -22294,6 +22341,10 @@ msgstr "Your questions"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready."
 msgstr "Your sandbox is ready."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Your session has expired. Sign in again to open this agent."
+msgstr "Your session has expired. Sign in again to open this agent."
 
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "Your teams"
