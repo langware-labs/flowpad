@@ -86,6 +86,8 @@ WebSocket /api/v1/connect/ws/{connection_id}
 
 Multiple browser tabs/windows can attach to the same PTY session simultaneously — each gets its own `connection_id` in the session's `attached_connections` set.
 
+**One WebSocket, one request lane.** The endpoint's receive loop awaits each `rest_api_msg` handler before reading the next frame (`handle_json_message` in `flow_sdk/server/routes/websocket.py`), so every `terminal-command` op a page sends — `input`, `resize`, `attach`, `ping`, across **all** its panes — runs strictly in series. Order is preserved, but latency is shared: a burst on one pane (e.g. one `input` per wheel tick while scrolling a mouse-tracking TUI) delays keystroke echo in every other pane behind it. `ui/tests/api/pty_throughput_bench.test.ts` measures this path through the TS SDK — output throughput + seq/line integrity, keystroke echo latency, and echo under a wheel-report flood on a second pane (opt-in: `PTY_BENCH=1 FLOW_INSTANCE=<name> npx vitest run --project api tests/api/pty_throughput_bench.test.ts`).
+
 #### Connection-membership FSM (backend-owned)
 
 Which connections receive a PTY's output is a **backend** state machine on `PtyState`, driven entirely by the WebSocket lifecycle — the frontend never re-attaches on reconnect. A connection is in exactly one state per `PtyState`:
@@ -732,7 +734,7 @@ JSONL stream: one JSON value per line.
 
 ### 10.3 Rolling truncation — frame boundaries only
 
-When the file exceeds `max_size_bytes` (default 10 MB) it is compacted to 75%
+When the file exceeds `max_size_bytes` (default 30 MB) it is compacted to 75%
 by dropping **whole frames** from the front — never splitting an escape
 sequence mid-byte. The header is rewritten to the winsize in effect at the
 first retained frame (resize frames folded in as they are dropped). A torn
@@ -826,7 +828,7 @@ implementation — see §13.5.
 │ force_repaint() jiggle (both flips)─┘  │   │ visible xterm: reset() → write(serial)  │
 │                                        │   │ write live chunks with seq > lastSeq    │
 │         <pty_pid>.pty (framed JSONL,   │   │ shell.resize(real dims) → TUI repaints  │
-│          10MB rolling, §10)            │   │ subscribe live output                   │
+│          30MB rolling, §10)            │   │ subscribe live output                   │
 └────────────────────────────────────────┘   └─────────────────────────────────────────┘
 ```
 
@@ -904,7 +906,7 @@ content written at width A and reflowed to B equals content written at B.
 | Mechanism | framed-stream replay (§13.1) | kill PTY + respawn `claude --resume <session_id>` |
 | Source | `<pty_pid>.pty` (exact bytes, recorded sizes) | Claude's session transcript (`.jsonl`) |
 | Live process | untouched | restarted |
-| Depth | 10MB rolling window | full conversation re-render |
+| Depth | 30MB rolling window | full conversation re-render |
 | Use | every reattach, automatic | deep fallback (stream truncated/lost, legacy v0 session) |
 
 ---
