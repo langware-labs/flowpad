@@ -477,7 +477,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
         <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">
           <AgentPlacesColumn agent={agent} autoLaunchPrompt={autoLaunchPrompt} pendingChanges={pending} />
-          <AgentPublicVisibilitySection agent={agent} />
+          <AgentPublicVisibilitySection agent={agent} version={version} />
         </aside>
       </div>
     </div>

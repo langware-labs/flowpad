@@ -6,9 +6,9 @@
  * machine once it is up. Every agent case is really about when that launch may start: never while
  * signed out, never before the agent's repository is known, and exactly once.
  *
- * Signed out, the page only makes a QUIET anonymous read (`apiClient.get` with
- * `expectUnauthorized`): a public agent answers it and is named on the sign-in card; a private one
- * is refused, which is expected and never shown. Signed in, `useEntity` is the seam for the hub
+ * Signed out, the page only makes a QUIET anonymous read (`apiClient.get`, its 401 never
+ * surfaced): a public agent answers it and is named on the sign-in card; a private one is
+ * refused, which is expected and never shown. Signed in, `useEntity` is the seam for the hub
  * read, so each case states exactly what the hub answered.
  *
  * `useSandboxes` keeps its real `plannedSteps` / `workspaceServiceUrl` (only the launch calls are
@@ -250,7 +250,7 @@ describe('/launch?agent=', () => {
     // The signed-in read is never made while signed out — only the quiet one.
     expect(hubReads()).toHaveLength(0);
     await waitFor(() =>
-      expect(mocks.anonGet).toHaveBeenCalledWith(`/api/v1/graph/agent/${AGENT_ID}`, { expectUnauthorized: true }),
+      expect(mocks.anonGet).toHaveBeenCalledWith(`/api/v1/graph/agent/${AGENT_ID}`),
     );
     await waitFor(() => expect(log).toHaveBeenCalled());
     // An expected refusal is not the user's business.
