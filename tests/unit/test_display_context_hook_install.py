@@ -1,10 +1,12 @@
 """A Vibe session answers ``UserPromptSubmit`` with its display context.
 
-Loading the SDK's ``vibe`` persona — the one that gives a session its display
+Loading the SDK's ``vibe`` layer — the one that gives a session its display
 pane — installs the prompt hook before launch, so the page's display context
-reaches the agent each turn (``display_context.py``). Nothing else does: another
-persona, the vibe sub-agent merely layered in, or a worker whose harness never
-reads the hook's answer.
+reaches the agent each turn (``display_context.py``). It follows the LAYER, not
+the persona role: an auto-launched agent embeds vibe without taking its persona
+(it keeps its own identity) and still has the display beside it. Nothing else
+installs it: another persona, or a worker whose harness never reads the hook's
+answer.
 """
 
 import pytest
@@ -48,9 +50,18 @@ async def test_another_persona_does_not(tmp_path):
     assert PROMPT not in (process.process_hook_events or [])
 
 
-async def test_vibe_layered_without_the_persona_role_does_not(tmp_path):
+async def test_vibe_layered_without_the_persona_role_still_installs_it(tmp_path):
+    """The shape an auto-launched agent session has.
+
+    `prepareAgentSession` layers vibe in with `set_ap_persona=False` so the agent
+    stays itself rather than answering as "the vibe agent" — but the session has
+    the same display pane, and it was precisely the courses' tutor agents, which
+    open a lecture page beside the chat, that ended up unable to see it.
+    """
     process = await _load(tmp_path, WorkerType.CLAUDE_CODE, "vibe", as_persona=False)
-    assert PROMPT not in (process.process_hook_events or [])
+    assert PROMPT in (process.process_hook_events or [])
+    # The identity half of the split still holds: no persona was taken.
+    assert not process.process_persona_path
 
 
 async def test_a_harness_that_ignores_hook_answers_does_not(tmp_path):

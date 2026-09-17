@@ -14,6 +14,14 @@ export interface IncomingProjectParams {
   /** Display name for the copy ("… shared <projectName> with you"). */
   projectName: string;
   senderName: string;
+  /**
+   * The SHARED project's id, when this came from a membership grant rather than
+   * a template deep link. Present means "materialize this row in place"
+   * (`setup-from-git`) instead of minting a fresh project from the template:
+   * the recipient's local project then carries the same id the hub and the
+   * sender use, so roles, membership and later shares all line up.
+   */
+  projectId?: string;
 }
 
 interface IncomingProjectState {

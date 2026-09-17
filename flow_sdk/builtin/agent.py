@@ -474,10 +474,18 @@ class Agent(Entity):
         Candidates: agents rooted in the project or one of its direct context
         folders (``assets_under_roots``, the same scoping journeys use), enabled,
         ``auto_launch`` on, and not yet marked. Every candidate — winner and
-        cancelled — is marked before the session opens, under a per-project
-        lock, so it is ONCE per project (see the ``auto_launch`` field). The
-        prompt is enqueued, not sent: the caller kicks the queue (``drain-queue``)
-        after the vibe persona is embedded, the order ``useAgentLauncher`` uses.
+        cancelled — is marked ONCE per project (see the ``auto_launch`` field),
+        under a per-project lock. The prompt is enqueued, not sent: the caller
+        kicks the queue (``drain-queue``) after the vibe persona is embedded, the
+        order ``useAgentLauncher`` uses.
+
+        The mark is written only once the session actually opened, and the lock
+        is held across that open. Marking first was cheaper but wrote off the
+        one chance the project had: a ``use()`` that raised — no worker binary,
+        no LLM funding, a transient failure — burned the mark anyway, and the
+        agent then never auto-launched again on that machine, with no way back
+        but ``reset_auto_launch``. Holding the lock keeps the double-open this
+        ordering would otherwise allow when two windows open the project at once.
         """
         from flow_sdk.builtin.project import Project, assets_under_roots  # noqa: PLC0415
         from flow_sdk.project_device_state import update_project_device_state  # noqa: PLC0415
@@ -499,11 +507,12 @@ class Agent(Entity):
                 return None
             candidates.sort(key=age_key)
             winner, cancelled = candidates[0], candidates[1:]
+
+            process = await winner.use(project_id=project_id)
             update_project_device_state(
                 project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
             )
 
-        process = await winner.use(project_id=project_id)
         prompt = (winner.auto_launch_prompt or "").strip()
         if prompt:
             process.queue.enqueue(prompt, source="auto_launch")

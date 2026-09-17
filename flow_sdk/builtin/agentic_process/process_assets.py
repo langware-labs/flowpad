@@ -87,8 +87,14 @@ class ProcessAssets:
                 projection = await self._place_projection(ref, projection)
             if set_ap_persona:
                 self.process.process_persona_path = projection.path.relative_to(self._process_assets_path()).as_posix()
-                if projection.name == VIBE_PERSONA_NAME:
-                    self._enable_display_context_hook()
+            # The hook follows the VIBE LAYER, not the persona. An agent session
+            # (`prepareAgentSession`) embeds vibe with `set_ap_persona=False` on
+            # purpose — the agent must keep its own identity rather than becoming
+            # "the vibe agent" — but it has exactly the same display beside it,
+            # and gating the hook on the persona left every auto-launched agent
+            # blind to the page it had just opened.
+            if projection.name == VIBE_PERSONA_NAME:
+                self._enable_display_context_hook()
             self._drop_legacy_agent_name(projection.name)
             self._normalize_process_asset_mount()
             self._record_embedded_ref(ref)
