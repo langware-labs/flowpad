@@ -13,7 +13,14 @@ import { useLayoutEffect, useMemo } from 'react';
  * `DataManager.claimIdBatch`) — wherever this sits in the tree. The watched
  * query then joins that same in-flight request for live updates.
  */
-export function EntityBatchHydrator({ type, ids }: { type: string; ids: readonly string[] }) {
+const NONE: never[] = [];
+
+/**
+ * The batch itself, for a caller that also READS the batched entities: one
+ * request serves both the cache warm-up and the caller's data, so the same ids
+ * are never fetched by a second query.
+ */
+export function useEntityBatch<U extends APIEntity<any>>(type: string, ids: readonly string[]): U[] {
   // Sorted, so the same set in a new order is the same request (and the same
   // cache key as any other query built from those ids).
   const sortedIds = useMemo(() => [...new Set(ids)].sort(), [ids]);
@@ -31,6 +38,11 @@ export function EntityBatchHydrator({ type, ids }: { type: string; ids: readonly
   useLayoutEffect(() => {
     if (idsKey) void dataManager.query(request).catch(() => undefined);
   }, [request, idsKey]);
-  useEntitiesQuery<APIEntity<any>>(request, { enabled: !!idsKey });
+  const { data } = useEntitiesQuery<U>(request, { enabled: !!idsKey });
+  return data ?? NONE;
+}
+
+export function EntityBatchHydrator({ type, ids }: { type: string; ids: readonly string[] }) {
+  useEntityBatch(type, ids);
   return null;
 }
