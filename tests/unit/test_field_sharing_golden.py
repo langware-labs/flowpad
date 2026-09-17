@@ -277,7 +277,9 @@ def test_the_two_egress_seams_now_agree():
             # `sent_at` is the projection-owned EVENT time: locally re-derived
             # from the item, and a hub LWW refresh must never blank it. `envelope`
             # is its projection-owned sibling (sender, recipients, subject).
-            ["origin_local", "source_item_id", "sent_at", "envelope"],
+            # `sender` is the typed author, local only: the hub keeps the `sender_id` wire
+            # string, so a hub refresh must never turn an agent's reply back into a person.
+            ["origin_local", "source_item_id", "sent_at", "envelope", "sender"],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
@@ -309,6 +311,7 @@ def test_the_two_egress_seams_now_agree():
                 "origin",
                 "origin_local",
                 "private_context_entities_",
+                "sender",
                 "shared_context_entities",
             ],
         ),

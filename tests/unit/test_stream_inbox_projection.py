@@ -220,21 +220,21 @@ class TestSenderMapping:
 
         item = SimpleNamespace(author_external_id="ami@langware.ai", author_display="Ami")
         source = SimpleNamespace(account_key="me@example.com")
-        sender_id, name = await _sender_for(item, source, "gmail")
-        # An EMPTY sender_id is never counted unread at all (stream_inbox.count_unread
-        # requires `latest.sender_id`), so the fallback must still be a string.
-        assert sender_id == "gmail:ami@langware.ai"
+        sender, name = await _sender_for(item, source, "gmail")
+        # A message with no sender is never counted unread at all, so a stranger
+        # must still be named — typed, and on the wire as `<channel>:<address>`.
+        assert (sender.kind, sender.wire_id) == ("external", "gmail:ami@langware.ai")
         assert name == "Ami"
 
     @pytest.mark.asyncio
     async def test_an_unknown_author_still_yields_a_sender(self):
         from flow_sdk.stream_inbox.projection import _sender_for
 
-        sender_id, _ = await _sender_for(
+        sender, _ = await _sender_for(
             SimpleNamespace(author_external_id=None, author_display=None),
             SimpleNamespace(account_key="me@example.com"), "gmail",
         )
-        assert sender_id == "gmail:unknown"
+        assert (sender.kind, sender.wire_id) == ("external", "gmail:unknown")
 
     @pytest.mark.asyncio
     async def test_our_own_address_maps_to_the_local_user(self, monkeypatch):
@@ -246,9 +246,9 @@ class TestSenderMapping:
         )
         item = SimpleNamespace(author_external_id="Me@Example.com", author_display="Me")
         source = SimpleNamespace(account_key="me@example.com")
-        sender_id, _ = await projection._sender_for(item, source, "gmail")
+        sender, _ = await projection._sender_for(item, source, "gmail")
         # Case-insensitive: providers do not agree on address casing.
-        assert sender_id == "local-42"
+        assert (sender.kind, sender.id) == ("user", "local-42")
 
 
 def _resolved(value):

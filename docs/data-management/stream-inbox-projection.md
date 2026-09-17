@@ -75,9 +75,12 @@ honestly. Don't watch one mailbox through two transports.
 
 **Attribution.** `_sender_for` maps an author that is one of the source's
 own addresses (`account_identities`, plus `account_key` for legacy rows,
-folded through `normalize_email`) to the local user — or to `agent:<id>` when
+folded through `normalize_email`) to the local user — or to the Agent when
 the source is an agent's mailbox (`config.agent_id`), so an agent's replies
-are never put in the owner's mouth. Everyone else is `<channel>:<address>`.
+are never put in the owner's mouth. Everyone else is an external sender on the
+channel. The answer is a typed `MessageSender` (`FlowMessage.sender`, PRIVATE —
+a hub refresh never turns an agent's reply back into a person); `sender_id`
+carries its wire form.
 This is load-bearing: the unread rule gates on the sender, so a Sent-folder
 item attributed to a stranger would count as unread mail. `reply_to_id` is
 two lookups (the parent item by its origin — same kind and namespace, the

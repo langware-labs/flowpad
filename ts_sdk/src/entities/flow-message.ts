@@ -3,6 +3,7 @@ import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
 import { IMessageEnvelope } from '../models/MessageEnvelope';
+import { IMessageSender } from '../models/MessageSender';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -145,6 +146,8 @@ export interface IFlowMessage extends IEntity {
   attachment?: Attachment[];
   sender_id?: string | null;
   sender_name?: string | null;
+  /** The typed author, local only — read it through `senderOf`, which covers hub rows. */
+  sender?: IMessageSender | null;
   receiver_address?: string | null;
   receiver_address_type?: string | null;
   /** User-given filename of the uploaded .flowmsg zip stored via fs/upload, e.g. "my-share.flowmsg". Null when no file was uploaded. */
@@ -231,6 +234,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   attachment?: Attachment[];
   sender_id?: string | null;
   sender_name?: string | null;
+  sender?: IMessageSender | null;
   receiver_address?: string | null;
   receiver_address_type?: string | null;
   attachment_filename?: string | null;
@@ -266,6 +270,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.attachment = entity.attachment;
     this.sender_id = entity.sender_id;
     this.sender_name = entity.sender_name;
+    this.sender = entity.sender ?? null;
     this.receiver_address = entity.receiver_address;
     this.receiver_address_type = entity.receiver_address_type;
     this.attachment_filename = entity.attachment_filename;

@@ -16,6 +16,7 @@ import pytest
 
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
 from flow_sdk.stream_inbox import project_unread
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "stream_inbox_unread_truth_table.json"
@@ -45,7 +46,7 @@ def _message(mid: str, row: dict) -> SimpleNamespace:
     return SimpleNamespace(
         id=mid,
         is_read=bool(row.get("is_read")),
-        sender_id=row.get("sender_id"),
+        sender=MessageSender.from_wire(row.get("sender_id") or ""),
         is_draft=bool(row.get("is_draft")),
         kind=row.get("kind", "user"),
     )

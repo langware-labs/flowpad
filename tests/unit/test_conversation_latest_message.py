@@ -102,5 +102,7 @@ class TestUnreadUsesTheSameLatest:
 def _fm(mid: str, *, is_read: bool):
     from types import SimpleNamespace
 
-    return SimpleNamespace(id=mid, is_read=is_read, sender_id="gmail:x@y.z",
+    from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+
+    return SimpleNamespace(id=mid, is_read=is_read, sender=MessageSender.external("gmail", "x@y.z"),
                            is_draft=False)

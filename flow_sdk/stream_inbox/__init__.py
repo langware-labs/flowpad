@@ -112,23 +112,15 @@ def conversation_is_unread(conv, latest, *, pending_conv_ids: set, self_ids: set
     is unread when its latest message (``latest``, resolved newest-by-timestamp by the
     caller) was received and not read. Not materialized yet, or a draft, is not unread —
     the post-materialization recompute picks it up rather than falling back to an older
-    message. An agent's reply is OURS, not unread mail from a stranger — and the ``agent:``
-    prefix says so by itself; enumerating agent rows instead would give a different answer
-    once an agent's mail is switched off.
+    message. "Received" is the typed sender: not ours by ``MessageSender.authored_by`` —
+    one of our user ids, or an Agent we host (an agent's reply is OURS, whether or not its
+    mail is still switched on). A message naming nobody is not unread.
     """
-    from flow_sdk.stream_inbox.projection import is_agent_sender  # noqa: PLC0415
-
     if conv.id in pending_conv_ids:
         return True
     if latest is None or getattr(latest, "is_draft", False):
         return False
-    return bool(
-        not latest.is_read
-        and latest.sender_id
-        and latest.sender_id not in self_ids
-        and not is_agent_sender(latest.sender_id)
-    )
-
+    return bool(not latest.is_read and latest.sender and not latest.sender.authored_by(self_ids))
 
 def in_stream_inbox_of(conv, owner) -> bool:
     """Whether ``conv`` is listed in ``owner``'s stream inbox. A row written before
