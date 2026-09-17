@@ -6,12 +6,8 @@ code to pin — when one of them is built, its snippet moves up and gets a test 
 
 from __future__ import annotations
 
-import uuid
-
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.tags import on_tag
 from tests.utils.snippets import doc
 
@@ -33,23 +29,21 @@ def _placed(dst):
 
 
 async def test_snippet_1_one_source_one_cycle(tree):
+    from tests.utils.snippets import fence_under, run_fence
+
     src, _ = tree
-    source = DataSource(name=f"Notes {uuid.uuid4().hex[:8]}", provider="folder", config={"root": str(src)})
-    await source.save()
-    assert (await source.verify())["ready"] is True
-    await source.sync()  # never raises; failure is health, not an exception
+    ns = await run_fence(fence_under(doc("pipes.md"), "1."), {"SRC": str(src)}, filename="pipes.md §1")
+    assert ns["source"].exist_in_db and ns["source"].provider == "folder"
+    # `sync()` never raised; failure would be health on the row, not an exception
+    assert ns["report"] is not None
 
 
 async def test_snippet_2_mirror_one_folder_into_another(tree):
+    from tests.utils.snippets import fence_under, run_fence
+
     src, dst = tree
-    source = DataSource(
-        name=f"Mirror notes {uuid.uuid4().hex[:8]}",
-        provider="folder",
-        reflect=ReflectMode.COPY.value,
-        reflect_into=str(dst),
-        config={"root": str(src)},
-    )
-    await source.save()
+    ns = await run_fence(fence_under(doc("pipes.md"), "2."), {"SRC": str(src), "DEST": str(dst)}, filename="pipes.md §2")
+    source = ns["source"]
     await source.verify()
 
     await source.sync()

@@ -22,14 +22,12 @@ reading: [docs/data-management/data-sources.md](../data-management/data-sources.
 Pinned by `tests/unit/test_data_sources_snippets.py`.
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.source_item import SourceItem
 
-src = DataSource(
-    name="Hacker News front page",
-    provider="rss",
-    config={"feed_urls": [FEED_URL]},
-)
+driver = await DataDriver.get("rss")
+config = driver.create_config(feed_urls=[FEED_URL])  # optional: validates now; a plain dict is validated on save()
+src = driver.create_source(config, name="Hacker News front page")
 await src.save()  # writes data_source.json; NEW → ACTIVE; channel and origin stamped
 
 outcome = await src.sync()
@@ -74,6 +72,7 @@ A second source for the same account is a lookup, never a fresh row.
 
 ```python
 from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 
 existing = await DataSource.find_for_account("agentmail", "inbox", "me@agentmail.to")
 driver = await DataDriver.get("agentmail")
@@ -105,13 +104,13 @@ Pinned by `tests/unit/test_data_sources_snippets.py` (the CRUD matrix is
 `tests/unit/test_folder_source/test_crud_matrix.py`).
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.reflect import ReflectMode
 
-src = DataSource(
+driver = await DataDriver.get("folder")
+src = driver.create_source(
+    driver.create_config(root=WATCHED),  # the tree to watch
     name="Shared drive notes",
-    provider="folder",
-    config={"root": WATCHED},  # the tree to watch
     reflect=ReflectMode.COPY.value,  # none | copy | symlink
     reflect_into=DESTINATION,  # absolute, the destination tree
 )
@@ -204,6 +203,8 @@ Read the row before poking it. `poll_now` clears `health`, `error_code` and
 `error_detail` together, so snapshot them first or the evidence is gone.
 
 ```python
+from flow_sdk.builtin.data_source import DataSource
+
 src = await DataSource.get_one({"id": src.id})
 src.status, src.health, src.error_code, src.last_synced_at, src.next_poll_at
 ```
@@ -283,13 +284,13 @@ connection**, made on the Connections screen. The scopes it grants,
 ```python
 from pathlib import Path
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.reflect import ReflectMode
 
-src = DataSource(
+driver = await DataDriver.get("gdrive")
+src = driver.create_source(
+    driver.create_config(cache_root=CACHE_ROOT, base_url=BASE_URL),  # `drives=[...]` for shared drives; empty = My Drive
     name="My Drive",
-    provider="gdrive",
-    config={"cache_root": CACHE_ROOT, "base_url": BASE_URL},  # `drives: [...]` for shared drives; empty = My Drive
     reflect=ReflectMode.COPY.value,
     reflect_into=DESTINATION,
 )
