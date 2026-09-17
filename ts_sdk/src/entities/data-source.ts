@@ -54,7 +54,7 @@ export interface IDataSource extends IEntity {
   poll_interval_seconds?: number;
   window_days?: number;
   cursor?: string | null;
-  manifest?: Record<string, unknown> | null;
+  manifest?: Record<string, unknown>;
   high_water?: string | null;
   last_attempted_at?: string | null;
   consecutive_failures?: number;
@@ -124,8 +124,9 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   /** The provider's opaque resume token — one per source, since a source is ONE
    *  stream. Null until the first pass completes, and after `reset`. */
   cursor: string | null = null;
-  /** The last pass's listing snapshot, for drivers that diff rather than resume. */
-  manifest: Record<string, unknown> | null = null;
+  /** The last pass's listing snapshot, for drivers that diff rather than resume.
+   *  A dict on the wire (never null) — the backend declares it one. */
+  manifest: Record<string, unknown> = {};
   /** ISO timestamp of the newest item synced so far. */
   high_water: string | null = null;
   last_attempted_at: string | null = null;
