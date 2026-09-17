@@ -19,6 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Button } from '@src/components/ui/button';
 
 import { AgentPlacesColumn } from './AgentPlacesColumn';
+import { AgentVisibilitySection } from './AgentVisibilitySection';
 import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfileFields';
 import { AgentMcpField } from './AgentMcpField';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
@@ -476,6 +477,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
         <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">
           <AgentPlacesColumn agent={agent} autoLaunchPrompt={autoLaunchPrompt} pendingChanges={pending} />
+          <AgentVisibilitySection agent={agent} version={version} />
         </aside>
       </div>
     </div>
