@@ -76,7 +76,7 @@ if TYPE_CHECKING:  # pragma: no cover
 # shared `ProjectedFields` mixin (one sentinel for every projected entity).
 _PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
-_PROJECTED_FIELDS = frozenset({"message_ids", "message_count"})
+_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread"})
 
 
 # Process-scoped FlowpadClient cache, keyed by api_key. ``Conversation.share`` /
@@ -255,8 +255,13 @@ class Conversation(ProjectedFields, Entity):
     # and its own contract forbids using it as a correctness gate. Hub-clock to
     # hub-clock has neither problem. LOCAL_ONLY: never sent to the hub.
     hub_updated_date: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # Whether this conversation is unread for the local viewer — the ONE answer every
+    # row and the badge render, computed by `stream_inbox.recompute_unread` from
+    # `conversation_is_unread` (latest received message unread, or a pending
+    # invitation). The frontend reads it; it does not recompute it. LOCAL_ONLY.
+    is_unread: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
-    projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db"
+    projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread)"
 
     @classmethod
     def hub_clock_moved(cls, local: "Conversation", hub_updated: Optional[datetime]) -> bool:

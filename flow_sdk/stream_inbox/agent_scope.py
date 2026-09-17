@@ -20,7 +20,8 @@ class AgentStreamInboxScopeError(ValueError):
 
 @dataclass(frozen=True)
 class AgentStreamInboxScope:
-    """The local rows an Agent's stream inbox is made of."""
+    """The local rows a stream inbox is made of — an Agent's (``agent_id`` set) or the
+    local user's (``resolve_local_stream_inbox_scope``, no agent)."""
 
     agent_id: str
     source_id: str | None
@@ -124,4 +125,39 @@ async def resolve_agent_stream_inbox_scope(agent_id: str) -> AgentStreamInboxSco
     )
 
 
-__all__ = ["AgentStreamInboxScope", "AgentStreamInboxScopeError", "resolve_agent_stream_inbox_scope"]
+async def resolve_local_stream_inbox_scope() -> AgentStreamInboxScope:
+    """The rows in the LOCAL USER's stream inbox: conversations the user owns or nobody
+    does (`stream_inbox.in_stream_inbox_of`), and the messages in them.
+
+    What a bulk action in the user's stream inbox must be bounded by. Without it
+    "Mark all read", "Archive all" and "Delete archived" ran over every row on the
+    machine, an Agent's mail included — the list stopped showing that mail once it was
+    scoped by owner, but the bulk verbs still reached it. Same value shape as an
+    Agent's scope, with no agent and no sources.
+    """
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.stream_inbox import in_stream_inbox_of  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import default_owner  # noqa: PLC0415
+
+    owner = await default_owner()
+    conversation_ids = sorted(str(c.id) for c in await Conversation.get_all({}) if in_stream_inbox_of(c, owner))
+    messages = await FlowMessage.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["conversation_id", conversation_ids])),
+        hydrate=False,
+    ) if conversation_ids else []
+    return AgentStreamInboxScope(
+        agent_id="",
+        source_id=None,
+        conversation_ids=frozenset(conversation_ids),
+        flow_message_ids=frozenset(str(m.id) for m in messages),
+    )
+
+
+__all__ = [
+    "AgentStreamInboxScope",
+    "AgentStreamInboxScopeError",
+    "resolve_agent_stream_inbox_scope",
+    "resolve_local_stream_inbox_scope",
+]

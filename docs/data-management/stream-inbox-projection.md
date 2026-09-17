@@ -68,7 +68,7 @@ own addresses (`account_identities`, plus `account_key` for legacy rows,
 folded through `normalize_email`) to the local user — or to `agent:<id>` when
 the source is an agent's mailbox (`config.agent_id`), so an agent's replies
 are never put in the owner's mouth. Everyone else is `<channel>:<address>`.
-This is load-bearing: both unread formulas gate on the sender, so a Sent-folder
+This is load-bearing: the unread rule gates on the sender, so a Sent-folder
 item attributed to a stranger would count as unread mail. `reply_to_id` is
 two lookups (the parent item by its origin — same kind and namespace, the
 reply's `reply_to_external_id` as key — then its message by
@@ -161,10 +161,27 @@ half.
 
 ## The rest of `flow_sdk/stream_inbox/`
 
-* `__init__.py` — the unread projection: `touch(reason)` is the fire-and-forget
-  recompute every mutation site (including this projection) calls;
+* `__init__.py` — the unread projection, and the ONLY place unread is decided.
+  `conversation_is_unread` is the one rule (a pending invitation, or a latest
+  message received and not read — drafts, self-sent and `agent:` replies excluded);
+  `recompute_unread` applies it to every conversation, stamps
+  `Conversation.is_unread` where it flipped (a projected field — the row renders it,
+  the frontend never recomputes it), and publishes `StreamInboxManager.unread`: the
+  count over the LOCAL USER's stream inbox only (owner is the user, or unowned) — an
+  Agent's mail stays in the Agent's stream inbox. `touch(reason)` is the
+  fire-and-forget recompute every mutation site (including this projection) calls;
   `recompute_unread` is the awaited form. Never deltas — every recompute starts
-  from the canonical rows.
+  from the canonical rows. A hub runtime has no such projection yet
+  (`docs/hub-rest-consolidation.md` §1 in the hub checkout), so hub rows carry no
+  `is_unread` and the facet falls back to the latest message there.
+* **Scope is a query, not a walk.** A stream inbox lists
+  `streamInboxConversationsRequest(owner)` (`ui/src/components/stream-inbox-view/channel-owner.ts`):
+  a live conversation query the backend filters by `owner` — exactly the Agent's
+  rows for an Agent, the user's plus unowned rows for the user. The home strip
+  builds the same request, so the two share one cache key. The BULK verbs (mark
+  all read, archive all, delete archived) are bounded the same way on the backend:
+  the Agent's scope when one is named, else `resolve_local_stream_inbox_scope` —
+  never every row on the machine.
 * `outbound.py` — the inverse direction, and deliberately small: resolves
   *where* a reply goes and hands it to the driver's `send`; the sent copy
   re-enters through ingest and projects like any other item.

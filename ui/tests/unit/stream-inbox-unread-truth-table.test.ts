@@ -1,11 +1,11 @@
 /**
  * Frontend half of the shared stream-inbox-unread truth table.
  *
- * Consumes the SAME fixture as the backend formula test
- * (`tests/unit/test_stream_inbox_unread_truth_table.py` over `flow_sdk.stream_inbox.count_unread`)
- * and asserts `conversationFacets` — the function that decides which rows the
- * Unread view renders — agrees case-by-case. Catches semantic drift between
- * the backend scalar (`StreamInboxManager.unread`) and the rendered list.
+ * The backend owns unread: `tests/unit/test_stream_inbox_unread_truth_table.py` pins each
+ * conversation's `is_unread` flag and the badge count from `flow_sdk.stream_inbox.project_unread`
+ * over the SAME fixture. This side pins that `conversationFacets` RENDERS that flag — a row hands
+ * over the backend's answer instead of recomputing it — and still derives the two facets that are
+ * display-only (archived, invitation), so the rendered Unread list matches the badge case by case.
  */
 import { describe, expect, it } from 'vitest';
 import type { Conversation, FlowMessage, Invitation } from '@sdk';
@@ -53,7 +53,8 @@ describe('stream inbox unread truth table — conversationFacets parity', () => 
     );
 
     const facets = conversationFacets({
-      conv: { archived_at: conv.archived_at ?? undefined } as unknown as Conversation,
+      // The flag as the backend stamped it (`facets.isUnread` is what the backend test pins).
+      conv: { archived_at: conv.archived_at ?? undefined, is_unread: c.facets!.isUnread } as unknown as Conversation,
       firstMessage: (firstFm ?? null) as unknown as FlowMessage | null,
       latestMessage: (latestFm ?? null) as unknown as FlowMessage | null,
       latestPtrTs: lastPtr?.ts ?? null,
