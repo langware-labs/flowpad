@@ -16,6 +16,7 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.testing import local_http_server, position
@@ -26,7 +27,6 @@ from flow_sdk.sources.testing import Subject, checks_for
 
 WhatsAppSource = asset_module("whatsapp").WhatsAppSource
 digits = asset_module("whatsapp").digits
-wa_source = asset_module("whatsapp")
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -43,6 +43,9 @@ def sign(body: bytes, secret: str = APP_SECRET) -> str:
 #: The ``whatsapp`` credential's values per business number — never config. A number with no entry
 #: gets the default pair; a test that wants a missing secret sets its own.
 SECRETS: dict[str, dict[str, str]] = {}
+#: Where Graph is for this test: the loopback double ``serve`` started, through the config's ``base_url``
+#: seam. Empty means the source's default — the real host — which no test here reaches.
+LOOPBACK: dict[str, str] = {}
 
 
 def _secrets_for(row) -> dict[str, str]:
@@ -60,12 +63,17 @@ def _credential(monkeypatch):
 
 
 def _source(**config) -> DataSource:
-    return DataSource(provider="whatsapp", name=f"WhatsApp test {uuid.uuid4().hex[:8]}", config={"phone_number_id": PHONE_ID, "verify_token": "verify-test", **config})
+    return DataSource(
+        provider="whatsapp",
+        name=f"WhatsApp test {uuid.uuid4().hex[:8]}",
+        config={"phone_number_id": PHONE_ID, "verify_token": "verify-test", **LOOPBACK, **config},
+    )
 
 
 def _binding() -> SourceBinding:
     return SourceBinding(
-        config={"phone_number_id": PHONE_ID}, credentials=Credentials(shape=AuthShape.SECRETS, values={"access_token": SecretStr("EAAG-test")})
+        config={"phone_number_id": PHONE_ID, **LOOPBACK},
+        credentials=Credentials(shape=AuthShape.SECRETS, values={"access_token": SecretStr("EAAG-test")}),
     )
 
 
@@ -152,15 +160,16 @@ class _Graph:
 
 
 @pytest.fixture
-def serve(monkeypatch, request):
+def serve(request):
     def _factory(replies=None):
         graph = _Graph(replies)
         server = local_http_server(graph)
-        monkeypatch.setattr(wa_source, "GRAPH_API_BASE", server.__enter__())
+        LOOPBACK["base_url"] = server.__enter__()
         request.addfinalizer(lambda: server.__exit__(None, None, None))
         return graph
 
-    return _factory
+    yield _factory
+    LOOPBACK.clear()
 
 
 @pytest.mark.parametrize("check", checks_for(WhatsAppSource), ids=str)
@@ -323,3 +332,33 @@ async def test_a_source_with_no_app_secret_accepts_no_delivery(recorded):
     await _saved(phone_number_id="unsigned-222")
     response = await webhook_delivery("whatsapp", _Request(body=_webhook(_text("wamid.U", "hi"), phone_number_id="unsigned-222")))
     assert response.status_code == 401 and recorded == []
+
+
+# ── the Double ───────────────────────────────────────────────────────────────
+
+
+async def test_the_double_delivers_after_the_source_exists_and_records_the_reply(monkeypatch):
+    from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
+
+    Double = load_module(SHIPPED_ROOT / "whatsapp" / "tests", "matrix").Double  # as the matrix runner loads it
+    driver = DataDriver.loaded("whatsapp")
+    with Double() as double:
+        monkeypatch.setattr(driver, "credentials_for", double.credentials)
+        source = DataSource(provider="whatsapp", name=f"WhatsApp double {uuid.uuid4().hex[:8]}", config=double.config)
+        await source.save()
+
+        first = await driver.traverse(source, position())
+        assert first.items == [] and await SourceItem.get_all({"data_source_id": source.id}) == []
+
+        delivery = double.deliver("hello after the fact", sender=WA_ID)
+        assert delivery["path"] == "/api/v1/data_source/webhook/whatsapp" and delivery["thread"] == WA_ID
+        pushed = await driver.ingest_pushed(source, json.loads(delivery["body"]), headers=delivery["headers"], raw=delivery["body"])
+        assert pushed["ingested"] == 1
+        assert (await driver.traverse(source, position())).unchanged is True  # a sync still lists nothing; the webhook IS the inbound
+
+        (item,) = await SourceItem.get_all({"data_source_id": source.id})
+        assert (item.external_id, item.body, item.author_external_id, item.thread_key) == (delivery["external_id"], "hello after the fact", WA_ID, WA_ID)
+
+        assert double.sent() == []
+        outcome = await driver.send(source, thread_key=WA_ID, to=WA_ID, text="and this went out", in_reply_to=delivery["external_id"])
+        assert double.sent() == [{"to": WA_ID, "text": "and this went out", "thread": delivery["external_id"], "external_id": outcome.external_id}]

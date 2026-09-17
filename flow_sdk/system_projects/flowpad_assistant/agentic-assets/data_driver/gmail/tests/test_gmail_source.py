@@ -14,7 +14,7 @@ import pytest
 from pydantic import SecretStr
 
 from flow_sdk.builtin.data_driver import DataDriver
-from flow_sdk.ingest.driver_registry import asset_module
+from flow_sdk.ingest.driver_registry import asset_module, load_module
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import position
 from flow_sdk.sources import UserProfile
@@ -60,10 +60,10 @@ class _Gmail:
             self.boxes["INBOX"].append((uid, thread, raw))
         return uid
 
-    def imap(self, _host):
+    def imap(self, _host, _port=None):
         return _Imap(self)
 
-    def smtp(self, _host, _port):
+    def smtp(self, _host, _port=None):
         return _Smtp(self)
 
 
@@ -267,8 +267,8 @@ async def test_reply_lookup_fetches_only_the_newest_matching_header(monkeypatch)
             return "BYE", []
 
     client = Client()
-    monkeypatch.setattr(gmail_source.imaplib, "IMAP4_SSL", lambda host: client)
-    snapshot = gmail_source.find_reply_inbox("captain@gmail.com", "password", "<sent@example.com>")
+    monkeypatch.setattr(gmail_source.imaplib, "IMAP4_SSL", lambda host, port: client)
+    snapshot = gmail_source.find_reply_inbox(gmail_source.Mailbox("captain@gmail.com", "password"), "<sent@example.com>")
     assert snapshot.uid_validity == "44" and [m.uid for m in snapshot.messages] == [8]
     assert client.calls == [
         ("SEARCH", None, "ALL"),
@@ -282,8 +282,8 @@ async def test_reply_wait_reuses_the_targeted_lookup(monkeypatch):
     opens, closes = [], []
     searches = [(), (gmail_source.FetchedMessage(8, "22", _raw()),)]
 
-    def open_inbox(address, password, mailbox="INBOX"):
-        opens.append((address, password))
+    def open_inbox(account, mailbox="INBOX"):
+        opens.append((account.address, account.password))
         return next(clients), "44"
 
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "password")
@@ -295,3 +295,23 @@ async def test_reply_wait_reuses_the_targeted_lookup(monkeypatch):
 
     assert reply.external_id == "<incoming@gmail.test>"
     assert opens == [(ADDRESS, "password"), (ADDRESS, "password")] and len(closes) == 2
+
+
+async def test_the_double_delivers_after_the_source_exists_and_records_the_reply(monkeypatch):
+    Double = load_module(Path(__file__).parent, "matrix").Double  # as the matrix runner loads it
+    driver = DataDriver.loaded("gmail")
+    with Double() as double:
+        monkeypatch.setattr(driver, "credentials_for", double.credentials)
+        row = _row(**double.config)
+        first = await driver.traverse(row, _view())
+        assert not first.items
+
+        delivered = double.deliver("Where is the treasure?", sender="sailor@example.com")
+        second = await driver.traverse(row, _view(cursor=first.cursor))
+        (item,) = second.items
+        assert (item.external_id, item.author_external_id, item.body.strip()) == (delivered["external_id"], "sailor@example.com", "Where is the treasure?")
+        assert item.thread_key == f"captain@gmail.com:{delivered['thread']}"
+
+        out = await driver.send(row, thread_key="", to="sailor@example.com", text="Under the mast.", in_reply_to=delivered["external_id"])
+        (sent,) = double.sent()
+        assert sent == {"to": "sailor@example.com", "text": "Under the mast.", "thread": delivered["external_id"], "external_id": out.external_id}
