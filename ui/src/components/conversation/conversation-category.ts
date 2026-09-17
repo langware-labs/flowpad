@@ -18,7 +18,7 @@ export interface CategoryInputs {
   conv: Conversation;
   /** First message — used only to detect `kind === 'invitation'`. */
   firstMessage?: FlowMessage | null;
-  /** Latest message — drives the unread facet. */
+  /** Latest message — the unread fallback on a hub runtime only (see `isUnread`). */
   latestMessage?: FlowMessage | null;
   /** Latest pointer ts (from `conversationMessageIds`). Used for the archived
    *  comparison so we don't race the async FlowMessage fetch — the pointer
@@ -67,12 +67,15 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const latestTime = latestPtrTs ? new Date(latestPtrTs).getTime() : 0;
   const isArchived = archivedAt !== null && !Number.isNaN(archivedAt) && latestTime <= archivedAt;
 
-  // Unread — viewer-relative, like invitation: sending a message must not make
-  // the conversation look unread to the sender himself (there is nothing for
-  // him to read). Invitation rows always carry an actionable CTA, so they
-  // count as unread.
-  const isSelfSent = isViewer(latestMessage?.sender_id ?? null, viewer);
-  const isUnread = isInvitation ? true : latestMessage ? !latestMessage.is_read && !isSelfSent : false;
+  // Unread — the backend owns it. The desktop stamps `conv.is_unread` from the one
+  // rule the badge also counts with (`stream_inbox.conversation_is_unread`: drafts,
+  // self-sent and agent replies excluded), so the row renders that answer rather
+  // than a second copy of the rule that can drift. A hub runtime has no per-viewer
+  // read projection yet (docs/hub-rest-consolidation.md §1): its rows arrive without
+  // the field and fall back to the latest message. Invitation rows carry a CTA, so
+  // they are unread either way.
+  const hubUnread = latestMessage ? !latestMessage.is_read && !isViewer(latestMessage.sender_id ?? null, viewer) : false;
+  const isUnread = isInvitation || (conv.is_unread ?? hubUnread);
 
   return { kind, isInvitation, isArchived, isUnread };
 }

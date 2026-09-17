@@ -6,6 +6,7 @@ import {
   QueryRequest,
   Task,
   TypeId,
+  User,
   acceptInvitation,
   dismissConversation,
   fetchConversations,
@@ -36,6 +37,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CheckCheck, EyeOff, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useIsAdvanced } from '@src/components/view-mode';
+import { useContext } from '@src/hooks/useContext';
+import { streamInboxConversationsRequest } from '@src/components/stream-inbox-view/channel-owner';
 import { formatTimeAgo } from './project-activity-utils';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -95,8 +98,18 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   // built locally by ``_ensure_invitation_placeholder_conversation`` after
   // ``fetchConversations`` materializes a pending Invitation. The Accept CTA
   // reads ``invitation_id`` off that first message's ``context_entities``.
-  const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
-  const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
+  // The local user's stream inbox, filtered by the backend — the same request the stream
+  // inbox builds, so opening it later is a warm remount (see `streamInboxConversationsRequest`).
+  const { localUser } = useContext();
+  const localUserId = localUser?.id;
+  const request = useMemo(
+    () => (localUserId ? streamInboxConversationsRequest(new TypeId(User.type, localUserId)) : null),
+    [localUserId],
+  );
+  const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'recent-conversations:idle' }), []);
+  const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request ?? idleRequest, {
+    enabled: request !== null,
+  });
 
   const sorted = useMemo(() => {
     const list = [...conversations];

@@ -66,7 +66,7 @@ PHRASES = {
     r"^flow_sdk/server/app\.py$|^tests/unit/test_fs_store/test_entity_type_enum\.py$": ['"inbox_manager"'],
     r"^docs/glossary\.md$": ['"inboxes"', '"inbox" is not a name'],
     # the agentmail driver's `inbox` config key, named in prose
-    r"^docs/snippets/data-sources\.md$": ["`inbox`"],
+    r"^docs/snippets/data-sources\.md$": ["`inbox`", "create_config(inbox="],
     r"^ui/tests/manual_regression/data-sources/credentialed_sources\.md(\.ts)?$": ["`inbox` field", "the inbox is account-bound"],
     # plain English for a person's own email inbox
     r"^flow_sdk/system_projects/flowpad_assistant/\.claude/agents/email_analyzer\.md$": ["the inbox you were asked for"],

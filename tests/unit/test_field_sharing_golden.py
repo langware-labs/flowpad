@@ -359,7 +359,8 @@ def test_the_two_egress_seams_now_agree():
             # never the hub's (that is the roster's `owner` role).
             # `channel_source_id`: the local DataSource behind a source-backed
             # conversation — a row id in OUR database.
-            ["hub_updated_date", "message_ids", "owner", "channel_source_id"],
+            # `is_unread`: this viewer's unread, projected by `stream_inbox.recompute_unread`.
+            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
@@ -378,6 +379,8 @@ def test_the_two_egress_seams_now_agree():
                 "last_edited_at",
                 "message_count",
                 "message_ids",
+                # A projection like `message_count`: only `recompute_unread` may write it.
+                "is_unread",
                 "private_context_entities_",
                 "shared_context_entities",
             ],

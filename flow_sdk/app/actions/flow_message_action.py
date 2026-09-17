@@ -49,6 +49,7 @@ from flow_sdk.stream_inbox.agent_scope import (
     AgentStreamInboxScope,
     AgentStreamInboxScopeError,
     resolve_agent_stream_inbox_scope,
+    resolve_local_stream_inbox_scope,
 )
 from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_created_drift
 from flow_sdk.utils.hub import HubError, hub_base_url, hub_get, hub_post
@@ -70,6 +71,12 @@ async def _optional_agent_stream_inbox_scope(agent_id: object) -> AgentStreamInb
     """Resolve an explicitly requested Agent scope; blank preserves legacy behavior."""
     value = str(agent_id or "").strip()
     return await resolve_agent_stream_inbox_scope(value) if value else None
+
+
+async def _bulk_stream_inbox_scope(agent_id: object) -> AgentStreamInboxScope:
+    """The stream inbox a BULK verb acts on: the Agent's when one is named, else the local
+    user's — never every row on the machine (see ``resolve_local_stream_inbox_scope``)."""
+    return await _optional_agent_stream_inbox_scope(agent_id) or await resolve_local_stream_inbox_scope()
 
 
 def _body_status_value(status: str | BodyStatus | None) -> str | None:
@@ -767,10 +774,10 @@ async def conversation_archive_all() -> ApiResponse:
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
         body = await request_info.get_post_data() or {}
-        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
+        scope = await _bulk_stream_inbox_scope(body.get("agent_id"))
         return await handle_conversation_archive_all(
             request_info.someone_typeid,
-            allowed_conversation_ids=scope.conversation_ids if scope else None,
+            allowed_conversation_ids=scope.conversation_ids,
         )
     except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
@@ -1072,10 +1079,10 @@ async def conversation_delete_archived() -> ApiResponse:
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
         body = await request_info.get_post_data() or {}
-        scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
+        scope = await _bulk_stream_inbox_scope(body.get("agent_id"))
         return await handle_conversation_delete_archived(
             request_info.someone_typeid,
-            allowed_conversation_ids=scope.conversation_ids if scope else None,
+            allowed_conversation_ids=scope.conversation_ids,
         )
     except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)
@@ -2735,11 +2742,11 @@ async def stream_inbox_bulk_update() -> ApiResponse:
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
         patch = await request_info.get_post_data() or {}
-        scope = await _optional_agent_stream_inbox_scope(patch.pop("agent_id", None))
+        scope = await _bulk_stream_inbox_scope(patch.pop("agent_id", None))
         return await handle_stream_inbox_bulk_update(
             patch,
             request_info.someone_typeid,
-            allowed_flow_message_ids=scope.flow_message_ids if scope else None,
+            allowed_flow_message_ids=scope.flow_message_ids,
         )
     except AgentStreamInboxScopeError as e:
         return ApiFailResponse(message=str(e), status_code=e.status_code)

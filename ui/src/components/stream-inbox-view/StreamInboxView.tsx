@@ -19,7 +19,6 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 import { CreateContactsGroupDialog } from '@src/components/contact-picker/CreateContactsGroupDialog';
 import {
   Conversation,
-  Agent,
   FlowMessage,
   Invitation,
   QueryRequest,
@@ -37,7 +36,6 @@ import {
   unarchiveConversation,
   conversationRowMessageIds,
   latestPointer,
-  type AgentStreamInboxScope,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
@@ -53,7 +51,7 @@ import { formatTimeAgo } from '@src/components/project-activity-strip/project-ac
 import { updateMessage, bulkUpdateMessages, searchStreamInbox } from './stream-inbox-api';
 import { type ChannelAttribution, SourceChip, sourceForOrigin, useChannelAttribution } from '@src/components/conversation/channel-attribution';
 import { AttachedChannelsBar, channelKeyOf, useAttachedChannels } from './AttachedChannelsBar';
-import { channelsOwnerFor } from './channel-owner';
+import { channelsOwnerFor, streamInboxConversationsRequest } from './channel-owner';
 import { useContext } from '@src/hooks/useContext';
 import {
   conversationFacets,
@@ -140,7 +138,6 @@ interface ConversationListRowProps {
   attributionFor: (origin: FlowMessage['origin']) => ChannelAttribution | null;
   refSetter: (el: HTMLDivElement | null) => void;
   agentId?: string;
-  allowedMessageIds?: ReadonlySet<string>;
 }
 
 export function ConversationListRow({
@@ -161,16 +158,13 @@ export function ConversationListRow({
   attributionFor,
   refSetter,
   agentId,
-  allowedMessageIds,
 }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
 
   // For invitation rows the first message IS the only message; for regular
   // rows we want the latest message preview but still need to peek at the
   // first to detect ``kind === 'invitation'``.
-  const pointers = (conv.conversationMessageIds ?? []).filter(
-    (pointer) => !allowedMessageIds || allowedMessageIds.has(pointer.id),
-  );
+  const pointers = conv.conversationMessageIds ?? [];
   const firstPtr = pointers[0];
   // Newest by ts, not last-appended — an ingested mailbox backfills
   // newest-first, so the last pointer there is the OLDEST mail.
@@ -499,40 +493,20 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selDeleteOpen, setSelDeleteOpen] = useState(false);
 
-  const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
-  const { data: conversations = [], refetch, isLoading, isSuccess } = useEntitiesQuery<Conversation>(request);
-  const [agentScope, setAgentScope] = useState<AgentStreamInboxScope | null>(null);
-  const refreshAgentScope = useCallback(async () => {
-    if (!agentId) return;
-    const scope = await new Agent({ id: agentId }).streamInboxScope();
-    setAgentScope(scope);
-  }, [agentId]);
-  useEffect(() => {
-    setAgentScope(null);
-  }, [agentId]);
-  const conversationKey = conversations
-    .map((conversation) => `${conversation.id}:${conversation.updated_date}:${conversation.message_ids}`)
-    .join(',');
-  useEffect(() => {
-    if (agentId) void refreshAgentScope().catch(() => setAgentScope({
-      agent_id: agentId,
-      source_id: null,
-      conversation_ids: [],
-      thread_ids: [],
-      flow_message_ids: [],
-    }));
-  }, [agentId, conversationKey, refreshAgentScope]);
-  const agentConversationIds = useMemo(
-    () => new Set(agentScope?.conversation_ids ?? []),
-    [agentScope?.conversation_ids],
+  // Scoped by the backend: the query names the owner, so an agent's stream inbox and the
+  // user's never load each other's rows (see `streamInboxConversationsRequest`).
+  // Owned-by strings, not TypeId instances, key the memo: `channelsOwner` is rebuilt
+  // whenever its inputs change identity, and a fresh request re-subscribes.
+  const ownerKey = channelsOwner?.toString() ?? '';
+  const request = useMemo(
+    () => (channelsOwner ? streamInboxConversationsRequest(channelsOwner) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's string form
+    [ownerKey],
   );
-  const agentFlowMessageIds = useMemo(
-    () => new Set(agentScope?.flow_message_ids ?? []),
-    [agentScope?.flow_message_ids],
-  );
-  const scopedConversations = useMemo(
-    () => (agentId ? conversations.filter((conversation) => !!conversation.id && agentConversationIds.has(conversation.id)) : conversations),
-    [agentConversationIds, agentId, conversations],
+  const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'stream-inbox:idle' }), []);
+  const { data: conversations = [], refetch, isLoading, isSuccess } = useEntitiesQuery<Conversation>(
+    request ?? idleRequest,
+    { enabled: request !== null },
   );
 
   // Only the FIRST load gets the full-screen "Loading…" state. Every
@@ -543,7 +517,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
   // a background refetch keeps the existing rows on screen.
   const hasLoadedOnce = useRef(false);
   if (isSuccess) hasLoadedOnce.current = true;
-  const initialLoading = (isLoading && !hasLoadedOnce.current) || (agentId !== undefined && agentScope === null);
+  const initialLoading = (isLoading || request === null) && !hasLoadedOnce.current;
 
   // Text search over message bodies — server-side, via the `stream-inbox-search`
   // action rather than a `$LIKE` entity query: under the reference model a
@@ -570,10 +544,10 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
   }, [agentId, needle, searchActive]);
 
   const sorted = useMemo(() => {
-    const list = searchActive ? scopedConversations.filter((c) => c.id && matchIds.has(c.id)) : [...scopedConversations];
+    const list = searchActive ? conversations.filter((c) => c.id && matchIds.has(c.id)) : [...conversations];
     list.sort(compareConversationsByRecency);
     return list;
-  }, [scopedConversations, searchActive, matchIds]);
+  }, [conversations, searchActive, matchIds]);
 
   // ── Batch-hydrate the per-row first+latest FlowMessages (X2) ────────────────
   // Each ``ConversationListRow`` resolves its first + latest FlowMessage by id
@@ -617,12 +591,11 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
     setFetching(true);
     try {
       await fetchConversations(agentId);
-      await refreshAgentScope();
       void refetch();
     } finally {
       setFetching(false);
     }
-  }, [agentId, refetch, refreshAgentScope]);
+  }, [agentId, refetch]);
 
   const handleArchive = useCallback(
     async (convId: string) => {
@@ -667,7 +640,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
   // archived conversations. Drives the BulkConfirmDialog summary and the
   // hub-reachability gate. Mirrors the server-side classification in
   // ``handle_conversation_delete_archived``.
-  const archivedConvs = useMemo(() => scopedConversations.filter((c) => c.archived_at), [scopedConversations]);
+  const archivedConvs = useMemo(() => conversations.filter((c) => c.archived_at), [conversations]);
   // Classify a conversation by the user's relationship to it — drives both the
   // bulk-delete confirm summary and the hub-reachability gate. Shared by the
   // "Delete all archived" flow and the multi-select "Delete" flow.
@@ -1237,7 +1210,6 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
                 if (conv.id) rowRefs.current.set(conv.id, el);
               }}
               agentId={agentId}
-              allowedMessageIds={agentId ? agentFlowMessageIds : undefined}
             />
           ))}
       </div>

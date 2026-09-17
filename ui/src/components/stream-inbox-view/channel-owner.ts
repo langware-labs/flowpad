@@ -1,4 +1,4 @@
-import { Agent, type DataSource, TypeId, User } from '@sdk';
+import { Agent, Conversation, type DataSource, ExpressionNode, QueryFilter, QueryRequest, TypeId, User } from '@sdk';
 
 /** The backend's `owner_of` rule (`flow_sdk/stream_inbox/projection.py`), client-side, for a
  *  row written before `owner` existed: the agent its legacy `config.agent_id` names,
@@ -16,4 +16,20 @@ export function ownerOf(source: Pick<DataSource, 'owner' | 'config'>): string | 
 export function channelsOwnerFor(agentId: string | undefined, localUserId: string | undefined): TypeId | null {
   if (agentId) return new TypeId(Agent.type, agentId);
   return localUserId ? new TypeId(User.type, localUserId) : null;
+}
+
+/** The conversations a stream inbox lists — a live query the BACKEND filters by owner, so the
+ *  browser neither loads every conversation nor narrows them itself. An agent's stream inbox is
+ *  exactly what it owns; the local user's also holds rows written before `owner` existed
+ *  (unowned — `owner_of`'s rule; a hub runtime's rows carry no owner, so they all match). Every
+ *  surface listing the user's conversations builds its request HERE: the same query is the same
+ *  cache key, which is what makes opening the stream inbox a warm remount instead of a loading
+ *  flash. */
+export function streamInboxConversationsRequest(owner: TypeId): QueryRequest {
+  const owned = new ExpressionNode({ op: '$EQ', operands: ['owner', owner.toString()] });
+  const match =
+    owner.type === Agent.type
+      ? owned
+      : new ExpressionNode({ op: '$OR', operands: [owned, new ExpressionNode({ op: '$IS_NULL', operands: ['owner'] })] });
+  return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match }) });
 }

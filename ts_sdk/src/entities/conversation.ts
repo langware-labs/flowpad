@@ -157,6 +157,12 @@ export interface IConversation extends IEntity {
    *  the row when set; auto-revives when a FlowMessage newer than this stamp
    *  arrives. Per-message ``FlowMessage.is_read`` remains independent. */
   archived_at?: string | Date | null;
+  /** Whose stream inbox lists this conversation — a user or agent typeid string;
+   *  null on rows written before the field existed (the local user's). */
+  owner?: string | null;
+  /** Unread for the local viewer, stamped by the backend (`stream_inbox.recompute_unread`).
+   *  Render it; never recompute it. Absent on a hub runtime, which has no such projection. */
+  is_unread?: boolean;
 }
 
 /**
@@ -184,6 +190,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   git_sharing_enabled?: boolean;
   dismissed_at?: string | Date | null;
   archived_at?: string | Date | null;
+  owner?: string | null;
+  is_unread?: boolean;
   static type: string = 'conversation';
 
   constructor(entity: Partial<IConversation> = {}) {
@@ -201,6 +209,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
     this.dismissed_at = entity.dismissed_at ?? null;
     this.archived_at = entity.archived_at ?? null;
+    this.owner = entity.owner ?? null;
+    this.is_unread = entity.is_unread;
   }
 
   /**
