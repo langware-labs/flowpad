@@ -20,12 +20,11 @@ import {
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
-import { isViewer } from './conversation-category';
 import { ThreadStack } from './ThreadStack';
-import { channelLabel } from './channel-attribution';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { syncConversationMessages, updateMessage } from '@src/components/stream-inbox-view/stream-inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
+import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { SessionEventLine } from './SessionEventLine';
 import { SessionCard } from './SessionCard';
@@ -545,7 +544,7 @@ export function ConversationView({
       const latestId = latestPointer(pointers)?.id;
       const latest = latestId ? messagesById.get(latestId) : undefined;
       if (!latest?.id || latest.is_read) return;
-      if (isViewer(latest.sender_id, { email: '', cloudUserId, localUserId: localUser?.id ?? null })) return;
+      if (authoredBy(senderOf(latest), [cloudUserId, localUser?.id])) return;
       const key = `${conversationId}:${latest.id}`;
       if (readMarkedRef.current === key) return;
       readMarkedRef.current = key;
@@ -755,7 +754,7 @@ export function ConversationView({
           ordinary ingest route once it exists. */}
       {sendingText && (
         <SessionEventLine
-          text={t`Sending in ${channelSpec?.title ?? channelLabel(channel)}: “${sendingText}”`}
+          text={t`Sending in ${channelSpec?.title}: “${sendingText}”`}
         />
       )}
       <MessageComposer

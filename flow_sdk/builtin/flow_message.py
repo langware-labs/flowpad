@@ -496,10 +496,13 @@ class FlowMessage(Entity):
         """
         if not isinstance(data, dict) or "sender_id" not in data:
             return data
-        wire = MessageSender.from_wire(data.get("sender_id"))
         current = data.get("sender")
-        kind = (current.get("kind") if isinstance(current, dict) else getattr(current, "kind", None)) if current else None
-        if current is None or (kind == SenderKind.USER and wire is not None and wire.kind is SenderKind.USER):
+        if isinstance(current, dict):
+            current = MessageSender.model_validate(current)
+        if current is not None and current.kind is not SenderKind.USER:
+            return data
+        wire = MessageSender.from_wire(data.get("sender_id"))
+        if current is None or (wire is not None and wire.kind is SenderKind.USER):
             data = {**data, "sender": wire}
         return data
 
