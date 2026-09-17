@@ -1,7 +1,5 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { ActionInfo } from '../models/ActionInfo';
+import { APIEntity, registerEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
-import type { GitOrigin } from '../models/GitOrigin';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { mainFileForType } from '../models/asset-editor';
@@ -11,7 +9,6 @@ import type { IDeployment } from './deployment';
 import { DataSource, type IDataSource } from './data-source';
 import { EmailInbox, type IEmailInbox } from './email-inbox';
 import { Trigger } from './trigger';
-import type { UserRole } from '../services/membershipService';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 
@@ -80,11 +77,6 @@ export class Agent extends APIEntity<Agent> {
   enabled: boolean;
   /** Absolute on-disk path to the agent's folder (`agent.md` sits inside). */
   asset_ref?: string;
-  /** Where the hub published this agent from: the repo, the branch it was pushed to
-   *  (`flow-cloud`) and the agent's folder as `rel_path`. Hub-written provenance —
-   *  absent on desktop rows and on agents never published from git. `/launch?agent=`
-   *  reads it to know which repository to launch. */
-  git_origin?: GitOrigin | null;
 
   // ── presentation + project auto-launch ─────────────────────────────────
   /** Welcome text rendered as the agent's first message in Vibe/Standard chat.
@@ -127,21 +119,12 @@ export class Agent extends APIEntity<Agent> {
 
     this.enabled = entity.enabled ?? true;
     this.asset_ref = entity.asset_ref;
-    this.git_origin = entity.git_origin;
 
     this.intro = entity.intro;
     this.auto_launch = entity.auto_launch ?? false;
     this.auto_launch_prompt = entity.auto_launch_prompt;
     this.places = entity.places ?? null;
     this.email_place = entity.email_place ?? null;
-  }
-
-  /** The agent's roles on its hub row (`ImAnonymousViewer(roles)` = is it public). Calls
-   * `GET /agent/<id>/roles`, which talks to the hub itself — deliberately not hub-reflected. */
-  public async fetchPermissions(): Promise<UserRole[]> {
-    const info = new ActionInfo('roles', Agent.type, this.id, 'GET');
-    const json = await dataManager.callAction<undefined, { roles?: UserRole[] | null }>(info);
-    return json?.roles ?? [];
   }
 
   /**

@@ -1494,6 +1494,7 @@ msgstr ""
 msgid "Add secret"
 msgstr "הוסף סוד"
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Add someone to share with."
 msgstr ""
@@ -1674,10 +1675,6 @@ msgstr "הוק סוכן"
 #: src/routes/loaders/load-agent-inbox.ts
 #: src/routes/loaders/load-agent-inbox.ts
 msgid "Agent inbox not found"
-msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Agent is publicly visible"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -2179,10 +2176,6 @@ msgstr "כל מי שתשתפו איתו יכול לפתוח, להשתמש ולמ
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
-msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Anyone, even without signing in, can see this agent's name, description and system prompt — its files and actions stay private."
 msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
@@ -3139,10 +3132,6 @@ msgstr "קריאות"
 msgid "Can’t find what you need? Send us a question and a person will get back to you."
 msgstr "לא מצאתם את מה שחיפשתם? שלחו לנו שאלה ומישהו יחזור אליכם."
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Can't launch this agent: it doesn't exist, or you don't have access to it."
-msgstr ""
-
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
 msgstr "לא ניתן לפתוח טרמינל"
@@ -3164,6 +3153,7 @@ msgstr ""
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentAddCloudMachine.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -4681,6 +4671,10 @@ msgstr ""
 msgid "Copy join code"
 msgstr "העתק קוד הצטרפות"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Copy launch link"
+msgstr ""
+
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
@@ -5017,10 +5011,6 @@ msgstr ""
 
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Could not load your token plan."
-msgstr ""
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Could not make this agent public"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
@@ -5397,10 +5387,6 @@ msgstr "לא הצלחנו להשלים את הכנת סביבת העבודה"
 msgid "Couldn't load {0}… ({1}) — opened {fallbackPointer} instead."
 msgstr "לא ניתן היה לטעון את {0}… ({1}) — נפתח {fallbackPointer} במקומו."
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Couldn't load this agent."
-msgstr ""
-
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "לא ניתן לטעון את התמליל"
@@ -5466,11 +5452,6 @@ msgstr "לא ניתן היה לזהות את התהליך הזה."
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
 msgstr "הגדרת הפרויקט נכשלה"
-
-#: src/pages/entry/AgentLaunchLanding.tsx
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Couldn't set up the sandbox."
-msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Couldn't start GitHub connection."
@@ -10502,6 +10483,10 @@ msgstr "הפעלה"
 msgid "Launch {0}?"
 msgstr "להפעיל את {0}?"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Launch a new sandbox running this agent"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Launch a session first"
 msgstr "יש להפעיל סשן תחילה"
@@ -11057,10 +11042,6 @@ msgstr "טוען הקשר משימה…"
 msgid "Loading tasks..."
 msgstr "טוען משימות..."
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Loading the agent…"
-msgstr ""
-
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading transcript data..."
 msgstr "טעינת נתוני תמליל..."
@@ -11258,10 +11239,6 @@ msgstr ""
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Make a todo app"
 msgstr "צרו אפליקציית משימות"
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Make agent publicly visible"
-msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Make this the default assistant"
@@ -14619,6 +14596,10 @@ msgstr ""
 msgid "People you add here can see this organization. An admin can run its teams and divide its budget; only the owner can change the organization's own total, its provider key, or its name."
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+msgid "People you share with can view this agent and its files. They can't edit, deploy or share it on."
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Permanently delete?"
 msgstr "למחוק קבוע?"
@@ -14836,14 +14817,6 @@ msgstr "יש להתחבר"
 #: src/notifications/ingest.ts
 msgid "Please sign in again to keep using cloud features."
 msgstr "יש להתחבר שוב כדי להמשיך להשתמש בתכונות הענן."
-
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Please sign in to flowpad to continue with the agent creation process."
-msgstr ""
-
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Please sign in to start the agent {agentName}…"
-msgstr ""
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
@@ -15410,7 +15383,7 @@ msgstr ""
 msgid "Publish hit a conflict"
 msgstr "הפרסום נתקל בהתנגשות"
 
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Publish this agent to share it"
 msgstr ""
 
@@ -17946,10 +17919,6 @@ msgstr ""
 #~ msgid "Set{0}"
 #~ msgstr ""
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Setting up your {agentName} on a new sandbox…"
-msgstr ""
-
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Setting up your project…"
 msgstr "הכנת הפרויקט שלך…"
@@ -17970,6 +17939,7 @@ msgstr "ההגדרה נכשלה"
 msgid "Setup git"
 msgstr "הגדרת Git"
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -17995,6 +17965,10 @@ msgstr "שיתוף {0}"
 msgid "Share {0} over Git"
 msgstr "לשתף את {0} דרך Git"
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+msgid "Share {agentName}"
+msgstr ""
+
 #: src/components/organization/budgets/OrgSharePanel.tsx
 msgid "Share {orgName}"
 msgstr ""
@@ -18007,6 +17981,7 @@ msgstr ""
 msgid "Share anyway"
 msgstr "שתפו בכל זאת"
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share by name or email…"
@@ -18028,6 +18003,14 @@ msgstr ""
 #: src/pages/hub-home/HubHome.tsx
 msgid "Share sandbox"
 msgstr "שיתוף סנדבוקס"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Share the agent with someone first — the link only works for people it's shared with."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Share this agent with specific people"
+msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -18082,10 +18065,16 @@ msgstr "הקשר משותף"
 msgid "Shared sessions"
 msgstr "סשנים משותפים"
 
+#. placeholder {0}: granted.join(', ')
 #. placeholder {0}: outcome.granted.join(', ')
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Shared with {0}"
 msgstr "משותף עם {0}"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Sharing"
+msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Sharing failed."
@@ -18341,7 +18330,6 @@ msgstr "תצוגת גרף Sigma"
 msgid "Sign in"
 msgstr "היכנסו"
 
-#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Sign In"
 msgstr ""
@@ -18450,7 +18438,6 @@ msgstr "ההתחברות לא אושרה"
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "התחברת"
@@ -19970,6 +19957,14 @@ msgstr ""
 msgid "They'll get an email with a link that opens this sandbox."
 msgstr "הם יקבלו דוא״ל עם קישור שפותח את ה-sandbox הזה."
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+msgid "They'll get an email with a link to this agent."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+msgid "They'll get an email with the agent."
+msgstr ""
+
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "They'll get an email, and the sandbox is already in their list."
 msgstr "הם יקבלו דוא״ל, וה-sandbox כבר ברשימה שלהם."
@@ -20001,10 +19996,6 @@ msgstr "לא ניתן לבטל פעולה זו."
 msgid "This agent"
 msgstr ""
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-#~ msgid "This agent doesn't exist, or you don't have access to it."
-#~ msgstr ""
-
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "This agent has no email address yet."
 #~ msgstr ""
@@ -20012,10 +20003,6 @@ msgstr ""
 #: src/routes/loaders/load-agent-inbox.ts
 #: src/routes/loaders/load-agent-inbox.ts
 msgid "This Agent inbox URL is malformed."
-msgstr ""
-
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "This agent isn't published from a git repository, so there's nothing to launch."
 msgstr ""
 
 #: src/routes/loaders/load-agent-inbox.ts
@@ -20179,10 +20166,6 @@ msgstr "הקישור הזה אינו מפנה ל-Sandbox."
 msgid "This link doesn't name a repository we can launch."
 msgstr "הקישור הזה לא מציין מאגר שאפשר להפעיל."
 
-#: src/pages/entry/LaunchLanding.tsx
-msgid "This link doesn't point at an agent."
-msgstr ""
-
 #: src/navigation/NavigationActions.ts
 msgid "This link has no available viewer"
 msgstr ""
@@ -20190,10 +20173,6 @@ msgstr ""
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
 msgstr "לקישור הזה חסר ה-Sandbox שהוא אמור לפתוח."
-
-#: src/pages/entry/LaunchLanding.tsx
-msgid "This link names both a repository and an agent. Ask for a link that names just one."
-msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."
@@ -20938,10 +20917,6 @@ msgstr "טריגרים"
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
 msgstr "נסה שוב"
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Try again."
-msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -22364,10 +22339,6 @@ msgstr "השאלות שלך"
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready."
-msgstr ""
-
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Your session has expired. Sign in again to open this agent."
 msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx

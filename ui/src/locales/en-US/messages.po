@@ -1494,6 +1494,7 @@ msgstr "Add schedule"
 msgid "Add secret"
 msgstr "Add secret"
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Add someone to share with."
 msgstr "Add someone to share with."
@@ -1675,10 +1676,6 @@ msgstr "Agent Hook"
 #: src/routes/loaders/load-agent-inbox.ts
 msgid "Agent inbox not found"
 msgstr "Agent inbox not found"
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Agent is publicly visible"
-msgstr "Agent is publicly visible"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "Agent name"
@@ -2180,10 +2177,6 @@ msgstr "Anyone you share with can open, use and delete this sandbox."
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
 msgstr "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Anyone, even without signing in, can see this agent's name, description and system prompt — its files and actions stay private."
-msgstr "Anyone, even without signing in, can see this agent's name, description and system prompt — its files and actions stay private."
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #~ msgid "API"
@@ -3139,10 +3132,6 @@ msgstr "Calls"
 msgid "Can’t find what you need? Send us a question and a person will get back to you."
 msgstr "Can’t find what you need? Send us a question and a person will get back to you."
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Can't launch this agent: it doesn't exist, or you don't have access to it."
-msgstr "Can't launch this agent: it doesn't exist, or you don't have access to it."
-
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
 msgstr "Can't open terminal"
@@ -3164,6 +3153,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentAddCloudMachine.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -4681,6 +4671,10 @@ msgstr "Copy id"
 msgid "Copy join code"
 msgstr "Copy join code"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Copy launch link"
+msgstr "Copy launch link"
+
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
@@ -5018,10 +5012,6 @@ msgstr "Could not load usage."
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Could not load your token plan."
 msgstr "Could not load your token plan."
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Could not make this agent public"
-msgstr "Could not make this agent public"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "Could not move email here"
@@ -5397,10 +5387,6 @@ msgstr "Couldn't finish preparing your workspace"
 msgid "Couldn't load {0}… ({1}) — opened {fallbackPointer} instead."
 msgstr "Couldn't load {0}… ({1}) — opened {fallbackPointer} instead."
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Couldn't load this agent."
-msgstr "Couldn't load this agent."
-
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "Couldn’t load transcript"
@@ -5466,11 +5452,6 @@ msgstr "Couldn’t resolve this process."
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
 msgstr "Couldn't set up the project"
-
-#: src/pages/entry/AgentLaunchLanding.tsx
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Couldn't set up the sandbox."
-msgstr "Couldn't set up the sandbox."
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Couldn't start GitHub connection."
@@ -10502,6 +10483,10 @@ msgstr "Launch"
 msgid "Launch {0}?"
 msgstr "Launch {0}?"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Launch a new sandbox running this agent"
+msgstr "Launch a new sandbox running this agent"
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Launch a session first"
 msgstr "Launch a session first"
@@ -11057,10 +11042,6 @@ msgstr "Loading task context…"
 msgid "Loading tasks..."
 msgstr "Loading tasks..."
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Loading the agent…"
-msgstr "Loading the agent…"
-
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading transcript data..."
 msgstr "Loading transcript data..."
@@ -11258,10 +11239,6 @@ msgstr "Machine size"
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Make a todo app"
 msgstr "Make a todo app"
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Make agent publicly visible"
-msgstr "Make agent publicly visible"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Make this the default assistant"
@@ -14619,6 +14596,10 @@ msgstr "People with no team"
 msgid "People you add here can see this organization. An admin can run its teams and divide its budget; only the owner can change the organization's own total, its provider key, or its name."
 msgstr "People you add here can see this organization. An admin can run its teams and divide its budget; only the owner can change the organization's own total, its provider key, or its name."
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+msgid "People you share with can view this agent and its files. They can't edit, deploy or share it on."
+msgstr "People you share with can view this agent and its files. They can't edit, deploy or share it on."
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Permanently delete?"
 msgstr "Permanently delete?"
@@ -14836,14 +14817,6 @@ msgstr "Please sign in"
 #: src/notifications/ingest.ts
 msgid "Please sign in again to keep using cloud features."
 msgstr "Please sign in again to keep using cloud features."
-
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Please sign in to flowpad to continue with the agent creation process."
-msgstr "Please sign in to flowpad to continue with the agent creation process."
-
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Please sign in to start the agent {agentName}…"
-msgstr "Please sign in to start the agent {agentName}…"
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
@@ -15410,7 +15383,7 @@ msgstr "Publish failed."
 msgid "Publish hit a conflict"
 msgstr "Publish hit a conflict"
 
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Publish this agent to share it"
 msgstr "Publish this agent to share it"
 
@@ -17946,10 +17919,6 @@ msgstr "Set values"
 #~ msgid "Set{0}"
 #~ msgstr "Set{0}"
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Setting up your {agentName} on a new sandbox…"
-msgstr "Setting up your {agentName} on a new sandbox…"
-
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Setting up your project…"
 msgstr "Setting up your project…"
@@ -17970,6 +17939,7 @@ msgstr "Setup failed"
 msgid "Setup git"
 msgstr "Setup git"
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -17995,6 +17965,10 @@ msgstr "Share {0}"
 msgid "Share {0} over Git"
 msgstr "Share {0} over Git"
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+msgid "Share {agentName}"
+msgstr "Share {agentName}"
+
 #: src/components/organization/budgets/OrgSharePanel.tsx
 msgid "Share {orgName}"
 msgstr "Share {orgName}"
@@ -18007,6 +17981,7 @@ msgstr "Share {projectName}"
 msgid "Share anyway"
 msgstr "Share anyway"
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share by name or email…"
@@ -18028,6 +18003,14 @@ msgstr "Share project"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Share sandbox"
 msgstr "Share sandbox"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Share the agent with someone first — the link only works for people it's shared with."
+msgstr "Share the agent with someone first — the link only works for people it's shared with."
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Share this agent with specific people"
+msgstr "Share this agent with specific people"
 
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -18082,10 +18065,16 @@ msgstr "Shared Context"
 msgid "Shared sessions"
 msgstr "Shared sessions"
 
+#. placeholder {0}: granted.join(', ')
 #. placeholder {0}: outcome.granted.join(', ')
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Shared with {0}"
 msgstr "Shared with {0}"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Sharing"
+msgstr "Sharing"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Sharing failed."
@@ -18341,7 +18330,6 @@ msgstr "Sigma graph view"
 msgid "Sign in"
 msgstr "Sign in"
 
-#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Sign In"
 msgstr "Sign In"
@@ -18450,7 +18438,6 @@ msgstr "Sign-in not confirmed"
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "Signed in"
@@ -19970,6 +19957,14 @@ msgstr "They'll get an email with a link that opens this budget."
 msgid "They'll get an email with a link that opens this sandbox."
 msgstr "They'll get an email with a link that opens this sandbox."
 
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+msgid "They'll get an email with a link to this agent."
+msgstr "They'll get an email with a link to this agent."
+
+#: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+msgid "They'll get an email with the agent."
+msgstr "They'll get an email with the agent."
+
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "They'll get an email, and the sandbox is already in their list."
 msgstr "They'll get an email, and the sandbox is already in their list."
@@ -20001,10 +19996,6 @@ msgstr "This action cannot be undone."
 msgid "This agent"
 msgstr "This agent"
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-#~ msgid "This agent doesn't exist, or you don't have access to it."
-#~ msgstr "This agent doesn't exist, or you don't have access to it."
-
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "This agent has no email address yet."
 #~ msgstr "This agent has no email address yet."
@@ -20013,10 +20004,6 @@ msgstr "This agent"
 #: src/routes/loaders/load-agent-inbox.ts
 msgid "This Agent inbox URL is malformed."
 msgstr "This Agent inbox URL is malformed."
-
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "This agent isn't published from a git repository, so there's nothing to launch."
-msgstr "This agent isn't published from a git repository, so there's nothing to launch."
 
 #: src/routes/loaders/load-agent-inbox.ts
 msgid "This Agent no longer exists."
@@ -20179,10 +20166,6 @@ msgstr "This link does not point at a sandbox."
 msgid "This link doesn't name a repository we can launch."
 msgstr "This link doesn't name a repository we can launch."
 
-#: src/pages/entry/LaunchLanding.tsx
-msgid "This link doesn't point at an agent."
-msgstr "This link doesn't point at an agent."
-
 #: src/navigation/NavigationActions.ts
 msgid "This link has no available viewer"
 msgstr "This link has no available viewer"
@@ -20190,10 +20173,6 @@ msgstr "This link has no available viewer"
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
 msgstr "This link is missing the sandbox it should open."
-
-#: src/pages/entry/LaunchLanding.tsx
-msgid "This link names both a repository and an agent. Ask for a link that names just one."
-msgstr "This link names both a repository and an agent. Ask for a link that names just one."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."
@@ -20938,10 +20917,6 @@ msgstr "Triggers"
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
 msgstr "Try again"
-
-#: src/components/assets/editor/agent-profile/AgentPublicVisibilitySection.tsx
-msgid "Try again."
-msgstr "Try again."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -22365,10 +22340,6 @@ msgstr "Your questions"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready."
 msgstr "Your sandbox is ready."
-
-#: src/pages/entry/AgentLaunchLanding.tsx
-msgid "Your session has expired. Sign in again to open this agent."
-msgstr "Your session has expired. Sign in again to open this agent."
 
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "Your teams"

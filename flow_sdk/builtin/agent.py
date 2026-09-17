@@ -562,11 +562,6 @@ class Agent(Entity):
 
     # ── publish ───────────────────────────────────────────────────────────
 
-    @property
-    def is_on_hub(self) -> bool:
-        """True iff this agent has a hub row — READ-ONLY; never call ``ensure_on_hub()`` just to check, it publishes."""
-        return bool(self.remote and self.origin)
-
     async def ensure_on_hub(self, actor: TypeId, *, force: bool = False) -> bool:
         """Publish this repository-backed agent through the canonical Git path.
 
@@ -574,8 +569,13 @@ class Agent(Entity):
         owning Project's repository, so publication must commit that asset path,
         push it, and register its ``GitOrigin`` under the already-published
         Project. The Hub can then clone the whole repository into the sandbox.
+
+        ``remote=True`` without ``git_origin`` is legacy partial state produced by
+        the old field-only share path. Treat it as unpublished so the next deploy
+        repairs the row rather than preserving a deployment that cannot load its
+        files (notably ``avatar.png``).
         """
-        if self.is_on_hub and not force:
+        if self.remote and self.origin and not force:
             return False
 
         from flow_sdk.builtin.asset_publishing import (
@@ -1041,53 +1041,6 @@ class Agent(Entity):
         from flow_sdk.builtin import agent_places  # noqa: PLC0415
 
         return await self._place_answer(lambda: asyncio.to_thread(agent_places.version_state, self))
-
-    @action.post(action_name="set_public")
-    async def set_public_action(self):
-        """`POST /agent/<id>/set_public {public: "anonymous"}` — hub-authoritative.
-
-        Stamps `visitor_role` on the agent's HUB row. The TS SDK sends `Hub-Reflect: true`,
-        so a published agent's call is forwarded to the hub before reaching here; this body
-        only runs for an offline/local call, which has no hub row to stamp — it fails loudly.
-        """
-        from fastapi import HTTPException  # noqa: PLC0415
-
-        raise HTTPException(
-            status_code=409,
-            detail="Making an agent public requires Flowpad Cloud; you're offline or signed out.",
-        )
-
-    @action.get(action_name="roles")
-    async def roles_action(self):
-        """`GET /agent/<id>/roles` — this agent's roles on its hub row, read straight from the hub.
-
-        Deliberately NOT hub-reflected, so `_hub_reflect.py` never sees this action; gated on
-        `is_on_hub` (read-only) — never `ensure_on_hub()`, which publishes as a side effect when
-        the agent isn't on the hub yet.
-        """
-        from fastapi import HTTPException  # noqa: PLC0415
-
-        if not self.is_on_hub:
-            raise HTTPException(
-                status_code=409,
-                detail="This agent has not been published to Flowpad Cloud.",
-            )
-
-        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
-        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-
-        try:
-            hub_resp = await hub_get_or_raise(BuiltinEntityType.AGENT, self.id, params={"expand": "permissions"})
-        except HubError as e:
-            # `is_target_missing` covers both a real 404 (deleted on the hub) and the
-            # authorizer's masked `target_not_found` (no role there at all) — either way
-            # there is nothing to report. Anything else (401 expired, hub down, 5xx)
-            # passes its own status and reason through verbatim.
-            status = 404 if e.is_target_missing else (e.status_code or 502)
-            raise HTTPException(status_code=status, detail=e.reason) from e
-
-        return {"roles": (hub_resp.get("expand") or {}).get("roles") or []}
 
     # ── schedules: child trigger assets (HTTP) ────────────────────────────
 

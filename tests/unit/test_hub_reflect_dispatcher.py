@@ -222,31 +222,6 @@ async def test_reflect_uses_request_method_not_action_methods(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_reflected_read_forwards_its_query(monkeypatch):
-    """A reflected read carries its query string — ``expand=permissions`` is the
-    only way a desk client learns the hub row's roles. (The hub serves
-    ``/<type>/<id>/read`` as the bare read, so the action name passes through.)"""
-    import flow_sdk.server.routes._hub_reflect as mod
-
-    captured = {}
-
-    async def fake_hub_get(entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
-        captured.update(action=action, params=kwargs.get("params"))
-        return {"id": entity_id, "expand": {"roles": ["anonymous_viewer"]}}
-
-    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
-    a = Action(action_name="read", function_name="handle_get", handler=lambda: None,
-               methods=["get"], types=["all"])
-    e = _make_entity(remote=True)
-
-    result = await mod.reflect_to_hub(a, e, {"expand": ["permissions", "blobs"]}, "GET")
-
-    assert captured == {"action": "read", "params": {"expand": "permissions,blobs"}}
-    assert result["expand"]["roles"] == ["anonymous_viewer"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
 async def test_reflect_to_hub_uses_post_for_mutating_actions(monkeypatch):
     import flow_sdk.server.routes._hub_reflect as mod
 
