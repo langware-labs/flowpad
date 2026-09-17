@@ -3136,6 +3136,10 @@ msgstr "الاستدعاءات"
 msgid "Can’t find what you need? Send us a question and a person will get back to you."
 msgstr "لم تجد ما تحتاجه؟ يمكن إرسال سؤالك وسيرد عليك أحد أفراد فريقنا."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Can't launch this agent: it doesn't exist, or you don't have access to it."
+msgstr ""
+
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
 msgstr "لا يمكن فتح المحطة الطرفية"
@@ -5395,6 +5399,10 @@ msgstr "تعذّر إكمال تحضير مساحة العمل"
 msgid "Couldn't load {0}… ({1}) — opened {fallbackPointer} instead."
 msgstr "تعذر تحميل {0}… ({1}) — تم فتح {fallbackPointer} بدلاً منه."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't load this agent."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "تعذّر تحميل السجل"
@@ -5460,6 +5468,11 @@ msgstr "تعذر تحديد هذه العملية."
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
 msgstr "تعذر إعداد المشروع"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't set up the sandbox."
+msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Couldn't start GitHub connection."
@@ -11022,6 +11035,10 @@ msgstr "جاري تحميل سياق المهمة…"
 msgid "Loading tasks..."
 msgstr "جارٍ تحميل المهام..."
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Loading the agent…"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading transcript data..."
 msgstr "جاري تحميل بيانات المحادثة..."
@@ -14811,6 +14828,14 @@ msgstr "يرجى تسجيل الدخول"
 msgid "Please sign in again to keep using cloud features."
 msgstr "يرجى تسجيل الدخول مرة أخرى للاستمرار في استخدام ميزات السحابة"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Please sign in to flowpad to continue with the agent creation process."
+msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Please sign in to start the agent {agentName}…"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
 msgstr "يرجى إعادة المحاولة."
@@ -17908,6 +17933,10 @@ msgstr ""
 #~ msgid "Set{0}"
 #~ msgstr ""
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Setting up your {agentName} on a new sandbox…"
+msgstr ""
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Setting up your project…"
 msgstr "جاري إعداد المشروع…"
@@ -18304,6 +18333,7 @@ msgstr "عرض Sigma للرسم البياني"
 msgid "Sign in"
 msgstr "تسجيل الدخول"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Sign In"
 msgstr ""
@@ -18412,6 +18442,7 @@ msgstr "لم يتم تأكيد تسجيل الدخول"
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "تم تسجيل الدخول"
@@ -19982,6 +20013,10 @@ msgstr ""
 #~ msgid "This agent has no email address yet."
 #~ msgstr ""
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "This agent isn't published from a git repository, so there's nothing to launch."
+msgstr ""
+
 #: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent no longer exists."
 msgstr ""
@@ -20148,6 +20183,10 @@ msgstr "هذا الرابط لا يشير إلى بيئة معزولة."
 msgid "This link doesn't name a repository we can launch."
 msgstr "هذا الرابط لا يحدد مستودعاً يمكن تشغيله."
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link doesn't point at an agent."
+msgstr ""
+
 #: src/navigation/NavigationActions.ts
 msgid "This link has no available viewer"
 msgstr ""
@@ -20155,6 +20194,10 @@ msgstr ""
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
 msgstr "هذا الرابط لا يتضمن البيئة المعزولة التي يُفترض أن يفتحها."
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link names both a repository and an agent. Ask for a link that names just one."
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."
@@ -22326,6 +22369,10 @@ msgstr "أسئلتك"
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Your sandbox is ready."
+msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Your session has expired. Sign in again to open this agent."
 msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx

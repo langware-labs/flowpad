@@ -1402,6 +1402,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
       console.error(`store.ts:Error fetching entity by type ID: ${typeId.toString()}`, error);
       ref.status = EntityStatus.ERROR;
+      // Set before `finally`: parked waiters are rejected with `ref.error`, not null.
+      ref.error = error as ApiError;
       throw error;
     } finally {
       this.resolvePendingRequests(ref);
