@@ -451,6 +451,16 @@ class Agent(Entity):
         return await target.use(project_id=project_id, owner=owner)
 
     @staticmethod
+    async def reset_auto_launch(project_id: str, agent_id: str) -> None:
+        """Clear ``agent_id``'s once-only mark in ``project_id``, so the next open
+        auto-launches it again. Other agents' marks are kept."""
+        from flow_sdk.project_device_state import update_project_device_state  # noqa: PLC0415
+
+        async with _AUTO_LAUNCH_LOCKS[project_id]:
+            remaining = [i for i in Agent.auto_launched_ids(project_id) if i != str(agent_id)]
+            update_project_device_state(project_id, **{_AUTO_LAUNCHED_KEY: remaining})
+
+    @staticmethod
     def auto_launched_ids(project_id: str) -> list[str]:
         """The project's once-only marks, sorted — what a later open will skip."""
         from flow_sdk.project_device_state import read_project_device_state  # noqa: PLC0415
@@ -1044,6 +1054,29 @@ class Agent(Entity):
             return adopted.model_dump(mode="json")
 
         return await self._place_answer(run)
+
+    @action.get(action_name="auto_launch_state")
+    async def auto_launch_state_action(self):
+        """`GET /agent/<id>/auto_launch_state` — ``{"launched": bool | None}``.
+
+        Whether this agent already auto-launched in its OWN project; ``None`` when it
+        has no project. A project that picks the agent up through a context folder
+        keeps its mark under that project, which this does not look at.
+        """
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        launched = self.id in Agent.auto_launched_ids(self.project_id) if self.project_id else None
+        return ApiSuccessResponse(data={"launched": launched})
+
+    @action.post(action_name="reset_auto_launch")
+    async def reset_auto_launch_action(self):
+        """`POST /agent/<id>/reset_auto_launch` — let this agent auto-launch again on its project's next open."""
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.project_id:
+            return ApiFailResponse(message="this agent is not in a project", status_code=400)
+        await Agent.reset_auto_launch(self.project_id, self.id)
+        return ApiSuccessResponse()
 
     @action.get(action_name="version")
     async def version_action(self):

@@ -13,6 +13,12 @@ import { Trigger } from './trigger';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 
+/** `GET /agent/<id>/auto_launch_state`. */
+export interface AgentAutoLaunchState {
+  /** Already auto-launched in the agent's own project; `null` when it has no project. */
+  launched: boolean | null;
+}
+
 /**
  * The launchable agent — identity (name / avatar / system prompt) plus the
  * launch bundle, mirroring `flow_sdk/builtin/agent.py`.
@@ -305,6 +311,16 @@ export class Agent extends APIEntity<Agent> {
   /** Make one place the only one answering this agent's email. */
   async setEmailPlace(deploymentId: string): Promise<void> {
     await this.post('set_email_place', { deployment_id: deploymentId });
+  }
+
+  /** Whether this agent already auto-launched in its project (the once-only mark is set). */
+  async autoLaunchState(): Promise<AgentAutoLaunchState> {
+    return this.get<AgentAutoLaunchState>('auto_launch_state');
+  }
+
+  /** Clear the once-only mark, so the project's next open auto-launches this agent again. */
+  async resetAutoLaunch(): Promise<void> {
+    await this.post<void>('reset_auto_launch');
   }
 
   /** Published commit and the changes on this computer that aren't published. */
