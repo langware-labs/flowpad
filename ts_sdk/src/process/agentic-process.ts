@@ -3018,6 +3018,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     const theme = hostTerminalTheme();
     actionInfo.bodyParameters = { ...(options ?? {}), ...(theme ? { theme } : {}) };
     const tOpen = performance.now();
+    toplog.log('agentic_process.load', `AgenticProcess.start POST /open sent proc=${this.id.slice(0, 8)}`);
     const result = await dataManager.callAction<
       unknown,
       {
@@ -3029,7 +3030,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       } | null
     >(actionInfo);
     toplog.log(
-      'process_load',
+      ['process_load', 'agentic_process.load'],
       `AgenticProcess.start POST /open took ${msSince(tOpen)}ms proc=${this.id.slice(0, 8)} ok=${!!result}`,
     );
     return this.adoptOpenPayload(result, options);
@@ -3076,7 +3077,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       ptyId: result.pty_id,
     });
     toplog.log(
-      ['process_load', 'pty'],
+      ['process_load', 'pty', 'agentic_process.load'],
       `AgenticProcess.start attachPty took ${msSince(tAttach)}ms pty=${result.pty_id?.slice(0, 8)}`,
     );
     // Successful open clears any prior user-stop intent.

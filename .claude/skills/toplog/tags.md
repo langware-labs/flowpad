@@ -26,6 +26,36 @@ The registry is every `### <tag>` heading below. Add entries in this format:
 <!-- New tags go here, one `### <tag>` heading each. Keep alphabetical so the
      registry stays scannable and catalog diffs stay stable across edits. -->
 
+### agentic_process.load
+- **Traces:** the whole "start a session → terminal attached" path, front and back, one line per step with its duration. Backend lines log as `toplog: [agentic_process.load] …`, frontend lines as `toplog.client: […agentic_process.load] …`, in the same instance log.
+  - **Frontend (click side):**
+    - `openNewChat click` (worker, mode, pty, `visibility`), `openNewChat createProcess took`, `openNewChat openShellProcess took`
+    - `InteractiveTerminal fit timer fired after Nms (scheduled 50ms)` and `fit + ptySync.initialize took`: a timer firing far past 50ms is a busy or throttled page, not slow terminal work
+    - `startProcessRuntime waitForConnected took|timed out`
+    - `AgenticProcess.start POST /open sent`, `… /open took`, `… attachPty took`
+    - Plus every `process_load` line (loader `perfLog`/`perfTime` steps, `materializeTab cache-miss`, `TabbedTerminal active flip`, pty-stream fetch / replay / backlog, WS request TIMEOUT), which is co-tagged.
+  - **Backend:**
+    - `createProcess start` (worker, visible, pty_mode, project), `preflight done` (is_installed + llm_picker_view), `saved`, `done`, `failed`, each with `ms` since the handler started
+    - `open request received` (the HTTP `/open` arriving), `open lock acquired wait_ms` (the per-process `_OPEN_LOCKS`)
+    - `_perform_open` steps with `ms` since it started: `reattached live worker`, `launch options ready`, `shell bound + STARTING saved`, `PTY spawned`, `done`, `failed`
+    - `worker status discovery slow ms= process= driver= status=` (≥ 25ms): the synchronous transcript search `fetch_worker_status` runs on the event loop, once for EVERY process a response serializes (the list, project history, a single GET). A burst of these lines from one request is a multi-second loop stall; `driver=codex` is the `~/.codex/sessions` rglob, `driver=claude` the `~/.claude/projects` directory walk.
+- **Where:**
+  - Frontend: `ui/src/navigation/open-new-chat.ts`, `ui/src/components/terminal/TabbedTerminal.tsx`, `ts_sdk/src/process/agentic-process.ts`, `ts_sdk/src/utils/perf.ts` (co-tags the `process_load` chokepoint), `ts_sdk/src/websocket.ts`, `ui/src/tabs/tab-content-lifecycle.ts`, `ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx`.
+  - Backend: `flow_sdk/builtin/faas/scan_actions.py` (`_scan_create_process`), `flow_sdk/builtin/agentic_process/agentic_process.py` (`_http_open`, `start_pty`, `_perform_open`).
+- **Use for** (symptom → lines to read):
+  - **"New session takes forever":** read by timestamp. A slow `createProcess` step on the backend (`preflight`, `saved`, `PTY spawned`) is backend work. `openNewChat createProcess took` much bigger than backend `createProcess done ms` is time the request spent in the browser or network, before or after the handler.
+  - **The gap between create and attach:** `openShellProcess took` and the loader lines show the navigation. The frontend `/open sent` timestamp next to the backend `open request received` timestamp splits the gap into "client didn't send yet" and "request didn't arrive yet".
+  - **Contention on the open:** a large `open lock acquired wait_ms` means another open (a second tab, the recovery watchdog) holds the process lock.
+  - **Every request slow at once (loop stall):** look for a burst of `worker status discovery slow` lines just before the stalled steps. On prod data (235 processes) one `GET /agentic_process` wrote 17 lines (1.9s) and blocked the loop 2.8–3.7s.
+  - **Write-lock contention:** `db writer lock waited ms` (> 200ms waiting for `BEGIN IMMEDIATE`) and `db writer lock held ms` (> 500ms holding it) name the request (`METHOD /path`) or asyncio task. A slow `createProcess row saved` next to a long `held` line from another writer attributes the stall.
+  - **Not covered:** a main-thread stall or requests queued in the browser appear only as unexplained time between two frontend lines. There is no log point for them.
+- **Where (lock lines):** `flow_sdk/db/drivers/sqlite/connection.py` (`_on_begin`, `_on_release`). They fire for any writer, not just the session start.
+- **Lock holder label:** `by=` is `METHOD /path` inside a request, else `<task name>:<coroutine qualname>` (e.g. `ap-flush-…:AgenticProcess._flush_transcript_change`), so an unnamed `Task-123` still names its writer.
+- **Read it as one timeline:** `python .claude/skills/toplog/scripts/load_timeline.py <instance log> [nth click]` orders front and back lines on one clock (frontend lines by `client_ts`, since they reach the log in 1s batches) as `+ms` from the click.
+- **Measure in a visible page.** A hidden tab throttles timers to about 1s, which inflates every frontend gap. The click line's `visibility=hidden` flags such a trace. Drive a headless browser (Playwright), not a background Chrome tab.
+- **Needs this checkout's code on the instance.** An installed release (e.g. `prod`) has none of these points and no `/toplog/client-log` route (405), so frontend lines stay in the browser console only.
+- **Verified 2026-09-16** on a temp instance (terminal mode, "New Claude chat" clicks): about 45 lines per click, front and back, from click to replay done. Tag off with another create: 0 new lines.
+
 ### claude_debug_session_log
 - **Traces:** nothing on its own — this tag is a *behavior switch*, not a trace stream. It selects the granularity of the Claude CLI's own `--debug-file`: OFF (default) writes one file per TURN (`<session>-<utc-stamp>.txt`), ON writes one file per SESSION (`<session>.txt`), the shape the CLI itself uses. Files land in `<instance>/logs/claude-cli-debug/` and are pruned after 7 days.
 - **Where:** `flow_sdk/builtin/agentic_process/cli_drivers/claude/stream_worker.py` (`SESSION_DEBUG_LOG_TAG`, `_turn_debug_file` — read once per turn, so a flip applies to the next turn with no restart). The pre-turn credential renewal in `.../claude/credential.py` shares the same helper, so ON collapses every renewal onto one `credential-renewal.txt`.

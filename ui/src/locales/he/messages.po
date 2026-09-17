@@ -4124,6 +4124,7 @@ msgid "Collapse side window"
 msgstr ""
 
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/color-picker.tsx
 msgid "Color"
 msgstr "צבע"
@@ -7224,6 +7225,7 @@ msgid "Emitted, but nothing on the backend is subscribed to that tag."
 msgstr "שודר, אך לא קיים מנוי לתג זה בשרת."
 
 #: src/components/conversation/EmojiPicker.tsx
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Emoji"
@@ -9608,11 +9610,11 @@ msgid "I18n"
 msgstr "שפה ובינאום"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
-#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Icon"
 msgstr "סמל"
 
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Icons"
 msgstr "סמלים"

@@ -134,9 +134,18 @@ function startProcessRuntime(process: AgenticProcess, cols: number, rows: number
     // initSdk connects FlowSync asynchronously. Preserve the former readiness
     // budget, but wait here after route commit so a cold socket cannot either
     // block the URL or make attach race the connection startup.
+    const tConnected = performance.now();
     try {
       await connectionManager.waitForConnected(5000);
+      toplog.log(
+        'agentic_process.load',
+        `startProcessRuntime waitForConnected took ${(performance.now() - tConnected).toFixed(0)}ms proc=${process.id.slice(0, 8)}`,
+      );
     } catch {
+      toplog.log(
+        'agentic_process.load',
+        `startProcessRuntime waitForConnected timed out proc=${process.id.slice(0, 8)}`,
+      );
       notify.error({
         title: t`No realtime connection`,
         message: t`Terminal may be unresponsive until the connection recovers.`,
@@ -378,7 +387,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       // Warm switch = the panel is already in the Set (visibility flip only);
       // cold = first visit mounts InteractiveTerminal (attach + replay).
       toplog.log(
-        ['process_load', 'pty'],
+        ['process_load', 'pty', 'agentic_process.load'],
         `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`,
       );
       if (prev.has(activeKey)) return prev;

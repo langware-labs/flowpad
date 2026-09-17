@@ -1153,7 +1153,14 @@ class AgenticProcess(Entity):
         (e.g. two browser tabs) can't both run recovery from stale process
         snapshots and double-spawn Claude.
         """
+        t_lock = time.monotonic()
         async with _OPEN_LOCKS[self.id]:
+            toplog.log(
+                "agentic_process.load",
+                "open lock acquired process=%s wait_ms=%.0f",
+                self.id,
+                (time.monotonic() - t_lock) * 1000,
+            )
             fresh = await AgenticProcess.get_by_id(self.id)
             if fresh is None and not self.exist_in_db:
                 await self.save()
@@ -1239,6 +1246,7 @@ class AgenticProcess(Entity):
         # ``_requeue_failed_launch(launched_head)`` can't NameError (masking
         # the real failure) when the exception fires before the pop section.
         launched_head: dict | None = None
+        t0 = time.monotonic()
         try:
             # If we're stuck in STOPPING with a dead worker (orphan from a
             # crashed close()/exit()), reset to STOPPED before doing anything
@@ -1323,6 +1331,12 @@ class AgenticProcess(Entity):
                         reattach_changed = True
                     if reattach_changed:
                         await self.save()
+                    toplog.log(
+                        "agentic_process.load",
+                        "open reattached live worker process=%s ms=%.0f",
+                        self.id,
+                        (time.monotonic() - t0) * 1000,
+                    )
                     return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
                 # Gate failed (PTY dead, worker dead, or both). Drop the stale
                 # shell so the relaunch path below sees a clean slate — without
@@ -1386,6 +1400,12 @@ class AgenticProcess(Entity):
             )
 
             await apply_api_model_to_options(cmd, self)
+            toplog.log(
+                "agentic_process.load",
+                "open launch options ready (project + process assets + api model) process=%s ms=%.0f",
+                self.id,
+                (time.monotonic() - t0) * 1000,
+            )
             # Inject the WebSocket connection ID so the worker can navigate its own tab explicitly
             if self.connection_id:
                 cmd.add_env("FLOWPAD_CONNECTION_ID", self.connection_id)
@@ -1402,6 +1422,13 @@ class AgenticProcess(Entity):
             # concurrent revalidation observes the in-flight start instead
             # of issuing a second open.
             await self.save()
+            toplog.log(
+                "agentic_process.load",
+                "open shell bound + STARTING saved process=%s shell=%s ms=%.0f",
+                self.id,
+                shell.id,
+                (time.monotonic() - t0) * 1000,
+            )
             on_exit = self._make_pty_exit_callback()
             worker_is_alive = False
             execution_info = None
@@ -1483,6 +1510,13 @@ class AgenticProcess(Entity):
                 if _shell_compute_is_local(shell):
                     await apply_worker_secret_env(spawn_env, self)
                 spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
+                toplog.log(
+                    "agentic_process.load",
+                    "open PTY spawned process=%s spawned=%s ms=%.0f",
+                    self.id,
+                    spawned,
+                    (time.monotonic() - t0) * 1000,
+                )
                 if not spawned:
                     worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
@@ -1538,6 +1572,14 @@ class AgenticProcess(Entity):
                 except Exception:
                     logger.debug("recovered-event emit skipped", exc_info=True)
 
+            toplog.log(
+                "agentic_process.load",
+                "open done process=%s recovery=%s resume=%s ms=%.0f",
+                self.id,
+                is_recovery,
+                is_resume,
+                (time.monotonic() - t0) * 1000,
+            )
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
         except asyncio.CancelledError:
@@ -1550,6 +1592,13 @@ class AgenticProcess(Entity):
             raise
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} start_pty error: {e}")
+            toplog.log(
+                "agentic_process.load",
+                "open failed process=%s ms=%.0f error=%s",
+                self.id,
+                (time.monotonic() - t0) * 1000,
+                e,
+            )
             # A failed terminal open must not strand the entity in its
             # optimistic PTY intent. Best-effort stop any partially created
             # transport, then restore the prior shell/transport so an existing
@@ -6222,12 +6271,25 @@ class AgenticProcess(Entity):
                 return None
         if self.status == ProcessStatus.NEW.value:
             return None
-        if self.status == ProcessStatus.STOPPED.value:
-            discovered = self._discover_status_from_transcript()
-            return discovered if discovered and is_worker_terminal(discovered) else None
         if self.status == ProcessStatus.FAILED.value:
             return WorkerStatus.ERROR
-        return self._discover_status_from_transcript()
+        t0 = time.monotonic()
+        discovered = self._discover_status_from_transcript()
+        took_ms = (time.monotonic() - t0) * 1000
+        # Synchronous file discovery on the event loop, run for EVERY process a
+        # response serializes: a list of N processes stalls the loop N times this.
+        if took_ms >= 25:
+            toplog.log(
+                "agentic_process.load",
+                "worker status discovery slow ms=%.0f process=%s driver=%s status=%s",
+                took_ms,
+                self.id,
+                self.driver.name,
+                self.status,
+            )
+        if self.status == ProcessStatus.STOPPED.value:
+            return discovered if discovered and is_worker_terminal(discovered) else None
+        return discovered
 
     def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> "StatusDetail | None":
         """The CLI's own error entry — its sentence and its entry id — when the
@@ -6908,6 +6970,7 @@ class AgenticProcess(Entity):
         """
         if self.hub_route:
             return self._remote_refusal("open")
+        toplog.log("agentic_process.load", "open request received process=%s", self.id)
         request_info = get_current_request_info()
         # Capture the WebSocket connection ID so the worker can target this tab explicitly
         if request_info and request_info.request_connection_id:
