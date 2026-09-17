@@ -89,3 +89,16 @@ def test_a_secret_in_a_config_is_refused_by_type_and_by_auth_name():
 
     with pytest.raises(DriverLoadError, match="never config"):
         check_config(NamedSource, _manifest(["api_key"], secrets={"api_key": ""}))
+
+
+def test_a_driver_creates_its_config_and_a_source_from_it():
+    from flow_sdk.builtin.data_driver import DataDriver
+
+    driver = DataDriver.for_class(_Source)
+    config = driver.create_config(urls=["http://a"], min_score="3")
+    assert isinstance(config, _Config) and config.min_score == 3
+
+    source = driver.create_source(config, name="probe")
+    assert (source.provider, source.config) == ("config-test", {"urls": ["http://a"], "min_score": 3})
+    with pytest.raises(ValueError, match=r"config.urls is not valid: ftp://x"):
+        driver.create_config(urls=["ftp://x"])

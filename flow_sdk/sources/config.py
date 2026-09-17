@@ -158,4 +158,15 @@ def _adapter(config: type[SourceConfig], name: str) -> TypeAdapter:
     return cache[name]
 
 
-__all__ = ["ChoiceEntry", "SourceConfig", "coerce_value"]
+def config_error(exc) -> str:
+    """A ``Config`` validation failure as the sentence the create route returns: the first field at
+    fault, ``config.<field> is required`` or ``config.<field> is not valid: <value>``."""
+    first = exc.errors()[0]
+    name = ".".join(str(part) for part in first.get("loc", ())[:1]) or "config"
+    value = first.get("input")
+    if first.get("type") == "missing" or value in ("", [], None) or (isinstance(value, str) and not value.strip()):
+        return f"config.{name} is required"
+    return f"config.{name} is not valid: {value}"
+
+
+__all__ = ["ChoiceEntry", "SourceConfig", "coerce_value", "config_error"]

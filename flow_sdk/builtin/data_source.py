@@ -44,6 +44,7 @@ from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.secrets.store import SecretStoreRef
+from flow_sdk.sources.config import config_error
 from flow_sdk.utils.serialization import iso_to_utc
 
 if TYPE_CHECKING:
@@ -1402,17 +1403,6 @@ RUNTIME_FIELDS: tuple[str, ...] = tuple(
     if name in DataSource.__annotations__  # this type's own, not the Entity base's
     and persist_policy(field) == Persist.FALSE
 )
-
-
-def config_error(exc) -> str:
-    """A ``Config`` validation failure as the sentence the create route returns: the first field at
-    fault, ``config.<field> is required`` or ``config.<field> is not valid: <value>``."""
-    first = exc.errors()[0]
-    name = ".".join(str(part) for part in first.get("loc", ())[:1]) or "config"
-    value = first.get("input")
-    if first.get("type") == "missing" or value in ("", [], None) or (isinstance(value, str) and not value.strip()):
-        return f"config.{name} is required"
-    return f"config.{name} is not valid: {value}"
 
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:
