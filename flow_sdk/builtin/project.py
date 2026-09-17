@@ -1076,6 +1076,22 @@ class Project(Entity):
         placement: reuse a matching local checkout when present, otherwise clone
         into the workspace slot ``GitOrigin.next_clone_target`` picks, then bind
         the existing shared Project id to that checkout and index it.
+
+        Indexing is READ-ONLY and awaited, and both halves matter:
+
+        * read-only, because this is somebody else's repository. The indexer
+          stamps identity into id-less files when it may write, which dirties a
+          fresh checkout and makes the recipient's next ``git pull`` fail with
+          "local changes would be overwritten" — for a course, that is the
+          student unable to receive the next lecture.
+        * awaited, because the caller navigates into the project the moment this
+          returns, and the auto-launch check that runs there can only find an
+          ``agentic-assets/agent/**`` agent that is already a row.
+
+        The bootstrap reconcile mirrors ``create-project-from-git``: a manifest
+        is third-party content, so a failure is logged and the install stands —
+        the project is usable without whatever the manifest additionally asked
+        for, and ``reconcile_bootstrap`` is idempotent, so re-opening retries.
         """
         origin = as_git(self.origin)
         if origin is None:
@@ -1090,19 +1106,28 @@ class Project(Entity):
         )
         target_dir = str(root)
         self.fs_storage_mount_path = canonical_posix_path(target_dir)
-        self.name = os.path.basename(target_dir.rstrip(os.sep))
+        # Keep the name the sender shared; the folder leaf is only a fallback.
+        # Overwriting it renamed the recipient's project after the repo folder —
+        # a course shared as "Web basics" arriving as "repo" or "remote" — and
+        # the sender's name is the one thing the two ends should agree on.
+        if not (self.name or "").strip():
+            self.name = os.path.basename(target_dir.rstrip(os.sep))
         self.remote = True
         await self.save()
         await self.setup_for_desktop()
-        await _index_additional_dir(target_dir)
+        await _index_additional_dir(target_dir, read_only=True)
+
+        try:
+            await self.reconcile_bootstrap()
+        except Exception as exc:  # noqa: BLE001 -- see the docstring: reported, not raised
+            logging.error("setup-from-git: bootstrap reconcile FAILED: %s", exc, exc_info=True)
         return self
 
     @action.post(action_name="setup-from-git")
     async def setup_from_git(self) -> ApiResponse:
         """Materialize a remote project's transmitted GitOrigin locally."""
         try:
-            project = await self.setup_from_git_origin()
-            return ApiSuccessResponse(data=project)
+            return ApiSuccessResponse(data=await self.setup_from_git_origin())
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=str(exc), status_code=400)
 

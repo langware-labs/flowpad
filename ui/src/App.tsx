@@ -33,6 +33,7 @@ import { useSyncOsBadge } from '@src/hooks/useStreamInboxManager';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { JourneyController } from '@src/journey/JourneyController';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
+import { IncomingSharedProjects } from '@src/components/task-receive/use-incoming-shared-projects';
 import { UiTagEmitter } from '@src/tags/ui.onTag';
 import { TagHighlightObserver } from '@src/tags/highlight.onTag';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
@@ -150,6 +151,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <GlobalEvents />
         {/* One-click install from the hub lands here — desktop only (it writes files). */}
         {!isHubOnly() && <AddAssetDialogRoot />}
+        {/* A project somebody shared arrives as a row with no files; this offers
+            to install it. Desktop only, same reason as above. */}
+        {!isHubOnly() && <IncomingSharedProjects />}
         <GitHubDeviceFlowModal />
         <OAuthCodeFlowModal />
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);

@@ -161,3 +161,32 @@ async def test_reset_lets_the_agent_launch_again_and_keeps_other_marks(tmp_path,
     outcome = await Agent.auto_launch_for(project.id)
     assert outcome is not None and outcome.agent.id == first.id
     assert len(used) == 2
+
+
+async def test_a_failed_session_open_leaves_the_mark_unset_so_the_next_open_retries(tmp_path, monkeypatch, used):
+    """The once-only mark is a promise that the agent DID launch.
+
+    Marking before the session opened meant a `use()` that raised — no worker
+    binary, no funding, anything transient — spent the project's single chance
+    and the agent never auto-launched again on that machine.
+    """
+    root = tmp_path / "p7"
+    project = await _project(root)
+    agent = await _agent(root, "tutor", auto_launch=True, auto_launch_prompt="open the lesson")
+
+    working = Agent.use  # the fixture's stub, restored for the retry below
+
+    async def _boom(self, project_id=None, *, deployment=None):
+        raise RuntimeError("no worker binary")
+
+    monkeypatch.setattr(Agent, "use", _boom)
+    with pytest.raises(RuntimeError, match="no worker binary"):
+        await Agent.auto_launch_for(project.id)
+
+    assert Agent.auto_launched_ids(project.id) == [], "a failed launch must not burn the mark"
+
+    # The retry is the point: with a working session the agent still launches.
+    monkeypatch.setattr(Agent, "use", working)
+    outcome = await Agent.auto_launch_for(project.id)
+    assert outcome is not None and outcome.agent.id == agent.id
+    assert Agent.auto_launched_ids(project.id) == [agent.id]
