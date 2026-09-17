@@ -81,6 +81,7 @@ PHRASES = {
     r"^tests/unit/test_cloud_origin_local_not_shared\.py$": ["#inbox/"],
     r"^docs/snippets/workflows\.md$": ["counterpart inbox"],
     r"^ui/src/components/llm-endpoints/share-endpoint\.ts$|^ui/tests/unit/share-endpoint\.test\.ts$": ["discovered in an inbox"],
+    r"^ui/tests/e2e/agent-auto-launch/agent_auto_launch_persona\.spec\.ts$": ["on top of their inbox", "with your inbox", "/inbox|"],
 }
 
 _exempt = [re.compile(p) for p in EXEMPT_FILES]
