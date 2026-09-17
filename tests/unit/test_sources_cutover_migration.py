@@ -25,7 +25,7 @@ def _db(tmp_path: Path) -> Path:
         conn.execute("INSERT INTO entities VALUES (?, ?, ?, ?, ?)", (eid, type_name, stamp, stamp, json.dumps(data)))
 
     put(SRC, "data_source", "2026-01-01", provider="agent", channel="slack", account_key="T1")
-    header = dict(data_source_id=SRC, provider="agent", kind="content.message.chat", segment_key="C1")
+    header = dict(data_source_id=SRC, provider="agent", kind="content.message.chat")
     put(OLD, "source_item", "2026-01-02", **header, external_id="17", body="old", read=True)
     put(NEW, "source_item", "2026-01-03", **header, external_id="17", body="new")
     put(ALONE, "source_item", "2026-01-02", **header, external_id="18", body="x", starred=True)
@@ -61,14 +61,14 @@ def test_apply_lifts_collapses_repoints_and_converges(tmp_path):
     mig.migrate(dry_run=False, db=db)
 
     kept = _read(db, NEW)
-    assert (kept["origin_kind"], kept["origin_namespace"], kept["origin_key"]) == ("slack", "T1/C1", "17")
+    assert (kept["origin_kind"], kept["origin_namespace"], kept["origin_key"]) == ("slack", "T1", "17")
     assert kept["data"]["spec_kind"] == "ingest.message" and kept["read"] is True, "newest survives, local state merged"
     assert _read(db, OLD) is None and _read(db, ALONE)["starred"] is True
     assert "origin" not in _read(db, BLANK), "a row that names no origin is left alone"
 
     msg = _read(db, MSG)
     assert msg["source_item_id"] == NEW and msg["origin_local"]["source_item_id"] == NEW
-    assert msg["origin"] == {"kind": "slack", "namespace": "T1/C1", "key": "17", "url": "https://slack.test/17"}
+    assert msg["origin"] == {"kind": "slack", "namespace": "T1", "key": "17", "url": "https://slack.test/17"}
 
     conv = _read(db, CONV)
     assert (conv["channel"], conv["channel_source_id"]) == ("slack", SRC)

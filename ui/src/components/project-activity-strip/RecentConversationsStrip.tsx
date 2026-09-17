@@ -6,16 +6,19 @@ import {
   QueryRequest,
   Task,
   TypeId,
+  User,
   acceptInvitation,
   dismissConversation,
   fetchConversations,
   isInvitationGoneError,
   isTypeId,
+  conversationRowMessageIds,
   latestPointer,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
+import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
 import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
@@ -34,6 +37,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CheckCheck, EyeOff, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useIsAdvanced } from '@src/components/view-mode';
+import { useContext } from '@src/hooks/useContext';
+import { streamInboxConversationsRequest } from '@src/components/stream-inbox-view/channel-owner';
 import { formatTimeAgo } from './project-activity-utils';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -93,8 +98,18 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   // built locally by ``_ensure_invitation_placeholder_conversation`` after
   // ``fetchConversations`` materializes a pending Invitation. The Accept CTA
   // reads ``invitation_id`` off that first message's ``context_entities``.
-  const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
-  const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
+  // The local user's stream inbox, filtered by the backend — the same request the stream
+  // inbox builds, so opening it later is a warm remount (see `streamInboxConversationsRequest`).
+  const { localUser } = useContext();
+  const localUserId = localUser?.id;
+  const request = useMemo(
+    () => (localUserId ? streamInboxConversationsRequest(new TypeId(User.type, localUserId)) : null),
+    [localUserId],
+  );
+  const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'recent-conversations:idle' }), []);
+  const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request ?? idleRequest, {
+    enabled: request !== null,
+  });
 
   const sorted = useMemo(() => {
     const list = [...conversations];
@@ -103,7 +118,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   }, [conversations]);
 
   // Resolve channel attribution ONCE for the whole strip and hand each row its
-  // answer — same contract as the main inbox list, so a row never holds its own
+  // answer — same contract as the main stream inbox list, so a row never holds its own
   // sources/specs query watchers.
   const { attributionFor } = useChannelAttribution();
 
@@ -130,8 +145,15 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   // conversations) don't skew the count.
   const liveVisibleCount = sorted.reduce((acc, c) => acc + (c.id && hiddenIds.has(c.id) ? 0 : 1), 0);
   const visibleCountActual = liveVisibleCount;
-  const visible = sorted.slice(0, visibleCount);
+  const visible = useMemo(() => sorted.slice(0, visibleCount), [sorted, visibleCount]);
   const hasMore = visibleCountActual > visibleCount;
+  // One batch per type for what the visible rows read (first + latest message,
+  // linked task) instead of one GET per row.
+  const rowMessageIds = useMemo(() => conversationRowMessageIds(visible), [visible]);
+  const rowTaskIds = useMemo(
+    () => visible.map((conv) => conv.firstContextOfType?.('task')?.id).filter((id): id is string => !!id),
+    [visible],
+  );
 
   // "New conversation" — gated on a cloud session (same as the home landing's
   // former "Start conversation" CTA, which this footer button replaces). After
@@ -165,7 +187,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     setDismissingAll(true);
     try {
       // Dismiss every live (non-hidden) conversation. Dismiss — not archive —
-      // hides it from this list but keeps it in the full Inbox and lets it
+      // hides it from this list but keeps it in the full Stream Inbox and lets it
       // reappear when a new message arrives, matching the per-row EyeOff action.
       const targets = sorted.filter((c) => c.id && !hiddenIds.has(c.id));
       await Promise.all(targets.map((c) => dismissConversation({ conversation_id: c.id })));
@@ -255,7 +277,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
         <div className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs font-medium">
-            <Trans>Inbox</Trans>
+            <Trans>Stream Inbox</Trans>
           </span>
           {visibleCountActual > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
@@ -338,6 +360,8 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       )}
 
       <div className="pb-1">
+        <EntityBatchHydrator type={FlowMessage.type} ids={rowMessageIds} />
+        <EntityBatchHydrator type={Task.type} ids={rowTaskIds} />
         {visibleCountActual === 0 ? (
           <div className="px-3 pb-3 text-xs text-muted-foreground">
             <Trans>No conversations</Trans>
@@ -374,7 +398,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
           <button
             type="button"
             className="flex flex-1 items-center justify-center gap-1.5 border-s px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            onClick={() => navigation.openDock(DockPointer.forInbox())}
+            onClick={() => navigation.openDock(DockPointer.forStreamInbox())}
             data-testid="open-all-conversations"
           >
             <MessageSquare className="h-3.5 w-3.5" />
@@ -402,6 +426,7 @@ interface ConversationRowProps {
   attributionFor: (
     origin: FlowMessage['origin'],
     originLocal?: FlowMessage['origin_local'],
+    channelSpec?: Conversation['channel_spec'],
   ) => ChannelAttribution | null;
   acceptingId: string | null;
   dismissingId: string | null;
@@ -470,9 +495,9 @@ function ConversationRow({
   const isInvitationRow = facets.isInvitation;
 
   // The row's channel glyph, resolved off the LATEST message's origin — the
-  // same signal the main inbox row uses. Hub-native rows resolve to null and
-  // render nothing: absence means "ours".
-  const attribution = attributionFor(latestMessage?.origin, latestMessage?.origin_local);
+  // same signal the main stream inbox row uses — and suppressed when the
+  // conversation's channel declares no chip (Flowpad's own chat).
+  const attribution = attributionFor(latestMessage?.origin, latestMessage?.origin_local, conv.channel_spec);
 
   // ``dismissed_at`` is a strip-only "Hide from Recent" (EyeOff) flag — NOT part
   // of the shared category, so it stays local. Same auto-revive pattern: compare
@@ -501,7 +526,7 @@ function ConversationRow({
   // The row label is the conversation's own title (derived via the canonical
   // helper: conv.title → name → participants). A task in the conversation's
   // shared context is NOT a title source — it surfaces only as the amber task
-  // chip below. Mirrors the inbox row fix.
+  // chip below. Mirrors the stream inbox row fix.
   const derivedTitle = deriveConversationTitle(conv);
   const title = isInvitationRow ? t`Invitation` : isTypeId(derivedTitle) ? t`Conversation` : derivedTitle;
   const taskFirstWord = taskTitle ? taskTitle.split(/\s+/)[0] : null;
@@ -564,7 +589,7 @@ function ConversationRow({
               <MailPlus className="h-3 w-3 flex-shrink-0 text-violet-500" aria-label={t`invitation`} />
             )}
             {/* Icon-only here: the strip is too narrow to spend a word on the
-                channel name, which the main inbox can afford. */}
+                channel name, which the main stream inbox can afford. */}
             <SourceChip attribution={attribution} iconOnly />
             <span className="truncate">{fromName ?? title}</span>
           </span>
@@ -630,7 +655,7 @@ function ConversationRow({
             onClick={() => onDismiss(conv.id)}
             disabled={dismissingId === conv.id}
             className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground disabled:opacity-40 group-hover:opacity-100"
-            title={t`Hide from Recent — still visible in Inbox; reappears when a new message arrives`}
+            title={t`Hide from Recent — still visible in Stream Inbox; reappears when a new message arrives`}
             aria-label={t`Hide from Recent conversations`}
             data-testid="dismiss-conversation-button"
           >

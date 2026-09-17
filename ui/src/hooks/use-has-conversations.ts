@@ -4,11 +4,11 @@ import { useMemo } from 'react';
 
 /**
  * Does this instance have ANY conversation? The existence gate for the rail's
- * Inbox icon — an inbox nobody has ever written to is a door onto an empty room.
+ * Stream Inbox icon — a stream inbox nobody has ever written to is a door onto an empty room.
  *
  * `limit: 1` deliberately: the answer is a boolean, so the row itself is never
- * read. This is the same query shape InboxView mounts
- * (`components/inbox-view/InboxView.tsx`), capped — the rail is mounted on every
+ * read. This is the same query shape StreamInboxView mounts
+ * (`components/stream-inbox-view/StreamInboxView.tsx`), capped — the rail is mounted on every
  * screen and must not carry the full list.
  *
  * Reactive: useEntitiesQuery's watchQuery re-validates on the Conversation

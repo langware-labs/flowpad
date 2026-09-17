@@ -1,6 +1,6 @@
 /**
  * ONE rule from a source (or a bare channel) to its glyph name. It used to live
- * twice — on the card and in the inbox's channel attribution — and the
+ * twice — on the card and in the stream inbox's channel attribution — and the
  * attached-channels bar would have been the third copy.
  *
  *   1. the spec's `channel_icon_names[channel]` — a multi-channel transport
@@ -14,11 +14,11 @@
  * already holds the spec passes it in rather than subscribing again.
  */
 import type { LucideIcon } from 'lucide-react';
-import { DataSource, type DataSourceSpec } from '@sdk';
+import { DataSource, type DataDriver } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { lucideByName } from '@src/lib/lucide-by-name';
 
-type SpecGlyphs = Pick<DataSourceSpec, 'icon_name' | 'channel_icon_names'>;
+type SpecGlyphs = Pick<DataDriver, 'icon_name' | 'channel_icon_names'>;
 
 export function sourceIconName(spec: SpecGlyphs | null | undefined, channel: string | null | undefined): string {
   const byChannel = channel ? spec?.channel_icon_names?.[channel] : undefined;

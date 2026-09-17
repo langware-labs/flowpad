@@ -24,10 +24,10 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.email_inbox_driver import (
-    EmailInboxError,
-    EmailInboxErrorCode,
-    get_email_inbox_driver,
+from flow_sdk.builtin.agent_mailbox_driver import (
+    AgentMailboxError,
+    AgentMailboxErrorCode,
+    get_agent_mailbox_driver,
 )
 from tests.hub_tests._hub_agent import create_hub_agent, delete_hub_agent
 from tests.hub_tests._local_login import login_as
@@ -51,17 +51,17 @@ async def bobs_agent_id(hub_base_url, bob_token):
 async def test_the_hub_masks_someone_elses_agent_as_target_not_found(hub_login_payload, bobs_agent_id):
     """The premise the unit tier hard-codes, checked against the real hub.
 
-    ``tests/unit/test_agent_email/test_inbox_policy.py`` fakes this answer, so if
+    ``tests/unit/test_agent_email/test_stream_inbox_policy.py`` fakes this answer, so if
     the hub ever stopped masking a foreign agent this way — or classified it as
     something other than ``target_not_found`` — that fake would keep passing and
     production would be broken. This is the test that would go red.
     """
     login_as(hub_login_payload)
 
-    with pytest.raises(EmailInboxError) as probed:
-        await get_email_inbox_driver().get_inbox(bobs_agent_id)
+    with pytest.raises(AgentMailboxError) as probed:
+        await get_agent_mailbox_driver().get_mailbox(bobs_agent_id)
 
-    assert probed.value.code == EmailInboxErrorCode.TARGET_NOT_FOUND
+    assert probed.value.code == AgentMailboxErrorCode.TARGET_NOT_FOUND
 
 
 async def test_publishing_someone_elses_agent_really_conflicts(hub_login_payload, bobs_agent_id):
@@ -89,9 +89,9 @@ async def test_a_mailbox_on_someone_elses_agent_names_the_reason(hub_login_paylo
     await agent.save()
     assert agent.remote is False, "the local row has never been published from here"
 
-    with pytest.raises(EmailInboxError) as raised:
-        await agent.allocate_inbox()
+    with pytest.raises(AgentMailboxError) as raised:
+        await agent.allocate_mailbox()
 
-    assert raised.value.code == EmailInboxErrorCode.FOREIGN_TARGET
+    assert raised.value.code == AgentMailboxErrorCode.FOREIGN_TARGET
     assert raised.value.status_code == 403
     assert agent.remote is False, "a failed adoption must not leave the agent marked published"

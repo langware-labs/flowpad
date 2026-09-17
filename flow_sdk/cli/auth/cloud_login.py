@@ -261,7 +261,7 @@ async def _finalize_login(login_data: LoginData) -> None:
 
     await set_login_status(HubLoginStatus.LOGGED_IN, user=user_info)
 
-    # Logout tombstoned every hub conversation via ``clear_inbox``. Release those
+    # Logout tombstoned every hub conversation via ``clear_stream_inbox``. Release those
     # now, before the pipe reopens and the catch-up below runs, so nothing this
     # session pulls back is dropped against a tombstone the last session left.
     # See ``HubWsBridge.release_session_conversation_suppressions`` for why that
@@ -280,9 +280,9 @@ async def _finalize_login(login_data: LoginData) -> None:
     # Restarting the WS only opens the pipe for FUTURE frames — the hub fans out
     # live and never replays, so anything addressed to this account while we were
     # logged out (or logged in as someone else) is still missing locally. Pull the
-    # backlog now, exactly as startup does, so the Inbox is correct the moment the
+    # backlog now, exactly as startup does, so the stream inbox is correct the moment the
     # user lands instead of after they find the manual refresh button.
-    from flow_sdk.inbox.catchup import start_hub_catchup
+    from flow_sdk.stream_inbox.catchup import start_hub_catchup
 
     start_hub_catchup("login")
 
@@ -321,7 +321,7 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
     Credentials ONLY. An EXPLICIT logout wants ``clear_user_data``, which adds
     the local-data purge on top; this one stays purge-free precisely because
     ``invalidate_hub_login`` calls it — an expired or hub-rejected token must
-    not cost the user their inbox.
+    not cost the user their stream inbox.
     """
     from flow_sdk.cli.auth.credentials import clear_credentials
     from flow_sdk.cloud_client.auth_state import set_connection_status, set_login_status
@@ -351,7 +351,7 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
 
 
 async def clear_user_data() -> None:
-    """EXPLICIT logout: drop the credentials AND the hub's copy of the inbox.
+    """EXPLICIT logout: drop the credentials AND the hub's copy of the stream inbox.
 
     The purge deliberately does NOT live inside ``clear_cloud_credentials``,
     because ``invalidate_hub_login`` calls that one: a token expiring on
@@ -364,10 +364,10 @@ async def clear_user_data() -> None:
     best-effort on top. A row that refuses to delete must never be the reason
     someone cannot log out.
     """
-    from flow_sdk.inbox.clear import clear_inbox
+    from flow_sdk.stream_inbox.clear import clear_stream_inbox
 
     await clear_cloud_credentials()
     try:
-        await clear_inbox()
+        await clear_stream_inbox()
     except Exception:  # noqa: BLE001
         logger.warning("logout: clearing local hub data failed", exc_info=True)

@@ -1,7 +1,7 @@
 """Sender's own outgoing message must NOT leave the conversation unread.
 
 Repro for the reported bug: *sending a message with an attachment marks the
-conversation as unread upon send.* The inbox row's unread state is derived
+conversation as unread upon send.* The stream inbox row's unread state is derived
 purely from the latest message's ``is_read`` flag
 (``conversation-category.ts``: ``isUnread = !latestMessage.is_read``) with no
 exclusion for messages the viewer sent themselves. So the sender's own

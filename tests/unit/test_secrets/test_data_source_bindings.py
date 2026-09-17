@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, DataSourceAmbiguous, DataSourceNotFound
 from flow_sdk.connections import Connection
 from flow_sdk.ingest.credentials import resolve_credentials
-from flow_sdk.ingest.sources import SourceType, register_source
 from flow_sdk.ingest.testing import make_data_source
-from flow_sdk.schema.data_spec.data_source_manifest_spec import CURRENT_SCHEMA, AuthSpec, ManifestSpec
+from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec, DataDriverSpec
 from flow_sdk.secrets import SecretStore
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.credentials import AuthShape
@@ -33,13 +33,13 @@ class _DriveSource(Source):
 
 @pytest.fixture
 def source_types():
-    register_source(
-        SourceType(_KeyedSource, manifest=ManifestSpec(name=_KeyedSource.provider, schema=CURRENT_SCHEMA, auth=KEYED))
+    DataDriver.register(
+        DataDriver.for_class(_KeyedSource, manifest=DataDriverSpec(name=_KeyedSource.provider, schema=CURRENT_SCHEMA, auth=KEYED))
     )
-    register_source(
-        SourceType(
+    DataDriver.register(
+        DataDriver.for_class(
             _DriveSource,
-            manifest=ManifestSpec(
+            manifest=DataDriverSpec(
                 name=_DriveSource.provider,
                 schema=CURRENT_SCHEMA,
                 auth=AuthSpec(connector="google", scopes=["drive.readonly"]),
@@ -58,10 +58,11 @@ def _value(credentials, name: str) -> str:
     return credentials.values[name].get_secret_value()
 
 
-async def test_get_answers_one_instance_by_name(home, source_types):
+async def test_get_answers_one_instance_by_name(project, source_types):
     work = await _saved(_DriveSource.provider, "work drive")
+    # A name is a folder, unique within a scope, so a twin lives in another scope.
     await _saved(_DriveSource.provider, "shared")
-    await _saved(_DriveSource.provider, "shared")
+    await _saved(_DriveSource.provider, "shared", project_id=str(project.id))
 
     assert (await DataSource.get("work drive")).id == work.id
     with pytest.raises(DataSourceNotFound):
@@ -126,13 +127,13 @@ async def test_outside_a_project_an_unbound_source_still_reads_the_environment(h
     assert _value(await resolve_credentials(KEYED, make_data_source("keyed")), "KEYED_API_KEY") == "from-environ"
 
 
-async def test_secret_keys_load_from_the_bound_store_before_the_machine_secret_and_the_config(home):
+async def test_secret_keys_load_from_the_bound_store_before_the_machine_secret_and_never_the_config(home):
     from flow_sdk.cli.auth.secrets import write_secret
 
     auth = AuthSpec(secrets={"api_key": "ingest_api.binding-test"})
     row = make_data_source("secrets-test", config={"api_key": "from-config"})
 
-    assert _value(await resolve_credentials(auth, row), "api_key") == "from-config"
+    assert "api_key" not in (await resolve_credentials(auth, row)).values, "a config is value-free"
     write_secret("ingest_api.binding-test", "from-machine-secret")
     assert _value(await resolve_credentials(auth, row), "api_key") == "from-machine-secret"
 
@@ -168,7 +169,7 @@ async def test_open_builds_the_source_with_what_is_bound(home, source_types):
     await store.save({"KEYED_API_KEY": "bound-value"})
     await row.set_secret_store(store)
 
-    live = await row.open()
+    live = (await row.open()).source
 
     assert isinstance(live, _KeyedSource)
     assert live.credentials.values["KEYED_API_KEY"].get_secret_value() == "bound-value"
@@ -201,11 +202,11 @@ async def test_a_credential_resolves_from_the_owning_agents_project_declaration(
     assert resolved.shape == AuthShape.SECRETS and _value(resolved, "api_key") == "from-project-env-local"
 
 
-async def test_an_undeclared_credential_falls_back_to_the_row_config(project):
+async def test_an_undeclared_credential_resolves_nothing_even_with_a_key_in_config(project):
     agent = await _agent_in(project)
     row = make_data_source("channel-test", owner=f"agent-{agent.id}", config={"api_key": "from-config"})
 
-    assert _value(await resolve_credentials(CHANNEL, row), "api_key") == "from-config"
+    assert not (await resolve_credentials(CHANNEL, row)).values, "a config is value-free"
 
 
 def test_credential_and_vars_are_declared_together():

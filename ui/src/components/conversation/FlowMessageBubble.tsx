@@ -23,6 +23,7 @@ import {
 } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { profileLabel } from '@sdk/models/MessageEnvelope';
+import { SenderKind, senderOf } from '@sdk/models/MessageSender';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -143,7 +144,7 @@ interface FlowMessageBubbleProps {
    *  query (one request for all messages, replacing the per-bubble fetch).
    *  When omitted the bubble falls back to fetching by id. */
   fm?: FlowMessage | null;
-  /** Show the original email envelope the inbox projection stamped on the message. */
+  /** Show the original email envelope the stream inbox projection stamped on the message. */
   showEmailHeaders?: boolean;
   timestamp: string;
   task?: ITask | null;
@@ -244,15 +245,15 @@ export function FlowMessageBubble({
   const { data: creator } = useEntity<User>(
     fm?.created_by && isValidIdentifier(fm.created_by) ? new TypeId(User.type, fm.created_by) : null,
   );
-  // An agent's own sent copies carry `agent:<id>` as sender_id (never a roster
-  // member, so the roster tiers below cannot name it). Resolve the Agent so an
-  // empty wire name does not read as the "roster says no" alert.
-  const agentSenderTypeId = useMemo(() => {
-    const raw = fm?.sender_id ?? '';
-    if (!raw.startsWith('agent:')) return null;
-    const id = raw.slice('agent:'.length);
-    return isValidIdentifier(id) ? new TypeId(Agent.type, id) : null;
-  }, [fm?.sender_id]);
+  // An agent's own sent copies are authored by the Agent (never a roster member,
+  // so the roster tiers below cannot name it). Resolve the Agent so an empty
+  // wire name does not read as the "roster says no" alert.
+  const sender = fm ? senderOf(fm) : null;
+  const agentSenderId = sender?.kind === SenderKind.Agent ? (sender.id ?? '') : '';
+  const agentSenderTypeId = useMemo(
+    () => (isValidIdentifier(agentSenderId) ? new TypeId(Agent.type, agentSenderId) : null),
+    [agentSenderId],
+  );
   const { data: agentSender } = useEntity<Agent>(agentSenderTypeId);
   const { localUser, updateName } = useLocalUser();
   const { t } = useLingui();
@@ -697,6 +698,7 @@ export function FlowMessageBubble({
         flowMessage={fm}
         task={task ?? undefined}
         senderName={displayName}
+        onSenderClick={agentSender ? () => navigation.openDock(agentSender.dockPointer) : undefined}
         onEditName={
           isCurrentUser
             ? (newName) => {

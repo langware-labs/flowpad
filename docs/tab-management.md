@@ -58,8 +58,8 @@ By-id: `close` (soft `visible=false` + per-`target_type` teardown via
 `teardown_for_tab`), `rename` (reflects explicit user input onto the target;
 worker processes update their canonical name and linked tabs atomically), and
 `set_name` (sets an ordinary tab label; worker process tabs instead reconcile the
-canonical process name and ignore the supplied automatic label). Worker OSC
-frames use `AgenticProcess.observe-title`; provider provenance and name priority
+canonical process name and ignore the supplied automatic label). Worker
+terminal titles are never naming evidence; provider provenance and name priority
 live in the [shared naming service](interface/session-naming.md). Ordinary shell
 and entity tabs retain their existing label/reflection behavior. List/display mutations broadcast a
 `tabs_changed` ping. Orphan cleanup: `Entity.delete` soft-closes any Tab pointing
@@ -83,7 +83,13 @@ in `ui/src/tabs/tab-content-lifecycle.ts`, because they depend on the concrete U
 `DockPointer`, route classifiers, and content adapters.
 
 ```ts
-type TabLifecycleState = 'opening' | 'opened' | 'open_failed' | 'closing' | 'close_failed';
+enum TabLifecycleState {
+  Opening = 'opening',
+  Opened = 'opened',
+  OpenFailed = 'open_failed',
+  Closing = 'closing',
+  CloseFailed = 'close_failed',
+}
 
 interface TabContentAdapter {
   setupTab(dock: DockPointer): Promise<TabSetupResult>;
@@ -376,13 +382,12 @@ any dock-less URL — is parked for the unified-tabs phase, Part 2).
 
 ```
 BACKEND — membership + order truth
-  compute_node._terminal_list   (compute_node.py:498)  strip membership: {pure_shells, visible_processes};
-                                                       drops AP-owned/sidecar shells; reaps stuck STOPPING
-  compute_node._terminal_close  (compute_node.py:611)  batched close: AP→STOPPING+visible=False, shell→CLOSING,
-                                                       async PTY teardown
-  Shell                         (shell.py:100,102)     tab_order (Persist.FALSE), last_active_at (stamped at PTY START only)
-  AgenticProcess                (agentic_process.py:386-391) shell_id (transport), visible (membership),
-                                                       last_active_at (new; not yet stamped server-side)
+  Tab entity list / close       (tab.py)                strip membership + order: the `Tab` placement rows
+  compute_node._terminal_close  (faas/compute_node.py:909) batched close (behind the `tabs/close` compat router):
+                                                       AP→STOPPING+visible=False, shell→CLOSING, async PTY teardown
+  Entity                        (entity_model.py:376,385) tab_order (Persist.FALSE), last_active_at (base-Entity fields,
+                                                       stamped by the generic `activate` action; Shell also at PTY start)
+  AgenticProcess                (agentic_process.py:586,618) shell_id (transport), visible (shown as a terminal tab)
 SDK — live entities
   dataManager.callAction + castAndDeepAssign            hydrate entity cache; WS subscribeToEntityOps streams ops
 MODULE STORES — derived, per-client
@@ -580,7 +585,7 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
 | wiki page                                                                  | `forWiki(name, …, wikiRef)`          | indirect — resolves to an asset `TypeId` at view time | A (resolves at view time)                |
 | diff / checkpoint                                                          | `forCheckpoint(hash)`                | no — git hash                                    | C                                        |
 | webapp preview                                                             | port                                 | no                                               | C                                        |
-| scan page / llm-indexers / graph / lens / settings / inbox / search / home | page pointers                        | no                                               | C                                        |
+| scan page / llm-indexers / graph / lens / settings / stream_inbox / search / home | page pointers                        | no                                               | C                                        |
 
 ## 3. The three buckets
 
@@ -599,7 +604,7 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
   to their target entity at view time (Markdown, Skill, or another registered
   asset type) → fold into A.
 - **(C) Inherently transient — never persisted.** Diff hashes, webapp ports,
-  scan page, lens/transcripts, settings/inbox/search/home. These are the
+  scan page, lens/transcripts, settings/stream_inbox/search/home. These are the
   **URL-dock transient tab**: present while the URL points at them, target
   optional, gone on navigation. `VIEWER_REGISTRY.canAddAsTab:false` is
   effectively today's bucket-C marker.

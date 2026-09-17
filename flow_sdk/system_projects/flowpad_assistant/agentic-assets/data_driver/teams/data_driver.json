@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "name": "teams",
+  "title": "Microsoft Teams",
+  "icon_name": "MicrosoftTeams",
+  "description": "One channel's conversations in Microsoft Teams. Connect Microsoft first, then pick the one channel this source reads. Work or school accounts only — the Teams message APIs do not support personal Microsoft accounts.",
+  "kind": "datasource.api.teams",
+  "setup_wiki": "Teams channels",
+  "auth": {
+    "connector": "microsoft",
+    "scopes": [
+      "ChannelMessage.Read.All",
+      "ChannelMessage.Send"
+    ]
+  },
+  "config": {
+    "channel": {
+      "type": "text",
+      "choices": true,
+      "label": "Channel",
+      "placeholder": "{team id}/19:abc...@thread.tacv2",
+      "hint": "Pick from the teams you have joined, or type '{team id}/{channel id}'. Both ids are needed: Graph reaches a channel only through its team, and a channel id is not unique across teams. Watching several channels? Add one source per channel."
+    }
+  }
+}

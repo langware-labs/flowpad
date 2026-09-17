@@ -2,13 +2,14 @@ import { t } from '@lingui/core/macro';
 import type { LucideIcon } from 'lucide-react';
 import { Archive, ArchiveRestore, CheckSquare, LifeBuoy, Trash2 } from 'lucide-react';
 import { Conversation, FlowMessage, FlowMessageKind, Invitation, isHelpdeskKind } from '@sdk';
+import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 
 // ── Conversation category — the single source of truth ──────────────────────
-// The inbox "category" is NOT one axis: a conversation can be helpdesk AND
+// The stream inbox "category" is NOT one axis: a conversation can be helpdesk AND
 // archived AND unread at once, and two of the axes (unread, invitation) are
 // *viewer-relative* — the same thread is an "Accept" row for the recipient and
 // a normal row for the sender. So we derive a small facet struct (centralizing
-// what InboxView and RecentConversationsStrip each used to derive separately)
+// what StreamInboxView and RecentConversationsStrip each used to derive separately)
 // plus a priority-collapsed `primary` for the cases that need one value.
 //
 // This is derived view-model logic, NOT persisted state — `kind` and
@@ -18,7 +19,7 @@ export interface CategoryInputs {
   conv: Conversation;
   /** First message — used only to detect `kind === 'invitation'`. */
   firstMessage?: FlowMessage | null;
-  /** Latest message — drives the unread facet. */
+  /** Latest message — the unread fallback on a hub runtime only (see `isUnread`). */
   latestMessage?: FlowMessage | null;
   /** Latest pointer ts (from `conversationMessageIds`). Used for the archived
    *  comparison so we don't race the async FlowMessage fetch — the pointer
@@ -67,21 +68,24 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const latestTime = latestPtrTs ? new Date(latestPtrTs).getTime() : 0;
   const isArchived = archivedAt !== null && !Number.isNaN(archivedAt) && latestTime <= archivedAt;
 
-  // Unread — viewer-relative, like invitation: sending a message must not make
-  // the conversation look unread to the sender himself (there is nothing for
-  // him to read). Invitation rows always carry an actionable CTA, so they
-  // count as unread.
-  const isSelfSent = isViewer(latestMessage?.sender_id ?? null, viewer);
-  const isUnread = isInvitation ? true : latestMessage ? !latestMessage.is_read && !isSelfSent : false;
+  // Unread — the backend owns it. The desktop stamps `conv.is_unread` from the one
+  // rule the badge also counts with (`stream_inbox.conversation_is_unread`: drafts,
+  // self-sent and agent replies excluded), so the row renders that answer rather
+  // than a second copy of the rule that can drift. A hub runtime has no per-viewer
+  // read projection yet (docs/hub-rest-consolidation.md §1): its rows arrive without
+  // the field and fall back to the latest message. Invitation rows carry a CTA, so
+  // they are unread either way.
+  const hubUnread = latestMessage ? !latestMessage.is_read && !authoredBy(senderOf(latestMessage), [viewer.cloudUserId, viewer.localUserId]) : false;
+  const isUnread = isInvitation || (conv.is_unread ?? hubUnread);
 
   return { kind, isInvitation, isArchived, isUnread };
 }
 
-// ── Recency sort — shared by InboxView + RecentConversationsStrip ────────────
+// ── Recency sort — shared by StreamInboxView + RecentConversationsStrip ────────────
 // Newest `updated_date` first, with a STABLE `id` tiebreaker. Without the
 // tiebreaker, rows with equal or missing `updated_date` fall back to the input
 // order — which is the server's non-deterministic result order — so the list
-// re-shuffled between fetches (i.e. on every inbox open). The tiebreaker makes
+// re-shuffled between fetches (i.e. on every stream inbox open). The tiebreaker makes
 // the sort a total order, so equal-timestamp rows keep a fixed position.
 export function compareConversationsByRecency(a: Conversation, b: Conversation): number {
   const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
@@ -169,7 +173,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
         label: t`Accept`,
         onClick: ctx.onAccept,
         disabled: ctx.accepting || !ctx.invitationId,
-        testId: 'inbox-accept-invitation-button',
+        testId: 'stream-inbox-accept-invitation-button',
       },
     ];
     if (ctx.invitationId) {
@@ -180,7 +184,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
         tone: 'destructive',
         label: t`Decline (delete) invitation`,
         onClick: ctx.onDecline,
-        testId: 'inbox-invitation-delete-button',
+        testId: 'stream-inbox-invitation-delete-button',
       });
     }
     return specs;
@@ -199,9 +203,9 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
           key: 'unarchive',
           kind: 'icon',
           icon: ArchiveRestore,
-          label: t`Unarchive — back to Inbox`,
+          label: t`Unarchive — back to Stream Inbox`,
           onClick: ctx.onUnarchive,
-          testId: 'inbox-row-unarchive-button',
+          testId: 'stream-inbox-row-unarchive-button',
         }
       : {
           key: 'archive',
@@ -210,7 +214,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
           tone: 'destructive',
           label: t`Archive — moves to Archived, kept`,
           onClick: ctx.onArchive,
-          testId: 'inbox-row-archive-button',
+          testId: 'stream-inbox-row-archive-button',
         },
     {
       key: 'delete',
@@ -219,7 +223,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
       tone: 'destructive',
       label: ctx.deleteLabel,
       onClick: ctx.onDelete,
-      testId: 'inbox-row-delete-button',
+      testId: 'stream-inbox-row-delete-button',
     },
   ];
 }

@@ -21,6 +21,8 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
+import { openExternal } from '@src/lib/open-external';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
 import { GitFileDiffModal } from './GitFileDiffModal';
@@ -80,7 +82,10 @@ interface GitAction {
 
 // Per-status copy/icon for the state-aware discard action. `default` covers
 // every tracked-edit status (M/A/R/…) not given its own entry.
-const UNDO_VARIANTS: Record<string, { standard: MessageDescriptor; advanced: MessageDescriptor; tooltip: MessageDescriptor; icon: LucideIcon }> = {
+const UNDO_VARIANTS: Record<
+  string,
+  { standard: MessageDescriptor; advanced: MessageDescriptor; tooltip: MessageDescriptor; icon: LucideIcon }
+> = {
   '?': {
     standard: msg`Remove`,
     advanced: msg`Discard (delete)`,
@@ -235,7 +240,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   const fetchStatus = useCallback(async () => {
     if (!computeNodeId || !workdir) return;
     try {
-      const result = await git.getStatus();
+      const result = await git.getStatus({ lineCounts: true });
       if (mountedRef.current) {
         setData(result ?? null);
         setLoading(false);
@@ -434,20 +439,58 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between border-b px-3 py-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate text-sm font-medium">
-              {data?.error ? <Trans>Not a git repo</Trans> : (data?.branch ?? 'git')}
-            </span>
-            {data && !data.error && data.ahead > 0 && (
-              <span className="shrink-0 rounded-full bg-green-500/20 px-1.5 py-0.5 text-[9px] font-bold text-green-500">
-                ↑{data.ahead}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate text-sm font-medium">
+                {data?.error ? <Trans>Not a git repo</Trans> : (data?.branch ?? 'git')}
               </span>
-            )}
-            {data && !data.error && data.behind > 0 && (
-              <span className="shrink-0 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">
-                ↓{data.behind}
-              </span>
+              {data && !data.error && data.branch && (
+                <CopyButton
+                  value={data.branch}
+                  title={t`Copy branch name`}
+                  testId="git-panel-copy-branch"
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  copiedIconClassName="text-green-500"
+                />
+              )}
+              {data && !data.error && data.ahead > 0 && (
+                <span className="shrink-0 rounded-full bg-green-500/20 px-1.5 py-0.5 text-[9px] font-bold text-green-500">
+                  ↑{data.ahead}
+                </span>
+              )}
+              {data && !data.error && data.behind > 0 && (
+                <span className="shrink-0 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">
+                  ↓{data.behind}
+                </span>
+              )}
+            </div>
+            {data && !data.error && data.remoteUrl && (
+              <div className="flex min-w-0 items-center gap-1 pl-5 text-[10px] text-muted-foreground">
+                {data.remoteWebUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => openExternal(data.remoteWebUrl!)}
+                    title={t`Open in browser`}
+                    data-testid="git-panel-open-remote"
+                    className="truncate hover:text-foreground hover:underline"
+                  >
+                    {data.remoteUrl}
+                  </button>
+                ) : (
+                  <span className="truncate" data-testid="git-panel-remote">
+                    {data.remoteUrl}
+                  </span>
+                )}
+                <CopyButton
+                  value={data.remoteUrl}
+                  title={t`Copy remote URL`}
+                  testId="git-panel-copy-remote"
+                  className="shrink-0 hover:text-foreground"
+                  iconClassName="h-2.5 w-2.5"
+                  copiedIconClassName="text-green-500"
+                />
+              </div>
             )}
           </div>
           <div className="flex items-center gap-1">
@@ -517,7 +560,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                 }`}
               >
                 <b.icon className="h-4 w-4 shrink-0" />
-                <span className="text-lg font-semibold leading-none tabular-nums">{b.files.length}</span>
+                <span className="text-lg font-semibold tabular-nums leading-none">{b.files.length}</span>
                 <span className="text-[10px] font-medium uppercase tracking-wide opacity-80">{b.label}</span>
               </div>
             ))}
@@ -544,7 +587,10 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
               data-testid="git-panel-sloc-net"
             >
               {net > 0 ? '+' : ''}
-              {net} <span className="font-normal text-muted-foreground"><Trans>net</Trans></span>
+              {net}{' '}
+              <span className="font-normal text-muted-foreground">
+                <Trans>net</Trans>
+              </span>
             </span>
           </div>
         )}

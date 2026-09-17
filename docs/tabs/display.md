@@ -52,7 +52,7 @@ a JSON list — no new APIField, `context_data` is already persisted + broadcast
 - `context_data["last_shown"]` mirrors the **newest target** (no `shown_at`) for
   back-compat readers (standard-mode viewer).
 - Capped at `DISPLAY_STACK_CAP = 50`; a **consecutive identical target** refreshes
-  its `shown_at` instead of duplicating (`_same_display_target` / `_append_display_entry`).
+  its `shown_at` instead of duplicating (`display_context.same_display_target` / `_append_display_entry`).
 
 ### `on_show` (the single writer)
 

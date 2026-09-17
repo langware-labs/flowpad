@@ -76,30 +76,25 @@ store.clearCache()
 *"Terminal not connecting", "output not appearing", "replay broken", "seq mismatch"*
 
 ```js
-// All live shell sessions (ShellManager level)
-shell.getAllSessions()          // Map<id, ShellSession>
-shell.initialSyncCompleted      // false = backend sync still running
-shell.syncInProgress
+// The active terminal's Shell entity (null when no terminal tab is active)
+shell?.id; shell?.pty_pid       // shell id / backend PTY id
+shell?.status                   // 'idle' | 'running' | 'closing' | 'closed' | 'error'
+shell?.shellStatus              // 'Not connected' | 'Disconnected' | 'Restarting...' | ...
+shell?.ptyStarted; shell?.attached; shell?.connected
 
-// Inspect a specific session
-const sess = shell.getSession('<sessionId>')
-sess.lastSeqReceived            // last PTY chunk seq number received
-sess.chunks.size                // number of buffered chunks
-sess.pid                        // OS process ID
-sess.cols; sess.rows            // terminal dimensions
-sess.status                     // 'active' | 'closed' | ...
+// Its PtyConnection (one per Shell)
+shell?.ptyConnection.lastSeq    // last PTY chunk seq number received (dedup)
+shell?.ptyConnection.chunks.size  // number of buffered live chunks
+shell?.printPty()               // dump the buffered output as text
 
-// Active node (compute node driving PTY)
-shell.activeNode                // { id, uname: 'local' }
+// All shells on the compute node (frontend cache)
+computeNode.getAllSessions()    // Shell[] sorted by created_at
 
-// ComputeNode-level sessions (agentic processes)
-computeNode.getAllSessions()
-
-// Send raw input to a PTY (for manual testing)
-shell.sendPtyInput('<sessionId>', 'ls -la\n')
+// Send raw input to the PTY (for manual testing)
+await shell?.sendInput('ls -la\n')
 ```
 
-**Tip:** if `sess.chunks.size` is growing but terminal is blank, the PTY is receiving data but the xterm adapter is not attached — `PtySyncSession.initialize()` may not have been called yet (check `terminalReady` state in React DevTools).
+**Tip:** if `shell.ptyConnection.chunks.size` is growing but the terminal is blank, the PTY is receiving data but the xterm is not consuming it — the `InteractiveTerminal` connect handler runs on `shell.on('status', 'connected')` (check `terminalReady` state in React DevTools).
 
 ---
 
@@ -129,13 +124,10 @@ await context.agenticProcess?.getPrompts()
 *"Sniffer not capturing", "hook events missing", "global sniffer panel empty"*
 
 ```js
-// Is the sniffer entity registered?
-sniffer                        // null = not active (no terminal open with sniffer enabled)
-sniffer?.id
-sniffer?.getTriggers()         // registered hook triggers
-
-// Is context aware of the sniffer?
+// Is context aware of the sniffer? (there is no `sniffer` global)
 context.snifferHook            // SnifferHook instance, or null
+context.snifferHook?.entity.id // its AgentHook entity
+await context.snifferHook?.entity.getTriggers()   // registered hook triggers
 
 // Check what session the sniffer is listening to
 context.activeShellId          // worker session id
@@ -157,11 +149,9 @@ connection.url                 // should be ws://localhost:9007/api/v1/connect/w
 // Reconnect state
 connection_manager.isReconnecting
 connection_manager.reconnectAttempts
-connection_manager.maxReconnectAttempts
 connection_manager.baseReconnectDelay
 
-// Active streams (streaming action responses)
-store.streams                  // Map of open streams
+// Streaming action responses
 store.streamingRequestsCount   // should drop to 0 after actions complete
 
 // Subscriptions and watches
@@ -169,7 +159,7 @@ store.subscriptions            // { map, originalKeys }
 store.watches                  // active entity watches
 ```
 
-**Tip:** if `connection_manager.reconnectAttempts` keeps climbing, check `connection_manager.maxReconnectAttempts` — once exceeded the app stops retrying silently. Do a full page refresh to reset.
+**Tip:** if `connection_manager.reconnectAttempts` keeps climbing, the socket never reaches `open` (it resets to 0 on a successful open) — check the backend is up and `connection.url` is right, then do a full page refresh.
 
 ---
 
@@ -218,10 +208,10 @@ console.table({
   reconnectAttempts:  connection_manager.reconnectAttempts,
   entitiesCached:     store.entities.map.size,
   streamingRequests:  store.streamingRequestsCount,
-  shellSyncDone:      shell.initialSyncCompleted,
-  shellSessions:      shell.getAllSessions().size,
+  shellConnected:     shell?.connected ?? false,
+  shellSessions:      computeNode?.getAllSessions().length,
   activeShellId:      context.activeShellId || '(none)',
-  snifferActive:      !!sniffer,
+  snifferActive:      !!context.snifferHook,
   project:            project?.name,
   workspace:          workspace?.name,
   computeNode:        computeNode?.uname,
@@ -249,11 +239,12 @@ For PTY/terminal issues:
 
 ```
 Terminal blank or frozen
-  └─ shell.getAllSessions().size > 0?
-       ├─ NO  → ShellManager didn't create session (check shell.syncInProgress)
-       └─ YES → sess.chunks.size growing?
-                  ├─ NO  → PTY process dead (check sess.pid via computeNode)
-                  └─ YES → xterm not consuming (PtySyncSession.initialize not called)
+  └─ shell (active Shell) not null and shell.connected?
+       ├─ NO  → no active shell / attach never completed (check shell?.shellStatus,
+       │         computeNode.getAllSessions())
+       └─ YES → shell.ptyConnection.chunks.size growing?
+                  ├─ NO  → PTY process dead (check shell.status, the backend log)
+                  └─ YES → xterm not consuming (connect handler not run)
                               → check terminalReady in React DevTools
 ```
 
@@ -263,11 +254,11 @@ Terminal blank or frozen
 
 | Global | Defined at |
 |--------|-----------|
-| `store` / `dataManager` | `ts_sdk/src/APIEntity.ts:834` |
-| `context` / `ctx` | `ts_sdk/src/FlowSync/context.ts:918` |
-| `connection_manager` | `ts_sdk/src/websocket.ts:479` |
-| `connection` | `ts_sdk/src/FlowSync/context.ts:368` |
-| `auth` | `ts_sdk/src/FlowSync/auth.ts:280` |
-| `project`, `workspace`, `computeNode`, `flow` | `ts_sdk/src/FlowSync/context.ts:705-750` |
-| `sniffer` | `ui/src/hooks/use-hooks-sniffer.ts:271` |
+| `store` | `ts_sdk/src/APIEntity.ts:1931` |
+| `context` / `ctx` / `dataContext` | `ts_sdk/src/FlowSync/context.ts:1214-1216` |
+| `connection_manager` | `ts_sdk/src/websocket.ts:858` |
+| `connection` | `ts_sdk/src/FlowSync/context.ts:646` |
+| `auth` | `ts_sdk/src/FlowSync/auth.ts:339` |
+| `workspace`, `computeNode`, `project` | `ts_sdk/src/FlowSync/context.ts:822`, `:1132`, `:1142` |
+| `shell` | `ts_sdk/src/FlowSync/context.ts:392` |
 | `defineGlobal` implementation | `ts_sdk/src/utils/globals.ts:31` |

@@ -4,9 +4,9 @@
 ``max(message.updated_date)``. For a conversation with NO messages that max was
 empty and the code fell back to ``datetime.now()`` — stamping ``updated_date``
 with the moment of the sync rather than anything the conversation had actually
-done. Because ``updated_date`` is the Inbox sort key
+done. Because ``updated_date`` is the stream inbox sort key
 (``compareConversationsByRecency``), every catch-up that touched a message-less
-conversation promoted it to the top of the Inbox and buried genuinely recent
+conversation promoted it to the top of the stream inbox and buried genuinely recent
 mail underneath. One reported instance had 30+ empty rows restamped into a
 single sweep band, pushing a real message from that morning to rank 36.
 
@@ -56,7 +56,7 @@ def _repair(dry_run: bool) -> dict[str, int]:
     conn = open_sqlite(get_instance_settings().db_path)
     try:
         # The pure-column test is pushed into SQL, so an already-correct row
-        # costs neither a JSON parse nor a resident blob — on a real inbox the
+        # costs neither a JSON parse nor a resident blob — on a real stream inbox the
         # vast majority of rows are already correct and never reach Python.
         candidates = conn.execute(
             "SELECT id, created_date, updated_date, data FROM entities"

@@ -13,7 +13,7 @@ import os
 import stat
 import uuid
 from dataclasses import MISSING, dataclass, field, fields
-from functools import cache
+from functools import cache, cached_property, partial
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_origin
 
@@ -81,6 +81,8 @@ def humanize_type(type_name: str) -> str:
 #: A field tagged ``merge`` is carried onto an existing registration by
 #: "non-default wins"; the untagged fields have bespoke rules in ``register``.
 _MERGE = {"merge": True}
+#: ``TypeInfo.manifest_layout`` of an ENTITY DOCUMENT: ``<type>.json`` + a ``<field>.md`` per ``Body``.
+ENTITY_LAYOUT = "entity"
 _DEFAULT_SHAPE = File(ext=".md")
 
 
@@ -124,6 +126,29 @@ class TypeInfo:
     def __post_init__(self) -> None:
         self.type_name = str(self.type_name)   # an EntityType member is accepted, a str is stored
         self.walk = (self.walk,) if isinstance(self.walk, Walk) else tuple(self.walk or ())
+        if self.manifest_layout == ENTITY_LAYOUT:
+            # An entity document carries its id in its own root and is fresh by its own files.
+            from flow_sdk.assets.identity import entity_document_fingerprint, native_json_identity  # noqa: PLC0415
+
+            if self.identity_carrier is None:
+                self.identity_carrier = native_json_identity()
+            if self.asset_hash_fn is None:
+                self.asset_hash_fn = partial(entity_document_fingerprint, self)
+
+    @property
+    def is_entity_document(self) -> bool:
+        """This type keeps its fields in ``<type>.json`` and its body beside it — THE one predicate."""
+        return self.manifest_layout == ENTITY_LAYOUT and self.asset_spec is not None
+
+    @cached_property
+    def body_file(self) -> str | None:
+        """An entity document's ``Body`` field name, or None. A spec declares at most one
+        (``field_kinds`` refuses a second), so this is the field, not a collection of them."""
+        if not self.is_entity_document:
+            return None
+        from flow_sdk.fs_store.serializer.fields import spec_layout  # noqa: PLC0415
+
+        return spec_layout(self.asset_spec).body or None
 
     @property
     def default_origin_kind(self) -> str:
@@ -209,9 +234,21 @@ class TypeInfo:
     name_from_path: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # JSON main docs: ``"sections"`` = ``{metadata, data}`` (a dataset);
     # ``"flat"`` = the header's keys merged into the payload's own document (a
-    # trace/report whose file predates us). None ⇒ flat when the class has no
-    # ``data_field``, sections otherwise.
+    # trace/report whose file predates us); ``"entity"`` = the ENTITY DOCUMENT —
+    # ``<type>.json`` holding ``type``, ``id``, ``name`` and every header field, each
+    # ``Body`` beside it as ``<field>.md`` (``ENTITY_LAYOUT``). None ⇒ flat when the
+    # class has no ``data_field``, sections otherwise.
     manifest_layout: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # Main documents this type USED to carry (``agent.md``). A folder holding one and not the current
+    # main is a RETIRED form: reported with the migration that converts it, never indexed or written.
+    retired_mains: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # What an orphan row of this type takes with it, awaited with the row's id before the row is dropped
+    # (``fs_store.orphan_removal``). ``None``: the row alone. A data source's records and cursors hang off
+    # its id, so removing the row without them leaves orphans no sweep reaches.
+    orphan_cascade_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # ``(file, how to port it)``: a folder holding one is a retired form NO migration converts — it is
+    # code to rewrite (a retired runtime's ``fetch.py``). Reported with the port, never indexed.
+    retired_files: tuple[tuple[str, str], ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
     # Facts the DISK carries that the header cannot say: counts over rows,
     # links scraped from a body, a name from the path. ``(data, root, header_raw)``
     # mutates the entity kwargs after the main doc and fields are read, before
@@ -386,6 +423,11 @@ class TypeInfo:
         """The path-derived v5 — the one deterministic answer for a KEYLESS
         type whose mint cannot be written (read-only source, failed write)."""
         return mint_uuid(str(Path(layout.root or where).resolve()), namespace=self.id_namespace)
+
+    @property
+    def retired_migration(self) -> str:
+        """The migration that converts this type's retired main (markdown → ``<type>.json``), or ``""``."""
+        return "flow_sdk.migrations.migration_2026_09_entity_json_mains" if self.manifest_layout == ENTITY_LAYOUT else ""
 
     # --- SCAN declarations ---
 
@@ -707,6 +749,21 @@ def _core_compatible(spec: Any, entity: Any) -> bool:
     if s_base is str:
         return issubclass(e_base, str) or hasattr(e_base, "__get_pydantic_core_schema__")
     return issubclass(e_base, s_base)
+
+
+def check_entity_layout(info: "TypeInfo") -> None:
+    """An entity document is a folder whose main is ``<type>.json``, whose spec has no
+    ``FreeSection`` and whose id lives in that document's root. Raises ``TypeError``."""
+    from flow_sdk.assets.identity_carrier import JsonRoot  # noqa: PLC0415
+    from flow_sdk.fs_store.serializer.fields import spec_layout  # noqa: PLC0415
+
+    name = info.type_name
+    if not isinstance(info.shape, Folder) or info.shape.main != f"{name}.json":
+        raise TypeError(f"{name}: an entity document is a folder whose main is {name}.json, not {info.shape!r}")
+    if info.asset_spec is None or spec_layout(info.asset_spec).free:
+        raise TypeError(f"{name}: an entity document needs an asset_spec without a FreeSection")
+    if not isinstance(info.identity_carrier, JsonRoot):
+        raise TypeError(f"{name}: an entity document carries its id in its own root (JsonRoot), not {info.identity_carrier!r}")
 
 
 def check_asset_spec(type_name: str, entity_cls: type, spec: type) -> None:
@@ -1043,6 +1100,8 @@ class SchemaRegistry:
         for info in cls._types.values():
             if info.asset_spec is not None and info.entity_cls is not None:
                 check_asset_spec(info.type_name, info.entity_cls, info.asset_spec)
+            if info.manifest_layout == ENTITY_LAYOUT:
+                check_entity_layout(info)
 
     @classmethod
     def get(cls, type_name: "str | TypeId") -> TypeInfo | None:

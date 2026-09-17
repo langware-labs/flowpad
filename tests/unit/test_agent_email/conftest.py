@@ -9,7 +9,8 @@ from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
 
 
 @pytest_asyncio.fixture
-async def mail_db(tmp_path):
+async def mail_db(tmp_path, fresh_user_scope):
+    # A fresh DB needs a fresh user scope: a data source a previous test left there would collide.
     cfg = DBConfig()
     cfg.database = str(tmp_path / "agent_mail.db")
     driver = SQLiteDBDriver(cfg)

@@ -9,6 +9,9 @@ import { NotificationProcessLine } from '../NotificationProcessLine';
 import { DiagnoseIconButton } from '../diagnose/DiagnoseIconButton';
 import { runAction } from '../commands';
 import type { NotificationData } from '../types';
+import { AgenticProcess } from '@sdk';
+import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
+import { processIdFromTypeId } from '@src/navigation/agentic-process-open';
 
 function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismiss: (id: string) => void }) {
   const { t } = useLingui();
@@ -78,6 +81,13 @@ export function NotificationFeed() {
   const remove = useBadgeStore((s) => s.remove);
   const clearAll = useBadgeStore((s) => s.clearAll);
   const badges = useMemo(() => Object.values(byId).sort((a, b) => b.timestamp - a.timestamp), [byId]);
+  const shown = useMemo(() => badges.slice(0, 5), [badges]);
+  // Each process notification line names its process: load the shown ones in
+  // one batch instead of one GET per line.
+  const processIds = useMemo(
+    () => shown.map((b) => processIdFromTypeId(b.typeId)).filter((id): id is string => !!id),
+    [shown],
+  );
 
   if (badges.length === 0) return null;
 
@@ -97,7 +107,8 @@ export function NotificationFeed() {
       </div>
 
       <div className="flex flex-col gap-2">
-        {badges.slice(0, 5).map((data) => (
+        <EntityBatchHydrator type={AgenticProcess.type} ids={processIds} />
+        {shown.map((data) => (
           <NotificationItem key={data.id} data={data} onDismiss={remove} />
         ))}
         {badges.length > 5 && (

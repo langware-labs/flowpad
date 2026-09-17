@@ -2056,7 +2056,7 @@ async def _build_info() -> DeferredInfo:
     user, project, _, _ = await _ensure_local_entities()
     from flow_sdk.core.capabilities.harness_state import compute_harness_state
     from flow_sdk.core.capabilities.summary import compute_capabilities_summary
-    from flow_sdk.inbox import recompute_unread
+    from flow_sdk.stream_inbox import recompute_unread
     from flow_sdk.system_tools import get_scan_info
 
     notice, desktop, scan, harness, capabilities, sandbox, sniffer, _ = await asyncio.gather(
@@ -2067,7 +2067,7 @@ async def _build_info() -> DeferredInfo:
         _optional_info("capability summary", compute_capabilities_summary(wait_for_discovery=False)),
         _optional_info("sandbox", _sandbox_status(user, project)),
         _optional_info("sniffer", _sniffer_status(user)),
-        _optional_info("inbox repair", recompute_unread("info", user.typeid)),
+        _optional_info("stream inbox repair", recompute_unread("info", user.typeid)),
     )
     fields = dict(desktop_info=desktop, scan_info=scan, harness_state=harness,
                   capabilities_summary=capabilities.model_dump(mode="json") if capabilities is not None else None,

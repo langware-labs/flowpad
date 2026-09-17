@@ -213,9 +213,9 @@ main-process (`electron/`) changes require the steps below.
 > string your change adds:
 > ```bash
 > curl -s http://localhost:9007/ | grep -oE '/assets/index[^"]+\.js' | head -1 \
->   | xargs -I{} curl -s http://localhost:9007{} | grep -c "inbox-search-input"   # >0 = live
+>   | xargs -I{} curl -s http://localhost:9007{} | grep -c "stream-inbox-search-input"   # >0 = live
 > ```
-> Validated 2026-06-10: an inbox text-search (`ui/` + `ts_sdk/` only) stayed invisible after a
+> Validated 2026-06-10: a stream inbox text-search (`ui/` + `ts_sdk/` only) stayed invisible after a
 > `main.js` asar patch — `build_ui.py` had run but the rebuilt bundle was never overlaid into the
 > install. Overlay + reload fixed it; no asar repack needed.
 

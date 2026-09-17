@@ -25,11 +25,39 @@ from flow_sdk.assets.scope import _folder_backed_types, folder_asset_for
 logger = logging.getLogger(__name__)
 
 
-def _strip_version(text: str) -> str:
+def strip_version_fields(fields: dict) -> str:
+    """The comparison key of an ENTITY DOCUMENT's fields: its keys minus ``version``,
+    canonically ordered. Takes the dict, so a caller holding one need not render it first."""
+    import json  # noqa: PLC0415
+
+    return json.dumps({k: v for k, v in fields.items() if k != "version"}, sort_keys=True, ensure_ascii=False)
+
+
+def bumped_version(current: object) -> int:
+    """The next value of the auto-managed ``version`` field — one more than ``current``,
+    or ``2`` when it is missing or not a number. THE bump rule, for every carrier."""
+    try:
+        return int(current) + 1  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 2
+
+
+def strip_version(text: str) -> str:
     """Asset text with the auto-managed ``version`` frontmatter field removed and
     frontmatter re-rendered canonically — the comparison key for "did the asset
     actually change?". Two saves differing only by the version bump (or by benign
     frontmatter formatting the YAML writer normalizes) collapse to the same key."""
+    if text.lstrip().startswith("{"):
+        # An entity document (``<type>.json``): its keys minus ``version``, canonically ordered.
+        import json  # noqa: PLC0415
+
+        try:
+            doc = json.loads(text)
+        except ValueError:
+            return text
+        if isinstance(doc, dict):
+            return strip_version_fields(doc)
+        return text
     if _extract_frontmatter(text) is None:
         return text
     from flow_sdk.assets.document import read_document_bytes
@@ -47,13 +75,9 @@ def version_document(text: str, base: str) -> str:
     from flow_sdk.assets.document import read_document_bytes
 
     document = read_document_bytes(text.encode("utf-8"))
-    if document.metadata_error or _extract_frontmatter(text) is None or _strip_version(text) == _strip_version(base):
+    if document.metadata_error or _extract_frontmatter(text) is None or strip_version(text) == strip_version(base):
         return text
-    try:
-        version = int(document.fields.get("version", 1)) + 1
-    except (ValueError, TypeError):
-        version = 2
-    return merge_frontmatter(text, {"version": version})
+    return merge_frontmatter(text, {"version": bumped_version(document.fields.get("version", 1))})
 
 
 
@@ -69,7 +93,8 @@ def _versionable_folder_types() -> list:
     """
     from flow_sdk.assets.identity_carrier import Frontmatter
 
-    return [t for t in _folder_backed_types() if isinstance(t.identity_carrier, Frontmatter)]
+    # An entity document carries ``version`` as a key of its ``<type>.json`` — the same field, another carrier.
+    return [t for t in _folder_backed_types() if isinstance(t.identity_carrier, Frontmatter) or t.is_entity_document]
 
 
 def _versionable_main_files() -> set[str]:

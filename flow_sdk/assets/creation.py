@@ -142,7 +142,7 @@ def create_asset(path: Path, type: EntityType, spec: DataSpec, *, typeid: TypeId
 
     from flow_sdk.assets.asset import Asset, entry_path
     from flow_sdk.assets.materialize import materialize_asset_sync
-    from flow_sdk.assets.serialization import render_asset, write_asset_fields
+    from flow_sdk.assets.serialization import render_asset, write_asset_fields, write_entity_bodies
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     type_name = EntityType(type)
@@ -176,6 +176,7 @@ def create_asset(path: Path, type: EntityType, spec: DataSpec, *, typeid: TypeId
             body = info.body_path_for(staged)
             body.parent.mkdir(parents=True, exist_ok=True)
             body.write_text(rendered, encoding="utf-8")
+            write_entity_bodies(spec, info, staged)
             write_asset_fields(staged, info, spec)
             info.stamp_id(staged, ref.id)
             # Existing empty directories are explicitly adoptable.

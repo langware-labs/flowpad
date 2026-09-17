@@ -1,7 +1,7 @@
 """Lift the flat ingestion envelope into the contract's value: an origin and a typed payload.
 
-Drivers emit the flat ``SourceItemSpec`` envelope (``provider``, ``segment_key``,
-``external_id``, ``name``/``body`` …) until each one becomes a source class. This module is
+Drivers emit the flat ``SourceItemSpec`` envelope (``provider``, ``external_id``,
+``name``/``body`` …) until each one becomes a source class. This module is
 the ONE place that shape becomes a ``CloudOrigin`` plus a ``Payload``. The ingestor lifts
 every page through it, the cutover migration lifts stored rows through it, and the
 projection lifts a row that was never migrated — three readers, one rule, so a row lifted on
@@ -9,8 +9,8 @@ write and a row lifted on read always agree.
 
 The scope rule: ``kind`` is the source's channel (its provider when no channel is set, the
 envelope's provider when there is no source row at all); ``namespace`` is the account the
-source reads as and the segment the item came from — ``<account>/<segment>``, or the segment
-alone for a source with no account (a feed). A local row id never appears: an origin travels.
+source reads as, or the kind itself for a source with no account. A local row id never appears: an
+origin travels.
 
 Everything here reads attributes, so an envelope, a ``SourceItem`` row and a migration's
 plain namespace over a stored blob all lift the same way. No I/O.
@@ -52,9 +52,9 @@ def origin_kind_of(source: Any, item: Any) -> str:
 
 def origin_of(source: Any, item: Any) -> CloudOrigin:
     """The identity of *item* as the contract names it."""
-    account, segment = _text(source, "account_key"), _text(item, "segment_key")
-    namespace = f"{account}/{segment}" if account and segment else (account or segment)
-    return CloudOrigin(kind=origin_kind_of(source, item), namespace=namespace, key=_text(item, "external_id"))
+    kind = origin_kind_of(source, item)
+    # A source with no account (a feed, a row-less envelope) is scoped by its channel alone.
+    return CloudOrigin(kind=kind, namespace=_text(source, "account_key") or kind, key=_text(item, "external_id"))
 
 
 def data_of(source: Any, item: Any, origin: CloudOrigin) -> Payload:
@@ -109,9 +109,7 @@ def kind_of(data: Payload) -> str:
     raise TypeError(f"{type(data).__name__} has no record kind; a record source emits a message or feed payload")
 
 
-def envelope_of(
-    item: Any, *, data_source_id: str, provider: str, segment_key: str, segment_label: str = ""
-) -> SourceItemSpec:
+def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemSpec:
     """The inverse of ``lift``: a contract item as the flat envelope the ingestor stores.
 
     ``origin`` and ``data`` ride along, so lifting the result is the identity — the header is
@@ -124,8 +122,6 @@ def envelope_of(
         data_source_id=data_source_id,
         provider=provider,
         kind=kind_of(data),
-        segment_key=segment_key,
-        segment_label=segment_label,
         external_id=item.origin.key,
         name=getattr(data, "subject", None) or getattr(data, "title", None) or "",
         body=getattr(data, "text", None) or "",

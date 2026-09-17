@@ -5,7 +5,7 @@ A source is an async session (``async with source:``) offering, by capability, `
 ``send`` / ``reply`` / ``draft``, and always ``on_change`` / ``notify``. Values are frozen
 ``DataSpec``s; capabilities are protocols discovered by ``isinstance``; failures are the
 ``SourceError`` family. This package imports ``flow_sdk.schema`` and the standard library
-only — the sync runtime (``flow_sdk.ingest``), the inbox and the pipes are applications
+only — the sync runtime (``flow_sdk.ingest``), the stream inbox and the pipes are applications
 built on it, never dependencies of it. See ``docs/data-management/source-contract-boundary.md``.
 """
 
@@ -33,7 +33,6 @@ from flow_sdk.sources.protocols import (
     Messaging,
     Mutable,
     Readable,
-    Segmented,
     StableHandle,
     Verdict,
     Verifiable,
@@ -60,7 +59,6 @@ from flow_sdk.sources.values import (
     ObjectQuery,
     Payload,
     RecordQuery,
-    SegmentRef,
     SourceItemSpec,
     UserProfile,
 )
@@ -107,8 +105,6 @@ __all__ = [
     "Readable",
     "RecordQuery",
     "Rejected",
-    "SegmentRef",
-    "Segmented",
     "Source",
     "SourceBinding",
     "SourceError",

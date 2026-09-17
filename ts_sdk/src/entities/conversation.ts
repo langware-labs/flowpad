@@ -1,6 +1,7 @@
 import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import type { IChannelSpec } from '../models/ChannelSpec';
 import { DockPointerData } from '../models/DockPointer';
 import { ConnectionManager, DataOp } from '../websocket';
 import { Callable } from '../types';
@@ -21,7 +22,7 @@ export interface ConversationMessage {
  */
 /**
  * The newest pointer by `ts`, or null for an empty list. Exported so the
- * surfaces that hold a raw pointer array (the inbox list, the recent strip)
+ * surfaces that hold a raw pointer array (the stream inbox list, the recent strip)
  * all share one rule — there must be exactly one definition of "latest" in
  * the app, and it must agree with `Conversation.latest_message_ref()` on the
  * backend, which computes the unread BADGE while this computes the unread ROW.
@@ -42,6 +43,24 @@ export function latestPointer(
     }
   }
   return best;
+}
+
+/**
+ * The message ids a conversation row reads — its first pointer and its latest
+ * (see `latestPointer`) — across `conversations`, deduped and sorted so a batch
+ * built from them has a stable key.
+ */
+export function conversationRowMessageIds(
+  conversations: readonly { conversationMessageIds?: readonly ConversationMessagePointer[] | null }[],
+): string[] {
+  const ids = new Set<string>();
+  for (const conv of conversations) {
+    const pointers = conv.conversationMessageIds ?? [];
+    if (pointers[0]?.id) ids.add(pointers[0].id);
+    const latest = latestPointer(pointers)?.id;
+    if (latest) ids.add(latest);
+  }
+  return [...ids].sort();
 }
 
 export interface ConversationMessagePointer {
@@ -112,9 +131,12 @@ export interface IConversation extends IEntity {
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
-  /** The channel a source-backed conversation replies through (``gmail``,
-   *  ``slack``); stamped by the inbox projection. Null = a Flowpad conversation. */
+  /** The channel this conversation replies through: ``flowpad`` (Flowpad's own chat) or a
+   *  data source channel (``gmail``, ``slack``, ``helpdesk``). Test ``channel_spec``, never this. */
   channel?: string | null;
+  /** The channel's traits (chip, transport, attachments), computed by the backend. Absent on a
+   *  hub runtime, which has no such projection. */
+  channel_spec?: IChannelSpec | null;
   /** The local DataSource feeding this conversation; never leaves the machine. */
   channel_source_id?: string | null;
   /** Hub role roster — inherited from the Entity base as ``members``. The wire
@@ -132,13 +154,19 @@ export interface IConversation extends IEntity {
    */
   git_sharing_enabled?: boolean;
   /** Strip-only dismissal timestamp. Recent strip hides the row when set;
-   *  auto-revives when a FlowMessage newer than this stamp arrives. Inbox
-   *  ignores this field. Null = not dismissed. */
+   *  auto-revives when a FlowMessage newer than this stamp arrives.
+   *  Stream Inbox ignores this field. Null = not dismissed. */
   dismissed_at?: string | Date | null;
-  /** Conversation-level archive timestamp. Both Inbox and Recent strip hide
+  /** Conversation-level archive timestamp. Both Stream Inbox and Recent strip hide
    *  the row when set; auto-revives when a FlowMessage newer than this stamp
    *  arrives. Per-message ``FlowMessage.is_read`` remains independent. */
   archived_at?: string | Date | null;
+  /** Whose stream inbox lists this conversation — a user or agent typeid string;
+   *  null on rows written before the field existed (the local user's). */
+  owner?: string | null;
+  /** Unread for the local viewer, stamped by the backend (`stream_inbox.recompute_unread`).
+   *  Render it; never recompute it. Absent on a hub runtime, which has no such projection. */
+  is_unread?: boolean;
 }
 
 /**
@@ -160,12 +188,15 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   message_count?: number;
   message_ids?: string | null;
   channel?: string | null;
+  channel_spec?: IChannelSpec | null;
   channel_source_id?: string | null;
   // ``members`` (the hub role roster) is inherited from the Entity base.
   title?: string | null;
   git_sharing_enabled?: boolean;
   dismissed_at?: string | Date | null;
   archived_at?: string | Date | null;
+  owner?: string | null;
+  is_unread?: boolean;
   static type: string = 'conversation';
 
   constructor(entity: Partial<IConversation> = {}) {
@@ -178,11 +209,14 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
     this.channel = entity.channel ?? null;
+    this.channel_spec = entity.channel_spec ?? null;
     this.channel_source_id = entity.channel_source_id ?? null;
     this.title = entity.title;
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
     this.dismissed_at = entity.dismissed_at ?? null;
     this.archived_at = entity.archived_at ?? null;
+    this.owner = entity.owner ?? null;
+    this.is_unread = entity.is_unread;
   }
 
   /**
@@ -231,9 +265,9 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   // arrives over the wire ready to render.
 
   /** Always open conversations in the conversation view — every entry point
-   *  (inbox, recent strip, chips, deep links) lands on the same URL. */
+   *  (stream inbox, recent strip, chips, deep links) lands on the same URL. */
   override get dockPointer(): DockPointerData {
-    if (!this.id) return new DockPointerData(ViewType.INBOX);
+    if (!this.id) return new DockPointerData(ViewType.STREAM_INBOX);
     return new DockPointerData(ViewType.CONVERSATION, this.id);
   }
 
@@ -526,7 +560,7 @@ export interface ListHelpdeskTicketsResult {
 }
 
 /** Staff triage queue: list the helpdesk project's tickets, including ones the
- *  caller hasn't picked up (which don't otherwise appear in their inbox).
+ *  caller hasn't picked up (which don't otherwise appear in their stream inbox).
  *  Members-only on the hub. */
 /**
  * Tickets for a desk. Two callers, opposite questions:
@@ -621,7 +655,7 @@ export interface DismissConversationResult {
 
 /** Strip-only dismiss: stamps ``dismissed_at = now()`` on the conversation so
  *  the Recent strip hides it. The row auto-revives when a FlowMessage newer
- *  than the stamp arrives. Inbox ignores this field. */
+ *  than the stamp arrives. Stream Inbox ignores this field. */
 export async function dismissConversation(
   params: DismissConversationParams,
 ): Promise<DismissConversationResult> {
@@ -647,8 +681,8 @@ export interface ArchiveAllConversationsResult {
   archived_at: string;
 }
 
-/** Conversation-level archive: stamps ``archived_at = now()``. Both Inbox
- *  and Recent strip hide the row when set; auto-revives when a FlowMessage
+/** Conversation-level archive: stamps ``archived_at = now()``.
+ *  Both Stream Inbox and Recent strip hide the row when set; auto-revives when a FlowMessage
  *  newer than the stamp arrives. Per-message ``FlowMessage.is_read`` is
  *  independent and not touched. */
 export async function archiveConversation(

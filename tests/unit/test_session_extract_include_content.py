@@ -61,7 +61,7 @@ def test_claude_include_content_false_skips_parse_keeps_envelope(tmp_path):
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_claude_include_content_true_renders_searchable_text(tmp_path):
     p = _write_claude_jsonl(tmp_path)
-    rec = extract_claude_session_from_path(p, include_content=True)  # default
+    rec = extract_claude_session_from_path(p, include_content=True)  # the indexer path
     assert rec.session_id == _CLAUDE_SID
     assert _NEEDLE in rec.content  # the full parse ran and indexed the message
 

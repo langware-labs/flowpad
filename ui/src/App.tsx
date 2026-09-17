@@ -29,10 +29,11 @@ import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
 import { useShowTargetListener } from '@src/hooks/use-show-target-listener';
-import { useSyncOsBadge } from '@src/hooks/useInboxManager';
+import { useSyncOsBadge } from '@src/hooks/useStreamInboxManager';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { JourneyController } from '@src/journey/JourneyController';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
+import { IncomingSharedProjects } from '@src/components/task-receive/use-incoming-shared-projects';
 import { UiTagEmitter } from '@src/tags/ui.onTag';
 import { TagHighlightObserver } from '@src/tags/highlight.onTag';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
@@ -72,7 +73,7 @@ const GlobalEvents = () => {
   // calling process (never navigates). Vibe's own display surfaces own the
   // vibe branch, so this no-ops there.
   useShowTargetListener();
-  // OS dock/launcher badge = the backend-owned InboxManager.unread (state,
+  // OS dock/launcher badge = the backend-owned StreamInboxManager.unread (state,
   // not a notification event) — mounted once, next to the WS listeners.
   useSyncOsBadge();
   useDockViewModeOverrideSync();
@@ -150,6 +151,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <GlobalEvents />
         {/* One-click install from the hub lands here — desktop only (it writes files). */}
         {!isHubOnly() && <AddAssetDialogRoot />}
+        {/* A project somebody shared arrives as a row with no files; this offers
+            to install it. Desktop only, same reason as above. */}
+        {!isHubOnly() && <IncomingSharedProjects />}
         <GitHubDeviceFlowModal />
         <OAuthCodeFlowModal />
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);

@@ -49,7 +49,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
 
   // Reactive list of all saved contexts for the sidebar (no scope = all visible).
   // Memoize the request — an inline QueryRequest re-subscribes every render and
-  // loops useSyncExternalStore (InboxView.tsx uses the same memoized pattern).
+  // loops useSyncExternalStore (StreamInboxView.tsx uses the same memoized pattern).
   const listRequest = useMemo(() => new QueryRequest({ type: GraphContext.type }), []);
   const { data: allContexts } = useEntitiesQuery<GraphContext>(listRequest);
   const contexts = useMemo(() => allContexts ?? [], [allContexts]);

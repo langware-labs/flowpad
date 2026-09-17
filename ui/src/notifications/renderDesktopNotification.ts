@@ -11,7 +11,7 @@ import { APP_NAME } from '@src/constants/app';
  * Knows nothing about any specific feature domain — Layer-2 consumers
  * (backend `notify_desktop(...)` callers) flatten their domain into this
  * payload. The OS *badge* is intentionally not handled here: it is state,
- * reflected from `InboxManager.unread` (see `useSyncOsBadge`).
+ * reflected from `StreamInboxManager.unread` (see `useSyncOsBadge`).
  */
 
 /** Where a click navigates — a dock pointer, never a URL (FE builds the URL). */

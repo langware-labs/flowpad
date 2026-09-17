@@ -66,7 +66,7 @@ after reattach (refresh / server restart). Frame format: header
 `{"v":1,"cols":C,"rows":R}`, then output frames `["o", "<b64>", seq]` and resize
 frames `["r", [cols, rows]]`. Every winsize change (including the attach-time
 jiggle) is recorded so replay interprets output at the correct width. Rolling cap
-is **10 MB on-disk** (~7.5 MB raw after base64), truncated **at frame
+is **30 MB on-disk** (~22.5 MB raw after base64), truncated **at frame
 boundaries** from the front (never splitting an escape sequence), rewriting the
 header to the winsize in effect at the first retained frame.
 

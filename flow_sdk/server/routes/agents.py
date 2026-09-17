@@ -47,5 +47,11 @@ async def auto_launch(request: Request):
         outcome = await Agent.auto_launch_for(project_id)
     except Exception as exc:  # noqa: BLE001 — the loader must get a stable failure, never a 500 page
         logger.warning("agent auto-launch failed for project %s: %s", project_id, exc)
-        return ApiFailResponse(message=f"auto-launch failed: {exc}")
+        # Deliberately a SUCCESS envelope carrying `error`, not ApiFailResponse:
+        # that is a pydantic model, so FastAPI ships it as HTTP 200 and the TS
+        # client unwraps `data.data` to `undefined` — the loader's catch never
+        # fires and a failed launch is indistinguishable from a project with no
+        # agent. The payload keeps its shape (null ids) so callers need no
+        # special case; `error` is what lets the UI say something happened.
+        return ApiSuccessResponse(data={**AutoLaunchOutcome.none_payload(), "error": str(exc)})
     return ApiSuccessResponse(data=outcome.to_payload() if outcome else AutoLaunchOutcome.none_payload())

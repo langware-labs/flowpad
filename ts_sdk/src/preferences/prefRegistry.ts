@@ -66,6 +66,8 @@ export enum PrefKey {
   HISTORY_ALL_PROJECTS = 'preferences.terminal.history_all_projects',
   LAST_OPENER = 'preferences.terminal.last_opener',
   PINNED_OPENERS = 'preferences.terminal.pinned_openers',
+  // files
+  FILES_SHOW_HIDDEN = 'preferences.files.show_hidden',
   // assets / skills
   EDITOR_MODE = 'preferences.assets.editor_mode',
   TRANSCRIPT_MODE = 'preferences.assets.transcript_mode',
@@ -496,6 +498,13 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     legacyLocalStorageKey: 'flowpad.historyModal.allProjects',
     category: 'terminal',
     label: 'History across all projects',
+    dataType: PrefDataType.BOOL,
+    defaultValue: false,
+  },
+  [PrefKey.FILES_SHOW_HIDDEN]: {
+    key: PrefKey.FILES_SHOW_HIDDEN,
+    category: 'files',
+    label: 'Show hidden files',
     dataType: PrefDataType.BOOL,
     defaultValue: false,
   },

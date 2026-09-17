@@ -9,7 +9,7 @@ import { Button } from '@src/components/ui/button';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { EVENTS_VIEW_TYPES, ViewType } from '@src/types/ViewType';
-import { useInboxManager } from '@src/hooks/useInboxManager';
+import { useStreamInboxManager } from '@src/hooks/useStreamInboxManager';
 import {
   Sidebar,
   SidebarContent,
@@ -73,7 +73,7 @@ export function CollapsedSidebar() {
   const onDiscover = location.pathname === '/discover';
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const devMode = useIsDev();
-  const { unread: unreadCount } = useInboxManager();
+  const { unread: unreadCount } = useStreamInboxManager();
   const viewMode = useViewMode();
   // Derived, not a second useIsVibe() subscription — that hook IS this comparison.
   const isVibe = viewMode === ViewMode.Vibe;
@@ -87,12 +87,12 @@ export function CollapsedSidebar() {
     // Glyph from the type registry (same rule as `data-sources` below): the rail
     // slot and an AgenticProcess entity are one thing to a user, so one TypeInfo.
     chats: { title: t`Chats`, icon: iconForType(AgenticProcess.type), viewType: ViewType.SHELL },
-    inbox: { title: t`Inbox`, icon: Mail, viewType: ViewType.INBOX },
+    stream_inbox: { title: t`Stream Inbox`, icon: Mail, viewType: ViewType.STREAM_INBOX },
     // `Plug`, not the screen's own `KeyRound` (VIEWER_REGISTRY): `llm-sources`
     // already wears KeyRound on this rail, and two slots with one glyph is worse
     // than a slot whose glyph differs from its header. A literal is right here —
     // the CLAUDE.md registry rule governs per-ENTITY-TYPE icons, and this slot is
-    // a screen, like `inbox` and `events` beside it.
+    // a screen, like `stream_inbox` and `events` beside it.
     credentials: { title: t`Connections`, icon: Plug, viewType: ViewType.CREDENTIALS },
     discover: { title: t`Discover`, icon: Compass, viewType: null },
     events: { title: t`Events`, icon: RadioTower, viewType: ViewType.EVENTS },
@@ -193,7 +193,7 @@ export function CollapsedSidebar() {
    *  badges instead of silently dropping them. */
   const badgeForId = (id: RailItemId): number => {
     switch (id) {
-      case 'inbox':
+      case 'stream_inbox':
         return unreadCount;
       default:
         return 0;

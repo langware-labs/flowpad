@@ -18,7 +18,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => (
 vi.mock('@src/components/data-sources/DataSourceDialog', () => ({ DataSourceDialog: () => null }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn() } }));
 
-import { AttachedChannelsBar, groupChannels } from '@src/components/inbox-view/AttachedChannelsBar';
+import { AttachedChannelsBar, groupChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
 
 function mount(rows: DataSource[], selected = new Set<string>()) {
   const onSelectedChange = vi.fn();

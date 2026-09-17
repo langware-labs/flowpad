@@ -147,8 +147,8 @@ class ViewType(StrEnum):
     CRON = "cron"  # Alias of EVENTS (scheduled jobs)
     ASSETS = "assets"  # Unified docs/skills/workflows tree
     PROJECT = "project"  # Collaboration on a project
-    AGENT = "agent"  # Agent-owned surfaces — /dock/agent/<agent-id>/inbox
-    INBOX = "inbox"  # Received FlowMessages from hub
+    AGENT = "agent"  # Agent-owned surfaces — /dock/agent/<agent-id>/stream_inbox
+    STREAM_INBOX = "stream_inbox"  # Stream Inbox — every owned message source, merged into conversations
     CONVERSATION = "conversation"  # Single Conversation viewer
     SPEC = "spec"  # Single Spec viewer
     GRAPH_CONTEXT = "graph_context"  # Frozen-context viewer
@@ -430,9 +430,9 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     # Same: a bare project dock is the assets workspace (see the PROJECT arm in
     # `content-panel.tsx`, which documents exactly that and was unaddressable).
     ViewType.PROJECT: _m(_OPT, label="Collaboration", aliases=("room",), pages=("desk", "hub")),
-    # `<agentId>/inbox` — the id leads, so the pointer is required.
+    # `<agentId>/stream_inbox` — the id leads, so the pointer is required.
     ViewType.AGENT: _m(_REQ, label="Agent"),
-    ViewType.INBOX: _m(_NONE, label="Inbox", aliases=("messages",)),
+    ViewType.STREAM_INBOX: _m(_NONE, label="Stream Inbox", aliases=("messages",)),
     ViewType.CONVERSATION: _m(_REQ, folds_sub_pointer=True, label="Conversation", pages=("desk", "hub")),
     ViewType.SPEC: _m(_REQ, label="Spec"),
     ViewType.GRAPH_CONTEXT: _m(_REQ, label="Context", aliases=("frozen context",)),

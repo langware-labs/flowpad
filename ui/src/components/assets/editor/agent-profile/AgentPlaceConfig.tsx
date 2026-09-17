@@ -38,7 +38,7 @@ function show(value: unknown): string {
 
 /**
  * The settings this place overrides — and only those. Everything not listed
- * uses the definition. Overrides are written into agent.md under `places`.
+ * uses the definition. Overrides are written into agent.json under `places`.
  */
 export function AgentPlaceConfig({ agent, deploymentId, overrides, onChanged }: AgentPlaceConfigProps) {
   const { t } = useLingui();

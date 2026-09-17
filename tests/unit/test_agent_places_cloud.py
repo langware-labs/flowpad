@@ -165,7 +165,7 @@ async def test_behind_counts_published_commits_the_machine_lacks(tmp_path):
     git("add", "-A")
     git("commit", "-q", "-m", "first")
     deployed = git("rev-parse", "HEAD")
-    (folder / "agent.md").write_text((folder / "agent.md").read_text() + "\nSecond.\n")
+    (folder / "system_prompt.md").write_text((folder / "system_prompt.md").read_text() + "\nSecond.\n")
     git("commit", "-q", "-am", "second")
     (root / "unrelated.txt").write_text("x")
     git("add", "-A")

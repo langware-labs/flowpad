@@ -15,11 +15,11 @@ import { promises as fs, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { DataSource } from '@sdk';
+import { DataSource, credentialsService, secretsService } from '@sdk';
 import { apiTestSetup } from '../utils/test-utils';
 import { testEntityName } from '../_cleanup';
 
-const ASSETS = path.resolve(__dirname, '../../../flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source');
+const ASSETS = path.resolve(__dirname, '../../../flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver');
 const NOW_ISO = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 type Handler = (req: IncomingMessage, body: string) => { status?: number; json?: unknown; text?: string; type?: string };
@@ -57,6 +57,8 @@ beforeEach(async () => {
 interface Case {
   provider: string;
   config: () => Promise<Record<string, unknown>> | Record<string, unknown>;
+  /** The driver's secret values by `auth` key — never config; `seedAuth` puts them where auth reads them. */
+  secrets?: Record<string, string>;
   fields?: Record<string, unknown>;
   serve?: Handler;
   minItems?: number;
@@ -77,7 +79,7 @@ const CASES: Case[] = [
       type: 'application/xml',
       text: readFileSync(path.join(ASSETS, 'rss/tests/fixtures/atom.xml'), 'utf8').replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g, NOW_ISO),
     }),
-    config: () => ({ feed_urls: [`${base}/atom`] }),
+    config: () => ({ feed_url: `${base}/atom` }),
     minItems: 3,
   },
   {
@@ -100,7 +102,8 @@ const CASES: Case[] = [
       const sent = JSON.parse(body || '{}');
       return { json: { ok: true, result: { message_id: telegramNext++, date: Math.floor(Date.now() / 1000), chat: { id: Number(sent.chat_id), type: 'private' }, from: { id: 777, is_bot: true }, text: sent.text } } };
     },
-    config: () => ({ bot_token: '123:MATRIX', base_url: base }),
+    config: () => ({ base_url: base }),
+    secrets: { bot_token: '123:MATRIX' },
     fields: { account_key: '@matrix_bot' },
     minItems: 1,
     send: { to: TELEGRAM_CHAT, text: 'matrix send' },
@@ -112,7 +115,8 @@ const CASES: Case[] = [
       if (url.includes('/messages/send') || url.endsWith('/reply')) return { json: { message_id: `<sent-${Date.now()}@x>`, thread_id: 't-1' } };
       return { json: { messages: [{ message_id: '<in-1@x>', thread_id: 't-1', timestamp: new Date().toISOString(), from: 'Ada <ada@example.com>', to: ['matrix@agentmail.to'], subject: 'Hi', preview: 'Hello' }] } };
     },
-    config: () => ({ inbox: 'matrix@agentmail.to', api_key: 'am_matrix', base_url: base }),
+    config: () => ({ inbox: 'matrix@agentmail.to', base_url: base }),
+    secrets: { api_key: 'am_matrix' },
     fields: { account_key: 'matrix@agentmail.to' },
     minItems: 1,
     send: { to: 'someone@example.com', text: 'matrix send', subject: 'Matrix' },
@@ -146,17 +150,49 @@ const CASES: Case[] = [
   },
 ];
 
+/**
+ * Put a driver's secret values where its manifest's `auth` reads them — a SecretPack (`credential` +
+ * `vars`) in this instance's vault, or a machine secret (`secrets`) — and return the undo. `null` when
+ * this instance already holds a real one: the matrix never overwrites, or deletes, a person's secret.
+ */
+async function seedAuth(provider: string, values: Record<string, string>): Promise<(() => Promise<unknown>) | null> {
+  const auth = JSON.parse(readFileSync(path.join(ASSETS, provider, 'data_driver.json'), 'utf8')).auth ?? {};
+  if (auth.credential) {
+    const vars: Record<string, string> = auth.vars ?? {};
+    const status = await credentialsService.status();
+    if (status.credentials.some((row) => row.name === auth.credential && row.scope === 'user')) return null;
+    const { typeid } = await credentialsService.save({
+      scope: 'user',
+      manifest: {
+        name: auth.credential,
+        value_store: 'vault',
+        vars: Object.fromEntries(Object.values(vars).map((name) => [name, { label: name, secret: true, required: true }])),
+      },
+      values: Object.fromEntries(Object.entries(values).map(([key, value]) => [vars[key], value])),
+    });
+    return () => credentialsService.remove(typeid);
+  }
+  const names = Object.entries(values).map(([key]) => auth.secrets?.[key] as string);
+  const held = new Set((await secretsService.list()).map((secret) => secret.name));
+  if (names.some((name) => held.has(name))) return null;
+  await Promise.all(Object.entries(values).map(([key, value]) => secretsService.write(auth.secrets[key], value)));
+  return () => Promise.all(names.map((name) => secretsService.delete(name)));
+}
+
 describe('data source matrix — TS SDK', () => {
   for (const c of CASES) {
-    it(`${c.provider}: create, verify, sync, items, send, reply, disable, delete`, async () => {
+    it(`${c.provider}: create, verify, sync, items, send, reply, disable, delete`, async (ctx) => {
       handler = c.serve ?? (() => ({ status: 404, json: {} }));
-      const created = await new DataSource({
-        name: testEntityName(`data-source-${c.provider}`),
-        provider: c.provider,
-        config: await c.config(),
-        ...(c.fields ?? {}),
-      } as never).save();
+      const forget = c.secrets ? await seedAuth(c.provider, c.secrets) : undefined;
+      if (forget === null) ctx.skip(); // a real secret of this driver lives on this instance
+      let created: DataSource | undefined;
       try {
+        created = await new DataSource({
+          name: testEntityName(`data-source-${c.provider}`),
+          provider: c.provider,
+          config: await c.config(),
+          ...(c.fields ?? {}),
+        } as never).save();
         const verdict = await created.verify();
         expect(verdict).toHaveProperty('ready');
 
@@ -176,7 +212,7 @@ describe('data source matrix — TS SDK', () => {
         expect((await created.setEnabled(false)).status).toBe('disabled');
         expect((await created.setEnabled(true)).status).toBe('active');
       } finally {
-        await created.delete();
+        await Promise.all([created?.delete(), forget?.()]);
       }
     });
   }

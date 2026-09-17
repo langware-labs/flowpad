@@ -39,7 +39,7 @@ def build_desktop_payload(
       true (the renderer's default), emitted only to turn it off.
 
     The OS *badge count* is intentionally NOT part of this payload — it is state,
-    reflected from ``InboxManager.unread`` via the entity channel.
+    reflected from ``StreamInboxManager.unread`` via the entity channel.
     """
     payload: dict = {"title": title, "body": body}
     if icon:

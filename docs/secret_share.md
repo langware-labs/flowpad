@@ -4,7 +4,7 @@ id: 5e2949c7-827c-50f9-a25f-0a322d4c42f5
 
 # Credentials and secrets
 
-A **credential** (`CredentialSpec`) is a named set of environment variables — a
+A **credential** (`SecretPack`) is a named set of environment variables — a
 "secret pack": Gmail is `GMAIL_ADDRESS` + `GMAIL_APP_PASSWORD`, a custom API key
 is one variable. It is the **only** way a secret is declared. A declared variable
 is injected into agent workers, terminals and compute-node commands; a value
@@ -12,13 +12,13 @@ nobody declares is never injected.
 
 ## Scope — where the declaration lives
 
-A credential is a REPO folder asset, `agentic-assets/credential/<name>/credential.json`,
+A credential is a REPO folder asset, `agentic-assets/secret_pack/<name>/secret_pack.json`,
 in one of the asset scopes Flowpad already has:
 
 | Scope | Folder | Applies to |
 |---|---|---|
-| `project` | `<project mount>/agentic-assets/credential/<name>/` | processes in that project |
-| `user` | `~/agentic-assets/credential/<name>/` | processes in every project on this machine |
+| `project` | `<project mount>/agentic-assets/secret_pack/<name>/` | processes in that project |
+| `user` | `~/agentic-assets/secret_pack/<name>/` | processes in every project on this machine |
 | `system` | the shipped assistant project | nothing — a **template**, added to one of the scopes above |
 
 A project credential travels with the project's repository; a teammate who opens
@@ -29,7 +29,7 @@ The shipped templates commit theirs, so every install indexes one row per templa
 
 ## Store — where the values live
 
-`credential.json` names its store in `value_store`. Both are
+`secret_pack.json` names its store in `value_store`. Both are
 [`SecretStore`](snippets/secret-stores.md) types — `env` is the `env_file` store
 (`env_file` is accepted too), and `spec.secret_store(environment)` builds the
 configured store — so the same `load` / `save` / `validate_keys` serve a
@@ -77,7 +77,7 @@ where its value is read does:
 | `env` | `<scope root>/.env.local` (unchanged) | `<scope root>/.env.production.local` |
 | `vault` | `credential.project.<pid>.VAR` (unchanged) | `credential.production.project.<pid>.VAR` |
 
-`credential.json` may override the store or the required set per environment;
+`secret_pack.json` may override the store or the required set per environment;
 the list of environments itself is never declared there:
 
 ```json

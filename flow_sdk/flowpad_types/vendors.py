@@ -23,7 +23,7 @@ from flow_sdk.utils.kind_registry import KindRegistry
 
 @dataclass(frozen=True)
 class Vendor:
-    key: str                          # driver short-id: what an agent.md writes, the cli_config key, the executable
+    key: str                          # driver short-id: what an agent.json writes, the cli_config key, the executable
     worker_type: str                  # the persisted ``AgenticProcess.worker_type`` value
     label: str                        # the vendor's own spelling — "OpenCode", not ``key.title()``
     account_noun: str                 # what you sign in WITH: "Anthropic account"

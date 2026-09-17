@@ -35,7 +35,7 @@ describe('buildHubRailItems', () => {
 
   it('keeps the content browsers ahead of it, in order', () => {
     expect(buildHubRailItems(t).map((i) => i.id)).toEqual([
-      'inbox',
+      'stream_inbox',
       'tasks',
       'docs',
       'world',
@@ -70,7 +70,7 @@ describe('buildHubRailItems', () => {
     );
 
     expect(pointers).toEqual({
-      inbox: 'conversation',
+      stream_inbox: 'conversation',
       tasks: 'task',
       docs: 'markdown',
     });
@@ -110,8 +110,8 @@ describe('buildHubRailItems', () => {
 
   it('never leaks the hub-only ids into the desk rail', () => {
     // The two unions overlap where a destination genuinely exists on both rails —
-    // 'home', 'inbox', and now 'credentials', which took a desk slot under the
-    // inbox and has its own entry in the desk `navMeta`. What must stay out is an
+    // 'home', 'stream_inbox', and now 'credentials', which took a desk slot under the
+    // stream inbox and has its own entry in the desk `navMeta`. What must stay out is an
     // id with no desk entry behind it: that renders a silent `null` slot.
     // `llm-endpoints` and `token-plan` are hub-only and have no desk screen.
     expect(RAIL_ITEMS.map((i) => i.id as string)).not.toContain('llm-endpoints');
@@ -122,7 +122,7 @@ describe('buildHubRailItems', () => {
 it('does not put LLM sources on the hub rail', () => {
   // Every fact that page renders is a box fact (a device token, a stored key, the endpoint
   // binding) and its box action 404s on the hub, so a hub entry would open an empty shell —
-  // the failure `buildHubRailItems` documents for InboxView.
+  // the failure `buildHubRailItems` documents for StreamInboxView.
   const ids = buildHubRailItems(((s: TemplateStringsArray) => s[0]) as never).map((i) => i.id);
   expect(ids).not.toContain('llm-sources');
 });

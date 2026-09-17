@@ -1,6 +1,6 @@
 """Conversation recency excludes hub *touches*.
 
-Contract (the inbox "Xm ago" clock):
+Contract (the stream inbox "Xm ago" clock):
 
     ``Conversation.updated_date`` is the last message's ``updated_date`` — i.e.
     the moment of the last *real* change to a message object (a new message, or
@@ -10,7 +10,7 @@ Contract (the inbox "Xm ago" clock):
     must NOT advance it.
 
 This pins the prod incident (conversation 64affa19): its only message was born
-12:41 yet the inbox showed it as "57m ago" because a 16:27 body re-download
+12:41 yet the stream inbox showed it as "57m ago" because a 16:27 body re-download
 touched the message — the hub bumped the message AND parent ``updated_date`` and
 the local row adopted the touch clock verbatim. The last *message* never
 changed; the recency did.
@@ -109,7 +109,7 @@ def test_pure_touch_is_not_stale():  # CAPTURES BUG
     the local message's ``updated_date`` never advances to the touch clock.
 
     Current code compares ``updated_date`` alone, so this returns True — the
-    exact upstream switch behind the stale inbox recency."""
+    exact upstream switch behind the stale stream inbox recency."""
     local = _local_fm()
     touch = _hub_echo(updated_date=_TOUCH)  # same text/status/created_date
     assert FlowMessage.is_stale(local, touch) is False
@@ -185,7 +185,7 @@ async def test_touched_parent_clock_does_not_advance_recency():  # CAPTURES BUG
 
     Current ``_upsert_hub_conversation_metadata`` adopts the hub parent clock
     verbatim (is_stale → updated_date = hub updated_date), so recency jumps to
-    16:27 and the days-old conversation floats to the top of the inbox."""
+    16:27 and the days-old conversation floats to the top of the stream inbox."""
     conv_id = "64affa19-02d9-4fe2-97e2-8978af187460"
     msg_id = "d3b466e3-786a-4e2a-808f-c3c4ab99232c"
     await _conv_with_message(conv_id, msg_id, created=_BORN, updated=_BORN)

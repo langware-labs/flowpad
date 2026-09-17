@@ -68,7 +68,7 @@ pyproject.toml                      # Python package config (published to PyPI a
      a. uvManager.ensureUv()         — ensure uv is available (auto-installs if needed)
      b. uvManager.installLatest()    — uv tool install flowpad (from PyPI)
      c. uvManager.start()            — flow start (launches server in background)
-5. Poll GET /api/v1/graph/bootstrap every 500ms (max 30 seconds)
+5. Poll GET /api/v1/graph/bootstrap every 500ms (max 120 seconds)
 6. Backend responds 200 -> load UI from http://localhost:9007
 7. preload.js injects window.flowpadDesktop and window.electronAPI
 8. main.tsx calls initDesktopBackend():
@@ -107,10 +107,10 @@ Creates the BrowserWindow and manages the full app lifecycle.
 
 **Key constants:**
 ```javascript
-BACKEND_PORT = 9007
-BACKEND_URL = "http://localhost:9007"
+BACKEND_PORT = 9007           // dev only: MINIHUB_DEV=true + FLOWPAD_BACKEND_PORT overrides it
+BACKEND_URL = `http://localhost:${BACKEND_PORT}`
 HEALTH_CHECK_INTERVAL = 500   // ms between bootstrap polls
-MAX_HEALTH_CHECKS = 60        // 30 seconds max wait
+MAX_HEALTH_CHECKS = 240       // 120 seconds max wait
 ```
 
 **Window configuration:**
@@ -129,7 +129,7 @@ MAX_HEALTH_CHECKS = 60        // 30 seconds max wait
 | `restart-backend` | `boolean`                 | Restart backend (flow stop + flow start) |
 | `open-external` | `void`                    | Open URL in system browser |
 
-**Dev mode:** Set `MINIHUB_DEV=true` to skip backend installation/spawning and assume it runs externally (e.g., `python -m server.run`).
+**Dev mode:** Set `MINIHUB_DEV=true` to skip backend installation/spawning and assume it runs externally (e.g., `uv run -m flow_sdk.server.run`).
 
 **Mouse back/forward (X1/X2) buttons** — Electron does not map these to history navigation, and the OS surfaces them **differently per platform**, so `createWindow()` listens per-platform and funnels into shared `goBack()`/`goForward()` (which call `webContents.navigationHistory`):
 
@@ -150,7 +150,7 @@ Exposes two API objects to the renderer via `contextBridge.exposeInMainWorld`:
 ```javascript
 {
   getBackendBaseUrl: () => ipcRenderer.invoke('get-backend-url')
-  // Returns "http://127.0.0.1:9007"
+  // Returns "http://localhost:9007"
 }
 ```
 
@@ -246,12 +246,14 @@ cd electron
 
 # Start backend + electron in parallel:
 npm run dev
-# Runs: python -m server.run (port 9007) + MINIHUB_DEV=true electron .
+# Runs: uv run -m flow_sdk.server.run (port 9007) + MINIHUB_DEV=true electron .
+#   (electron starts once http://localhost:9007/api/v1/graph/bootstrap answers)
 ```
 
 ### Full Build (macOS)
 
 ```bash
+python3 build_ui.py              # from the repo root — pack:mac does NOT build the UI
 cd electron
 npm run pack:mac:full
 ```
@@ -259,17 +261,19 @@ npm run pack:mac:full
 This runs the following steps in order:
 
 ```
-1. npm i                         # Install electron dependencies
-2. npm run build                 # Build frontend only
-   └── build:frontend            # IS_PACKAGE=true python3 build_ui.py
-       ├── Clean server/static/
-       ├── npm install (ui/)
-       ├── npm run build (with DEPLOY_ENV=desktop IS_PACKAGE=true)
-       └── Copy ui/dist/* -> server/static/
-3. npm run pack:mac              # electron-builder packages everything
-   ├── Bundles electron shell (main.js, preload.js, uv-manager.js, etc.) into app.asar
-   ├── Custom mac-sign.js signs the app
-   └── notarize.js submits to Apple for notarization
+0. python3 build_ui.py           # repo root; electron/package.json has no UI build script
+   ├── Clean flow_sdk/server/static/
+   ├── npm install (ui/)
+   ├── npm run build (with DEPLOY_ENV=desktop IS_PACKAGE=true)
+   └── Copy ui/dist/* -> flow_sdk/server/static/
+1. npm i                         # pack:mac:full = npm i && npm run pack:mac
+2. npm run pack:mac
+   ├── npm run build:flow-rs     # node scripts/build-flow-rs.js
+   ├── npm run cleanup           # rimraf release
+   └── electron-builder --mac --config electron-builder.config.cjs
+       ├── Bundles electron shell (main.js, preload.js, uv-manager.js, etc.) into app.asar
+       ├── signing/mac-sign.js signs the app
+       └── signing/notarize.js submits to Apple for notarization
 ```
 
 **Note:** The UI is built into `server/static/` so it can be included in the PyPI package. The `flowpad` package must be published to PyPI separately (`uv build && twine upload dist/*`) before the Electron app can install it on user machines.
@@ -311,8 +315,8 @@ To release a new version:
 
 ```
 1. Update flow_sdk/_version.py and electron/package.json to the same version
-2. Build UI: cd electron && npm run build
-3. Publish Python package: cd .. && uv build && twine upload dist/*
+2. Build UI: python build_ui.py  (repo root)
+3. Publish Python package: uv build && twine upload dist/*
 4. Package Electron: cd electron && npm run pack:mac:full  (or win/linux)
 5. Distribute the .dmg / .exe / .AppImage
 ```
@@ -357,7 +361,7 @@ The `entitlements.mac.plist` grants:
 
 | Problem                                         | Cause | Fix |
 |-------------------------------------------------|-------|-----|
-| UI calls port 9007 in packaged app              | UI built without `IS_PACKAGE=true` | Run `npm run build:frontend` from `electron/` (uses `build_ui.py`) |
+| UI calls port 9007 in packaged app              | UI built without `IS_PACKAGE=true` | Run `python3 build_ui.py` from the repo root (sets `IS_PACKAGE=true`) |
 | Backend fails to start                          | uv tool install failed | Check logs for uv errors; ensure internet access on first launch |
 | `ModuleNotFoundError: No module named 'server'` | `server` package not included in the PyPI wheel | Ensure `pyproject.toml` has `include = ["flow_sdk*", "server*"]` |
 | Port 9007 already in use                        | Another instance or process | Kill the process or change `BACKEND_PORT` in `main.js` |

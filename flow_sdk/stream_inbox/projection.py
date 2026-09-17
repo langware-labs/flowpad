@@ -1,0 +1,947 @@
+"""The stream inbox projection — ingested cloud records become stream inbox conversations.
+
+``SourceItem`` is the CACHE of a mutable cloud object; ``FlowMessage`` is how it
+is rendered in a conversation. This module is the one-way projection between
+them, and nothing else in the system knows both halves.
+
+**Identity is looked up, so everything is idempotent.**
+
+    thread        resolved by (channel, thread_key)   — MessageThread.find_existing
+    conversation  thread.conversation_id              — authoritative once born
+    message       resolved by source_item_id          — the reference column
+
+Ids are ordinary uuid4s, minted only on first sight; re-projecting the whole
+corpus converges on the same rows by lookup, which is what lets the reconcile
+sweep below be a blunt instrument. ``materialize_flow_message`` already upserts
+on a pre-populated id.
+
+**A projected FlowMessage is a REFERENCE row, not a copy.** It carries
+membership (thread, conversation), attribution (sender, origin) and the
+person's state (``is_read``); its ``text`` stays empty on disk and is hydrated
+at read time from the SourceItem it references — so an item edit changes
+nothing here, and there is no snapshot-refresh machinery to keep in step.
+
+**Two lanes, and both are load-bearing.** The per-item lane is the steady
+state. The reconcile lane exists because ``ingest_items`` emits item tags ONLY
+in ``IngestMode.INCREMENTAL``, and ``IngestMode.for_run`` picks BACKFILL on the
+first run or when a cycle carries more than ``STORM_CAP_PER_MINUTE`` (30)
+items — so a first sync of a real mailbox announces *nothing*. The sweep also
+deliberately ignores ``changed_ids``: the agent transport's worker writes
+through ``flow record create``, a separate ``ingest_items`` call, so the
+driver's own report is empty.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any, Optional
+
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+from flow_sdk.stream_inbox._locks import loop_lock, new_registry
+
+logger = logging.getLogger(__name__)
+
+# Serializes thread CREATION (the resolve is double-checked outside it). The
+# old derived id made concurrent item events converge on one row for free; a
+# lookup-then-create races, and two events on a new thread would fork it.
+_thread_locks = new_registry()
+
+
+def _thread_lock():
+    return loop_lock(_thread_locks)
+
+
+async def find_thread(channel: str, key: str, owner, data_source_id: str):
+    """The thread on this natural key, read-only: the source's own row, else the
+    row a pre-account install wrote (`resolve_thread` adopts that one; a reader
+    just answers from it)."""
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+    thread = await MessageThread.find_existing(channel, key, owner, data_source_id)
+    return thread if thread is not None else await MessageThread.find_unclaimed(channel, key, owner)
+
+
+async def resolve_thread(channel: str, key: str, owner, *, data_source_id: str, title: str, conversation_id: str = ""):
+    """The thread for ``(owner, channel, key)`` read by ``data_source_id`` — found, adopted, or minted.
+
+    Resolve-or-create, double-checked: a lookup does not absorb the race a derived id
+    did — two concurrent events on a brand-new thread would each miss and fork it. The
+    lock is taken only on a miss, so the ~100% common already-exists case never
+    serializes on it.
+
+    Between the lookup and the mint sits the migration: a thread written before
+    ``owner`` or ``data_source_id`` existed has neither, and it must become THIS
+    source's row rather than be forked by a fresh one — the conversation it points at
+    is the one the user has been reading. Scoped to rows with no source and this owner
+    (or none), never "any row on the key", so a second account mints its own thread.
+
+    ``conversation_id`` ADOPTS an existing conversation at birth instead of
+    minting one — a channel whose threads already exist locally as hub-mirrored
+    rows (the help desk) hands it over so both writers converge on one row.
+    """
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+    thread = await MessageThread.find_existing(channel, key, owner, data_source_id)
+    if thread is not None:
+        return thread
+    async with _thread_lock():
+        thread = await find_thread(channel, key, owner, data_source_id)
+        if thread is not None:
+            if not thread.owner or not thread.data_source_id:
+                thread.owner = thread.owner or owner
+                thread.data_source_id = data_source_id
+                await thread.save(notify=False)
+            return thread
+        # Both ids are ordinary uuid4s, minted here at birth and looked up ever
+        # after. `conversation_id` is authoritative from this moment: a merge
+        # repoints it, which is the whole reason nothing re-derives it from the
+        # key. A mail thread titles by subject. A chat message has none, and
+        # falling back to the KEY put raw Slack ts digits in the stream inbox; the
+        # root message's opening is what Slack itself titles a thread by.
+        # Stamped at birth only, so it never churns.
+        thread = MessageThread(
+            id=mint_uuid(),
+            channel=channel,
+            thread_key=key,
+            owner=owner,
+            data_source_id=data_source_id,
+            conversation_id=conversation_id or mint_uuid(),
+            title=title,
+            name=title,
+        )
+        await thread.save(notify=False)
+        return thread
+
+
+#: How many un-projected items one reconcile pass will catch up. A first Gmail
+#: sync is a few hundred; this bounds the work per `sync.completed` without a
+#: cursor, because the next sync's sweep picks up whatever is left.
+RECONCILE_BATCH = 500
+
+#: Reply/forward prefixes stripped when a provider gives us no native thread
+#: handle and the subject is all we have. Deliberately multi-lingual: a
+#: two-entry English list silently forks every non-English thread. Applied
+#: repeatedly to a fixed point, so `Re: Fwd: RE:` collapses.
+_SUBJECT_PREFIX = re.compile(
+    r"^\s*(?:re|rif|aw|antw|sv|vs|vb|res|enc|tr|fwd?|wg|encaminhada|回复|答复|转发)\s*(?:\[\d+\])?\s*:\s*",
+    re.IGNORECASE,
+)
+#: Bracketed list/banner tags: `[team]`, `[EXTERNAL]`.
+_SUBJECT_TAG = re.compile(r"^\s*\[[^\]]{1,40}\]\s*")
+
+
+def normalize_subject(subject: str) -> str:
+    """A subject reduced to its threading key.
+
+    The FALLBACK thread key — used only when the provider offers nothing
+    better. Every channel worth supporting ships a native handle (Gmail
+    ``threadId``, Slack ``thread_ts``, a Jira issue key) and the driver should
+    put it in ``SourceItem.thread_key``; this is what happens when it can't.
+
+    Known and accepted failure modes, documented so nobody rediscovers them as
+    bugs: two unrelated ``Re: hello`` threads IN ONE MAILBOX collapse into one, and
+    editing a subject mid-thread forks it. Both are why the native handle wins when
+    it exists; the thread key is also scoped by channel, owner and the source that
+    read it, so the collapse never crosses accounts.
+    """
+    text = (subject or "").strip()
+    while True:
+        stripped = _SUBJECT_TAG.sub("", _SUBJECT_PREFIX.sub("", text))
+        if stripped == text:
+            break
+        text = stripped
+    return " ".join(text.split()).casefold()
+
+
+def thread_key_for(item, subject: str) -> str:
+    """The item's grouping key: the driver's handle, else the subject."""
+    native = (item.thread_key or "").strip()
+    return native or normalize_subject(subject)
+
+
+#: The ontology subtree this projection accepts. `SourceItem.kind` is what
+#: separates a MESSAGE from a document: `content.message.email` and
+#: `content.message.chat` belong in a stream inbox, `content.feed.item` (an RSS entry,
+#: a Hacker News story) emphatically does not — it is an article, and projecting
+#: it produced a 300-row stream inbox of news headlines the first time this ran.
+MESSAGE_KIND_ROOT = "content.message"
+
+
+def is_message(item) -> bool:
+    """Whether an ingested record belongs in the stream inbox at all.
+
+    Hierarchy match, not a prefix compare — `tag_is_within` is the shared
+    dot-taxonomy owner and is lenient about case/whitespace, so an untrusted
+    provider string can't slip through on formatting.
+    """
+    from flow_sdk.tags.grammar import tag_is_within  # noqa: PLC0415
+
+    return tag_is_within(item.kind or "", MESSAGE_KIND_ROOT)
+
+
+def _thread_title(item) -> str:
+    """A chat thread's display title: the root message's opening line.
+
+    First line only, bounded, ellipsized on a word where possible. Empty when
+    the item has no body — the caller then falls back to the thread key.
+    """
+    opening = (getattr(item, "body", "") or "").strip().splitlines()[0:1]
+    text = opening[0].strip() if opening else ""
+    if len(text) <= 60:
+        return text
+    cut = text[:60].rsplit(" ", 1)[0] or text[:60]
+    return f"{cut}…"
+
+
+def channel_of(source) -> str:
+    """The user-facing channel for a DataSource.
+
+    Falls back to ``provider`` for rows written before ``channel`` existed —
+    wrong-looking for the agent transport (whose provider is literally
+    ``"agent"``), but stable, which is what identity needs. Configure
+    ``channel`` on the source to fix the badge and the thread key together.
+    """
+    return (getattr(source, "channel", "") or getattr(source, "provider", "") or "").strip()
+
+
+async def project_source_item(
+    item,
+    *,
+    source=None,
+    notify: bool = True,
+    recount: bool = True,
+    announce: bool = True,
+    known_unplaced: bool = False,
+) -> Optional[tuple[str, str]]:
+    """Project one SourceItem into its conversation.
+
+    Returns ``(flow_message_id, thread_id)``, or None when the item cannot be
+    placed (no source, not a message) rather than raising — one bad record
+    must not stall a sync. Idempotent: identity is resolved by lookup (thread
+    by natural key, message by ``source_item_id``), so a second call converges
+    on the same rows.
+
+    ``recount=False`` defers the thread recount to the caller. A sweep sets it:
+    recounting per item is quadratic in thread depth, because each recount
+    reloads the whole thread.
+
+    ``announce=False`` suppresses the projected tag. A sweep sets it when the
+    batch itself would be a storm, for the reason `IngestMode` encodes one layer
+    down: the caps are 30/min and raising them is not an option. Announcing each
+    of a 500-item import would put 500 events into that cap — and on an agent
+    mailbox each surviving one spends a real turn answering months-old mail.
+
+    The announcement still fires from HERE rather than from a lane, because the
+    two lanes race and either may do the write; the incremental lane calls this
+    function whether or not the sweep got there first, and only the call that
+    CREATED the row announces (``_place_message``), so the announcement lands
+    exactly once without a lane having to know who won.
+    """
+    from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    if not is_message(item):
+        return None  # a feed article is not stream inbox material — see MESSAGE_KIND_ROOT
+    if source is None:
+        source = await DataSource.get_one({"id": item.data_source_id})
+    if source is None:
+        logger.debug("[stream-inbox] item %s has no DataSource — skipped", item.id)
+        return None
+
+    channel = channel_of(source)
+    subject = item.name or ""
+    key = thread_key_for(item, subject)
+    owner = await owner_of(source)
+
+    thread = await resolve_thread(
+        channel, key, owner,
+        data_source_id=str(source.id),
+        title=subject or _thread_title(item) or key,
+        conversation_id=str(getattr(item, "conversation_id", "") or ""),
+    )
+    thread_id = str(thread.id)
+    conversation_id = thread.conversation_id
+
+    # Defensive reads end here: `item` and `source` are typed entities.
+
+    conversation = await ensure_conversation_entity(
+        conversation_id,
+        parent_typeid=None,
+        someone_typeid=None,
+        title=thread.title or subject or key,
+        owner=thread.owner,
+    )
+    # A born-`flowpad` conversation (a help desk ticket) takes the source's channel here;
+    # a source channel is never overwritten (`Conversation.adopt_channel`).
+    if conversation.adopt_channel(channel, str(source.id)):
+        await conversation.save(notify=False)
+
+    sender, sender_name = await _sender_for(item, source, channel)
+    # The message row is resolved by its reference column. FIRST placement
+    # runs under the shared lock: two lanes (sync ingest + the projected-tag
+    # handler) can otherwise both prove "no row" before either inserts — that
+    # TOCTOU produced a duplicated message live (one item, two FlowMessages,
+    # 0.4s apart). The already-placed path re-projects without the lock, so
+    # the steady-state re-poll never serializes; `known_unplaced` (the
+    # reconcile sweep's bulk proof) skips only the unlocked pre-check —
+    # inside the lock the row is always re-asked, because any proof taken
+    # before the lock is stale by definition.
+    existing_fm = None if known_unplaced else await _placed_message(item)
+    if existing_fm is None:
+        async with _thread_lock():
+            existing_fm = await _placed_message(item)
+            if existing_fm is None:
+                # First placement stays UNDER the lock — the birth is the race.
+                return await _place_message(
+                    item, source, channel, subject, key, thread, thread_id,
+                    conversation_id, sender, sender_name, None,
+                    notify=notify, recount=recount, announce=announce,
+                )
+    # Already placed: idempotent re-projection, no lock needed.
+    return await _place_message(
+        item, source, channel, subject, key, thread, thread_id,
+        conversation_id, sender, sender_name, existing_fm,
+        notify=notify, recount=recount, announce=announce,
+    )
+
+
+def _origins(item, source, channel: str, key: str):
+    """The two halves of a projected message's provenance. `origin` travels
+    with the message (the channel chip, "open in Gmail") and is the row's own
+    origin; `origin_local` is PRIVATE and carries the row ids that only resolve
+    here."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.cloud_origin import CloudOriginLocal  # noqa: PLC0415
+
+    # The connector's link when it gives one; otherwise the channel's own address
+    # formula (the channel's source class says it), so "Open in Gmail" works for records
+    # whose provider never supplied a URL. None when neither has one.
+    channel_type = DataDriver.loaded(channel)
+    url = item.permalink or (channel_type.cls.permalink(item.external_id or "", key) if channel_type else "") or None
+    origin = _origin_of(item, source).model_copy(update={"url": url})
+    origin_local = CloudOriginLocal(data_source_id=item.data_source_id or "", source_item_id=item.id or "")
+    return origin, origin_local
+
+
+def _origin_of(item, source):
+    """The row's origin — lifted on read for a row the cutover migration has not reached."""
+    from flow_sdk.ingest.legacy_lift import origin_of  # noqa: PLC0415
+
+    return getattr(item, "origin", None) or origin_of(source, item)
+
+
+def _payload_of(item, source):
+    """The row's typed payload — lifted on read for a row the cutover migration has not reached."""
+    from flow_sdk.ingest.legacy_lift import data_of  # noqa: PLC0415
+
+    return getattr(item, "data", None) or data_of(source, item, _origin_of(item, source))
+
+
+def _envelope_of(item, source):
+    """The header a message-shaped payload carries, or None for anything else."""
+    from flow_sdk.builtin.flow_message import MessageEnvelope  # noqa: PLC0415
+    from flow_sdk.sources.values.items import MessageData  # noqa: PLC0415
+
+    data = _payload_of(item, source)
+    if not isinstance(data, MessageData):
+        return None
+    return MessageEnvelope(
+        subject=getattr(data, "subject", None), sender=data.sender, recipients=data.recipients, sent_at=data.sent_at
+    )
+
+
+async def _placed_message(item):
+    """The row this item already landed on, if any. A record carrying a
+    `message_id` hint can only ever be on the row of that id — `_place_message`
+    mints with it, and the hub mirror may have written it first — so that is
+    the one query; anything else is found by its reference column. Either way
+    the caller re-projects onto it; a mirrored row is CLAIMED below
+    (`_place_message` heals the projection-owned fields it lacks)."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    hinted = str(getattr(item, "message_id", "") or "")
+    return await FlowMessage.get_one({"id": hinted} if hinted else {"source_item_id": str(item.id)})
+
+
+async def _place_message(
+    item, source, channel, subject, key, thread, thread_id,
+    conversation_id, sender, sender_name, existing_fm,
+    *, notify, recount, announce,
+):
+    """Write the message row + pointers for one resolved message.
+
+    Split from ``project_source_item`` so first placement can run under the
+    dedupe lock, and THE convergence point for ``sent_at``: an existing row
+    whose stamp differs from the item's ``occurred_at`` is corrected here,
+    because ``materialize_flow_message`` deliberately no-op-upserts an
+    existing local row and the payload alone would never reach it. The
+    projection is the one writer of ``sent_at``; nothing else may touch it.
+    """
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
+
+    # A BIRTH, not a write, and the announcement below keys off it. Both lanes
+    # (the reconcile sweep and the `.created` handler) reach here for the same
+    # item, and whichever loses finds the row and re-projects — announcing on
+    # every pass put two `projected` events on the bus per message, and an agent
+    # mailbox answered each one. This is the lane-neutral "I placed it" fact, so
+    # the announcement lands exactly once without either lane knowing who won.
+    first_placement = existing_fm is None
+    envelope = _envelope_of(item, source)
+    if existing_fm is not None:
+        fm_id = str(existing_fm.id)
+        want = iso_to_utc(item.occurred_at) if item.occurred_at else None
+        have = iso_to_utc(existing_fm.sent_at) if existing_fm.sent_at else None
+        dirty = False
+        if want is not None and have != want:
+            existing_fm.sent_at = want
+            dirty = True
+        # CLAIM: a row the hub mirror wrote first (or refreshed since) carries
+        # none of the projection-owned fields — no source reference, no origin,
+        # no thread. The projection is the one writer of those, so it stamps
+        # them here; without this the composer never sees a channel to reply
+        # through and the row re-projects on every pass.
+        if str(existing_fm.source_item_id or "") != str(item.id):
+            existing_fm.source_item_id = str(item.id)
+            dirty = True
+        if existing_fm.thread_id != thread_id:
+            existing_fm.thread_id = thread_id
+            dirty = True
+        # The typed author is projection-owned too: the hub's copy of an agent's reply
+        # names the authenticated person, and only this machine knows it was the agent.
+        if existing_fm.sender != sender:
+            existing_fm.sender, existing_fm.sender_id = sender, sender.wire_id
+            dirty = True
+        if existing_fm.origin is None:
+            existing_fm.origin, existing_fm.origin_local = _origins(item, source, channel, key)
+            dirty = True
+        if existing_fm.envelope != envelope:
+            existing_fm.envelope = envelope
+            dirty = True
+        if dirty:
+            try:
+                await existing_fm.save(notify=False)
+            except Exception:  # noqa: BLE001 — healing must not break placement
+                logger.exception("[stream-inbox] projection heal failed for %s", fm_id)
+    else:
+        # A record that names the hub's own message id lands on it, so the
+        # mirror's later copy of the same message updates this row.
+        fm_id = str(getattr(item, "message_id", "") or "") or mint_uuid()
+    from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    origin, origin_local = _origins(item, source, channel, key)
+    payload: dict[str, Any] = {
+        "id": fm_id,
+        # The HYDRATED body: the in-memory row (and therefore every live emit
+        # made from it) carries what a reader sees, while `FlowMessage.save()`
+        # blanks `text` around persistence — the STORED row stays a reference.
+        "text": item.body or subject,
+        "source_item_id": str(item.id),
+        # EVENT time — the projection is the one writer of this field. Present
+        # on every (re)projection, so a legacy row heals the moment anything
+        # re-projects its item (a sync's reconcile sweep, an .updated tag, a
+        # replay): reindex fixes the data "as is", by design.
+        "sent_at": item.occurred_at or None,
+        "sender": sender.model_dump(mode="json"),
+        "sender_id": sender.wire_id,
+        "sender_name": sender_name,
+        "thread_id": thread_id,
+        "origin": origin.model_dump(),
+        "origin_local": origin_local.model_dump(),
+        "envelope": envelope.model_dump(mode="json") if envelope else None,
+    }
+    if item.reply_to_external_id:
+        # Two lookups, no derivation: the parent item by its natural key, then
+        # its message row by the reference column. A parent that has not
+        # arrived — or arrived but is not yet projected — yields no
+        # `reply_to_id`. Accepted loss vs the derived form: a child projected
+        # before its parent keeps a null `reply_to_id` (nothing heals it
+        # later); both lanes project oldest-first, which covers the normal case.
+        own = _origin_of(item, source)
+        parent = await SourceItem.find_existing(
+            item.data_source_id, own.model_copy(update={"key": item.reply_to_external_id, "url": None})
+        )
+        if parent is not None:
+            parent_fm = await FlowMessage.get_one({"source_item_id": str(parent.id)})
+            if parent_fm is not None:
+                payload["reply_to_id"] = str(parent_fm.id)
+
+    # `bundle_ts` becomes the conversation pointer's timestamp, which is what
+    # orders the feed — so a backfill lands in message time, not arrival order.
+    await materialize_flow_message(
+        payload,
+        conversation_id,
+        someone_typeid=None,
+        bundle_ts=(item.occurred_at or None),
+        notify=notify,
+    )
+    if recount:
+        await recompute_thread_projection(thread_id, thread=thread, notify=notify)
+    if announce and first_placement:
+        from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_projected_tag  # noqa: PLC0415
+
+        emit_projected_tag(item)
+    return fm_id, thread_id
+
+
+def self_addresses(source) -> set[str]:
+    """Every address that means "me" on this source, casefolded.
+
+    `account_identities` is the field for it; `account_key` is included only
+    because it is what a source configured before that field existed had —
+    for a mailbox it is often the address anyway.
+    """
+    values = list(getattr(source, "account_identities", None) or [])
+    values.append(str(getattr(source, "account_key", "") or ""))
+    return {_fold(v) for v in values if v and v.strip()}
+
+
+def _fold(value: str) -> str:
+    """Compare-form for an address or handle.
+
+    `normalize_email` is the documented funnel for every email entering the
+    system ("strip + lowercase"), so use it — a parallel `casefold()` here
+    would diverge on non-ASCII (`ß` → `ss`) and silently fail to recognise our
+    own mail, which is the exact failure `_sender_for` exists to prevent. Non-
+    email handles (a Slack user id) fall through its passthrough unchanged.
+    """
+    from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+
+    text = (value or "").strip()
+    return normalize_email(text) or text.lower()
+
+
+def display_name_of(raw: str, address: str) -> str:
+    """A human name from whatever the provider handed us.
+
+    Providers are inconsistent here: some give `"Ada Lovelace" <ada@x.io>`,
+    some a bare name, some the address twice. `parseaddr` is the stdlib's
+    RFC 5322 reader — it unescapes quoted names and tolerates trailing junk
+    (`"Ada" <a@x.io> (via list)`), both of which a hand-rolled split gets
+    wrong. Falls back to the address so a byline is never empty.
+    """
+    from email.utils import parseaddr  # noqa: PLC0415
+
+    text = (raw or "").strip()
+    name = parseaddr(text)[0].strip() if text else ""
+    return name or text or address
+
+
+async def _sender_for(item, source, channel: str) -> tuple[MessageSender, str]:
+    """``(sender, sender_name)`` — who wrote this item, typed, and what to call them.
+
+    Load-bearing, not cosmetic. The unread rule gates on the sender
+    (``stream_inbox.conversation_is_unread``), so an item WE authored — every
+    message in a Sent folder, and every reply we send — would otherwise count as
+    unread mail from a stranger. Our own address is the local user; on an agent's
+    own source it is that Agent; anyone else is EXTERNAL on this channel.
+    """
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    address = (item.author_external_id or "").strip()
+    display = display_name_of(item.author_display or "", address)
+    if is_self_address(source, address):
+        # An AGENT's mailbox is not the user's. Attributing its sent copies to
+        # the human would put words in their mouth — the owner would appear to
+        # have written replies they never saw. Same reasoning as
+        # `ConversationKind.HELPDESK`, where a reply carries one non-human
+        # identity rather than the individual who happened to send it.
+        agent_sender = await _agent_sender_for(source)
+        if agent_sender:
+            return agent_sender[0], agent_sender[1] or display or "Agent"
+        local = await User.get_local()
+        if local and local.id:
+            return MessageSender.user(str(local.id)), display or "You"
+    return MessageSender.external(channel, address), display or channel
+
+
+def agent_id_of(source) -> str:
+    """The agent whose mailbox this source is, or ``""``.
+
+    `config.agent_id` is the cloud-mailbox driver's one load-bearing key — the
+    address is allocated and may change, the agent id cannot — so every reader
+    of it comes here rather than re-spelling the lookup. `config` really is an
+    untyped dict, which is why the defensive read is justified here and nowhere
+    else in this file.
+
+    An agent-owned source answers the same question without that key: a channel
+    is not allocated to an agent, it is BOUND to one (``Agent.bind_channel``),
+    and the binding is the ``owner``. Reading it here is what lets one rule serve
+    both — otherwise every reader (the turn, the attribution, the outbound
+    persona) would have to learn a second spelling of "whose agent is this".
+    Config still wins, so a mailbox row is untouched.
+    """
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    configured = str((getattr(source, "config", None) or {}).get("agent_id") or "").strip()
+    if configured:
+        return configured
+    owner = getattr(source, "owner", None)
+    if owner is not None and getattr(owner, "type", None) == EntityType.AGENT.value:
+        return str(getattr(owner, "id", "") or "").strip()
+    return ""
+
+
+async def default_owner() -> "TypeId | None":
+    """The owner a row gets when nothing said otherwise: the local user.
+
+    ``None`` only on an instance that has not bootstrapped its local user row
+    yet — callers treat that as "unowned", never as "owned by nobody".
+    """
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    local = await User.get_local()
+    if local is None or not local.id:
+        return None
+    return TypeId(type=EntityType.USER.value, id=str(local.id))
+
+
+async def owner_of(entity) -> "TypeId | None":
+    """Whose row this is — THE reader of ownership, for every caller.
+
+    Precedence is the migration in one place: an explicit ``owner`` wins; a
+    legacy source that only carries ``config.agent_id`` is that agent's; and
+    anything else is the local user's. Because every reader comes here,
+    correctness never depends on the backfill having run — a row written
+    before ``owner`` existed answers exactly as it will after.
+    """
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    explicit = getattr(entity, "owner", None)
+    if explicit:
+        return explicit if isinstance(explicit, TypeId) else TypeId(str(explicit))
+    agent_id = agent_id_of(entity)
+    if agent_id:
+        return TypeId(type=EntityType.AGENT.value, id=agent_id)
+    return await default_owner()
+
+
+def is_agent_owner(owner) -> bool:
+    """Whether an owner typeid names an Agent (vs a user)."""
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    return owner is not None and str(getattr(owner, "type", "")) == EntityType.AGENT.value
+
+
+async def owning_agent(entity):
+    """The Agent that owns ``entity``, or None when its owner is a user."""
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+    owner = await owner_of(entity)
+    return await Agent.get_by_id(owner.id) if is_agent_owner(owner) else None
+
+
+def is_self_address(source, address: str) -> bool:
+    """Is this address one of OUR account's on that source?
+
+    The one place the folding rule is applied. `self_addresses` is public but
+    `_fold` is not, and a second caller reaching for the private half is how the
+    normalization funnel starts to diverge.
+    """
+    folded = (address or "").strip()
+    return bool(folded) and _fold(folded) in self_addresses(source)
+
+
+async def _agent_sender_for(source) -> "tuple[MessageSender, str] | None":
+    """``(sender, display)`` when this source is an agent's own mailbox."""
+    owner = await owner_of(source)
+    if not is_agent_owner(owner):
+        return None
+    agent_id = owner.id
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+    agent = await Agent.get_by_id(agent_id)
+    return MessageSender.agent(agent_id), str(getattr(agent, "name", "") or "")
+
+
+async def recompute_thread_projection(thread_id: str, *, thread=None, notify: bool = True) -> None:
+    """Recount a thread from its messages and publish iff something changed.
+
+    The count lives here rather than on each message because the conversation
+    view fetches a bounded window (``CONVERSATION_MESSAGES_WINDOW``, 500) with
+    no pagination — a client-side count is silently wrong for a real mailbox,
+    and the packed row needs the count without loading the thread.
+    """
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+    from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL  # noqa: PLC0415
+
+    if thread is None:
+        thread = await MessageThread.get_one({"id": thread_id})
+    if thread is None:
+        return
+    count = len(await FlowMessage.get_all({"match": {"thread_id": thread_id}}))
+    if not count or thread.message_count == count:
+        return  # idempotent early-out — no save, no broadcast
+    thread._set_projection("message_count", count, PROJECTION_SENTINEL)
+    await thread.save(notify=notify)
+
+
+async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH) -> int:
+    """Project every SourceItem of one source that has no message yet.
+
+    The catch-up lane. Cheap because a projected message carries its
+    ``source_item_id``: "has this been projected?" is one bulk IN query over
+    the indexed reference column, not a join or a per-item probe.
+    """
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+    source = await DataSource.get_one({"id": data_source_id})
+    if source is None:
+        return 0
+    # The kind gate belongs in the QUERY, not after it: a source that mixes
+    # articles with mail would otherwise spend the whole `limit` budget on rows
+    # it then drops, and re-fetch the same ones on every sweep forever.
+    items = await SourceItem.get_all(
+        QueryFilter(
+            match=ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", data_source_id]),
+                    ExpressionNode(op=QueryOp.LIKE, operands=["kind", f"{MESSAGE_KIND_ROOT}.%"]),
+                ],
+            ),
+            limit=limit,
+            order_by={"occurred_at": "asc"},
+        )
+    )
+    if not items:
+        return 0
+    existing = await FlowMessage.get_all(
+        QueryFilter(
+            match=ExpressionNode(
+                op=QueryOp.IN, operands=["source_item_id", [str(i.id) for i in items]]
+            )
+        ),
+        hydrate=False,  # placement check reads ids only
+    )
+    placed = {str(m.source_item_id) for m in existing}
+    # Placed but missing EVENT time — legacy rows from before ``sent_at``
+    # existed (or a drifted stamp cleared by hand). Re-projecting them runs
+    # the convergent heal, which is what makes a plain reindex fix mis-dated
+    # data "as is" — no bespoke migration, this sweep runs after every sync.
+    unstamped = {
+        str(m.source_item_id)
+        for m in existing
+        if getattr(m, "sent_at", None) is None and str(m.source_item_id or "")
+    }
+    missing = [i for i in items if str(i.id) not in placed]
+    heal = [i for i in items if str(i.id) in unstamped and i.occurred_at]
+    if not missing and not heal:
+        return 0
+    # Oldest first, so conversation pointers land in message order even though
+    # a provider hands them back newest-first.
+    missing.sort(key=lambda i: i.occurred_at or "")
+
+    # Announce per item only when this sweep is not itself a storm. The cap is
+    # the real condition — NOT "is this the first sync". A mailbox's first poll
+    # is always a backfill by `IngestMode`, and gating on that would mean an
+    # agent never answers the first mail it ever receives, while a genuine
+    # 500-message import would still need silencing. Size answers both.
+    from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE  # noqa: PLC0415
+
+    announce = len(missing) <= STORM_CAP_PER_MINUTE
+    if not announce:
+        # Said out loud: a silent cap reads downstream as "nothing arrived".
+        logger.info(
+            "[stream-inbox] %d items exceed the %d/min cap — projecting %s without per-item events",
+            len(missing),
+            STORM_CAP_PER_MINUTE,
+            data_source_id,
+        )
+
+    projected = 0
+    touched: set[str] = set()
+    # One loop, two legs. `missing` items are first placements
+    # (`known_unplaced=True`, announced per the storm decision above);
+    # `heal` items already have a row — re-resolving runs the sent_at heal
+    # through the same idempotent upsert, and is never announced because
+    # nothing "arrived", a stamp converged. Recounts are deferred either way:
+    # per-item recounting reloads the whole thread each time, quadratic in
+    # thread depth over a backfill.
+    for item, unplaced, announce_it in (
+        *((i, True, announce) for i in missing),
+        *((i, False, False) for i in heal),
+    ):
+        try:
+            result = await project_source_item(
+                item, source=source, recount=False,
+                announce=announce_it, known_unplaced=unplaced,
+            )
+            if result:
+                projected += unplaced
+                touched.add(result[1])
+        except Exception:  # noqa: BLE001 — one bad record must not stall the sweep
+            logger.exception("[stream-inbox] reconcile failed for source_item %s", item.id)
+    for thread_id in touched:
+        await recompute_thread_projection(thread_id)
+    logger.info("[stream-inbox] reconciled %d/%d items for source %s", projected, len(missing), data_source_id)
+    return projected
+
+
+async def remove_projection_for_items(item_ids, *, notify: bool = True) -> int:
+    """Delete the reference rows for purged SourceItems and heal their containers.
+
+    Mandatory under the reference model, where it was merely hygiene under the
+    copy: an orphaned reference renders BLANK, not stale-but-readable, so a
+    purge that left the messages behind would fill the stream inbox with empty rows.
+
+    Per doomed message: destroy the row, prune its conversation pointer. Then
+    per touched thread: recount, or delete it when nothing remains; a
+    conversation with no messages and no threads left goes with it. Hub-native
+    messages never carry ``source_item_id``, so a mixed conversation only ever
+    loses its channel half.
+    """
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.conversation import prune_message_pointer  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    ids = [str(i) for i in item_ids if i]
+    if not ids:
+        return 0
+    doomed = await FlowMessage.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["source_item_id", ids])),
+        hydrate=False,
+    )
+    if not doomed:
+        return 0
+
+    touched_threads = {str(fm.thread_id) for fm in doomed if fm.thread_id}
+    touched_convs = {str(fm.conversation_id) for fm in doomed if fm.conversation_id}
+    for fm in doomed:
+        conv_id = str(fm.conversation_id or "")
+        try:
+            await fm.destroy()
+        except Exception:  # noqa: BLE001 — one stuck row must not stall the purge
+            logger.exception("[stream-inbox] purge: destroy failed for flow_message %s", fm.id)
+            continue
+        if conv_id:
+            try:
+                rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
+                await prune_message_pointer(rec, str(fm.id), notify=notify)
+            except Exception:  # noqa: BLE001
+                logger.exception("[stream-inbox] purge: pointer prune failed fm=%s conv=%s", fm.id, conv_id)
+
+    # Grouped, not per-row: a whole-source purge touches hundreds of threads,
+    # and 2-3 point queries each turns one purge into a query storm. One IN
+    # query answers "which touched threads still hold messages" for all of
+    # them; same shape for conversations below.
+    thread_rows = await MessageThread.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", sorted(touched_threads)]))
+    )
+    survivors = await FlowMessage.get_all(
+        QueryFilter(
+            match=ExpressionNode(op=QueryOp.IN, operands=["thread_id", sorted(touched_threads)])
+        ),
+        hydrate=False,
+    )
+    live_threads = {str(m.thread_id) for m in survivors if m.thread_id}
+    for thread in thread_rows:
+        if str(thread.id) in live_threads:
+            await recompute_thread_projection(str(thread.id), thread=thread, notify=notify)
+        else:
+            await thread.destroy()
+
+    # After the thread destroys, so a reaped thread cannot keep its
+    # conversation alive.
+    conv_ids = sorted(touched_convs)
+    conv_msgs = await FlowMessage.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["conversation_id", conv_ids])),
+        hydrate=False,
+    )
+    threads_left = await MessageThread.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["conversation_id", conv_ids]))
+    )
+    alive = {str(m.conversation_id) for m in conv_msgs if m.conversation_id}
+    alive |= {str(t.conversation_id) for t in threads_left if t.conversation_id}
+    for conv_id in conv_ids:
+        if conv_id in alive:
+            continue
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is not None:
+            await conv.destroy()
+
+    _touch()
+    return len(doomed)
+
+
+# ── bus wiring ───────────────────────────────────────────────────────────────
+
+_started = False
+
+
+def start_stream_inbox_projection() -> None:
+    """Arm both lanes. Idempotent; called at server startup."""
+    global _started
+    if _started:
+        return
+    _started = True
+    from flow_sdk.tags import on_tag  # noqa: PLC0415
+
+    on_tag("ingest.*.item.created", _on_item)
+    on_tag("ingest.*.item.updated", _on_item)
+    on_tag("ingest.*.sync.completed", _on_sync)
+    logger.info("[stream-inbox] projection armed (item + reconcile lanes)")
+
+
+async def _on_item(event) -> None:
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    entity_id = str((event.data or {}).get("entity_id") or "")
+    if not entity_id:
+        return
+    try:
+        item = await SourceItem.get_one({"id": entity_id})
+        if item is None:
+            return
+        # Announce ARRIVAL, not every write. This lane is armed for `.created`
+        # AND `.updated`, and `project_source_item` is an idempotent upsert — so
+        # announcing on an update re-announces a message that is already placed,
+        # and a consumer that acts on the announcement acts twice. For the agent
+        # runner that means a second billable turn answering mail it already
+        # answered. The ingest lane draws the same line one level down, where
+        # `emit_item_tag` returns early on `unchanged`.
+        first_placement = event.tag.rsplit(".", 1)[-1] == "created"
+        await project_source_item(item, announce=first_placement)
+        _touch()
+    except Exception:  # noqa: BLE001 — never fail the ingest that triggered us
+        logger.exception("[stream-inbox] projection failed for source_item %s", entity_id)
+
+
+async def _on_sync(event) -> None:
+    source_id = str((event.data or {}).get("source_id") or "")
+    if not source_id:
+        return
+    try:
+        if await reconcile_source(source_id):
+            _touch()
+    except Exception:  # noqa: BLE001
+        logger.exception("[stream-inbox] reconcile failed for source %s", source_id)
+
+
+def _touch() -> None:
+    """Republish the unread badge.
+
+    ``stream_inbox.touch`` and NOT ``recompute_unread``: the awaited form is for
+    callers that must observe the fresh value, and a full recompute is a
+    whole-table scan under a global lock. Awaiting one per item event would
+    put up to STORM_CAP_PER_MINUTE of those on the ingest handler's critical
+    path; the fire-and-forget form is what every other mutation site uses.
+    """
+    from flow_sdk import stream_inbox  # noqa: PLC0415
+
+    stream_inbox.touch("stream-inbox-projection")
