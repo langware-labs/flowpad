@@ -44,7 +44,6 @@ from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.secrets.store import SecretStoreRef
-from flow_sdk.sources.config import config_error
 from flow_sdk.utils.serialization import iso_to_utc
 
 if TYPE_CHECKING:
@@ -1011,8 +1010,6 @@ class DataSource(Entity):
         a value off its rule is a ``ValueError`` naming it, which the create route maps to a 400. An
         existing row only has what it typed shaped (a string where a list is declared); a rule added
         later must not turn the poller's re-save into an exception nobody reads."""
-        from pydantic import ValidationError  # noqa: PLC0415
-
         if not isinstance(self.config, dict):
             return
         if "agent_id" in self.config and "agent_id" not in config_cls.model_fields:
@@ -1022,11 +1019,7 @@ class DataSource(Entity):
             if any(isinstance(v, str) for v in self.config.values()):
                 self.config = {**self.config, **config_cls.draft(self.config)}
             return
-        try:
-            typed = config_cls.model_validate(self.config)
-        except ValidationError as exc:
-            raise ValueError(config_error(exc)) from None
-        self.config = typed.model_dump(mode="json", exclude_unset=True)
+        self.config = config_cls.validated(self.config).model_dump(mode="json", exclude_unset=True)
 
     def _coerce_reflect(self, spec) -> None:
         """``reflect`` must be a mode the spec offers, or the source ingests

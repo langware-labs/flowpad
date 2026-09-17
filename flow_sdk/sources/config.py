@@ -82,6 +82,16 @@ class SourceConfig(DataSpec):
     derived: ClassVar[tuple[str, ...]] = ()
 
     @classmethod
+    def validated(cls, data: Mapping[str, Any]) -> "SourceConfig":
+        """This config built from ``data``, every rule applied. A failure is a ``ValueError`` naming
+        the first field at fault (``config.feed_urls is not valid: ftp://x``) — the sentence a create
+        route returns as a 400."""
+        try:
+            return cls.model_validate(data)
+        except ValidationError as exc:
+            raise ValueError(config_error(exc)) from None
+
+    @classmethod
     def lift(cls, raw: Mapping[str, Any]) -> dict[str, Any]:
         """A config written under older key names, as this class names them. Override to adopt a
         renamed key; every read — create, draft, best match — goes through it."""

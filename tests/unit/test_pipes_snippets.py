@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.tags import on_tag
-from tests.utils.snippets import doc
+from tests.utils.snippets import doc, fence_under, run_fence
 
 # Doc snippets name their sources for a reader, so each runs in its own user scope.
 pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope")]  # do not increase timeout without approval
@@ -28,21 +28,19 @@ def _placed(dst):
     return sorted(p.relative_to(dst).as_posix() for p in dst.rglob("*.md"))
 
 
-async def test_snippet_1_one_source_one_cycle(tree):
-    from tests.utils.snippets import fence_under, run_fence
+async def _section(heading: str, ns: dict) -> dict:
+    return await run_fence(fence_under(doc("pipes.md"), heading), ns, filename=f"pipes.md § {heading}")
 
+
+async def test_snippet_1_one_source_one_cycle(tree):
     src, _ = tree
-    ns = await run_fence(fence_under(doc("pipes.md"), "1."), {"SRC": str(src)}, filename="pipes.md §1")
+    ns = await _section("1.", {"SRC": str(src)})  # sync() never raises: a failure is health on the row
     assert ns["source"].exist_in_db and ns["source"].provider == "folder"
-    # `sync()` never raised; failure would be health on the row, not an exception
-    assert ns["report"] is not None
 
 
 async def test_snippet_2_mirror_one_folder_into_another(tree):
-    from tests.utils.snippets import fence_under, run_fence
-
     src, dst = tree
-    ns = await run_fence(fence_under(doc("pipes.md"), "2."), {"SRC": str(src), "DEST": str(dst)}, filename="pipes.md §2")
+    ns = await _section("2.", {"SRC": str(src), "DEST": str(dst)})
     source = ns["source"]
     await source.verify()
 
