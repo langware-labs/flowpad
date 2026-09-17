@@ -31,7 +31,7 @@ vi.mock('@sdk/react/hooks', () => ({
 // The conversation query is scoped to the local user's typeid and not issued until
 // that id is known, so the view needs one to render any rows.
 vi.mock('@src/hooks/useContext', () => ({
-  useContext: () => ({ localUser: { id: 'me-id', email: 'me@example.com' } }),
+  useContext: () => ({ localUser: { id: 'e1e1e1e1-1111-4111-8111-111111111111', email: 'me@example.com' } }),
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
