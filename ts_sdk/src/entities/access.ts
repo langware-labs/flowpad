@@ -63,3 +63,53 @@ export async function setAccess(child: TypeId, parent: TypeId, rules: AccessRule
 export async function clearAccess(child: TypeId, parent: TypeId): Promise<ChildAccess> {
   return await dataManager.callAction<undefined, ChildAccess>(accessAction(child, parent, 'DELETE'));
 }
+
+/**
+ * Who a public grant reaches: `visitor` reaches anonymous callers AND every signed-in
+ * user, `authenticated` reaches every signed-in human. Mirrors the hub's `PublicAudience`.
+ */
+export type PublicAudience = 'visitor' | 'authenticated';
+
+/** The role an owner grants to make an agent readable — the row only, no files or verbs. */
+export const PUBLIC_VIEWER_ROLE = 'anonymous_viewer';
+
+/** The hub's `PublicAccess`: the role one audience holds on the target, or null when private to it. */
+export interface PublicAccess {
+  audience: PublicAudience;
+  role: string | null;
+}
+
+function publicAccessAction(target: TypeId, audience: PublicAudience, method: 'GET' | 'PUT' | 'DELETE'): ActionInfo {
+  const info = new ActionInfo('access', target.type, target.id, method);
+  info.subpath = ['public', audience];
+  info.hubReflect = true;
+  return info;
+}
+
+/**
+ * Read the role `audience` holds on `target`: `GET <type>/<id>/access/public/<audience>`.
+ *
+ * Owner-only on the hub, reads included — so a rejection also means "this caller may
+ * not change it", and callers can gate their controls on it.
+ */
+export async function getPublicAccess(target: TypeId, audience: PublicAudience): Promise<PublicAccess> {
+  return await dataManager.callAction<undefined, PublicAccess>(publicAccessAction(target, audience, 'GET'));
+}
+
+/**
+ * Grant `audience` a role on `target`: `PUT <type>/<id>/access/public/<audience>` with `{role}`.
+ *
+ * Owner-only and opt-in per type on the hub (`public_access` in its policies), so a
+ * refusal (403 not the owner, 400 a type or role that cannot be public) is thrown for
+ * the caller to surface. Applies to the target only — its children stay private.
+ */
+export async function setPublicAccess(target: TypeId, audience: PublicAudience, role: string): Promise<PublicAccess> {
+  const info = publicAccessAction(target, audience, 'PUT');
+  info.bodyParameters = { role };
+  return await dataManager.callAction<unknown, PublicAccess>(info);
+}
+
+/** Revoke `audience`'s access to `target`: `DELETE <type>/<id>/access/public/<audience>`. */
+export async function clearPublicAccess(target: TypeId, audience: PublicAudience): Promise<PublicAccess> {
+  return await dataManager.callAction<undefined, PublicAccess>(publicAccessAction(target, audience, 'DELETE'));
+}
