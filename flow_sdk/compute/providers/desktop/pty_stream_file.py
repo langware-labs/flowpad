@@ -58,7 +58,7 @@ class PtyStreamFile:
         path: Filesystem path for the .pty file.
         cols/rows: Initial terminal size (header of a fresh file).
         max_size_bytes: Maximum file size before frame-boundary truncation
-            (default 10 MB on-disk, i.e. ~7.5 MB of raw output after base64).
+            (default 30 MB on-disk, i.e. ~22.5 MB of raw output after base64).
     """
 
     def __init__(
@@ -66,7 +66,7 @@ class PtyStreamFile:
         path: Path,
         cols: int = 80,
         rows: int = 24,
-        max_size_bytes: int = 10 * 1024 * 1024,
+        max_size_bytes: int = 30 * 1024 * 1024,
     ) -> None:
         self._path = path
         self._max_size_bytes = max_size_bytes
