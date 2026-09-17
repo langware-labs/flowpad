@@ -1,7 +1,7 @@
 /**
  * Delete ONE source — the verb and its confirm copy, shared by the Data
  * Sources screen and the stream inbox's channel lists so the cascade sentence
- * ("its streams and every record it ingested") exists once.
+ * ("every record it ingested") exists once.
  */
 import { useCallback, useState } from 'react';
 import type { DataSource } from '@sdk';
@@ -32,7 +32,7 @@ export function useSourceDelete(onDeleted?: (source: DataSource) => void) {
   // override is the only reason these disappear together.
   const confirm = {
     title: t`Delete this data source?`,
-    description: t`"${deleting?.name || deleting?.provider || ''}" will be removed along with its streams and every record it ingested. This cannot be undone.`,
+    description: t`"${deleting?.name || deleting?.provider || ''}" will be removed along with every record it ingested. This cannot be undone.`,
     confirmLabel: t`Delete`,
   };
   return { deleting, setDeleting, remove, confirm };

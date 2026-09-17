@@ -505,26 +505,12 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
-        # Partial expression index on a SourceItem's natural key. Ingestion
-        # resolves every record by (data_source, stream, external id) rather
-        # than by a derived id, and does it on EVERY poll to consult the digest
-        # gate — the read that is supposed to cost one indexed lookup and
-        # nothing else. These are JSON fields, not columns, so without this the
-        # gate degrades to a full scan of the type: a 500-item page against a
-        # source holding 50k records compares the IN list against every row,
-        # every minute, forever.
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_natural_key_v2 "
-                "ON entities(json_extract(data, '$.data_source_id'), "
-                "json_extract(data, '$.segment_key'), "
-                "json_extract(data, '$.external_id')) "
-                "WHERE type = 'source_item'"
-            )
-        )
-        # The same lookup under the origin triple (``SOURCE_ITEM.natural_key``). v2 stays
-        # until the engine swap: rows the cutover migration has not reached yet still
-        # carry only the flat header.
+        # Partial expression index on a SourceItem's natural key (``SOURCE_ITEM.natural_key``).
+        # Ingestion resolves every record by its origin rather than by a derived id, and does it
+        # on EVERY poll to consult the digest gate — the read that is supposed to cost one indexed
+        # lookup and nothing else. These are JSON fields, not columns, so without this the gate
+        # degrades to a full scan of the type.
+        await conn.execute(text("DROP INDEX IF EXISTS ix_entities_source_item_natural_key_v2"))
         await conn.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS ix_entities_source_item_origin_v3 "
@@ -555,16 +541,7 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
-        # The same lookup for cursors: `ensure_for` resolves one per stream per
-        # source on every poll, and `data_source_id` alone is selective enough
-        # (a source has streams in the tens, not thousands).
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_cursor_by_source "
-                "ON entities(json_extract(data, '$.data_source_id')) "
-                "WHERE type = 'data_source_cursor'"
-            )
-        )
+        await conn.execute(text("DROP INDEX IF EXISTS ix_entities_cursor_by_source"))
 
         # A consumer drains a source in INGEST order — `(created_date, id)`, both real
         # columns, so ORDER BY and LIMIT push to SQL. Without this the drain is a type scan

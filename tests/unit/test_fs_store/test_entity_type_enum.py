@@ -205,7 +205,6 @@ EXPECTED = {
     # source, its per-stream cursor, and the records it produces — additive
     # members, no existing value changed.
     "DATA_SOURCE": "data_source",
-    "DATA_SOURCE_CURSOR": "data_source_cursor",
     "SECRET_PACK": "secret_pack",
     "DATA_DRIVER": "data_driver",
     "SOURCE_ITEM": "source_item",
@@ -244,6 +243,7 @@ def test_back_compat_aliases_are_the_same_class():
 RETIRED_VALUES: dict[str, str] = {
     "data_source_spec": "the driver definition, now data_driver (0.2.170; old rows are pruned at boot, no migration)",
     "credential_spec": "the named set of environment variables, now secret_pack (0.2.170; old rows are pruned at boot)",
+    "data_source_cursor": "a source's per-segment position, now DataSource.cursor (one source = one stream; old rows are pruned at boot)",
     "inbox_manager": "the unread-badge singleton, now stream_inbox_manager (old rows are pruned at boot, no migration)",
 }
 

@@ -52,31 +52,32 @@ def feed_server():
         yield url
 
 
-def _row(*urls: str):
-    return make_data_source("rss", name="fixture feed", config={"feed_urls": list(urls)})
+def _row(url: str):
+    return make_data_source("rss", name="fixture feed", config={"feed_url": url})
 
 
-def _view(url: str, *, state=None):
-    return position(segment_key=url, prior=state or {}, window_start=(NOW - timedelta(days=7)).isoformat())
+def _view(prior=None):
+    return position(prior, window_start=(NOW - timedelta(days=7)).isoformat())
 
 
 @pytest.mark.parametrize("check", checks_for(RssSource), ids=str)
 async def test_conformance(check, feed_server):
-    atom, rss = f"{feed_server}/atom", f"{feed_server}/rss"
+    atom = f"{feed_server}/atom"
     await check.run(Subject(
-        source=lambda: RssSource(SourceBinding(config={"feed_urls": [atom, rss]})),
+        source=lambda: RssSource(SourceBinding(config={"feed_url": atom})),
         seeded=tuple(CloudOrigin(kind="rss", namespace=atom, key=entry) for entry in ATOM_IDS),
     ))
 
 
-async def test_each_feed_url_is_a_segment():
-    row = _row("https://a.test/f", "https://b.test/f")
-    assert [ref.key for ref in await DataDriver.loaded("rss").segments(row)] == ["https://a.test/f", "https://b.test/f"]
+async def test_a_stored_list_of_feeds_splits_into_one_source_per_feed():
+    parts = RssSource.Config.split({"feed_urls": ["https://a.test/f", "https://b.test/f"]})
+    assert parts == [("https://a.test/f", {"feed_url": "https://a.test/f"}), ("https://b.test/f", {"feed_url": "https://b.test/f"})]
+    assert RssSource.Config.split({"feed_url": "https://a.test/f"}) is None
 
 
 async def test_atom_is_parsed_and_the_window_drops_old_entries(feed_server):
     url = f"{feed_server}/atom"
-    result = await DataDriver.loaded("rss").traverse(_row(url), _view(url))
+    result = await DataDriver.loaded("rss").traverse(_row(url), _view())
     assert sorted(item.external_id for item in result.items) == list(ATOM_IDS[:2]), "the 2020 entry is outside the window"
     assert [item.external_id for item in result.items] == [ATOM_IDS[1], ATOM_IDS[0]], "records ingest in the order they happened"
     first = next(item for item in result.items if item.external_id == ATOM_IDS[0])
@@ -87,7 +88,7 @@ async def test_atom_is_parsed_and_the_window_drops_old_entries(feed_server):
 
 async def test_rss2_is_parsed_including_rfc822_dates(feed_server):
     url = f"{feed_server}/rss"
-    result = await DataDriver.loaded("rss").traverse(_row(url), _view(url))
+    result = await DataDriver.loaded("rss").traverse(_row(url), _view())
     by_id = {item.external_id: item for item in result.items}
     assert sorted(by_id) == ["rss-item-0001", "rss-item-0002"]
     assert "platypus" in by_id["rss-item-0001"].body and by_id["rss-item-0001"].occurred_at.startswith("2026-07-30T10:00:00")
@@ -96,9 +97,9 @@ async def test_rss2_is_parsed_including_rfc822_dates(feed_server):
 async def test_a_304_is_the_free_no_op_poll(feed_server):
     url, driver = f"{feed_server}/atom", DataDriver.loaded("rss")
     row = _row(url)
-    first = await driver.traverse(row, _view(url))
+    first = await driver.traverse(row, _view())
     assert first.cursor, "the conditional pair must travel as the resume cursor"
-    second = await driver.traverse(row, _view(url, state=first))
+    second = await driver.traverse(row, _view(first))
     assert second.unchanged and second.items == [] and second.cursor == first.cursor
 
 
@@ -110,5 +111,5 @@ async def test_a_304_is_the_free_no_op_poll(feed_server):
 async def test_a_failure_classifies_by_what_fixes_it(feed_server, path, health):
     url = f"{feed_server}{path}"
     with pytest.raises(Exception) as caught:
-        await DataDriver.loaded("rss").traverse(_row(url), _view(url))
+        await DataDriver.loaded("rss").traverse(_row(url), _view())
     assert classify(caught.value)[0] is health

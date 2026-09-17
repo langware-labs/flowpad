@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from email.utils import getaddresses, parseaddr
-from typing import Annotated, Any, AsyncGenerator, Optional
+from typing import Annotated, Any, AsyncGenerator, Mapping, Optional
 from urllib.parse import quote
 
 from pydantic import StringConstraints
@@ -26,8 +26,7 @@ from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Outco
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
-from flow_sdk.sources.values.query import DataQuery, MessageQuery
-from flow_sdk.sources.values.segment import SegmentRef
+from flow_sdk.sources.values.query import MessageQuery
 
 DEFAULT_BASE_URL = "https://api.agentmail.to/v0"
 #: Messages per page; the resume cursor does the rest.
@@ -66,10 +65,6 @@ class AgentMailSource(EmailAddressing, Source):
     def resume_after(cls, timestamp: str) -> str:
         return _RESUME + timestamp
 
-    @classmethod
-    def lift_cursor(cls, state: dict) -> Optional[str]:
-        return cls.resume_after(state["high_water"]) if state.get("high_water") else None
-
     @property
     def inbox(self) -> str:
         inbox = str(self.config.get("inbox") or "").strip()
@@ -92,15 +87,17 @@ class AgentMailSource(EmailAddressing, Source):
             await self._client.aclose()
             self._client = None
 
-    async def segments(self) -> list[SegmentRef]:
-        return [SegmentRef(key=self.inbox, label=self.inbox, query=MessageQuery())]
-
     # ── read ────────────────────────────────────────────────────────────────
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    def query(self) -> MessageQuery:
+        """The inbox, whole: the inbox itself is the source's scope, not a query field."""
+        return MessageQuery()
+
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
-        if query is not None and (not isinstance(query, MessageQuery) or query.conversation is not None):
+        query = self.effective_query(narrow)
+        if query.conversation is not None:
             raise Unsupported("AgentMail lists an inbox; it does not read one thread")
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         floor, newest, token = _start(query, cursor)
@@ -124,10 +121,12 @@ class AgentMailSource(EmailAddressing, Source):
             resume_cursor=_RESUME + newest if newest else (cursor if isinstance(cursor, str) and cursor.startswith(_RESUME) else None),
         )
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[MessageItem, None]:
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[MessageItem, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:

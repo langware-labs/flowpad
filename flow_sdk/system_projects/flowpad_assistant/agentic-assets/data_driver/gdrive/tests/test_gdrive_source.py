@@ -49,8 +49,8 @@ def _source(tmp_path, base: str, **config):
     return make_data_source("gdrive", name="Drive test", config={"base_url": base, "cache_root": str(tmp_path / "cache"), **config})
 
 
-def _view(state: dict | None = None, segment: str = "root"):
-    return position(segment_key=segment, prior=state or {})
+def _view(prior=None, **given):
+    return position(prior, **given)
 
 
 def _file(file_id: str, name: str, mime: str = "text/plain") -> dict:
@@ -152,7 +152,7 @@ async def test_origin_id_is_the_drive_file_id(driver, tmp_path):
     assert driver.origin_id_for(source, result.refs[0]) == "gdrive:f1"
 
 
-async def test_a_name_that_would_traverse_is_reduced_to_one_segment(driver, tmp_path):
+async def test_a_name_that_would_traverse_is_reduced_to_one_path_component(driver, tmp_path):
     with local_http_server(_Drive(files=[_file("f1", "../../escape.txt")])) as base:
         result = await driver.traverse(_source(tmp_path, base), _view())
     placed = Path(result.refs[0])
@@ -165,7 +165,7 @@ async def test_a_name_that_would_traverse_is_reduced_to_one_segment(driver, tmp_
 async def test_a_later_pass_follows_the_log_and_never_enumerates(driver, tmp_path):
     drive = _Drive(changes=[{"fileId": "f9", "file": _file("f9", "new.txt")}])
     with local_http_server(drive) as base:
-        result = await driver.traverse(_source(tmp_path, base), _view({"cursor": DriveSource.changes_from("T1")}))
+        result = await driver.traverse(_source(tmp_path, base), _view(cursor=DriveSource.changes_from("T1")))
     assert "/files" not in drive.calls, "a source that walks is a folder source wearing a Drive hat"
     assert [Path(r).name for r in result.refs] == ["new.txt"]
     assert result.cursor == DriveSource.changes_from("T2")
@@ -214,14 +214,14 @@ async def test_a_rename_carries_the_identity_and_clears_the_stale_bytes(driver, 
     assert not Path(old).exists() and driver.origin_id_for(source, new) == "gdrive:f1"
 
 
-async def test_a_legacy_cursor_and_index_keep_their_removals(driver, tmp_path):
-    """A row a legacy driver synced: its page token resumes the log and its sidecar still maps a
-    removed fileId to the file it placed."""
+async def test_the_cache_sidecar_index_keeps_a_removal_the_manifest_does_not_know(driver, tmp_path):
+    """A row with a cursor but no manifest: the sidecar beside the cache still maps a removed
+    fileId to the file it placed."""
     cache = tmp_path / "cache"
     cache.mkdir()
     (cache / ".gdrive-index.json").write_text(json.dumps({"one.txt": "f1"}))
     with local_http_server(_Drive(changes=[{"fileId": "f1", "removed": True}])) as base:
-        result = await driver.traverse(_source(tmp_path, base), _view({"page_token": "T1", "index": {"one.txt": "f1"}}))
+        result = await driver.traverse(_source(tmp_path, base), _view(cursor=DriveSource.changes_from("T1")))
     assert [Path(t).name for t in result.tombstones] == ["one.txt"]
 
 
@@ -261,13 +261,23 @@ async def test_a_refusal_needs_a_person_and_a_server_error_does_not(driver, tmp_
     assert classify(caught.value)[0] is health
 
 
-# ── segments, setup and the picker ───────────────────────────────────────────
+# ── one drive, setup and the picker ──────────────────────────────────────────
 
 
-async def test_shared_drives_are_separate_segments_labelled_by_their_picked_name(driver, tmp_path):
-    source = _source(tmp_path, "", drives=[{"id": "D1", "name": "Marketing"}, "D2"])
-    assert [(s.key, s.label) for s in await driver.segments(source)] == [("D1", "Marketing"), ("D2", "D2")]
-    assert [s.key for s in await driver.segments(_source(tmp_path, ""))] == ["root"]
+async def test_a_stored_list_of_drives_splits_into_one_source_per_drive_labelled_by_its_picked_name():
+    parts = DriveSource.Config.split({"drives": [{"id": "D1", "name": "Marketing"}, "D2"], "base_url": "x"})
+    assert parts == [("Marketing", {"drive": "D1", "base_url": "x"}), ("D2", {"drive": "D2", "base_url": "x"})]
+    assert DriveSource.Config.split({"drive": "D1"}) is None
+
+
+async def test_the_query_is_the_configured_shared_drive_else_my_drive(driver, tmp_path):
+    drive = _Drive(files=[_file("f1", "one.txt")])
+    with local_http_server(drive) as base:
+        binding = SourceBinding(config={"base_url": base, "drive": "D1"}, credentials=TOKEN)
+        assert DriveSource(binding).query().drive == "D1"
+        assert DriveSource(SourceBinding(config={})).query().drive == ""
+        result = await driver.traverse(_source(tmp_path, base, drive="D1"), _view())
+    assert len(result.refs) == 1
 
 
 async def test_verify_says_what_to_do_when_there_is_no_credential(driver, tmp_path, monkeypatch):
@@ -284,14 +294,14 @@ async def test_verify_passes_when_drive_answers(driver, tmp_path):
 async def test_the_picker_offers_the_shared_drives_the_credential_can_see(driver, tmp_path):
     drive = _Drive(drives=[{"id": "0ABxyz", "name": "Marketing"}, {"id": "0ABabc", "name": "Legal"}])
     with local_http_server(drive) as base:
-        picks = await driver.choices(_source(tmp_path, base), "drives")
+        picks = await driver.choices(_source(tmp_path, base), "drive")
     assert [(c.id, c.name) for c in picks] == [("0ABxyz", "Marketing"), ("0ABabc", "Legal")]
 
 
 async def test_a_refused_listing_raises_rather_than_returning_an_empty_list(driver, tmp_path):
     with local_http_server(lambda path, headers: (403, b"{}", {})) as base:
         with pytest.raises(SourceError):
-            await driver.choices(_source(tmp_path, base), "drives")
+            await driver.choices(_source(tmp_path, base), "drive")
 
 
 async def test_the_picker_answers_nothing_for_a_field_it_does_not_furnish(driver, tmp_path):

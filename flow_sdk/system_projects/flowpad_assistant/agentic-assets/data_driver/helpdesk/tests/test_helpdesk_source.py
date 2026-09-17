@@ -24,7 +24,7 @@ from flow_sdk.ingest.testing import position
 from flow_sdk.schema.data_spec.choice_spec import Choice
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.errors import NotFound
+from flow_sdk.sources.errors import InvalidCursor, NotFound
 from flow_sdk.sources.testing import Subject, checks_for
 
 HelpdeskSource = asset_module("helpdesk").HelpdeskSource
@@ -73,8 +73,8 @@ def _row(**config):
                            config={"desk_project_id": DESK, **config}, account_key="", account_identities=[])
 
 
-def _view(state=None):
-    return position(segment_key=TICKET, prior=state or {}, window_start=None)
+def _view(prior=None, *, cursor=None):
+    return position(prior, cursor=cursor)
 
 
 @pytest.fixture
@@ -111,20 +111,92 @@ class TestTheSource:
         assert "traits" not in manifest, "a builtin never declares traits"
 
     def test_replies_target_the_ticket(self):
-        item = SimpleNamespace(segment_key=TICKET, thread_key=TICKET, external_id=MSG["id"])
+        item = SimpleNamespace(thread_key=TICKET, external_id=MSG["id"])
         spec = DataDriver.loaded("helpdesk").outbound_spec(_row()).reply_to(item, body="try restarting it")
         assert isinstance(spec, HelpdeskMessageSpec) and spec.to == [TICKET] and spec.thread_key == TICKET
 
 
+OTHER = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+OTHER_ROW = {**POOL[0], "conversation_id": OTHER, "preview": "the wifi is down", "updated_at": "2026-09-06T09:00:00+00:00"}
+OTHER_MSG = {**MSG, "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "text": "the wifi is down",
+             "created_date": "2026-09-06T09:00:00+00:00", "updated_date": "2026-09-06T09:00:00+00:00"}
+
+
+class _Desk(_Hub):
+    """A hub whose tickets each hold their own messages."""
+
+    def __init__(self, threads, pool):
+        super().__init__(pool=pool)
+        self.threads = threads
+
+    async def get(self, entity_type, entity_id, action):
+        self.calls.append(("get", entity_type, entity_id, action))
+        return self.pool if action == "helpdesk_conversations" else self.threads.get(entity_id, [])
+
+    def reads(self):
+        return [c[2] for c in self.calls if c[3] == "flow_message"]
+
+
+def _serve(monkeypatch, desk):
+    monkeypatch.setattr(HelpdeskSource, "build", classmethod(lambda cls, binding: cls(binding, hub=desk)))
+    return DataDriver.loaded("helpdesk")
+
+
 class TestThePool:
-    async def test_every_ticket_is_a_segment_carrying_the_pool_rows_change_token(self, hub):
-        (segment,) = await DataDriver.loaded("helpdesk").segments(_row())
-        assert (segment.key, segment.label) == (TICKET, "my printer is broken")
-        assert segment.stamp == f"{POOL[0]['message_count']}:{POOL[0]['updated_at']}"
+    async def test_the_desk_is_one_stream_over_every_ticket_in_the_pool(self, monkeypatch):
+        desk = _Desk({TICKET: [MSG], OTHER: [OTHER_MSG]}, [POOL[0], OTHER_ROW])
+        result = await _serve(monkeypatch, desk).traverse(_row(), _view())
+        assert sorted(i.thread_key for i in result.items) == sorted([TICKET, OTHER])
+        assert sorted(desk.reads()) == sorted([TICKET, OTHER])
+
+    async def test_a_ticket_whose_stamp_did_not_move_is_not_read(self, monkeypatch):
+        desk = _Desk({TICKET: [MSG], OTHER: [OTHER_MSG]}, [POOL[0], OTHER_ROW])
+        driver = _serve(monkeypatch, desk)
+        first = await driver.traverse(_row(), _view())
+        reply = {**MSG, "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "text": "have you tried turning it off",
+                 "created_date": "2026-09-06T10:05:00+00:00", "updated_date": "2026-09-06T10:05:00+00:00"}
+        desk.threads[TICKET].append(reply)
+        desk.pool = [{**POOL[0], "message_count": 2, "updated_at": reply["updated_date"]}, OTHER_ROW]
+        desk.calls.clear()
+        second = await driver.traverse(_row(), _view(first))
+        assert [i.external_id for i in second.items] == [reply["id"]]
+        assert desk.reads() == [TICKET], "the idle ticket's stamp did not move, so it costs no fetch"
+        desk.calls.clear()
+        third = await driver.traverse(_row(), _view(second))
+        assert third.items == [] and third.unchanged is True and desk.reads() == []
+
+    async def test_a_new_ticket_is_picked_up_on_the_next_pass(self, monkeypatch):
+        desk = _Desk({TICKET: [MSG]}, [POOL[0]])
+        driver = _serve(monkeypatch, desk)
+        first = await driver.traverse(_row(), _view())
+        desk.threads[OTHER] = [OTHER_MSG]
+        desk.pool = [POOL[0], OTHER_ROW]
+        desk.calls.clear()
+        second = await driver.traverse(_row(), _view(first))
+        assert [(i.thread_key, i.external_id) for i in second.items] == [(OTHER, OTHER_MSG["id"])]
+        assert desk.reads() == [OTHER]
+
+    async def test_a_page_cut_inside_a_ticket_carries_on_inside_it(self):
+        many = [{**MSG, "id": f"m{n}", "updated_date": f"2026-09-06T10:0{n}:00+00:00"} for n in (1, 2, 3)]
+        desk = _Desk({TICKET: many, OTHER: [OTHER_MSG]}, [POOL[0], OTHER_ROW])
+        got, cursor = [], None
+        async with HelpdeskSource(SourceBinding(config={"desk_project_id": DESK}), hub=desk) as source:
+            while True:
+                page = await source.fetch(cursor, page_size=2)
+                got.extend(i.origin.key for i in page.items)
+                if (cursor := page.next_cursor) is None:
+                    break
+        assert got == ["m1", "m2", "m3", OTHER_MSG["id"]]
+
+    async def test_a_malformed_desk_cursor_is_invalid(self, hub):
+        async with HelpdeskSource(SourceBinding(config={"desk_project_id": DESK}), hub=hub) as source:
+            for bad in ("desk:{", 'desk:{"watermark":""}', 'desk:{"watermark":"","tickets":{"t":"x"}}', "mark:{}"):
+                with pytest.raises(InvalidCursor):
+                    await source.fetch(bad)
 
     async def test_a_source_without_a_desk_cannot_poll(self, hub):
         with pytest.raises(Exception) as caught:
-            await DataDriver.loaded("helpdesk").segments(_row(desk_project_id=""))
+            await DataDriver.loaded("helpdesk").traverse(_row(desk_project_id=""), _view())
         assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR and "desk" in str(caught.value)
 
 
@@ -133,23 +205,20 @@ class TestMapping:
         (item,) = (await DataDriver.loaded("helpdesk").traverse(_row(), _view())).items
         assert item.external_id == MSG["id"] and item.message_id == MSG["id"], "the projection mints the FlowMessage with the hub's id"
         assert item.conversation_id == TICKET, "the projection adopts the hub conversation"
-        assert (item.thread_key, item.segment_key, item.body, item.kind) == (TICKET, TICKET, "my printer is broken", "content.message.chat")
+        assert (item.thread_key, item.body, item.kind) == (TICKET, "my printer is broken", "content.message.chat")
         assert (item.author_external_id, item.author_display) == (GUEST, "Guest")
 
-    async def test_the_cursor_is_a_watermark_on_updated_date(self, hub):
+    async def test_the_cursor_holds_each_tickets_change_token_and_message_watermark(self, hub):
         first = await DataDriver.loaded("helpdesk").traverse(_row(), _view())
-        assert first.cursor == HelpdeskSource.resume_at(MSG["updated_date"], [MSG["id"]])
+        stamp = f"{POOL[0]['message_count']}:{POOL[0]['updated_at']}"
+        assert first.cursor == HelpdeskSource.resume_at(POOL[0]["updated_at"], {TICKET: (stamp, MSG["updated_date"], [MSG["id"]])})
         again = await DataDriver.loaded("helpdesk").traverse(_row(), _view(first))
         assert again.items == [] and again.unchanged is True
 
-    async def test_a_legacy_watermark_is_adopted(self, hub):
-        again = await DataDriver.loaded("helpdesk").traverse(_row(), _view({"high_water": MSG["updated_date"], "boundary_ids": [MSG["id"]]}))
-        assert again.items == []
-
     async def test_an_edit_re_arrives_because_its_stamp_moved(self, hub):
         hub.messages = [{**MSG, "text": "my printer is on fire", "updated_date": "2026-09-06T10:05:00+00:00"}]
-        state = {"cursor": HelpdeskSource.resume_at(MSG["updated_date"], [MSG["id"]])}
-        result = await DataDriver.loaded("helpdesk").traverse(_row(), _view(state))
+        cursor = HelpdeskSource.resume_at(POOL[0]["updated_at"], {TICKET: ("1:earlier", MSG["updated_date"], [MSG["id"]])})
+        result = await DataDriver.loaded("helpdesk").traverse(_row(), _view(cursor=cursor))
         assert [i.body for i in result.items] == ["my printer is on fire"]
 
 

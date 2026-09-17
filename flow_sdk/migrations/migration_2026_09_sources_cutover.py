@@ -109,13 +109,12 @@ def _lift(row: _Row, sources: dict[str, SimpleNamespace]) -> tuple[str, str, str
     """Fill ``origin``, the flat triple and ``data`` on a row that lacks them. The key, or None."""
     from pydantic import ValidationError
 
-    from flow_sdk.core.entity.legacy_fields import adopt_renamed
     from flow_sdk.ingest.legacy_lift import data_of, origin_of
 
     blob = row.blob
     if blob.get("origin_key") and blob.get("data"):
         return (blob.get("origin_kind", ""), blob.get("origin_namespace", ""), blob["origin_key"])
-    header = SimpleNamespace(**adopt_renamed(dict(blob), {"stream_key": "segment_key"}))
+    header = SimpleNamespace(**blob)
     source = sources.get(str(blob.get("data_source_id") or ""))
     try:
         origin = origin_of(source, header)

@@ -100,8 +100,8 @@ def _row(bot, **fields):
     )
 
 
-def _view(state=None):
-    return position(segment_key="updates", prior=state or {}, window_start=None)
+def _view(prior=None, *, cursor=None):
+    return position(prior, cursor=cursor)
 
 
 def _update(update_id, **message):
@@ -130,8 +130,12 @@ class TestTheSource:
         assert driver.sends is True and driver.identity_config_key == ""
         assert driver.channel_for(_row(bot)) == "telegram"
 
-    async def test_the_queue_is_one_segment(self, bot):
-        assert [s.key for s in await DataDriver.loaded("telegram").segments(_row(bot))] == ["updates"]
+    async def test_the_queue_takes_no_query_and_refuses_a_narrowing(self, bot):
+        source = await DataDriver.loaded("telegram").open(_row(bot))
+        assert source.query() is None
+        async with source:
+            with pytest.raises(ValueError):
+                await source.fetch(narrow={"since": "2026-01-01T00:00:00+00:00"})
 
     async def test_the_token_never_rides_in_config(self, bot):
         source = await DataDriver.loaded("telegram").open(_row(bot))
@@ -168,14 +172,10 @@ class TestMapping:
 class TestTheCursorIsTheAck:
     async def test_the_committed_offset_is_what_is_sent_back(self, bot):
         bot.updates = [_update(900001)]
-        result = await DataDriver.loaded("telegram").traverse(_row(bot), _view({"cursor": TelegramSource.resume_at(900001)}))
+        result = await DataDriver.loaded("telegram").traverse(_row(bot), _view(cursor=TelegramSource.resume_at(900001)))
         assert bot.requests[-1][1]["offset"] == "900001"
         assert result.cursor == TelegramSource.resume_at(900002)
         assert [i.external_id for i in result.items] == [f"{CHAT}/7"]
-
-    async def test_a_legacy_offset_is_adopted(self, bot):
-        await DataDriver.loaded("telegram").traverse(_row(bot), _view({"next_offset": 900001}))
-        assert bot.requests[-1][1]["offset"] == "900001"
 
     async def test_a_first_run_sends_no_offset(self, bot):
         result = await DataDriver.loaded("telegram").traverse(_row(bot), _view())
@@ -183,7 +183,7 @@ class TestTheCursorIsTheAck:
 
     async def test_non_message_updates_still_advance_the_offset(self, bot):
         bot.updates = [{"update_id": 900005, "edited_message": {**MESSAGE}}]
-        result = await DataDriver.loaded("telegram").traverse(_row(bot), _view({"cursor": TelegramSource.resume_at(900001)}))
+        result = await DataDriver.loaded("telegram").traverse(_row(bot), _view(cursor=TelegramSource.resume_at(900001)))
         assert result.items == [] and result.cursor == TelegramSource.resume_at(900006)
 
 

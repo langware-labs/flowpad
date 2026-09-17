@@ -98,6 +98,10 @@ class FolderSource(CollectionSource):
         assert self._folder is not None
         return await self._blocking(self._folder.stat, key, origin=self._scope.origin(key))
 
+    def query(self) -> ObjectQuery:
+        """The whole tree; ``narrow={"prefix": ...}`` reads a subtree."""
+        return ObjectQuery()
+
     async def _scan(self, query: Optional[ObjectQuery]) -> list[tuple[str, os.stat_result]]:
         assert self._folder is not None
         return await self._blocking(self._folder.scan, "" if query is None else query.prefix, type(self).skip)

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.testing import local_http_server
 
-from .test_teams_source import SEGMENT, _FakeGraph, _message, _token, teams_source
+from .test_teams_source import CONTAINER, _FakeGraph, _message, _token, teams_source
 
 
 @contextmanager
@@ -20,7 +20,7 @@ def case(monkeypatch, tmp_path):
     with local_http_server(fake) as base:
         monkeypatch.setattr(teams_source, "GRAPH_API_BASE", base)
         yield {
-            "config": {"channels": [SEGMENT]},
+            "config": {"channel": CONTAINER},
             "min_items": 3,
-            "send": {"to": SEGMENT, "text": "matrix send"},
+            "send": {"to": CONTAINER, "text": "matrix send"},
         }

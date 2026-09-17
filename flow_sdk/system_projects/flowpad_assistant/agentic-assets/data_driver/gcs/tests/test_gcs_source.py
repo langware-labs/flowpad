@@ -50,8 +50,8 @@ def _source(tmp_path, base: str, **config):
     )
 
 
-def _view(state: dict | None = None, segment: str = "/"):
-    return position(segment_key=segment, prior=state or {})
+def _view(prior=None):
+    return position(prior)
 
 
 def _obj(name: str, generation: str = "1") -> dict:
@@ -199,13 +199,17 @@ async def test_pagination_is_followed(driver, tmp_path):
     assert len(result.refs) == 3 and len(bucket.listed) == 3
 
 
-async def test_a_prefix_is_a_segment_and_bounds_the_listing(driver, tmp_path):
+async def test_a_stored_list_of_prefixes_splits_into_one_source_per_prefix():
+    parts = GcsSource.Config.split({"bucket": "acme-docs", "prefixes": ["handbook/", "archive/"]})
+    assert parts == [("handbook/", {"bucket": "acme-docs", "prefix": "handbook/"}), ("archive/", {"bucket": "acme-docs", "prefix": "archive/"})]
+    assert GcsSource.Config.split({"bucket": "acme-docs", "prefix": "handbook/"}) is None
+
+
+async def test_the_prefix_is_the_query_and_bounds_the_listing(driver, tmp_path):
     bucket = _Bucket([_obj("handbook/intro.md"), _obj("archive/old.md")])
     with local_http_server(bucket) as base:
-        source = _source(tmp_path, base, prefixes=["handbook/"])
-        segments = await driver.segments(source)
-        result = await driver.traverse(source, _view(segment="handbook/"))
-    assert [s.key for s in segments] == ["handbook/"] and bucket.listed[-1]["prefix"] == "handbook/"
+        result = await driver.traverse(_source(tmp_path, base, prefix="handbook/"), _view())
+    assert bucket.listed[-1]["prefix"] == "handbook/"
     assert len(result.refs) == 1 and result.refs[0].endswith("handbook/intro.md")
 
 
@@ -262,4 +266,4 @@ async def test_no_project_is_answered_before_any_request(driver, tmp_path):
 
 async def test_the_picker_answers_nothing_for_a_field_it_does_not_furnish(driver, tmp_path):
     with local_http_server(_Bucket()) as base:
-        assert await driver.choices(_source(tmp_path, base, project="p"), "prefixes") == []
+        assert await driver.choices(_source(tmp_path, base, project="p"), "prefix") == []

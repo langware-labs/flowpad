@@ -284,7 +284,7 @@ export function DataSourceDialog({
         <DialogHeader>
           <DialogTitle>{editing ? t`Edit data source` : t`Add a data source`}</DialogTitle>
           <DialogDescription>
-            <Trans>A source is one remote account or feed set. The poller syncs it on the heartbeat.</Trans>
+            <Trans>A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat.</Trans>
           </DialogDescription>
         </DialogHeader>
 

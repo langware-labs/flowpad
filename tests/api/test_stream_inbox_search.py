@@ -35,7 +35,6 @@ async def test_search_hits_channel_bodies_and_native_text(bootstrapped_client):
         data_source_id=str(uuid.uuid4()),
         provider="agent",
         kind="content.message.chat",
-        segment_key="C012345678",
         external_id="1725000000.000100",
         name="standup",
         body=f"deploy is blocked on {marker}-slack",

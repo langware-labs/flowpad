@@ -16,4 +16,4 @@ def case(monkeypatch, tmp_path):
         return 200, body, {"Content-Type": "application/xml"}
 
     with local_http_server(respond) as base:
-        yield {"config": {"feed_urls": [f"{base}/atom"]}, "min_items": 3}
+        yield {"config": {"feed_url": f"{base}/atom"}, "min_items": 3}

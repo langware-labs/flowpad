@@ -51,7 +51,7 @@ export function ReplayDialog({
       notify.success({
         title: since
           ? t`Dropped ${result.removed} records since ${since}`
-          : t`Dropped ${result.removed} records across ${result.streams} streams`,
+          : t`Dropped ${result.removed} records`,
         // The verb is not synchronous — say when the data comes back, or the
         // empty list a user sees next looks like the replay ate everything.
         message: t`Re-fetch happens on the next poll.`,

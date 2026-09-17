@@ -247,7 +247,6 @@ class EntityType(StrEnum):
     DATA_SOURCE = "data_source"
     # One independently-checkpointed stream within a DataSource — a feed URL, a
     # channel. DB-only: written every poll, so it must never touch disk.
-    DATA_SOURCE_CURSOR = "data_source_cursor"
     # How far one consumer (a workflow) has got through one source. See builtin/consumer_position.py.
     CONSUMER_POSITION = "consumer_position"
     # One reflected page of an object-shaped source — the log a folder consumer pages. See builtin/source_change.py.

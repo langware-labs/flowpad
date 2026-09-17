@@ -37,7 +37,6 @@ def _item(source_id: str, thread_key: str) -> SourceItem:
     return SourceItem(
         data_source_id=source_id,
         provider="cloud_email",
-        segment_key="agent-1",
         external_id="<m1@x>",
         name="Subject",
         body="hello",

@@ -60,8 +60,8 @@ pytestmark = [
 FIXTURE = pathlib.Path(os.environ.get("SLACK_FIXTURE", "/nonexistent/slack_channel.csv"))
 
 #: Compared byte-exact. Identifiers, with no typography to argue about. The
-#: ts (`external_id`) keys the dict; `segment_key` is asserted against the
-#: fixture's channel_id per row.
+#: ts (`external_id`) keys the dict; the origin namespace's channel component is
+#: asserted against the fixture's channel_id per row.
 EXACT = ("author_external_id", "thread_key")
 
 #: Same measured transport limit as the gmail twin: the fetch is a language
@@ -155,8 +155,8 @@ async def test_connect_my_slack_channel(assistant):
     assert (src.config or {}).get("connector") == "slack", (
         "the skill must route a Slack channel to the agent transport"
     )
-    assert channel_id in (src.config or {}).get("segments", []), (
-        "the channel id must become a segment, verbatim"
+    assert (src.config or {}).get("mailbox") == channel_id, (
+        "the channel id must become the source's one channel, verbatim"
     )
 
     # ── it fetches, by spawning a worker of its own ─────────────────────────
@@ -193,7 +193,7 @@ def _assert_matches_channel(expected: dict, ingested: dict, channel_id: str) -> 
         row, got = expected[external_id], ingested[external_id]
         for field in EXACT:
             assert getattr(got, field) == row[field], f"{external_id}.{field}"
-        assert got.segment_key == channel_id == row["channel_id"], f"{external_id}.segment_key"
+        assert got.origin_namespace.split("/")[-1] == channel_id == row["channel_id"], f"{external_id}.origin_namespace"
         assert got.kind == "content.message.chat", f"{external_id}.kind"
         assert _instant(got.occurred_at) == _instant(row["occurred_at"]), f"{external_id}.occurred_at"
         if not _same_opening(row["text"], got.body):

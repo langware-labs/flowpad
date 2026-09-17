@@ -38,13 +38,13 @@ def _shared_message(sender_id: str, kind: str = "agentmail"):
     )
 
 
-def _item(item_id: str, author: str, subject: str, segment_key: str = ""):
-    # `segment_key` is the CHANNEL on a chat record — what a channel-addressed
-    # driver replies to, and what an author-addressed one ignores.
+def _item(item_id: str, author: str, subject: str, origin_namespace: str = ""):
+    # The origin namespace's trailing component is the CHANNEL on a chat record —
+    # what a channel-addressed driver replies to, and what an author-addressed one ignores.
     return SimpleNamespace(
         id=item_id, author_external_id=author, name=subject,
         thread_key="t-1", external_id=f"<{item_id}@mail>",
-        segment_key=segment_key,
+        origin_namespace=origin_namespace,
     )
 
 
@@ -282,7 +282,7 @@ class TestAChannelRepliesToTheChannel:
         wire["spec"] = SlackMessageSpec
         wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
         wire["messages"] = [_message("slack:U06L8JSQJ1X", "i-1", kind="slack")]
-        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", segment_key="C08L1P4C95J")}
+        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", origin_namespace="T0123/C08L1P4C95J")}
 
         target = await resolve_reply_target(CONVERSATION)
 
@@ -294,7 +294,7 @@ class TestAChannelRepliesToTheChannel:
         wire["spec"] = SlackMessageSpec
         wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
         wire["messages"] = [_message("slack:U06L8JSQJ1X", "i-1", kind="slack")]
-        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", segment_key="")}
+        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", origin_namespace="")}
 
         with pytest.raises(ChannelSendUnavailable):
             await resolve_reply_target(CONVERSATION)

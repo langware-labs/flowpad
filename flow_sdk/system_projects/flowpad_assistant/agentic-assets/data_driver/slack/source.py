@@ -1,14 +1,13 @@
-"""``SlackSource`` — the channels a bot has been let into, read one page per pass.
+"""``SlackSource`` — one channel a bot has been let into, read one page per pass.
 
 **The rate cap shapes the source.** Since 2025-05-29 Slack allows a non-Marketplace app one
-``conversations.history`` request a minute, at most 15 messages. So a pass reads one page of one
-channel (``segment_budget = 1``, ``pages_per_pass = 1``): a busy channel is sampled, not
-mirrored. The Events API is the answer to that, and a separate piece of work.
+``conversations.history`` request a minute, at most 15 messages. So a pass reads one page of the
+channel (``pages_per_pass = 1``): a busy channel is sampled, not mirrored. The Events API is the answer to that, and a separate piece of work.
 
 **Setup is a state, not a failure.** Slack will not let an app read a channel the bot was never
-invited to, and a private channel needs a human to do the inviting. ``verify`` asks each channel
+invited to, and a private channel needs a human to do the inviting. ``verify`` asks the channel
 the cheapest question with the right answer (``conversations.history``, ``limit=1``) and names
-the channels still waiting on an invite.
+it while it is still waiting on an invite.
 
 **200 is not success.** Slack answers ``{"ok": false, "error": …}`` with status 200, so every
 call goes through one translation into the contract's errors.
@@ -21,9 +20,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional, Union
+from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, Union
 
-from pydantic import Field, StringConstraints
+from pydantic import StringConstraints
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source, positive_int
@@ -34,8 +33,7 @@ from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
-from flow_sdk.sources.values.query import DataQuery, MessageQuery
-from flow_sdk.sources.values.segment import SegmentRef
+from flow_sdk.sources.values.query import MessageQuery
 
 #: Slack's own base. Overridable only so a test can point at a local double.
 SLACK_API_BASE = "https://slack.com/api"
@@ -66,7 +64,9 @@ class SlackMessageData(MessageData):
 class SlackConfig(SourceConfig):
     """What a slack source is configured with."""
 
-    channels: list[Union[Annotated[str, StringConstraints(pattern=r"^[CGD][A-Z0-9]{6,}$")], ChoiceEntry]] = Field(min_length=1)
+    retired_list = ("channels", "channel")
+
+    channel: Union[Annotated[str, StringConstraints(pattern=r"^[CGD][A-Z0-9]{6,}$")], ChoiceEntry]
     #: Who may drive the channel; the row keeps it as ``inbound_allowed_senders``.
     allowed_senders: list[str] = []
 
@@ -78,9 +78,8 @@ class SlackSource(Source):
     durable_cursor = True
     page_size = HISTORY_PAGE
     pages_per_pass = 1
-    segment_budget = 1
-    #: A Slack source is ABOUT its channels: a caller reuses the row whose channels name one.
-    identity_config_key = "channels"
+    #: A Slack source is ABOUT its channel: a caller reuses the row that names it.
+    identity_config_key = "channel"
     connection = "slack"
 
     def __init__(self, binding: SourceBinding) -> None:
@@ -93,28 +92,21 @@ class SlackSource(Source):
         return _RESUME + ts
 
     @property
-    def channels(self) -> list[tuple[str, str]]:
-        """``(id, label)`` per configured channel, keyed by id — a renamed channel is the same one.
-        An entry is a bare id or ``{"id", "name"}``; a caller that wrote one id as a string (or
-        several as lines) names those ids, never the string's characters."""
-        entries = self.config.get("channels") or []
-        if isinstance(entries, str):
-            entries = [line for line in entries.splitlines() if line.strip()]
-        out: list[tuple[str, str]] = []
-        for entry in entries:
-            key = str((entry.get("id") if isinstance(entry, dict) else entry) or "").strip()
-            if key:
-                out.append((key, str(entry.get("name") or key) if isinstance(entry, dict) else key))
-        return out
+    def channel(self) -> tuple[str, str]:
+        """``(id, label)`` of the configured channel, keyed by id — a renamed channel is the same one.
+        The entry is a bare id or ``{"id", "name"}``; ``("", "")`` when none is configured."""
+        entry = self.config.get("channel") or ""
+        key = str((entry.get("id") if isinstance(entry, dict) else entry) or "").strip()
+        return (key, (str(entry.get("name") or key) if isinstance(entry, dict) else key)) if key else ("", "")
+
+    def query(self) -> MessageQuery:
+        key = self.channel[0]
+        return MessageQuery(conversation=self.channel_origin(key) if key else None)
 
     def channel_origin(self, channel: str) -> CloudOrigin:
         return self.origin(channel, channel)
 
     # ── what the application asks ───────────────────────────────────────────
-    @classmethod
-    def lift_cursor(cls, state: dict) -> Optional[str]:
-        return cls.resume_after(state["last_ts"]) if state.get("last_ts") else None
-
     @classmethod
     def outbound_spec(cls) -> type:
         from flow_sdk.builtin.source_item import SlackMessageSpec  # noqa: PLC0415
@@ -142,23 +134,14 @@ class SlackSource(Source):
             await self._client.aclose()
             self._client = None
 
-    async def segments(self) -> list[SegmentRef]:
-        return [
-            SegmentRef(key=key, label=label, query=MessageQuery(conversation=self.channel_origin(key)))
-            for key, label in self.channels
-        ]
-
     # ── read ────────────────────────────────────────────────────────────────
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
-        if query is not None and not isinstance(query, MessageQuery):
-            raise Unsupported(f"SlackSource does not support {type(query).__name__}")
+        query = self.effective_query(narrow)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
-        conversation = query.conversation if query is not None and query.conversation else None
-        if conversation is None and self.channels:
-            conversation = self.channel_origin(self.channels[0][0])
+        conversation = query.conversation
         if conversation is None:
             if cursor is not None:
                 raise InvalidCursor("this source has no channel to continue")
@@ -185,10 +168,12 @@ class SlackSource(Source):
             resume_cursor=_RESUME + newest if newest else None,
         )
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[MessageItem, None]:
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[MessageItem, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:
@@ -214,32 +199,24 @@ class SlackSource(Source):
 
     # ── setup ───────────────────────────────────────────────────────────────
     async def verify(self) -> Verdict:
-        """All-or-nothing: a source reading three of five channels looks like it works, so nobody
-        goes looking for the missing two."""
-        if not self.channels:
-            return Verdict(ready=False, detail="No channels selected yet — pick at least one for this source to read.")
+        """The channel asked for ONE message: a missing invite is a setup state, not a failure."""
+        key, label = self.channel
+        if not key:
+            return Verdict(ready=False, detail="No channel selected yet — pick one for this source to read.")
         if self.credentials.token is None:
             return Verdict(ready=False, detail="No Slack credential is available on this machine yet. Connect Slack first.")
-        pending: list[str] = []
-        for key, label in self.channels:
-            error = str((await self._api("conversations.history", {"channel": key, "limit": 1})).get("error") or "")
-            if not error:
-                continue
-            if error in NOT_A_MEMBER | NO_SUCH_CHANNEL:
-                pending.append(key)
-                continue
-            if error == "missing_scope":
-                return Verdict(
-                    ready=False,
-                    detail="The Slack app is missing the history permission. It needs `channels:history` (and "
-                    "`groups:history` for private channels); an admin has to add it and everyone reconnects.",
-                )
+        error = str((await self._api("conversations.history", {"channel": key, "limit": 1})).get("error") or "")
+        if error in NOT_A_MEMBER | NO_SUCH_CHANNEL:
+            return Verdict(ready=False, detail=f"Invite the Flowpad bot to #{label}, then press Verify again.", pending=(key,))
+        if error == "missing_scope":
+            return Verdict(
+                ready=False,
+                detail="The Slack app is missing the history permission. It needs `channels:history` (and "
+                "`groups:history` for private channels); an admin has to add it and everyone reconnects.",
+            )
+        if error:
             return Verdict(ready=False, detail=f"Slack refused the request: {error}")
-        if pending:
-            labels = dict(self.channels)
-            names = ", ".join(f"#{labels.get(key, key)}" for key in pending)
-            return Verdict(ready=False, detail=f"Invite the Flowpad bot to {names}, then press Verify again.", pending=tuple(pending))
-        return Verdict(ready=True, detail=f"Reading {len(self.channels)} channel(s).")
+        return Verdict(ready=True, detail=f"Reading #{label}.")
 
     async def whoami(self) -> tuple[UserProfile, ...]:
         me = await self._call("auth.test")
@@ -256,7 +233,7 @@ class SlackSource(Source):
         """Every channel the token can SEE, not only those the bot has joined: "not a member yet"
         is a setup state the person fixes with an invite, so hiding it would hide the channel
         they opened the form to add."""
-        if field != "channels":
+        if field != "channel":
             return []
         body = await self._call(
             "conversations.list", types="public_channel,private_channel", exclude_archived="true", limit="200"

@@ -1,18 +1,17 @@
-"""What a ``DataDriver`` does at run time — the registry of loaded drivers, and one segment's traversal.
+"""What a ``DataDriver`` does at run time — the registry of loaded drivers, and one source's traversal.
 
 A ``DataDriver`` (``flow_sdk/builtin/data_driver.py``) is one data source driver as the application
 runs it: the folder's ``Source`` class
 and its manifest (``flow_sdk/ingest/driver_registry.py`` loads both). Everything that differs between
 sources the class or the manifest says — the credential shape (``auth``), the transport it is built
-over (``build``), how a send's arguments address its channel (``message_for``), how a cursor an older
-build left is adopted (``lift_cursor``), the identity a reflected file resolves on
+over (``build``), how a send's arguments address its channel (``message_for``), the identity a reflected file resolves on
 (``origin_id_for``). The sync engine, reflection and the stream inbox ask the type; nothing here, or
 anywhere outside an asset folder, names a provider.
 
-**One segment's traversal** (``DataDriver.traverse``) is the engine step: a page chain capped by
-``pages_per_pass``, starting from the durable cursor when the class declares one, else from the
-row's window. A record source's items lower to the flat envelope in the order they happened; a
-reflecting source's files become refs diffed against the manifest the cursor row carries — an
+**One source's traversal** (``DataDriver.traverse``) is the engine step: the source's ``query()``, paged
+by ``fetch(cursor)`` and capped by ``pages_per_pass``, starting from the row's durable cursor when the
+class declares one, else from the row's window. A record source's items lower to the flat envelope in
+the order they happened; a reflecting source's files become refs diffed against the manifest the row carries — an
 observed stamp per key plus, when the source can say, a handle that survives a rename. A remote
 file source's changed bytes are pulled through ``open`` into the row's cache first.
 """
@@ -40,14 +39,12 @@ from flow_sdk.sources.protocols import (
     Identified,
     Listable,
     Messaging,
-    Segmented,
     StableHandle,
     Verdict,
     Verifiable,
 )
 from flow_sdk.sources.values.page import ChangePage
 from flow_sdk.sources.values.query import MessageQuery
-from flow_sdk.sources.values.segment import SegmentRef
 from flow_sdk.utils.kind_registry import KindRegistry
 from flow_sdk.utils.serialization import iso_to_utc
 
@@ -59,8 +56,6 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-#: The one segment of a source that does not split its selection.
-ROOT_SEGMENT = "root"
 #: Remote objects pulled at once into a cache. Small on purpose: each is held whole in memory
 #: before its atomic write, so the gate bounds peak RSS as much as sockets.
 DOWNLOAD_CONCURRENCY = 4
@@ -99,23 +94,31 @@ class SendOutcome:
         return self.status is SendStatus.DRAFTED
 
 
-# ── one segment's position and what a traversal of it found ────────────────────
+# ── a source's position and what a traversal from it found ─────────────────────
 
 
 @dataclass(frozen=True)
-class SegmentPosition:
-    """Where a segment's last traversal left off. ``legacy_state`` is the dict an older build kept
-    on the cursor row; it is read once, through the type's ``lift_cursor``, and never written."""
+class Position:
+    """Where a source's last traversal left off: the durable cursor and, for a reflecting source, the
+    manifest of what it last observed. ``window_start`` floors a traversal that has no cursor."""
 
-    segment_key: str
     cursor: Optional[str] = None
     manifest: dict = field(default_factory=dict)
-    legacy_state: dict = field(default_factory=dict)
     window_start: Optional[str] = None
 
 
+def position_of(row: Any, now: Optional[datetime] = None) -> Position:
+    """The position a row holds: its cursor, its manifest and its window floor."""
+    floor = row.window_floor(now or datetime.now(timezone.utc)) if hasattr(row, "window_floor") else None
+    return Position(
+        cursor=getattr(row, "cursor", None) or None,
+        manifest=dict(getattr(row, "manifest", None) or {}),
+        window_start=floor.isoformat() if floor else None,
+    )
+
+
 @dataclass(frozen=True)
-class SegmentPass:
+class Pass:
     """One traversal's findings: records OR files, and the position to carry to the next one."""
 
     items: list = field(default_factory=list)
@@ -272,15 +275,6 @@ def _when(item: Any) -> Any:
     return getattr(item.data, "sent_at", None) or getattr(item.data, "published_at", None)
 
 
-async def _single_segment(source: Source) -> str:
-    """The key of a source's one segment, else ``root``."""
-    if isinstance(source, Segmented):
-        refs = await source.segments()
-        if len(refs) == 1:
-            return refs[0].key
-    return ROOT_SEGMENT
-
-
 class DriverRuntime:
     """The run-time half of ``DataDriver``: build, bind, traverse, send. A mixin, so the registry
     holds the entity itself; its state (``_cls``, ``_manifest``, ``_folder``, ...) is the entity's
@@ -354,10 +348,6 @@ class DriverRuntime:
     @property
     def attention_poll_seconds(self) -> Optional[int]:
         return self.cls.attention_poll_seconds
-
-    @property
-    def segment_budget(self) -> Optional[int]:
-        return self.cls.segment_budget
 
     @property
     def stamps_identity(self) -> bool:
@@ -457,36 +447,27 @@ class DriverRuntime:
         root = self.tree_root(row)
         return str(self.cls.origin_id_for(row, ref, root) or "") if root is not None else ""
 
-    async def segments(self, row: Any) -> list[SegmentRef]:
-        source = await self.open(row)
-        if not isinstance(source, Segmented):
-            return [SegmentRef(key=ROOT_SEGMENT)]
-        async with source:
-            return list(await source.segments())
-
-    # ── one segment's traversal ─────────────────────────────────────────────
-    async def traverse(self, row: Any, position: SegmentPosition) -> SegmentPass:
+    # ── the source's traversal ──────────────────────────────────────────────
+    async def traverse(self, row: Any, position: Optional[Position] = None) -> Pass:
+        """One pass over the source's stream from ``position`` (the row's own when omitted)."""
+        position = position or position_of(row)
         if not issubclass(self.cls, Listable):
             # A push-only source (a webhook is its only delivery): a poll finds nothing.
-            return SegmentPass(cursor=position.cursor, manifest=dict(position.manifest), unchanged=True)
+            return Pass(cursor=position.cursor, manifest=dict(position.manifest), unchanged=True)
         source = await self.open(row)
         cls = type(source)
         async with source:
-            segment = None
-            if isinstance(source, Segmented):
-                segment = next((ref for ref in await source.segments() if ref.key == position.segment_key), None)
-            query = segment.query if segment else None
-            cursor = None
-            if cls.durable_cursor:
-                cursor = position.cursor or (cls.lift_cursor(position.legacy_state) if position.legacy_state else None)
+            cursor = position.cursor if cls.durable_cursor else None
             complete = cursor is None
             started_at = cursor
             floor = iso_to_utc(position.window_start) if position.window_start else None
+            query = source.query()
+            narrow = None
             if cursor is None and floor is not None and isinstance(query, MessageQuery) and query.since is None:
-                query = query.model_copy(update={"since": floor})
+                narrow = {"since": floor}
             items, removed, moved, resume, pages = [], [], [], None, 0
             while True:
-                page = await source.fetch(query, cursor=cursor)
+                page = await source.fetch(cursor, narrow=narrow)
                 pages += 1
                 items.extend(page.items)
                 if isinstance(page, ChangePage):
@@ -499,22 +480,17 @@ class DriverRuntime:
             # An idle traversal hands back no new resume point: the position it started from stands.
             carried = (resume or started_at) if cls.durable_cursor else None
             if cls.reflects:
-                manifest = position.manifest or dict(position.legacy_state.get("manifest") or {})
-                return await self._files(row, source, items, removed, moved, carried, manifest, complete=complete)
-            return self._records(row, position, segment, items, carried, floor, moved_on=carried != started_at)
+                return await self._files(row, source, items, removed, moved, carried, dict(position.manifest), complete=complete)
+            return self._records(row, items, carried, floor, moved_on=carried != started_at)
 
-    def _records(self, row: Any, position: SegmentPosition, segment, items, cursor: Optional[str], floor, *, moved_on: bool) -> SegmentPass:
+    def _records(self, row: Any, items, cursor: Optional[str], floor, *, moved_on: bool) -> Pass:
         kept = sorted(
             (item for item in items if floor is None or (_when(item) or floor) >= floor),
             key=lambda item: _when(item) or _EPOCH,
         )
-        label = segment.label if segment else ""
-        envelopes = [
-            envelope_of(item, data_source_id=str(row.id), provider=self.provider, segment_key=position.segment_key, segment_label=label)
-            for item in kept
-        ]
+        envelopes = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in kept]
         stamps = [when for when in map(_when, kept) if when is not None]
-        return SegmentPass(
+        return Pass(
             items=envelopes,
             cursor=cursor,
             high_water=max(stamps).isoformat() if stamps else None,
@@ -522,7 +498,7 @@ class DriverRuntime:
             unchanged=not items and not moved_on,
         )
 
-    async def _files(self, row: Any, source: Source, items, removed, moved, cursor: Optional[str], previous: dict, *, complete: bool) -> SegmentPass:
+    async def _files(self, row: Any, source: Source, items, removed, moved, cursor: Optional[str], previous: dict, *, complete: bool) -> Pass:
         """A reflecting source's files as refs, diffed against the manifest.
 
         A traversal from the beginning is ``complete``: a key it no longer lists is gone. A delta
@@ -587,7 +563,7 @@ class DriverRuntime:
                     stale.unlink(missing_ok=True)
             kept = {key: rel for key, rel in known.items() if key in current}
             write_cache_index(root, self.provider, {rel: key for key, rel in {**kept, **placed}.items()})
-        return SegmentPass(
+        return Pass(
             refs=[r for key in changed if (r := ref(key, placed.get(key)))],
             tombstones=tombstones,
             renames=renames,
@@ -643,9 +619,8 @@ class DriverRuntime:
         only its inbound half. After identity is stamped, so the copy reads as ours."""
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
 
-        segment = await _single_segment(source)
         try:
-            await ingest_items([envelope_of(sent, data_source_id=str(row.id), provider=self.provider, segment_key=segment)])
+            await ingest_items([envelope_of(sent, data_source_id=str(row.id), provider=self.provider)])
         except Exception:  # noqa: BLE001 — the message IS delivered; bookkeeping must not unsend it
             logger.exception("[ingest] %s sent %s but could not record the copy", self.provider, sent.origin.key)
             return False
@@ -666,15 +641,8 @@ class DriverRuntime:
         source = await self.open(row, credentials=credentials)
         async with source:
             events = source.events_from_webhook(payload)  # type: ignore[attr-defined]
-            segment = await _single_segment(source)
         items = [
-            envelope_of(
-                event.item,
-                data_source_id=str(row.id),
-                provider=self.provider,
-                segment_key=segment,
-                segment_label=str(getattr(getattr(event.item.data, "conversation", None), "key", "") or ""),
-            )
+            envelope_of(event.item, data_source_id=str(row.id), provider=self.provider)
             for event in events
             if event.item is not None
         ]
@@ -689,7 +657,7 @@ class DriverRuntime:
         item = await source.find_reply(external_id)  # type: ignore[attr-defined]
         if item is None:
             return None
-        return envelope_of(item, data_source_id=str(row.id), provider=self.provider, segment_key=await _single_segment(source))
+        return envelope_of(item, data_source_id=str(row.id), provider=self.provider)
 
     async def wait_for_reply(self, row: Any, external_id: str) -> Any:
         """Look again until the response exists. The caller owns the deadline, so there is no second
@@ -751,11 +719,10 @@ DRIVERS: "KindRegistry[DataDriver]" = KindRegistry("data driver", key="provider"
 
 __all__ = [
     "DOWNLOAD_CONCURRENCY",
-    "ROOT_SEGMENT",
     "RUN_SOURCE_KEY",
     "DRIVERS",
-    "SegmentPass",
-    "SegmentPosition",
+    "Pass",
+    "Position",
     "SendOutcome",
     "SendStatus",
     "DriverRuntime",
@@ -764,6 +731,7 @@ __all__ = [
     "cached_path",
     "identity_stamped",
     "ingest_run_context",
+    "position_of",
     "read_cache_index",
     "stamp_identity",
     "write_cache_index",

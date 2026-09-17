@@ -20,7 +20,6 @@ from flow_sdk.builtin.data_source import (
     SourceStatus,
     prune_fileless_data_sources,
 )
-from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.fs_store.orphan_removal import remove_orphan_row
 from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
@@ -81,12 +80,12 @@ async def test_a_poll_writes_the_row_and_leaves_the_file_alone(scope):
     before = (main.read_bytes(), main.stat().st_mtime_ns)
 
     source.health = "ok"
-    source.segment_count = 3
+    source.cursor = "c3"
     await source.save_runtime()
 
     assert (main.read_bytes(), main.stat().st_mtime_ns) == before
     stored = await DataSource.get_by_id(source.id)
-    assert (stored.health, stored.segment_count) == ("ok", 3)
+    assert (stored.health, stored.cursor) == ("ok", "c3")
 
 
 async def test_a_copied_folder_arrives_parked_until_its_owner_verifies(scope):
@@ -120,28 +119,16 @@ async def test_a_secret_in_the_config_is_refused():
         DataSourceSpec.model_validate({"data_driver_name": "telegram", "data_driver_config": {"bot": {"value": "123:abc"}}})
 
 
-async def test_removing_an_orphan_row_takes_what_hangs_off_it(scope):
-    source = await _saved()
-    await DataSourceCursor(data_source_id=str(source.id), segment_key="stream").save()
-
-    assert await remove_orphan_row(str(source.id), "data_source")
-
-    assert await DataSource.get_by_id(source.id) is None
-    assert await DataSourceCursor.get_all({"data_source_id": str(source.id)}) == []
-
-
 async def test_boot_prunes_rows_with_no_file_and_keeps_the_rest(scope):
     kept = await _saved("kept")
     # A row from before sources were files: written straight to the table, with no folder.
     fileless = DataSource(name="legacy", provider=_Mailbox.provider, config={"address": "old@x.test"})
     await DBEntity.save(fileless)
-    await DataSourceCursor(data_source_id=str(fileless.id), segment_key="stream").save()
 
     assert await prune_fileless_data_sources() >= 1
 
     assert await DataSource.get_by_id(kept.id) is not None
     assert await DataSource.get_by_id(fileless.id) is None
-    assert await DataSourceCursor.get_all({"data_source_id": str(fileless.id)}) == []
 
 
 async def test_deleting_a_source_removes_its_folder_so_no_index_brings_it_back(scope):

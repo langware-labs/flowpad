@@ -17,7 +17,7 @@ The token lives in the request path, so an error message never carries it.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, ClassVar, Optional
+from typing import Any, AsyncGenerator, ClassVar, Mapping, Optional
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source, positive_int
@@ -36,16 +36,14 @@ from flow_sdk.sources.errors import (
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
-from flow_sdk.sources.values.query import DataQuery
-from flow_sdk.sources.values.segment import SegmentRef
 
 DEFAULT_BASE_URL = "https://api.telegram.org"
 #: Updates per page; the committed offset does the rest.
 PAGE_LIMIT = 100
 #: Telegram's hard cap for one ``sendMessage`` text.
 MAX_TEXT_LEN = 4096
-#: The queue is one stream, not per-chat.
-UPDATES_SEGMENT = "updates"
+#: The queue is one stream, not per-chat: every origin is scoped under it.
+UPDATES_STREAM = "updates"
 _OFFSET = "offset:"
 
 
@@ -85,16 +83,12 @@ class TelegramSource(Source):
         return f"{_OFFSET}{int(offset)}"
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
-        return super().origin(key, *(within or (UPDATES_SEGMENT,)))
+        return super().origin(key, *(within or (UPDATES_STREAM,)))
 
     def chat_origin(self, chat_id: str, topic: str = "") -> CloudOrigin:
         return self.origin(f"{chat_id}/{topic}" if topic else chat_id)
 
     # ── what the application asks ───────────────────────────────────────────
-    @classmethod
-    def lift_cursor(cls, state: dict) -> Optional[str]:
-        return cls.resume_at(state["next_offset"]) if state.get("next_offset") else None
-
     @classmethod
     def outbound_spec(cls) -> type:
         from flow_sdk.builtin.source_item import TelegramMessageSpec  # noqa: PLC0415
@@ -126,17 +120,16 @@ class TelegramSource(Source):
             await self._client.aclose()
             self._client = None
 
-    async def segments(self) -> list[SegmentRef]:
-        self._token()  # a missing token is a person's to fix, before any cursor exists
-        return [SegmentRef(key=UPDATES_SEGMENT, label="updates")]
-
     # ── read ────────────────────────────────────────────────────────────────
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    def query(self) -> None:
+        """The update queue is the whole bot: it takes no query, so nothing narrows it."""
+        return None
+
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
-        if query is not None:
-            raise Unsupported("the Telegram update queue takes no query")
+        self.effective_query(narrow)  # the queue takes no query: any narrowing is refused
         limit = min(PAGE_LIMIT if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE), PAGE_LIMIT)
         offset = _offset(cursor)
         params: dict[str, Any] = {"timeout": 0, "limit": limit}
@@ -155,10 +148,12 @@ class TelegramSource(Source):
             resume_cursor=self.resume_at(after) if after else None,
         )
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[MessageItem, None]:
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[MessageItem, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:

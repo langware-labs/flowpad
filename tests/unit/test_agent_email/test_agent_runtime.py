@@ -62,7 +62,6 @@ async def test_prompt_refusal_is_checked_before_reply_capture(mail_db, monkeypat
     item = SourceItem(
         data_source_id=source.id,
         provider="cloud_email",
-        segment_key=agent.id,
         external_id=f"<{mint_uuid()}@example.com>",
         name="Question",
         body="Can you answer this?",

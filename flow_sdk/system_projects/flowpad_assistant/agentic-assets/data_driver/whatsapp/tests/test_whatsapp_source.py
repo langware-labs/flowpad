@@ -24,7 +24,6 @@ from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, Credentials
 from flow_sdk.sources.testing import Subject, checks_for
 
-MESSAGES_SEGMENT = asset_module("whatsapp").MESSAGES_SEGMENT
 WhatsAppSource = asset_module("whatsapp").WhatsAppSource
 digits = asset_module("whatsapp").digits
 wa_source = asset_module("whatsapp")
@@ -87,7 +86,7 @@ def _text(message_id: str, body: str, *, ts: str = "1789000000", **extra) -> dic
 
 def _items(payload):
     return [
-        envelope_of(e.item, data_source_id="ds-wa", provider="whatsapp", segment_key=MESSAGES_SEGMENT)
+        envelope_of(e.item, data_source_id="ds-wa", provider="whatsapp")
         for e in WhatsAppSource(_binding()).events_from_webhook(payload)
     ]
 
@@ -128,7 +127,7 @@ def test_a_number_is_read_in_one_spelling():
 
 
 async def test_fetch_reports_unchanged_because_there_is_nothing_to_poll():
-    result = await DataDriver.loaded("whatsapp").traverse(_source(), position(segment_key="messages", prior={}, window_start=None))
+    result = await DataDriver.loaded("whatsapp").traverse(_source(), position())
     assert result.unchanged is True and result.items == []
 
 

@@ -79,7 +79,7 @@ const CASES: Case[] = [
       type: 'application/xml',
       text: readFileSync(path.join(ASSETS, 'rss/tests/fixtures/atom.xml'), 'utf8').replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g, NOW_ISO),
     }),
-    config: () => ({ feed_urls: [`${base}/atom`] }),
+    config: () => ({ feed_url: `${base}/atom` }),
     minItems: 3,
   },
   {

@@ -86,7 +86,6 @@ def _item(**kw):
         data_source_id=str(uuid.uuid4()),
         provider="agent",
         kind="content.message.email",
-        segment_key="INBOX",
         external_id=f"<{uuid.uuid4().hex[:8]}@x>",
         name="Q3 planning",
         body="the actual body, living on the item",

@@ -32,7 +32,7 @@ def _dataset(ref: str) -> dict:
 
 # ── verbs ────────────────────────────────────────────────────────────────
 
-ITEM_FIELDS = ("id", "external_id", "name", "body", "author_display", "occurred_at", "permalink", "segment_label")
+ITEM_FIELDS = ("id", "external_id", "name", "body", "author_display", "occurred_at", "permalink")
 
 
 def cmd_sample(args) -> dict:

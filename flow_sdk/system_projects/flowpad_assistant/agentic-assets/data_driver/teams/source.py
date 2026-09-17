@@ -1,4 +1,4 @@
-"""``TeamsSource`` — the channel conversations a connected Microsoft account can see.
+"""``TeamsSource`` — one channel's conversations, as a connected Microsoft account sees them.
 
 Four facts about Graph decide the shape:
 
@@ -6,7 +6,7 @@ Four facts about Graph decide the shape:
   and a poll has no request user, which is why the Microsoft connection is a desktop grant whose
   refresh token the poller can spend.
 * **A channel is addressable only through its team,** and a channel id is not unique across teams.
-  A segment is the composite ``{teamId}/{channelId}``; origins are scoped by it.
+  The source's channel is the composite ``{teamId}/{channelId}``; origins are scoped by it.
 * **``/messages`` returns ROOTS; the conversation is in ``replies``.** ``$expand=replies`` brings a
   chain back in one request, which is what makes one page per pass enough. Teams has exactly two
   levels, so a message's conversation is always its root. ``page_size`` bounds conversations; a
@@ -25,9 +25,9 @@ import html
 import json
 import re
 from datetime import datetime, timezone
-from typing import Annotated, Any, AsyncGenerator, ClassVar, Optional, Union
+from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, Union
 
-from pydantic import Field, StringConstraints
+from pydantic import StringConstraints
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source, positive_int
@@ -46,8 +46,7 @@ from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
-from flow_sdk.sources.values.query import DataQuery, MessageQuery
-from flow_sdk.sources.values.segment import SegmentRef
+from flow_sdk.sources.values.query import MessageQuery
 
 #: Graph's own base. Overridable only so a test can point at a local double.
 GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
@@ -75,7 +74,9 @@ class TeamsMessageData(MessageData):
 class TeamsConfig(SourceConfig):
     """What a teams source is configured with."""
 
-    channels: list[Union[Annotated[str, StringConstraints(pattern=r"^[^/\s]+/19:[^/\s]+$")], ChoiceEntry]] = Field(min_length=1)
+    retired_list = ("channels", "channel")
+
+    channel: Union[Annotated[str, StringConstraints(pattern=r"^[^/\s]+/19:[^/\s]+$")], ChoiceEntry]
 
 
 class TeamsSource(Source):
@@ -85,8 +86,8 @@ class TeamsSource(Source):
     durable_cursor = True
     page_size = MESSAGE_PAGE
     pages_per_pass = 1
-    #: A Teams source is ABOUT its channels; each entry is ``{teamId}/{channelId}``.
-    identity_config_key = "channels"
+    #: A Teams source is ABOUT its channel, the composite ``{teamId}/{channelId}``.
+    identity_config_key = "channel"
     connection = "microsoft"
 
     def __init__(self, binding: SourceBinding) -> None:
@@ -99,28 +100,23 @@ class TeamsSource(Source):
         return _RESUME + created
 
     @property
-    def channels(self) -> list[tuple[str, str]]:
-        entries = self.config.get("channels") or []
-        if isinstance(entries, str):
-            entries = [line for line in entries.splitlines() if line.strip()]
-        out: list[tuple[str, str]] = []
-        for entry in entries:
-            key = str((entry.get("id") if isinstance(entry, dict) else entry) or "").strip()
-            if key:
-                out.append((key, str(entry.get("name") or key) if isinstance(entry, dict) else key))
-        return out
+    def channel(self) -> tuple[str, str]:
+        """``(composite id, label)`` of the configured channel; ``("", "")`` when none is."""
+        entry = self.config.get("channel") or ""
+        key = str((entry.get("id") if isinstance(entry, dict) else entry) or "").strip()
+        return (key, (str(entry.get("name") or key) if isinstance(entry, dict) else key)) if key else ("", "")
+
+    def query(self) -> MessageQuery:
+        key = self.channel[0]
+        return MessageQuery(conversation=self.channel_origin(key) if key else None)
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
-        return super().origin(key, *(within or [key for key, _ in self.channels[:1]]))
+        return super().origin(key, *(within or ([self.channel[0]] if self.channel[0] else [])))
 
-    def channel_origin(self, segment: str) -> CloudOrigin:
-        return self.origin(split_segment(segment)[1], segment)
+    def channel_origin(self, container: str) -> CloudOrigin:
+        return self.origin(split_channel(container)[1], container)
 
     # ── what the application asks ───────────────────────────────────────────
-    @classmethod
-    def lift_cursor(cls, state: dict) -> Optional[str]:
-        return cls.resume_after(state["last_created"]) if state.get("last_created") else None
-
     @classmethod
     def outbound_spec(cls) -> type:
         from flow_sdk.builtin.source_item import TeamsMessageSpec  # noqa: PLC0415
@@ -131,13 +127,13 @@ class TeamsSource(Source):
         """``to`` is the composite ``{teamId}/{channelId}`` (a Teams thread key is a bare message id
         and names no channel); ``thread_key`` is the ROOT the post goes under. Without one it is a new
         root, and only then does ``subject`` mean anything. Graph posts as the connected user."""
-        segment = str(to or "").strip()
-        if not all(split_segment(segment)):
+        container = str(to or "").strip()
+        if not all(split_channel(container)):
             raise ValueError("a teams send needs `{teamId}/{channelId}` in `to`")
         if not (text or "").strip():
             raise ValueError("a teams send needs text")
         root = str(thread_key or "").strip() or str(in_reply_to or "").strip()
-        conversation = self.origin(root, segment) if root else self.channel_origin(segment)
+        conversation = self.origin(root, container) if root else self.channel_origin(container)
         return TeamsMessageData(text=text, subject=None if root else (subject or None), conversation=conversation), None
 
     async def _open(self) -> None:
@@ -148,29 +144,23 @@ class TeamsSource(Source):
             await self._client.aclose()
             self._client = None
 
-    async def segments(self) -> list[SegmentRef]:
-        return [SegmentRef(key=key, label=label, query=MessageQuery(conversation=self.channel_origin(key))) for key, label in self.channels]
-
     # ── read ────────────────────────────────────────────────────────────────
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
-        if query is not None and not isinstance(query, MessageQuery):
-            raise Unsupported(f"TeamsSource does not support {type(query).__name__}")
+        query = self.effective_query(narrow)
         limit = min(self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE), 50)
-        conversation = query.conversation if query is not None and query.conversation else None
-        if conversation is None and self.channels:
-            conversation = self.channel_origin(self.channels[0][0])
+        conversation = query.conversation
         if conversation is None:
             if cursor is not None:
                 raise InvalidCursor("this source has no channel to continue")
             return ChangePage(items=())
-        segment, root = self._where(conversation)
-        if segment == CHATS or root is not None:
+        container, root = self._where(conversation)
+        if container == CHATS or root is not None:
             raise Unsupported("reading one Teams thread or chat is not supported")
         since, newest, link = _start(query, cursor)
-        team, channel = split_segment(segment)
+        team, channel = split_channel(container)
         body = await self._graph("GET", link) if link else await self._graph(
             "GET", f"teams/{team}/channels/{channel}/messages", params={"$top": str(limit), "$expand": "replies"}
         )
@@ -182,7 +172,7 @@ class TeamsSource(Source):
                     continue
                 newest = max(newest or "", created)
                 if message.get("messageType") not in NOT_A_MESSAGE and message.get("id"):
-                    items.append(self._item(segment, message_root, message))
+                    items.append(self._item(container, message_root, message))
         more = str(body.get("@odata.nextLink") or "")
         return ChangePage(
             items=tuple(items),
@@ -190,62 +180,63 @@ class TeamsSource(Source):
             resume_cursor=_RESUME + newest if newest else None,
         )
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[MessageItem, None]:
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[MessageItem, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:
                 return
 
-    def _item(self, segment: str, root: dict, message: dict) -> MessageItem:
+    def _item(self, container: str, root: dict, message: dict) -> MessageItem:
         message_id, root_id = str(message["id"]), str(root.get("id") or message["id"])
         sender = (message.get("from") or {}).get("user") or {}
         replied = str(message.get("replyToId") or "")
         data = TeamsMessageData(
             text=plain_text(message.get("body") or {}),
             subject=str(root.get("subject") or "") or None,
-            conversation=self.origin(root_id, segment),
-            sender=UserProfile(origin=self.origin(str(sender["id"]), segment), name=str(sender.get("displayName") or "") or None) if sender.get("id") else None,
+            conversation=self.origin(root_id, container),
+            sender=UserProfile(origin=self.origin(str(sender["id"]), container), name=str(sender.get("displayName") or "") or None) if sender.get("id") else None,
             sent_at=_when(message.get("createdDateTime")),
-            in_reply_to=self.origin(replied, segment) if replied else None,
+            in_reply_to=self.origin(replied, container) if replied else None,
             raw=message,
         )
-        origin = self.origin(message_id, segment)
+        origin = self.origin(message_id, container)
         link = str(message.get("webUrl") or "")
         return MessageItem(origin=origin.model_copy(update={"url": link}) if link else origin, data=data)
 
     # ── setup ───────────────────────────────────────────────────────────────
     async def verify(self) -> Verdict:
-        """All-or-nothing across the channels, each asked for ONE message."""
-        if not self.channels:
-            return Verdict(ready=False, detail="No channels selected yet — pick at least one for this source to read.")
+        """The channel asked for ONE message."""
+        key, label = self.channel
+        if not key:
+            return Verdict(ready=False, detail="No channel selected yet — pick one for this source to read.")
         if self.credentials.token is None:
             return Verdict(ready=False, detail="No Microsoft credential is available on this machine yet. Connect Microsoft first.")
-        outcomes = await asyncio.gather(*(self._probe(key) for key, _ in self.channels))
-        if any(isinstance(outcome, AccessDenied) for outcome in outcomes):
+        outcome = await self._probe(key)
+        if isinstance(outcome, AccessDenied):
             return Verdict(
                 ready=False,
                 detail="Microsoft refused to read the channel. The connection is missing the `ChannelMessage.Read.All` "
                 "permission, or a tenant admin has not consented to it — reconnect after an admin grants it.",
             )
-        blocked = next((o for o in outcomes if o is not None and not isinstance(o, NotFound)), None)
-        if blocked is not None:
-            return Verdict(ready=False, detail=f"Microsoft refused the request: {blocked}")
-        pending = tuple(key for (key, _), outcome in zip(self.channels, outcomes) if isinstance(outcome, NotFound))
-        if pending:
+        if isinstance(outcome, NotFound):
             return Verdict(
                 ready=False,
-                detail=f"Cannot see {', '.join(pending)}. Join the team (or check the team/channel ids), then press Verify again.",
-                pending=pending,
+                detail=f"Cannot see {key}. Join the team (or check the team/channel ids), then press Verify again.",
+                pending=(key,),
             )
-        return Verdict(ready=True, detail=f"Reading {len(self.channels)} channel(s).")
+        if outcome is not None:
+            return Verdict(ready=False, detail=f"Microsoft refused the request: {outcome}")
+        return Verdict(ready=True, detail=f"Reading {label}.")
 
-    async def _probe(self, segment: str) -> Optional[Exception]:
-        team, channel = split_segment(segment)
+    async def _probe(self, container: str) -> Optional[Exception]:
+        team, channel = split_channel(container)
         if not (team and channel):
-            return NotFound(f"`{segment}` is not `{{teamId}}/{{channelId}}`")
+            return NotFound(f"`{container}` is not `{{teamId}}/{{channelId}}`")
         try:
             await self._graph("GET", f"teams/{team}/channels/{channel}/messages", params={"$top": "1"})
         except (AccessDenied, NotFound, Rejected, SourceUnavailable) as exc:
@@ -260,7 +251,7 @@ class TeamsSource(Source):
     async def choices(self, field: str) -> list[dict]:
         """Two levels, because Graph has no "every channel I can see": the joined teams, then each
         team's channels. The id offered is the composite a fetch can address."""
-        if field != "channels":
+        if field != "channel":
             return []
         teams = [(str(t["id"]), str(t.get("displayName") or t["id"])) for t in (await self._graph("GET", "me/joinedTeams")).get("value") or [] if t.get("id")]
         listings = await asyncio.gather(*(self._graph("GET", f"teams/{team_id}/channels") for team_id, _ in teams))
@@ -289,28 +280,28 @@ class TeamsSource(Source):
             chat = await self._graph("POST", "chats", json={"chatType": "oneOnOne", "members": members})
             chat_id = str(chat.get("id") or "")
             return await self._post(f"chats/{chat_id}/messages", data, self.origin(chat_id, CHATS), CHATS)
-        segment, root = self._where(data.conversation)
-        if segment == CHATS:
+        container, root = self._where(data.conversation)
+        if container == CHATS:
             return await self._post(f"chats/{data.conversation.key}/messages", data, data.conversation, CHATS)
-        team, channel = split_segment(segment)
+        team, channel = split_channel(container)
         path = f"teams/{team}/channels/{channel}/messages" + (f"/{root}/replies" if root else "")
-        return await self._post(path, data, data.conversation, segment, subject=None if root else getattr(data, "subject", None))
+        return await self._post(path, data, data.conversation, container, subject=None if root else getattr(data, "subject", None))
 
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:
         self._require_open()
         _check_outgoing(data)
         if data.conversation is not None or data.recipients:
             raise ValueError("a reply is routed from the message it answers; leave conversation and recipients empty")
-        segment, message_id = self._where(origin)
-        if segment == CHATS or message_id is None:
+        container, message_id = self._where(origin)
+        if container == CHATS or message_id is None:
             raise NotFound(f"{origin!r} names no channel message", origin=origin)
-        team, channel = split_segment(segment)
+        team, channel = split_channel(container)
         answered = await self._graph("GET", f"teams/{team}/channels/{channel}/messages/{message_id}")
         root = str(answered.get("replyToId") or answered.get("id") or message_id)
-        sent = await self._post(f"teams/{team}/channels/{channel}/messages/{root}/replies", data, self.origin(root, segment), segment)
+        sent = await self._post(f"teams/{team}/channels/{channel}/messages/{root}/replies", data, self.origin(root, container), container)
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": origin}))
 
-    async def _post(self, path: str, data: MessageData, conversation: CloudOrigin, segment: str, *, subject: Optional[str] = None) -> MessageItem:
+    async def _post(self, path: str, data: MessageData, conversation: CloudOrigin, container: str, *, subject: Optional[str] = None) -> MessageItem:
         payload: dict[str, Any] = {"body": {"contentType": "text", "content": data.text}}
         if subject:
             payload["subject"] = subject
@@ -319,12 +310,12 @@ class TeamsSource(Source):
         if not message_id:
             raise OutcomeUnknown("Microsoft accepted the post but returned no id for it")
         sent = MessageData(text=data.text, conversation=conversation, sent_at=_when(body.get("createdDateTime")))
-        return MessageItem(origin=self.origin(message_id, segment), data=sent)
+        return MessageItem(origin=self.origin(message_id, container), data=sent)
 
     # ── transport ───────────────────────────────────────────────────────────
     def _where(self, origin: object) -> tuple[str, Optional[str]]:
-        """``(segment, message id)`` an origin names; ``None`` for a channel itself. A chat is the
-        ``chats`` segment, keyed by its chat id."""
+        """``(container, message id)`` an origin names; ``None`` for a channel itself. A chat's
+        container is ``chats``, keyed by its chat id."""
         if not isinstance(origin, CloudOrigin):
             raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
         account = self.binding.account_key
@@ -332,7 +323,7 @@ class TeamsSource(Source):
         rest = origin.namespace[len(prefix):] if origin.kind == self._scope.kind and origin.namespace.startswith(prefix) else ""
         if rest == CHATS:
             return CHATS, origin.key
-        team, channel = split_segment(rest)
+        team, channel = split_channel(rest)
         if not (team and channel):
             raise ValueError(f"{origin!r} is outside this source's scope")
         return rest, None if origin.key == channel else origin.key
@@ -362,10 +353,10 @@ class TeamsSource(Source):
         return body if isinstance(body, dict) else {}
 
 
-def split_segment(segment: str) -> tuple[str, str]:
+def split_channel(container: str) -> tuple[str, str]:
     """``{teamId}/{channelId}`` → its halves, or two empties. A channel id holds a colon and an
     ``@`` but never a slash, so one split is unambiguous."""
-    team, _, channel = str(segment or "").strip().partition("/")
+    team, _, channel = str(container or "").strip().partition("/")
     return (team, channel) if team and channel else ("", "")
 
 
@@ -421,4 +412,4 @@ def _when(value: Any) -> Optional[datetime]:
         return None
 
 
-__all__ = ["GRAPH_API_BASE", "MESSAGE_PAGE", "TeamsMessageData", "TeamsSource", "plain_text", "split_segment"]
+__all__ = ["GRAPH_API_BASE", "MESSAGE_PAGE", "TeamsMessageData", "TeamsSource", "plain_text", "split_channel"]

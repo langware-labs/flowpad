@@ -25,14 +25,14 @@ def _name() -> str:
 
 
 async def _source() -> DataSource:
-    src = DataSource(name=f"feed {uuid.uuid4().hex[:8]}", provider="rss", config={"feed_urls": ["http://x/feed"]})
+    src = DataSource(name=f"feed {uuid.uuid4().hex[:8]}", provider="rss", config={"feed_url": "http://x/feed"})
     await src.save()
     return src
 
 
 async def _item(src: DataSource, n: int, *, created: datetime | None = None) -> SourceItem:
     item = SourceItem(
-        data_source_id=str(src.id), segment_key="s", external_id=f"e{n}",
+        data_source_id=str(src.id), external_id=f"e{n}",
         provider="rss", name=f"item {n}", body=f"body {n}",
     )
     await item.save(notify=False)

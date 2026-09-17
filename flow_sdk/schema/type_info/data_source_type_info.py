@@ -1,4 +1,4 @@
-"""Type metadata for DATA_SOURCE and DATA_SOURCE_CURSOR.
+"""Type metadata for DATA_SOURCE and the rows keyed to it.
 
 **DataSource is an asset** — an entity document at
 ``<scope>/agentic-assets/data_source/<name>/data_source.json``: which data driver, with which config,
@@ -6,10 +6,6 @@ owned by whom. The file holds only what a person authors (``DataSourceSpec``); w
 learns while it runs (status, health, the next poll, identities) is row-only, so a poll never
 rewrites the file. The file is the truth: a row with no file is removed, with everything it
 ingested (``orphan_cascade_fn``).
-
-**DataSourceCursor is Tier C (``db_only``)** — it is written on every poll of
-every stream. Giving it a disk mirror would mean a filesystem write per stream
-per minute forever, for state no human reads and no search should return.
 """
 from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.schema_registry import ENTITY_LAYOUT, TypeInfo
@@ -18,7 +14,7 @@ from flow_sdk.schema.types import EntityType
 
 
 async def _cascade_data_source(entity_id: str) -> None:
-    """What a data source ingested goes with it: records, cursors, positions, changes, projections."""
+    """What a data source ingested goes with it: records, positions, changes, projections."""
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415 — the type info loads before the class
 
     await DataSource.delete_children_of(entity_id)
@@ -47,14 +43,8 @@ DATA_SOURCE = TypeInfo(
     orphan_cascade_fn=_cascade_data_source,
 )
 
-DATA_SOURCE_CURSOR = TypeInfo(
-    type_name=EntityType.DATA_SOURCE_CURSOR,
-    icon="Bookmark",
-    api_visible=True,
-    db_only=True,
-)
-
-# The consumer-side cursor: same shape, same reasons, one level up.
+# The consumer-side cursor. Tier C (``db_only``): written on every drain, so a disk mirror would be a
+# filesystem write per poll forever, for state no human reads and no search should return.
 CONSUMER_POSITION = TypeInfo(
     type_name=EntityType.CONSUMER_POSITION,
     icon="Bookmark",

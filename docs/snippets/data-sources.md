@@ -4,8 +4,8 @@ version: 2
 ---
 # Data sources — snippets
 
-A data source is one remote account or tree Flowpad syncs from, configured on
-a driver. It is a `DataSource`, and an asset: `save()` writes
+A data source is one stream Flowpad syncs from — one feed, one channel, one
+mailbox, one tree — configured on a driver. Watching three feeds is three sources. It is a `DataSource`, and an asset: `save()` writes
 `agentic-assets/data_source/<name>/data_source.json` into the current project
 (the user scope outside one), and nothing is on disk before that. Every item it
 produces is a `SourceItem`; one cycle is one verb,
@@ -26,7 +26,7 @@ from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.source_item import SourceItem
 
 driver = await DataDriver.get("rss")
-config = driver.create_config(feed_urls=[FEED_URL])  # optional: validates now; a plain dict is validated on save()
+config = driver.create_config(feed_url=FEED_URL)  # optional: validates now; a plain dict is validated on save()
 src = driver.create_source(config, name="Hacker News front page")
 await src.save()  # writes data_source.json; NEW → ACTIVE; channel and origin stamped
 
@@ -48,21 +48,21 @@ The config keys are the manifest's, one dict per provider:
 
 | provider      | config                                                               | account key             | secret (never config)                   |
 | ------------- | -------------------------------------------------------------------- | ----------------------- | --------------------------------------- |
-| `rss`         | `feed_urls: list[str]`                                               | —                       | —                                       |
+| `rss`         | `feed_url: str`                                                      | —                       | —                                       |
 | `hackernews`  | `types`, `min_score`, `base_url` (all optional)                      | —                       | —                                       |
 | `folder`      | `root: str`                                                          | `root`                  | —                                       |
 | `git`         | `repo: str`, `branch`                                                | `repo`                  | —                                       |
 | `agentmail`   | `inbox`, `base_url`                                                  | `inbox`                 | machine secret `ingest_api.agentmail`   |
 | `telegram`    | `base_url`                                                           | stamped from `getMe`    | `telegram` pack: `TELEGRAM_BOT_TOKEN`   |
-| `slack`       | `channels: list[str]`                                                | `channels` (membership) | the Slack connection                    |
-| `gdrive`      | `drives`, `cache_root`, `base_url`                                   | —                       | the Google connection                   |
-| `gcs`         | `bucket`, `project`, `prefixes`, `cache_root`, `base_url`            | `bucket`                | the Google connection                   |
+| `slack`       | `channel` (one id, or a picked `{id, name}`), `allowed_senders`      | `channel`               | the Slack connection                    |
+| `gdrive`      | `drive` (empty = My Drive), `cache_root`, `base_url`                 | —                       | the Google connection                   |
+| `gcs`         | `bucket`, `project`, `prefix`, `cache_root`, `base_url`              | `bucket`                | the Google connection                   |
 | `gmail`       | `address`                                                            | `address`               | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`   |
 | `cloud_email` | `address` (`agent_id` is filled from the owner)                      | `agent_id`              | —                                       |
-| `agent`       | `connector`, `harness`, `segments`, `agent`, `subagent`, `max_items` | `connector`             | the harness's own                       |
+| `agent`       | `connector`, `harness`, `mailbox`, `agent`, `subagent`, `max_items`  | `connector`             | the harness's own                       |
 
 Each driver declares its config as a typed `Config` in its `source.py`: `save()` of a new source
-validates it whole (`ValueError: config.feed_urls is required`) and shapes what you typed (`"5"`
+validates it whole (`ValueError: config.feed_url is required`) and shapes what you typed (`"5"`
 becomes `5`, a newline string a list). A secret is never config — `data_source.json` is a file a
 project may share — so it lives in the store the driver's `auth` names.
 
@@ -160,7 +160,6 @@ items = [
         data_source_id=src.id,
         provider="agent",
         kind="content.message.email",
-        segment_key="INBOX",
         external_id="msg-42",          # provider-native, stable
         name="Invoice #42",
         body="Please find attached...",
@@ -172,8 +171,8 @@ report = await ingest_items(items, mode=IngestMode.INCREMENTAL)
 report.outcomes                    # one per item: created | updated | unchanged
 ```
 
-Five header fields mint identity: `data_source_id`, `provider`, `kind`,
-`segment_key`, `external_id`. A missing one raises by name; an unknown key
+Four header fields mint identity: `data_source_id`, `provider`, `kind`,
+`external_id` (lifted into the item's `origin`). A missing one raises by name; an unknown key
 (`subject` instead of `name`) raises rather than landing as an empty column.
 
 Same thing from a worker, over the write route:
@@ -193,9 +192,9 @@ row; the HTTP route of the same name is a thin wrapper over it. Pinned by
 await src.verify()          # connection + setup probe → status ACTIVE or SETUP
 await src.poll_now()        # mark due; the heartbeat picks it up within 60s
 await src.replay(since=None)   # re-emit item events from what is stored
-await src.reset_cursors()   # forget high-water marks, keep rows
+await src.reset()           # forget the position (cursor), keep rows
 await src.purge_items()     # drop rows AND their read/starred state
-await src.delete()          # cascade: cursors, items, projected messages
+await src.delete()          # cascade: items, projected messages
 ```
 
 Read the row before poking it. `poll_now` clears `health`, `error_code` and
@@ -206,12 +205,14 @@ from flow_sdk.builtin.data_source import DataSource
 
 src = await DataSource.get_one({"id": src.id})
 src.status, src.health, src.error_code, src.last_synced_at, src.next_poll_at
+src.cursor, src.consecutive_failures  # where the next pass starts; failed passes in a row
 ```
 
 `status` is the lifecycle (`new`, `setup`, `active`, `disabled`, plus the
 `parked` latch after repeated failures);
 `health` is the last cycle's verdict (`never_synced`, `ok`, `transient_error`,
-`config_error`). One segment in `config_error` parks the whole source today.
+`config_error`). A failed pass never moves `cursor`; `config_error` parks the
+source until `poll_now` un-latches it.
 
 ## 8. Reply through the source
 
@@ -261,14 +262,14 @@ back to a plain text input carrying `picks.detail`, and never blocks a save.
 
 `choices_for` answers `None` for a provider that does not exist or a field its manifest
 never marked — that is the form asking about something it had no business asking about,
-and it is a caller bug rather than a refusal. `type` still decides the shape: `text` picks
-one, `lines` picks many.
+and it is a caller bug rather than a refusal. A source reads one stream, so a pick is one
+value; picking three channels in the Add Source dialog creates three sources.
 
 | provider | field      | what it lists                                                        |
 | -------- | ---------- | -------------------------------------------------------------------- |
 | `gcs`    | `bucket`   | buckets in `config.project` — the project is read for THIS call only |
-| `gdrive` | `drives`   | the shared drives the Google account can see                         |
-| `slack`  | `channels` | every channel the token can see, joined or not                       |
+| `gdrive` | `drive`    | the shared drives the Google account can see                         |
+| `slack`  | `channel`  | every channel the token can see, joined or not                       |
 
 ## 10. A source behind a connection: Google Drive
 
@@ -288,7 +289,7 @@ from flow_sdk.ingest.reflect import ReflectMode
 
 driver = await DataDriver.get("gdrive")
 src = driver.create_source(
-    driver.create_config(cache_root=CACHE_ROOT, base_url=BASE_URL),  # `drives=[...]` for shared drives; empty = My Drive
+    driver.create_config(cache_root=CACHE_ROOT, base_url=BASE_URL),  # `drive=...` for a shared drive; empty = My Drive
     name="My Drive",
     reflect=ReflectMode.COPY.value,
     reflect_into=DESTINATION,
@@ -309,3 +310,55 @@ Drive's own folder names and are reflected into `reflect_into` like a folder
 source's. The report's `created`/`updated` count *records*, so they stay 0 for
 a file source: look at the tree. Leave `base_url` out in real use; it exists so
 a test can point the source at a loopback Drive.
+
+## 11. Consume a source yourself
+
+`sync()` is pages → ingest → ack. The same loop is yours when you want the items without
+the graph: the source owns its query (its config) and its position (`cursor`), so neither
+is an argument. Pinned by `tests/unit/test_data_sources_snippets.py`.
+
+```python
+async with await src.open() as live:
+    async for page in live.pages(page_size=50):  # from the stored position, 50 items a page
+        for item in page.items:
+            item.origin.key
+        await page.ack()  # the next read starts after this page; un-acked = read again
+
+    notes = [item async for item in live.items(prefix="notes/")]  # narrows the query; the position does not move
+
+await src.reset()  # cursor = None: the next read starts from the beginning
+```
+
+`items(**narrow)` accepts the fields of the source's own query — `prefix` for a tree, `since`
+for a message source (`live.items(since=yesterday)`) — and refuses one the query does not have
+(`ValueError`).
+
+## 12. Read two sources as one
+
+`merge(*sources)` opens several sources as one session. Nothing is stored: a page is always ONE
+source's (`page.source`) and acks that source's cursor; `items(**narrow)` narrows every source's
+query and interleaves by event time; a reply goes back through the source whose scope owns the
+item's origin. Pinned by `tests/unit/test_data_sources_snippets.py`.
+
+```python
+from flow_sdk.ingest.session import merge
+
+async with await merge(notes, docs).open() as live:
+    async for page in live.pages(page_size=50):
+        seen = {page.source.name: len(page)}
+        await page.ack()                                   # moves that source's cursor only
+
+    recent = [item async for item in live.items(prefix="2026/")]   # narrowed on every source; no position moves
+    owner = live.source_of(recent[0])                      # the source whose scope owns the item's origin
+```
+
+```python
+from flow_sdk.ingest.session import merge
+
+async with await merge(support, sales).open() as live:
+    async for m in live.items():
+        await live.reply(m, body="on it")                  # through the source m came from, in its own shape
+```
+
+There is no `merged.send`: a new message needs a channel, so call `send` on the source you mean.
+A push-only source has no pages to read and is refused at `open()`.

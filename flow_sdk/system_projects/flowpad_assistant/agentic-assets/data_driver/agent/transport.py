@@ -56,7 +56,7 @@ DEFAULT_SEND_DEADLINE_SECONDS = 120
 class HarnessWorker:
     """The ``WorkerTransport`` the ``agent`` source is handed on this machine."""
 
-    async def fetch(self, *, source_id: str, name: str, config: Mapping[str, Any], segment_key: str, since: str) -> dict:
+    async def fetch(self, *, source_id: str, name: str, config: Mapping[str, Any], mailbox: str, since: str) -> dict:
         harness = config.get("harness") or None
         deadline = int(config.get("deadline_seconds") or DEFAULT_DEADLINE_SECONDS)
         target = f"data_source:{source_id}"
@@ -67,7 +67,7 @@ class HarnessWorker:
             raise problem.as_source_error()
         async with _slots:
             try:
-                return await asyncio.wait_for(self._run_fetch(source_id, name, config, harness, segment_key, since), timeout=deadline)
+                return await asyncio.wait_for(self._run_fetch(source_id, name, config, harness, mailbox, since), timeout=deadline)
             except asyncio.TimeoutError:
                 error = LaunchError.transient(LaunchErrorCode.TIMEOUT, f"the worker did not finish within {deadline}s", str(harness or ""))
                 emit_launch_failed(error, target)
@@ -115,7 +115,7 @@ class HarnessWorker:
 
     # ── the spawn ─────────────────────────────────────────────────────────────
 
-    async def _run_fetch(self, source_id: str, name: str, config: Mapping[str, Any], harness: Any, segment_key: str, since: str) -> dict:
+    async def _run_fetch(self, source_id: str, name: str, config: Mapping[str, Any], harness: Any, mailbox: str, since: str) -> dict:
         """Launch through the NAMED agent, the way every preset launch does, so the Agent's persona
         (worker, model, permission mode, subagents) is what runs."""
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
@@ -128,7 +128,7 @@ class HarnessWorker:
             raise SourceError.config("unknown_agent", str(exc)) from exc
         row = SimpleNamespace(id=source_id)
         options: dict[str, Any] = {
-            "name": f"ingest {name or source_id[:8]} · {segment_key}",
+            "name": f"ingest {name or source_id[:8]} · {mailbox}",
             "visible": False,
             # The run's only handle: an ingest worker has no spawning entity to browse from.
             "context_data": ingest_run_context(row),
@@ -139,7 +139,7 @@ class HarnessWorker:
         base = execution_base(proc)
         (base / "output").mkdir(parents=True, exist_ok=True)
         receipt_path = base / "output" / RECEIPT_FILENAME
-        instruction = fetch_instruction(row, config, receipt_path, segment_key=segment_key, since=since)
+        instruction = fetch_instruction(row, config, receipt_path, mailbox=mailbox, since=since)
         proc.instruction_content = instruction
         await proc.save()
         response = await proc.prompt(instruction)
@@ -233,14 +233,14 @@ def _subagent_prompt(name: str) -> str:
         return ""
 
 
-def fetch_instruction(source: Any, config: Mapping[str, Any], receipt_path: Any, *, segment_key: str, since: str) -> str:
+def fetch_instruction(source: Any, config: Mapping[str, Any], receipt_path: Any, *, mailbox: str, since: str) -> str:
     """The subagent markdown leads; only the per-run addendum is built here. The CLI is named by
     ABSOLUTE path: a stale ``flow`` on the worker's PATH once shadowed this backend's."""
     body = _subagent_prompt(str(config.get("subagent") or profile_of(config).subagent))
     flow_cli = Path(sys.executable).parent / "flow"
     run_lines = [
         *_run_prefix(source, config),
-        f"- {profile_of(config).segment_noun} (`segment_key`): `{segment_key}`",
+        f"- {profile_of(config).mailbox_noun}: `{mailbox}`",
         f"- fetch messages newer than: `{since or '(no floor — fetch the most recent)'}`",
         f"- record at most {int(config.get('max_items') or 25)} messages, newest first",
         *_run_suffix(receipt_path, flow_cli),

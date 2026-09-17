@@ -91,8 +91,8 @@ def _row(mail, **config):
                            config={"inbox": INBOX, "base_url": mail.base, **config})
 
 
-def _view(state=None):
-    return position(segment_key=INBOX, prior=state or {}, window_start=None)
+def _view(prior=None, *, cursor=None):
+    return position(prior, cursor=cursor)
 
 
 @pytest.mark.parametrize("check", checks_for(AgentMailSource), ids=str)
@@ -113,12 +113,13 @@ class TestTheSource:
         driver = DataDriver.loaded("agentmail")
         assert driver.sends is True and driver.channel_for(_row(mail)) == "agentmail"
 
-    async def test_one_inbox_is_one_segment(self, mail):
-        assert [s.key for s in await DataDriver.loaded("agentmail").segments(_row(mail))] == [INBOX]
+    def test_the_query_is_the_whole_inbox(self, mail):
+        query = AgentMailSource(SourceBinding(config={"inbox": INBOX, "base_url": mail.base})).query()
+        assert (query.conversation, query.since) == (None, None)
 
     async def test_a_missing_inbox_is_a_config_error(self, mail):
         with pytest.raises(Exception) as caught:
-            await DataDriver.loaded("agentmail").segments(_row(mail, inbox=""))
+            await DataDriver.loaded("agentmail").traverse(_row(mail, inbox=""), _view())
         assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
 
 
@@ -137,13 +138,9 @@ class TestMapping:
 class TestCursor:
     async def test_only_what_is_newer_than_the_high_water_returns(self, mail):
         mail.messages = [MSG, {**MSG, "message_id": "<old@x>", "timestamp": "2026-08-01T00:00:00.000Z"}]
-        result = await DataDriver.loaded("agentmail").traverse(_row(mail), _view({"cursor": AgentMailSource.resume_after("2026-08-02T00:00:00.000Z")}))
+        result = await DataDriver.loaded("agentmail").traverse(_row(mail), _view(cursor=AgentMailSource.resume_after("2026-08-02T00:00:00.000Z")))
         assert [i.external_id for i in result.items] == ["<abc@email.amazonses.com>"]
         assert result.cursor == AgentMailSource.resume_after(MSG["timestamp"])
-
-    async def test_a_legacy_high_water_is_adopted(self, mail):
-        result = await DataDriver.loaded("agentmail").traverse(_row(mail), _view({"high_water": MSG["timestamp"]}))
-        assert result.items == [] and result.unchanged is True
 
     async def test_nothing_new_is_reported_unchanged(self, mail):
         mail.messages = []

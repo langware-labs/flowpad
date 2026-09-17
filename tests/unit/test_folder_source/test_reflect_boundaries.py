@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.ingest import reflect
 from flow_sdk.ingest.reflect import (
@@ -65,7 +66,7 @@ async def test_the_driver_produces_refs_and_never_items(folder_db, watched, make
     source, _project = await make_source(ReflectMode.NONE.value)
     driver = DataDriver.loaded("folder")
 
-    result = await driver.traverse(source, position(segment_key="root", prior={}))
+    result = await driver.traverse(source, position())
 
     assert result.refs, "driver produced no refs"
     assert result.items == [], "a file source must not produce IngestItems"
@@ -104,19 +105,12 @@ async def test_polling_converges_to_quiet(folder_db, watched, make_source):
     write_doc(watched)
     source, _project = await make_source(ReflectMode.NONE.value)
 
-    from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-    from tests.unit._ingest_helpers import position
-
     driver = DataDriver.loaded("folder")
 
     async def probe_is_quiet() -> bool:
-        cursor = await DataSourceCursor.get_one(
-            {"data_source_id": source.id, "segment_key": "root"}
-        )
-        assert cursor is not None and cursor.manifest, "poll left no manifest"
-        result = await driver.traverse(
-            source, position(segment_key="root", prior={"manifest": dict(cursor.manifest)})
-        )
+        row = await DataSource.get_one({"id": source.id})
+        assert row.manifest, "poll left no manifest"
+        result = await driver.traverse(row)
         return result.unchanged and not result.refs and not result.tombstones
 
     # Bounded, and the bound is the point: if this ever needs more passes,

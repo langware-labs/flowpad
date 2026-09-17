@@ -97,7 +97,6 @@ pre-rename names `source_id`, `stream_key` and `title` are rejected outright:
 | `data_source_id` | the data-source id given below, verbatim |
 | `provider` | the provider given below, verbatim |
 | `kind` | `content.message.email` |
-| `segment_key` | `SENT` |
 | `external_id` | **the provider's own id for the message you just sent**, copied exactly |
 | `name` | the subject you sent under |
 | `body` | the message body, verbatim — the same text you sent |
@@ -105,9 +104,6 @@ pre-rename names `source_id`, `stream_key` and `title` are rejected outright:
 | `author_external_id` | the email address you sent from |
 | `occurred_at` | the send time as ISO-8601 |
 | `thread_key` | the thread id the message landed in |
-
-`segment_key` is `SENT`, not the mailbox you read. That is what keeps this record
-from ever colliding with a later fetch of the inbox.
 
 `external_id` must be the id of the message **you created**, not the one you
 replied to. Getting this wrong creates a record that can never converge with

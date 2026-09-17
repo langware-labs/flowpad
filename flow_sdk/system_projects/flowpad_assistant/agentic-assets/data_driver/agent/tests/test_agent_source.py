@@ -51,8 +51,8 @@ def _row(**config):
                            config={"connector": "gmail", "harness": "claude", **config})
 
 
-def _view(state=None, key="INBOX"):
-    return position(segment_key=key, prior=state or {}, window_start=None)
+def _view(prior=None, *, cursor=None):
+    return position(prior, cursor=cursor, window_start=None)
 
 
 @pytest.mark.parametrize("check", [c for c in checks_for(AgentSource) if c.requires is not Messaging], ids=str)
@@ -71,12 +71,41 @@ def test_the_connector_is_the_channel():
 async def test_the_worker_records_so_a_traversal_returns_no_items(worker):
     result = await DataDriver.loaded("agent").traverse(_row(), _view())
     assert result.items == [] and result.cursor == AgentSource.resume_after("2026-09-01T10:00:00+00:00")
-    assert worker.fetches[0]["segment_key"] == "INBOX" and worker.fetches[0]["since"] == ""
+    assert worker.fetches[0]["mailbox"] == "INBOX" and worker.fetches[0]["since"] == ""
 
 
 async def test_the_receipts_high_water_is_the_next_runs_floor(worker):
-    await DataDriver.loaded("agent").traverse(_row(), _view({"high_water": "2026-08-31T00:00:00+00:00"}))
-    assert worker.fetches[0]["since"] == "2026-08-31T00:00:00+00:00", "a legacy cursor is adopted"
+    first = await DataDriver.loaded("agent").traverse(_row(), _view())
+    await DataDriver.loaded("agent").traverse(_row(), _view(first))
+    assert worker.fetches[1]["since"] == "2026-09-01T10:00:00+00:00"
+
+
+async def test_a_named_mailbox_is_the_one_walked(worker):
+    await DataDriver.loaded("agent").traverse(_row(mailbox="SENT"), _view())
+    assert worker.fetches[0]["mailbox"] == "SENT"
+
+
+async def test_a_channel_connector_has_no_default_mailbox(worker):
+    await DataDriver.loaded("agent").traverse(_row(connector="slack", mailbox="C0123ABCD"), _view())
+    assert worker.fetches[0]["mailbox"] == "C0123ABCD"
+    with pytest.raises(Exception) as caught:
+        await DataDriver.loaded("agent").traverse(_row(connector="slack"), _view())
+    assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
+    assert worker.fetches[1:] == [], "a slack source with no channel never launches a worker"
+
+
+def test_a_stored_list_of_mailboxes_splits_into_one_source_per_mailbox():
+    parts = AgentSource.Config.split({"connector": "gmail", "harness": "claude", "segments": ["INBOX", "SENT"]})
+    assert parts == [
+        ("INBOX", {"connector": "gmail", "harness": "claude", "mailbox": "INBOX"}),
+        ("SENT", {"connector": "gmail", "harness": "claude", "mailbox": "SENT"}),
+    ]
+    assert AgentSource.Config.split({"connector": "gmail", "harness": "claude", "mailbox": "INBOX"}) is None
+
+
+async def test_the_items_origin_joins_the_mailbox():
+    source = AgentSource(SourceBinding(source_id="ds-agent", config={"connector": "gmail", "mailbox": "SENT"}), worker=_Worker())
+    assert source.query().conversation == source.origin("SENT", "SENT")
 
 
 @pytest.mark.parametrize("reported,health", [("no_connector", SourceHealth.CONFIG_ERROR), ("imap_hiccup", SourceHealth.TRANSIENT_ERROR)])

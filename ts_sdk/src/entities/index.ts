@@ -24,7 +24,6 @@ export * from './bookmark';
 export * from './graph_context';
 export * from './capability';
 export * from './data-source';
-export * from './data-source-cursor';
 export * from './data-driver';
 export * from './secret-pack';
 export * from './agent-mailbox';

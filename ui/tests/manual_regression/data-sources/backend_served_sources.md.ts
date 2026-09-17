@@ -154,7 +154,7 @@ test.describe('Data sources are served by the backend', () => {
     await openScreen(page);
     const dialog = await openDialog(page, 'rss');
     await dialog.locator('#ds-name').fill(`rejected-${stamp()}`);
-    await dialog.locator('#ds-feed_urls').fill('not-a-url');
+    await dialog.locator('#ds-feed_url').fill('not-a-url');
 
     // The manifest's `pattern` is doing this. No RSS-specific validator survives in ui/.
     await expect(dialog.getByRole('button', { name: 'Add source' })).toBeDisabled();
@@ -164,7 +164,7 @@ test.describe('Data sources are served by the backend', () => {
   test('an rss source can be created', async ({ page }) => {
     await openScreen(page);
     await createSource(page, 'rss', `rss-${stamp()}`, {
-      feed_urls: 'https://hnrss.org/frontpage',
+      feed_url: 'https://hnrss.org/frontpage',
     });
   });
 

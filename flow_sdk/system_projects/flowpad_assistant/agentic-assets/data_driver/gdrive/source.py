@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, AsyncGenerator, AsyncIterator, ClassVar, Optional, Union
+from typing import Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional
 from urllib.parse import quote
 
 import httpx
@@ -24,14 +24,13 @@ from pydantic import AwareDatetime
 from flow_sdk.sources import http
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.config import ChoiceEntry, SourceConfig
-from flow_sdk.sources.errors import AccessDenied, InvalidCursor, SourceError, SourceUnavailable, Unsupported
+from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.errors import AccessDenied, InvalidCursor, SourceError, SourceUnavailable
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 from flow_sdk.sources.values.query import DataQuery
-from flow_sdk.sources.values.segment import SegmentRef
 from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
@@ -40,8 +39,6 @@ logger = logging.getLogger(__name__)
 DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
 #: The one scope read with — named here because ``verify`` repeats it to the person.
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
-#: The segment of My Drive. A folder is never a segment: a file dragged out of one would fork.
-ROOT_SEGMENT = "root"
 #: Google-native types with a lossless-enough text target, and what ``open`` exports them as.
 EXPORT_TYPES = {
     "application/vnd.google-apps.document": ("text/markdown", ".md"),
@@ -78,7 +75,7 @@ class DriveFileData(FileData):
 
 
 def safe_name(name: str) -> str:
-    """A Drive name as ONE path segment: Drive permits ``/`` and ``..`` in a name."""
+    """A Drive name as ONE path component: Drive permits ``/`` and ``..`` in a name."""
     cleaned = name.replace("/", "_").replace("\\", "_").strip()
     return "_" if cleaned in {"", ".", ".."} else cleaned
 
@@ -92,7 +89,11 @@ def _servable(meta: dict) -> bool:
 class DriveConfig(SourceConfig):
     """What a gdrive source is configured with."""
 
-    drives: list[Union[str, ChoiceEntry]] = []
+    retired_list = ("drives", "drive")
+
+    #: A shared drive's id — each has its own change log — or empty for My Drive. Never a folder:
+    #: a file dragged out of one would fork.
+    drive: str = ""
     cache_root: str = ""
     base_url: str = ""
 
@@ -125,10 +126,6 @@ class DriveSource(Source):
 
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
-    def lift_cursor(cls, state: dict) -> Optional[str]:
-        return cls.changes_from(state["page_token"]) if state.get("page_token") else None
-
-    @classmethod
     def origin_id_for(cls, row: Any, ref: str, root: Any) -> str:
         """``gdrive:<fileId>`` for a cached file, read out of the index the engine keeps beside the
         cache — a ``fileId`` survives rename, move and content replacement, which neither a path nor
@@ -150,16 +147,9 @@ class DriveSource(Source):
             self._http = None
 
     # ── listing ─────────────────────────────────────────────────────────────
-    async def segments(self) -> list[SegmentRef]:
-        """One per configured shared drive — each has its own change log — else My Drive. An
-        entry is a bare id or the ``{id, name}`` the picker stores; keyed on the id either way,
-        because a renamed drive is the same drive."""
-        refs: list[SegmentRef] = []
-        for entry in self.config.get("drives") or []:
-            key, label = (str(entry.get("id") or "").strip(), str(entry.get("name") or "")) if isinstance(entry, dict) else (str(entry).strip(), "")
-            if key:
-                refs.append(SegmentRef(key=key, label=label or key, query=DriveQuery(drive=key)))
-        return refs or [SegmentRef(key=ROOT_SEGMENT, label="My Drive", query=DriveQuery())]
+    def query(self) -> DriveQuery:
+        """The configured shared drive, keyed on its id — a renamed drive is the same drive — else My Drive."""
+        return DriveQuery(drive=str(self.config.get("drive") or "").strip())
 
     async def get(self, origin: CloudOrigin) -> Optional[FileItem]:
         self._require_open()
@@ -171,14 +161,13 @@ class DriveSource(Source):
         meta = response.json()
         return self._item(meta) if _servable(meta) and meta.get("mimeType") != FOLDER_MIME else None
 
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
-        if query is not None and not isinstance(query, DriveQuery):
-            raise Unsupported(f"DriveSource does not support {type(query).__name__}")
+        query = self.effective_query(narrow)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
-        drive = _drive_params(query.drive if query is not None else "")
+        drive = _drive_params(query.drive)
         if cursor is None:
             return await self._list(drive, limit, None)
         if not isinstance(cursor, str):
@@ -192,10 +181,12 @@ class DriveSource(Source):
             return await self._changes(drive, limit, token)
         raise InvalidCursor("not a Drive cursor")
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[FileItem, None]:
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[FileItem, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:
@@ -281,7 +272,7 @@ class DriveSource(Source):
     async def choices(self, field: str) -> list[dict]:
         """The shared drives this credential can see. A refusal raises: an empty list would read
         as "this account has no shared drives", which needs different words in the form."""
-        if field != "drives":
+        if field != "drive":
             return []
         if self.credentials.token is None:
             raise AccessDenied("No Google credential on this machine. Connect Google first.")
@@ -324,9 +315,9 @@ class DriveSource(Source):
 
 def _drive_params(drive: str) -> dict[str, str]:
     """The shared-drive half of every call, or nothing for My Drive."""
-    if not drive or drive == ROOT_SEGMENT:
+    if not drive:
         return {}
     return {"driveId": drive, "corpora": "drive", "includeItemsFromAllDrives": "true", "supportsAllDrives": "true"}
 
 
-__all__ = ["DRIVE_API_BASE", "DRIVE_SCOPE", "EXPORT_TYPES", "ROOT_SEGMENT", "DriveFileData", "DriveQuery", "DriveSource", "safe_name"]
+__all__ = ["DRIVE_API_BASE", "DRIVE_SCOPE", "EXPORT_TYPES", "DriveFileData", "DriveQuery", "DriveSource", "safe_name"]

@@ -3,19 +3,19 @@
   "name": "slack",
   "title": "Slack",
   "icon_name": "Slack",
-  "description": "Channels in a connected Slack workspace. Connect Slack first, then invite the bot to each channel and press Verify.",
+  "description": "One channel in a connected Slack workspace. Connect Slack first, then invite the bot to the channel and press Verify.",
   "kind": "datasource.api.slack",
   "setup_wiki": "Slack channels",
   "auth": {
     "connector": "slack"
   },
   "config": {
-    "channels": {
-      "type": "lines",
+    "channel": {
+      "type": "text",
       "choices": true,
-      "label": "Channels",
+      "label": "Channel",
       "placeholder": "C0123456789",
-      "hint": "Pick from the channels this workspace has, or type IDs one per line. The ID is what is stored — a renamed channel keeps its ID, and keying on the name would fork its history."
+      "hint": "Pick from the channels this workspace has, or type its ID. The ID is what is stored — a renamed channel keeps its ID, and keying on the name would fork its history. Watching several channels? Add one source per channel."
     },
     "allowed_senders": {
       "type": "lines",

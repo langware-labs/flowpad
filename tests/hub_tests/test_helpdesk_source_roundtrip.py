@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -140,13 +139,9 @@ async def test_a_guest_ticket_reaches_the_desk_owner_as_a_message_source_and_the
         # ONE poll: pool → the ticket's messages → ingest → project.
         await _poll(source)
 
-        from flow_sdk.ingest.legacy_lift import origin_of
-
-        def origin_in_ticket(message_id: str):
-            return origin_of(source, SimpleNamespace(segment_key=ticket, external_id=message_id))
-
-        item = await SourceItem.find_existing(source.id, origin_in_ticket(first["id"]))
+        item = await SourceItem.get_one({"data_source_id": source.id, "external_id": first["id"]})
         assert item is not None and item.conversation_id == ticket and item.message_id == first["id"]
+        assert item.origin_namespace.split("/")[-1] == ticket, "the message's origin is scoped to its ticket"
         threads = [t for t in await MessageThread.get_all({"channel": "helpdesk"}) if t.thread_key == ticket]
         assert len(threads) == 1 and threads[0].conversation_id == ticket, "the thread adopted the hub conversation"
         assert await Conversation.get_one({"id": ticket}) is not None
@@ -170,7 +165,7 @@ async def test_a_guest_ticket_reaches_the_desk_owner_as_a_message_source_and_the
         assert sorted(r.id for r in rows) == sorted([first["id"], reply["id"]])
         loaded = await DataSource.get_one({"id": source.id})
         from flow_sdk.stream_inbox.projection import self_addresses
-        sent_item = await SourceItem.find_existing(source.id, origin_in_ticket(reply["id"]))
+        sent_item = await SourceItem.find_existing(source.id, item.origin.model_copy(update={"key": reply["id"]}))
         assert sent_item is not None and sent_item.author_external_id == me, (sent_item.author_external_id, me)
         assert me in self_addresses(loaded), (loaded.account_identities, loaded.account_key)
         mine = await FlowMessage.get_one({"id": reply["id"]})

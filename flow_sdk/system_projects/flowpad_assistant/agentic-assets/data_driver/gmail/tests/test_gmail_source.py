@@ -147,8 +147,8 @@ def _row(**config):
     return SimpleNamespace(id="gmail-source", provider="gmail", account_key="", account_identities=[], config={"address": ADDRESS, **config})
 
 
-def _view(state=None, window_start=None):
-    return position(segment_key="INBOX", prior=state or {}, window_start=window_start)
+def _view(prior=None, *, cursor=None, window_start=None):
+    return position(prior, cursor=cursor, window_start=window_start)
 
 
 @pytest.mark.parametrize("check", checks_for(GmailSource), ids=str)
@@ -188,7 +188,7 @@ async def test_the_address_falls_back_to_the_environment(monkeypatch):
 
 async def test_an_imap_message_maps_and_advances_the_uid_cursor(gmail):
     gmail.deliver(_raw(), "9988", uid=7)
-    result = await DataDriver.loaded("gmail").traverse(_row(), _view({"uid_validity": "44", "last_uid": 6}))
+    result = await DataDriver.loaded("gmail").traverse(_row(), _view(cursor=GmailSource.resume_at("44", 6)))
     (item,) = result.items
     assert (item.external_id, item.thread_key, item.reply_to_external_id) == ("<incoming@gmail.test>", "captain@gmail.com:9988", "<question@gmail.test>")
     assert (item.author_external_id, item.body.strip()) == ("sailor@example.com", "The treasure is under the mast.")
@@ -199,7 +199,7 @@ async def test_an_imap_message_maps_and_advances_the_uid_cursor(gmail):
 async def test_changed_uid_validity_resets_the_cursor_and_supplies_stable_identity(gmail):
     gmail.validity = "45"
     gmail.deliver(_raw(message_id=""), "7", uid=1)
-    result = await DataDriver.loaded("gmail").traverse(_row(), _view({"cursor": GmailSource.resume_at("44", 900)}))
+    result = await DataDriver.loaded("gmail").traverse(_row(), _view(cursor=GmailSource.resume_at("44", 900)))
     assert result.items[0].external_id == "imap:45:1" and result.cursor == GmailSource.resume_at("45", 1)
 
 

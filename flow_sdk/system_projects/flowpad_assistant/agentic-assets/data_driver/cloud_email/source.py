@@ -6,7 +6,7 @@ through its agent-mailbox driver family with the ordinary cloud login, so the so
 ``MailboxTransport`` rather than a credential.
 
 The hub addresses a mailbox by AGENT, never by address (one mailbox per agent), so the agent id is
-the segment: immutable, and the thing without which nothing can poll. The channel is the medium —
+the source's scope: immutable, and the thing without which nothing can poll. The channel is the medium —
 ``email`` — because it is half the thread key, and naming the transport would fork every thread
 the day a second transport reads the same mailbox.
 
@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from typing import Any, AsyncGenerator, ClassVar, Optional, Protocol
+from typing import Any, AsyncGenerator, ClassVar, Mapping, Optional, Protocol
 
 from flow_sdk.sources.base import Source, positive_int
 from flow_sdk.sources.binding import SourceBinding
@@ -42,8 +42,7 @@ from flow_sdk.sources.errors import (
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
-from flow_sdk.sources.values.query import DataQuery, MessageQuery
-from flow_sdk.sources.values.segment import SegmentRef
+from flow_sdk.sources.values.query import MessageQuery
 
 #: The medium, not the transport.
 CHANNEL = "email"
@@ -131,12 +130,6 @@ class CloudEmailSource(EmailAddressing, Source):
         agent = agent_id_of(row)
         return {"agent_id": agent} if agent else {}
 
-    @classmethod
-    def lift_cursor(cls, state: dict) -> Optional[str]:
-        if state.get("high_water") and state.get("boundary_ids"):
-            return cls.resume_at(state["high_water"], state["boundary_ids"])
-        return None
-
     @staticmethod
     def thread_key(agent_id: str, thread_id: str) -> Optional[str]:
         """The provider thread id SCOPED TO THIS MAILBOX. A provider's thread id is mailbox-scoped,
@@ -162,18 +155,20 @@ class CloudEmailSource(EmailAddressing, Source):
     def origin(self, key: str, *within: str) -> CloudOrigin:
         return super().origin(key, *(within or (self.agent_id,)))
 
-    async def segments(self) -> list[SegmentRef]:
-        return [SegmentRef(key=self.agent_id, label=str(self.config.get("address") or "").strip(), query=MessageQuery())]
-
     # ── read ────────────────────────────────────────────────────────────────
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    def query(self) -> MessageQuery:
+        """The mailbox, whole: the agent it serves is the source's scope, not a query field."""
+        return MessageQuery()
+
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
         self._require_open()
-        if query is not None and not isinstance(query, DataQuery):
-            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
-        if query is not None and (not isinstance(query, MessageQuery) or query.conversation is not None):
+        query = self.effective_query(narrow)
+        if query.conversation is not None:
             raise Unsupported("a hub mailbox is listed whole; it does not read one thread")
         limit = min(self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE), 100)
-        mark = _Mark.decode(cursor, floor=query.since.isoformat() if query is not None and query.since and cursor is None else "")
+        mark = _Mark.decode(cursor, floor=query.since.isoformat() if query.since and cursor is None else "")
         # Deliberately no `labels` filter: our own sent copies come back through this very listing,
         # and filtering to `received` would make every reply vanish from its own thread. The nudged
         # `after` re-reads the boundary second, so the request asks for the ids already seen there on
@@ -207,10 +202,12 @@ class CloudEmailSource(EmailAddressing, Source):
             resume_cursor=token or (cursor if isinstance(cursor, str) and cursor.startswith(_MARK) else None),
         )
 
-    async def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncGenerator[MessageItem, None]:
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[MessageItem, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:

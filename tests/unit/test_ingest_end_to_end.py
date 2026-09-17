@@ -16,7 +16,6 @@ from datetime import datetime, timezone
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.ingest.sync import sync_source
@@ -42,7 +41,7 @@ async def test_fetch_copy_index_emit_then_a_silent_repeat(feed_server):
         kind="datasource.feed.rss",
         account_key=account,
         name=f"Fixture feed {uuid.uuid4().hex[:8]}",
-        config={"feed_urls": [url]},
+        config={"feed_url": url},
     )
     await src.save()
 
@@ -62,13 +61,10 @@ async def test_fetch_copy_index_emit_then_a_silent_repeat(feed_server):
         hits = await SourceItem.search("zebrafish", limit=10)
         assert any(r.id in {h.id for h in hits} for r in rows), "body did not reach FTS"
 
-        # the cursor advanced, and health rolled up
-        cursor = await DataSourceCursor.ensure_for(src.id, url)
-        assert cursor.health == SourceHealth.OK.value
-        assert cursor.high_water.startswith("2026-07-30T11:00:00")
-
+        # the position advanced, and health is stamped
         refreshed = await DataSource.get_one({"id": src.id})
         assert refreshed.health == SourceHealth.OK.value
+        assert refreshed.high_water.startswith("2026-07-30T11:00:00")
         assert refreshed.next_poll_at is not None
 
         # SIZE decides how loudly a run announces itself, not whether it is the

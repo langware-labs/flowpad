@@ -48,18 +48,16 @@ async def test_binding_makes_the_source_the_agents(connected):
 
 
 async def test_the_channel_id_is_shaped_by_the_providers_declared_field(connected):
-    """`channels` is declared `lines`, so a bare id must land as a list.
-
-    `bind_channel` writes the bare value on purpose and lets the driver's `Config`
+    """`bind_channel` writes the bare value on purpose and lets the driver's `Config`
     apply the provider's own field type on save — otherwise this method would
-    need to know which providers take lists.
+    need to know each provider's shape.
     """
     agent = await _agent("binder-shape")
 
     source = await agent.bind_channel(provider="slack", channel=CHANNEL)
 
-    stored = (source.config or {}).get("channels")
-    assert stored in (CHANNEL, [CHANNEL]), f"unexpected shape {stored!r}"
+    stored = (source.config or {}).get("channel")
+    assert (stored.get("id") if isinstance(stored, dict) else stored) == CHANNEL, f"unexpected shape {stored!r}"
 
 
 async def test_binding_twice_adopts_the_same_source(connected):

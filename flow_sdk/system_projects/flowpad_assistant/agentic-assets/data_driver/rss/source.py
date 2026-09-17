@@ -1,4 +1,4 @@
-"""``RssSource`` — RSS 2.0 and Atom feeds, one segment per feed URL.
+"""``RssSource`` — one RSS 2.0 or Atom feed.
 
 ``httpx`` (already a dependency) and ``xml.etree``; no ``feedparser`` — the fields are a dozen
 tag lookups, and every transitive dependency of a shipped wheel is a liability.
@@ -16,10 +16,10 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Annotated, Any, ClassVar, Optional
+from typing import Annotated, Any, ClassVar, Mapping, Optional
 from xml.etree import ElementTree
 
-from pydantic import Field, StringConstraints
+from pydantic import StringConstraints
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import CollectionSource
@@ -31,7 +31,6 @@ from flow_sdk.sources.values.items import FeedItemData, SourceItemSpec
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import ChangePage
 from flow_sdk.sources.values.query import DataQuery
-from flow_sdk.sources.values.segment import SegmentRef
 
 _ATOM = "{http://www.w3.org/2005/Atom}"
 #: Marks a cursor as a resume token, not a page continuation.
@@ -49,7 +48,9 @@ class FeedQuery(DataQuery):
 class RssConfig(SourceConfig):
     """What a rss source is configured with."""
 
-    feed_urls: list[Annotated[str, StringConstraints(pattern=r"^https?://")]] = Field(min_length=1)
+    retired_list = ("feed_urls", "feed_url")
+
+    feed_url: Annotated[str, StringConstraints(pattern=r"^https?://")]
 
 
 class RssSource(CollectionSource):
@@ -62,16 +63,19 @@ class RssSource(CollectionSource):
     def __init__(self, binding: SourceBinding) -> None:
         super().__init__(binding)
         self._client: Any = None
-        #: Per session: each feed's parsed entries and the resume token its response carried.
+        #: Per session: the feed's parsed entries and the resume token its response carried.
         self._feeds: dict[str, tuple[list[dict], Optional[str]]] = {}
 
     @property
-    def feeds(self) -> list[str]:
-        return [str(url) for url in self.config.get("feed_urls") or [] if url]
+    def feed_url(self) -> str:
+        return str(self.config.get("feed_url") or "")
+
+    def query(self) -> FeedQuery:
+        return FeedQuery(url=self.feed_url)
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
-        """An entry's identity is scoped by its feed — the first feed when none is named."""
-        return super().origin(key, *(within or self.feeds[:1]))
+        """An entry's identity is scoped by its feed."""
+        return super().origin(key, *(within or (self.feed_url,)))
 
     async def _open(self) -> None:
         self._client, self._feeds = http.client(), {}
@@ -81,29 +85,25 @@ class RssSource(CollectionSource):
             await self._client.aclose()
             self._client = None
 
-    async def segments(self) -> list[SegmentRef]:
-        return [SegmentRef(key=url, label=url, query=FeedQuery(url=url)) for url in self.feeds]
-
     async def get(self, origin: CloudOrigin) -> Optional[SourceItemSpec]:
         self._require_open()
         if not isinstance(origin, CloudOrigin):
             raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
-        url = next((u for u in self.feeds if self.origin(origin.key, u).namespace == origin.namespace), None)
-        if origin.kind != self._scope.kind or url is None:
+        if origin.kind != self._scope.kind or self.origin(origin.key).namespace != origin.namespace:
             raise ValueError(f"{origin!r} is outside this source's scope")
-        return next((self._item(key, raw) for key, raw in await self._scan(FeedQuery(url=url)) if raw[1]["id"] == origin.key), None)
+        return next((self._item(key, raw) for key, raw in await self._scan(self.query()) if raw[1]["id"] == origin.key), None)
 
-    async def fetch(self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None) -> ChangePage:
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
         self._require_open()
-        self._check_query(query)
+        query = self.effective_query(narrow)
         if isinstance(cursor, str) and cursor.startswith(_RESUME):
-            if not isinstance(query, FeedQuery):
-                raise InvalidCursor("a resume cursor belongs to one feed")
             if not await self._load(query.url, _conditions(cursor)):
                 return ChangePage(items=(), resume_cursor=cursor)
             cursor = None
-        page = await super().fetch(query, cursor=cursor, page_size=page_size)
-        done = isinstance(query, FeedQuery) and page.next_cursor is None
+        page = await super().fetch(cursor, page_size=page_size, narrow=narrow)
+        done = page.next_cursor is None
         return ChangePage(items=page.items, next_cursor=page.next_cursor, resume_cursor=self._feeds[query.url][1] if done else None)
 
     async def _load(self, url: str, conditions: Optional[dict] = None) -> bool:
@@ -117,16 +117,13 @@ class RssSource(CollectionSource):
         return True
 
     async def _lookup(self, key: str) -> Any:
-        url = key.partition("\n")[0]
-        return dict(await self._scan(FeedQuery(url=url))).get(key)
+        return dict(await self._scan(self.query())).get(key)
 
     async def _scan(self, query: Optional[DataQuery]) -> list[tuple[str, Any]]:
-        entries: dict[str, Any] = {}
-        for url in [query.url] if isinstance(query, FeedQuery) else self.feeds:
-            if url not in self._feeds:
-                await self._load(url)
-            entries.update((f"{url}\n{entry['id']}", (url, entry)) for entry in self._feeds[url][0])
-        return sorted(entries.items())
+        url = query.url if isinstance(query, FeedQuery) else self.feed_url
+        if url not in self._feeds:
+            await self._load(url)
+        return sorted((f"{url}\n{entry['id']}", (url, entry)) for entry in self._feeds[url][0])
 
     def _item(self, key: str, raw: Any) -> SourceItemSpec:
         url, entry = raw
