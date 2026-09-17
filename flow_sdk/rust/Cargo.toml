@@ -13,11 +13,38 @@ crate-type = ["cdylib", "rlib"]
 name = "flow-rs"
 path = "src/bin/flow-rs.rs"
 
+# The permanent Windows launcher (electron/signing/SMARTSCREEN-PLAN.md, phase 1):
+# downloads the versioned Flowpad-Setup installer, verifies it, runs it. Windows-only
+# behaviour; on other platforms the binary is a stub so `cargo build` stays green.
+[[bin]]
+name = "flowpad-install"
+path = "src/bin/flowpad-install.rs"
+
 [dependencies]
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
+# flowpad-install: HTTPS via the platform TLS stack (schannel + the Windows root store on
+# Windows; no C code, so the Windows target type-checks from any host), SHA-512, base64.
+ureq = { version = "2", default-features = false, features = ["native-tls"] }
+native-tls = "0.2"
+sha2 = "0.10"
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+# flowpad-install: WinVerifyTrust + CertGetNameString (Authenticode check), MessageBox.
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Security_WinTrust",
+  "Win32_Security_Cryptography",
+  "Win32_Security_Cryptography_Catalog",
+  "Win32_Security_Cryptography_Sip",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+embed-resource = "3"
 
 [dev-dependencies]
 uuid = { version = "1", features = ["v4"] }
