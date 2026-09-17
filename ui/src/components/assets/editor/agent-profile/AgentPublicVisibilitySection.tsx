@@ -1,4 +1,4 @@
-import { ActionInfo, Agent, dataManager, TypeId } from '@sdk';
+import { ActionInfo, Agent, cloudManager, dataManager, TypeId, type AgentVersionState } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { Globe, Loader2 } from 'lucide-react';
@@ -6,9 +6,28 @@ import { Globe, Loader2 } from 'lucide-react';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { Button } from '@src/components/ui/button';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { genericEntityShareSource } from '@src/hooks/share-sources';
+
+/**
+ * The one-click "launch a new sandbox running this agent" link — the same
+ * `/launch?agent=<id>` landing page a shared invite would open (see
+ * `ui/src/pages/entry/AgentLaunchLanding.tsx`).
+ *
+ * `/launch` is served by the HUB's own app origin, not this computer's local backend —
+ * `ActionInfo.fullActionUrl` (as `sandboxShareLink` uses) would give the wrong one here,
+ * since desk mode talks to a local backend that merely reflects to the hub. `cloudAppUrl`
+ * is the real per-account hub origin (dev/staging/prod), read live off `cloud/status` —
+ * never hardcoded — and correct even when this page is itself viewed ON the hub (it then
+ * resolves to the hub's own browser origin, which is still the hub).
+ */
+export function agentLaunchLink(agent: Agent): string | null {
+  const hubUrl = cloudManager.cloudAppUrl;
+  if (!hubUrl) return null;
+  return `${hubUrl.replace(/\/+$/, '')}/launch?agent=${encodeURIComponent(agent.id)}`;
+}
 
 /**
  * Stamp the agent readable by anyone, signed-out callers included: the hub's `set_public`
@@ -31,11 +50,18 @@ export async function makeAgentPublic(agent: Agent): Promise<void> {
  * The hub's `agent.anonymous_viewer` role grants `read` and nothing else, so the consequence line
  * names exactly what that exposes (the row: name, description, prompt) and what it does not.
  */
-export function AgentPublicVisibilitySection({ agent }: { agent: Agent }) {
+export function AgentPublicVisibilitySection({
+  agent,
+  version,
+}: {
+  agent: Agent;
+  version: AgentVersionState | null;
+}) {
   const { t } = useLingui();
-  // Only a published (`remote`) agent has a hub row to stamp. Whether that row is public is its
-  // `visitor_role`, which the hub reports only as `expand.roles` — never on the local copy.
-  const publishable = agent.remote === true;
+  // `version.published` (freshly fetched) is the gate, not the WS-stale `agent.remote`/`origin`
+  // (publish() saves those with notify=False — see flow_sdk/builtin/asset_publishing.py).
+  const publishable = version?.published === true;
+  const launchLink = publishable ? agentLaunchLink(agent) : null;
   const [isPublic, setIsPublic] = useState(false);
   const [busy, setBusy] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -62,6 +88,7 @@ export function AgentPublicVisibilitySection({ agent }: { agent: Agent }) {
     return () => {
       live = false;
     };
+    // `publishable` already changes whenever `version` does — no need to also list `version`.
   }, [agent, publishable]);
 
   const onMakePublic = async () => {
@@ -112,6 +139,23 @@ export function AgentPublicVisibilitySection({ agent }: { agent: Agent }) {
           actions stay private.
         </Trans>
       </p>
+      {launchLink && (
+        <div className="mt-3" data-testid="agent-launch-link">
+          <p className="mb-1 text-xs text-muted-foreground">
+            <Trans>Launch a new sandbox running this agent</Trans>
+          </p>
+          <div className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{launchLink}</span>
+            <CopyButton
+              value={launchLink}
+              testId="agent-launch-link-copy"
+              title={t`Copy launch link`}
+              copiedIconClassName="text-green-500"
+              className="shrink-0 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            />
+          </div>
+        </div>
+      )}
       {shareOpen && (
         <ShareToConversationDialog open={shareOpen} onClose={() => setShareOpen(false)} source={shareSource} />
       )}

@@ -18,18 +18,25 @@ vi.mock('@src/notifications', () => ({
   dismiss: vi.fn(),
 }));
 
-const { Agent, dataManager } = await import('@sdk');
+const { Agent, cloudManager, dataManager } = await import('@sdk');
 const { AgentPublicVisibilitySection } =
   await import('@src/components/assets/editor/agent-profile/AgentPublicVisibilitySection');
 const { TooltipProvider } = await import('@src/components/ui/tooltip');
+type AgentVersionState = import('@sdk').AgentVersionState;
 
 const AGENT_ID = '11111111-2222-4333-8444-555555555555';
-const agent = (over: Record<string, unknown> = {}) => new Agent({ id: AGENT_ID, name: 'q', remote: true, ...over });
+const agent = (over: Record<string, unknown> = {}) => new Agent({ id: AGENT_ID, name: 'q', ...over });
+
+// `version.published` (a fresh `GET .../version`) is the section's publishable gate — never
+// `agent.remote`/`origin` off the cached entity, since publish() saves those with `notify=False`
+// (flow_sdk/builtin/asset_publishing.py), so no WS broadcast ever refreshes the cached entity.
+const PUBLISHED: AgentVersionState = { published: true, published_commit: 'deadbeef', has_repo: true, pending_changes: 0 };
+const UNPUBLISHED: AgentVersionState = { published: false, published_commit: '', has_repo: true, pending_changes: 1 };
 
 // ShareButton renders a Tooltip (needs a TooltipProvider), and opening its dialog calls
 // useDockNavigation (needs a Router) — neither is otherwise on this page's own tree.
 const RouterWrapper = createRouterWrapper('/');
-const renderSection = (props: { agent: InstanceType<typeof Agent> }) =>
+const renderSection = (props: { agent: InstanceType<typeof Agent>; version: AgentVersionState | null }) =>
   render(
     <RouterWrapper>
       <TooltipProvider>
@@ -55,7 +62,7 @@ describe('AgentPublicVisibilitySection', () => {
   it('calls set_public with anonymous, reflected to the hub, and then reads as public', async () => {
     const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ public: 'anonymous' });
 
-    renderSection({ agent: agent() });
+    renderSection({ agent: agent(), version: PUBLISHED });
     const button = screen.getByTestId('agent-make-public');
     expect(button).toHaveTextContent('Make agent publicly visible');
     expect(screen.getByTestId('agent-public-consequence')).toHaveTextContent('even without signing in');
@@ -75,7 +82,7 @@ describe('AgentPublicVisibilitySection', () => {
     const fetch = vi.spyOn(Agent.prototype, 'fetchPermissions').mockResolvedValue(['anonymous_viewer']);
     const call = vi.spyOn(dataManager, 'callAction');
 
-    renderSection({ agent: agent() });
+    renderSection({ agent: agent(), version: PUBLISHED });
 
     const button = screen.getByTestId('agent-make-public');
     await waitFor(() => expect(button).toHaveTextContent('Agent is publicly visible'));
@@ -88,7 +95,7 @@ describe('AgentPublicVisibilitySection', () => {
     const fetch = vi.spyOn(Agent.prototype, 'fetchPermissions');
     const call = vi.spyOn(dataManager, 'callAction');
 
-    renderSection({ agent: agent({ remote: false }) });
+    renderSection({ agent: agent(), version: UNPUBLISHED });
 
     const button = screen.getByTestId('agent-make-public');
     expect(button).toHaveTextContent('Publish this agent to share it');
@@ -98,10 +105,23 @@ describe('AgentPublicVisibilitySection', () => {
     expect(call).not.toHaveBeenCalled();
   });
 
+  it('treats a still-loading or missing version as unpublished, never as a stale "published"', () => {
+    const fetch = vi.spyOn(Agent.prototype, 'fetchPermissions');
+    const call = vi.spyOn(dataManager, 'callAction');
+
+    renderSection({ agent: agent(), version: null });
+
+    const button = screen.getByTestId('agent-make-public');
+    expect(button).toHaveTextContent('Publish this agent to share it');
+    expect(button).toBeDisabled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(call).not.toHaveBeenCalled();
+  });
+
   it('reports a refused call and leaves the button usable', async () => {
     vi.spyOn(dataManager, 'callAction').mockRejectedValue(new Error('agent cannot be made public'));
 
-    renderSection({ agent: agent() });
+    renderSection({ agent: agent(), version: PUBLISHED });
     const button = screen.getByTestId('agent-make-public');
     fireEvent.click(button);
 
@@ -112,27 +132,55 @@ describe('AgentPublicVisibilitySection', () => {
   });
 
   it('offers a Share button that opens the contact-first share dialog, independent of publish state', () => {
-    renderSection({ agent: agent({ remote: false }) });
+    renderSection({ agent: agent(), version: UNPUBLISHED });
 
     fireEvent.click(screen.getByTestId('agent-share-with-people'));
 
     expect(screen.getByTestId('share-to-conversation-dialog')).toBeInTheDocument();
   });
+
+  it('offers a copyable launch-a-new-sandbox link once published, and not before', () => {
+    vi.spyOn(cloudManager, 'cloudAppUrl', 'get').mockReturnValue('https://staging.flowpad.ai');
+
+    const { rerender } = renderSection({ agent: agent(), version: UNPUBLISHED });
+    expect(screen.queryByTestId('agent-launch-link')).not.toBeInTheDocument();
+
+    rerender(
+      <RouterWrapper>
+        <TooltipProvider>
+          <AgentPublicVisibilitySection agent={agent()} version={PUBLISHED} />
+        </TooltipProvider>
+      </RouterWrapper>,
+    );
+    expect(screen.getByTestId('agent-launch-link')).toHaveTextContent(
+      `https://staging.flowpad.ai/launch?agent=${AGENT_ID}`,
+    );
+  });
+
+  it('omits the launch link when the hub app url is not yet known, even once published', () => {
+    vi.spyOn(cloudManager, 'cloudAppUrl', 'get').mockReturnValue('');
+
+    renderSection({ agent: agent(), version: PUBLISHED });
+
+    expect(screen.queryByTestId('agent-launch-link')).not.toBeInTheDocument();
+  });
 });
 
 describe('Agent.fetchPermissions', () => {
-  it('GETs the agent with expand=permissions, reflected to the hub, and reads the roles', async () => {
+  it('GETs the roles action directly — never hub-reflected — and reads the roles', async () => {
     hubPermissions.mockRestore(); // the method under test, not a stub
-    const call = vi
-      .spyOn(dataManager, 'callAction')
-      .mockResolvedValue({ id: AGENT_ID, expand: { roles: ['anonymous_viewer'] } });
+    const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ roles: ['anonymous_viewer'] });
 
     const roles = await agent().fetchPermissions();
 
     const info = call.mock.calls[0][0];
     expect(info.method).toBe('GET');
-    expect(info.hubReflect).toBe(true);
-    expect(info.fullActionUrl).toContain(`agent/${AGENT_ID}?expand=permissions`);
+    // Deliberately NOT hub-reflected: `roles_action` calls the hub itself (see
+    // flow_sdk/builtin/agent.py), so the generic `_hub_reflect.py` dispatcher must never
+    // intercept this call — reflecting it would route it at the wrong hub URL (`.../roles`,
+    // which the hub does not expose) before ever reaching that body.
+    expect(info.hubReflect).toBeFalsy();
+    expect(info.fullActionUrl).toContain(`agent/${AGENT_ID}/roles`);
     expect(roles).toEqual(['anonymous_viewer']);
   });
 });

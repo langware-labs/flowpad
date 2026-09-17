@@ -1,9 +1,7 @@
 /**
- * The SDK client's 401 alert, and the one opt-out from it.
+ * The SDK client's 401 alert.
  *
- * A 401 normally means the session is gone, so the client shows a blocking alert. A caller that
- * reads something anonymously (the `/launch?agent=` card) expects a 401 for a private target and
- * passes `expectUnauthorized` — the error still reaches the caller, only the alert is skipped.
+ * A 401 normally means the session is gone, so the client shows a blocking alert.
  *
  * The alert is observed where it lands — the `alert` event `@sdk/alert` dispatches on `window` —
  * rather than by mocking the module, so this exercises the real path.
@@ -62,13 +60,5 @@ describe('apiClient 401 handling', () => {
     expect(thrownBy(clientErrorHandler(), error)).toBe(error);
 
     expect(alerts).toHaveLength(1);
-  });
-
-  it('skips the alert when the caller expects a 401, and still fails the request', () => {
-    const error = unauthorized({ expectUnauthorized: true });
-
-    expect(thrownBy(clientErrorHandler(), error)).toBe(error);
-
-    expect(alerts).toHaveLength(0);
   });
 });

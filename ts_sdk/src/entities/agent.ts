@@ -136,26 +136,12 @@ export class Agent extends APIEntity<Agent> {
     this.email_place = entity.email_place ?? null;
   }
 
-  /**
-   * The agent's roles, read with `expand=permissions` — `ImAnonymousViewer(roles)` answers
-   * whether it is public. Reflected to the hub: visibility is the hub row's `visitor_role`,
-   * which never syncs down to the local copy. The hub only answers for a published
-   * (`remote`) agent; otherwise the local backend answers.
-   *
-   * Returns the raw `roles` list, NOT an `Agent` — every `APIEntity` constructor registers
-   * itself into the shared entity cache (`APIEntity.ts`'s ctor -> `register_new_entity`),
-   * unconditionally replacing whatever is cached for this id. The hub's reflected payload
-   * here is a different (sparser) shape than the local row — e.g. it carries no `remote` —
-   * so wrapping it in `new Agent(json)` clobbered the real cached entity for every other
-   * subscriber (confirmed live: `AgentProfileEditor`'s own `remote` read went `undefined`
-   * right after this call, disabling the Publish button too).
-   */
+  /** The agent's roles on its hub row (`ImAnonymousViewer(roles)` = is it public). Calls
+   * `GET /agent/<id>/roles`, which talks to the hub itself — deliberately not hub-reflected. */
   public async fetchPermissions(): Promise<UserRole[]> {
-    const info = new ActionInfo('', Agent.type, this.id, 'GET');
-    info.hubReflect = true;
-    info.queryParameters = { expand: 'permissions' };
-    const json = await dataManager.callAction<undefined, { expand?: { roles?: UserRole[] | null } }>(info);
-    return json?.expand?.roles ?? [];
+    const info = new ActionInfo('roles', Agent.type, this.id, 'GET');
+    const json = await dataManager.callAction<undefined, { roles?: UserRole[] | null }>(info);
+    return json?.roles ?? [];
   }
 
   /**

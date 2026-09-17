@@ -5,17 +5,6 @@ import { APIStats } from './apiStats';
 import config from './config';
 import { API_PREFIX } from './config/SDKConfig';
 
-declare module 'axios' {
-  interface AxiosRequestConfig {
-    /**
-     * This request may legitimately answer 401 — an anonymous read of something that may be
-     * private — so the response interceptor skips its blocking "session lost" alert. The error
-     * still rejects; only the alert is suppressed.
-     */
-    expectUnauthorized?: boolean;
-  }
-}
-
 //@ts-ignore
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function generateCurlCommand(request: AxiosRequestConfig) {
@@ -171,9 +160,7 @@ function initApiClient(client: ApiAxiosInstance) {
       if (error.response?.status !== 404) {
         console.log('API call error:', msg);
       }
-      // A caller that expects a 401 (an anonymous read of something that may be private) opts out
-      // of the alert: for it, "not allowed" is an answer, not a lost session.
-      if (error.response?.status === 401 && !error.config?.expectUnauthorized) {
+      if (error.response?.status === 401) {
         alert(error.response.statusText, msg, 'warning');
       }
       throw error;
