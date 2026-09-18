@@ -1,0 +1,11 @@
+{
+  "type": "agent",
+  "id": "29ef9f21-ad17-4c7b-89d9-d0acd08c7cf4",
+  "name": "capability-installer",
+  "description": "Installs a missing capability (CLI, auth, tool) on this machine.",
+  "avatar": "🔧",
+  "worker_type": "claude",
+  "model": "sm",
+  "permission_mode": "bypassPermissions",
+  "enabled": true
+}

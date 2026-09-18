@@ -51,7 +51,7 @@ import { useFS } from '@src/hooks/useFS';
 const PREVIEW_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads';
 
 export function HtmlPreview({ path }: { path: string }) {
-  const { computeNode } = useAgentContext();
+  const { computeNode, flow } = useAgentContext();
   const fs = useFS(computeNode?.typeId);
 
   // The revision the FS store bumps on every write to this path. Carrying it in
@@ -59,7 +59,11 @@ export function HtmlPreview({ path }: { path: string }) {
   // `no-store`, but the iframe would keep the document it already has until its
   // src actually changes.
   const revision = fs?.revision(path) ?? 0;
-  const src = computeNode?.typeId && fs ? `${fs.getServeUrl(path)}?r=${revision}` : null;
+  // The process this page is shown beside. The server writes it into the page as
+  // `__FLOWPAD_PROCESS_ID__`, so the page's SDK can reach that process
+  // (`setDisplayContext`, `enqueue`).
+  const processParam = flow?.id ? `&process=${encodeURIComponent(flow.id)}` : '';
+  const src = computeNode?.typeId && fs ? `${fs.getServeUrl(path)}?r=${revision}${processParam}` : null;
 
   if (!src) {
     return (

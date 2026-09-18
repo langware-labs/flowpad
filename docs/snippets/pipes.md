@@ -1,3 +1,6 @@
+---
+id: 77bc8d9e-4546-4410-9a56-c0ba8331d97b
+---
 # Pipes — wiring a source to whatever consumes it
 
 How data gets from a source to the thing that wants it. Two halves: what runs
@@ -11,13 +14,13 @@ Every snippet below is run as written by `tests/unit/test_pipes_snippets.py`.
 health, not thrown. The cursor advances only after the write lands.
 
 ```python
-from flow_sdk.builtin.data_source import DataSource
-import flow_sdk.ingest.drivers          # registers the shipped providers
+from flow_sdk.builtin.data_driver import DataDriver
 
-source = DataSource(name="Notes", provider="folder", config={"root": "/src"})
+driver = await DataDriver.get("folder")
+source = driver.create_source(driver.create_config(root=SRC), name="Notes")
 await source.save()
-await source.verify()      # is the setup finished?
-report = await source.sync()   # one cycle, now
+await source.verify()  # is the setup finished?
+report = await source.sync()  # one cycle, now
 ```
 
 The HTTP verb `poll_now` does NOT do this — it marks the source due for the next
@@ -30,22 +33,26 @@ deletions all propagate, because the driver diffs `{rel_path: [mtime, size,
 inode]}` and so *observes* absence rather than guessing it.
 
 ```python
-source = DataSource(
+from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
+
+driver = await DataDriver.get("folder")
+source = driver.create_source(
+    driver.create_config(root=SRC),
     name="Mirror notes",
-    provider="folder",
     reflect=ReflectMode.COPY.value,     # record | none | copy | symlink
-    reflect_into="/dest",               # absolute
-    config={"root": "/src"},
+    reflect_into=DEST,                  # absolute
 )
+await source.save()
 ```
 
 The same folder as a block, with the changes as a stream you can follow:
 
 ```python
-from flow_sdk.blocks import FolderSource, workflow
+from flow_sdk.blocks import FolderChanges, workflow
 
 async with workflow("mirror"):                        # the name IS the consumer identity
-    docs = FolderSource(SRC, mirror_to=DEST)          # finds (or creates) the source above
+    docs = FolderChanges(SRC, mirror_to=DEST)          # finds (or creates) the source above
     async for change in docs.listen():                # change: FolderChange(added, changed, removed, renamed)
         change.added, change.removed                  # canonical absolute paths
         await change.ack()                            # position commits LAST — at-least-once
@@ -93,9 +100,9 @@ on `listen()`, which drives the source through the poller's slot so the two can
 never poll it at once.
 
 ```python
-from flow_sdk.blocks import FolderSource
+from flow_sdk.blocks import FolderChanges
 
-docs = FolderSource(SRC)
+docs = FolderChanges(SRC)
 async for change in docs.listen(poll_every=0.5):    # seconds between THIS loop's polls
     await change.ack()
 ```
@@ -107,16 +114,16 @@ mechanism (a viewer's lease) and `listen()` deliberately does not use it.
 ## 5. An agent on several sources
 
 ```python
-from flow_sdk.blocks import EmailMessageSpec, FolderChange, FolderSource, Inbox, listen, workflow
+from flow_sdk.blocks import EmailMessageSpec, FolderChange, FolderChanges, StreamInbox, listen, workflow
 from flow_sdk.builtin.agent_registry import get_agent
 
 async with workflow("triage"):
-    inbox = Inbox("me@agentmail.to", api_key=KEY)
-    docs  = FolderSource(SRC)
+    stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY)
+    docs = FolderChanges(SRC)
     agent = await get_agent("triager")
 
     async with agent.process_messages():
-        async for item in listen(inbox, docs):        # merged; each item carries ITS source's ack
+        async for item in listen(stream_inbox, docs): # merged; each item carries ITS source's ack
             if isinstance(item.item, FolderChange):
                 await item.ack()                      # a folder page: acknowledged, not answered
                 continue
@@ -135,11 +142,11 @@ turn instead of prompting again.
 ## 6. Keep a RAG index level with a folder
 
 ```python
-from flow_sdk.blocks import FolderSource, workflow
+from flow_sdk.blocks import FolderChanges, workflow
 from flow_sdk.builtin.rag_index import RagIndex
 
 async with workflow("docs-rag"):
-    docs  = FolderSource(SRC)
+    docs  = FolderChanges(SRC)
     index = await RagIndex.named("notes")             # find-or-create, like ensure_default
     async for change in docs.listen():
         report = await index.apply(change)            # +1 present, −1 gone — inside apply
@@ -157,3 +164,26 @@ ack and move on, the heartbeat pass catches up.
 `await index.search("how does the walk decide what to skip")` asks it — SEMANTIC
 retrieval over chunks. Not to be confused with `SourceItem.search(...)`, which is
 FTS5 keyword matching over rows; both are useful and they are not the same thing.
+
+## 7. Pages, 50 at a time
+
+`listen()` hands out one delivery at a time. `pages()` is the same drain, a page at a time,
+with ONE ack per page — and `pages(*sources)` merges several the way `listen(*sources)` does:
+a page is always one source's (`page.source_id`), so acking it moves only that position.
+
+```python
+from flow_sdk.blocks import StreamInbox, pages, workflow
+
+async with workflow("digest"):
+    support = StreamInbox("support@agentmail.to", api_key=KEY)
+    sales = StreamInbox("sales@agentmail.to", api_key=KEY)
+
+    async for page in pages(support, sales, size=50):   # up to 50 deliveries, all from one source
+        digest = [m.body for m in page]
+        await page.ack()                                # one write: the page's last row
+```
+
+A page's ack commits everything up to its last row, filtered rows included, so a page never
+leaves a gap. Each delivery inside still has its own `ack()` for a consumer that wants the
+finer grain. A restart under the same workflow name hands an un-acked page back whole, its
+items marked `redelivered`.

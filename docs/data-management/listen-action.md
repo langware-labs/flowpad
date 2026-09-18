@@ -570,8 +570,10 @@ private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity, fromEntityStr
 
     if (op === 'delete') {
         this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
-    } else if (op === 'create' || this.dataOpQueryInvalidation) {
+    } else if (op === 'update' && this.dataOpQueryInvalidation) {
         // Full re-run over HTTP for every watched query of this type whose filter accepts `data`.
+        // Dormant: `dataOpQueryInvalidation` is never enabled. `create` does NOT come here —
+        // it is spliced into matching results locally in `case 'create'` below (X5a).
         for (const watchedQuery of this.watchedQueries.getWatchCallbacksByType(typeId.type)) {
             if (!watchedQuery.request.query || watchedQuery.request.query.validate(data)) {
                 void this._query(watchedQuery.request).then((r) => watchedQuery.updateResults(r));
@@ -588,17 +590,30 @@ private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity, fromEntityStr
 
     switch (op) {
         case 'create': {
+            const existingRef = this.entities.get(typeId);
+            if (existingRef && (existingRef.saveInFlight || existingRef.status === EntityStatus.FETCHING)) {
+                // An in-flight save/GET owns this ref → BUFFER the create's fields
+                // (flushed by applyPendingUpdate), but splice LIST membership now.
+                this.bufferPendingUpdate(existingRef, data);
+                if (existingRef.entity) {
+                    this.watchedQueries.insertEntityIntoResults(typeId.type, typeId, existingRef.entity, data);
+                }
+                break;
+            }
             const entity = this.castAndDeepAssign(data);
             this.register_new_entity(typeId, entity);
+            // X5a: local splice into every matching live query — no network LIST refetch.
+            this.watchedQueries.insertEntityIntoResults(typeId.type, typeId, entity, data);
             this._notifyAllAliases(typeId, entity, entity);
             break;
         }
         case 'update': {
             if (!this.hasRef(typeId)) return;        // not cached → ignore
             const ref = this.getRef(typeId);
-            if (!ref.entity) {
-                // Fetch in flight → BUFFER the update; fetchByTypeId applies it later.
-                ref.pendingUpdate = data;
+            if (ref.saveInFlight || ref.status === EntityStatus.FETCHING || !ref.entity) {
+                // An HTTP read/save owns this ref → BUFFER (merged per field);
+                // fetchByTypeId/save apply it via applyPendingUpdate.
+                this.bufferPendingUpdate(ref, data);
                 return;
             }
             ref.entity = this.castAndDeepAssign(data);
@@ -618,11 +633,11 @@ private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity, fromEntityStr
 }
 ```
 
-> **Note (corrected)**: The UPDATE path no longer throws. Earlier revisions described an `Error('Entity not found in cache on data op update')` thrown when a ref existed but its entity was `null`. The current code instead **buffers** the update (`ref.pendingUpdate = data`) and returns, letting the in-flight `fetchByTypeId` apply it on completion. When the `TypeId` is not cached at all, it returns silently.
+> **Note (corrected)**: The UPDATE path no longer throws. Earlier revisions described an `Error('Entity not found in cache on data op update')` thrown when a ref existed but its entity was `null`. The current code instead **buffers** the update (`bufferPendingUpdate(ref, data)`, a per-field merge into `ref.pendingUpdate`) whenever a save or GET owns the ref (`saveInFlight`, `FETCHING`, or no entity yet) and returns, letting the in-flight `fetchByTypeId`/`save` apply it via `applyPendingUpdate` on completion. When the `TypeId` is not cached at all, it returns silently.
 
 Two update concerns run per event:
 
-1. **WatchedQuery path** (list queries): on `create` (always) or on any non-delete op when `dataOpQueryInvalidation` is enabled, all `WatchedQuery` instances for the entity type are checked. If the incoming entity data passes the query's filter, the full query is re-run via HTTP and the cached results are replaced. On `update` with `dataOpQueryInvalidation` off, membership is still reconciled per query: a row that stops matching is spliced out locally, a row that newly matches triggers a re-run, and a row that keeps matching only gets a `notifyCallbacks()` so React re-renders the mutated object. `delete` removes the entity from every result set.
+1. **WatchedQuery path** (list queries): on `create`, the entity carried by the data-op is spliced locally into every `WatchedQuery` of that type whose filter accepts it (`insertEntityIntoResults`, X5a) — no HTTP re-run; this splice happens even when an in-flight save/GET forces the create's fields to be buffered. Only on `update` with `dataOpQueryInvalidation` enabled (currently never) is the full query re-run via HTTP. On `update` with `dataOpQueryInvalidation` off, membership is still reconciled per query: a row that stops matching is spliced out locally, a row that newly matches triggers a re-run, and a row that keeps matching only gets a `notifyCallbacks()` so React re-renders the mutated object. `delete` removes the entity from every result set.
 
 2. **Subscriber/alias path** (single entity): CREATE/UPDATE/DELETE notify subscribers through `_notifyAllAliases` (and register/delete the ref via `register_new_entity` / `_deleteWithAliases`) so alias keys stay consistent. Subscribers receive the new entity, or `null` on delete.
 

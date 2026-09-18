@@ -8,6 +8,7 @@ export {
   isOpenableProjectPath,
   selectProjectContext,
   useCloneGitProjectAndOpen,
+  useInstallSharedProjectAndOpen,
   useEnsureProject,
   useGitCloneDialogSubmit,
   useSelectExistingProject,

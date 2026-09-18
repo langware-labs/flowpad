@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Atom Feed</title>
+  <updated>2026-07-30T12:00:00Z</updated>
+  <entry>
+    <id>urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a</id>
+    <title>First atom entry</title>
+    <link href="https://example.test/a/1"/>
+    <updated>2026-07-30T11:00:00Z</updated>
+    <author><name>Ada</name></author>
+    <content>Body of the first atom entry with zebrafish in it.</content>
+  </entry>
+  <entry>
+    <id>urn:uuid:2225c695-cfb8-4ebb-bbbb-80da344efa6a</id>
+    <title>Second atom entry</title>
+    <link href="https://example.test/a/2"/>
+    <updated>2026-07-29T09:30:00Z</updated>
+    <author><name>Grace</name></author>
+    <summary>Summary of the second entry.</summary>
+  </entry>
+  <entry>
+    <id>urn:uuid:3325c695-cfb8-4ebb-cccc-80da344efa6a</id>
+    <title>Ancient entry outside the window</title>
+    <link href="https://example.test/a/3"/>
+    <updated>2020-01-01T00:00:00Z</updated>
+    <summary>Too old to ingest.</summary>
+  </entry>
+</feed>

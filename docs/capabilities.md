@@ -72,12 +72,12 @@ scanned `MCP_SERVER` row can reach it through `McpSpec.from_record`.
 The backend capability infrastructure lives under `flow_sdk/core/capabilities`.
 Each capability has a runner that implements:
 
-- `check()`: returns whether the capability is available on this machine.
-- `install()`: starts a headless install `AgenticProcess` and returns its
+- `setup()`: starts a headless install `AgenticProcess` and returns its
   `process_id` immediately. The worker is selected by resolving the default
   `harness` capability to a concrete leaf such as `harness.claude.cli` or
   `harness.codex.cli`.
-- `test()`: validates that the installed capability actually works. For
+- `test()`: validates that the installed capability actually works (the entity
+  action first re-runs discovery for the kind, so it doubles as Check/Refresh). For
   harness CLI kinds the result's `details.auth` also carries the CLI's login
   state (`logged_in` / `logged_out` / `unknown`, with `verified` true only
   when the vendor CLI itself confirmed it), probed through the worker
@@ -86,9 +86,8 @@ Each capability has a runner that implements:
 The entity actions are exposed on `capability`:
 
 ```http
-POST /api/v1/graph/capability/<id>/check
-POST /api/v1/graph/capability/<id>/install
 POST /api/v1/graph/capability/<id>/test
+POST /api/v1/graph/capability/<id>/setup
 ```
 
 ### Device login (harness CLIs)
@@ -129,7 +128,7 @@ GET /api/v1/graph/capability?include_system=true
 Use the SDK hook for React surfaces:
 
 ```ts
-const { available, capability, check, install, test, activeProcess } =
+const { available, capability, refetch, test, setup, activeProcess } =
   useCapability('harness.claude');
 ```
 

@@ -146,6 +146,27 @@ def remove_transferred_tree(entry_dir: Path, root: Path) -> None:
             parent = parent.parent
 
 
+def portable_asset_name(name: str) -> str:
+    """A portable rendered filename, preserving the sender's display spelling."""
+    return "".join(character if character.isalnum() or character in "-_." else "_" for character in name) or "asset"
+
+
+def materialize_rendered_asset(info, folder: Path, name: str, content: str, typeid) -> Path | None:
+    """Place one rendered bundle main document and identity, without scaffolds."""
+    from flow_sdk.assets.directory import AssetDir
+    from flow_sdk.assets.layout import Folder
+
+    if isinstance(info.shape, Folder):
+        if not info.shape.main:
+            return None
+        relative = Path(name) / info.shape.main
+    else:
+        relative = Path(f"{name}{info.shape.ext}")
+    destination = AssetDir(folder).load_asset(relative, content=content)
+    _mint_rendered_asset_identity(info, destination, typeid.type, typeid.id)
+    return destination
+
+
 def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_id: str) -> str:
     """Persist identity for a source-less body through the type's sole seam.
 

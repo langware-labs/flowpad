@@ -16,14 +16,17 @@
  * The controller is kept ONLY for the surrounding controls: the trailing
  * opener toolbar, the new-tab menu, spawn modals, and the close-shortcut label.
  */
-import { dataManager, Project, tabKey, tabManager, Tab, TypeId, uniqueTabsByDockKey } from '@sdk';
+import { AgenticProcess, dataManager, Project, tabKey, tabManager, Tab, TypeId, uniqueTabsByDockKey } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { isTypeIdLikeName } from '@src/components/terminal/rename-rules';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { globalHomeDock } from '@src/tabs/project-entry';
+import { useTabCloser } from '@src/tabs/tab-close-request';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
+import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
 import {
   closeTabsWithLifecycle,
   closeTabWithLifecycle,
@@ -56,7 +59,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   // in the backend's global order (preserved by the filter).
   const allTabs = useAllTabs();
   // Keep content-tab chip labels in step with their backing entities (generic
-  // entity → tab name mirror; terminals keep their own auto-rename path).
+  // entity → tab name mirror; process tabs are projected by the backend FSM).
   useSyncContentTabNames();
   const currentTabs = useCurrentTabs();
   const globalTabs = useMemo(() => uniqueTabsByDockKey(allTabs), [allTabs]);
@@ -82,6 +85,18 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   // "<project>'s Assets" name. Only its icon/title are borrowed, below.
   const ancestorChildTabs = useMemo(() => (ancestor ? [ancestor.child] : []), [ancestor]);
   const ancestorChildItem = useTabStripItems(ancestorChildTabs)[0];
+  // Every process chip reads its process (the shown-target badge): load them in
+  // one batch instead of one GET per chip.
+  const processIds = useMemo(
+    () => [
+      ...new Set(
+        [...tabs, ...ancestorChildTabs]
+          .filter((tab) => tab.target_type === AgenticProcess.type && tab.target_id)
+          .map((tab) => tab.target_id as string),
+      ),
+    ],
+    [tabs, ancestorChildTabs],
+  );
 
   const tabByKey = useMemo(() => {
     const m = new Map<string, Tab>();
@@ -194,7 +209,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       const next = tabManager.resolveNext(remaining, new Set());
       if (next?.dockPointer) navigation.openDock(next.dockPointer);
       else if (projectId) navigation.openDock(DockPointer.forProject(projectId));
-      else navigation.closeDock();
+      else navigation.openDock(globalHomeDock());
     },
     [allTabs, projectId, navigation],
   );
@@ -222,12 +237,12 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (key: string, newName: string) => {
       const tab = tabByKey.get(key);
       if (!tab) return;
-      // The strip owns the input UI; validation is the OWNER's job (see
-      // TabStrip's header). A TypeId-shaped name (`shell-<v4-uuid>`) is an
-      // ADDRESS, not a label — suppress it and keep the existing name rather
-      // than writing a name that reads like a pointer.
-      if (isTypeIdLikeName(newName)) return;
-      if (newName === tab.name?.trim()) return;
+      // Confirming a process name also pins it, even when the text is unchanged
+      // or resembles an identifier. Automatic title filtering is backend-owned.
+      if (tab.target_type !== AgenticProcess.type) {
+        if (isTypeIdLikeName(newName)) return;
+        if (newName === tab.name?.trim()) return;
+      }
       const target =
         tab.target_type && tab.target_id
           ? new TypeId(tab.target_type, tab.target_id)
@@ -269,6 +284,9 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     [tabByKey, projectId],
   );
 
+  // Content asking to close the tab it is shown in closes it the same way the X does.
+  useTabCloser(tabByKey, handleClose);
+
   // Keyboard shortcuts (the strip owns them): mod+W close active, mod+T new
   // terminal, mod+PgUp/PgDn cycle. Mac=Ctrl, Windows=Meta, Linux=Alt.
   useEffect(() => {
@@ -308,6 +326,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
 
   return (
     <>
+      <EntityBatchHydrator type={AgenticProcess.type} ids={processIds} />
       <TabStrip
         items={items}
         activeKey={activeKey}

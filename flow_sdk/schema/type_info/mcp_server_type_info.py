@@ -1,13 +1,10 @@
 """Type metadata for MCP_SERVER."""
 import uuid
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.mcp_server import (
-    extract_mcp_server,
-    mcp_server_identity_key,
-)
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import File
+from flow_sdk.assets.types.mcp_server import extract_mcp_server, mcp_server_identity_key
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
 from flow_sdk.schema.types import EntityType
 
 MCP_SERVER = TypeInfo(

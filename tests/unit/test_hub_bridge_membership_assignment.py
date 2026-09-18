@@ -34,47 +34,21 @@ async def test_bridge_routes_every_membership_container_assignment(monkeypatch, 
 
 
 @pytest.mark.asyncio
-async def test_project_assignment_materializes_value_free_secret_and_delete():
+async def test_project_assignment_materializes_and_delete_removes():
     bridge = HubWsBridge()
     project_id = mint_uuid()
-    wire_secret_id = mint_uuid()
-    env_var = "OPENAI_BRIDGE_ASSIGNMENT"
 
     await bridge._on_data_op(
         {
             "op": "create",
             "to_entity": f"project-{project_id}",
-            "data": {
-                "id": project_id,
-                "name": "Assigned secret project",
-                "shared_secret_origins": {
-                    f"secret_origin-{wire_secret_id}": {
-                        "name": "OpenAI",
-                        "project_id": project_id,
-                        "env_var": env_var,
-                        "kind": "env-local",
-                        "locator": {"kind": "env-local", "env_key": env_var},
-                        "sod_store": "env-local",
-                    }
-                },
-            },
+            "data": {"id": project_id, "name": "Assigned project"},
         }
     )
 
     project = await Project.get_one({"id": project_id})
     assert project is not None
     assert project.remote is True
-    assert len(project.secret_origins) == 1
-    secret = project.secret_origins[0]
-    assert secret["typeid"].startswith("secret_origin-")
-    assert secret["name"] == "OpenAI"
-    assert secret["env_var"] == env_var
-    assert secret["kind"] == "env-local"
-    assert secret["locator"] == {"kind": "env-local", "env_key": env_var}
-    assert secret["sod_store"] == "env-local"
-    assert secret["scope"] == "shared"
-    assert [str(tid) for tid in project.context_of_type("secret_origin", bucket="shared")] == [secret["typeid"]]
-    assert project.shared_secret_origins[secret["typeid"]]["project_id"] == project_id
 
     await bridge._on_data_op(
         {

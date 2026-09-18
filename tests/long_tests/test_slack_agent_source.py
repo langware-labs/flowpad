@@ -1,5 +1,5 @@
 """LIVE: a person types "sync my Slack channel C…" and gets a working source —
-and an inbox whose rows are references, not copies.
+and a stream inbox whose rows are references, not copies.
 
 The Slack twin of ``test_gmail_agent_source.py`` — same two-layer primitive
 (an AgenticProcess asks for the source; the source it builds fetches by
@@ -34,7 +34,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped drivers
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.flow_message import FlowMessage
@@ -43,8 +42,8 @@ from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.inbox.projection import reconcile_source
 from flow_sdk.ingest.sync import sync_source
+from flow_sdk.stream_inbox.projection import reconcile_source
 from tests.long_tests._transcript_helpers import assert_prompt_ok, safe_exit
 from tests.test_settings import test_service_config
 
@@ -61,8 +60,8 @@ pytestmark = [
 FIXTURE = pathlib.Path(os.environ.get("SLACK_FIXTURE", "/nonexistent/slack_channel.csv"))
 
 #: Compared byte-exact. Identifiers, with no typography to argue about. The
-#: ts (`external_id`) keys the dict; `segment_key` is asserted against the
-#: fixture's channel_id per row.
+#: ts (`external_id`) keys the dict; the origin namespace's channel component is
+#: asserted against the fixture's channel_id per row.
 EXACT = ("author_external_id", "thread_key")
 
 #: Same measured transport limit as the gmail twin: the fetch is a language
@@ -156,8 +155,8 @@ async def test_connect_my_slack_channel(assistant):
     assert (src.config or {}).get("connector") == "slack", (
         "the skill must route a Slack channel to the agent transport"
     )
-    assert channel_id in (src.config or {}).get("segments", []), (
-        "the channel id must become a segment, verbatim"
+    assert (src.config or {}).get("mailbox") == channel_id, (
+        "the channel id must become the source's one channel, verbatim"
     )
 
     # ── it fetches, by spawning a worker of its own ─────────────────────────
@@ -166,7 +165,7 @@ async def test_connect_my_slack_channel(assistant):
     assert ingested, "the fetch worker recorded nothing"
 
     _assert_matches_channel(expected, ingested, channel_id)
-    await _assert_reference_inbox(src, ingested)
+    await _assert_reference_stream_inbox(src, ingested)
 
 
 def _assert_matches_channel(expected: dict, ingested: dict, channel_id: str) -> None:
@@ -194,7 +193,7 @@ def _assert_matches_channel(expected: dict, ingested: dict, channel_id: str) -> 
         row, got = expected[external_id], ingested[external_id]
         for field in EXACT:
             assert getattr(got, field) == row[field], f"{external_id}.{field}"
-        assert got.segment_key == channel_id == row["channel_id"], f"{external_id}.segment_key"
+        assert got.origin_namespace.split("/")[-1] == channel_id == row["channel_id"], f"{external_id}.origin_namespace"
         assert got.kind == "content.message.chat", f"{external_id}.kind"
         assert _instant(got.occurred_at) == _instant(row["occurred_at"]), f"{external_id}.occurred_at"
         if not _same_opening(row["text"], got.body):
@@ -206,7 +205,7 @@ def _assert_matches_channel(expected: dict, ingested: dict, channel_id: str) -> 
         pytest.skip("recorded text drifted from the channel:\n  " + "\n  ".join(drift))
 
 
-async def _assert_reference_inbox(src, ingested: dict) -> None:
+async def _assert_reference_stream_inbox(src, ingested: dict) -> None:
     """The reference model, end to end: blank rows in the store, bodies on read.
 
     ``reconcile_source`` is called directly — the tag lanes belong to the
@@ -223,6 +222,6 @@ async def _assert_reference_inbox(src, ingested: dict) -> None:
         hydrated = await FlowMessage.get_by_id(raw[0].id)
         assert hydrated.text == (item.body or item.name or ""), "reads hydrate from the item"
 
-        thread = await MessageThread.find_existing("slack", item.thread_key or "")
-        assert thread is not None, "the thread resolves by (channel, thread_key) lookup"
+        thread = await MessageThread.find_existing("slack", item.thread_key or "", src.owner, str(src.id))
+        assert thread is not None, "the thread resolves by its natural key lookup"
         assert raw[0].thread_id == thread.id and raw[0].conversation_id == thread.conversation_id

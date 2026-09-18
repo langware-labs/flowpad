@@ -1040,10 +1040,11 @@ async def test_ensure_tab_does_not_persist_synthetic_name() -> None:
     )
     assert not tab.name, "synthetic name must not be adopted as the durable label"
 
-    # A real name on the same pointer IS adopted (backfill of the null name).
+    # Loader hints are not authoritative for worker tabs, even when plausible.
+    # A missing process cannot supply a canonical title.
     again = await ensure_tab(p, target_type="agentic_process", target_id=target, name="Real title")
     assert again.id == tab.id
-    assert again.name == "Real title"
+    assert again.name is None
 
 
 # ── One-tab-per-process: parent invariant + legacy display-row reap ──────────

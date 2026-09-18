@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { Agent, AGENT_AVATAR_REF, FSRef } from '@sdk';
+import { Agent, AGENT_AVATAR_REF, FSRef, type AssetDocument, type DocumentPatch } from '@sdk';
 import { AgentProfileEditor } from '@src/components/assets/editor/agent-profile/AgentProfileEditor';
 import { AvatarValue } from '@src/lib/avatar-value';
 
@@ -31,8 +31,8 @@ vi.mock('@src/components/graph-view/icons/iconRegistry', async () => {
   };
 });
 
-vi.mock('@src/components/assets/editor/agent-profile/AgentDeploymentsSection', () => ({
-  AgentDeploymentsSection: () => null,
+vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({
+  AgentPlacesColumn: () => null,
 }));
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentRunDialog', () => ({
@@ -43,19 +43,22 @@ vi.mock('@src/components/assets/editor/agent-profile/AgentMcpField', () => ({
   AgentMcpField: () => null,
 }));
 
+vi.mock('@src/components/assets/editor/agent-profile/AgentVisibilitySection', () => ({
+  AgentVisibilitySection: () => null,
+}));
+
 const AGENT_ID = 'ebed6648-ad32-4611-a63e-b12bb38b984b';
 const PNG_1X1 = Uint8Array.from(
   Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
 );
 
-const AGENT_DOCUMENT = `---
-name: Q
-title: QA manager
-enabled: true
----
-
-Run QA.
-`;
+let document: AssetDocument;
+function updateDocument(patch: DocumentPatch): Promise<AssetDocument> {
+  expect(patch.expected_revision).toBe(document.revision);
+  document = { ...document, fields: { ...document.fields, ...patch.set_fields },
+    body: patch.body ?? document.body, revision: `${document.revision}-saved` };
+  return Promise.resolve(document);
+}
 
 function agentMainRef(): FSRef {
   const avatarRef = { getDownloadUrl: mocks.getDownloadUrl };
@@ -65,13 +68,14 @@ function agentMainRef(): FSRef {
   };
   return {
     path: 'agent.md',
-    read: mocks.read,
-    write: mocks.write,
+    readDocument: mocks.read,
+    updateDocument: mocks.write,
     parent,
   } as unknown as FSRef;
 }
 
 function qAgent(avatar?: string): Agent {
+  document.fields.avatar = avatar ?? null;
   return new Agent({
     id: AGENT_ID,
     name: 'Q',
@@ -93,37 +97,42 @@ function readFile(file: File): Promise<Uint8Array> {
 
 async function chooseImage(file: File): Promise<void> {
   const user = userEvent.setup();
-  await user.click(screen.getByRole('button', { name: 'Change avatar' }));
+  await user.click(await screen.findByRole('button', { name: 'Change avatar' }));
   await user.click(await screen.findByRole('tab', { name: 'Image' }));
   fireEvent.change(screen.getByLabelText('Choose avatar image'), { target: { files: [file] } });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.read.mockResolvedValue(AGENT_DOCUMENT);
-  mocks.write.mockResolvedValue(undefined);
+  document = { body_ref: { path: '/workspace/agentic-assets/agent/q/agent.md', type_id: 'compute_node-@local', ref_type: 'file', read_only: false },
+    raw_text: '', body: 'Run QA.', fields: { name: 'Q', title: 'QA manager', enabled: true },
+    body_start_line: 6, revision: 'initial' };
+  mocks.read.mockImplementation(() => Promise.resolve(document));
+  mocks.write.mockImplementation(updateDocument);
 });
 
 describe('Agent profile avatar', () => {
-  it('distinguishes the Agent launch switch from its Email inbox', () => {
+  it('has no agent-wide switch or name box in the header: enabled is per place, the name is the folder', async () => {
     render(<MemoryRouter><AgentProfileEditor agent={qAgent()} mainRef={agentMainRef()} /></MemoryRouter>);
 
-    expect(screen.getByText('Agent enabled')).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Enable Agent' })).toBeChecked();
-    expect(screen.getByTestId('agent-inbox-button')).toHaveTextContent('Email inbox');
+    expect(await screen.findByRole('textbox', { name: 'Agent title' })).toBeInTheDocument();
+    expect(screen.queryByText('Agent enabled')).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Enable Agent' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Agent name' })).toBeNull();
+    expect(screen.getByTestId('agent-name')).toHaveTextContent('Q');
   });
 
-  it('resolves a canonical bundle image through its asset FSRef and uses the TypeInfo fallback', () => {
+  it('resolves a canonical bundle image through its asset FSRef and uses the TypeInfo fallback', async () => {
     const withImage = qAgent(AGENT_AVATAR_REF);
     const first = render(<MemoryRouter><AgentProfileEditor agent={withImage} mainRef={agentMainRef()} /></MemoryRouter>);
     // Accessible name follows Agent.getDisplayName() — title over name
     // ("assistant turns are signed by the Agent", 378e760f5).
-    const image = screen.getByRole('img', { name: 'QA manager avatar' });
+    const image = await screen.findByRole('img', { name: 'QA manager avatar' });
     expect(image).toHaveAttribute('src', 'http://files.local/avatar.png');
     first.unmount();
 
     render(<MemoryRouter><AgentProfileEditor agent={qAgent()} mainRef={agentMainRef()} /></MemoryRouter>);
-    expect(screen.getByTestId('registry-agent-icon')).toBeInTheDocument();
+    expect(await screen.findByTestId('registry-agent-icon')).toBeInTheDocument();
   });
 
   it('keeps Lucide and emoji values while unknown words fall back safely', () => {
@@ -141,28 +150,17 @@ describe('Agent profile avatar', () => {
   });
 
   it('serializes profile patches through agent.md without calling entity save', async () => {
-    let document = AGENT_DOCUMENT;
-    mocks.read.mockImplementation(() => Promise.resolve(document));
-    mocks.write.mockImplementation((next: string) => {
-      document = next;
-      return Promise.resolve();
-    });
     const agent = qAgent();
     const entitySave = vi.spyOn(agent, 'save');
 
     render(<MemoryRouter><AgentProfileEditor agent={agent} mainRef={agentMainRef()} /></MemoryRouter>);
-    fireEvent.change(screen.getByRole('textbox', { name: 'Agent title' }), {
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Agent title' }), {
       target: { value: 'Senior QA manager' },
     });
     fireEvent.blur(screen.getByRole('textbox', { name: 'Agent title' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Agent name' }), {
-      target: { value: 'Q Prime' },
-    });
-    fireEvent.blur(screen.getByRole('textbox', { name: 'Agent name' }));
 
-    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(2));
-    expect(document).toContain('title: Senior QA manager');
-    expect(document).toContain('name: Q Prime');
+    await waitFor(() => expect(document.fields).toMatchObject({ title: 'Senior QA manager', name: 'Q' }));
+    expect(mocks.write).toHaveBeenCalled();
     expect(entitySave).not.toHaveBeenCalled();
   });
 
@@ -181,11 +179,11 @@ describe('Agent profile avatar', () => {
     });
     mocks.read.mockImplementation(() => {
       events.push('read');
-      return Promise.resolve(AGENT_DOCUMENT);
+      return Promise.resolve(document);
     });
-    mocks.write.mockImplementation(() => {
+    mocks.write.mockImplementation((patch: DocumentPatch) => {
       events.push('write');
-      return Promise.resolve();
+      return updateDocument(patch);
     });
     const agent = qAgent();
 
@@ -196,8 +194,8 @@ describe('Agent profile avatar', () => {
     expect(mocks.uploadFile).toHaveBeenCalledWith(expect.any(File));
     expect(uploaded?.name).toBe('avatar.png');
     expect(await readFile(uploaded!)).toEqual(PNG_1X1);
-    expect(agent.avatar).toBe('./avatar.png');
-    expect(events).toEqual(['upload', 'complete', 'read', 'write']);
+    expect(document.fields.avatar).toBe('./avatar.png');
+    expect(events).toEqual(['read', 'upload', 'complete', 'write']);
   });
 
   it('preserves the old avatar when upload fails', async () => {
@@ -217,16 +215,16 @@ describe('Agent profile avatar', () => {
     const user = userEvent.setup();
 
     render(<MemoryRouter><AgentProfileEditor agent={agent} mainRef={agentMainRef()} /></MemoryRouter>);
-    await user.click(screen.getByRole('button', { name: 'Change avatar' }));
+    await user.click(await screen.findByRole('button', { name: 'Change avatar' }));
     await user.click(await screen.findByRole('tab', { name: 'Image' }));
     await user.click(screen.getByRole('button', { name: 'Remove avatar' }));
 
     await waitFor(() => expect(mocks.write).toHaveBeenCalled());
-    expect(agent.avatar).toBeNull();
-    expect(agent.toJSON()).toMatchObject({ avatar: null });
+    expect(document.fields.avatar).toBeNull();
+    expect(mocks.write).toHaveBeenCalledWith({expected_revision: 'initial', set_fields: {avatar: null}});
   });
 
-  it('restores the previous avatar when saving the uploaded reference fails', async () => {
+  it('preserves the stored avatar and shows the error when saving the reference fails', async () => {
     mocks.uploadFile.mockResolvedValue({ waitForCompletion: () => Promise.resolve() });
     const agent = qAgent('Star');
     mocks.write.mockRejectedValue(new Error('save unavailable'));
@@ -234,7 +232,8 @@ describe('Agent profile avatar', () => {
     render(<MemoryRouter><AgentProfileEditor agent={agent} mainRef={agentMainRef()} /></MemoryRouter>);
     await chooseImage(new File([PNG_1X1], 'portrait.png', { type: 'image/png' }));
 
-    await waitFor(() => expect(mocks.notifyError).toHaveBeenCalled());
+    await screen.findByText('save unavailable');
+    expect(document.fields.avatar).toBe('Star');
     expect(agent.avatar).toBe('Star');
   });
 });

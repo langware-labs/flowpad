@@ -19,12 +19,11 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_PY_FILE = _REPO_ROOT / "flow_sdk" / "graph_workflow_manager" / "graph_workflow_doc.py"
+_PY_FILE = _REPO_ROOT / "flow_sdk" / "assets" / "types" / "graph_workflow_doc.py"
 _TS_STEP_FILE = _REPO_ROOT / "ts_sdk" / "src" / "entities" / "journey" / "journey-step.ts"
 _TS_WAIT_FILE = _REPO_ROOT / "ts_sdk" / "src" / "entities" / "journey" / "journey-wait.ts"
 
@@ -64,7 +63,7 @@ def test_python_and_typescript_agree(name: str):
 
 def test_python_members_match_runtime():
     """The parsed Python literals must match what the module actually exports."""
-    from flow_sdk.graph_workflow_manager.graph_workflow_doc import (
+    from flow_sdk.assets.types.graph_workflow_doc import (
         GUIDED_ACT_KINDS,
         GUIDED_PRESENT_KINDS,
         GUIDED_WAIT_KINDS,

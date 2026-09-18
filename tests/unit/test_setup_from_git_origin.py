@@ -45,7 +45,35 @@ async def test_setup_from_git_origin_materializes_through_the_driver(tmp_path, m
     assert seen["token"] == "ghs_token"  # the caller's credential rides into the driver
     assert seen["indexed"] == str(checkout)
     assert project.fs_storage_mount_path == canonical_posix_path(str(checkout))
-    assert project.name == "acme-repo" and project.remote is True
+    # The sender's name survives the install: the folder leaf is only a fallback,
+    # so a course shared as "Web basics" never arrives named "repo".
+    assert project.name == "shared" and project.remote is True
+
+
+@pytest.mark.asyncio
+async def test_a_nameless_shared_project_falls_back_to_the_folder_leaf(tmp_path, monkeypatch, initialize_test_db):
+    checkout = tmp_path / "acme-repo"
+    checkout.mkdir()
+    origin = GitOrigin(provider="github", owner="acme", name="repo", branch="main", rel_path=".")
+
+    async def _materialize(_self, _origin, **_kwargs):
+        return checkout, None
+
+    async def _index(_path, **_kwargs):
+        return None
+
+    async def _token():
+        return None
+
+    monkeypatch.setattr(GitOriginDriver, "materialize", _materialize)
+    monkeypatch.setattr(agentic_process, "_index_additional_dir", _index)
+    monkeypatch.setattr("flow_sdk.app.actions.oauth_action._get_github_token_for_current_user", _token)
+
+    project = Project(name="", origin=origin)
+    await project.save()
+    await project.setup_from_git_origin()
+
+    assert project.name == "acme-repo"
 
 
 @pytest.mark.asyncio

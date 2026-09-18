@@ -11,6 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+import json
+
 import pytest
 from pydantic import BaseModel
 
@@ -118,9 +120,9 @@ COMPARE[Dataset] = {"examples": lambda rows: [r.model_dump(mode="json", exclude=
 
 
 def _register_probe_types() -> None:
-    from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
+    from flow_sdk.assets.identity import frontmatter_identity
+    from flow_sdk.assets.layout import File, Folder
     from flow_sdk.fs_store.schema_registry import TypeInfo
-    from flow_sdk.schema.layout import File, Folder
 
     for cls, spec, shape in (
         (_Leaf, _LeafSpec, File(ext=".md")),
@@ -258,13 +260,13 @@ def test_the_shipped_agent_md_round_trips(tmp_path: Path) -> None:
     assert (b.name, b.system_prompt, b.id) == (a.name, a.system_prompt, a.id)
 
 
-def test_agent_io_contract_round_trips_as_yaml_and_stays_out_of_the_launch_hash(tmp_path: Path) -> None:
+def test_agent_io_contract_round_trips_as_json_and_stays_out_of_the_launch_hash(tmp_path: Path) -> None:
     a = Agent(name="clf", model="haiku", system_prompt="classify",
               input={"text": "string"}, output={"category": "string", "tags": ["string"]})
     o = LocalOrigin(base=str(tmp_path), rel_path="clf")
     DiskSerializer().store(a, o)
-    text = (tmp_path / "clf" / "agent.md").read_text()
-    assert "input:\n  text: string" in text                       # plain YAML, no keywords
+    doc = json.loads((tmp_path / "clf" / "agent.json").read_text())
+    assert doc["input"] == {"text": "string"}                     # plain authoring form, no keywords
     b = DiskSerializer().load(Agent, o)
     assert to_authoring_form(b.output) == {"category": "string", "tags": ["string"]}
     assert b.output.model_validate({"category": "x", "tags": ["a"]}).category == "x"

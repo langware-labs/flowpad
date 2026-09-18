@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
+from flow_sdk.assets.identity import frontmatter_identity
+from flow_sdk.assets.identity_carrier import Derived, Foreign, Frontmatter, Sidecar
+from flow_sdk.assets.layout import Folder
 from flow_sdk.capsules import AssetCapsule, CapsuleData
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import Derived, Foreign, Frontmatter, Sidecar
-from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
-from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
-from flow_sdk.schema.layout import Folder
 from tests.fixtures.identity import resolve_id
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"

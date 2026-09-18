@@ -30,7 +30,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 
 logger = logging.getLogger(__name__)
 
-# Fixed inbox the diagnosis reports go to. The hub may override/enforce this; we
+# Fixed email address the diagnosis reports go to. The hub may override/enforce this; we
 # send it explicitly so the intent is visible in the payload.
 REPORT_TO_EMAIL = "diagnosis@langware.ai"
 

@@ -61,10 +61,14 @@ PTY (`viewModePtyMode`), so selecting Terminal switches the live worker to
 `WorkerMode.Interactive`; selecting **Chat or Vibe** switches it back to
 `WorkerMode.CLI`
 (`ui/src/components/terminal/interactive-terminal/use-process-surface.ts`).
-The two directions reach the backend differently, and that asymmetry is real:
-`→Interactive` routes through `start()` / the `open` action (it has to actually
-attach a live PTY), while `→CLI` is the `switch-mode` action, whose
-`_enter_cli_mode` kills the PTY and persists `visible=false` + `pty_mode=false`.
+Both directions reach the backend through the **same** action, `switch-mode`:
+`→Interactive` spawns the PTY and returns the same open payload the `open`
+action does, so the client still does its live attach off the response, while
+`→CLI` runs `_enter_cli_mode`, killing the PTY and persisting `visible=false` +
+`pty_mode=false`. They used to differ — `→Interactive` went through `start()` /
+`open`, which carries no mid-turn guard, and that let a mid-turn switch to
+Terminal spawn a second worker onto the transcript a live headless turn was
+still writing, losing that turn (FLOWPAD-2130). One route, one guard.
 Both sides are one backend mutation driven by view mode — the mapping is
 `surfaceForViewMode(mode) → 'vibe' | 'chat' | 'terminal'`
 (`ui/src/contexts/view-mode-context.tsx`), the single reason View mode is *the*
@@ -197,18 +201,18 @@ inside one component with scattered `isAdvanced &&`. Instead:
 
 ```tsx
 // container builds slots ONCE (all hooks already ran above)
-const center = <EntityActionsToolbar … showExport={false} />;   // Share + Bookmark
-const download = <ExportEntityButton … />;
+const title = <span className="truncate">{process.name}</span>;
+const download = <ExportEntityButton typeId={process.typeId} defaultTitle={process.name ?? ''} />;
 // …debug, restart, right slots…
 
 <ViewSwap
   advanced={<AdvancedInteractiveTabHeader debug={debug} restart={restart}
-              center={center} download={download} right={right} />}
-  standard={<StandardInteractiveTabHeader center={center} />}
+              title={title} download={download} right={right} />}
+  standard={<StandardInteractiveTabHeader title={title} />}
 />
 ```
 
-The same `center` node is handed to both layouts — one set of buttons, two
+The same `title` node is handed to both layouts — one node, two
 arrangements. Nothing is rebuilt or refetched on toggle.
 
 ## Worked example — the interactive tab header
@@ -216,16 +220,16 @@ arrangements. Nothing is rebuilt or refetched on toggle.
 `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx` is the
 stateful container; `InteractiveTabHeader.tsx` holds the two layouts.
 
-Standard strips the toolbar to its essence: only **Share + Bookmark**, aligned
-right. Advanced is the full toolbar. The download/export action moved out of the
-center CTA group into the right toolbar (it's an Advanced-only action and never
-belonged between Share and the star).
+Standard strips the toolbar to its essence: only the centered **title**. Share +
+Bookmark are deliberately absent — the top navigation bar already carries them.
+Advanced is the full toolbar; the download/export action sits in the right
+toolbar (it's an Advanced-only action).
 
 | Slot | Standard | Advanced |
 | --- | --- | --- |
 | `debug` (CLI Options, Columns & Trace) | — | ✓ left |
 | `restart` | — | ✓ left |
-| `center` (Share + Bookmark) | ✓ right-aligned | ✓ centered |
+| `title` (entity title) | ✓ centered | ✓ centered |
 | `download` (export bundle) | — | ✓ right |
 | `right` (asset mgr, commit/merge, terminal, fork, worktree, session info, transcript) | — | ✓ right |
 

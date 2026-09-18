@@ -14,5 +14,6 @@ describe('owner survives construction', () => {
   });
   it('MessageThread', () => {
     expect(new MessageThread({ channel: 'slack', thread_key: 'k', owner: AGENT }).owner).toBe(AGENT);
+    expect(new MessageThread({ channel: 'slack', thread_key: 'k', data_source_id: 'src-1' }).data_source_id).toBe('src-1');
   });
 });

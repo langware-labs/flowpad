@@ -70,6 +70,10 @@ class GitStatus(_CamelModel):
     ahead: int = 0
     behind: int = 0
     files: list[GitStatusFile] = []
+    # Fetch URL of the branch's remote (origin when there is no upstream), as
+    # configured, and its https browser form when the host is recognisable.
+    remote_url: str | None = None
+    remote_web_url: str | None = None
 
 
 class GitCurrentBranchData(_CamelModel):
@@ -402,8 +406,38 @@ class GitRepo:
             return (None, ahead, behind)
         return (body.split("...", 1)[0].strip() or None, ahead, behind)
 
-    async def get_status(self) -> GitStatus:
+    @staticmethod
+    def _remote_web_url(remote_url: str) -> str | None:
+        """Browser URL for a git remote, or None when it isn't a web host.
+
+        Examples::
+
+            git@github.com:org/repo.git          → https://github.com/org/repo
+            ssh://git@host:22/org/repo.git       → https://host/org/repo
+            https://user@host/org/repo.git       → https://host/org/repo
+            /local/path/repo.git                 → None
+        """
+        url = remote_url.strip()
+        m = re.match(r"^(?:[\w.-]+@)?([\w.-]+):(?!//)(.+)$", url)
+        if m and len(m.group(1)) > 1:  # a one-letter "host" is a Windows drive
+            host, path = m.group(1), m.group(2)
+        else:
+            m = re.match(r"^(?:https?|ssh|git)://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+)$", url)
+            if not m:
+                return None
+            host, path = m.group(1), m.group(2)
+        path = path.strip("/")
+        if path.endswith(".git"):
+            path = path[: -len(".git")]
+        return f"https://{host}/{path}" if path else None
+
+    async def get_status(self, *, line_counts: bool = False) -> GitStatus:
         """Return a rich git-status object.
+
+        ``line_counts`` fills each file's ``insertions``/``deletions``. It is
+        opt-in because it costs four more git spawns plus a throwaway index
+        over the whole worktree, and only the Git panel shows the counts —
+        the footer pill and other status readers need just the file list.
 
         Schema::
 
@@ -428,7 +462,7 @@ class GitRepo:
 
         # One count per path, staged and unstaged and untracked together, so a
         # file's ``+/-`` is its whole change against HEAD.
-        numstat = await self._line_counts()
+        numstat = await self._line_counts() if line_counts else {}
 
         # File list comes from the same ``status_out`` above. ``--untracked-files=all``
         # lists each untracked file individually instead of collapsing a wholly-
@@ -474,12 +508,22 @@ class GitRepo:
                 )
             )
 
+        # ``ls-remote --get-url`` resolves the upstream's remote, else origin,
+        # through insteadOf rewrites — and never touches the network.
+        remote_out, remote_rc = await self._run_git("ls-remote", "--get-url")
+        remote_url = remote_out.strip() if remote_rc == 0 and remote_out.strip() else None
+        if remote_url:
+            # Credentials embedded in an https remote never leave the node.
+            remote_url = re.sub(r"^(https?://)[^@/]+@", r"\1", remote_url)
+
         return GitStatus(
             error=None,
             branch=branch,
             ahead=ahead,
             behind=behind,
             files=files,
+            remote_url=remote_url,
+            remote_web_url=self._remote_web_url(remote_url) if remote_url else None,
         )
 
     async def get_file_diff(self, file_path: str, status: str) -> GitFileDiff:
@@ -942,7 +986,7 @@ class GitRepo:
         """Route a git-ops sub-path to the appropriate git operation.
 
         Sub-paths:
-            status              → get_status()           → GitStatus (camelCase)
+            status              → get_status()           → GitStatus (camelCase; ?lineCounts=true adds +/-)
             unpushed-files      → get_unpushed_files()   → {files} (repo-rel, ahead of @{u})
             diff?filepath=...   → get_diff(filepath)     → GitDiffData
             branch              → get_branch()           → {branch}
@@ -969,7 +1013,8 @@ class GitRepo:
                 return ApiFailResponse(message="git-ops/init requires POST", status_code=405)
             return ApiSuccessResponse(data=(await self.init()).model_dump(by_alias=True))
         if sub == "status":
-            return ApiSuccessResponse(data=(await self.get_status()).model_dump(by_alias=True))
+            line_counts = params.get("lineCounts") in (True, "1", "true")
+            return ApiSuccessResponse(data=(await self.get_status(line_counts=line_counts)).model_dump(by_alias=True))
         if sub == "unpushed-files":
             return ApiSuccessResponse(data=(await self.get_unpushed_files()).model_dump(by_alias=True))
         if sub == "branch":

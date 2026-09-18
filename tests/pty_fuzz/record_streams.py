@@ -160,7 +160,7 @@ def main() -> int:
     ap.add_argument(
         "--max-size",
         type=int,
-        default=10 * 1024 * 1024,
+        default=30 * 1024 * 1024,
         help="PtyStreamFile max_size_bytes in --production mode (small → truncation)",
     )
     args = ap.parse_args()

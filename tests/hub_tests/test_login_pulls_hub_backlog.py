@@ -1,8 +1,8 @@
-"""Logging in must pull the hub backlog into the Inbox — against a live hub.
+"""Logging in must pull the hub backlog into the Stream Inbox — against a live hub.
 
 The reported bug: alice sends bob a message while bob's app is logged out.
 Bob logs in and sees nothing; the conversation only appears after he clicks
-the Inbox's "Fetch new messages from hub" button.
+the Stream Inbox's "Fetch new messages from hub" button.
 
 Why it happens: the hub's fan-out is live-only (``_fanout_message`` pushes to
 a participant's currently-open WS connections and drops the frame otherwise —
@@ -82,7 +82,7 @@ async def _drain_catchup_tasks() -> bool:
     catch-up was scheduled at all; on the unfixed code there is none, and the
     assertion below is what reports the bug.
     """
-    tasks = [t for t in asyncio.all_tasks() if (t.get_name() or "").startswith("inbox-catchup:")]
+    tasks = [t for t in asyncio.all_tasks() if (t.get_name() or "").startswith("stream-inbox-catchup:")]
     for t in tasks:
         await t
     return bool(tasks)
@@ -90,7 +90,7 @@ async def _drain_catchup_tasks() -> bool:
 
 async def test_login_pulls_hub_backlog_into_local_store(hub_base_url, hub_login_payload):
     """A conversation that landed on the hub while logged out is present
-    locally once login completes — with no Inbox refresh in between."""
+    locally once login completes — with no Stream Inbox refresh in between."""
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.cli.auth.cloud_login import _finalize_login, clear_cloud_credentials
     from flow_sdk.cli.auth.hub_login import hub_auth_available
@@ -133,11 +133,11 @@ async def test_login_pulls_hub_backlog_into_local_store(hub_base_url, hub_login_
     scheduled = await _drain_catchup_tasks()
 
     # 5. The symptom: bob is logged in, and the conversation alice sent him is
-    #    still missing locally — so the Inbox renders nothing until he finds
+    #    still missing locally — so the Stream Inbox renders nothing until he finds
     #    the manual refresh button.
     local = await Conversation.get_one({"id": conv_id})
     assert local is not None, (
         "conversation sent while logged out is still missing after login "
-        f"(catch-up scheduled: {scheduled}) — the Inbox stays empty until the "
+        f"(catch-up scheduled: {scheduled}) — the Stream Inbox stays empty until the "
         "user clicks 'Fetch new messages from hub'"
     )

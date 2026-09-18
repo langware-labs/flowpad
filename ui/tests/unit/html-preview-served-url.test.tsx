@@ -24,9 +24,10 @@ const FILE = '/home/user/Flowpad workspace/Course Project/clouds-site/index.html
 const SERVE_BASE = 'http://localhost:8000/api/v1/graph/compute_node/@local/fs/serve';
 
 let revision = 0;
+let shownBeside: { id: string } | null = null;
 
 vi.mock('@src/components/agent-layout/agent-layout', () => ({
-  useAgentContext: () => ({ computeNode: { typeId: { toString: () => 'compute_node-@local' } } }),
+  useAgentContext: () => ({ computeNode: { typeId: { toString: () => 'compute_node-@local' } }, flow: shownBeside }),
 }));
 vi.mock('@src/hooks/useFS', () => ({
   useFS: () => ({
@@ -44,7 +45,22 @@ function frame(): HTMLIFrameElement {
 describe('HtmlPreview', () => {
   afterEach(() => {
     revision = 0;
+    shownBeside = null;
     cleanup();
+  });
+
+  it('names the process the page is shown beside, so the served page can reach it', () => {
+    shownBeside = { id: '3f2a1b4c-0000-4000-8000-0000000000aa' };
+    render(<HtmlPreview path={FILE} />);
+
+    const url = new URL(frame().getAttribute('src') ?? '');
+    // The server turns this into `__FLOWPAD_PROCESS_ID__` inside the page.
+    expect(url.searchParams.get('process')).toBe('3f2a1b4c-0000-4000-8000-0000000000aa');
+  });
+
+  it('sends no process when none is in context', () => {
+    render(<HtmlPreview path={FILE} />);
+    expect(new URL(frame().getAttribute('src') ?? '').searchParams.has('process')).toBe(false);
   });
 
   it('points the frame at the served url, not at inlined markup', () => {

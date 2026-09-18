@@ -60,13 +60,21 @@ type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMo
  * in-workspace `New` control (EntityExecutionPanel's onProcessCreated hook) —
  * so a process born either way carries the same persona. An un-indexed sub-agent
  * degrades to a plain assistant session (logged, never thrown).
+ *
+ * `asPersona: false` embeds vibe as a LAYER instead of the identity — for a
+ * session opened as an Agent (`prepareAgentSession`), whose own system prompt is
+ * the identity. Declaring vibe the persona there renders "You are the 'vibe'
+ * agent … for every reply" after the agent's prompt, and the agent answers as vibe.
  */
-export async function embedVibeSubagent(proc: AgenticProcess): Promise<void> {
+export async function embedVibeSubagent(
+  proc: AgenticProcess,
+  { asPersona = true }: { asPersona?: boolean } = {},
+): Promise<void> {
   try {
     const vibeRef = await systemSubagentRef('vibe');
-    // `true` -- the vibe sub-agent IS the session's persona; the kind==vibe
+    // By default the vibe sub-agent IS the session's persona; the kind==vibe
     // layers embedded below must not claim that identity.
-    if (vibeRef) await proc.loadEmbeddedSubagent(vibeRef, true);
+    if (vibeRef) await proc.loadEmbeddedSubagent(vibeRef, asPersona);
     else console.warn('[Vibe] vibe sub-agent not indexed; continuing without persona');
   } catch (e) {
     console.warn('[Vibe] failed to embed vibe sub-agent; continuing without persona', e);

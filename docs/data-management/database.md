@@ -85,7 +85,7 @@ else:
 ```
 
 Reason 1 still holds for the test scaffolding, which is why
-`tests/conftest.py` builds its driver with `DBConfig(database=..., pooled=False)`
+`tests/pytest_plugin.py` (the fixtures the repo-root `conftest.py` loads) builds its driver with `DBConfig(database=..., pooled=False)`
 and records that as a known gap, not a preference. Reader sessions are an
 `execution_options()` copy of the same engine, so they share the pool and
 the pragma listeners.

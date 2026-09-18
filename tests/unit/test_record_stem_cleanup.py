@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.fs_store.record_paths import parse_record_stem, record_stem
 
 pytestmark = [pytest.mark.timeout(30)]  # do not increase without approval

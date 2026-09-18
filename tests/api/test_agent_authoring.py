@@ -1,19 +1,23 @@
 """Ordinary Agent authoring through the generic project-scoped graph API."""
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.assets.creation import AssetPathCollisionError
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
-from flow_sdk.fs_store.fs_record import AssetPathCollisionError
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from tests.fixtures.identity import frontmatter_id
 
 pytestmark = pytest.mark.asyncio
+
+
+def _document_id(path: Path) -> str | None:
+    return json.loads(path.read_text(encoding="utf-8")).get("id")
 
 
 async def _create_project(client, name: str, mount: Path) -> dict:
@@ -44,12 +48,12 @@ async def test_project_agent_collision_preserves_the_first_bundle(bootstrapped_c
     assert is_valid_entity_id(created["id"])
     assert created["project_id"] == first["id"]
 
-    agent_md = first_root / "agentic-assets" / "agent" / "q" / "agent.md"
-    original_bytes = agent_md.read_bytes()
-    original_identity = frontmatter_id(agent_md)  # markdown identity IS frontmatter ``id:``
+    agent_json = first_root / "agentic-assets" / "agent" / "q" / "agent.json"
+    original_bytes = agent_json.read_bytes()
+    original_identity = _document_id(agent_json)  # entity document identity IS its root ``id``
     assert original_identity == created["id"]
 
-    [disk_record] = SchemaRegistry.get("agent").from_disk_fn(FSRef(agent_md), created["id"])
+    [disk_record] = SchemaRegistry.get("agent").from_disk_fn(FSRef(agent_json), created["id"])
     assert (disk_record.name, disk_record.title, disk_record.avatar) == (
         "Q",
         "QA manager",
@@ -62,12 +66,12 @@ async def test_project_agent_collision_preserves_the_first_bundle(bootstrapped_c
     )
     assert collision.status_code == 409, collision.text
     assert "already exists in this scope" in collision.text
-    assert agent_md.read_bytes() == original_bytes
-    assert frontmatter_id(agent_md) == original_identity
+    assert agent_json.read_bytes() == original_bytes
+    assert _document_id(agent_json) == original_identity
     assert (await Agent.get_by_id(created["id"])).title == "QA manager"
 
     rows = await Agent.get_all(QueryFilter(match=ExpressionNode(project_id=first["id"])))
-    assert [row.id for row in rows if row.asset_ref == str(agent_md.parent)] == [created["id"]]
+    assert [row.id for row in rows if row.asset_ref == str(agent_json.parent)] == [created["id"]]
 
     other_scope = await client.post(f"/api/v1/graph/project/{second['id']}/agent", json=payload)
     assert other_scope.status_code == 200, other_scope.text
@@ -117,7 +121,7 @@ async def test_create_rejects_caller_asset_ref_and_uses_project_placement(bootst
     assert response.json()["data"]["asset_ref"] == str(expected)
     assert response.json()["data"]["project_id"] == project["id"]
     assert response.json()["data"]["scope"] == "project"
-    assert (expected / "agent.md").is_file()
+    assert (expected / "agent.json").is_file()
     assert not outside.exists()
 
 
@@ -135,7 +139,7 @@ async def test_create_rejects_a_symlinked_placement_escape(bootstrapped_client, 
 
     assert response.status_code == 400, response.text
     assert "escapes its scope root" in response.text
-    assert not (outside / "agent" / "q" / "agent.md").exists()
+    assert not (outside / "agent" / "q" / "agent.json").exists()
     assert await Agent.get_one({"name": "Q", "project_id": project["id"]}) is None
 
 
@@ -149,9 +153,9 @@ async def test_simultaneous_same_slug_creates_have_one_winner(bootstrapped_clien
     )
 
     assert sorted(response.status_code for response in responses) == [200, 409]
-    carrier = tmp_path / "race" / "agentic-assets" / "agent" / "race_agent" / "agent.md"
+    carrier = tmp_path / "race" / "agentic-assets" / "agent" / "race_agent" / "agent.json"
     winner = next(response.json()["data"] for response in responses if response.status_code == 200)
-    assert frontmatter_id(carrier) == winner["id"]
+    assert _document_id(carrier) == winner["id"]
     rows = await Agent.get_all(QueryFilter(match=ExpressionNode(project_id=project["id"])))
     assert [row.id for row in rows if row.asset_ref == str(carrier.parent)] == [winner["id"]]
 
@@ -160,7 +164,7 @@ async def test_prepared_fresh_asset_rechecks_collision_at_save(bootstrapped_clie
     """A caller-populated asset_ref must not bypass the guarded create seam."""
     agent = Agent(name="Q")
     await agent._prepare_for_storage(tmp_path)
-    carrier = tmp_path / "agentic-assets" / "agent" / "q" / "agent.md"
+    carrier = tmp_path / "agentic-assets" / "agent" / "q" / "agent.json"
     carrier.parent.mkdir(parents=True, exist_ok=True)
     original = b"existing authored bundle\n"
     carrier.write_bytes(original)
@@ -170,3 +174,44 @@ async def test_prepared_fresh_asset_rechecks_collision_at_save(bootstrapped_clie
 
     assert carrier.read_bytes() == original
     assert await Agent.get_by_id(agent.id) is None
+
+
+async def test_direct_asset_creation_excludes_entity_creation_before_db_write(bootstrapped_client, tmp_path):
+    from flow_sdk.assets.asset import Asset
+    from flow_sdk.assets.creation import creation_reservation
+    from flow_sdk.schema.types import EntityType
+
+    target = tmp_path / "agentic-assets/agent/reserved"
+    info = SchemaRegistry.get(EntityType.AGENT)
+    rival = Agent(name="reserved", asset_ref=str(target))
+    with creation_reservation(info, target):
+        with pytest.raises(AssetPathCollisionError):
+            await asyncio.create_task(rival.save())
+        created = Asset.create(target, type=EntityType.AGENT, spec=info.asset_spec(name="reserved"))
+    assert await Agent.get_by_id(rival.id) is None
+    assert Asset.from_path(target).typeid == created.typeid
+
+
+async def test_project_request_does_not_assign_ownership_to_outside_asset(bootstrapped_client, tmp_path):
+    project = await _create_project(bootstrapped_client, "request-scope", tmp_path / "project")
+    document = tmp_path / "outside.md"
+    response = await bootstrapped_client.post(
+        f"/api/v1/graph/project/{project['id']}/markdown",
+        json={"name": "outside", "asset_ref": str(document), "body": "# Outside\n"},
+    )
+    assert response.status_code == 200, response.text
+    assert not response.json()["data"].get("project_id")
+    assert document.read_text().endswith("# Outside\n")
+
+
+async def test_skill_create_collision_preserves_write_once_document(bootstrapped_client, tmp_path):
+    project = await _create_project(bootstrapped_client, "skill-collision", tmp_path / "project")
+    route = f"/api/v1/graph/project/{project['id']}/skill"
+    payload = {"name": "example", "description": "Original", "body": "Original skill"}
+    first = await bootstrapped_client.post(route, json=payload)
+    assert first.status_code == 200, first.text
+    path = Path(first.json()["data"]["asset_ref"]) / "SKILL.md"
+    original = path.read_bytes()
+    second = await bootstrapped_client.post(route, json={**payload, "body": "Replacement"})
+    assert second.status_code == 409, second.text
+    assert path.read_bytes() == original

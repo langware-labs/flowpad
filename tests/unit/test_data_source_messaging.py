@@ -1,19 +1,21 @@
 """Provider-agnostic send and reply-waiting behavior on ``DataSource``."""
 from __future__ import annotations
 
+import uuid
 from unittest.mock import AsyncMock
 
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SourceItem, SourceItemSpec
-from flow_sdk.ingest.driver import SendOutcome
+from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SourceItem
+from flow_sdk.ingest.driver_runtime import SendOutcome
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 def _source() -> DataSource:
-    return DataSource(name="Mailbox", provider="mail-test")
+    return DataSource(name=f"Mailbox {uuid.uuid4().hex[:8]}", provider="mail-test")
 
 
 def _reply(source: DataSource, *, reply_to: str) -> SourceItem:
@@ -21,7 +23,6 @@ def _reply(source: DataSource, *, reply_to: str) -> SourceItem:
         data_source_id=source.id,
         provider=source.provider,
         kind="content.message.email",
-        segment_key="INBOX",
         external_id="<reply@example.com>",
         name="Re: Question",
         body="Answer",
@@ -36,7 +37,7 @@ class TestDataSourceSend:
         driver = AsyncMock()
         driver.sends = True
         driver.send.return_value = SendOutcome(external_id="<sent@example.com>")
-        monkeypatch.setattr("flow_sdk.ingest.driver.get_driver", lambda provider: driver)
+        monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.loaded", lambda provider: driver)
 
         outcome = await source.send(
             EmailMessageSpec(
@@ -64,7 +65,7 @@ class TestDataSourceSend:
         driver = AsyncMock()
         driver.sends = True
         driver.send.return_value = SendOutcome(external_id="message-1")
-        monkeypatch.setattr("flow_sdk.ingest.driver.get_driver", lambda provider: driver)
+        monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.loaded", lambda provider: driver)
 
         await source.send(MessageSpec(to=["chat-1"], body="Hello"))
 
@@ -76,7 +77,7 @@ class TestDataSourceSend:
 
         source = _source()
         get_driver = AsyncMock()
-        monkeypatch.setattr("flow_sdk.ingest.driver.get_driver", get_driver)
+        monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.loaded", get_driver)
         spec = EmailMessageSpec(
             to=["friend@example.com"],
             body="Hello",
@@ -96,7 +97,7 @@ class TestDataSourceSend:
     @pytest.mark.asyncio
     async def test_source_without_sending_driver_refuses(self, monkeypatch):
         source = _source()
-        monkeypatch.setattr("flow_sdk.ingest.driver.get_driver", lambda provider: None)
+        monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.loaded", lambda provider: None)
 
         with pytest.raises(RuntimeError, match="mail-test driver cannot send"):
             await source.send(EmailMessageSpec(to=["friend@example.com"], body="Hello"))
@@ -139,30 +140,21 @@ class TestDataSourceExpectReply:
         assert reply.external_id == row.external_id
 
     @pytest.mark.asyncio
-    async def test_uses_a_driver_targeted_reply_lookup_when_available(self, monkeypatch):
+    async def test_a_type_that_cannot_look_a_reply_up_syncs_until_it_lands(self, monkeypatch):
         source = _source()
-        found = SourceItemSpec.model_validate(
-            {
-                key: getattr(_reply(source, reply_to="<sent@example.com>"), key)
-                for key in SourceItemSpec.model_fields
-            }
-        )
-        driver = AsyncMock()
-        driver.wait_for_reply = None
-        driver.find_reply.return_value = found
-        ingest = AsyncMock()
+        reply_row = _reply(source, reply_to="<sent@example.com>")
+        stype = AsyncMock()
+        stype.finds_replies = False
         sync = AsyncMock()
-        monkeypatch.setattr(SourceItem, "get_all", AsyncMock(return_value=[]))
-        monkeypatch.setattr("flow_sdk.ingest.driver.get_driver", lambda provider: driver)
-        monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", ingest)
+        monkeypatch.setattr(SourceItem, "get_all", AsyncMock(side_effect=[[], [reply_row]]))
+        monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.loaded", lambda provider: stype)
         monkeypatch.setattr("flow_sdk.ingest.sync.sync_source", sync)
 
         reply = await source.expect_reply(SendOutcome(external_id="<sent@example.com>"))
 
-        assert reply is found
-        driver.find_reply.assert_awaited_once_with(source, "<sent@example.com>")
-        ingest.assert_awaited_once_with([found])
-        sync.assert_not_awaited()
+        assert reply.reply_to_external_id == "<sent@example.com>"
+        sync.assert_awaited_once()
+        stype.wait_for_reply.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_uses_a_driver_session_wait_when_available(self, monkeypatch):
@@ -174,11 +166,12 @@ class TestDataSourceExpectReply:
             }
         )
         driver = AsyncMock()
+        driver.finds_replies = True
         driver.wait_for_reply.return_value = found
         ingest = AsyncMock()
         sync = AsyncMock()
         monkeypatch.setattr(SourceItem, "get_all", AsyncMock(return_value=[]))
-        monkeypatch.setattr("flow_sdk.ingest.driver.get_driver", lambda provider: driver)
+        monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.loaded", lambda provider: driver)
         monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", ingest)
         monkeypatch.setattr("flow_sdk.ingest.sync.sync_source", sync)
 
@@ -211,14 +204,14 @@ class TestReplySpecAsksTheChannel:
 
         from flow_sdk.builtin.source_item import SlackMessageSpec
 
-        source = DataSource(name="Slack", provider="slack-test")
+        source = DataSource(name=f"Slack {uuid.uuid4().hex[:8]}", provider="slack-test")
         monkeypatch.setattr(
-            "flow_sdk.ingest.driver.get_driver",
+            "flow_sdk.builtin.data_driver.DataDriver.loaded",
             lambda _p: SimpleNamespace(outbound_spec=lambda _s: SlackMessageSpec),
         )
         item = SimpleNamespace(
             author_external_id="U06L8JSQJ1X",
-            segment_key="C08L1P4C95J",
+            origin_namespace="T0123/C08L1P4C95J",
             thread_key="100.000100",
             external_id="100.000100",
             name="hello",
@@ -233,12 +226,11 @@ class TestReplySpecAsksTheChannel:
 
         source = _source()
         monkeypatch.setattr(
-            "flow_sdk.ingest.driver.get_driver",
+            "flow_sdk.builtin.data_driver.DataDriver.loaded",
             lambda _p: SimpleNamespace(outbound_spec=lambda _s: EmailMessageSpec),
         )
         item = SimpleNamespace(
             author_external_id="friend@example.com",
-            segment_key="INBOX",
             thread_key="t-1",
             external_id="<x@mail>",
             name="Question",

@@ -1,17 +1,19 @@
 """Type metadata for GRAPH_WORKFLOW — folder-backed flow document (whiteboard model)."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import (
+from flow_sdk.assets.identity import (
     folder_json_identity,
 )
-from flow_sdk.fs_store.indexer.functions.graph_workflow import (
-    extract_graph_workflow,
-    graph_workflow_asset_hash,
-)
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.types.graph_workflow import extract_graph_workflow, graph_workflow_asset_hash
+from flow_sdk.assets.types.graph_workflow_doc import GraphWorkflowDoc
+from flow_sdk.assets.types.scaffolds import render_graph_document, scaffold_graph_workflow
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
 GRAPH_WORKFLOW = TypeInfo(
+    render_fn=render_graph_document,
+    scaffold_fn=scaffold_graph_workflow,
+    scaffold_spec=GraphWorkflowDoc,
     type_name=EntityType.GRAPH_WORKFLOW,
     icon="Workflow",
     display_name="Graph Workflows",

@@ -38,7 +38,7 @@ def _to_item(raw: dict[str, Any]):
     as `subject` would otherwise get a row with an empty name) both raise."""
     from pydantic import ValidationError  # noqa: PLC0415
 
-    from flow_sdk.builtin.source_item import SourceItemSpec  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
     try:
         return SourceItemSpec.model_validate(raw)

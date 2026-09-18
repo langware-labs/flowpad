@@ -36,8 +36,8 @@ def test_the_types_the_literal_never_listed_are_indexable(derived):
     that recomputes the implementation's own formula agrees with any formula,
     including a broken one."""
     formerly_missing = {
-        "agent_trace", "data_source_spec", "graph_workflow", "helpdesk", "journey",
-        "mcp", "prompt", "secret_origin", "workflow_run",
+        "agent_trace", "data_driver", "graph_workflow", "helpdesk", "journey",
+        "mcp", "prompt", "workflow_run",
     }
     assert formerly_missing <= {str(t) for t in derived}
 

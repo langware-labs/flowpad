@@ -23,7 +23,6 @@ from pydantic import field_validator
 from starlette.requests import Request
 from starlette.responses import Response
 
-from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_request import APIRequest
 from flow_sdk.api.api_types.api_field import APIField, EntityField, NoDbBField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
@@ -33,23 +32,9 @@ from flow_sdk.config import default_service_config
 from flow_sdk.core import Entity, action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.schema.data_spec.app_location_type import AppLocationType
 from flow_sdk.utils import ROOT_FOLDER
 from flow_sdk.worldview.ontology import KindStr
-
-
-class AppLocationType(StrEnum):
-    Folder = "Folder"
-    Builtin = "Builtin"
-    GCPBucket = "GCPBucket"
-    # Built output of an Artifact. ``location_root`` still carries the concrete
-    # absolute directory (resolved once, at registration) so serving stays a
-    # synchronous path join — resolving a GitOrigin per request would put a
-    # checkout lookup in front of every asset fetch.
-    Artifact = "Artifact"
-    # A webapp REPO ASSET on disk: ``asset_ref`` is the app folder, ``build``
-    # names the served subdir inside it. We start the app folder, we serve the
-    # build — so the row needs both, and neither is ``location_root``.
-    Asset = "Asset"
 
 
 def get_micro_apps_root() -> Path:

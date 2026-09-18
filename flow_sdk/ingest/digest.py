@@ -28,16 +28,7 @@ from flow_sdk.fs_store.serializer.db import digest_over
 #: The fields that define a record's identity-as-content. Adding one changes
 #: every digest and re-writes the corpus once; that is a deliberate act, which
 #: is why the list is explicit and lives here rather than being derived.
-DIGESTED_FIELDS: tuple[str, ...] = (
-    "kind",
-    "name",
-    "body",
-    "occurred_at",
-    "author_external_id",
-    "author_display",
-    "permalink",
-    "thread_key",
-)
+from flow_sdk.schema.data_spec.source_item_spec import DIGESTED_FIELDS
 
 
 def content_digest(item: Any) -> str:

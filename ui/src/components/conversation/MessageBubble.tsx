@@ -22,6 +22,8 @@ interface MessageBubbleProps {
   flowMessage?: FlowMessage | null;
   task?: ITask;
   senderName: string;
+  /** When set, the sender's name and avatar open the sender — an agent's profile. */
+  onSenderClick?: () => void;
   onEditName?: (newName: string) => void;
   /** When set, renders a delete (trash) control on the bubble. The parent
    *  decides who may delete (sender or conversation owner) and only passes
@@ -160,6 +162,7 @@ export function MessageBubble({
   flowMessageId,
   flowMessage,
   senderName,
+  onSenderClick,
   onEditName,
   onDeleteMessage,
   onForwardMessage,
@@ -219,6 +222,10 @@ export function MessageBubble({
   const time = formatTime(message.timestamp);
   const ago = formatTimeAgo(message.timestamp);
 
+  // The sender (avatar + name) is ONE element kind: a button when there is somewhere to open, else plain.
+  const SenderTag = onSenderClick ? 'button' : 'span';
+  const senderProps = onSenderClick ? { type: 'button' as const, onClick: onSenderClick } : {};
+
   const handleBubbleClick = (e: MouseEvent<HTMLDivElement>) => {
     if (!onSelect) return;
     // Ignore clicks that originated on interactive children (buttons, links,
@@ -237,11 +244,13 @@ export function MessageBubble({
       onClick={handleBubbleClick}
       data-testid={flowMessageId ? `message-bubble-${flowMessageId}` : undefined}
     >
-      <div
+      <SenderTag
+        {...senderProps}
+        aria-label={onSenderClick ? t`Open ${displayName}` : undefined}
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColorForMessage(message.role, message.sender_id)}`}
       >
         {initial}
-      </div>
+      </SenderTag>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-baseline gap-2">
           {!isBot && editing ? (
@@ -257,7 +266,13 @@ export function MessageBubble({
               autoFocus
             />
           ) : (
-            <span className="text-sm font-semibold text-foreground">{displayName}</span>
+            <SenderTag
+              {...senderProps}
+              className={`text-sm font-semibold text-foreground ${onSenderClick ? 'hover:underline' : ''}`}
+              data-testid={onSenderClick ? 'message-sender-link' : undefined}
+            >
+              {displayName}
+            </SenderTag>
           )}
           {!isBot && onEditName && !editing && (
             <button

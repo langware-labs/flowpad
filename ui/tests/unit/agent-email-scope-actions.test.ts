@@ -1,6 +1,6 @@
 import { ActionInfo, archiveConversation, dataManager, fetchConversations } from '@sdk';
 import { sendToChannel } from '@sdk/entities/notifications';
-import { bulkUpdateMessages, searchInbox, updateMessage } from '@src/components/inbox-view/inbox-api';
+import { bulkUpdateMessages, searchStreamInbox, updateMessage } from '@src/components/stream-inbox-view/stream-inbox-api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const AGENT_ID = '11111111-1111-4111-8111-111111111111';
@@ -9,12 +9,12 @@ const MESSAGE_ID = '33333333-3333-4333-8333-333333333333';
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('Agent-scoped Inbox actions', () => {
+describe('Agent-scoped Stream Inbox actions', () => {
   it('carries agent_id through reads and mutations', async () => {
     const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({} as never);
 
     await fetchConversations(AGENT_ID);
-    await searchInbox('treasure', AGENT_ID);
+    await searchStreamInbox('treasure', AGENT_ID);
     await updateMessage(MESSAGE_ID, { is_read: true }, AGENT_ID);
     await bulkUpdateMessages({ is_read: true }, AGENT_ID);
     await archiveConversation({ conversation_id: CONVERSATION_ID, agent_id: AGENT_ID });
@@ -23,9 +23,9 @@ describe('Agent-scoped Inbox actions', () => {
     const actions = call.mock.calls.map((entry) => entry[0] as ActionInfo);
     expect(actions.map((action) => action.name)).toEqual([
       'conversation-list',
-      'inbox-search',
-      'inbox-update',
-      'inbox-bulk-update',
+      'stream-inbox-search',
+      'stream-inbox-update',
+      'stream-inbox-bulk-update',
       'conversation-archive',
       'send_external',
     ]);

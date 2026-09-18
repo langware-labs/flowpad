@@ -107,7 +107,8 @@ export function ViewToggle() {
     // firing onClick directly): `disabled` already stops the pointer path.
     if (blocked(next)) return;
     if (currentDock) {
-      navigation.openDock(currentDock.withViewMode(next));
+      // Marked as a switch, so the sync hook saves it even from a bare URL.
+      navigation.openDock(currentDock.withViewMode(next), undefined, { viewModeSwitch: true });
     } else {
       setViewMode(next);
     }

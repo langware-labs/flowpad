@@ -40,6 +40,7 @@ class ToplogStateMessage(BaseMessage):
     message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
     enabled: bool
     filter: Dict[str, bool]
+    persist: bool = False
 
 
 class TagMessage(BaseMessage):

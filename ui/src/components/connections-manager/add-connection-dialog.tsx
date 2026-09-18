@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { KeyRound } from 'lucide-react';
-import type { CredentialSpec, OAuthProvider } from '@sdk';
+import { KeyRound, KeySquare } from 'lucide-react';
+import type { SecretPack, OAuthProvider } from '@sdk';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { getIconPacks, resolveIcon } from '@sdk/icons';
 import { flowIconComponent } from '@sdk/react/FlowIcon';
@@ -25,9 +25,11 @@ export interface AddConnectionDialogProps {
   /** OAuth providers with no credential held yet. */
   providers: OAuthProvider[];
   /** Credential definitions with nothing declared or detected yet. */
-  specs: CredentialSpec[];
+  specs: SecretPack[];
   onPickProvider: (providerName: string) => void;
-  onPickCredential: (spec: CredentialSpec) => void;
+  onPickCredential: (spec: SecretPack) => void;
+  /** Declare your own set of environment variables. */
+  onPickCustom: () => void;
   /** Set while a pick is in flight, so the tile can spell "working". */
   busyKey?: string | null;
 }
@@ -60,7 +62,7 @@ function providerIcon(provider: OAuthProvider) {
  *  Same order as a provider's, because the two sections show the same companies:
  *  "Anthropic" and "Anthropic API key" are one brand and must not wear two
  *  different colours one row apart. */
-function credentialIcon(spec: CredentialSpec) {
+function credentialIcon(spec: SecretPack) {
   const ref = brandRef(String(spec.name ?? ''), spec.icon_name);
   return ref ? flowIconComponent(ref) : KeyRound;
 }
@@ -72,10 +74,10 @@ export function AddConnectionDialog({
   specs,
   onPickProvider,
   onPickCredential,
+  onPickCustom,
   busyKey,
 }: AddConnectionDialogProps) {
   const { t } = useLingui();
-  const nothingLeft = providers.length === 0 && specs.length === 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -85,7 +87,7 @@ export function AddConnectionDialog({
             <Trans>Add connection</Trans>
           </DialogTitle>
           <DialogDescription>
-            <Trans>Values stay on this machine. Nothing is sent anywhere by adding one.</Trans>
+            <Trans>Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -108,26 +110,24 @@ export function AddConnectionDialog({
             </TileSection>
           )}
 
-          {specs.length > 0 && (
-            <TileSection title={<Trans>Use an API key</Trans>}>
-              {specs.map((spec) => (
-                <DesktopTile
-                  key={spec.name}
-                  Icon={credentialIcon(spec)}
-                  label={spec.title || String(spec.name ?? '')}
-                  loading={busyKey === spec.name}
-                  data-testid={`add-connection-${spec.name}`}
-                  onClick={() => onPickCredential(spec)}
-                />
-              ))}
-            </TileSection>
-          )}
-
-          {nothingLeft && (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              <Trans>Everything available is already connected.</Trans>
-            </p>
-          )}
+          <TileSection title={<Trans>Use an API key</Trans>}>
+            {specs.map((spec) => (
+              <DesktopTile
+                key={spec.name}
+                Icon={credentialIcon(spec)}
+                label={spec.title || String(spec.name ?? '')}
+                loading={busyKey === spec.name}
+                data-testid={`add-connection-${spec.name}`}
+                onClick={() => onPickCredential(spec)}
+              />
+            ))}
+            <DesktopTile
+              Icon={KeySquare}
+              label={t`Custom credentials`}
+              data-testid="add-connection-custom"
+              onClick={onPickCustom}
+            />
+          </TileSection>
         </div>
       </DialogContent>
     </Dialog>

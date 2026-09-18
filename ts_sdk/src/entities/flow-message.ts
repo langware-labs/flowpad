@@ -2,6 +2,8 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
+import { IMessageEnvelope } from '../models/MessageEnvelope';
+import { IMessageSender } from '../models/MessageSender';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -144,6 +146,8 @@ export interface IFlowMessage extends IEntity {
   attachment?: Attachment[];
   sender_id?: string | null;
   sender_name?: string | null;
+  /** The typed author, local only — read it through `senderOf`, which covers hub rows. */
+  sender?: IMessageSender | null;
   receiver_address?: string | null;
   receiver_address_type?: string | null;
   /** User-given filename of the uploaded .flowmsg zip stored via fs/upload, e.g. "my-share.flowmsg". Null when no file was uploaded. */
@@ -160,7 +164,7 @@ export interface IFlowMessage extends IEntity {
   delivered_at?: string | null;
   received_at?: string | null;
   /** EVENT time — when the human sent this on its original channel. Written
-   *  only by the backend inbox projection (from SourceItem.occurred_at);
+   *  only by the backend stream inbox projection (from SourceItem.occurred_at);
    *  None for authored and hub-synced messages, whose event time is their
    *  own created/updated clock. Read through `eventTime`, never directly. */
   sent_at?: string | null;
@@ -204,6 +208,8 @@ export interface IFlowMessage extends IEntity {
    *  exactly the badge rule: no origin, no channel mark. */
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
+  /** Sender, recipients, subject and event time of the cached record; projection-owned. */
+  envelope?: IMessageEnvelope | null;
   /** The MessageThread this belongs to. Null = ungrouped, i.e. flat rendering
    *  (every message that predates threading). */
   thread_id?: string | null;
@@ -228,6 +234,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   attachment?: Attachment[];
   sender_id?: string | null;
   sender_name?: string | null;
+  sender?: IMessageSender | null;
   receiver_address?: string | null;
   receiver_address_type?: string | null;
   attachment_filename?: string | null;
@@ -249,6 +256,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   remote_worker_session_id?: string | null;
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
+  /** Sender, recipients, subject and event time of the cached record; projection-owned. */
+  envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
   reply_to_id?: string | null;
   source_item_id?: string | null;
@@ -261,6 +270,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.attachment = entity.attachment;
     this.sender_id = entity.sender_id;
     this.sender_name = entity.sender_name;
+    this.sender = entity.sender ?? null;
     this.receiver_address = entity.receiver_address;
     this.receiver_address_type = entity.receiver_address_type;
     this.attachment_filename = entity.attachment_filename;
@@ -282,6 +292,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
     this.origin = entity.origin ?? null;
     this.origin_local = entity.origin_local ?? null;
+    this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;
     this.source_item_id = entity.source_item_id ?? null;
@@ -322,7 +333,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   }
 
   /** WHEN THIS MESSAGE LAST CHANGED — mirrors FlowMessage.event_time on the
-   *  backend: the recency/activity clock behind the inbox's "Xm ago". Includes
+   *  backend: the recency/activity clock behind the stream inbox's "Xm ago". Includes
    *  `updated_date` because a genuine edit IS new activity. For a message's
    *  place in the feed read `occurredAt` instead. */
   get eventTime(): string | null {

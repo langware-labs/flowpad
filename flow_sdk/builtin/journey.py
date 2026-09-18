@@ -22,13 +22,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Optional
 
-from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.assets.types.graph_workflow_doc import GraphWorkflowDoc, GraphWorkflowNodeDef
     from flow_sdk.builtin.journey_journal import JourneyJournal
-    from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowDoc, GraphWorkflowNodeDef
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +101,24 @@ class Journey(Entity):
     description: str = APIField(default="")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     enabled: bool = APIField(default=True, description="The journey's active switch.")
+    project_root: str | None = NoDBAPIField(default=None)
 
     _api_visible: ClassVar[bool] = True
+
+    async def expand_blobs(self):
+        await super().expand_blobs()
+        self.project_root = None
+        if not self.asset_ref:
+            return
+        from flow_sdk.builtin.asset_publishing import owning_project
+
+        project = await owning_project(self)
+        mount = getattr(project, "fs_storage_mount_path", None)
+        if not mount:
+            return
+        root, occurrence = Path(mount).resolve(), Path(self.asset_ref).resolve()
+        if root == occurrence or root in occurrence.parents:
+            self.project_root = str(root)
 
     @property
     def folder(self) -> Optional[Path]:
@@ -117,13 +133,13 @@ class Journey(Entity):
     def auto_launch_enabled(self) -> bool:
         """The `auto_launch` flag — disk (graph.json) is the single source of
         truth, read through the one shared reader the indexer also uses."""
-        from flow_sdk.fs_store.indexer.functions.journey import read_auto_launch
+        from flow_sdk.assets.types.journey import read_auto_launch
 
         return read_auto_launch(Path(self.asset_ref)) if self.asset_ref else False
 
     def gate(self) -> Optional[dict]:
         """The `gate` block from graph.json (disk is truth), or None."""
-        from flow_sdk.fs_store.indexer.functions.journey import read_gate
+        from flow_sdk.assets.types.journey import read_gate
 
         return read_gate(Path(self.asset_ref)) if self.asset_ref else None
 
@@ -246,7 +262,7 @@ class Journey(Entity):
 
     def doc(self) -> Optional["GraphWorkflowDoc"]:
         """This journey's parsed graph.json (disk is truth)."""
-        from flow_sdk.graph_workflow_manager.graph_workflow_doc import parse_graph_workflow_doc
+        from flow_sdk.assets.types.graph_workflow_doc import parse_graph_workflow_doc
 
         if not self.asset_ref:
             return None
@@ -275,8 +291,8 @@ class Journey(Entity):
 
     async def launch(self, user_id: str) -> Optional["JourneyJournal"]:
         """Idempotent: return the active journal, else start a fresh one at the entry."""
-        from flow_sdk.builtin.journey_journal import JourneyJournal, JourneyStatus
         from flow_sdk.api.api_types.identifier import mint_uuid
+        from flow_sdk.builtin.journey_journal import JourneyJournal, JourneyStatus
 
         active = await self._active(user_id)
         if active is not None:

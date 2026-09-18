@@ -33,12 +33,11 @@ registration in ``flow_sdk/schema/type_info/dataset_type_info.py``.
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BeforeValidator, PlainSerializer, ValidationError, model_validator
+from pydantic import ValidationError, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity, action
@@ -46,7 +45,7 @@ from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.json_body import current_user_id, read_json_body
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
-from flow_sdk.schema.data_spec import FreeSection, FrontMatter, to_authoring_form
+from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec, DatasetSpecType
 from flow_sdk.schema.data_spec.dataset_spec import (  # noqa: F401 — enums re-exported
     DEFAULT_DATASET_SPEC,
     DataLayoutEnum,
@@ -59,8 +58,6 @@ from flow_sdk.schema.data_spec.dataset_spec import (  # noqa: F401 — enums re-
 # Owned here (the model module) so writers (GraphWorkflowManager's born-compatible
 # example stamps) and the indexer's reader agree by construction.
 from flow_sdk.schema.data_spec.layout import EXAMPLE_META  # noqa: F401 — re-exported
-
-logger = logging.getLogger(__name__)
 
 #: What `examples` holds: paths, folders and cells — never file CONTENTS.
 ARTIFACT_ROW = DEFAULT_DATASET_SPEC.example_type()
@@ -76,42 +73,9 @@ __all__ = ["Dataset", "DatasetManifestSpec", "DataLayoutEnum", "ExampleKind", "E
 #: form; the shared ``to_authoring_form`` emits it back (the parametrization
 #: remembers its form). STRICT: a malformed spec on an API write is a 4xx, not
 #: a silent None. Leniency is a DISK-READ policy and lives in ``from_fs``.
-DatasetSpecType = Annotated[type, BeforeValidator(DatasetSpec.parse), PlainSerializer(to_authoring_form, return_type=Any)]
 
-class DatasetManifestSpec(FrontMatter):
-    """The ``metadata`` section of ``dataset.json`` — the fields a human authors.
-    The denormalized counts are NOT here: the indexer computes them from the
-    rows, and writing them back would make the manifest lie after an append.
 
-    A malformed ``spec`` ON DISK degrades the SLOT, never the dataset: raising
-    would cost every example row, and an ``orphan_action=DELETE`` sweep would
-    then reap rows that parsed fine. That is a disk-read policy — the entity
-    field itself is strict — so it lives here, at the header read.
-    """
 
-    @model_validator(mode="before")
-    @classmethod
-    def _lenient_spec(cls, values: Any) -> Any:
-        raw = values.get("spec") if isinstance(values, dict) else None
-        if raw is None or isinstance(raw, type):
-            return values
-        try:
-            DatasetSpec.parse(raw)
-        except (ValueError, ValidationError) as exc:
-            logger.warning("[dataset] ignoring malformed `spec`: %s", exc)
-            return {k: v for k, v in values.items() if k != "spec"}
-        return values
-
-    title: Optional[str] = None
-    description: Optional[str] = None
-    #: The DataSource whose items this dataset curates (empty when hand-authored).
-    source_id: Optional[str] = None
-    data_layout: Optional[str] = None
-    field_spec: Optional[Dict[str, str]] = None
-    delimiter: Optional[str] = None
-    spec: Optional[DatasetSpecType] = None
-    #: The free ``data`` section of ``dataset.json`` — the document's second half.
-    data: Optional[FreeSection] = None
 
 
 class Dataset(Entity):
@@ -167,11 +131,11 @@ class Dataset(Entity):
         derived here, so an entity built from rows (a save) and one read from
         disk agree, and neither can carry a stale count."""
         if self.examples:
-            counts: Dict[str, int] = {}
-            for ex in self.examples:
-                counts[ex.kind.value] = counts.get(ex.kind.value, 0) + 1
-            self.num_examples = len(self.examples)
-            self.kind_counts = counts
+            from flow_sdk.assets.types.dataset import dataset_counts
+
+            counts = dataset_counts(str(example.kind) for example in self.examples)
+            self.num_examples = counts["num_examples"]
+            self.kind_counts = counts["kind_counts"]
         return self
 
     def of_kind(self, kind: ExampleKind) -> List[ExampleSpec]:
@@ -208,14 +172,14 @@ class Dataset(Entity):
         from the cheap index — re-parsing every example's payload (what a full
         reindex does) would make labelling N rows O(N²)."""
         rows = self._index()
-        kinds: Dict[str, int] = {}
-        for row in rows:
-            kinds[row["kind"]] = kinds.get(row["kind"], 0) + 1
-        self.num_examples = len(rows)
+        from flow_sdk.assets.types.dataset import dataset_counts
+
+        counts = dataset_counts(row["kind"] for row in rows)
+        self.num_examples = counts["num_examples"]
         # `annotated` is the layout's `has_ground_truth` — the rule the indexer's
         # `count_annotated` applies too, so a label and a reindex agree.
         self.num_annotated = sum(1 for row in rows if row["annotated"])
-        self.kind_counts = kinds
+        self.kind_counts = counts["kind_counts"]
         await self.save()
         return self
 
@@ -230,9 +194,10 @@ class Dataset(Entity):
         """Items → example rows (``input/item.json`` + provenance). Returns the
         new example ids. Raises ``LookupError`` for an unknown item,
         ``ValueError`` when the dataset cannot take source items."""
-        from flow_sdk.builtin.source_item import SourceItem, SourceItemSpec  # noqa: PLC0415
+        from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.schema.data_spec.dataset_spec import FileRef, FolderSpec  # noqa: PLC0415
         from flow_sdk.schema.data_spec.layout import INPUT, layout_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
         if self.input_shape is not SourceItemSpec:
             raise ValueError('this dataset does not take source items — its spec input must be "ingest.source_item"')

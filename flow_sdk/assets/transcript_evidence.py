@@ -29,8 +29,8 @@ def recognizable_asset_reference(path):
     from fnmatch import fnmatchcase
     from pathlib import Path
 
+    from flow_sdk.assets.layout import Folder
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    from flow_sdk.schema.layout import Folder
 
     path = Path(path)
     for name in SchemaRegistry.get_all_types():

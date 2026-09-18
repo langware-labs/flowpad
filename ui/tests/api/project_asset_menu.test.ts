@@ -81,6 +81,7 @@ async function indexProject(projectId: string): Promise<void> {
 }
 
 beforeAll(async () => {
+  tmpRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'flowpad-menu-')));
   const logPath = `/tmp/project_asset_menu.${INSTANCE}.log`;
   const logHandle = await fs.open(logPath, 'w');
   try {
@@ -89,6 +90,10 @@ beforeAll(async () => {
       env: {
         ...process.env,
         FLOW_INSTANCE: INSTANCE,
+        HOME: tmpRoot,
+        FLOW_HOME: path.join(tmpRoot, '.flow'),
+        FLOWPAD_CLAUDE_HOME: path.join(tmpRoot, '.claude'),
+        CLAUDE_CONFIG_DIR: path.join(tmpRoot, '.claude'),
         LOCAL_SERVER_PORT: String(PORT),
         MINIHUB_RELOAD: 'False',
         FLOWPAD_SKIP_DOTENV: 'true',
@@ -102,9 +107,6 @@ beforeAll(async () => {
   const up = await waitHealthy(PORT, 60_000);
   if (!up) throw new Error(`backend '${INSTANCE}' did not come up on :${PORT} — see ${logPath}`);
 
-  // realpath resolves symlinks (macOS /var → /private/var) so these match the
-  // backend's canonical_posix_path form exactly.
-  tmpRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'flowpad-menu-')));
   for (const key of ['A', 'B', 'C', 'leaf'] as const) {
     dirs[key] = path.join(tmpRoot, key);
     await fs.mkdir(dirs[key], { recursive: true });
@@ -266,8 +268,9 @@ describe('project asset menu (get-assets ?menu=true)', () => {
     expect(await sdk.Project.getProjectByPath(dirs.leaf)).toBeFalsy();
   }, 60_000);
 
-  it('leaves the flat getAssets response untouched', async () => {
-    const assets = await projectA.getAssets();
+  it('returns the flat inventory and scan diagnostics', async () => {
+    const { assets, scan_issues } = await projectA.getAssets();
+    expect(scan_issues).toEqual([]);
     expect(Array.isArray(assets)).toBe(true);
     expect(assets.length).toBeGreaterThan(0);
     for (const a of assets) expect(a).toHaveProperty('source');

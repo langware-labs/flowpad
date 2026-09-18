@@ -123,7 +123,7 @@ def test_the_authoring_form_is_strict() -> None:
 def test_a_dataset_shape_held_by_a_field_dumps_compactly_and_is_strict() -> None:
     """The FIELD is strict: a malformed spec on an API write is an error, not a
     silent None. Leniency is a disk-read policy — see ``test_a_malformed_spec_on_disk``."""
-    from flow_sdk.builtin.dataset import DatasetSpecType
+    from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetSpecType
 
     class Holder(BaseModel):
         spec: Optional[DatasetSpecType] = None

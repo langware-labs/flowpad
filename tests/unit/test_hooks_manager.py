@@ -11,8 +11,9 @@ Adapted for flow-cli:
 import pytest
 
 from flow_sdk.builtin.agent_hook import AgentHook, AgentProvider, HookEventType, HookScope
-from flow_sdk.builtin.hook_models import ActionType, HookEventData, TriggerAction
+from flow_sdk.builtin.hook_models import HookEventData
 from flow_sdk.builtin.trigger import Trigger
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 
 
 def test_create_agent_hook_model():

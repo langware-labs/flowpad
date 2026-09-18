@@ -5,7 +5,7 @@
 the hub **carrying the HTTP method verbatim**, swapping only the base URL. It does
 *not* infer the verb from anything — which is precisely why it cannot reproduce the
 class of bug where a roster ``GET`` got reflected to the hub as a destructive
-``DELETE`` (the "Cloud request rejected" inbox toast).
+``DELETE`` (the "Cloud request rejected" stream inbox toast).
 
 Auth + error reporting are reused, not duplicated: the inner client is the shared
 ``FlowpadClient`` httpx client, whose event hooks (``client_hooks._on_request`` /

@@ -204,7 +204,7 @@ function pushRecent(code: string): void {
  * the current project — so the language a project is read in follows the project.
  * The equality guard breaks the apply→record feedback loop: `applyProjectLocale`
  * → `setLocale(project.locale)` lands here with an already-matching value and
- * no-ops. Mirrors `stampProjectViewMode` in view-mode-context.
+ * no-ops.
  */
 function stampProjectLocale(project: Project | null | undefined, code: string): void {
   if (!project || project.locale === code) return;

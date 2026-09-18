@@ -1,11 +1,11 @@
 """Type metadata for PLAN."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import (
+from flow_sdk.assets.identity import (
     frontmatter_identity,
     resolved_path_key,
 )
-from flow_sdk.fs_store.indexer.functions.claude_plan import extract_claude_plan
+from flow_sdk.assets.layout import File, Walk
+from flow_sdk.assets.types.claude_plan import extract_claude_plan
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 

@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { TabStrip, type TabStripItem } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useTabCloser } from '@src/tabs/tab-close-request';
 import { closeTabWithLifecycle } from '@src/tabs/tab-content-lifecycle';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { useAllTabs, useTabLifecycles, useWorkspaceChildren } from '@src/tabs/use-tab-manager';
@@ -88,6 +89,9 @@ export function WorkspaceChildStrip({ processTab, processDock, projectId }: Work
     },
     [childByKey, activeKey, processDock, navigation],
   );
+
+  // Content asking to close the tab it is shown in closes it the same way the X does.
+  useTabCloser(childByKey, handleClose);
 
   // Close the WHOLE workspace: the process/display anchor tab plus every child
   // it opened. Backend close doesn't cascade to children, so we close each one

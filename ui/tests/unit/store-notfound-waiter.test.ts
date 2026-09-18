@@ -15,7 +15,12 @@
  */
 
 import { DataManager, EntityStatus, TypeId } from '@sdk';
-import { describe, expect, it } from 'vitest';
+import apiClient from '@sdk/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('DataManager.resolvePendingRequests — 404 waiter handling', () => {
   it('resolves a parked waiter with null (not reject) when the ref is a 404', async () => {
@@ -43,5 +48,23 @@ describe('DataManager.resolvePendingRequests — 404 waiter handling', () => {
     ref.error = boom as never;
 
     await expect(dm.waitForTypeId(typeId)).rejects.toBe(boom);
+  });
+
+  it('rejects a reader parked on a failing (non-404) fetch with THAT error, not with nothing', async () => {
+    // The real sequence behind a blank `/launch?agent=` card under StrictMode: the first
+    // `useEntity` subscription drives the fetch, the second parks on it, and the hub answers 403.
+    // `getByTypeId` used to mark the ref ERROR without recording the error, so the parked reader
+    // was rejected with `null` and surfaced as `isError` with no error at all.
+    const dm = new DataManager();
+    const typeId = new TypeId('agent', '5be3d54a-3e27-4a92-bef9-cbb723e71871');
+    const forbidden = Object.assign(new Error('Request failed with status code 403'), { response: { status: 403 } });
+    vi.spyOn(apiClient, 'get').mockRejectedValue(forbidden);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const driver = dm.getByTypeId(typeId); // sets the ref FETCHING before its first await
+    const parked = dm.getByTypeId(typeId); // parks on the in-flight fetch
+
+    await expect(driver).rejects.toBe(forbidden);
+    await expect(parked).rejects.toBe(forbidden);
   });
 });

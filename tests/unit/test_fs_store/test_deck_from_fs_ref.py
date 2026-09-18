@@ -12,11 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.types.deck import extract_deck
 from flow_sdk.builtin.deck import Deck
 from flow_sdk.capsules import CapsuleData
 from flow_sdk.capsules.folder import FolderCapsule
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.deck import extract_deck
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.fixtures.identity import resolve_id
 

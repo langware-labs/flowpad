@@ -74,7 +74,7 @@ import { credentialsPointer } from '@src/components/credentials-view/credentials
 export const RUN_PARAM = 'run';
 /** Which MessageThread a conversation view is filtered to (`?thread=<id>`). */
 export const THREAD_PARAM = 'thread';
-/** Agent mailbox scope carried from an Agent Inbox into its conversation. */
+/** Agent mailbox scope carried from an agent's Stream Inbox into its conversation. */
 export const AGENT_PARAM = 'agent';
 export const NODE_PARAM = 'node';
 export const PANEL_PARAM = 'panel';
@@ -99,6 +99,8 @@ export const PROCESS_RUN_SCOPE_KEYS = [
   // entry in each. An ingest worker has no spawning entity to browse from (the
   // whole reason this list exists), so its source is the only handle on it.
   'data_source_id',
+  // A scheduled agent run: its trigger is what spawned it.
+  'trigger_id',
 ] as const;
 
 export type ProcessRunScope = Partial<Record<(typeof PROCESS_RUN_SCOPE_KEYS)[number], string>>;
@@ -1432,15 +1434,15 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for the inbox, optionally focused on a specific conversation
+   * Create dock pointer for the stream inbox, optionally focused on a specific conversation
    * and/or message via query params.
    *
    * URL formats:
-   *   /dock/inbox
-   *   /dock/inbox?conversation=<id>
-   *   /dock/inbox?conversation=<id>&message=<id>
+   *   /dock/stream_inbox
+   *   /dock/stream_inbox?conversation=<id>
+   *   /dock/stream_inbox?conversation=<id>&message=<id>
    */
-  static forInbox(
+  static forStreamInbox(
     options?: { conversationId?: string | null; messageId?: string | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
@@ -1448,25 +1450,25 @@ export class DockPointer implements IDockPointer {
     if (options?.conversationId) queryOptions.conversation = options.conversationId;
     if (options?.messageId) queryOptions.message = options.messageId;
     return new DockPointer(
-      ViewType.INBOX,
+      ViewType.STREAM_INBOX,
       undefined,
       Object.keys(queryOptions).length ? queryOptions : undefined,
       layout,
     );
   }
 
-  /** The one address for an Agent's mailbox surface. */
-  static forAgentInbox(agentId: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.AGENT, `${agentId}/inbox`, undefined, layout);
+  /** The one address for an Agent's stream inbox surface. */
+  static forAgentStreamInbox(agentId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.AGENT, `${agentId}/stream_inbox`, undefined, layout);
   }
 
   static parseAgentPointer(pointer: string | undefined | null): {
     agentId: string | null;
-    view: 'inbox' | null;
+    view: 'stream_inbox' | null;
   } {
     const parts = pointer?.split('/').filter(Boolean) ?? [];
-    return parts.length === 2 && parts[0] && parts[1] === 'inbox'
-      ? { agentId: parts[0], view: 'inbox' }
+    return parts.length === 2 && parts[0] && parts[1] === 'stream_inbox'
+      ? { agentId: parts[0], view: 'stream_inbox' }
       : { agentId: null, view: null };
   }
 
@@ -1933,7 +1935,7 @@ export class DockPointer implements IDockPointer {
    * @param options.conversationId - Optional conversation id to canonicalise
    *   into the URL — produces `/dock/tasks/<taskId>/conversation/<convId>`.
    *   The task view itself only renders the task; the segment is purely a
-   *   canonical anchor (so deep-links from the email / inbox can carry both).
+   *   canonical anchor (so deep-links from the email / stream inbox can carry both).
    */
   static forTasks(taskId?: string, options?: { conversationId?: string; layout?: Layout }): DockPointer {
     // Task is now a generic folder asset — it opens through the shared asset
@@ -2370,7 +2372,7 @@ export class DockPointer implements IDockPointer {
     }
     if (this.viewType === ViewType.AGENT) {
       const { agentId, view } = DockPointer.parseAgentPointer(pointer);
-      return view === 'inbox' && agentId ? DockPointer.tryTypeId(Agent.type, agentId) : null;
+      return view === 'stream_inbox' && agentId ? DockPointer.tryTypeId(Agent.type, agentId) : null;
     }
     if (this.viewType === ViewType.GRAPH) {
       const parsed = DockPointer.parseGraphPointer(pointer);

@@ -17,12 +17,12 @@ const PRESETS: { id: Preset; label: string }[] = [
 ];
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-// APScheduler/cron day-of-week: 0=Mon … 6=Sun (same as Python)
+// Crontab day-of-week (APScheduler `from_crontab`): 0=Sun, 1=Mon … 6=Sat.
 const DAY_VALUES = ['1', '2', '3', '4', '5', '6', '0'];
 
 // ── Cron builder ──────────────────────────────────────────────────────────────
 
-function buildCron(preset: Preset, time: string, weekDay: string, monthDay: string, customExpr: string, runAt: string): Pick<ICronEvent, 'expr' | 'trigger_type'> {
+export function buildCron(preset: Preset, time: string, weekDay: string, monthDay: string, customExpr: string, runAt: string): Pick<ICronEvent, 'expr' | 'trigger_type'> {
   const [h = '9', m = '0'] = time.split(':');
   const min = String(parseInt(m, 10));
   const hr  = String(parseInt(h, 10));
@@ -35,7 +35,7 @@ function buildCron(preset: Preset, time: string, weekDay: string, monthDay: stri
   }
 }
 
-function parseCron(trigger_type?: string, expr?: string): { preset: Preset; time: string; weekDay: string; monthDay: string } {
+export function parseCron(trigger_type?: string, expr?: string): { preset: Preset; time: string; weekDay: string; monthDay: string } {
   if (trigger_type === 'date') return { preset: 'once', time: '09:00', weekDay: '1', monthDay: '1' };
   if (!expr) return { preset: 'daily', time: '09:00', weekDay: '1', monthDay: '1' };
   const parts = expr.split(' ');
@@ -47,6 +47,13 @@ function parseCron(trigger_type?: string, expr?: string): { preset: Preset; time
     return { preset: 'daily', time, weekDay: '1', monthDay: '1' };
   }
   return { preset: 'custom', time: '09:00', weekDay: '1', monthDay: '1' };
+}
+
+/** `YYYY-MM-DDTHH:mm:ss` in LOCAL wall-clock time — what a `datetime-local`
+ *  input shows. `toISOString()` is UTC and displayed a shifted time. */
+export function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 // ── Sub-component: compact segmented control ──────────────────────────────────
@@ -87,10 +94,15 @@ function TimeRow({ preset, time, onTimeChange, weekDay, onWeekDayChange, monthDa
   runAt: string; onRunAtChange: (v: string) => void;
   customExpr: string; onCustomExprChange: (v: string) => void;
 }) {
+  const { t } = useLingui();
   if (preset === 'once') {
     return (
       <input
         type="datetime-local"
+        // Seconds are selectable: a one-shot run can be set to the second.
+        step={1}
+        aria-label={t`Run at`}
+        data-testid="cron-run-at"
         value={runAt}
         onChange={(e) => onRunAtChange(e.target.value)}
         required
@@ -100,7 +112,6 @@ function TimeRow({ preset, time, onTimeChange, weekDay, onWeekDayChange, monthDa
   }
 
   if (preset === 'custom') {
-    const { t } = useLingui();
     return (
       <div className="flex flex-col gap-0.5">
         <input
@@ -190,13 +201,15 @@ export function CronForm({ initial = {}, defaultName = 'Today', onSubmit, onCanc
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setHours(9, 0, 0, 0);
-    return d.toISOString().slice(0, 16);
+    return toLocalInputValue(d);
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const fields = buildCron(preset, time, weekDay, monthDay, customExpr, runAt);
-    await onSubmit({ name, description: description || undefined, ...fields, enabled: true });
+    // Carry the current enabled state: forcing `true` re-enabled a disabled
+    // schedule every time it was edited.
+    await onSubmit({ name, description: description || undefined, ...fields, enabled: initial.enabled ?? true });
   };
 
   return (

@@ -14,7 +14,7 @@ materializing it back into the local database.
 
 Confirmed live on production (app.flowpad.ai): a real, previously-deleted
 conversation ("test3", deleted 2026-07-09) was found fully resurrected locally
-with all its messages, re-triggered on every single inbox open.
+with all its messages, re-triggered on every single stream inbox open.
 
 This test drives the REAL ``handle_conversation_list`` handler — only the hub
 HTTP boundary (``hub_get``) is mocked, matching the established pattern in

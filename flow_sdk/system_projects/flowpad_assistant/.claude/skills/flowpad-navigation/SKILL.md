@@ -114,7 +114,7 @@ opens a different screen and reports success.
 | Graph Workflows | `graph-workflows` | workflows |
 | Home | `home` | landing, start |
 | Hooks | `hooks` | claude hooks |
-| Inbox | `inbox` | messages |
+| Stream Inbox | `stream_inbox` | messages |
 | LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
 | LLM sources | `llm-sources` | harness funding |
 | Set up LLM | `llm-setup` | llm setup, choose llm, connect llm |

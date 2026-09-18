@@ -158,7 +158,7 @@ export function useUiCommandListener(): void {
 
     // Banner click (from main process) → navigate to the payload's generic
     // click target (URL-first, works for any notify_type — the OS badge is
-    // handled separately by useSyncOsBadge, driven by InboxManager.unread).
+    // handled separately by useSyncOsBadge, driven by StreamInboxManager.unread).
     const bridge = (window as unknown as { electronAPI?: NotifyBridge }).electronAPI;
     const disposeNotificationClick = bridge?.onNotificationClick?.(({ clickTarget }) => {
       const pointer = dockPointerForClickTarget(clickTarget);

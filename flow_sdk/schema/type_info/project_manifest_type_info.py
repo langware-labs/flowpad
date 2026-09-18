@@ -14,11 +14,10 @@ travels with git.
 Never browseable and never creatable from the UI — it is written only by an
 asset's ``set-published`` action.
 """
-from flow_sdk.fs_store.indexer.functions._asset_identity import folder_json_identity
-from flow_sdk.fs_store.operations.project_manifest import reconcile_published_cache
+from flow_sdk.assets.identity import folder_json_identity
+from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.project_manifest_spec import PROJECT_MANIFEST_MAIN, ProjectManifestSpec
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 
 PROJECT_MANIFEST = TypeInfo(
@@ -38,5 +37,4 @@ PROJECT_MANIFEST = TypeInfo(
     name_from_path=True,
     asset_spec=ProjectManifestSpec,
     identity_carrier=folder_json_identity(),
-    post_sync_fn=reconcile_published_cache,
 )

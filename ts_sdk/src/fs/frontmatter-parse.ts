@@ -6,10 +6,9 @@
  * fences tolerate trailing spaces/tabs and CRLF; the close fence may end the
  * file without a trailing newline.
  *
- * Callers own their body-whitespace policy (SkillParser trims, the markdown
- * editors keep the body verbatim so a save round-trips byte-for-byte) and
- * their own typed reading of `yaml` — this module only finds the boundary and
- * offers a flat `key: value` read for the simple cases.
+ * Presentation-only callers use the body and flat labels. Structured document
+ * reads and all edits go through the backend document action; this splitter
+ * never supplies metadata for a write.
  */
 
 const OPEN_FENCE = /^---[ \t]*\r?\n/;

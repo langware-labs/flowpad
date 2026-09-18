@@ -18,10 +18,10 @@ and no edit to the indexer's registration graph.
 ``wizard.json`` so a wizard shipped in the wheel carries none, and each install
 stamps its own uuid4 capsule instead of every install sharing one id.
 """
-from flow_sdk.fs_store.indexer.functions._asset_identity import folder_json_identity
-from flow_sdk.fs_store.indexer.functions.wizard import extract_wizard, wizard_asset_hash
+from flow_sdk.assets.identity import folder_json_identity
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.types.wizard import extract_wizard, wizard_asset_hash
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 

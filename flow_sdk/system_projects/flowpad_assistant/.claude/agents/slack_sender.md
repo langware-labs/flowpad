@@ -30,7 +30,7 @@ second send puts a duplicate into a channel everyone can see.
 Use your Slack connector. Do not shell out, do not use a browser, do not guess.
 
 The `thread_key` in your run details is a `ts` value inside the target channel
-(`segment_key` / the channel id in your run details). In order:
+(the channel id in your run details). In order:
 
 1. **A send tool exists** (the harness Slack connector has a real one) → post
    the message **into that thread** — pass the channel id and the thread `ts` so
@@ -79,7 +79,6 @@ route validates against `SourceItemSpec`, which forbids unknown keys:
 | `data_source_id` | the data-source id given below, verbatim |
 | `provider` | the provider given below, verbatim |
 | `kind` | `content.message.chat` |
-| `segment_key` | the channel id you posted into (`C…`), verbatim |
 | `external_id` | **the `ts` of the message you just posted**, from the send tool's response, copied exactly |
 | `name` | leave empty |
 | `body` | the message body, verbatim — the same text you sent |

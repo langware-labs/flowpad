@@ -29,6 +29,25 @@ repos:
         files: '^ui/'
         types_or: [javascript, ts, tsx, json, css, html]
 
+      # ---------- Electron packaging manifest (electron/) ----------
+      # electron-builder.json `files` is a whitelist: a new module under
+      # electron/ that is not listed is silently left out of the desktop build
+      # and only fails at runtime (`Cannot find module`). Block the commit until
+      # every staged electron/ file matches a `files` pattern — positive (ships)
+      # or `!` (deliberately not packaged). The JSON is the single source of
+      # truth; fix the list, not this hook.
+      - id: electron-builder-files
+        name: Electron builder files manifest
+        # `language: node` (not system): pre-commit provisions node itself
+        # (system node when present), so this runs on macOS, Linux and Windows
+        # without the bash `node-hook.sh` wrapper. minimatch is pinned to the
+        # major electron-builder depends on, so the gate matches exactly what
+        # the build will package.
+        entry: node scripts/check-electron-builder-files.js
+        language: node
+        additional_dependencies: ['minimatch@10']
+        files: '^electron/'
+
       # ---------- TypeScript SDK (ts_sdk/) ----------
       # ts_sdk is a top-level SIBLING of ui/ with no TypeScript of its own, so it
       # can't run tsc against its own tsconfig (the @types it references live in

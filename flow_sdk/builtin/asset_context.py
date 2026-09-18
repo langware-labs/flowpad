@@ -29,8 +29,33 @@ async def hydrate_asset_descriptor_remote(descriptors: list[AssetDescriptor]) ->
             remote.update({str(TypeId(type=kind, id=str(row.id))): bool(getattr(row, "remote", False)) for row in rows})
         except Exception:
             logger.debug("asset cloud decoration unavailable for %s", kind, exc_info=True)
-    return [descriptor if descriptor.remote is not None else descriptor.model_copy(update={"remote": remote.get(descriptor.typeid, False)})
-            for descriptor in descriptors]
+    def decorate(descriptor):
+        parent = TypeId(descriptor.parent_type_id) if descriptor.parent_type_id else None
+        parent_info = SchemaRegistry.get(parent.type) if parent else None
+        return descriptor.model_copy(update={
+            "remote": descriptor.remote if descriptor.remote is not None else remote.get(descriptor.typeid, False),
+            "attachable": not (parent_info is not None and parent_info.browseable_by is not None),
+        })
+    return [decorate(descriptor) for descriptor in descriptors]
+
+
+def asset_body_ref(path, *, authority, root):
+    """Address the selected occurrence through its containing authority."""
+    from pathlib import Path
+
+    from flow_sdk.assets import Asset
+    from flow_sdk.assets.asset import NotAnAsset
+
+    if not path:
+        return None
+    try:
+        body = Asset.from_path(path).layout.body
+        if body is None:
+            return None
+        relative = body.relative_to(Path(root).resolve())
+        return {"path": relative.as_posix(), "type_id": str(authority), "ref_type": "text", "read_only": True}
+    except (OSError, ValueError, NotAnAsset):
+        return None
 
 
 def collect_base_source_dirs(project) -> tuple[list[tuple[str, AssetSource]], set[str]]:

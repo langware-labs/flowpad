@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flow_sdk.builtin.change_event import ChangeEvent
-from flow_sdk.builtin.trigger import Trigger, TriggerType
+from flow_sdk.builtin.trigger import Trigger
+from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
 _log = logging.getLogger(__name__)
 

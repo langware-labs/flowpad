@@ -18,11 +18,10 @@ allow.
 when it is absent, so a hand-authored or shipped document is never re-rendered
 out from under its author.
 """
-from flow_sdk.fs_store.indexer.functions._asset_identity import folder_json_identity
-from flow_sdk.builtin.trigger_arming import arm_after_index
-from flow_sdk.fs_store.indexer.functions.trigger import extract_trigger, trigger_asset_hash
+from flow_sdk.assets.identity import folder_json_identity
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.types.trigger import extract_trigger, trigger_asset_hash
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -47,5 +46,4 @@ TRIGGER = TypeInfo(
     asset_hash_fn=trigger_asset_hash,
     # A trigger arms the moment it is INDEXED, not at the next restart. This is
     # what makes "trigger changes take effect after a restart" stop being true.
-    post_sync_fn=arm_after_index,
 )

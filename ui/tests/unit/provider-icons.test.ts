@@ -20,14 +20,14 @@ import { getIconPacks, resolveIcon } from '@sdk/icons';
 
 const MANIFEST_ROOT = join(
   __dirname,
-  '../../../flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source',
+  '../../../flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver',
 );
 
 type Manifest = { name: string; title?: string; icon_name?: string };
 
 const manifests: Manifest[] = readdirSync(MANIFEST_ROOT, { withFileTypes: true })
   .filter((e) => e.isDirectory())
-  .map((e) => JSON.parse(readFileSync(join(MANIFEST_ROOT, e.name, 'data_source.json'), 'utf8')));
+  .map((e) => JSON.parse(readFileSync(join(MANIFEST_ROOT, e.name, 'data_driver.json'), 'utf8')));
 
 describe('provider icons', () => {
   it('finds the shipped manifests', () => {

@@ -27,6 +27,7 @@ import contextlib
 import json as _json
 import logging
 import uuid
+from typing import Any
 
 from flow_sdk.actions.action_registry import action as _action_registry
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist
@@ -329,30 +330,41 @@ class Tab(Entity):
         if target is not None and callable(teardown):
             await teardown()
 
-    async def set_label(self, name: str) -> None:
-        """Set ONLY the Tab label — no target reflect, no ``auto_rename`` change.
+    @classmethod
+    def preserved_fields_on_save(cls, current_data: dict) -> tuple[str, ...]:
+        from flow_sdk.schema.types import EntityType
 
-        The PTY auto-title mirror: the active panel already saved the live name onto
-        its Shell/AgenticProcess; this keeps the durable ``Tab.name`` in step so the
-        chip stays right once inactive. Unlike :meth:`rename`, it must NOT touch the
-        target (which would pin ``auto_rename=False`` and stop future auto-titles)."""
+        return ("name",) if current_data.get("target_type") == EntityType.AGENTIC_PROCESS else ()
+
+    async def reconcile_target_name(self, target=None) -> None:
+        """Process tab names project durable naming state, even on reopen."""
+        if target is None:
+            target = await self._target_entity()
+        reconcile = getattr(target, "reconcile_name", None)
+        if callable(reconcile):
+            current = await reconcile()
+            if current is not None:
+                self.name = current.name
+
+    async def set_label(self, name: str) -> None:
+        """Set an ordinary label; worker labels always project their target."""
+        target = await self._target_entity()
+        if callable(getattr(target, "reconcile_name", None)):
+            await self.reconcile_target_name(target)
+            return
         if name and self.name != name:
             self.name = name
             await self.save()
 
     async def rename(self, name: str) -> None:
-        """``Tab.name`` is the generic source of truth for the tab label. Set it,
-        then reflect onto the backing entity by calling its generic ``rename`` —
-        base ``Entity.rename`` adopts the name onto ANY target (conversation,
-        agentic_process, shell, markdown, …); shell/agentic_process override it
-        to also pin ``auto_rename=False`` (and the FE sends the PTY ``/rename``).
-        Dispatch is by method, not by ``if target_type==`` (slick P6) — exactly
-        like ``close`` → ``teardown_for_tab``. A target-less tab keeps the label
-        on the Tab alone.
-        """
+        """A process target owns the transaction that names it and its tabs."""
+        target = await self._target_entity()
+        if callable(getattr(target, "reconcile_name", None)):
+            await target.rename(name)
+            self.name = target.name
+            return
         self.name = name
         await self.save()
-        target = await self._target_entity()
         if target is not None:
             await target.rename(name)
 
@@ -869,7 +881,13 @@ async def _load_target_entity(target_type: str | None, target_id: str | None):
     return await entity_cls.get_one({"id": str(target_id)})
 
 
-async def ensure_tab(
+async def ensure_tab(pointer: str, **options: Any) -> Tab:
+    """Deterministic get-or-create for a tab — ``ensure_tab_created`` without the flag."""
+    tab, _created = await ensure_tab_created(pointer, **options)
+    return tab
+
+
+async def ensure_tab_created(
     pointer: str,
     *,
     target_type: str | None = None,
@@ -880,8 +898,10 @@ async def ensure_tab(
     worktree: bool | None = None,
     after_tab_id: str | None = None,
     parent_tab_id: str | None = None,
-) -> Tab:
+) -> tuple[Tab, bool]:
     """Deterministic get-or-create for a tab, keyed by the canonical pointer.
+    Returns the tab and whether this call minted its row (a hidden row re-shown
+    is a reopen, not a create).
 
     On reopen (same pointer) the existing row is reused and re-shown
     (``visible=True``); the denormalized target/project/name hints are refreshed
@@ -930,6 +950,10 @@ async def ensure_tab(
     # *second* canonical row → two visible chips for one pointer. Query the pointer:
     # reuse the canonical (``id == tid``) row, and soft-hide any foreign-id strays
     # sharing that pointer so a pre-existing duplicate self-heals on next open.
+    # A loader label is presentation, never naming evidence for a worker.
+    # Initialize legacy authority before inserting a new tab with a UI hint.
+    if target_type == "agentic_process":
+        name = None
     same_pointer = await Tab.get_all({"pointer": pointer})
     existing = next((t for t in same_pointer if t.id == tid), None)
     for stray in same_pointer:
@@ -1025,7 +1049,8 @@ async def ensure_tab(
                 dirty = True
         if dirty:
             await existing.save()
-        return existing
+        await existing.reconcile_target_name()
+        return existing, False
     # Fresh create: place the new tab in the GLOBAL order — immediately after the
     # opener. ``after_tab_id`` is the explicit opener when given; otherwise the
     # opener defaults to the most-recently-active visible tab (browser-style: a
@@ -1065,7 +1090,8 @@ async def ensure_tab(
     tab.tab_order = new_order.index(tid)
     await _persist_global_order(new_order, {t.id: t for t in visible})
     await tab.save()
-    return tab
+    await tab.reconcile_target_name()
+    return tab, True
 
 
 async def _tabs_for_target(target_type: str, target_id: str) -> list["Tab"]:
@@ -1430,11 +1456,11 @@ async def broadcast_tabs_changed() -> None:
         logger.debug(f"broadcast_tabs_changed failed: {e}")
 
 
-async def _list_response(project: str | None):
+async def _list_response(project: str | None, **extra: object):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs = await _build_tab_list(project)
-    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
+    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs], **extra})
 
 
 async def _http_new_tab(
@@ -1451,8 +1477,9 @@ async def _http_new_tab(
 ):
     """POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
     right after ``after_tab_id`` (the opener); reopen keeps its slot. Returns the
-    updated project-filtered list."""
-    await ensure_tab(
+    updated project-filtered list, and ``created`` — whether this call minted the
+    row, which the client's view-mode memory policy keys ``TabCreate`` on."""
+    _tab, created = await ensure_tab_created(
         pointer,
         target_type=target_type,
         target_id=target_id,
@@ -1464,7 +1491,7 @@ async def _http_new_tab(
         parent_tab_id=parent_tab_id,
     )
     await broadcast_tabs_changed()
-    return await _list_response(project_id)
+    return await _list_response(project_id, created=created)
 
 
 _action_registry.register(

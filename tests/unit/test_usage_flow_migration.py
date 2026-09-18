@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from flow_sdk.usage_report.graph_workflow_function import _window_from_event
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
 
 
 def test_window_from_event_override_and_default():

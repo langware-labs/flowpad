@@ -224,10 +224,11 @@ async def build_asset_menu(
     flatten(root)
     by_dir = {n.path: n for n in nodes}
 
-    descriptors = await scan_path_asset_descriptors(
+    catalog = await scan_path_asset_descriptors(
         [(node.path, node.source) for node in nodes], own_project_id=str(project.id),
         types=count_types, limit=MENU_SCAN_CAP,
     )
+    descriptors = catalog.assets
     truncated = len(descriptors) >= MENU_SCAN_CAP
     own = asset_counts(descriptors, by_dir)
 

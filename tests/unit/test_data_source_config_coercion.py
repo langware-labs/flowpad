@@ -1,25 +1,32 @@
-"""``DataSource.save`` shapes ``config`` by the spec's field types — a URL sent
-as a string where the manifest declares ``lines`` becomes a one-element list,
-so the driver never iterates the characters of a URL."""
+"""``DataSource.save`` shapes ``config`` by the driver's ``Config`` — a URL sent as a string where a
+list is declared becomes a one-element list, so the driver never iterates the characters of a URL."""
 from __future__ import annotations
 
-import pytest
+from typing import Annotated
 
-from flow_sdk.builtin.data_source_spec import ConfigFieldSpec, DataSourceSpec
+import pytest
+from pydantic import StringConstraints
+
+from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.sources.base import Source
+from flow_sdk.sources.config import SourceConfig
 from tests.unit._ingest_helpers import make_data_source
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]
 
 
-async def test_lines_csv_and_number_fields_are_coerced_on_save():
-    await DataSourceSpec(
-        name="probe_provider", title="Probe",
-        config={"feed_urls": ConfigFieldSpec(type="lines"), "tags": ConfigFieldSpec(type="csv"), "depth": ConfigFieldSpec(type="number")},
-    ).save(notify=False)
-    src = make_data_source(provider="probe_provider", config={"feed_urls": "http://a/x\nhttp://b/y", "tags": "a, b", "depth": "3", "other": "kept"})
+class _ProbeConfig(SourceConfig):
+    feed_urls: list[str] = []
+    tags: list[str] = []
+    depth: int = 0
+
+
+async def test_list_and_number_fields_are_coerced_on_save():
+    _driver("probe_provider", _ProbeConfig)
+    src = make_data_source(provider="probe_provider", config={"feed_urls": "http://a/x\nhttp://b/y", "tags": "a, b", "depth": "3"})
     await src.save(notify=False)
     assert src.config["feed_urls"] == ["http://a/x", "http://b/y"]
-    assert src.config["tags"] == ["a", "b"] and src.config["depth"] == 3 and src.config["other"] == "kept"
+    assert src.config["tags"] == ["a", "b"] and src.config["depth"] == 3
 
 
 async def test_a_list_stays_a_list_and_an_unknown_provider_changes_nothing():
@@ -32,7 +39,7 @@ async def test_reflect_off_the_spec_list_falls_to_the_spec_default_on_create():
     """A folder source created through the API with the row default `record`
     has no reflector for the refs its driver returns; the spec's head is what
     the dialog would have picked."""
-    await DataSourceSpec(name="tree_provider", title="Tree", reflect=["none", "copy"]).save(notify=False)
+    await DataDriver(name="tree_provider", title="Tree", reflect=["none", "copy"]).save(notify=False)
     src = make_data_source(provider="tree_provider", config={"root": "/tmp/x"})
     assert src.reflect == "record"
     await src.save(notify=False)
@@ -43,13 +50,32 @@ async def test_reflect_off_the_spec_list_falls_to_the_spec_default_on_create():
     assert chosen.reflect == "copy", "a mode the spec offers is kept as given"
 
 
+class _StrictConfig(SourceConfig):
+    root: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    note: str = ""
+
+
+class _DefaultedConfig(SourceConfig):
+    depth: int = 3
+
+
+class _RegexConfig(SourceConfig):
+    feed_urls: list[Annotated[str, StringConstraints(pattern=r"^https?://")]]
+
+
+class _LenientConfig(SourceConfig):
+    root: str = ""
+
+
+def _driver(name: str, config: type[SourceConfig]) -> None:
+    source = type(f"_{name}", (Source,), {"provider": name, "Config": config})
+    DataDriver.register(DataDriver.for_class(source))
+
+
 async def test_a_missing_required_field_refuses_the_create_naming_the_field():
     """The form already refuses it; this is the API's and an agent's copy of
     the rule — a `ValueError`, which the create route maps to a 400."""
-    await DataSourceSpec(
-        name="strict_provider", title="Strict",
-        config={"root": ConfigFieldSpec(type="path", required=True), "note": ConfigFieldSpec()},
-    ).save(notify=False)
+    _driver("strict_provider", _StrictConfig)
     with pytest.raises(ValueError, match="config.root is required"):
         await make_data_source(provider="strict_provider", config={"note": "x"}).save(notify=False)
     with pytest.raises(ValueError, match="config.root is required"):
@@ -59,11 +85,8 @@ async def test_a_missing_required_field_refuses_the_create_naming_the_field():
     assert ok.exist_in_db
 
 
-async def test_a_required_field_with_a_default_may_be_omitted():
-    await DataSourceSpec(
-        name="defaulted_provider", title="Defaulted",
-        config={"depth": ConfigFieldSpec(type="number", required=True, default=3)},
-    ).save(notify=False)
+async def test_a_field_with_a_default_may_be_omitted():
+    _driver("defaulted_provider", _DefaultedConfig)
     src = make_data_source(provider="defaulted_provider", config={})
     await src.save(notify=False)
     assert src.exist_in_db
@@ -72,10 +95,7 @@ async def test_a_required_field_with_a_default_may_be_omitted():
 async def test_a_value_off_the_pattern_is_refused_per_entry_after_coercion():
     """`lines` are split first, so the message names the entry at fault, not
     the whole blob — the form's rule (`source-form.ts`), applied here."""
-    await DataSourceSpec(
-        name="regex_provider", title="Regex",
-        config={"feed_urls": ConfigFieldSpec(type="lines", pattern=r"^https?://")},
-    ).save(notify=False)
+    _driver("regex_provider", _RegexConfig)
     with pytest.raises(ValueError, match=r"config.feed_urls is not valid: ftp://b/y"):
         await make_data_source(provider="regex_provider", config={"feed_urls": "http://a/x\nftp://b/y"}).save(notify=False)
     src = make_data_source(provider="regex_provider", config={"feed_urls": "http://a/x"})
@@ -83,14 +103,12 @@ async def test_a_value_off_the_pattern_is_refused_per_entry_after_coercion():
     assert src.config["feed_urls"] == ["http://a/x"]
 
 
-async def test_an_existing_row_is_not_re_validated_on_re_save():
-    """The poller re-saves every tick; a rule added to the spec after the row
+async def test_an_existing_row_is_not_re_validated_on_re_save(monkeypatch):
+    """The poller re-saves every tick; a rule added to the Config after the row
     was minted must not turn that into an exception nobody reads."""
-    await DataSourceSpec(name="lenient_provider", title="Lenient", config={"root": ConfigFieldSpec()}).save(notify=False)
+    _driver("lenient_provider", _LenientConfig)
     src = make_data_source(provider="lenient_provider", config={"root": "/tmp/x"})
     await src.save(notify=False)
-    spec = await DataSourceSpec.get_one({"name": "lenient_provider"})
-    spec.config = {"root": ConfigFieldSpec(required=True), "token": ConfigFieldSpec(required=True)}
-    await spec.save(notify=False)
+    _driver("lenient_provider", _StrictConfig)  # a stricter rule, after the fact
     src.config = {"root": "/tmp/x"}
-    await src.save(notify=False)   # no `token`, and no raise
+    await src.save(notify=False)   # no raise

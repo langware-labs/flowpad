@@ -6,10 +6,10 @@ import {
   UserNote,
   forwardDiagnosis,
   sendDiagnosisEmailReport,
-  type APIEntity,
   type EntityFeedData,
 } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
 import { getFeedEntryTypeId } from './feed-utils';
 import { useFeedMutations } from '@src/hooks/use-feed-mutations';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -25,26 +25,6 @@ import { Textarea } from '@src/components/ui/textarea';
 
 /** Bulk clear only earns its header space once the list is long enough to be a chore. */
 const DISMISS_ALL_MIN_ENTRIES = 5;
-
-/**
- * Invisible cache-warmer: issues ONE ``$IN`` query for all of a single type's
- * feed-target ids so the matching ``FeedEntryCard``s resolve from cache instead
- * of one GET (+ ``/watch``) each. Rendered once per distinct target type so its
- * hooks stay stable even as the set of types changes. Renders nothing.
- */
-function FeedTargetHydrator({ type, ids }: { type: string; ids: string[] }) {
-  const request = useMemo(
-    () =>
-      new QueryRequest({
-        type,
-        query: { match: { op: '$IN', operands: ['id', ids] } },
-        name: `feed ${type} hydration`,
-      }),
-    [type, ids],
-  );
-  useEntitiesQuery<APIEntity<any>>(request, { enabled: ids.length > 0 });
-  return null;
-}
 
 export function HomeFeedColumn() {
   const { t } = useLingui();
@@ -200,10 +180,8 @@ export function HomeFeedColumn() {
 
   return (
     <div className="flex h-full min-h-0 w-72 shrink-0 flex-col gap-2">
-      {/* Batch cache-warmers — one ``$IN`` query per target type. Render
-          nothing; they exist so the cards below read from cache. */}
       {targetsByType.map(({ type, ids }) => (
-        <FeedTargetHydrator key={type} type={type} ids={ids} />
+        <EntityBatchHydrator key={type} type={type} ids={ids} />
       ))}
       <div aria-hidden className="h-9 shrink-0" />
       <div

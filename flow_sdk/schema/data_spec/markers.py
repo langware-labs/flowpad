@@ -1,4 +1,4 @@
-"""Field-type markers — the two facts a spec states about its main document.
+"""Field-type markers for document sections and explicitly nested assets.
 
 A ``DataSpec`` describes an on-disk tree through its field TYPES: ``FileRef``
 is a file, ``FolderSpec`` a directory, a nested entity a sub-asset. Two facts
@@ -8,14 +8,15 @@ section of a two-section JSON manifest. They are ``Annotated`` markers, so the
 field keeps its plain Python type everywhere else (the DB row, the API) and
 only the disk serializer reads the annotation.
 
-At most one of each per spec (``fields.spec_layout`` enforces it).
+At most one body and one free section per spec (``fields.spec_layout`` enforces it).
+``SubAsset[Spec]`` distinguishes nested filesystem bytes from ordinary inline specs.
 """
 
 from __future__ import annotations
 
 import types
 from dataclasses import dataclass
-from typing import Annotated, Any, Optional, Union, get_args, get_origin
+from typing import Annotated, Any, Optional, TypeVar, Union, get_args, get_origin
 
 
 @dataclass(frozen=True)
@@ -28,19 +29,28 @@ class FreeSectionMarker:
     """This ``dict`` is the free ``data`` section of a two-section JSON manifest."""
 
 
+@dataclass(frozen=True)
+class SubAssetMarker:
+    """This registered spec is a separate nested filesystem asset."""
+
+
+_T = TypeVar("_T")
+SubAsset = Annotated[_T, SubAssetMarker()]
+
+
 #: The markdown body — rendered after the frontmatter, never in it.
 Body = Annotated[str, BodyMarker()]
 #: The free JSON section — ``{"metadata": <header>, "data": <this>}``.
 FreeSection = Annotated[dict[str, Any], FreeSectionMarker()]
 
 
-def marker_of(annotation: Any) -> Optional[BodyMarker | FreeSectionMarker]:
+def marker_of(annotation: Any) -> Optional[BodyMarker | FreeSectionMarker | SubAssetMarker]:
     """The marker on ``annotation``, looking through ``Optional`` / ``Union``
     and ``Annotated`` layers; None when the field carries none."""
     origin = get_origin(annotation)
     if origin is Annotated:
         for meta in get_args(annotation)[1:]:
-            if isinstance(meta, (BodyMarker, FreeSectionMarker)):
+            if isinstance(meta, (BodyMarker, FreeSectionMarker, SubAssetMarker)):
                 return meta
         return marker_of(get_args(annotation)[0])
     if origin in (Union, types.UnionType):

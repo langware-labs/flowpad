@@ -62,15 +62,16 @@ from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
+    from flow_sdk.assets.directory import AssetDir
     from flow_sdk.builtin.agent_hook import HookEventType
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.assets.directory import AssetDir
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
+    from flow_sdk.builtin.agentic_process.naming.providers import NamingAdapter
     from flow_sdk.builtin.hooks.types import AgentHookResponse, HookCapabilities, HookOutcome
-    from flow_sdk.builtin.worker_status import WorkerStatus
     from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
     from flow_sdk.responses.response import ApiResponse
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 # Per-line StreamReader limit shared by every JSONL CLI transport. Asyncio's
@@ -516,6 +517,11 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
             env[ENV_CLAUDE_CONFIG_DIR] = str(claude_home)
         else:
             env.pop(ENV_CLAUDE_CONFIG_DIR, None)
+    for key, configured_root in getattr(process.driver, "session_store_env", {}).items():
+        supplied = env.get(key)
+        if supplied and Path(supplied).expanduser().resolve() != Path(configured_root).resolve():
+            raise ValueError(f"Worker {key} must match Flowpad's configured session store")
+        env[key] = configured_root
     pinned = flow_cli_env_path(env.get("PATH"))
     if pinned:
         env["PATH"] = pinned
@@ -557,16 +563,14 @@ async def resolve_worker_language(process: "AgenticProcess") -> str | None:
 
 
 async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
-    """Resolve project SecretOrigin pointers into this transient worker env.
+    """Resolve declared credentials (user scope + the process's project) into
+    this transient worker env.
 
     This must only be called on spawn-time env dicts. It must not mutate
     AgentOptions.env_vars because those are persisted and rendered.
     """
+    from flow_sdk.builtin.credential_resolver import environment_for, resolve_attached_secrets  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_resolver import (  # noqa: PLC0415
-        attached_env_vars_for,
-        resolve_project_secrets,
-    )
 
     project = None
     project_id = getattr(process, "project_id", None)
@@ -577,15 +581,13 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
             project = await Project.get_ancestor(process.typeid)
         except Exception:
             project = None
-    if project is None:
-        return env
 
     # Node attachment gates the worker too, not only the connector's commands.
-    # None = nothing curated on this node, i.e. every declared secret, so an
-    # untouched setup behaves exactly as it did before attachment existed.
-    only = await attached_env_vars_for(project)
-    resolved = await resolve_project_secrets(project, only=only, process=process)
-    for env_var, value in resolved.items():
+    # None = nothing curated on this node, i.e. every declared variable. With no
+    # project, only user-scope credentials apply. Values come from the process's
+    # environment: its Deployment's, else this instance's default.
+    environment = await environment_for(process)
+    for env_var, value in (await resolve_attached_secrets(project, environment=environment)).items():
         # setdefault, not assignment: an explicitly-set env var wins.
         env.setdefault(env_var, value.get_secret_value())
 
@@ -1722,9 +1724,25 @@ class WorkerDriver(Protocol):
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Native session-store environment pinned to instance configuration."""
+        ...
+
+    @property
+    def naming_adapter(self) -> "NamingAdapter":
+        """Provider title observations, read on transcript events and lifecycle edges."""
+        ...
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolved transcript path plus the native JSONL format metadata."""
         ...
+
+    # Optional ``transcript_is_final(process, path) -> bool``: True when ``path``
+    # is this session's own record, which a live turn only appends to, so its
+    # location may be remembered (``agentic_process.transcript_cache``). Read via
+    # ``getattr`` with a False default, so a vendor that does not declare it keeps
+    # resolving on every read.
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         """Where this driver's worker writes its JSONL/event log for the

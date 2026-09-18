@@ -12,12 +12,12 @@ import path from 'node:path';
 import { parse } from 'dotenv';
 
 const workingDirectory = process.cwd();
-const REPO_ROOT = existsSync(path.resolve(workingDirectory, 'ui/package.json'))
+export const REPO_ROOT = existsSync(path.resolve(workingDirectory, 'ui/package.json'))
   ? workingDirectory
   : path.resolve(workingDirectory, '..');
 const FILE_ENV_BY_MODE = new Map<string, Record<string, string>>();
 
-function configuredFileEnv(): Record<string, string> {
+export function configuredFileEnv(): Record<string, string> {
   const mode = process.env.FLOW_INSTANCE || 'development';
   const cached = FILE_ENV_BY_MODE.get(mode);
   if (cached) return cached;

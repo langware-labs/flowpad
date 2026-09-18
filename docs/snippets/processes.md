@@ -75,7 +75,7 @@ author time, not at spawn.
 ```python
 agent = await Agent.get_one({"name": "researcher"})
 
-proc = await agent.launch("Summarize today's inbox in three bullets.", wait=True)
+proc = await agent.launch("Summarize today's stream inbox in three bullets.", wait=True)
 ```
 
 * `agent.create_process(prompt, **options)` is the primitive: the process is
@@ -116,6 +116,7 @@ class McpSpec(DataSpec):                 # flow_sdk/schema/data_spec/mcp_spec.py
     args: list[str] = []
     env: dict[str, str] = {}
     url: str = ""
+    entrypoint: str = ""                 # bundled server: path relative to the asset folder
 ```
 
 Frozen, `extra="forbid"`: a misspelled key raises. `McpSpec.from_record(row)`

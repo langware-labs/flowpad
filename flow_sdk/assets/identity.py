@@ -1,0 +1,92 @@
+"""Identity carrier factories — the vocabulary a type declares ``identity_carrier=`` in.
+
+Validation and minting belong to ``TypeInfo.mint``; owner reconciliation to
+the indexer (``flow_sdk.fs_store.indexer.reconcile``).
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from flow_sdk.assets.identity_carrier import Derived, Frontmatter, JsonRoot, Sidecar
+
+__all__ = [
+    "NATIVE_JSON_IDENTITY",
+    "derived_identity",
+    "folder_json_identity",
+    "frontmatter_identity",
+    "native_json_identity",
+    "needs_ref",
+    "resolved_path_key",
+]
+
+
+def needs_ref(fn):
+    """Mark a stable-key function that reads MORE off its ref than the path —
+    a ``json_path`` fragment, the walk's scope. Handed a bare path such a type
+    keys a DIFFERENT v5, so ``resolve_asset`` refuses it (``keyed_by_ref``)."""
+    fn.needs_ref = True
+    return fn
+
+
+def resolved_path_key(ref: Any) -> str:
+    return str(Path(getattr(ref, "_path", ref)).resolve())
+
+
+NATIVE_JSON_IDENTITY = JsonRoot()
+
+
+def frontmatter_identity() -> Frontmatter:
+    """The carrier for a type whose main document is markdown: ``id:`` in its
+    frontmatter — a file type, or a folder type whose main document is
+    markdown (``SKILL.md``, ``task.md``)."""
+    return Frontmatter()
+
+
+def folder_json_identity() -> Sidecar:
+    return Sidecar()
+
+
+def native_json_identity() -> JsonRoot:
+    return NATIVE_JSON_IDENTITY
+
+
+def derived_identity(reader: Any = None) -> Derived:
+    return Derived(reader=reader)
+
+
+def main_file_mtime(ref: Any, filename: str) -> float:
+    """Freshness of a folder asset = the mtime of the ONE file that defines it.
+
+    The third copy of this was being written when it moved here. Every
+    ``Folder(main=...)`` type wants exactly this rule and for the same reason:
+    a folder asset accumulates things beside its document — a helpdesk's guides
+    have their own records and their own hashes, a wizard's folder collects run
+    scratch — and hashing the tree would re-index the asset every time any of
+    that changed, which is precisely when nothing about the asset did.
+
+    ``0.0`` for a missing file: an asset whose document is gone is not fresh.
+    """
+    try:
+        return (ref._path / filename).stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def entity_document_fingerprint(info: Any, ref: Any) -> float:
+    """Freshness of an ENTITY DOCUMENT folder: ``<type>.json`` and its body file
+    (``system_prompt.md``). Editing either re-indexes; anything else beside them does not.
+
+    ``info`` is the type itself, bound at registration — the hash of an asset is not a name lookup."""
+    from flow_sdk.assets.serialization import entity_body_path  # noqa: PLC0415
+
+    root = ref._path if ref._path.is_dir() else ref._path.parent
+    body = info.body_file
+    total = 0
+    for path in (root / info.shape.main, *(() if body is None else (entity_body_path(root, body),))):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        total += stat.st_mtime_ns + stat.st_size
+    return float(total)

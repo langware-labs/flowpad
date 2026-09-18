@@ -10,9 +10,9 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.inbox.agent_runner import _reuse_or_spawn_agent_process, handle_inbound
-from flow_sdk.inbox.projection import channel_of, thread_key_for
 from flow_sdk.responses.response import ApiFailResponse
+from flow_sdk.stream_inbox.agent_runner import _reuse_or_spawn_agent_process, handle_inbound
+from flow_sdk.stream_inbox.projection import channel_of, thread_key_for
 
 pytestmark = pytest.mark.asyncio
 
@@ -51,7 +51,7 @@ async def test_mail_process_uses_agent_deployment_bundle_and_is_reused(mail_db, 
 async def test_prompt_refusal_is_checked_before_reply_capture(mail_db, monkeypatch):
     agent = await _agent(f"mail-prompt-fail-{mint_uuid()[:8]}")
     source = DataSource(
-        name="Agent inbox",
+        name="Agent mailbox",
         provider="cloud_email",
         channel="email",
         config={"agent_id": agent.id, "address": "ada@agentmail.to"},
@@ -62,7 +62,6 @@ async def test_prompt_refusal_is_checked_before_reply_capture(mail_db, monkeypat
     item = SourceItem(
         data_source_id=source.id,
         provider="cloud_email",
-        segment_key=agent.id,
         external_id=f"<{mint_uuid()}@example.com>",
         name="Question",
         body="Can you answer this?",

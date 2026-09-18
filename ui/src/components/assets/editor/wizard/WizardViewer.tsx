@@ -60,7 +60,15 @@ const STEP_STYLE: Record<string, { Icon: typeof Circle; className: string }> = {
   not_reached: { Icon: Circle, className: 'text-muted-foreground/30' },
 };
 
-const WizardIcon = iconForType(Wizard.type);
+// Resolved at render, never at module scope: before bootstrap `iconForType`
+// answers lucide `FileText`, after it a FlowIcon wrapper. A capitalised
+// module-level const is registered with Fast Refresh, so an HMR re-run would
+// file both under one family and hand every `FileText` a non-forwardRef type
+// ("Component is not a function").
+function WizardIcon({ className }: { className?: string }) {
+  const Icon = iconForType(Wizard.type);
+  return <Icon className={className} />;
+}
 
 export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }) {
   const mainRef = useMemo(() => fsRef.child(MAIN_FILE), [fsRef]);

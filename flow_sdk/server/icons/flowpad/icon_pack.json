@@ -40,7 +40,8 @@
       "asset": "google-cloud-storage.svg",
       "aliases": [
         "GoogleCloudStorage"
-      ]
+      ],
+      "color": "#4285F4"
     },
     {
       "kind": "generic",
@@ -54,6 +55,33 @@
       "kind": "shell",
       "asset": "shell.svg",
       "source": "lucide `square-terminal` (ISC)"
+    },
+    {
+      "kind": "source-folder",
+      "asset": "source-folder.svg",
+      "color": "#F59E0B",
+      "source": "lucide `folder` (ISC)",
+      "aliases": [
+        "SourceFolder"
+      ]
+    },
+    {
+      "kind": "agent-transport",
+      "asset": "agent-transport.svg",
+      "color": "#A78BFA",
+      "source": "lucide `bot` (ISC)",
+      "aliases": [
+        "AgentTransport"
+      ]
+    },
+    {
+      "kind": "help-desk",
+      "asset": "help-desk.svg",
+      "color": "#EF4444",
+      "source": "lucide `life-buoy` (ISC)",
+      "aliases": [
+        "HelpDesk"
+      ]
     }
   ]
 }

@@ -32,6 +32,8 @@ export interface AssetUsage {
 }
 
 export interface AssetDescriptor {
+  /** Backend staging policy for this exact occurrence. */
+  attachable?: boolean;
   /** Serialized TypeId, e.g. "skill-<uuid>" or "subagent-<uuid>". */
   typeid: string;
   source: AssetSource;
@@ -66,9 +68,15 @@ export interface ProcessAssetUsage {
   evidence: AssetUsage[];
 }
 
-/** Worker verification status and its resolved configuration. */
-export interface ProcessAssetInventory {
+export interface AssetScanIssue { path: string; message: string; type_name?: string | null }
+export interface AssetScanResult {
   assets: AssetDescriptor[];
+  scan_issues?: AssetScanIssue[];
+  truncated?: boolean;
+}
+
+/** Worker verification status and its resolved configuration. */
+export interface ProcessAssetInventory extends AssetScanResult {
   used_assets?: ProcessAssetUsage[];
   unresolved_usage?: ProcessAssetUsage[];
   assistant_enabled?: boolean;

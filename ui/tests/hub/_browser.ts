@@ -27,7 +27,11 @@ export interface InstancePage {
 }
 
 export async function launchBrowser(): Promise<Browser> {
-  return chromium.launch({ headless: true });
+  // Headed on demand: a journey test is also the demo of that journey, and a
+  // human watching it run is the only way to judge whether the experience is
+  // any good. `slowMo` makes the steps followable rather than a flicker.
+  const headed = process.env.FLOWPAD_TEST_HEADED === '1';
+  return chromium.launch({ headless: !headed, slowMo: headed ? 120 : 0 });
 }
 
 /** Open a page on the instance's frontend and start collecting console errors. */

@@ -126,7 +126,7 @@ is injected at runtime and therefore lands last in the cascade; a plain
 `.fp-icon{width:1em}` would beat `h-4 w-4` at every call site.
 
 Outside React, `iconElement(tag, packs)` returns an `HTMLElement` and
-`iconChip(tag, label, packs)` the labelled pill an inbox row wears. `useIcon` is
+`iconChip(tag, label, packs)` the labelled pill a stream inbox row wears. `useIcon` is
 for callers that need the *resolution* — which pack answered, whether best-match
 degraded — rather than a glyph.
 

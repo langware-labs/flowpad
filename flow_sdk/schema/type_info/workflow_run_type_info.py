@@ -1,13 +1,10 @@
 """Type metadata for WORKFLOW_RUN."""
 from typing import Optional
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
-from flow_sdk.fs_store.indexer.functions.workflow_run import (
-    extract_workflow_run,
-    workflow_run_identity_key,
-)
+from flow_sdk.assets.identity import derived_identity
+from flow_sdk.assets.layout import File
+from flow_sdk.assets.types.workflow_run import extract_workflow_run, workflow_run_identity_key
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode

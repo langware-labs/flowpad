@@ -3,17 +3,18 @@ import {
   dataContext,
   type IDockPointer,
   instancePreferences,
-  isHubOnly,
   onPreferenceChange,
   PREF_REGISTRY,
   PrefKey,
-  type Project,
   TypeId,
+  ViewModeEvent,
+  viewModeMemory,
   ViewType,
 } from '@sdk';
 import { usePreference, usePreferenceResolved } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useLocation } from 'react-router';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 
 declare global {
@@ -237,87 +238,14 @@ export function getViewMode(): ViewMode {
   return toViewMode(instancePreferences.get(PrefKey.VIEW_MODE));
 }
 
-// Per-project memory: every effective mode change (footer toggle via the dock-URL
-// adoption below, pointerless direct set, window.setView/setDev) converges in
-// setViewMode, which stamps the current project. The equality guard breaks the
-// apply→record feedback loop: applyProjectViewMode → setViewMode(project.last_mode)
-// lands here with an already-matching value and no-ops.
-function stampProjectViewMode(project: Project | null | undefined, val: ViewMode): void {
-  if (!project || project.last_mode === val) return;
-  // Hub: view mode is a desk concept — the hub serves one page and its project
-  // schema has no `last_mode` to store, so this stamp can only ever be a
-  // no-op write. And it isn't harmless: `toJSON` emits only fields the SERVER's
-  // schema declares, and the hub publishes just the project-specific delta
-  // (artifacts/helpdesk/…) — so the resulting full-row PUT ships without
-  // `name` and wipes the name off every project the hub loads, including the
-  // one just created. Don't write projects from here on the hub.
-  if (isHubOnly()) return;
-  project.last_mode = val;
-  void project.save().catch((err) => {
-    console.warn('[view-mode] failed to record last_mode on project', err);
-  });
-}
+// View-mode MEMORY (`last_mode` on a session or project) is read here and in
+// navigation, and written ONLY through the SDK's `viewModeMemory`, whose
+// `VIEW_MODE_STORE` policy decides which events mint it. Restoring a mode never
+// writes: a remembered mode reaches the screen by being stated on the URL.
 
-/**
- * Apply a project's remembered view mode on project load (called from
- * `loadProject`, after CurrentProjectTypeId is written to context): a valid
- * stored `last_mode` becomes the active mode; a project without one adopts —
- * and records — the current mode. Saves are fire-and-forget so the loader
- * stays fast (URL-first rule).
- */
-export function applyProjectViewMode(project: Project): void {
-  const remembered = toViewModeOrNull(project.last_mode);
-  if (remembered) {
-    setViewMode(remembered);
-  } else {
-    stampProjectViewMode(project, getViewMode());
-  }
-}
-
-/**
- * Per-SESSION memory, one level below the project's. The project's `last_mode`
- * answers "what mode does a NEW session in here start in"; a session's own
- * answers "what mode is THIS session in" — and it outranks the project's for
- * as long as the session is open, because the mode is a property of the thing
- * you are looking at, not of the app.
- *
- * Same equality guard as the project stamp, and for the same reason: the mode
- * a session is opened in comes straight back round as a stamp (loader applies
- * it → the URL carries it → `useDockViewModeOverrideSync` records it), so an
- * already-matching value must cost nothing rather than a save per open.
- */
-export function stampProcessViewMode(process: AgenticProcess | null | undefined, val: ViewMode): void {
-  if (!process || process.last_mode === val) return;
-  process.last_mode = val;
-  void process.save().catch((err) => {
-    console.warn('[view-mode] failed to record last_mode on process', err);
-  });
-}
-
-/**
- * Apply a session's remembered view mode when its dock loads (called from
- * `routeProcessPointer`, after `loadProcess` has written CurrentProcessTypeId).
- *
- * `urlViewMode` is the `?viewMode` the dock arrived with. When present it is
- * authoritative and this does NOTHING: the URL already outranks every
- * projection in `useViewMode`, and `useDockViewModeOverrideSync` — the single
- * load-time owner of view-mode arrangements — both adopts it as the preference
- * and stamps it onto this session. Acting here as well would write the
- * remembered mode over the requested one for a frame and save the process
- * twice.
- *
- * With no mode on the URL (a cold deep link, a hard refresh) the stored mode
- * becomes the active one; a session that has never carried a mode adopts — and
- * records — the current one.
- */
-export function applyProcessViewMode(process: AgenticProcess, urlViewMode: ViewMode | null): void {
-  if (urlViewMode) return;
-  const remembered = toViewModeOrNull(process.last_mode);
-  if (remembered) {
-    setViewMode(remembered);
-  } else {
-    stampProcessViewMode(process, getViewMode());
-  }
+/** A target's remembered mode, or null when it has none (or garbage). */
+export function rememberedViewMode(target: { last_mode?: string | null } | null | undefined): ViewMode | null {
+  return toViewModeOrNull(target?.last_mode ?? null);
 }
 
 /**
@@ -333,27 +261,15 @@ export function sessionIdForDock(dock: IDockPointer): string | null {
 }
 
 /**
- * The mode a SESSION dock should open in, from the session's own memory — the
- * cache-only read behind the URL-first seed in `NavigationActions.openDock`.
- * Null when the dock is not a session, the entity is not in cache (a cold deep
- * link: the loader's `applyProcessViewMode` covers that), or it has no valid
- * stored mode (a session that predates this memory, which adopts the ambient
- * mode on its first open).
+ * The mode a dock should open in from its own memory — the cache-only read
+ * behind the URL-first seed in `NavigationActions.openDock`. The memory lives on
+ * the dock's TARGET (the same entity its tab is minted against), when that
+ * target's type carries `last_mode`. Null when it has none, it is not in cache
+ * (a cold deep link: the shell loader redirects onto the remembered mode), or
+ * it has never stored a mode.
  */
-export function rememberedSessionViewMode(dock: IDockPointer): ViewMode | null {
-  const sessionId = sessionIdForDock(dock);
-  if (!sessionId) return null;
-  // A pointer is URL text: the id segment can be anything, and the cache lookup
-  // builds a TypeId, which THROWS on a malformed one. A seed that decides which
-  // mode a dock opens in must never be the thing that fails a navigation — an
-  // unreadable id simply has no memory, and the loader reports the bad URL.
-  let process: AgenticProcess | null = null;
-  try {
-    process = AgenticProcess.getByIdFromCache<AgenticProcess>(sessionId);
-  } catch {
-    return null;
-  }
-  return toViewModeOrNull(process?.last_mode ?? null);
+export function rememberedDockViewMode(dock: IDockPointer): ViewMode | null {
+  return rememberedViewMode(viewModeMemory.targetFor(dock.targetTypeId));
 }
 
 // The last mode that wasn't Vibe. Entering Vibe ADOPTS it as the persisted
@@ -374,11 +290,23 @@ export function previousNonVibeViewMode(): ViewMode {
   return lastNonVibeViewMode ?? ViewMode.Standard;
 }
 
-export function setViewMode(val: ViewMode): void {
+/**
+ * THE mode switch: persist `val` as the preference and report `ModeSwitch` to
+ * view-mode memory, against `dock`'s memory target (when the switch happened on
+ * a dock) and the current project. Every path that changes mode on purpose —
+ * the footer toggle's navigation (via `useDockViewModeOverrideSync`), a
+ * pointerless toggle, `window.setView` / `setDev` — lands here, and nothing that
+ * merely opens or restores a tab does.
+ */
+export function setViewMode(val: ViewMode, dock: IDockPointer | null = null): void {
   recordNonVibe(val);
   instancePreferences.set(PrefKey.VIEW_MODE, val);
   applyAttribute(getEffectiveViewMode());
-  stampProjectViewMode(dataContext.project, val);
+  viewModeMemory.record(
+    ViewModeEvent.ModeSwitch,
+    { tab: viewModeMemory.targetFor(dock?.targetTypeId), project: dataContext.project },
+    val,
+  );
 }
 
 /**
@@ -474,34 +402,41 @@ export function useViewMode(): ViewMode {
   return mode;
 }
 
+/** History state a user's mode switch travels with — see `useDockViewModeOverrideSync`. */
+export const VIEW_MODE_SWITCH_STATE = { viewModeSwitch: true } as const;
+
+export function isViewModeSwitchState(state: unknown): boolean {
+  return (state as { viewModeSwitch?: unknown } | null)?.viewModeSwitch === true;
+}
+
 /**
- * Sync the current DockPointer's viewMode override into useViewMode().
- * This is the load-time owner of all view-mode arrangements: the footer toggle
- * only navigates (same pointer, `?viewMode=<mode>`); when the URL loads here we
- * apply the mode AND adopt it as the persisted preference, so the choice
- * survives leaving the URL and the session without any write in the click path.
+ * Sync the current DockPointer's viewMode override into useViewMode(), and turn
+ * a mode SWITCH into `setViewMode`.
+ *
+ * The footer toggle only navigates (same pointer, `?viewMode=<mode>`), so a
+ * switch is read off the URL transition rather than written in the click path:
+ * the SAME dock committing with a DIFFERENT mode. Any other load — opening a
+ * tab, a seeded or explicit opener mode, a redirect that adds the mode to a bare
+ * URL — only displays its mode. That is what keeps memory and the preference
+ * from being minted by merely looking at something.
  */
 export function useDockViewModeOverrideSync(): void {
   const currentDock = useCurrentDock();
   const override = currentDock?.viewMode ?? null;
-  // The session this mode is being applied to, when the dock addresses one.
-  // Held as an id, not the entity, so the effect re-runs when the URL moves to
-  // another session rather than on every cache identity change.
-  const sessionId = currentDock ? sessionIdForDock(currentDock) : null;
+  const previous = useRef(currentDock);
+  const marked = isViewModeSwitchState(useLocation().state);
 
   useEffect(() => {
+    const prev = previous.current;
+    previous.current = currentDock;
     setDockViewModeOverride(override);
-    // instancePreferences.set no-ops on equal values, so no guard is needed here.
-    if (override) setViewMode(override);
-    // Per-session memory: a mode on a session's URL — put there by the footer
-    // toggle's navigation, by an opener that named one, or by the seed in
-    // `openDock` — IS that session's mode from here on. Recorded on LOAD rather
-    // than in the click path (URL-first): a reload, a back/forward, or a deep
-    // link onto the same URL records exactly the same thing.
-    if (override && sessionId) {
-      stampProcessViewMode(AgenticProcess.getByIdFromCache<AgenticProcess>(sessionId), override);
-    }
-  }, [override, sessionId]);
+    // A switch is the same dock committing with a different mode. From a bare
+    // URL only the toggle's marker makes it one: a redirect that adds the mode
+    // carries no marker, so it only displays.
+    if (!currentDock || !prev || !override || prev.viewMode === override) return;
+    if (!prev.viewMode && !marked) return;
+    if (prev.withViewMode(null).equals(currentDock.withViewMode(null))) setViewMode(override, currentDock);
+  }, [currentDock, override, marked]);
 
   useEffect(() => () => setDockViewModeOverride(null), []);
 }

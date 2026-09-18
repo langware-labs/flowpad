@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING
 
 from pydantic import PrivateAttr, computed_field, model_validator
 
+from flow_sdk.assets.layout import File, Folder, LayoutKind
 from flow_sdk.assets.materialize import MaterializationMode, materialize_asset_sync, remove_path
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.schema.layout import File, Folder, LayoutKind
 
 if TYPE_CHECKING:
+    from flow_sdk.assets.layout import Layout
     from flow_sdk.fs_store.schema_registry import TypeInfo
-    from flow_sdk.schema.layout import Layout
 
 
 class NotAnAsset(LookupError):
@@ -102,14 +102,14 @@ class Asset(DataSpec):
         return cls(path=Path(path), project_id=project_id)
 
     @classmethod
-    def from_typeid(cls, typeid: TypeId | str) -> Asset:
+    def from_typeid(cls, typeid: TypeId | str, *, records_root: str | Path) -> Asset:
         from flow_sdk.api.api_types.identifier import is_valid_entity_id
         from flow_sdk.fs_store.fs_record import FSRecord
 
         ref = typeid if isinstance(typeid, TypeId) else TypeId(typeid)
         if not is_valid_entity_id(ref.id):
             raise ValueError("Asset identity must be UUID v4 or v5")
-        record = FSRecord.load(ref.type, ref.id)
+        record = FSRecord.load_record(Path(records_root) / ref.type / ref.id / "metadata.json")
         if not record.asset_path:
             raise NotAnAsset(f"Filesystem record {ref} has no asset path")
         asset = cls.from_path(record.asset_path)
@@ -118,9 +118,29 @@ class Asset(DataSpec):
         return asset
 
     @classmethod
+    def create(cls, path, *, type, spec, identity: TypeId | None = None) -> Asset:
+        from flow_sdk.assets.creation import create_asset
+
+        return create_asset(Path(path), type, spec, typeid=identity)
+
+    def read_document(self):
+        from flow_sdk.assets.document import read_document
+
+        if self.layout.body is None:
+            raise NotAnAsset(f"Asset has no document: {self.path}")
+        return read_document(self.layout.body)
+
+    def update_document(self, patch, *, expected_revision: str):
+        from flow_sdk.assets.document import update_document
+
+        if self.layout.body is None:
+            raise NotAnAsset(f"Asset has no document: {self.path}")
+        return update_document(self.layout.body, patch, expected_revision=expected_revision)
+
+    @classmethod
     def containing(cls, path: str | Path, *, project_id: str | None = None) -> Asset | None:
         """Resolve declared nested assets, otherwise the nearest owning folder."""
-        from flow_sdk.fs_store.placement import mount_matches
+        from flow_sdk.assets.placement import mount_matches
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
         p = Path(os.path.abspath(Path(path).expanduser()))

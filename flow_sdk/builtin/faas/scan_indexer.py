@@ -280,10 +280,8 @@ _PROJECT_TYPES: dict[str, tuple[str, EntityType]] = {
 
 def _project_sessions(encoded_name: str, jsonls: list[Path], limit: int) -> list[dict]:
     """Sessions for one encoded project (mirrors the old get_sessions_for_project)."""
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import (
-        claude_session_meta_dict,
-        extract_claude_session_from_path,
-    )
+    from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
+    from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_session_meta_dict
 
     sessions: list[dict] = []
     jsonls = sorted(jsonls, key=lambda p: p.stat().st_mtime, reverse=True)
@@ -317,12 +315,10 @@ async def scan_project_from_indexer(
     include_sessions: bool = True,
 ) -> dict:
     """Serve ``scan-project`` — one project's resources via an indexer sub-walk."""
+    from flow_sdk.assets.types.claude_project_path import decode_claude_project_dir
     from flow_sdk.builtin.project import Project
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions._claude_projects import (
-        _claude_projects_dir,
-        decode_claude_project_dir,
-    )
+    from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
     from flow_sdk.fs_store.scope import Scope
 
     project_dir = _claude_projects_dir() / project_encoded_name

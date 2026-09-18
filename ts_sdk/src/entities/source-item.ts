@@ -5,14 +5,24 @@
  */
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
+import { ICloudOrigin } from '../models/CloudOrigin';
+
+/** The typed payload a source emitted, tagged with its registered kind. */
+export interface SourceItemData {
+  spec_kind?: string;
+  [field: string]: unknown;
+}
 
 export interface ISourceItem extends IEntity {
   kind?: string;
   provider?: string;
   data_source_id?: string;
-  segment_key?: string;
-  segment_label?: string;
   external_id?: string;
+  origin?: ICloudOrigin | null;
+  origin_kind?: string;
+  origin_namespace?: string;
+  origin_key?: string;
+  data?: SourceItemData | null;
   thread_key?: string | null;
   reply_to_external_id?: string | null;
   permalink?: string | null;
@@ -37,9 +47,12 @@ export class SourceItem extends APIEntity<SourceItem> implements ISourceItem {
   kind: string = '';
   provider: string = '';
   data_source_id: string = '';
-  segment_key: string = '';
-  segment_label: string = '';
   external_id: string = '';
+  origin: ICloudOrigin | null = null;
+  origin_kind: string = '';
+  origin_namespace: string = '';
+  origin_key: string = '';
+  data: SourceItemData | null = null;
   thread_key: string | null = null;
   reply_to_external_id: string | null = null;
   permalink: string | null = null;
@@ -55,9 +68,12 @@ export class SourceItem extends APIEntity<SourceItem> implements ISourceItem {
     this.kind = entity.kind ?? this.kind;
     this.provider = entity.provider ?? this.provider;
     this.data_source_id = entity.data_source_id ?? this.data_source_id;
-    this.segment_key = entity.segment_key ?? this.segment_key;
-    this.segment_label = entity.segment_label ?? this.segment_label;
     this.external_id = entity.external_id ?? this.external_id;
+    this.origin = entity.origin ?? this.origin;
+    this.origin_kind = entity.origin_kind ?? this.origin_kind;
+    this.origin_namespace = entity.origin_namespace ?? this.origin_namespace;
+    this.origin_key = entity.origin_key ?? this.origin_key;
+    this.data = entity.data ?? this.data;
     this.thread_key = entity.thread_key ?? this.thread_key;
     this.reply_to_external_id = entity.reply_to_external_id ?? this.reply_to_external_id;
     this.permalink = entity.permalink ?? this.permalink;

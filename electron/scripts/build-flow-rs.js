@@ -5,11 +5,19 @@
  * `pack:linux` so electron-builder's extraResources entry has a binary
  * to bundle.
  *
- * Cross-compilation is intentionally out of scope here — see
- * flow_sdk/rust/README.md. A dedicated Rust release workflow is the
- * follow-up once we have multi-platform builds.
+ * macOS is the one place we cross-build: the Electron app ships as a single
+ * universal (x64 + arm64) bundle, and @electron/universal only lipo-merges the
+ * Mach-O files INSIDE the two per-arch app bundles. An extraResources sidecar
+ * is copied in as-is, so `flow-rs` must already be a fat binary or one half of
+ * the audience gets the wrong-arch executable. We build both apple-darwin
+ * targets and `lipo -create` them into the same `target/release/flow-rs` path
+ * the electron-builder config points at — mirroring
+ * scripts/sign_flow_rs_macos.sh, which produces the vendored wheel copy.
  *
- * Requires `cargo` on PATH (rustup-installed Rust toolchain).
+ * Windows/Linux stay a plain host-arch `cargo build --release`.
+ *
+ * Requires a rustup-installed Rust toolchain: `cargo` everywhere, plus
+ * `rustup` on macOS to add the two apple-darwin targets.
  */
 /* eslint-disable no-console */
 'use strict';
@@ -21,8 +29,14 @@ const { execFileSync } = require('child_process');
 
 const RUST_DIR = path.resolve(__dirname, '..', '..', 'flow_sdk', 'rust');
 const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
 const BIN_NAME = IS_WIN ? 'flow-rs.exe' : 'flow-rs';
 const OUTPUT_BIN = path.join(RUST_DIR, 'target', 'release', BIN_NAME);
+
+// Both halves of the macOS universal binary. Must match the targets used by
+// scripts/sign_flow_rs_macos.sh so the desktop sidecar and the vendored wheel
+// binary are built the same way.
+const MAC_TARGETS = ['x86_64-apple-darwin', 'aarch64-apple-darwin'];
 
 if (!fs.existsSync(path.join(RUST_DIR, 'Cargo.toml'))) {
   console.error(`[build-flow-rs] Cargo.toml not found at ${RUST_DIR}`);
@@ -72,7 +86,7 @@ if (!cargoBin) {
 }
 
 console.log(`[build-flow-rs] using ${cargoBin}`);
-console.log(`[build-flow-rs] cargo build --release  (cwd=${RUST_DIR})`);
+console.log(`[build-flow-rs] ${IS_MAC ? 'universal (x64 + arm64)' : 'host-arch'} release build  (cwd=${RUST_DIR})`);
 
 // Prepend ~/.cargo/bin to PATH so the spawned cargo can find rustc/rustup
 // even when this script's shell didn't inherit them.
@@ -82,14 +96,48 @@ if (fs.existsSync(cargoBinDir) && !(env.PATH || '').includes(cargoBinDir)) {
   env.PATH = `${cargoBinDir}${path.delimiter}${env.PATH || ''}`;
 }
 
+function cargo(args) {
+  execFileSync(cargoBin, args, { cwd: RUST_DIR, stdio: 'inherit', env });
+}
+
+function buildHostArch() {
+  cargo(['build', '--release']);
+}
+
+function buildMacUniversal() {
+  // rustup lives next to cargo in ~/.cargo/bin; the PATH prep above makes it
+  // reachable. `target add` is idempotent, so always run it — a fresh CI
+  // runner has only the host target installed.
+  const rustupBin = path.join(path.dirname(cargoBin), 'rustup');
+  const rustup = fs.existsSync(rustupBin) ? rustupBin : 'rustup';
+  console.log(`[build-flow-rs] rustup target add ${MAC_TARGETS.join(' ')}`);
+  execFileSync(rustup, ['target', 'add', ...MAC_TARGETS], { stdio: 'inherit', env });
+
+  const slices = [];
+  for (const target of MAC_TARGETS) {
+    console.log(`[build-flow-rs] cargo build --release --bin flow-rs --target ${target}`);
+    cargo(['build', '--release', '--bin', 'flow-rs', '--target', target]);
+    const slice = path.join(RUST_DIR, 'target', target, 'release', BIN_NAME);
+    if (!fs.existsSync(slice)) {
+      throw new Error(`expected ${target} slice missing at ${slice}`);
+    }
+    slices.push(slice);
+  }
+
+  fs.mkdirSync(path.dirname(OUTPUT_BIN), { recursive: true });
+  console.log(`[build-flow-rs] lipo -create -> ${OUTPUT_BIN}`);
+  execFileSync('lipo', ['-create', '-output', OUTPUT_BIN, ...slices], { stdio: 'inherit' });
+  execFileSync('lipo', ['-info', OUTPUT_BIN], { stdio: 'inherit' });
+}
+
 try {
-  execFileSync(cargoBin, ['build', '--release'], {
-    cwd: RUST_DIR,
-    stdio: 'inherit',
-    env,
-  });
+  if (IS_MAC) {
+    buildMacUniversal();
+  } else {
+    buildHostArch();
+  }
 } catch (err) {
-  console.error(`[build-flow-rs] cargo build failed: ${err.message}`);
+  console.error(`[build-flow-rs] build failed: ${err.message}`);
   process.exit(1);
 }
 

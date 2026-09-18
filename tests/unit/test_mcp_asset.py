@@ -89,13 +89,19 @@ async def _index(root: Path) -> None:
     await _reindex_root(root, RecordType.USER_HOME_FOLDER, types=(RecordType.AGENT, RecordType.MCP))
 
 
+def _write_agent_document(agent_dir: Path, name: str, worker_type: str, prompt: str = "") -> None:
+    (agent_dir / "agent.json").write_text(
+        json.dumps({"type": "agent", "name": name, "worker_type": worker_type}) + "\n", encoding="utf-8"
+    )
+    if prompt:
+        (agent_dir / "system_prompt.md").write_text(prompt + "\n", encoding="utf-8")
+
+
 def _write_agent(root: Path, name: str) -> Path:
     """An agent folder with one MCP asset nested inside it."""
     agent_dir = root / "agentic-assets" / "agent" / name
     agent_dir.mkdir(parents=True, exist_ok=True)
-    (agent_dir / "agent.md").write_text(
-        f"---\nname: {name}\nworker_type: claude\n---\n\nA test agent.\n", encoding="utf-8"
-    )
+    _write_agent_document(agent_dir, name, "claude", "A test agent.")
     mcp_dir = agent_dir / "agentic-assets" / "mcp" / "dummy"
     mcp_dir.mkdir(parents=True, exist_ok=True)
     (mcp_dir / "mcp.json").write_text(
@@ -166,14 +172,14 @@ async def test_the_declaration_and_the_folder_are_two_layers():
     ``attach_declared_mcp_servers`` turns it into the folder form, and nothing
     else in a launch consults the list.
     """
-    from flow_sdk.builtin.agent import AgentSpec
+    from flow_sdk.schema.data_spec.agent_spec import AgentSpec
 
     assert "mcp_servers" in Agent.model_fields
     assert "mcp_servers" in AgentSpec.model_fields
 
 
 async def test_a_declared_id_attaches_and_is_idempotent(home, agent_name):
-    """An id on agent.md becomes an Mcp asset in the agent's OWN folder."""
+    """An id on agent.json becomes an Mcp asset in the agent's OWN folder."""
     _write_agent(home, agent_name)
     await _index(home)
     agent = await (await Agent.get_one({"name": agent_name})).save()
@@ -366,7 +372,7 @@ async def test_probe_names_a_missing_entrypoint(home, agent_name):
 async def test_add_mcp_writes_an_asset_and_is_idempotent(home, agent_name):
     agent_dir = home / "agentic-assets" / "agent" / agent_name
     agent_dir.mkdir(parents=True)
-    (agent_dir / "agent.md").write_text(f"---\nname: {agent_name}\nworker_type: claude\n---\n")
+    _write_agent_document(agent_dir, agent_name, "claude")
     await _index(home)
     agent = await Agent.get_one({"name": agent_name})
 
@@ -387,7 +393,7 @@ async def test_add_mcp_is_idempotent_for_a_bundled_server(home, agent_name):
 
     agent_dir = home / "agentic-assets" / "agent" / agent_name
     agent_dir.mkdir(parents=True)
-    (agent_dir / "agent.md").write_text(f"---\nname: {agent_name}\nworker_type: claude\n---\n")
+    _write_agent_document(agent_dir, agent_name, "claude")
     await _index(home)
     agent = await Agent.get_one({"name": agent_name})
 
@@ -403,7 +409,7 @@ async def test_a_codex_agent_refuses_a_name_codex_cannot_address(home, agent_nam
     on dots, so a dotted name would nest the entry under the wrong table."""
     agent_dir = home / "agentic-assets" / "agent" / agent_name
     agent_dir.mkdir(parents=True)
-    (agent_dir / "agent.md").write_text(f"---\nname: {agent_name}\nworker_type: codex\n---\n")
+    _write_agent_document(agent_dir, agent_name, "codex")
     await _index(home)
     agent = await Agent.get_one({"name": agent_name})
 

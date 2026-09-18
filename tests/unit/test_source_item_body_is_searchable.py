@@ -21,17 +21,18 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.source_item import SourceItem
+from flow_sdk.sources import CloudOrigin
 
 
 def _item(**kw) -> SourceItem:
     """A SourceItem carrying the natural key the ingestor resolves rows by."""
     data_source_id = kw.pop("data_source_id", "ds-test")
-    segment_key = kw.pop("segment_key", "stream-test")
+    namespace = kw.pop("namespace", "stream-test")
     external_id = kw.pop("external_id", uuid.uuid4().hex)
     return SourceItem(
         data_source_id=data_source_id,
-        segment_key=segment_key,
         external_id=external_id,
+        origin=CloudOrigin(kind="rss", namespace=namespace, key=external_id),
         kind="content.feed.item",
         provider="rss",
         **kw,
@@ -85,7 +86,7 @@ async def test_reingest_converges_on_one_row():
     first = _item(external_id=external_id, name="v1", body="first body")
     await first.save()
 
-    second = await SourceItem.find_existing("ds-test", "stream-test", external_id)
+    second = await SourceItem.find_existing("ds-test", first.origin)
     assert second is not None and second.id == first.id, (
         "the natural key did not resolve the row the ingestor would have updated"
     )

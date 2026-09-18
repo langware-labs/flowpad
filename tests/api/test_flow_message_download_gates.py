@@ -1,6 +1,6 @@
 """API tests for the single backend download gate, driven through real routes.
 
-The implicit sync/nav actions (open / inbox-open / conversation-sync / …) pull a
+The implicit sync/nav actions (open / stream-inbox-open / conversation-sync / …) pull a
 message's body bundle to materialize it. They must forward ``body_status`` into
 the one chokepoint (``_download_and_unpack_bundle``) so that a *dangling pointer*
 — a hub FlowMessage with FILE attachments + ``attachment_filename`` set but

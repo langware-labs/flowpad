@@ -36,10 +36,12 @@ export { WORKER_STATUS_LABEL, PROCESS_STATUS_LABEL, workerStatusText } from './s
 export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
 export type {
   AgenticProcessReportEventResult,
+  DisplayContextState,
   DisplayEntry,
   IAgenticProcess,
   MarkdownDoc,
   ProcessState,
+  SessionNameState,
   ShowTarget,
   SpawnResult,
 } from './agentic-process';
@@ -47,7 +49,7 @@ export type { AgentHookData, ProcessHookCallback } from './process-hooks';
 export { ProcessCounters, parseStatusReport } from './process-status-report';
 export type { ProcessStatusReport, ProcessCountersData, FocusedAsset } from './process-status-report';
 export { ProcessKind, ProcessType } from './process-types';
-export type { AssetDescriptor, AssetSource, AssetUsage, AssetUsageKind, ProcessAssetUsage, ProcessAssetInventory } from './asset-descriptor';
+export type { AssetScanIssue, AssetScanResult, AssetDescriptor, AssetSource, AssetUsage, AssetUsageKind, ProcessAssetUsage, ProcessAssetInventory } from './asset-descriptor';
 export {
   ASSET_SOURCE_LABEL,
   READONLY_ASSET_SOURCES,

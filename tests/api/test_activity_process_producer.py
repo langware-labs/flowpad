@@ -15,7 +15,7 @@ from flow_sdk.builtin.agentic_process.activity_bridge import (
     subject_for,
     sync_process_activity,
 )
-from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 

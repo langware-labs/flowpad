@@ -1,4 +1,4 @@
-"""A guest opens a ticket; the desk owner's inbox gets it as a message source
+"""A guest opens a ticket; the desk owner's stream inbox gets it as a message source
 and answers it — through the hub, end to end.
 
 Identities: THIS instance (alice, `hub_session`) owns the desk and polls it
@@ -23,9 +23,9 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.inbox.outbound import dispatch_channel_reply
-from flow_sdk.inbox.projection import reconcile_source
 from flow_sdk.ingest.sync import sync_source
+from flow_sdk.stream_inbox.outbound import dispatch_channel_reply
+from flow_sdk.stream_inbox.projection import reconcile_source
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -108,7 +108,7 @@ async def _await_hub_message(base, token, conv_id, *, containing: str, not_from:
 
 
 async def _poll(source: DataSource) -> None:
-    """One poll the way the server does it: the driver fetch, then the inbox
+    """One poll the way the server does it: the driver fetch, then the stream inbox
     projection's reconcile sweep (the lane a first, BACKFILL sync relies on —
     pytest never starts the bus lanes, so the sweep is called directly)."""
     await sync_source(source)
@@ -116,7 +116,7 @@ async def _poll(source: DataSource) -> None:
 
 
 async def _desk_source(desk_id: str) -> DataSource:
-    source = DataSource(name="test desk", provider="helpdesk", config={"desk_project_id": desk_id})
+    source = DataSource(name=f"test desk {uuid.uuid4().hex[:8]}", provider="helpdesk", config={"desk_project_id": desk_id})
     await source.save()
     return source
 
@@ -139,8 +139,9 @@ async def test_a_guest_ticket_reaches_the_desk_owner_as_a_message_source_and_the
         # ONE poll: pool → the ticket's messages → ingest → project.
         await _poll(source)
 
-        item = await SourceItem.find_existing(source.id, ticket, first["id"])
+        item = await SourceItem.get_one({"data_source_id": source.id, "external_id": first["id"]})
         assert item is not None and item.conversation_id == ticket and item.message_id == first["id"]
+        assert item.origin_namespace.split("/")[-1] == ticket, "the message's origin is scoped to its ticket"
         threads = [t for t in await MessageThread.get_all({"channel": "helpdesk"}) if t.thread_key == ticket]
         assert len(threads) == 1 and threads[0].conversation_id == ticket, "the thread adopted the hub conversation"
         assert await Conversation.get_one({"id": ticket}) is not None
@@ -163,8 +164,8 @@ async def test_a_guest_ticket_reaches_the_desk_owner_as_a_message_source_and_the
         rows = await FlowMessage.get_all({"conversation_id": ticket})
         assert sorted(r.id for r in rows) == sorted([first["id"], reply["id"]])
         loaded = await DataSource.get_one({"id": source.id})
-        from flow_sdk.inbox.projection import self_addresses
-        sent_item = await SourceItem.find_existing(source.id, ticket, reply["id"])
+        from flow_sdk.stream_inbox.projection import self_addresses
+        sent_item = await SourceItem.find_existing(source.id, item.origin.model_copy(update={"key": reply["id"]}))
         assert sent_item is not None and sent_item.author_external_id == me, (sent_item.author_external_id, me)
         assert me in self_addresses(loaded), (loaded.account_identities, loaded.account_key)
         mine = await FlowMessage.get_one({"id": reply["id"]})
@@ -179,14 +180,16 @@ async def test_a_stranger_is_refused_by_the_pool_in_a_sentence(hub_session, bob_
     membership sentence, not a generic error. Exercised through the driver's
     hub seam with bob's token, since this instance is logged in as alice."""
     from flow_sdk.cloud_client.shared.errors import HubError
-    from flow_sdk.ingest.drivers.helpdesk import _as_source_error
+    from flow_sdk.ingest.driver_registry import asset_module
+    from flow_sdk.ingest.health import SourceHealth, classify
+    hub_refusal = asset_module("helpdesk", "transport").hub_refusal
 
     base = hub_session["base_url"]
     async with httpx.AsyncClient(timeout=10) as h:
         r = await h.get(f"{base}/api/v1/graph/project/{desk}/helpdesk_conversations", headers=_auth(bob_token))
     assert r.status_code in (401, 403), r.text
-    err = _as_source_error(HubError(r.status_code, r.json().get("message") or ""))
-    assert err.code == "not_a_member" and "member" in err.detail
+    err = hub_refusal(HubError(r.status_code, r.json().get("message") or ""), signed_in=True)
+    assert classify(err)[0] is SourceHealth.CONFIG_ERROR and "member" in str(err)
 
 
 # ── an Agent owns the desk ───────────────────────────────────────────────────
@@ -216,10 +219,10 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
     our wiring broken; a process that said nothing is the CLI's availability."""
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.fs_store.type_id import TypeId
-    from flow_sdk.inbox import start_inbox
-    from flow_sdk.inbox.agent_scope import resolve_agent_inbox_scope
     from flow_sdk.schema.types import EntityType
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+    from flow_sdk.stream_inbox import start_stream_inbox
+    from flow_sdk.stream_inbox.agent_scope import resolve_agent_stream_inbox_scope
     from tests.hub_tests._hub_agent import create_hub_agent, delete_hub_agent
     from tests.hub_tests.test_agent_email_conversation import _ran_a_turn
 
@@ -227,7 +230,7 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
     await get_or_create_local_user()
     # The SAME call `server/app.py` makes: arms the projection lanes and the
     # agent runner, so a projected inbound message runs the turn.
-    start_inbox()
+    start_stream_inbox()
 
     agent_id = await create_hub_agent(base, token, f"desk-agent-{uuid.uuid4().hex[:8]}")
     agent = Agent(
@@ -259,8 +262,8 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
         await _poll(source)
         mine = await FlowMessage.get_one({"id": reply["id"]})
         assert mine is not None and mine.sender_id == f"agent:{agent_id}", mine.sender_id
-        scope = await resolve_agent_inbox_scope(agent_id)
-        assert ticket in scope.conversation_ids, "the ticket is in the agent's inbox, not the user's"
+        scope = await resolve_agent_stream_inbox_scope(agent_id)
+        assert ticket in scope.conversation_ids, "the ticket is in the agent's stream inbox, not the user's"
     finally:
         await source.delete()
         await agent.delete()

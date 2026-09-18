@@ -45,7 +45,7 @@ def test_every_type_is_served_by_the_one_disk_serializer() -> None:
 
 def test_type_info_default_origin_kind_follows_db_only() -> None:
     assert SchemaRegistry.get("agent").default_origin_kind == "local"
-    assert SchemaRegistry.get("data_source_cursor").default_origin_kind == "db"
+    assert SchemaRegistry.get("consumer_position").default_origin_kind == "db"
 
 
 def test_an_explicit_origin_overrides_the_default() -> None:
@@ -96,7 +96,9 @@ def test_a_db_side_save_of_an_unowned_file_never_drops_its_frontmatter(tmp_path)
 
 
 def test_an_owned_file_is_rerendered_on_every_save(tmp_path) -> None:
-    """Agent owns ``agent.md``: an entity-side edit must reach disk."""
+    """Agent owns ``agent.json``: an entity-side edit must reach disk."""
+    import json
+
     from flow_sdk.builtin.agent import Agent
 
     folder = tmp_path / "q"
@@ -105,4 +107,4 @@ def test_an_owned_file_is_rerendered_on_every_save(tmp_path) -> None:
     DiskSerializer().store(a, o, type_name="agent")
     a.title = "two"
     DiskSerializer().store(a, o, type_name="agent")
-    assert "title: two" in (folder / "agent.md").read_text()
+    assert json.loads((folder / "agent.json").read_text())["title"] == "two"

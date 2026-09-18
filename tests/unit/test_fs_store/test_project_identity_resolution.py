@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.identity_carrier import Derived
 from flow_sdk.fs_store import FSRecord, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identity_carrier import Derived
 from flow_sdk.fs_store.indexer.functions import claude_projects
 from flow_sdk.fs_store.indexer.functions.claude_projects import (
     claude_project_identity_key,
@@ -21,7 +21,7 @@ from flow_sdk.fs_store.indexer.functions.claude_projects import (
 from flow_sdk.schema.type_info.project_type_info import PROJECT
 from tests.fixtures.identity import resolve_id
 
-V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+V4 ="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "existing-project"))
 
 

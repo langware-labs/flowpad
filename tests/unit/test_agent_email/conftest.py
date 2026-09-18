@@ -3,14 +3,14 @@ import pytest_asyncio
 
 import flow_sdk.db.drivers.db_driver as db_driver_mod
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
-import flow_sdk.ingest.drivers  # noqa: F401 — side-effect: register_driver()
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
 
 
 @pytest_asyncio.fixture
-async def mail_db(tmp_path):
+async def mail_db(tmp_path, fresh_user_scope):
+    # A fresh DB needs a fresh user scope: a data source a previous test left there would collide.
     cfg = DBConfig()
     cfg.database = str(tmp_path / "agent_mail.db")
     driver = SQLiteDBDriver(cfg)

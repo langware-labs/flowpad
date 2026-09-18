@@ -14,13 +14,14 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.deployment import Deployment
-from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp
+from flow_sdk.builtin.faas.micro_app import MicroApp
 from flow_sdk.core.display_target import (
     DisplayTargetKind,
     DisplayTargetNotFound,
     InvalidDisplayTarget,
     resolve_display_target,
 )
+from flow_sdk.schema.data_spec.app_location_type import AppLocationType
 
 
 async def _artifact(name: str = "Todo") -> Artifact:

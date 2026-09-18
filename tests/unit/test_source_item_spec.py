@@ -5,15 +5,17 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.builtin.source_item import SourceItem, SourceItemSpec
+from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.serializer.db import DbSerializer
 from flow_sdk.fs_store.serializer.fields import unwrap_annotation
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
+from flow_sdk.sources import CloudOrigin, FeedItemData
 
 pytestmark = pytest.mark.timeout(5)
 
-_HEADER = dict(data_source_id="ds", provider="rss", kind="content.feed.item", segment_key="k", external_id="x")
+_HEADER = dict(data_source_id="ds", provider="rss", kind="content.feed.item", external_id="x")
 
 
 def test_every_spec_field_is_a_row_field_with_the_same_annotation():
@@ -51,7 +53,8 @@ def test_raw_never_reaches_the_payload_but_every_header_field_reaches_the_row():
     full = dict(
         _HEADER, name="t", body="b", occurred_at="2026-01-01T00:00:00Z", author_external_id="a",
         author_display="A", permalink="https://x", thread_key="th", reply_to_external_id="r",
-        segment_label="L", conversation_id="c", message_id="m", raw={"volatile": 1},
+        conversation_id="c", message_id="m", raw={"volatile": 1},
+        origin=CloudOrigin(kind="rss", namespace="k", key="x"), data=FeedItemData(title="t"),
     )
     row = SourceItem(**full)
     assert "raw" not in row.metadata_payload()

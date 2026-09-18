@@ -40,9 +40,9 @@ export function resetSurfaceReconcileState(): void {
   lastReconciledMode.clear();
 }
 
-/** The backend action a transport change lands on. The two directions do NOT
- *  share a route, and they do not share a guard either — see the gate below. */
-export type TransportRoute = 'open' | 'switch-mode';
+/** The backend action a transport change lands on. Both directions share ONE
+ *  route now, and therefore one guard — see the gate below. */
+export type TransportRoute = 'switch-mode';
 
 /** What a mode selection would have to do to a session's transport, and whether
  *  the server would accept it right now. */
@@ -56,14 +56,11 @@ export interface SurfaceTransportGate {
 }
 
 /**
- * ONE predicate for "can this session change transport now", read by both the
- * reconcile effect below and the footer `ViewToggle`'s greyed-out state, so the
- * control cannot offer a switch the effect would refuse. It mirrors the SERVER
- * per route: `→CLI` is `switch-mode`, which 409s while `is_turn_busy`; `→PTY` is
- * `start()`/`open`, which has no mid-turn guard, so neither has the client.
- * Hence BUSY, not readiness — readiness is also false for a FAILED session and a
- * `/exit`-ed PTY, the two states whose recovery needs these very clicks.
- * Rules: docs/breadcrumbs/surface_transcript_reconcile.md
+ * ONE predicate for "can this session change transport now", shared by the
+ * reconcile effect and the footer `ViewToggle`, mirroring the one server answer:
+ * `switch-mode` 409s while `is_turn_busy`, in both directions. →PTY used to take
+ * the unguarded `open`, so this blocked nothing there (FLOWPAD-2130). Keyed on
+ * BUSY: a FAILED session and an `/exit`-ed PTY are not ready but need the click.
  */
 export function surfaceTransportGate(
   process: AgenticProcess | null | undefined,
@@ -73,8 +70,7 @@ export function surfaceTransportGate(
   const wantPty = viewModePtyMode(viewMode);
   const ptyMode = !(process.isHeadless ?? false);
   if (wantPty === ptyMode) return { needsSwitch: false, route: null, blocked: false };
-  const route: TransportRoute = wantPty ? 'open' : 'switch-mode';
-  return { needsSwitch: true, route, blocked: route === 'switch-mode' && isBusy(process) };
+  return { needsSwitch: true, route: 'switch-mode', blocked: isBusy(process) };
 }
 
 /**
@@ -102,11 +98,14 @@ export function surfaceTransportGate(
  * The reason it was made one-directional in `bf9b51706` was a kill that fired
  * on a HEALTHY worker at the wrong moment — a mid-turn switch the backend 409s,
  * queued to land minutes later. That is a GUARD problem, and the guard is
- * `surfaceTransportGate` above: the `switch-mode` route is declined while
- * `busy`, keyed on the same `is_turn_busy` predicate the backend 409s on, so
- * the two can never disagree. The footer toggle greys its segment on that same
- * call, so the control cannot offer a switch this effect would refuse — and,
- * equally, cannot refuse one the server would have honoured.
+ * `surfaceTransportGate` above: a transport switch is declined while `busy`,
+ * keyed on the same `is_turn_busy` predicate the backend 409s on, so the two
+ * can never disagree. The footer toggle greys its segment on that same call, so
+ * the control cannot offer a switch this effect would refuse — and, equally,
+ * cannot refuse one the server would have honoured. That symmetry only holds
+ * since `switchMode` put BOTH directions on `switch-mode`: while →PTY took the
+ * unguarded `open`, a mid-turn →terminal went through and put a second worker on
+ * the live turn's own transcript (FLOWPAD-2130).
  *
  * Reconciles on a mode CHANGE only, never on first sight of a process: merely
  * opening a session must not kill or spawn a worker. The one exception is the
@@ -216,10 +215,9 @@ export function useProcessSurface({
     void (async () => {
       let reconciled = false;
       try {
-        // →PTY routes through `start()`/`open` (it must actually attach a live
-        // PTY); →CLI is the `switch-mode` action, which kills the PTY and
-        // persists `visible=false` + `pty_mode=false`. Dimensions are a terminal
-        // concern only — the headless direction has no grid to size.
+        // One route, so one mid-turn guard: →PTY attaches off the same open
+        // payload `start()` returns, →CLI kills the PTY and clears `pty_mode`.
+        // Dimensions are a terminal concern — headless has no grid to size.
         await live.switchMode(
           wantPty ? WorkerMode.Interactive : WorkerMode.CLI,
           wantPty ? getDims?.() : undefined,

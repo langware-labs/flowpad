@@ -9,6 +9,7 @@ Routes:
 """
 
 import logging
+from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.api.oauth_api import OAuthAction, OauthClientRequestInfo, OAuthProvider
 from flow_sdk.app.actions.desktop_oauth import (
@@ -17,7 +18,6 @@ from flow_sdk.app.actions.desktop_oauth import (
     delete_anthropic_token_for_current_user,
     get_anthropic_token_for_current_user,
     get_desktop_oauth_auth_url,
-    handle_desktop_oauth_callback,
     wait_for_desktop_oauth_callback,
 )
 from flow_sdk.app.actions.oauth_attachment import attach_action, detach_action, disconnect_action
@@ -33,6 +33,9 @@ from flow_sdk.core.oauth.hub_oauth import (
 from flow_sdk.core.oauth.provider_registry import OAuthFlowKind, get_local_provider, prefers_hub_flow
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.core.oauth.flows import AuthFlowResult
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +215,23 @@ async def oauth_main() -> ApiResponse:
 
                     result = await hub_cancel_auth(provider, state)
                     status = str(result.get("status") or "not_found")
+                    if status == "success":
+                        # The hub finished before the cancel landed: store the local copy
+                        # the way the landing does. A reported success with nothing stored
+                        # here would read as connected and be empty.
+                        completed, _delivered = await complete_hub_flow(provider, state)
+                        if completed is not None:
+                            status = completed.status.value
+                    elif status == "cancelled":
+                        from flow_sdk.core.oauth import flows  # noqa: PLC0415
+
+                        # Nothing to store; close the flow so its initiator hears the end.
+                        await flows.finish_flow(
+                            state,
+                            flows.AuthFlowResult(
+                                status=flows.AuthFlowStatus.CANCELLED, provider=provider, code="cancelled_by_client"
+                            ),
+                        )
                     return ApiSuccessResponse(
                         data={
                             **result,
@@ -381,26 +401,30 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
     if prefers_hub_flow(provider):
         from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
         from flow_sdk.api.api_types.messages import OAuthMessageStatus  # noqa: PLC0415
-        from flow_sdk.app.actions.desktop_oauth import _broadcast_oauth_msg  # noqa: PLC0415
         from flow_sdk.core.oauth.hub_oauth import hub_credentials_ref, hub_test_provider  # noqa: PLC0415
 
         # Connecting this machine can reuse the owner's existing valid grant.
         # Only an actual provider probe permits adoption; a catalogue row alone
-        # must never bypass reauthorization for a revoked credential.
-        verification = await hub_test_provider(provider)
+        # must never bypass reauthorization for a revoked credential. An explicit
+        # reauthorize (the row's Reconnect) always runs the provider's consent.
+        params = getattr(request_info, "request_parameters", None) or {}
+        reauthorize = str(params.get("reauthorize", "")).lower() in {"1", "true", "yes"}
+        verification = None if reauthorize else await hub_test_provider(provider)
         if verification and verification.get("ok") is True:
             hub_name = await hub_credentials_ref(provider)
             local_name = await resolve_user_credentials_name(provider) or hub_name
             await _adopt_hub_credential(provider, local_name, hub_name)
+            # No broadcast: this response IS the delivery to the one caller that asked.
             request_id = mint_uuid()
-            await _broadcast_oauth_msg(request_id, OAuthMessageStatus.SUCCESS)
             return ApiSuccessResponse(data={
                 "provider": provider,
                 "oauth_request_id": request_id,
                 "status": OAuthMessageStatus.SUCCESS.value,
             })
+        from flow_sdk.cli.auth.cloud_urls import desktop_oauth_complete_url  # noqa: PLC0415
+
         try:
-            hub_payload = await hub_start_auth(provider)
+            hub_payload = await hub_start_auth(provider, return_to=desktop_oauth_complete_url(provider))
         except Exception as exc:  # noqa: BLE001
             from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
@@ -420,6 +444,16 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
             hub_refusal = await redirect_unreachable_reason(str(hub_payload.get("auth_url") or ""))
             if not hub_refusal:
                 logger.info("OAuth: %s runs the authorization-code flow on the hub", provider)
+                from flow_sdk.core.oauth.flows import AuthFlowKind, start_flow  # noqa: PLC0415
+
+                # Keyed by the hub's own request id: the hub's return, its push and
+                # the poll all name the flow by it.
+                start_flow(
+                    AuthFlowKind.HUB_CODE,
+                    provider,
+                    flow_id=str(hub_payload.get("oauth_request_id") or ""),
+                    initiator_connection_id=getattr(request_info, "initiator_connection_id", "") or "",
+                )
                 # Name the grant, so the client knows where it completes.
                 # ``CODE`` already means exactly this one — "authorization code,
                 # redirect handled by the hub" — while ``LOOPBACK`` is the same
@@ -450,7 +484,9 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
                 data={"error_code": code},
             )
 
-    return await get_desktop_oauth_auth_url(provider, user_id)
+    return await get_desktop_oauth_auth_url(
+        provider, user_id, getattr(request_info, "initiator_connection_id", "") or ""
+    )
 
 
 async def _get_flowpad_cloud_oauth_auth() -> ApiResponse:
@@ -489,7 +525,10 @@ async def _handle_callback(provider: str, request_info) -> ApiResponse:
     if code and state and state in _desktop_oauth_sessions:
         if _desktop_oauth_sessions[state].provider != provider:
             return ApiFailResponse(message="Authorization provider mismatch")
-        return await handle_desktop_oauth_callback(code, state)
+        from flow_sdk.app.actions.desktop_oauth import complete_loopback_flow, flow_result_response  # noqa: PLC0415
+
+        result, _delivered = await complete_loopback_flow(state, code)
+        return flow_result_response(result)
 
     return ApiFailResponse(
         message=f"OAuth callback for {provider}: session not found. "
@@ -511,13 +550,9 @@ async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
         return await wait_for_desktop_oauth_callback(state)
 
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.core.oauth.hub_oauth import (  # noqa: PLC0415
-        hub_credentials_ref,
-        hub_wait_auth,
-    )
 
     try:
-        result = await hub_wait_auth(provider, state)
+        result, _delivered = await complete_hub_flow(provider, state)
     except HubError as exc:
         return ApiFailResponse(
             message=exc.reason,
@@ -527,12 +562,50 @@ async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
             },
             status_code=exc.status_code or 503,
         )
-    status = str(result.get("status") or "error").lower()
-    if status == "success":
-        local_name = await resolve_user_credentials_name(provider)
-        hub_name = await hub_credentials_ref(provider)
-        await _adopt_hub_credential(provider, local_name or hub_name, hub_name)
-    return ApiSuccessResponse(data={**result, "oauth_request_id": state, "provider": provider})
+    data = {"oauth_request_id": state, "provider": provider, "status": "pending"}
+    if result is not None:
+        data.update(
+            status=result.status.value,
+            code=result.code or None,
+            message=result.detail or None,
+            identity=result.identity or None,
+        )
+    return ApiSuccessResponse(data=data)
+
+
+async def complete_hub_flow(provider: str, flow_id: str) -> tuple[Optional["AuthFlowResult"], bool]:
+    """Finish a hub-run grant: read the hub's result, store the local copy, tell the initiator.
+
+    The ONE completion for the default flow. The browser's return to
+    ``/auth/oauth/complete``, the hub's ``oauth_msg`` push and the ``wait-callback``
+    poll all call it; whichever lands first does the work under the flow's lock,
+    and the rest read the stored result. Returns ``(None, False)`` while the hub is
+    still waiting on the user; ``(result, delivered)`` once it ended.
+    """
+    from flow_sdk.core.oauth import flows  # noqa: PLC0415
+    from flow_sdk.core.oauth.hub_oauth import hub_credentials_ref, hub_wait_auth  # noqa: PLC0415
+
+    async def produce() -> Optional["AuthFlowResult"]:
+        hub = await hub_wait_auth(provider, flow_id)
+        status = str(hub.get("status") or "error").lower()
+        if status in {"pending", "polling"}:
+            return None
+        if status == "success":
+            local_name = await resolve_user_credentials_name(provider)
+            hub_name = await hub_credentials_ref(provider)
+            await _adopt_hub_credential(provider, local_name or hub_name, hub_name)
+        try:
+            flow_status = flows.AuthFlowStatus(status)
+        except ValueError:
+            flow_status = flows.AuthFlowStatus.ERROR
+        return flows.AuthFlowResult(
+            status=flow_status,
+            provider=provider,
+            code=str(hub.get("code") or ""),
+            detail=str(hub.get("message") or ""),
+        )
+
+    return await flows.complete_once(flow_id, produce)
 
 
 async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -> None:
@@ -543,14 +616,16 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
     discovered providers. A visibility row alone is not a completed adoption.
     """
     from flow_sdk.app.actions.desktop_oauth import record_credential  # noqa: PLC0415
+    from flow_sdk.core.connections.specs import _connection_user  # noqa: PLC0415
     from flow_sdk.core.oauth.hub_mirror import hub_mirror  # noqa: PLC0415
     from flow_sdk.core.oauth.hub_providers import invalidate_hub_providers  # noqa: PLC0415
     from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
-    from flow_sdk.request_context.methods import get_current_request_user_fresh  # noqa: PLC0415
 
     invalidate_hub_providers()
 
-    user = await get_current_request_user_fresh()
+    # Request user when there is one, else this instance's own user: the browser's
+    # return and the hub's push complete a flow with no request user attached.
+    user = await _connection_user()
     if user is None:
         raise RuntimeError("OAuth token could not be stored: no local user")
 

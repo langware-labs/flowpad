@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped drivers
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.graph_workflow import GraphWorkflow
 from flow_sdk.builtin.source_item import SourceItem
@@ -92,8 +91,8 @@ async def test_a_graph_workflow_receives_ingested_records(feed_server, tmp_path)
         provider="rss",
         kind="datasource.feed.rss",
         account_key=account,
-        name="Demo feed",
-        config={"feed_urls": [url]},
+        name=f"Demo feed {uuid.uuid4().hex[:8]}",
+        config={"feed_url": url},
     )
     await src.save()
 

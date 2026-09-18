@@ -55,19 +55,14 @@ export class Whiteboard extends APIEntity<Whiteboard> {
     return wb.save();
   }
 
-  /**
-   * Create a whiteboard scoped to the given project. If `project` is null,
-   * creates in the user's home (~/.claude/whiteboards/<name>/).
-   * `folderVfsPath` is reserved for future fine-grained placement; the server
-   * derives the path from project scope today.
-   */
+  /** Create in the selected scope, optionally at an exact authorized folder. */
   static async createInProject(
     project: { typeId?: import('../models/TypeId').TypeId } | null,
     name: string,
-    _folderVfsPath?: string,
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<Whiteboard> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
     const wb = new Whiteboard({ name: name.trim() });
-    return wb.save(scopeIds);
+    return wb.save(scopeIds, destination);
   }
 }
