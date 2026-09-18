@@ -81,6 +81,7 @@ export interface ILLMEndpoint extends IEntity {
   principal_typeid?: string | null;
   system_default?: boolean;
   credential_hint?: string;
+  public?: boolean;
 }
 
 @registerEntity
@@ -106,6 +107,11 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
   system_default: boolean = false;
   /** `""` or `****abcd`; read-only, written by the hub's credential action. */
   credential_hint: string = '';
+  /**
+   * Spendable by whoever holds the id, with no login (`flow llm user use <id>`). Read-only:
+   * toggled by the hub's `public` action, which refuses an endpoint with no cost limit.
+   */
+  public: boolean = false;
 
   constructor(entity: Partial<ILLMEndpoint> = {}) {
     super(entity);
@@ -120,6 +126,7 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
     this.principal_typeid = entity.principal_typeid ?? this.principal_typeid;
     this.system_default = entity.system_default ?? this.system_default;
     this.credential_hint = entity.credential_hint ?? this.credential_hint;
+    this.public = entity.public ?? this.public;
   }
 
   /** Root ⇔ no sources. Derived, never stored. */

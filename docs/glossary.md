@@ -161,6 +161,12 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   *from*, one layer down and unrelated. An `LLMSource` names a way to pay; a `source_llmendpoint`
   names a budget upstream of another budget. `resolve_llm_source` picks one per spawn, and its
   `reason` field is what both the picker and the spawn error render.
+* **public endpoint** — ours. A hub `LLMEndpoint` its admin opened (the `public` action) to
+  **whoever holds its id**: spendable with no login, so a foreign machine binds it with
+  `flow llm user use <endpoint-id>`. The id is the bearer and the endpoint's cost limit is the
+  whole defence. NOT "public" in the `visitor_role` / public-listing sense — it is stamped as
+  `Entity.public_role`, which no listing matches, so a public endpoint is usable but never
+  enumerable. See [llm-endpoints §7](snippets/llm-endpoints.md).
 * **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, agent-mailbox, serializer, ingest-provider and reflect-mode registries.
 * **`SecretPack`** — ours. A named set of environment variables (a "secret pack") and the ONLY way a secret is declared: a folder asset at `agentic-assets/secret_pack/<name>/` in **user** or **project** scope; the shipped ones are **templates** (`system` scope). Not an OAuth connection, and not an `ApiKey` (an inbound Flowpad token). The file is `secret_pack.json`, its shape `CredentialSpec` (value-free); the row is `SecretPack` (type `secret_pack`, formerly `credential_spec`). The UI still says **Credentials**. See [secret_share](secret_share.md).
 * **`SecretStore`** — ours (was *value store*). A place secret values live, keyed by environment variable name: a type plus its config (`flow_sdk/secrets`). Three ship: `env_file` (a dotenv file; a credential's `value_store` spells it `env`, the scope root's `.env.local` by default), `vault` (the per-instance encrypted store, `sodot` on disk) and `gcp_secret_manager` (a Google Cloud Secret Manager project, read through a bound `google` connection). A credential names its store per environment; a `DataSource` instance binds one (`set_secret_store`). Not a `Connection`, which is an account that hands out a token. See [secret-stores](snippets/secret-stores.md).

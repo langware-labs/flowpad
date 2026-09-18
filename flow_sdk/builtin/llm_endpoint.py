@@ -115,6 +115,11 @@ def endpoint_share_landing_path(endpoint_id: str) -> str:
     return dock_url(ViewType.LLM_ENDPOINTS, pointer=endpoint_id, page=PageId.HUB)
 
 
+#: What a box with no hub login sends as its bearer to a PUBLIC endpoint. Not a credential: the
+#: hub reads it as an invalid token and falls through to the endpoint's own anonymous grant.
+PUBLIC_ENDPOINT_TOKEN = "flowpad-public-endpoint"
+
+
 def hub_invoke_path(typeid: Any) -> str:
     """The FULL hub path an endpoint is invoked on, e.g.
     ``/api/v1/graph/llm_endpoint/<id>/invoke``.
@@ -179,6 +184,10 @@ class LLMEndpoint(Entity):
     #:   without a role edge, and answering ``False`` for it would turn the shared pool into
     #:   everybody's personal budget.
     can_administer: bool | None = APIField(default=None, persist=Persist.FALSE)
+    #: HUB only: the hub opened this budget to whoever holds its id, so it is spendable with NO
+    #: hub login. Runtime-only like the rest of a hub projection -- it arrives from the hub's
+    #: listing, or from this box's own public binding when no listing is reachable at all.
+    public: bool = APIField(default=False, persist=Persist.FALSE)
 
     #: An explicit key handed to the constructor. A PrivateAttr, so it is never a field, never
     #: dumped, never persisted and never shared — it exists for ``LLMEndpoint(provider=...,
@@ -255,6 +264,7 @@ class LLMEndpoint(Entity):
             "harness",
             "invocable",
             "can_administer",
+            "public",
         )
     )
 
@@ -334,14 +344,18 @@ class LLMEndpoint(Entity):
         the user never stored, and let it outrank a hub budget they did configure.
 
         A HUB endpoint's key is the hub login key — the hub swaps in the real provider
-        credential on the far side. A DEVICE endpoint has no key at all, by definition.
+        credential on the far side. A PUBLIC hub endpoint needs none: the hub admits whoever
+        holds its id, so a box with no login sends ``PUBLIC_ENDPOINT_TOKEN`` -- a placeholder,
+        because every harness refuses to start with an empty token variable. A login key still
+        wins when there is one, so a signed-in box is attributed as itself. A DEVICE endpoint
+        has no key at all, by definition.
         """
         if self.kind == LLMEndpointKind.DEVICE:
             return None
         if self.kind == LLMEndpointKind.HUB:
             from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
 
-            return resolve_hub_api_key()
+            return resolve_hub_api_key() or (PUBLIC_ENDPOINT_TOKEN if self.public else None)
         if self._explicit_api_key:
             return self._explicit_api_key
         if self.secret_name:

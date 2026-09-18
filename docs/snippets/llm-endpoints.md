@@ -9,7 +9,7 @@ An `LLMEndpoint` is one answer to "who pays for these tokens". There are three k
 | `kind` | Credential | Stored here? | Callable in-process? |
 | --- | --- | --- | --- |
 | `api_key` | a provider key in this machine's sod store, or the environment | yes, one row per key | yes |
-| `hub` | this box's hub login; the hub swaps in the real provider key | no — a projection of a hub row | yes |
+| `hub` | this box's hub login — or nothing at all, for a **public** endpoint (§7); the hub swaps in the real provider key | no — a projection of a hub row | yes |
 | `device` | a vendor CLI's own OAuth session, per harness | no — derived from `Capability` | no |
 
 Both callable kinds expose the same four calls: `create_completion`, `create_embeddings`,
@@ -74,6 +74,8 @@ hub = await fetch_hub_llm_endpoints()        # budgets the hub offers
 
 `fetch_hub_llm_endpoints` answers `[]` when logged out or unreachable, and serves a 30-second
 memo — a picker that cannot reach the hub should show nothing, not fail the screen it sits on.
+A **public** endpoint (§7) is never in this listing, signed in or not: it is spendable by people
+who hold nothing on it, so a box learns of one only from the id it was given.
 
 Both are Python-side reads. `llm_endpoint` is not API-visible yet, so a local key endpoint has
 no live entity query behind it; the frontend gets these through the funding status action.
@@ -139,6 +141,104 @@ except LLMAuthError:
 except LLMRateLimited:
     ...   # throttled, or the hub budget is spent
 ```
+
+## 7. A public endpoint: run on a machine that never logged in
+
+A hub endpoint can be opened to **whoever holds its id**. That is what lets a foreign machine —
+a colleague's laptop, a CI box, a container — run agents on your budget with no account, no
+key and no login. Two commands, on a box with nothing but `pip install flowpad` and a harness CLI:
+
+```bash
+flow llm user use <endpoint-id> --hub https://<your hub>    # --hub defaults to this box's hub
+python agentic_process_snippet.py
+```
+
+```python
+"""Ask a headless agent one question, on a machine that has never logged in to anything.
+
+The whole setup is the command before this one -- ``flow llm user use <public-endpoint-id>`` --
+which points the box at a PUBLIC hub ``LLMEndpoint``. Nothing here names a budget, a key or a
+hub: the process is funded by whatever the box resolves, exactly as on a signed-in machine.
+"""
+
+import asyncio
+import tempfile
+
+from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
+from flow_sdk.flowpad_types.enums import WorkerType
+
+PROMPT = 'Reply with exactly the single word "pong" and nothing else.'
+
+
+async def main() -> None:
+    process = await AgenticProcess(
+        worker_type=WorkerType.CLAUDE_CODE,
+        workdir=tempfile.mkdtemp(),
+        cli_config={"model": "sm", "permission_mode": "bypassPermissions"},
+        pty_mode=False,  # print mode: one spawn, one turn, then done
+        visible=False,
+        load_flowpad_assistant=False,
+    ).save()
+    try:
+        await process.prompt(PROMPT)
+        # ``prompt()`` returning is the turn STARTING. The answer is in the history once the
+        # turn is no longer busy.
+        while True:
+            fresh = await AgenticProcess.get_by_id(process.id) or process
+            if not is_turn_busy(fresh, fresh.fetch_worker_status()):
+                history = fresh.driver.load_history(fresh)
+                if history:
+                    break
+            await asyncio.sleep(2.0)
+        print(_last_answer(history))
+    finally:
+        await process.exit()
+
+
+def _last_answer(history: list) -> str:
+    """The last thing the assistant SAID -- its ``chat`` elements, not its reasoning."""
+    for item in reversed(history):
+        attributes = item.attributes or {}
+        if attributes.get("role") == "assistant" and attributes.get("element-type") == "chat":
+            return str(item.flow_value).strip()
+    return ""
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Pinned by `tests/long_tests/test_loginless_in_docker.py`, which runs exactly those two commands
+in a clean container (`tests/loginless_e2e/`) holding no hub key, no provider key and no
+`FLOWPAD_HUB_URL`; the resolver and binding rules are pinned by
+`tests/unit/test_llm_source_resolution.py` and `tests/unit/test_hub_llm_endpoint.py`.
+
+The admin's half is four hub calls (`tests/loginless_e2e/make_public_endpoint.py`) — create a
+root, give it a provider key, **cap it in money**, open it:
+
+```bash
+POST /api/v1/graph/llm_endpoint                   {"name": "demo", "provider": "openrouter"}
+POST /api/v1/graph/llm_endpoint/<id>/credential   {"key": "sk-or-..."}
+PUT  /api/v1/graph/llm_endpoint/<id>              {"limits": {"cost_usd_total": 5.0}}
+POST /api/v1/graph/llm_endpoint/<id>/public       {"enabled": true}      # false closes it again
+```
+
+What to know before handing an id out:
+
+* **The id is the credential.** Anyone who sees it can spend the budget until its limit trips.
+  Treat it like an API key; `{"enabled": false}` revokes every holder at once.
+* **The cost limit is the whole defence**, so the hub refuses `public` without one. Spend is
+  metered per endpoint, never per caller — there is no caller to meter. Budget for the harness,
+  not the prompt: one `pong` from Claude Code is ~60k cache-write tokens (about $0.08 on haiku).
+* **An anonymous caller may `invoke` and list `models`, nothing else** — not read the endpoint,
+  its usage or its chain, and a public endpoint appears in no listing, so ids cannot be enumerated.
+* **`public` is an admin action, not a field.** A `PUT {"public": true}` is ignored, and a
+  sandbox key is refused: the budget must not be openable by the thing that spends it.
+* On the box, a public binding is a hub endpoint that is eligible **without** a hub login
+  (`flow llm list` shows it as `public endpoint`); `flow llm test <n>` spends one real token
+  through it, and `flow llm user clear` drops it. A box that later signs in keeps it — a public
+  endpoint is in nobody's listing, so its absence there is not a reason to drop the binding.
 
 ## Gotchas
 
