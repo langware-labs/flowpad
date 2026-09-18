@@ -258,7 +258,8 @@ and config overrides. `resolve_worker_api_auth(process)` resolves the source and
 hands it to `binding_for_candidate(worker_type, candidate, tier=…)`, which is the
 half that does not care where the choice came from: it reads the driver's
 `ApiAuthSpec`, takes the key off the chosen endpoint (the hub login for a hub
-endpoint, the stored key otherwise — never the environment, so a spawn cannot be
+endpoint — or, for a **public** one on a box with no login, the `PUBLIC_ENDPOINT_TOKEN`
+placeholder, since the hub admits whoever holds the id — the stored key otherwise — never the environment, so a spawn cannot be
 funded by something the picker never counted), folds the provider env into the
 spawn through `apply_worker_secret_env`, and resolves the slug from the spec's
 tier→slug map ⊕ the harness's `Capability.model_map`. A missing key raises
