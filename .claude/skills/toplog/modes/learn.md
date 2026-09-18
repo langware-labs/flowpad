@@ -3,9 +3,16 @@ id: 6a718120-83db-4e5c-a14e-d0d42634ce00
 ---
 # Mode: `learn` — consolidate what helped
 
-Run this after a root cause is proven (or whenever coverage gaps surface), to turn
-a debugging session into durable traceability. Make the smallest change that
-captures the lesson:
+Two forms, one catalog:
+
+| Arg | When | What it does |
+| --- | --- | --- |
+| `learn` | a root cause is proven, or a coverage gap surfaced | consolidate the lesson into the catalog + code |
+| `learn tandem` | an RCA is STUCK and the path is dark | RCA and toplog feed each other, one seam per pass |
+
+## `learn` — consolidate the lesson
+
+Make the smallest change that captures it:
 
 * **Enrich an existing tag** — extend its `../tags.md` entry (more **Where**,
   sharper **Use for**) so next time the right tag is obvious. One heading per
@@ -25,3 +32,50 @@ captures the lesson:
   anything real, and never as a side effect of `run` or `scan`.
 
 After editing, run `scan` to confirm code and catalog reconcile.
+
+## `learn tandem` — RCA and toplog advancing together
+
+Consolidating afterwards is the easy case. The one that needs this mode is the
+RCA that is stuck: the decisive path has no `toplog.log` on it, so every chain is
+inference, or the symptom refuses to reproduce on demand.
+
+Neither side can finish alone, and neither leads. **They feed each other**, and a
+pass is only complete when the hand-off has gone both ways:
+
+| | hands over | which the other turns into |
+| --- | --- | --- |
+| **toplog → RCA** | the lines a tag emitted, and the lines it did NOT | a path admitted into the chain, or one struck off it |
+| **RCA → toplog** | the seam its chain now rests on but cannot see | the next tag or log point to place, aimed there |
+
+So each pass ends with both sides further along: one more line the trace can see,
+one less hypothesis the RCA carries. If a pass feeds only one direction — a trace
+nobody reasoned over, or a theory nobody instrumented — it does not count as a
+pass; close the loop before starting another.
+
+**A. Cover the blind path** *(RCA → toplog)*. Take the seam the RCA just named
+and put a tag on it — enrich an existing tag, or add a new one (rules above).
+Provisional is fine here: the catalog entry can wait for step C, the log points
+cannot. Activate with `run` and reproduce.
+
+**B. Prove and validate** *(toplog → RCA)*. Hand the trail back to `/rca`. The
+bar does not move: a path enters the causal chain only when a LINE says it ran,
+and the cause is accepted only when its switch toggles **both** directions. A tag
+that stayed silent is evidence too — it rules its path out. Whatever the RCA
+cannot see from this trail is the input to the next A.
+
+**C. Proven → consolidate (the `learn` form above). Not proven → back to A.**
+When the switch toggles, write the finding into the tag now, while it is fresh:
+which line pinned the switch, what the silence of the neighbouring tags ruled
+out, and the **Verified:** line. When it does not, return to A one seam UPSTREAM
+of the last line you saw — carrying what the trail eliminated, so the next pass
+is narrower, not wider. The loop ends one way only: a proven switch AND a catalog
+that now covers the path that proved it.
+
+Two rules keep the loop honest:
+
+* **Every pass must retire an unknown** — a new line, or a hypothesis killed. A
+  pass that adds tags and learns nothing is tag sprawl; stop and say so instead
+  of turning on more.
+* **Leave no provisional points behind.** If the loop is abandoned, either finish
+  the catalog entry or remove the `toplog.log` calls you added. Code with trace
+  points and no entry is exactly what `scan` exists to catch.

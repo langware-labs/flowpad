@@ -1,0 +1,11 @@
+{
+  "type": "agent",
+  "id": "19efeec3-5537-4776-9771-3db06fbceba2",
+  "name": "provisioner",
+  "description": "Reaches one ComputeOp goal on this machine after the cheap attempt failed.",
+  "avatar": "🎯",
+  "worker_type": "claude",
+  "model": "sm",
+  "permission_mode": "bypassPermissions",
+  "enabled": true
+}

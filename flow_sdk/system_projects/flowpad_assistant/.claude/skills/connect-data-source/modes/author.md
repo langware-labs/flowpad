@@ -24,7 +24,7 @@ over the same backend actions.
     source.py                 exactly ONE flow_sdk.sources.Source subclass — the source
     transport.py …            optional helper modules, imported relatively (`from .transport import …`)
     tests/test_<name>_source.py   the conformance kit + wire cases against a loopback double
-    tests/matrix.py           the source's case in the data source matrix
+    tests/matrix.py           its Double (a loopback provider) and its case in the data source matrix
     README.md                 setup, credentials, what a person must click
 ```
 
@@ -114,8 +114,12 @@ class's own method (`build`, `configure`, `query`, `origin_id_for`,
   health). Import the class with
   `WikiSource = asset_module("wiki").WikiSource` (`flow_sdk.ingest.source_registry`).
   Name the file `test_<name>_source.py` — test module names are global.
-- `tests/matrix.py`: `case(monkeypatch, tmp_path)`, a context manager yielding
-  `{"config": …, "fields": …, "min_items": …, "send": …}` over the same doubles.
+- `tests/matrix.py`: a `Double` — the provider over a loopback socket, with `config`
+  (including any base-URL seam the driver reads), `secrets` keyed as the manifest's `auth`
+  names them, `deliver(text, sender=…)` and `sent()` — and `case(monkeypatch, tmp_path)`, a
+  context manager over it yielding `{"config": …, "fields": …, "min_items": …, "send": …,
+  "double": …}`. A message driver's `Double` is also what the stream inbox channel matrix
+  and the browser doubles process (`tests/e2e/channel_doubles.py`) read through.
 
 ## Shipping an editor with the source
 

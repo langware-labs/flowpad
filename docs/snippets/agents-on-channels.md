@@ -10,8 +10,8 @@ every allowed message — nothing of yours stays running), or **your process run
 Python over the same SDK, for a worker or a policy of your own). Both need Flowpad running on the
 machine and an LLM source the harness can spend (Settings → LLM, or the `lm_keys` route).
 Everything below is run as written by `tests/unit/test_agents_on_channels_snippets.py` against the
-WhatsApp double; variant B is also proven in Docker by
-`tests/long_tests/test_whatsapp_agent_in_docker.py`.
+WhatsApp double; both variants are also proven in Docker by
+`tests/long_tests/test_whatsapp_agent_in_docker.py` — a clean container, the snippet alone, a real model turn.
 
 ## 1. The credential, once
 

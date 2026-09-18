@@ -44,6 +44,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
     import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``
     import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
+    import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.check`` / ``compute_op.attempt`` / ``compute_op.action.*``
     import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
     import flow_sdk.schema.data_spec.folder_change_spec  # noqa: F401  — registers ``ingest.folder_change``

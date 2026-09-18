@@ -1,12 +1,13 @@
-"""Variant B of ``docs/snippets/agents-on-channels.md`` runs in Docker and answers WhatsApp.
+"""Both variants of ``docs/snippets/agents-on-channels.md`` run in Docker and answer WhatsApp.
 
 A clean container of this tree's backend image, no volumes, no keychain, no Anthropic login:
 the claude harness is funded by an OpenRouter key through the product's own two routes
 (``lm_keys`` → ``llm-endpoint/select``) and pinned to haiku, so a real model turn runs — and a
 device-funded one cannot be mistaken for it. The WhatsApp provider is the driver's own ``Double``
 hosted INSIDE the container (``tests/e2e/channel_doubles.py --channels whatsapp --no-plant``); the
-agent is set up by the snippet ALONE (§1 + §3 of the page, assembled into one script). A customer
-writes in through the webhook; the loop spawns the agent; the reply leaves through the channel.
+agent is set up by the snippet ALONE (§1 + §2 for variant A, §1 + §3 for variant B, assembled into
+one script). A customer writes in through the webhook; the backend's runner (A) or the script's loop
+(B) spawns the agent; the reply leaves through the channel.
 
 Needs docker and ``OPENROUTER_API_KEY`` in the environment or ``.env.local``; skips otherwise.
 The first turn pays for the CLI's cold start in a fresh container.
@@ -57,12 +58,13 @@ def _exec(name: str, script: str, *, detach: bool = False) -> str:
     return _sh("docker", "exec", "-i", name, "sh", "-c", script).stdout
 
 
-def snippet_script() -> str:
-    """§1 + §3 of the page as one script, values from the environment: the snippet, nothing else."""
+def snippet_script(variant: str, *, credential: bool) -> str:
+    """§1 + §2 (A) or §1 + §3 (B) of the page as one script, values from the environment: the snippet,
+    nothing else. §1 is "once": the second variant on the same machine runs without it."""
     page = (REPO / "docs/snippets/agents-on-channels.md").read_text(encoding="utf-8")
     fences = re.findall(r"```python\n(.*?)```", page, re.S)
-    credential, loop = fences[0], fences[2]
-    body = "".join(("    " + line if line.strip() else line) for line in (credential + "\n" + loop).splitlines(True))
+    parts = ([fences[0]] if credential else []) + [fences[{"A": 1, "B": 2}[variant]]]
+    body = "".join(("    " + line if line.strip() else line) for line in "\n".join(parts).splitlines(True))
     return (
         "import asyncio, json, os\n"
         "WHATSAPP_TOKEN = os.environ['WHATSAPP_TOKEN']\nWHATSAPP_APP_SECRET = os.environ['WHATSAPP_APP_SECRET']\n"
@@ -143,10 +145,21 @@ def _control(c: dict, method: str, route: str, body: dict | None = None) -> str:
     return _exec(c["name"], f"curl -s -X {method} $(cat /tmp/control){route} {data}")
 
 
-def test_the_snippet_alone_puts_an_agent_on_whatsapp_and_it_answers(container):
-    c = container
-    _fund_claude_with_openrouter(c)
-    channel = _start_whatsapp_double(c)
+@pytest.fixture(scope="module")
+def rig(container):
+    _fund_claude_with_openrouter(container)
+    return {**container, "channel": _start_whatsapp_double(container), "credential_declared": False}
+
+
+@pytest.mark.parametrize("variant", ["A", "B"])
+def test_the_snippet_alone_puts_an_agent_on_whatsapp_and_it_answers(rig, variant):
+    c, channel = rig, rig["channel"]
+    # One variant at a time on the double's one business number: the earlier variant's source goes.
+    for row in httpx.get(f"{c['base']}/api/v1/graph/data_source", timeout=10).json().get("data") or []:
+        httpx.delete(f"{c['base']}/api/v1/graph/data_source/{row['id']}", timeout=10)
+    # The image has no pkill: walk /proc, skipping this shell (its own cmdline names the script too).
+    _exec(c["name"], "for p in /proc/[0-9]*; do pid=$(basename $p); [ \"$pid\" = \"$$\" ] && continue; "
+                     "grep -q run_whatsapp_agent $p/cmdline 2>/dev/null && kill $pid; done; true")
 
     # The snippet, with the values a person would have: the credential's secrets, the business
     # number's id, the verify token, the customer who may write in. EXTRA_CONFIG points the driver
@@ -156,19 +169,22 @@ def test_the_snippet_alone_puts_an_agent_on_whatsapp_and_it_answers(container):
         "PHONE_NUMBER_ID": channel["config"]["phone_number_id"], "VERIFY_TOKEN": channel["config"]["verify_token"],
         "CUSTOMER": channel["sender"], "EXTRA_CONFIG": json.dumps({"base_url": channel["config"]["base_url"]}),
     }
-    _sh("docker", "exec", "-i", c["name"], "sh", "-c", "cat > /app/run_whatsapp_agent.py", input=snippet_script())
+    script = snippet_script(variant, credential=not c["credential_declared"])
+    c["credential_declared"] = True
+    _sh("docker", "exec", "-i", c["name"], "sh", "-c", "cat > /app/run_whatsapp_agent.py", input=script)
     exports = " ".join(f"{k}='{v}'" for k, v in env.items())
     _exec(c["name"], f"cd /app && {exports} python run_whatsapp_agent.py > /tmp/agent.log 2>&1", detach=True)
 
-    # The customer writes in once the loop has made its source (the webhook needs a row to land on).
+    # The customer writes in once the snippet has made its source (the webhook needs a row to land
+    # on). Variant A's script has exited by then; variant B's is the loop that stays up.
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
-        rows = httpx.get(f"{c['base']}/api/v1/graph/data_source", timeout=10).json().get("data") or []
-        if any(r.get("provider") == "whatsapp" for r in rows):
+        rows = [r for r in httpx.get(f"{c['base']}/api/v1/graph/data_source", timeout=10).json().get("data") or [] if r.get("provider") == "whatsapp"]
+        if rows and (variant == "B" or rows[0].get("status") == "active"):
             break
         time.sleep(1)
     else:
-        pytest.fail(f"the snippet made no source:\n{_exec(c['name'], 'tail -30 /tmp/agent.log')}")
+        pytest.fail(f"the snippet made no {'active ' if variant == 'A' else ''}source:\n{_exec(c['name'], 'tail -30 /tmp/agent.log')}")
     order = f"ZX-{uuid.uuid4().hex[:5].upper()}"
     delivered = json.loads(_control(c, "POST", "/deliver", {"channel": "whatsapp", "text": f"Hello, my order {order} arrived with a cracked screen. What should I do?"}))
     assert delivered.get("webhook_status") == 200, delivered
@@ -185,4 +201,7 @@ def test_the_snippet_alone_puts_an_agent_on_whatsapp_and_it_answers(container):
     (reply,) = [m for m in sent if order in (m.get("text") or "")]
     assert reply["to"] == channel["sender"] and reply["thread"] == delivered["external_id"]
     assert "cracked screen. What should I do?" not in reply["text"], "the reply is an answer, not the question"
-    assert rows and str(rows[0].get("owner") or "").startswith("agent-"), "the source is the agent's"
+    assert str(rows[0].get("owner") or "").startswith("agent-"), "the source is the agent's"
+    if variant == "A":
+        assert rows[0].get("inbound_allowed_senders") == [channel["sender"]], "the source carries the allowlist the runner gates on"
+        assert "run_whatsapp_agent" not in _exec(c["name"], "cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\\0' ' '"), "nothing of the snippet's stays running: the backend answered"

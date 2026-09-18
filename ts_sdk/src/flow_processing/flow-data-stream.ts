@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { v4 as uuid } from 'uuid';
 import { FlowData } from './flow-data';
+import { toplog } from '../services/toplog';
 import { FlowElementType, FlowElementTypes, isStreamableElementType } from './flow-element-types';
 import { FlowDataEvents, FlowEvents } from './flow-events';
 
@@ -246,6 +247,16 @@ export class FlowDataStream extends EventEmitter {
   ingest(item: FlowData): FlowData | null {
     const elementType = item.elementType;
     const groupId = item.groupId;
+
+    if (elementType === FlowElementTypes.CHAT) {
+      toplog.log(
+        'chat_delivery',
+        `ingest src=${(item as { source?: unknown }).source} group=${groupId ?? 'none'} ` +
+          `t=${item.attributes['t'] ?? 'none'} i=${item.attributes['i'] ?? 'none'} ` +
+          `role=${item.attributes.role ?? 'none'} len=${String(item.content ?? '').length} ` +
+          `known_groups=${this._ownItems.filter((e) => e.elementType === FlowElementTypes.CHAT).length}`,
+      );
+    }
 
     if (elementType === FlowElementTypes.USER_MESSAGE) {
       const role = item.attributes.role ?? '';
