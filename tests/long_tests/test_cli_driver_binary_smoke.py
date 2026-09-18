@@ -34,10 +34,12 @@ import pytest
 
 from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.cli import DeepAgentsAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode import OpenCodeAgentOptions
 from flow_sdk.transcript_analyzer import AgentTranscriptFile
 from flow_sdk.transcript_analyzer.entries import UnknownEntry
 from tests.long_tests._model_tier import small_model_for
+from tests.long_tests.conftest import worker_is_installed
 from tests.test_settings import test_service_config
 
 pytestmark = pytest.mark.skipif(
@@ -76,7 +78,7 @@ def _run_turn_and_parse(worker: str, options, tmp_path: Path, *, success_types: 
 
     workdir = tmp_path / "work"
     workdir.mkdir(parents=True, exist_ok=True)
-    argv, _env = options.to_spawn_args()
+    argv, options_env = options.to_spawn_args()
     binary = shutil.which(argv[0])
     assert binary is not None
 
@@ -86,6 +88,9 @@ def _run_turn_and_parse(worker: str, options, tmp_path: Path, *, success_types: 
         capture_output=True,
         text=True,
         cwd=str(workdir),
+        # The options' own env rides along: a CLI with a vendor login needs none of it, but a
+        # harness funded only by an endpoint (deepagents) has nothing else to spend.
+        env={**os.environ, **options_env},
         timeout=_TURN_GUARD_SECONDS,
     )
     if not result.stdout.strip():
@@ -153,18 +158,46 @@ _opencode = pytest.param(
 )
 
 
-@pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot, _opencode])
+def _deepagents_options(**kwargs) -> DeepAgentsAgentOptions:
+    """The runner needs a session id (the driver preassigns one) and its funding in the env."""
+    from flow_sdk.api.api_types.identifier import mint_uuid
+
+    return DeepAgentsAgentOptions(
+        session_id=mint_uuid(),
+        env_vars={
+            "FLOWPAD_DEEPAGENTS_BASE_URL": "https://openrouter.ai/api/v1",
+            "FLOWPAD_DEEPAGENTS_API_KEY": os.environ.get("OPENROUTER_API_KEY", ""),
+        },
+        **kwargs,
+    )
+
+
+# Our own runner over LangChain's deepagents: the stream is OURS, so "drift" here means the
+# engine changed the message shapes the runner translates. Its terminal is ``result``.
+_deepagents = pytest.param(
+    "deepagents", _deepagents_options, {"result"},
+    marks=pytest.mark.skipif(
+        not worker_is_installed("deepagents") or not os.environ.get("OPENROUTER_API_KEY"),
+        reason="deepagents harness not installed or no OPENROUTER_API_KEY",
+    ),
+    id="deepagents",
+)
+
+
+@pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot, _opencode, _deepagents])
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_version_smoke(worker, options_cls, success_types):
-    binary = shutil.which(worker)
+    # The vendor's own argv head: a name on PATH for a CLI, this interpreter + ``-m`` for a package.
+    head = options_cls()._resolve_binary()
+    binary = shutil.which(head[0])
     result = subprocess.run(
-        [binary, "--version"], capture_output=True, text=True, timeout=_TURN_GUARD_SECONDS
+        [binary, *head[1:], "--version"], capture_output=True, text=True, timeout=_TURN_GUARD_SECONDS
     )
     assert result.returncode == 0
     assert any(ch.isdigit() for ch in result.stdout)
 
 
-@pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot, _opencode])
+@pytest.mark.parametrize("worker, options_cls, success_types", [_codex, _copilot, _opencode, _deepagents])
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_headless_turn_parses(worker, options_cls, success_types, tmp_path: Path):
     _run_turn_and_parse(

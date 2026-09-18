@@ -72,6 +72,11 @@ class CliCapabilityRunner(CapabilityRunner):
         # worker_type) rather than parsed back out of the kind string.
         self.worker_type = worker_type
 
+    def locate_on_process_path(self) -> str | None:
+        """The executable as THIS process can find it, with no sweep — what the spawn path's
+        lazy resolution asks (``discovery.resolve_capability_value``)."""
+        return shutil.which(self.executable)
+
     def value_from_executable_path(self, resolved: str | None, *, source: str = "the terminal PATH") -> CapabilityValue:
         """This capability's typed value for an already-resolved executable path.
 
@@ -197,6 +202,58 @@ class CliCapabilityRunner(CapabilityRunner):
         except Exception as exc:
             logger.debug("auth probe for %s failed: %s", self.spec.kind, exc)
             return None
+
+
+class PythonModuleCapabilityRunner(CliCapabilityRunner):
+    """A harness that is a Python package run as ``python -m <module>``, not a binary on PATH.
+
+    Installed ⇔ every distribution in ``requires`` is present in THIS interpreter's environment;
+    the executable is this interpreter. The value keeps the CLI runner's shape — the bin FOLDER —
+    so every reader of it (``worker_bin_folder``, the spawn PATH pin, ``test``) is unchanged.
+
+    Presence is read from package metadata, never by importing: a harness like deepagents takes
+    seconds to import, and this answers on the spawn path.
+    """
+
+    def __init__(self, *, spec: CapabilitySpec, module: str, requires: tuple[str, ...], worker_type: str | None = None) -> None:
+        import sys
+        from pathlib import Path
+
+        super().__init__(
+            spec=spec,
+            executable=Path(sys.executable).name,
+            test_args=["-m", module, "--version"],
+            worker_type=worker_type,
+        )
+        self.module = module
+        self.requires = tuple(requires)
+
+    def missing_distributions(self) -> list[str]:
+        from importlib import metadata
+
+        missing = []
+        for name in self.requires:
+            try:
+                metadata.version(name)
+            except metadata.PackageNotFoundError:
+                missing.append(name)
+        return missing
+
+    def locate_on_process_path(self) -> str | None:
+        import sys
+
+        return None if self.missing_distributions() else sys.executable
+
+    def value_from_executable_path(self, resolved: str | None, *, source: str = "this Python environment") -> CapabilityValue:
+        value = super().value_from_executable_path(resolved, source=source)
+        if not resolved:
+            missing = ", ".join(self.missing_distributions()) or ", ".join(self.requires)
+            value.message = f"{self.spec.name} is not installed in {source} (missing: {missing})."
+        return value
+
+    async def discover(self, probe: dict) -> CapabilityValue:
+        """The terminal-PATH probe has nothing to say about a package: ask the environment."""
+        return self.value_from_executable_path(self.locate_on_process_path())
 
 
 class CapabilityReferenceRunner(CapabilityRunner):
@@ -585,6 +642,39 @@ async def resolve_default_worker_type() -> str:
     return worker_type
 
 
+def bootstrap_worker_type() -> str | None:
+    """The installed ``Vendor.bootstrap`` worker, or None.
+
+    The worker of last resort for a BUILTIN process: a harness that ships inside FlowPad's own
+    environment and needs only an LLM endpoint, so a box with no CLI installed can still run the
+    process that installs one.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_is_installed
+
+    return next((v.worker_type for v in VENDORS if v.bootstrap and worker_is_installed(v.key)), None)
+
+
+async def resolve_builtin_worker_type() -> str:
+    """The worker a BUILTIN process (a capability install, a wizard step) runs on.
+
+    The user's selected harness whenever it is actually installed — it is their tool, and their
+    login funds it. Only when it is not does the bootstrap worker step in. With neither, the
+    selected worker is returned anyway so the launch path reports "not installed" by name.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_is_installed
+
+    try:
+        selected = await resolve_default_worker_type()
+    except Exception:
+        fallback = bootstrap_worker_type()
+        if fallback is None:
+            raise
+        return fallback
+    if worker_is_installed(selected):
+        return selected
+    return bootstrap_worker_type() or selected
+
+
 def install_worker_type(harness_kind: str) -> str:
     """The AgenticProcess ``worker_type`` for a harness leaf kind.
 
@@ -681,8 +771,18 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     workdir.mkdir(parents=True, exist_ok=True)
 
     try:
-        harness_kind = await resolve_default_harness_kind()
-        worker_type = install_worker_type(harness_kind)
+        try:
+            # An availability PROBE (unlike the wizard's selection lookup in
+            # ``resolve_builtin_worker_type``): an install must run on a harness that works NOW.
+            harness_kind = await resolve_default_harness_kind()
+            worker_type = install_worker_type(harness_kind)
+        except Exception:
+            # No harness is available — the fresh-install case this process exists for. The
+            # bootstrap worker needs no CLI, so it can run the install that provides one.
+            worker_type = bootstrap_worker_type()
+            if worker_type is None:
+                raise
+            harness_kind = vendor_by("worker_type", worker_type).capability_kind
     except Exception as exc:
         return CapabilityResult(
             ok=False,
@@ -949,6 +1049,19 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             },
         ),
         CapabilitySpec(
+            name="Deep Agents",
+            kind=CapabilityKind.DEEPAGENTS_CLI.value,
+            description=(
+                "The builtin worker: LangChain's deepagents harness as a Python package beside "
+                "FlowPad. Needs no vendor CLI and no account — only an LLM endpoint."
+            ),
+            icon="Bot",
+            value_spec=_FOLDER,
+            homepage_url="https://docs.langchain.com/oss/python/deepagents/overview",
+            # No ``install_commands``: it is a dependency of FlowPad's own environment, not
+            # something a shell one-liner in the user's terminal could put there.
+        ),
+        CapabilitySpec(
             name="Chrome Authenticated Browsing",
             kind=CapabilityKind.CHROME_AUTHENTICATED.value,
             description="Agent-driven Chrome browsing with authenticated browser state.",
@@ -1057,13 +1170,17 @@ def _build_default_registry() -> CapabilityRegistry:
         )
     )
     for vendor in VENDORS:
-        registry.register(
-            CliCapabilityRunner(
-                spec=specs[vendor.capability_kind],
-                executable=vendor.key,
+        spec = specs[vendor.capability_kind]
+        if vendor.python_module:
+            runner: CliCapabilityRunner = PythonModuleCapabilityRunner(
+                spec=spec,
+                module=vendor.python_module,
+                requires=vendor.python_requires,
                 worker_type=vendor.worker_type,
             )
-        )
+        else:
+            runner = CliCapabilityRunner(spec=spec, executable=vendor.key, worker_type=vendor.worker_type)
+        registry.register(runner)
     registry.register(ChromeAuthenticatedBrowsingRunner(specs[CapabilityKind.CHROME_AUTHENTICATED.value]))
     registry.register(GithubAccountRunner(specs[CapabilityKind.GITHUB.value]))
     registry.register(

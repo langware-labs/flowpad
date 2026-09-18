@@ -30,7 +30,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     get_driver,
 )
 
-_VENDORS = ("claude", "codex", "copilot", "opencode")
+_VENDORS = ("claude", "codex", "copilot", "opencode", "deepagents")
 
 
 def _driver_cls(vendor: str):

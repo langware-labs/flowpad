@@ -832,6 +832,23 @@ class AgenticProcess(Entity):
         return self
 
     @model_validator(mode="after")
+    def _a_headless_only_vendor_is_headless(self) -> "AgenticProcess":
+        """``pty_mode`` is the routing key EVERY client reads (the TS SDK routes a turn on the
+        persisted value), and it defaults to interactive. A vendor with no TUI
+        (``Vendor.interactive`` False) can only ever be headless, so the stored intent says so —
+        otherwise a caller that never thought about transports asks for a terminal that cannot
+        exist and its turn never starts."""
+        if self.pty_mode and not self._vendor().interactive:
+            self.pty_mode = False
+        return self
+
+    def _vendor(self):
+        """This process's vendor; an unset ``worker_type`` follows the default, like ``driver``."""
+        from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none  # noqa: PLC0415
+
+        return (vendor_or_none(self.worker_type) if self.worker_type else None) or default_vendor()
+
+    @model_validator(mode="after")
     def _migrate_legacy_process_assets_mount(self) -> "AgenticProcess":
         if self.id:
             self.additional_dirs = [
@@ -1297,6 +1314,13 @@ class AgenticProcess(Entity):
             # recovery), set in the stale-shell-drop branch below. Drives the
             # ``recovered`` event emission in the success tail.
             is_recovery = False
+            # A headless-only vendor has no TUI for a PTY to host: say so, rather than spawn a
+            # runner that would sit waiting for a prompt on a terminal's stdin. Checked before
+            # anything is mutated, so there is nothing to roll back.
+            if not self._vendor().interactive:
+                return ApiFailResponse(
+                    message=f"{self._vendor().label} is a headless worker: it has no terminal session to open. Prompt it instead."
+                )
             if visible is not None and self.visible != visible:
                 self.visible = visible
                 reattach_changed = True

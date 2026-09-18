@@ -105,13 +105,14 @@ async def launch_step_process(
     timeout. It rides `wait()`'s existing 2s poll — no new budget.
     """
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
-    from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
+    from flow_sdk.core.capabilities.registry import resolve_builtin_worker_type  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
     try:
-        worker_type = await resolve_default_worker_type()
+        # The bare box a wizard is meant to fix often has no harness yet: the selected harness
+        # when it is installed, else the bootstrap worker that needs none.
+        worker_type = await resolve_builtin_worker_type()
     except Exception as exc:  # noqa: BLE001
-        # The bare box a wizard is meant to fix often has no harness yet. Say so.
         return ProcessResult(None, False, f"No coding-agent harness is available to run this step: {exc}")
 
     try:

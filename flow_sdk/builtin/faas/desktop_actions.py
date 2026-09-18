@@ -272,6 +272,8 @@ class DesktopActionsMixin:
 
         commands: list[dict[str, str]] = []
         for vendor in VENDORS:
+            if not vendor.interactive:
+                continue  # headless-only: there is no TUI to launch in a terminal
             try:
                 commands.append({"key": vendor.worker_type, "command": interactive_launch_command(vendor.worker_type, cwd)})
             except Exception:
