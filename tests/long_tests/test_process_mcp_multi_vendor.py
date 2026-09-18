@@ -24,7 +24,6 @@ from __future__ import annotations
 import json
 
 import asyncio
-import shutil
 import sys
 from pathlib import Path
 
@@ -36,6 +35,7 @@ from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 from tests.fixtures.dummy_mcp_server import MAGIC
 from tests.long_tests._model_tier import small_model_for
+from tests.long_tests.conftest import fund_worker_without_a_login, worker_is_installed
 from tests.long_tests._transcript_helpers import assert_prompt_ok, await_transcript, safe_exit
 from tests.test_settings import test_service_config
 
@@ -61,6 +61,7 @@ _WORKER_TYPE = {
     "codex": WorkerType.CODEX,
     "copilot": WorkerType.COPILOT,
     "opencode": WorkerType.OPENCODE,
+    "deepagents": WorkerType.DEEPAGENTS,
 }
 
 
@@ -73,7 +74,7 @@ def _worker(name: str):
     """
     return pytest.param(
         name,
-        marks=pytest.mark.skipif(shutil.which(name) is None, reason=f"{name} CLI not installed"),
+        marks=pytest.mark.skipif(not worker_is_installed(name), reason=f"{name} harness not installed"),
         id=name,
     )
 
@@ -102,6 +103,7 @@ async def _assert_worker_echoed_token(process, worker: str, failure_hint: str) -
     Shared by both hops so the staged-assertion policy — an environment gap
     SKIPS, a worker that ran and did not get the tool FAILS — is written once.
     """
+    await fund_worker_without_a_login(worker)  # a no-op for a harness with its own login
     try:
         assert_prompt_ok(await process.prompt(_INSTRUCTION))
         transcript = await await_transcript(

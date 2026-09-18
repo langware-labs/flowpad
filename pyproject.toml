@@ -65,6 +65,16 @@ dependencies = [
     "apscheduler~=3.10",
     "pathspec",
     "pyyaml>=6.0",
+    # The builtin ``deepagents`` worker (cli_drivers/deepagents): a harness that ships as a
+    # Python package, so a box with nothing but an LLM endpoint still has a worker. deepagents
+    # itself requires Python >=3.11; on 3.10 these are skipped and the vendor simply reports
+    # "not installed". Upper bounds are deliberate — ``[tool.uv] prerelease = "allow"`` below
+    # would otherwise let the resolver walk the LangChain stack onto a pre-release.
+    "deepagents>=0.7.15,<0.8; python_version >= '3.11'",
+    "langchain-openai>=1.6,<2; python_version >= '3.11'",
+    "langgraph-checkpoint-sqlite>=3.1,<4; python_version >= '3.11'",
+    # NOT langchain's own MCPAdapter: it needs fastmcp>=4, and this project pins fastmcp<4.
+    "langchain-mcp-adapters>=0.3,<1; python_version >= '3.11'",
 ]
 
 [project.urls]

@@ -111,8 +111,15 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
   and never belongs in the toplog catalog.
 - **`harness` and `worker` are two names for one axis.** `HarnessType`
   (`assets/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
-  They're deliberately distinct and bridged by `_WORKER_NAME_TO_TYPE`, but the industry word
-  for both is *provider*.
+  They're deliberately distinct and bridged by the `VENDORS` table (`Vendor.harness`), but the
+  industry word for both is *provider*.
+- **`deepagents` is a provider mirror for the ENGINE only.** The vendor key, package and
+  capability kind follow LangChain's `deepagents` package like every other vendor follows its
+  CLI — but there is no `deepagents` CLI of ours to mirror: the **runner**
+  (`cli_drivers/deepagents/runner.py`) and its JSONL event protocol are OURS. Don't call it
+  a "deep agent" in our own vocabulary (`Agent` is reserved); it is the *Deep Agents worker*,
+  and its role — the hidden, headless worker of last resort — is a set of `Vendor` facts
+  (`hidden`, `bootstrap`, `interactive=False`), not a second name.
 - **`DataSource` is the ingestion entity, not the trace enum.** `DataSource`
   (`flow_sdk/builtin/data_source.py`) is a configured remote system of record we sync from —
   a feed, later a mailbox. It is unrelated to `FlowDataSource`, the History/Stream/Sniffer
@@ -180,8 +187,8 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 
 | Ours | One place | Notes |
 |---|---|---|
-| `VENDORS` / `Vendor` | `flow_sdk/flowpad_types/vendors.py` | The one table of facts about the four CLI harness vendors (key, persisted `worker_type`, aliases, placement harness, capability kind, dot-dir, session entity type, pricing prefixes). Stdlib-only so `placement.py` and `transcript_analyzer` can import it; classes are reached by the dotted `package`. `vendor_for` / `vendor_or_none` / `default_vendor` / `vendor_by` / `vendor_for_path`. |
-| `JsonlTeeStreamWorker` | `flow_sdk/builtin/agentic_process/cli_drivers/jsonl_tee_worker.py` | The one non-interactive JSONL turn loop for vendors whose CLI records no turn terminal (copilot, opencode); a vendor supplies its session-key spelling, terminal types, stdin mode, converter and gate. Claude and codex stay on their own workers. |
+| `VENDORS` / `Vendor` | `flow_sdk/flowpad_types/vendors.py` | The one table of facts about the five harness vendors (key, persisted `worker_type`, aliases, placement harness, capability kind, dot-dir, session entity type, pricing prefixes) plus the declared facts generic machinery asks instead of branching on a key: `hidden`, `bootstrap`, `interactive`, `python_module` / `python_requires`, `transcript_stems`. Stdlib-only so `placement.py` and `transcript_analyzer` can import it; classes are reached by the dotted `package`. `vendor_for` / `vendor_or_none` / `default_vendor` / `vendor_by` / `vendor_for_path`. |
+| `JsonlTeeStreamWorker` | `flow_sdk/builtin/agentic_process/cli_drivers/jsonl_tee_worker.py` | The one non-interactive JSONL turn loop for vendors whose stdout is one JSON event per line (copilot, opencode, deepagents); a vendor supplies its session-key spelling, terminal types, stdin mode, converter and gate. Claude and codex stay on their own workers. |
 | `GitOriginDriver.materialize(origin, *, preferred_root, preferred_project_id, token)` | `flow_sdk/builtin/drivers/git_driver.py` | THE clone/reuse/pull policy — bundle receive, `Project.setup_from_git_origin`, `setup_from_bootstrap_git`, `Folder.resolve_location` and `create-project-from-git` all route through it. An absent/empty `preferred_root` means *clone here*. The driver is anonymous; callers pass their own `token`. |
 | `GitOrigin.next_clone_target()` / `fresh_clone_slot(leaf, reuse_empty=)` | `flow_sdk/fs_store/origin/git_origin.py` | The two workspace placement policies: reuse a matching checkout vs. never reuse (suffix past a collision; an empty dir is not one unless `reuse_empty=False`). |
 | Live session (`RemoteWorkerSession`) | `flow_sdk/builtin/remote_worker_session.py`; ledger `docs/collab/live-sessions.md` | THE unit of running a prompt on a collaborator's machine: every prompt sent in a conversation opens or continues one, keyed by its `starting_message_id`. Carries the session's `reply_policy` (`auto` \| `review`) and `approved_via` (`manual` \| `standing_grant`). The inbound gate is `decide_inbound_prompt`; the turn runner is `run_session_turn`; a consumed turn is marked by `FlowMessage.prompt_auto_handled`. |

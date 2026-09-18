@@ -227,7 +227,7 @@ The `execute()` method launches `claude` via `asyncio.create_subprocess_exec` an
 
 * `ERROR` — if subprocess fails or claude binary not found
 
-There is also `ClaudeCodeAgenticWorker` (`flow_sdk/builtin/agentic_process/cli_drivers/claude/code_agentic_worker.py`) which uses the `claude_agent_sdk` Python package directly instead of subprocess. It supports multi-turn sessions, pause/resume, and streaming input injection. It requires `claude_agent_sdk` as an optional dependency.
+There is also `ClaudeCodeAgenticWorker` (`flow_sdk/builtin/agentic_process/cli_drivers/claude/code_agentic_worker.py`), written against the `claude_agent_sdk` Python package. **It is not wired:** no driver instantiates it, and `claude_agent_sdk` is not a declared dependency (its wheel bundles a ~215 MB CLI binary, which is why it was not adopted). The worker that needs no vendor CLI is the hidden `deepagents` vendor (`cli_drivers/deepagents/`) — see `worker_spec/AgenticWorkerSpec.md` §0.
 
 ### Results
 

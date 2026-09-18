@@ -41,6 +41,7 @@ def test_capability_kind_ontology_prefix_matching():
 
     assert CapabilityKind.CLAUDE_CLI.value in harness_kinds
     assert CapabilityKind.CODEX_CLI.value in harness_kinds
+    assert CapabilityKind.DEEPAGENTS_CLI.value in harness_kinds
     assert claude_kinds == {CapabilityKind.CLAUDE_CLI.value}
 
 
