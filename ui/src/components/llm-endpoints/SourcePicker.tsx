@@ -1,7 +1,7 @@
 /**
  * The endpoint a new allocation draws from.
  *
- * One parent, chosen once. The hub makes the link a `source_llmendpoint` relationship written only
+ * One parent, chosen once. The hub makes the link a `partof` (endpoint → endpoint) relationship written only
  * by `allocate`, which is addressed TO the endpoint being drawn from — so there is nothing to
  * reorder and nothing to change afterwards. This replaces an ordered multi-source picker: that
  * shape came from a client-writable `sources` field the hub removed, because a list checked against

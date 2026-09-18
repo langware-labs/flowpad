@@ -10,7 +10,15 @@
  * records — so every mutation invalidates explicitly and a focus refetch covers "I came back after
  * someone spent something".
  */
-import { budgetsService, type MemberBudget, type OrgBudgets, type TeamBudgets } from '@sdk';
+import {
+  TypeId,
+  budgetsService,
+  dataManager,
+  type APIEntity,
+  type MemberBudget,
+  type OrgBudgets,
+  type TeamBudgets,
+} from '@sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useInvalidateTokenPlan } from '@src/components/token-plan/use-token-plan';
@@ -91,6 +99,27 @@ export function useRemoveAllowance() {
   const invalidate = useInvalidateBudgets();
   return useMutation({
     mutationFn: ({ endpointId }: { endpointId: string }) => removeAllowance(endpointId),
+    onSuccess: () => invalidate(),
+  });
+}
+
+/**
+ * Take a person off the TEAM -- the members DELETE, the same call the org detail panel makes.
+ *
+ * This is what "remove" means on a person's budget row. Deleting their allowance instead would be
+ * undone on their next read (the hub mints a default for anyone still on the team); removing the
+ * membership is the act, and the hub's own `member_removed` listener drops the allowance with it.
+ */
+export function useRemoveTeamMember() {
+  const invalidate = useInvalidateBudgets();
+  return useMutation({
+    mutationFn: async ({ teamId, userId }: { teamId: string; userId: string }) => {
+      const team = await dataManager.getByTypeId<APIEntity<never>>(new TypeId('team', teamId));
+      // A team that cannot be resolved is a failed mutation, not a silent no-op: the row would
+      // stay on screen with its budget intact and nothing would say why.
+      if (!team) throw new Error(`team ${teamId} not found`);
+      await team.removeMember(userId);
+    },
     onSuccess: () => invalidate(),
   });
 }

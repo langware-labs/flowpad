@@ -36,13 +36,27 @@
  * authorization rule — and an org admin's standing on a budget row is derived by the hub from the
  * scope it hangs under, which the browser cannot see at all.
  */
-import { TypeId, dataManager, type MemberBudget, type OrgPerson, type ScopeBudget } from '@sdk';
-import { ChevronDown, ChevronRight, Hash, Loader2, Mail, Pencil, Send, Trash2, UserPlus, Wallet } from 'lucide-react';
-import { useState } from 'react';
+import { QueryRequest, Team, TypeId, dataManager, type MemberBudget, type OrgPerson, type ScopeBudget } from '@sdk';
+import {
+  ChevronDown,
+  ChevronRight,
+  Hash,
+  Loader2,
+  Mail,
+  Pencil,
+  Send,
+  Trash2,
+  UserMinus,
+  UserPlus,
+  Users,
+  Wallet,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
 import { useInlineRename } from '@src/components/browseable-tree/use-inline-rename';
+import { useEntitiesQuery } from '@src/hooks/entity-hooks/useEntitiesQuery';
 import { formatValue } from '@src/components/cost-dashboard/constants';
 import { formatUsd } from '@src/components/llm-endpoints/usage-math';
 import { useSetupScope } from '@src/components/token-plan/use-token-plan';
@@ -68,6 +82,7 @@ import {
   useInvalidateBudgets,
   useOrgBudgets,
   useRemoveAllowance,
+  useRemoveTeamMember,
   useSetLifetimeCap,
   useTeamBudgets,
 } from './use-budgets';
@@ -109,7 +124,13 @@ function savingCap(
 
 // ── organization ──────────────────────────────────────────────────────────────
 
-export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => void }) {
+/** The HTTP status a failed budgets read carried, when it carried one. */
+function statusOf(error: unknown): number | null {
+  const status = (error as { response?: { status?: unknown } } | null)?.response?.status;
+  return typeof status === 'number' ? status : null;
+}
+
+export function OrgUnit({ orgId, name, onDeleted }: { orgId: string; name?: string; onDeleted: () => void }) {
   const { t } = useLingui();
   const { data, isLoading, error, refetch } = useOrgBudgets(orgId);
   const setCap = useSetLifetimeCap();
@@ -125,13 +146,15 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
     onCreated: () => void invalidate(),
   });
 
-  // Refused, not broken: `budgets` is admin-and-above on the hub, so this is the ordinary answer
-  // for a member who was invited to a team here. Render NOTHING. The screen is the money, a member
-  // has none of it to see, and a box explaining whose permission they lack is a sentence about
-  // somebody else -- told to a person who only wanted to know what they joined. What would serve
-  // them is their org and the teams they are in; that is a graph question (a plain team query
-  // still answers with every team in the org), not something to fake with a placeholder here.
-  if (error) return null;
+  // Refused, not broken: `budgets` is admin-and-above on the hub, so a refusal is the ordinary
+  // answer for a member who was invited to a team here. The screen is the money and a member has
+  // none of it to see -- but they did join something, and a blank page says otherwise. So a refusal
+  // renders the one thing the member may read: the org's name and the teams they are in, with no
+  // money and no controls (`MemberOrgCard`). Anything else that went wrong stays hidden.
+  if (error) {
+    const status = statusOf(error);
+    return status === 401 || status === 403 ? <MemberOrgCard orgId={orgId} name={name} /> : null;
+  }
   if (isLoading) return <Loading />;
   // Settled, and still no `org`. The declared shape promises one, so this is a hub answering
   // something we cannot render -- an older deployment without the action, or a refusal riding an
@@ -337,12 +360,59 @@ export function OrgUnit({ orgId, onDeleted }: { orgId: string; onDeleted: () => 
 }
 
 /**
+ * What a plain MEMBER sees of an organization: its name and the teams they are on. Nothing else.
+ *
+ * A member holds `read` on the org and on the teams they belong to, and nothing on the money.
+ * `budgets` refuses them, so the card is built from two reads they are allowed: the org row the
+ * page already listed (its name arrives as a prop) and a team query, which the hub scopes to the
+ * caller -- so it answers with THEIR teams, not every team in the org. No roster, no budgets, no
+ * controls; the hub would refuse each of them and the screen must not offer what it cannot do.
+ */
+function MemberOrgCard({ orgId, name }: { orgId: string; name?: string }) {
+  const { t } = useLingui();
+  const teamsQuery = useMemo(() => new QueryRequest({ type: Team.type, query: {} }), []);
+  const { data: teams, isLoading } = useEntitiesQuery<Team>(teamsQuery);
+  const mine = Array.isArray(teams) ? teams : [];
+  return (
+    <section className="rounded-lg border border-border" data-testid="org-unit" data-readonly="true">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-lg font-semibold" data-testid="org-name">
+          {name || t`Organization`}
+        </h2>
+      </div>
+      <div className="px-4 py-3" data-testid={`org-member-teams-${orgId}`}>
+        {isLoading ? (
+          <Loading />
+        ) : mine.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            <Trans>You are not on any team yet.</Trans>
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1 text-sm">
+            {mine.map((team) => (
+              <li key={team.id} className="flex items-center gap-2" data-testid={`org-member-team-${team.id}`}>
+                <Users className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                {team.name}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
  * One person's budget. A component rather than inline JSX because it renames in place, and
  * `useInlineRename` is a hook — a hook inside the `.map` callback that used to render this row
  * would break the rules of hooks the moment the roster reorders.
  *
  * The three trailing controls read right-to-left in order of consequence: Advanced (tune it), Edit
- * (rename it), Delete (remove it). Delete keeps the rightmost, most-isolated slot it already had.
+ * (rename it), Remove. Remove keeps the rightmost, most-isolated slot it already had -- and what it
+ * removes depends on the row. A PERSON's row removes them from the TEAM: deleting their allowance
+ * would only be undone on their next read (the hub mints one for anyone still on the team), and
+ * removing the membership takes the allowance with it through the hub's own listener. A row with no
+ * person behind it (an allowance nobody has accepted yet) deletes the allowance itself.
  *
  * **What Edit renames is the ENDPOINT, not the person.** `MemberBudget.name` is the endpoint's own
  * name — what the owner typed when adding them — falling back to the account name only when that
@@ -359,6 +429,7 @@ function MemberRow({
   teamName,
   capPending,
   canInvite,
+  canManage,
   inviting,
   onInvite,
   onSetCap,
@@ -370,6 +441,8 @@ function MemberRow({
   capPending: boolean;
   /** Same gate as "Add people" — whoever runs this team is who brings people into it. */
   canInvite: boolean;
+  /** May the caller run this team's roster (`members` on the team)? Gates "Remove from team". */
+  canManage: boolean;
   inviting: boolean;
   onInvite: () => void;
   onSetCap: (usd: number | null) => void;
@@ -456,15 +529,27 @@ function MemberRow({
           >
             <Pencil className="h-3.5 w-3.5" />
           </Button>
-          {/* The hub mints its own per-user default again on that person's next read, so removing
-              one achieves nothing but a confusing reappearance. */}
-          {!member.system_default && (
+          {member.user_id ? (
+            canManage && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                aria-label={t`Remove from team`}
+                title={t`Remove ${member.name} from ${teamName}`}
+                data-testid={`member-remove-${member.endpoint_id}`}
+                onClick={onRemove}
+              >
+                <UserMinus className="h-3.5 w-3.5" />
+              </Button>
+            )
+          ) : (
             <Button
               size="icon"
               variant="ghost"
               className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
               aria-label={t`Delete`}
-              data-testid={`member-remove-${member.endpoint_id}`}
+              data-testid={`member-delete-${member.endpoint_id}`}
               onClick={onRemove}
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -563,6 +648,7 @@ function TeamUnit({
   const detail = useTeamBudgets(peopleOpen || adding ? team.id : null);
   const setCap = useSetLifetimeCap();
   const remove = useRemoveAllowance();
+  const removeMember = useRemoveTeamMember();
 
   const poolId = team.endpoint_id;
   const over = team.limit_usd !== null && team.allocated_usd !== null && team.allocated_usd > team.limit_usd;
@@ -788,6 +874,7 @@ function TeamUnit({
                           teamName={team.name}
                           capPending={savingCap(setCap, member.endpoint_id)}
                           canInvite={team.can_allocate}
+                          canManage={team.can_manage}
                           inviting={!!member.email && invitingEmails.includes(member.email)}
                           onInvite={() => void sendInvites(member.email ? [member.email] : [])}
                           onSetCap={(usd) => setCap.mutate({ endpointId: member.endpoint_id, usd })}
@@ -818,24 +905,28 @@ function TeamUnit({
         open={!!removingMember}
         onOpenChange={(next) => !next && setRemovingMember(null)}
         variant="destructive"
-        title={t`Remove this budget?`}
-        description={t`${removingMember?.name ?? ''} will no longer be able to spend from ${team.name}. Money already spent is not affected.`}
+        title={removingMember?.user_id ? t`Remove from ${team.name}?` : t`Remove this budget?`}
+        description={
+          removingMember?.user_id
+            ? t`${removingMember?.name ?? ''} will leave ${team.name} and lose the budget it gave them. Money already spent is not affected.`
+            : t`${removingMember?.name ?? ''} will no longer be able to spend from ${team.name}. Money already spent is not affected.`
+        }
         confirmLabel={t`Remove`}
         onConfirm={() => {
           if (!removingMember) return;
           const target = removingMember;
           setRemovingMember(null);
-          remove.mutate(
-            { endpointId: target.endpoint_id },
-            {
-              onError: (e) =>
-                notify.error({
-                  title: t`Could not remove ${target.name}`,
-                  message: errorMessage(e, ''),
-                  id: 'budget-remove',
-                }),
-            },
-          );
+          const onError = (e: unknown) =>
+            notify.error({
+              title: t`Could not remove ${target.name}`,
+              message: errorMessage(e, ''),
+              id: 'budget-remove',
+            });
+          if (target.user_id) {
+            removeMember.mutate({ teamId: team.id, userId: target.user_id }, { onError });
+          } else {
+            remove.mutate({ endpointId: target.endpoint_id }, { onError });
+          }
         }}
       />
 
