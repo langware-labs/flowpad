@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "name": "repo-cloned",
+  "label": "the demo repo",
+  "icon": "FolderGit2",
+  "description": "The demo repository is checked out at /work/demo-repo.",
+  "requires": [
+    "git-on-path"
+  ],
+  "check": {
+    "commands": {
+      "linux": "test -d /work/demo-repo/.git"
+    }
+  },
+  "attempts": [
+    {
+      "command": {
+        "commands": {
+          "linux": "git clone --quiet file:///work/origin.git /work/demo-repo"
+        }
+      }
+    }
+  ]
+}

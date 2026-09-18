@@ -1,0 +1,21 @@
+{
+  "type": "compute_op",
+  "name": "unreachable",
+  "label": "an unreachable goal",
+  "icon": "CircleOff",
+  "description": "A goal whose check never passes \u2014 the negative case.",
+  "check": {
+    "commands": {
+      "linux": "exit 1"
+    }
+  },
+  "attempts": [
+    {
+      "command": {
+        "commands": {
+          "linux": "true"
+        }
+      }
+    }
+  ]
+}

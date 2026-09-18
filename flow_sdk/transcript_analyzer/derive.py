@@ -53,6 +53,7 @@ _FLOW_VERBS = frozenset(
         "log",
         "migrate",
         "navigate",
+        "op",
         "ping",
         "process",
         "progress",

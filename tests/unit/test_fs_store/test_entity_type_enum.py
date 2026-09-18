@@ -58,6 +58,7 @@ EXPECTED = {
     "TRANSCRIPT_CUSTOM_TITLE": "transcript_entry:custom_title",
     "TRANSCRIPT_PR_LINK": "transcript_entry:pr_link",
     "COMPUTE_NODE": "compute_node",
+    "COMPUTE_OP": "compute_op",
     "ENVIRONMENT": "environment",
     "SESSION_ANALYSIS": "session_analysis",
     "SESSION_CLASSIFICATION": "session_classification",
