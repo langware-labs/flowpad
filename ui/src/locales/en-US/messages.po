@@ -573,6 +573,12 @@ msgstr "{0} was upgraded and restarted."
 #. placeholder {0}: removingMember?.name ?? ''
 #. placeholder {1}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
+msgid "{0} will leave {1} and lose the budget it gave them. Money already spent is not affected."
+msgstr "{0} will leave {1} and lose the budget it gave them. Money already spent is not affected."
+
+#. placeholder {0}: removingMember?.name ?? ''
+#. placeholder {1}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
 msgid "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 msgstr "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 
@@ -782,6 +788,10 @@ msgstr "{remaining} issue{0} need investigation"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "{removed} assets removed."
 msgstr "{removed} assets removed."
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "{repeats} of these already have a budget in {teamName}; their caps will be updated."
+msgstr "{repeats} of these already have a budget in {teamName}; their caps will be updated."
 
 #: src/components/conversation/SessionCard.tsx
 msgid "{replyCount, plural, one {# reply} other {# replies}}"
@@ -9061,8 +9071,8 @@ msgid "Given out to teams"
 msgstr "Given out to teams"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
-msgid "Given to you by the hub"
-msgstr "Given to you by the hub"
+#~ msgid "Given to you by the hub"
+#~ msgstr "Given to you by the hub"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "glob"
@@ -14282,6 +14292,7 @@ msgstr "Org & teams"
 
 #: src/components/account/account-info.tsx
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/token-plan/token-plan-math.ts
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
@@ -14323,8 +14334,8 @@ msgid "Organizations, the teams inside them, and who has a budget in each."
 msgstr "Organizations, the teams inside them, and who has a budget in each."
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
-msgid "Origin"
-msgstr "Origin"
+#~ msgid "Origin"
+#~ msgstr "Origin"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Orphan"
@@ -16019,6 +16030,11 @@ msgstr "Remove"
 msgid "Remove {0}"
 msgstr "Remove {0}"
 
+#. placeholder {0}: member.name
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove {0} from {teamName}"
+msgstr "Remove {0} from {teamName}"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
 msgstr "Remove {label}"
@@ -16064,6 +16080,11 @@ msgstr "Remove file"
 msgid "Remove folder"
 msgstr "Remove folder"
 
+#. placeholder {0}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove from {0}?"
+msgstr "Remove from {0}?"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "Remove from folder"
@@ -16076,6 +16097,10 @@ msgstr "Remove from project"
 #: src/components/entity-execution-panel/QueueChip.tsx
 msgid "Remove from queue"
 msgstr "Remove from queue"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove from team"
+msgstr "Remove from team"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Remove from vibe agents"
@@ -22290,6 +22315,10 @@ msgstr "You"
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "You are not in any team in this organization yet."
 #~ msgstr "You are not in any team in this organization yet."
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "You are not on any team yet."
+msgstr "You are not on any team yet."
 
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."

@@ -59,7 +59,6 @@ function endpoint(id: string, kind: string, over: Partial<LLMEndpointOffer> = {}
     provider: kind === 'device' ? '' : 'openrouter',
     enabled: true,
     credential_hint: '',
-    system_default: false,
     invoke_path: '',
     kind,
     secret_name: '',
@@ -68,7 +67,7 @@ function endpoint(id: string, kind: string, over: Partial<LLMEndpointOffer> = {}
     base_url: '',
     filters: {} as LLMEndpointOffer['filters'],
     limits: {} as LLMEndpointOffer['limits'],
-    principal_typeid: null,
+    holder_typeid: null,
     ...over,
   };
 }
@@ -110,7 +109,7 @@ function statusWith(resolvedTypeid: string | null, over: Partial<LLMFundingStatu
     endpoints: {
       [DEVICE]: endpoint(DEVICE, 'device'),
       [KEY]: endpoint(KEY, 'api_key'),
-      [HUB]: endpoint(HUB, 'hub', { principal_typeid: 'user-1' }),
+      [HUB]: endpoint(HUB, 'hub', { holder_typeid: 'user-1' }),
     },
     active_for: [],
     ...over,
@@ -148,9 +147,7 @@ describe('FundingChip', () => {
     h.status.mockReturnValue(statusWith(KEY) as never);
     renderChip();
     await waitFor(() =>
-      expect(screen.getByTestId('funding-chip-trigger').getAttribute('title')).toContain(
-        'stored API key',
-      ),
+      expect(screen.getByTestId('funding-chip-trigger').getAttribute('title')).toContain('stored API key'),
     );
   });
 
