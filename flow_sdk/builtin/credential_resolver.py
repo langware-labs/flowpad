@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from pydantic import SecretStr
@@ -67,12 +68,35 @@ async def credentials_in_scope(project: Optional["Project"]) -> CredentialPairs:
     users: CredentialPairs = []
     projects: CredentialPairs = []
     for spec in await SecretPack.get_all(QueryFilter(match=match)):
+        if not _document_exists(spec):
+            continue
         name = spec_scope_name(spec)
         if name == SCOPE_USER:
             users.append((spec, user))
         elif name == SCOPE_PROJECT and proj is not None and str(spec.project_id or "") == proj.project_id:
             projects.append((spec, proj))
     return users + projects
+
+
+def _document_exists(spec: "SecretPack") -> bool:
+    """Whether this row still has the folder it describes.
+
+    A row can outlive its document — the folder was deleted, the project it sat
+    in was removed, a test's temp directory went away — and the row alone is not
+    a declaration. Believing one is how a variable NOBODY declares gets injected
+    into a process and snapshotted into a node's attachment list, long after the
+    credential it came from stopped existing.
+
+    The same rule the rest of the asset layer keeps: the file is the truth, the
+    row is only the index. ``data_source`` enforces it by pruning fileless rows
+    at boot; this is the resolver's own in-process answer, so a credential
+    deleted a second ago stops applying without waiting for a restart.
+
+    A row with no ``asset_ref`` at all is left alone: that is a shape this
+    predicate does not model, and silently dropping it would be a second bug.
+    """
+    ref = getattr(spec, "asset_ref", "") or ""
+    return not ref or Path(ref).exists()
 
 
 def declare(pairs: CredentialPairs) -> dict[str, DeclaredVar]:

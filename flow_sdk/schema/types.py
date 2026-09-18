@@ -220,6 +220,11 @@ class EntityType(StrEnum):
     # a Journey PRESENTS a step and waits for a person; a Wizard DECIDES and
     # executes. So a wizard step carries an exit-code map, not a waitFor.
     WIZARD = "wizard"
+    # A folder-backed GOAL: compute_op.json holding the one check that decides
+    # whether the goal holds, plus attempts ordered cheapest-first (a shell
+    # one-liner, then an agent). A Wizard SEQUENCES steps; a ComputeOp is one
+    # step's worth of "make this true and prove it", reusable on its own.
+    COMPUTE_OP = "compute_op"
     # A folder-backed support desk PORTAL: guides plus a helpdesk.json naming the
     # hub project that owns the ticket queue. A repo declares itself a help desk
     # by shipping one, so cloning it as a context folder is what gives a project

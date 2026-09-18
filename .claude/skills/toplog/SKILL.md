@@ -6,8 +6,10 @@ description: >-
   trace tags for a given issue (in code or tests) so RCA has better
   traceability; `list`/`on`/`off`/`status` list the tags, or start, stop or show tag logging directly;
   `scan` reconciles the tags referenced in code against the
-  tag catalog; `learn` consolidates post-RCA findings (enrich a tag, add a
-  new one with its trace points, or retire a stale one). Use when debugging a
+  tag catalog; `learn` consolidates findings (enrich a tag, add a new one with
+  its trace points, or retire a stale one), and `learn tandem` drives a stuck RCA
+  and the catalog forward together: cover the blind path, prove, then either
+  consolidate or cover the next seam upstream. Use when debugging a
   hard failure and you want richer logs before or alongside RCA, when adding or
   auditing toplog tags, or after proving a root cause to capture the
   traceability that helped. Also triggers on "turn on tracing for X", "toplog
@@ -33,7 +35,7 @@ This file routes — load the row that matches the task at hand.
 | `run <issue>` (default when an issue is given) | `modes/run.md`   | Activate tags to trace an issue; feed RCA |
 | `list` / `on <tags>` / `off [tags]` / `status` | `modes/switch.md` | List catalog tags with on/off; start, stop or show tag logging |
 | `scan`               | `modes/scan.md`   | Reconcile code tags with the catalog                 |
-| `learn` (usually after RCA) | `modes/learn.md` | Consolidate findings into the catalog + code       |
+| `learn` (after RCA) / `learn tandem` (with a stuck one) | `modes/learn.md` | Consolidate findings into the catalog + code; or run RCA and toplog forward together, one seam per pass |
 
 ## Reference
 
