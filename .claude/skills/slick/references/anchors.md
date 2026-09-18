@@ -1,3 +1,6 @@
+---
+id: 59c1ba69-974d-4fc4-aa6b-43f84e354f20
+---
 # Slick — codebase anchor index
 
 Exact paths and symbols to model after (or grep for) when applying each
@@ -93,7 +96,7 @@ Worked example: `pty_submits_on_paste` declared as a driver trait replaced a
 | Short unit test             | `tests/unit/test_entity.py`                                        | `TypeId` equality in \~6 lines                                                    |
 | Clean integration           | `tests/api/test_health_check.py`                                   | real HTTP, 17 LOC                                                                 |
 | Real-entity CRUD            | `tests/api/test_basic_crud.py`                                     | `Team(name=…)` → POST `/graph/team`                                               |
-| Test fixtures               | `tests/conftest.py`                                                | `_TestHome` sandbox, `_InMemoryKeyring`, per-run DB isolation                     |
+| Test fixtures               | `tests/pytest_plugin.py` (loaded by the root `conftest.py`)        | `_TestHome` sandbox, `_InMemoryKeyring`, per-run DB isolation                     |
 | Vitest config               | `ui/vitest.config.ts`, `ui/tests/unit/vitest.config.ts`            | unit tests <50 LOC                                                                |
 | Short vitest                | `ui/tests/unit/action_info.test.ts`                                | `actionUrl` in \~13 LOC                                                           |
 | CLI harness                 | `flow_sdk/cli/flow_cli.py`                                         | `flow record/navigate/context/schema`; exit codes encode semantics                |

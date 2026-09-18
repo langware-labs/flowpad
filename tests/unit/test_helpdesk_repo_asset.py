@@ -23,11 +23,11 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.types.helpdesk import helpdesk_stable_key, read_manifest
 from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir
 from flow_sdk.builtin.helpdesk import Helpdesk
-from flow_sdk.fs_store.indexer.functions.helpdesk import helpdesk_stable_key, read_manifest
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.layout import Folder
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 

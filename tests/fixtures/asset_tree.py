@@ -31,8 +31,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from flow_sdk.assets.layout import Folder
 from flow_sdk.builtin.project import Project
-from flow_sdk.schema.layout import Folder
 
 # ── The layout, declared once ────────────────────────────────────────────────
 

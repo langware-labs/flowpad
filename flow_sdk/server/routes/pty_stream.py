@@ -8,9 +8,12 @@ result into the visible terminal before attaching for live output. See
 
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from flow_sdk import toplog
 from flow_sdk.responses.response import ApiSuccessResponse
 
 router = APIRouter()
@@ -33,8 +36,16 @@ async def get_pty_stream(shell_id: str) -> JSONResponse:
     except ValueError:
         return JSONResponse({"error": "shell has no pty"}, status_code=404)
 
+    t0 = time.monotonic()
     frames = PtyStreamFile(path=path).read_frames()
     if frames is None:
         return JSONResponse({"error": "no stream recorded"}, status_code=404)
+    # Parses the whole stream file on the event loop — a slow line here stalls
+    # every terminal on this backend, not just the one being mounted.
+    if toplog.is_on("pty"):
+        toplog.log(
+            "pty", "stream_read shell=%s bytes=%s events=%s ms=%.0f",
+            shell_id, path.stat().st_size, len(frames["events"]), (time.monotonic() - t0) * 1000,
+        )
     # Standard envelope — the ts_sdk axios interceptor unwraps response.data.data
     return ApiSuccessResponse(data=frames)

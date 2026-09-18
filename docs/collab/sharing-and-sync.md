@@ -105,7 +105,7 @@ body-upload work happens in exactly one function.
                          ┌───────────────────────────────────────────┐
  NEW conversation        │  share_action.share_entity()              │
  (first share)           │  flow_sdk/app/actions/share_action.py     │
-                         │  :43-113                                  │
+                         │  :45-230                                  │
                          │    → Conversation.share(recipients)       │
                          │    → persist remote=True on local row     │
                          └───────────────────────────────────────────┘
@@ -113,21 +113,21 @@ body-upload work happens in exactly one function.
 
                          ┌───────────────────────────────────────────┐
  EXISTING conversation   │  handle_add_message()                     │
- (reply / re-share)      │  notification_action.py :677-868          │
+ (reply / re-share)      │  notification_action.py :885-1190         │
                          └───────────────────────────────────────────┘
                                           │
  FORWARD                 ┌───────────────────────────────────────────┐
  (clone into another)    │  handle_forward_message()                 │
-                         │  notification_action.py :905-979          │
+                         │  notification_action.py :1223-1302        │
                          │    → src_fm.clone_for_forward(…)          │
                          │    → _copy_clone_storage(…)               │
                          └───────────────────────────────────────────┘
                                           │
    both reply & forward ──────────────────┤
                                           ▼
-                  _merge_shared_context_into_conversation()  :356-375
+                  _merge_shared_context_into_conversation()  :420-439
                                           ▼
-                  _finalize_message_dispatch()               :504-534
+                  _finalize_message_dispatch()               :582-624
                   (link · jsonl append · hub header · body upload)
 ```
 
@@ -176,75 +176,74 @@ local path later through `resolve-git-location`: if the current project already
 matches the repo and branch, the artifact is marked ready; otherwise the UI opens
 the git setup wizard and retries with the wizard's local checkout result.
 
-### Path A — NEW: `share_action.share_entity()` (`share_action.py:43-113`)
+### Path A — NEW: `share_action.share_entity()` (`share_action.py:45-230`)
 
-The generic `share` action (`types="all"`). It reconstructs the entity in-process
-(no DB save) from the request body, sanitized to API fields (`:68-70`). If the
-body carries `recipients` **and** the entity is a `Conversation`, it calls
-`Conversation.share(recipients=…)` (`:79-80`) — the hub-invite sequence in §3 —
-and feeds participants+recipients to the address-book learner. Otherwise plain
-`entity.share()` (`:91`).
+The generic `share` action (`types="all"`). It loads the authoritative local row
+named by the URL (`entity_model.get_one`). For a `Conversation` it calls
+`Conversation.share(recipients=…, recipient_user_ids=…)` (`:160-161`) — the
+hub-invite sequence in §3. Otherwise it calls `entity.share(recipients=…)` or
+plain `entity.share()` (`:163-165`).
 
-After `share()` returns it re-loads the on-disk row and persists `remote=True`
-(`:98-112`). This matters because `share()` operated on a transient
-request-built instance, while `handle_add_message`'s `is_remote_send` gate later
-reads `remote` off the **persisted** row. The `_local_mode_share_blocked()` gate
-(`:31-40, :51`) is the backend belt-and-suspenders behind the FE
+After `share()` returns it persists `remote=True` on the local row when it is not
+already set (`:217-222`), because `handle_add_message`'s `is_remote_send` gate
+later reads `remote` off the **persisted** row. The `_local_mode_share_blocked()`
+gate (`:32-41, :52`) is the backend belt-and-suspenders behind the FE
 `guardCloudAction`.
 
-### Path B — EXISTING (reply): `handle_add_message()` (`notification_action.py:677-868`)
+### Path B — EXISTING (reply): `handle_add_message()` (`notification_action.py:885-1190`)
 
 The single message-send handler — text, files, images, prompts, asset refs all
 come through here. The share-relevant arc:
 
 1. Parse `asset_references` + `shared_context_entities` (both legacy
-   `context_entities` and the new key are accepted, `:707-719`).
+   `context_entities` and the new key are accepted, `:919-929`).
 2. `_parse_context_typeids` strips the transport types (`conversation`/
-   `flow_message`) and the conversation's own id (`:749`).
+   `flow_message`) and the conversation's own id (`:994`).
 3. `_merge_shared_context_into_conversation(conv, typeids, someone)`
-   (`:356-375`) — **idempotent**: `add_shared_context_entities` dedups by
+   (`:420-439`) — **idempotent**: `add_shared_context_entities` dedups by
    `(type, id)`, saves only when changed, then calls
    `_link_context_to_conversation(typeids)` to set each item's
    `parent_type_id` back to the conversation (the parent-link that powers
    recursive share, §4). The local backend is the single writer of the local
    Conversation's `shared_context_entities` — there is **no** optimistic FE
    write of this field.
-4. Build the reply `FlowMessage`, attach files/asset-refs/prompt
-   (`:820-837`), set `is_remote_send` from `conv.remote` (`:842-844`), save.
+4. Build the reply `FlowMessage`, attach files/asset-refs/prompt, set
+   `is_remote_send` from `conv.remote` (`:1158`), save.
 5. `_finalize_message_dispatch(...)` (the shared tail below).
 
-### Path C — FORWARD: `handle_forward_message()` (`notification_action.py:905-979`)
+### Path C — FORWARD: `handle_forward_message()` (`notification_action.py:1223-1302`)
 
-Triggered by `share_action.flow_message_forward` (`share_action.py:167-203`).
+Triggered by `share_action.flow_message_forward` (`share_action.py:285-325`).
 It clones rather than re-attaches:
 
-- `clone_for_forward(...)` (`flow_message.py:516-570`) builds a **new** entity:
-  fresh id via `allocate_id` → `mint_uuid` (`:558`), fresh timestamps and
+- `clone_for_forward(...)` (`flow_message.py:776-830`) builds a **new** entity:
+  fresh id via `allocate_id` → `mint_uuid` (`:818`), fresh timestamps and
   delivery/read/body state (model defaults), the forwarder as `sender_id`,
-  provenance `cloned_from_id` + `cloned_from_sender_id` (`:555-556`). It
+  provenance `cloned_from_id` + `cloned_from_sender_id` (`:814-815`). It
   **drops the per-message transport attachments** (`conversation-<src>` /
-  `flow_message-<src>`, the `drop` set at `:535-538`), **deep-copies** content
-  attachments (`:539-543`), and **rewrites** the shared context to the target
-  conversation (`:550`, `:559-569`).
-- `_copy_clone_storage(src, clone)` (`:871-902`) byte-copies FILE/PROMPT-file
+  `flow_message-<src>`, the `drop` set at `:795`), **deep-copies** content
+  attachments (`:800`), and **rewrites** the shared context to the target
+  conversation (`:804`, `:809`).
+- `_copy_clone_storage(src, clone)` (`:1191-1222`) byte-copies FILE/PROMPT-file
   bytes between embedded storages (keyed by entity id, so the new id's subpaths
   resolve). Missing source bytes are skipped — the bundle re-pulls from the hub.
-- Then the **same** merge + dispatch tail as a reply (`:961, :970-972`).
+- Then the **same** merge + dispatch tail as a reply (`_finalize_message_dispatch`
+  at `:1285`).
 
-### The shared tail: `_finalize_message_dispatch()` (`:504-534`)
+### The shared tail: `_finalize_message_dispatch()` (`:582-624`)
 
 The part that must stay in lock-step between reply and forward — they differ
 only in how the FM was built:
 
 ```
 _finalize_message_dispatch(conv, fm, context_typeids, someone, is_remote_send):
-  1. _link_message_into_context_entities(fm, …)   # mutual link: each ctx entity → this msg   (:519)
-  2. conv = _append_message_to_conversation(…)     # conversation.jsonl pointer + message_ids/count (:522)
-  3. _notify_ui_conversation_updated(…)            # refresh sender UI immediately            (:528)
-  4. if is_remote_send:                            # hub-mirrored only                        (:529)
+  1. _link_message_into_context_entities(fm, …)   # mutual link: each ctx entity → this msg   (:599)
+  2. conv = _append_message_to_conversation(…)     # conversation.jsonl pointer + message_ids/count (:602)
+  3. _notify_ui_conversation_updated(…)            # refresh sender UI immediately            (:610)
+  4. if is_remote_send:                            # hub-mirrored only                        (:611)
        _send_conversation_message_header(conv,fm)  #   create hub header (delivery receipts)
        if fm.body_status == UPLOADING:
-         create_task(_upload_body_and_finalize(…)) #   body bundle uploads in background       (:533)
+         create_task(_upload_body_and_finalize(…)) #   body bundle uploads in background       (:616)
 ```
 
 See `./messages-and-attachments.md` for attachments, body upload, and clone
@@ -255,44 +254,48 @@ receive side.
 
 ## 3. `Conversation.share()` — the hub-invite sequence
 
-`flow_sdk/builtin/conversation.py:186-265`. Without `recipients` it is just
-`Entity.share()` (POST `/graph/conversation`, caller becomes `owner`). With
-`recipients` it runs the full invite sequence:
+`flow_sdk/builtin/conversation.py:355-476`. Without `recipients` (or
+`recipient_user_ids`) it is just `Entity.share()` (POST `/graph/conversation`,
+caller becomes `owner`) plus the local context link. With recipients it runs the
+full invite sequence:
 
 ```
-1. await super().share()                         (:209)
+1. await super().share()                         (:399)
    POST /graph/conversation → hub-side row exists; conversation becomes REMOTE,
    caller gets the `owner` role.
 
-2. _link_context_to_conversation()               (:213 → :267-309)
+2. POST /graph/conversation/<id>/join           (:416)
+   The caller joins IMMEDIATELY after create, so the creator enters
+   `participants` and the hub stamps `initiated_by`. Until then even the creator
+   cannot owner-delete the row, so nothing that can block or fail may run first.
+
+3. _link_context_to_conversation()               (:421 → :478-521)
    For each shared-context doc, set parent_type_id = this conversation locally.
    The hub does NOT host doc types (markdown …), so the doc itself is never
    pushed; instead the REMOTE conversation becomes its parent → the doc is now
    `effective_remote` (powers §4).
 
-3. _deliver_pending_messages()                   (:228)
+4. deliver_pending_messages()                    (:427 → :569)
    Flush any messages composed while the conversation was still local-only
    (e.g. the offline flow-diagnose artifact). Reuses the SAME send pipeline a
    reply uses — no separate push path — and runs BEFORE inviting so the
    invitation's callback and the recipient's first fetch resolve.
 
-4. callback_override = _first_message_landing_path()   (:235 → :396)
+5. callback_override = _first_message_landing_path()   (:432 → :762)
    Post-accept landing → the conversation's first FlowMessage on the hub (that
    URL renders MessageLanding with the "Open in Flowpad" button). Computed once;
    same for every recipient. None when there are no messages yet.
 
-5. asset_targets = _share_hostable_assets()      (:243 → :311-351)
+6. asset_targets = _share_hostable_assets()      (:436 → :522-568)
    For each shared-context asset whose TYPE the hub hosts
-   (_HUB_SHAREABLE_ASSET_TYPES = skill, agent — conversation.py:76), push it
+   (_HUB_SHAREABLE_ASSET_TYPES = skill, subagent — conversation.py:117), push it
    via Entity.share() when not already remote (hub auto-mints
    sharer ─[owner]→ asset), persist remote=True, and collect one `reader`
    invitation_target per asset. Doc types are skipped — they keep riding the
    message bundle.
 
-6. POST /graph/conversation/<id>/join           (:247)
-   The caller joins so the creator enters `participants`.
-
-7. for each recipient:  POST /graph/conversation/<id>/members   (:249-264)
+7. for each recipient:  POST /graph/conversation/<id>/members   (:456-476)
+   (one loop over `recipients` emails, one over `recipient_user_ids`)
    MembershipRequest {
      recipient_email,
      invitation_targets: [

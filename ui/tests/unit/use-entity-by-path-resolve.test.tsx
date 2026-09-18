@@ -1,3 +1,4 @@
+import { EntityResolutionGate } from '@src/components/assets/editor/EntityResolutionGate';
 /**
  * Phase 5 — path-only resolve. The client sends a PATH and the backend names
  * the record type: `useEntityByPath` calls `systemTools.resolveByPath(path)`
@@ -7,7 +8,7 @@
  * never reaches resolve at all.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook, waitFor } from '@testing-library/react';
+import { cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -63,10 +64,34 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.restoreAllMocks();
 });
 
 describe('useEntityByPath — path-only resolve', () => {
+  it('shows the exact classified document when only the Entity projection is malformed', async () => {
+    mocks.resolveByPath.mockResolvedValue({type: 'skill', id: SKILL_ID, root: SKILL_DIR,
+      body: `${SKILL_DIR}/SKILL.md`, editor: 'skill', entity: null, entity_error: 'Malformed YAML'});
+    const queryClient = new QueryClient({defaultOptions: {queries: {retry: false}}});
+    const ref = new FSRef(SKILL_DIR, COMPUTE_NODE);
+    render(<QueryClientProvider client={queryClient}><EntityResolutionGate type="skill" fsRef={ref} typeLabel="skill"
+      render={() => <div>Entity editor</div>} renderDocument={(document) => <output data-testid="document">{document.vpath}</output>} />
+    </QueryClientProvider>);
+    await waitFor(() => expect(screen.getByTestId('document').textContent).toContain(`${SKILL_DIR}/SKILL.md`));
+    expect(screen.getByRole('alert').textContent).toBe('Malformed YAML');
+    expect(screen.queryByText('Entity editor')).toBeNull();
+    expect(mocks.getByTypeId).not.toHaveBeenCalled();
+  });
+
+  it('does not hide permission failures behind the document renderer', async () => {
+    mocks.resolveByPath.mockRejectedValue(Object.assign(new Error('Forbidden'), {response: {status: 403}}));
+    const queryClient = new QueryClient({defaultOptions: {queries: {retry: false}}});
+    render(<QueryClientProvider client={queryClient}><EntityResolutionGate type="skill" fsRef={new FSRef(SKILL_DIR, COMPUTE_NODE)} typeLabel="skill"
+      render={() => null} renderDocument={() => <output data-testid="document" />} /></QueryClientProvider>);
+    await waitFor(() => expect(screen.getByTestId('entity-resolution-error')).toBeTruthy());
+    expect(screen.queryByTestId('document')).toBeNull();
+  });
+
   it('calls resolve with the path only and keys the entity by the returned type/id', async () => {
     mocks.resolveByPath.mockResolvedValue({
       type: 'skill',

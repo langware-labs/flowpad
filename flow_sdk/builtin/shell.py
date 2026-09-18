@@ -32,13 +32,13 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.utils.serialization import now_epoch_ms
 
 if TYPE_CHECKING:
-    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
         AgentOptions,
         WorkerExecutionInfo,
     )
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.faas.pty_session import Pty
+    from flow_sdk.fs_store.type_id import TypeId
 
 logger = logging.getLogger(__name__)
 
@@ -141,24 +141,29 @@ def _sentinel_body(text: str, marker: str, end: int) -> str:
 
 
 async def _with_attached_project_secrets(
-    project_id: str | None, extra_env: dict[str, str] | None
+    project_id: str | None, extra_env: dict[str, str] | None, *, process_id: str | None = None
 ) -> dict[str, str] | None:
-    """Merge the project's attached secrets under any explicit ``extra_env``.
+    """Merge declared credentials (user scope + the project's) under any
+    explicit ``extra_env``.
+
+    The environment is the owning process's (its Deployment's) when the terminal
+    belongs to one, else this instance's default.
 
     Best-effort by design: a terminal must open even when a secret cannot be
     resolved, so every failure here is swallowed and the PTY spawns without it.
     """
-    if not project_id:
-        return extra_env
     try:
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.builtin.credential_resolver import environment_for, resolve_attached_secrets  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.builtin.secret_origin_resolver import secret_env_dict  # noqa: PLC0415
 
-        project = await Project.get_by_id(str(project_id))
-        if project is None or not project.secret_origins:
-            # The common case. Return before the node lookup rather than after.
+        project = await Project.get_by_id(str(project_id)) if project_id else None
+        process = await AgenticProcess.get_by_id(str(process_id)) if process_id else None
+        resolved = await resolve_attached_secrets(project, environment=await environment_for(process))
+        if not resolved:
             return extra_env
-        return await secret_env_dict(project, extra_env)
+        # Explicit ``extra_env`` wins over a declared value.
+        return {**{name: value.get_secret_value() for name, value in resolved.items()}, **(extra_env or {})}
     except Exception as e:  # noqa: BLE001
         logger.debug("[shell] could not resolve project secrets for the PTY: %s", e)
         return extra_env
@@ -575,7 +580,9 @@ class Shell(Entity):
             # same set a worker gets. Transient: it reaches the child process
             # env and is never written to the node's filesystem. An explicitly
             # passed value always wins.
-            extra_env = await _with_attached_project_secrets(self.project_id, extra_env)
+            extra_env = await _with_attached_project_secrets(
+                self.project_id, extra_env, process_id=self.agentic_process_id
+            )
             await cn.create_pty(
                 self.id,
                 rows=rows,

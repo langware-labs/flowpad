@@ -35,8 +35,8 @@ export type HubItem = {
  * the entry IS a type — the view it opens resolves its rows the same way, so a
  * hardcoded glyph would disagree with the destination it leads to. Entries that
  * name a lucide icon directly are the ones that are a PLACE rather than a type
- * (WorldView, Credentials) — and Inbox, deliberately: it happens to open a
- * `conversation` list, but the slot is the desk's Inbox, so it keeps that slot's
+ * (WorldView, Credentials) — and Stream Inbox, deliberately: it happens to open a
+ * `conversation` list, but the slot is the desk's Stream Inbox, so it keeps that slot's
  * `Mail` (see `navMeta` in `collapsed-sidebar.tsx`) rather than the type's glyph.
  */
 export function buildHubRailItems(t: (s: TemplateStringsArray) => string): readonly HubItem[] {
@@ -46,14 +46,14 @@ export function buildHubRailItems(t: (s: TemplateStringsArray) => string): reado
     // Home button keeps hub navigation under `page=hub`, and the project is the
     // leading breadcrumb). Two buttons for one destination is the thing the
     // rail has always avoided.
-    // Inbox, matching the desk's Inbox slot (same `Mail` glyph). It lists the
+    // Stream Inbox, matching the desk's Stream Inbox slot (same `Mail` glyph). It lists the
     // hub's `conversation` entities over `graph/conversation`; the desk
-    // `InboxView` is NOT reusable here, because everything it reads is desk-only
-    // (`conversation-list` action → 404 on the hub, `inbox_manager` → 422), so it
+    // `StreamInboxView` is NOT reusable here, because everything it reads is desk-only
+    // (`conversation-list` action → 404 on the hub, `stream_inbox_manager` → 422), so it
     // would render an empty shell. That also means no unread badge on the hub.
     {
-      id: 'inbox',
-      title: t`Inbox`,
+      id: 'stream_inbox',
+      title: t`Stream Inbox`,
       icon: Mail,
       viewType: ViewType.HUB_RECORDS,
       pointer: 'conversation',

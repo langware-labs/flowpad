@@ -12,9 +12,9 @@
  * useTerminalStripController. Every row is Global-scoped (`project_id: null`) so
  * the strip needs no project context and no backend.
  */
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Tab, tabManager, type TabRow } from '@sdk';
+import { dataManager, Tab, tabManager, type TabRow } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resetTabContentLifecycleForTests } from '@src/tabs/tab-content-lifecycle';
 
@@ -117,6 +117,20 @@ afterEach(() => {
 });
 
 describe('ancestor-active highlight in the global strip', () => {
+  it.each(['my agent', `agentic_process-${AP}`])('sends explicit process rename %s even when unchanged or identifier-shaped', async (name) => {
+    const { processRow } = setupStrip();
+    h.currentDock = DockPointer.fromTabHash(processRow.pointer);
+    const rename = vi.spyOn(Tab, 'renameById').mockResolvedValue([]);
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue(null as never);
+    render(<UnifiedTabStrip />);
+    fireEvent.doubleClick(screen.getByText('my agent'));
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: name } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(rename).toHaveBeenCalledWith(PROCESS_TAB_ID, name));
+  });
+
   it('lights the ancestor chip — exactly one — while a child fills the panel', () => {
     const { processRow, childRow } = setupStrip();
     render(<UnifiedTabStrip />);

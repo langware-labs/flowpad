@@ -1,3 +1,5 @@
+import uuid
+
 """Shared setup for the folder-source matrix.
 
 Two things this package cannot run without, both lifted from
@@ -16,13 +18,12 @@ import pytest_asyncio
 
 import flow_sdk.db.drivers.db_driver as db_driver_mod
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect: register_all()
-import flow_sdk.ingest.drivers  # noqa: F401 — side-effect: register_driver() for every shipped driver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
-from flow_sdk.ingest.reflect import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 
 
 @pytest_asyncio.fixture
@@ -98,7 +99,7 @@ def make_source(watched, project, in_workspace):
         await proj.save()
 
         src = DataSource(
-            name="watched-folder",
+            name=f"watched-folder {uuid.uuid4().hex[:8]}",
             provider="folder",
             config={"root": str(watched)},
             reflect=mode,

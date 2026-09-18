@@ -23,19 +23,12 @@ Discovery has two halves:
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
-from typing import Any
 
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
+from flow_sdk.assets.scanning import first_seen, is_appledouble
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.assets.frontmatter import (
-    _extract_body,
-    _extract_frontmatter,
-    _yaml_load,
-)
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-from flow_sdk.fs_store.indexer.walkers.generic import first_seen, is_appledouble
-from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.fs_store.record_types import RecordType
 
 
@@ -124,127 +117,6 @@ def markdown_in_folder_fn(
 
 # ── parse_markdown_text + id helpers (moved from MarkdownRecord) ─────────────
 
-_WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
-
-
-def _extract_wiki_links(body: str) -> list[str]:
-    """Extract [[wiki link]] inner text from markdown body.
-
-    Returns the raw inner text — for ``[[target|alias]]`` this is
-    ``target|alias``. Downstream callers (resolver/wiki) split the alias.
-    """
-    return [m.group(1).strip() for m in _WIKI_LINK_RE.finditer(body) if m.group(1).strip()]
-
-
-_DIR_TO_ASSET_TYPE: dict[str, str] = {
-    "workflows": "workflow",
-    "skills": "skill",
-    "agents": "subagent",
-    "memory": "memory",
-    "docs": "doc",
-    "templates": "template",
-}
-
-
-def _markdown_id_from_path(path: Path) -> str:
-    """Transitional/read-only fallback key — the stable uuid5(path) value.
-
-    No longer the miss behavior (``TypeInfo.mint_id`` persists a fresh v4).
-    Survives only as the ``parse_markdown_text`` read-side
-    derive for a not-yet-stamped file.
-    """
-    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
-
-    return mint_uuid(str(path.resolve()))
-
-
-def markdown_id(ref: FSRef) -> str:
-    """The id the indexer would assign, derived WITHOUT writing.
-
-    Routes through the one seam. It used to read frontmatter only, while the
-    indexer's backend reads the identity CAPSULE first — so a capsule-stamped,
-    frontmatter-less doc got a different id here than from the walk, and this
-    value feeds straight into ``sync_to_db()`` (agentic_process, bootstrap).
-    That forked the document; delegating converges it.
-
-    ``overwrite=False`` keeps the no-write contract: these callers run in
-    request handlers and over read-only mounts.
-    """
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    info = SchemaRegistry.get(str(RecordType.MARKDOWN))
-    if info is None:
-        # Deliberately no fallback. The only fallback available is the
-        # frontmatter-only derive this function was rewired to eliminate, and
-        # its result flows into sync_to_db() — a crash during registry
-        # bootstrap is strictly better than a silently forked document.
-        raise RuntimeError("markdown TypeInfo is not registered; cannot resolve identity")
-    # A read-only derive: the walk already stamped; this must never write.
-    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
-
-    probe = FSRef(ref._path, read_only=True, record_type=ref.record_type, scope=ref.scope)
-    return reconcile(info, info.layout_for(probe), None, None, write=False, ref=probe)
-
-
-def _derive(data: dict, root: Path, header_raw: dict, *, titled: bool) -> None:
-    """The facts a markdown file's PATH and BODY carry that its frontmatter does
-    not: the asset type (from the parent directory), the title (the stem), the
-    name, the wiki-links scraped from the body, and the folder containment the
-    wiki tree renders from."""
-    if not data.get("asset_type"):
-        data["asset_type"] = "skill" if root.name == "SKILL.md" else _DIR_TO_ASSET_TYPE.get(root.parent.name, "doc")
-    if titled:
-        data["title"] = data.get("title") or root.stem
-        body = data.get("body") or ""
-        links = _extract_wiki_links(body) if body else []
-        links.extend(data.get("links") or [])
-        data["links"] = links
-    data["name"] = data.get("title") or root.stem
-    try:
-        data["parent_path"] = str(root.resolve().parent)
-    except OSError:
-        pass
-    vault = _resolve_vault_root(root)
-    if vault:
-        data["vault_root"] = vault
-    if not data.get("project_id"):
-        pid = _resolve_system_project_id_for_path(root)
-        if pid:
-            data["project_id"] = pid
-
-
-def derive_markdown(data: dict, root: Path, header_raw: dict) -> None:
-    _derive(data, root, header_raw, titled=True)
-
-
-def derive_claude_md(data: dict, root: Path, header_raw: dict) -> None:
-    _derive(data, root, header_raw, titled=False)
-
-
-def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
-    """Parse a markdown string with YAML frontmatter into a fields dict — the
-    same header (``MarkdownSpec``) and the same derivation the serializer
-    applies, over a STRING. Public for ``operations.markdown_index.from_markdown``."""
-    from flow_sdk.builtin.claude_memory_entities import MarkdownSpec  # noqa: PLC0415
-    from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
-    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-
-    text = strip_capsule_blocks(text)
-    fm_text = _extract_frontmatter(text)
-    fields = _yaml_load(fm_text) if fm_text else {}
-    fields = fields if isinstance(fields, dict) else {}
-    data: dict[str, Any] = MarkdownSpec.model_validate(fields).model_dump(exclude_none=True, exclude={"body"})
-    data["body"] = _extract_body(text)
-    _derive(data, path or Path("Untitled.md"), fields, titled=True)
-    # Validate-on-adopt (v4/v5 only) — a foreign/hand-authored id is never
-    # adopted; derive the stable uuid5(path) instead.
-    asset_id = adopt_entity_id(fields.get("id"))
-    if not asset_id and path is not None:
-        asset_id = _markdown_id_from_path(path)
-    if asset_id:
-        data["id"] = asset_id
-    return data
-
 
 _SYSTEM_PID_CACHE: dict[str, str | None] = {}
 
@@ -298,3 +170,13 @@ def _resolve_vault_root(path: Path) -> str | None:
             continue
         return str(root)
     return None
+
+
+def derive_markdown_context(data: dict, root: Path, header_raw: dict) -> None:
+    vault = _resolve_vault_root(root)
+    if vault:
+        data["vault_root"] = vault
+    if not data.get("project_id"):
+        pid = _resolve_system_project_id_for_path(root)
+        if pid:
+            data["project_id"] = pid

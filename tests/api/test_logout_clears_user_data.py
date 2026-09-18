@@ -5,7 +5,7 @@ Three things are pinned here:
 * the hub's copy goes — a ``remote=True`` conversation, its messages (including
   a ``PENDING_SEND`` draft queued while offline), its thread, and the org row
   login materialized;
-* a locally-projected conversation SURVIVES — see ``flow_sdk/inbox/clear.py``
+* a locally-projected conversation SURVIVES — see ``flow_sdk/stream_inbox/clear.py``
   for why deleting one would be unrecoverable;
 * an involuntary invalidation (expired / rejected token) purges NOTHING.
 
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 async def _search(client, needle: str) -> list[str]:
     """Conversation ids whose message bodies match — the read-back the UI does."""
-    response = await client.post("/api/v1/graph/inbox-search", json={"q": needle})
+    response = await client.post("/api/v1/graph/stream-inbox-search", json={"q": needle})
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "SUCCESS", body

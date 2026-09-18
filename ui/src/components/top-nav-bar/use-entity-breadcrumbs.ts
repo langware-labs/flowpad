@@ -2,7 +2,7 @@ import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, type LucideIcon } from 'lucide-react';
-import { Agent, dataManager, Organization, PageId, Project, tabManager, TypeId, ViewType, Wiki, WikiEntry, WorldViewProjection, type AnyEntity } from '@sdk';
+import { AgenticProcess, Agent, dataManager, Organization, PageId, Project, tabManager, TypeId, ViewType, Wiki, WikiEntry, WorldViewProjection, type AnyEntity } from '@sdk';
 import { VIEWER_REGISTRY } from '@src/types/ViewType';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
@@ -14,6 +14,8 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
 import { useContext } from '@src/hooks/useContext';
 import { useProjectLocation } from '@src/hooks/use-project-location';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { ViewMode } from '@src/contexts/view-mode-context';
 
 /**
  * The address bar's contents: `Project / …ancestors… / current`.
@@ -133,7 +135,7 @@ const PROJECT_HOME_CRUMB_LABEL = msg`Home`;
 /** The org graph addresses as "Organization › Graph" — see the crumb builder. */
 const ORGANIZATION_CRUMB_LABEL = msg`Organization`;
 const GRAPH_CRUMB_LABEL = msg`Graph`;
-const INBOX_CRUMB_LABEL = msg`Inbox`;
+const STREAM_INBOX_CRUMB_LABEL = msg`Stream Inbox`;
 
 /** Basename of an `asset_ref`, trailing separators ignored. */
 function basename(ref: string | null): string | null {
@@ -166,7 +168,11 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
   // the user read a document. viewType + pointer is what actually changes with
   // the content; `focus` carries the target for worldview docks, whose pointer
   // does not.
-  const dockKey = dock ? `${dock.viewType ?? ''}|${dock.pointer ?? ''}|${dock.options?.focus ?? ''}` : null;
+  //
+  // `hostProcessId` too: a file shown in a session's display is addressed
+  // `project › process › file`, and the host is lifted out of `pointer`.
+  const hostProcessId = dock?.hostProcessId ?? null;
+  const dockKey = dock ? `${dock.viewType ?? ''}|${dock.pointer ?? ''}|${dock.options?.focus ?? ''}|${hostProcessId ?? ''}` : null;
 
   // Phase 0 — straight off the URL, no awaits, available on the first frame.
   const urlTargetTypeId = useMemo(() => dock?.targetTypeId ?? null, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -215,6 +221,19 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       live = false;
     };
   }, [scopedAgentTypeId?.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The session whose display is showing this dock: the middle segment of
+  // `project › process › file`. The host is the process's own typeid
+  // (`agentic_process-<id>`), exactly what the URL's `process/<typeid>/display` carries.
+  const hostProcessTypeId = useMemo(() => {
+    if (!hostProcessId) return null;
+    try {
+      return new TypeId(hostProcessId);
+    } catch {
+      return null;
+    }
+  }, [hostProcessId]);
+  const { data: hostProcess } = useEntity<AgenticProcess>(hostProcessTypeId);
 
   // The Wiki the page lives in, as its own crumb. `@local` is an alias for the
   // active project's default wiki rather than an id, so it takes the same
@@ -308,9 +327,9 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
 
   const crumbs = useMemo<Crumb[]>(() => {
     const out: Crumb[] = [];
-    const isAgentInbox = agentRoute?.view === 'inbox' && !!agentRoute.agentId;
+    const isAgentStreamInbox = agentRoute?.view === 'stream_inbox' && !!agentRoute.agentId;
     const isAgentConversation = dock?.viewType === ViewType.CONVERSATION && !!dock.agentScopeId;
-    const isAgentScoped = isAgentInbox || isAgentConversation;
+    const isAgentScoped = isAgentStreamInbox || isAgentConversation;
 
     // The project always leads — except on the hub, or in the transient window
     // where no project is selected, where there simply isn't one.
@@ -326,6 +345,17 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         Icon: iconForType(Project.type),
         pointer: null,
         kind: 'project',
+      });
+    }
+
+    // A document shown in a session's display lives UNDER that session.
+    if (hostProcessTypeId && !isAgentScoped) {
+      out.push({
+        key: hostProcessTypeId.toString(),
+        label: hostProcess ? entityLabel(hostProcess as AnyEntity, hostProcessTypeId) : labelForType(AgenticProcess.type),
+        Icon: iconForType(AgenticProcess.type),
+        pointer: DockPointer.forShell(hostProcessId ?? undefined).withViewMode(ViewMode.Vibe),
+        kind: 'ancestor',
       });
     }
 
@@ -360,7 +390,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     }
 
     if (isAgentScoped && scopedAgentId && scopedAgentTypeId) {
-      const agentEntity = scopedAgent ?? (isAgentInbox ? (resolved.entity as Agent | null) : null);
+      const agentEntity = scopedAgent ?? (isAgentStreamInbox ? (resolved.entity as Agent | null) : null);
       out.push({
         key: `agent-${scopedAgentId}`,
         label: agentEntity ? entityLabel(agentEntity, scopedAgentTypeId) : labelForType(Agent.type),
@@ -371,13 +401,13 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         kind: 'ancestor',
       });
       out.push({
-        key: `agent-inbox-${scopedAgentId}`,
-        label: i18n._(INBOX_CRUMB_LABEL),
-        Icon: viewIcon(new DockPointer(ViewType.INBOX)),
-        pointer: isAgentInbox ? null : DockPointer.forAgentInbox(scopedAgentId),
-        kind: isAgentInbox ? 'current' : 'ancestor',
+        key: `agent-stream-inbox-${scopedAgentId}`,
+        label: i18n._(STREAM_INBOX_CRUMB_LABEL),
+        Icon: viewIcon(new DockPointer(ViewType.STREAM_INBOX)),
+        pointer: isAgentStreamInbox ? null : DockPointer.forAgentStreamInbox(scopedAgentId),
+        kind: isAgentStreamInbox ? 'current' : 'ancestor',
       });
-      if (isAgentInbox) return out;
+      if (isAgentStreamInbox) return out;
     }
 
     // The organization GRAPH is a lens on the People & teams screen, not a
@@ -457,6 +487,8 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     scopedAgentId,
     scopedAgentTypeId,
     scopedAgent,
+    hostProcessTypeId,
+    hostProcess,
     dock,
     ancestors,
     wikiCrumb,

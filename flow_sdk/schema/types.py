@@ -30,8 +30,8 @@ class EntityType(StrEnum):
     # this may delegate to.
     AGENT = "agent"
     # The Hub's server-minted mailbox row. The value deliberately differs from
-    # the Agent action name ("email_inbox") so graph paths remain unambiguous.
-    EMAIL_INBOX = "agent_mailbox"
+    # the Agent action name ("mailbox") so graph paths remain unambiguous.
+    AGENT_MAILBOX = "agent_mailbox"
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"
@@ -157,7 +157,6 @@ class EntityType(StrEnum):
     SYSTEM_ROOT = "system_root"
     CWD_ROOT = "cwd_root"
     FOLDER = "folder"
-    SECRET_ORIGIN = "secret_origin"
     CONTACTS_GROUP = "contacts_group"
     # A blessed dot-taxonomy tag name (flow_sdk/builtin/tag.py). Optional
     # enrichment — anonymous tags (plain strings) need no entity at all.
@@ -231,9 +230,9 @@ class EntityType(StrEnum):
     MESSAGE_ATTACHMENT = "message_attachment"
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
-    # The @local singleton owning the inbox unread projection (see
-    # builtin/inbox_manager.py + flow_sdk/inbox). DB-only, not user-creatable.
-    INBOX_MANAGER = "inbox_manager"
+    # The @local singleton owning the stream inbox unread projection (see
+    # builtin/stream_inbox_manager.py + flow_sdk/stream_inbox). DB-only, not user-creatable.
+    STREAM_INBOX_MANAGER = "stream_inbox_manager"
     RUN = "run"
     # A file on disk outside the record store (DB-only; SemanticLock targets).
     FILE = "file"
@@ -242,25 +241,23 @@ class EntityType(StrEnum):
     TAB = "tab"
     # One record ingested from a cloud DataSource (a feed entry, a chat
     # message). Generic and discriminated by `kind`, NOT one type per provider
-    # — the inbox projection has to be one queryable table.
+    # — the stream inbox projection has to be one queryable table.
     SOURCE_ITEM = "source_item"
     # A configured remote system of record we sync from (flow_sdk/ingest).
     DATA_SOURCE = "data_source"
     # One independently-checkpointed stream within a DataSource — a feed URL, a
     # channel. DB-only: written every poll, so it must never touch disk.
-    DATA_SOURCE_CURSOR = "data_source_cursor"
     # How far one consumer (a workflow) has got through one source. See builtin/consumer_position.py.
     CONSUMER_POSITION = "consumer_position"
     # One reflected page of an object-shaped source — the log a folder consumer pages. See builtin/source_change.py.
     SOURCE_CHANGE = "source_change"
     #: The AUTHORED half of a source — a folder asset describing what a source
-    #: is. ``DATA_SOURCE`` is the configured instance; this is its definition.
-    DATA_SOURCE_SPEC = "data_source_spec"
+    #: is. ``DATA_DRIVER`` is the configured instance; this is its definition.
+    DATA_DRIVER = "data_driver"
     #: The authored definition of a NAMED SET OF ENV VARS a provider needs
-    #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD). ``SECRET_ORIGIN`` is one
-    #: project's declaration of ONE variable; this is the global definition of
-    #: the group. Same split as DATA_SOURCE_SPEC : DATA_SOURCE.
-    CREDENTIAL_SPEC = "credential_spec"
+    #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD) — the only way secrets are
+    #: declared, in user or project scope.
+    SECRET_PACK = "secret_pack"
     # One thread of ingested cloud messages (a Gmail thread, a Slack
     # `thread_ts`). MANY threads may point at ONE conversation — that is the
     # merge seam, and why the conversation id is not derived from the thread.

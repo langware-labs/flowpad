@@ -513,7 +513,16 @@ def test_build_spawn_uses_absolute_discovered_claude_path(tmp_path: Path, monkey
     # the graceful-interrupt channel) — never as an argv positional.
     assert "--input-format" in argv and "stream-json" in argv
     assert "--" not in argv
-    payload = json.loads(stdin_payload)
+    # stdin now carries TWO lines: a ``set_max_thinking_tokens`` control
+    # request (opts into summarized thinking — FLOWPAD-2098) ahead of the
+    # user message it used to be alone.
+    lines = stdin_payload.splitlines()
+    assert len(lines) == 2
+    control = json.loads(lines[0])
+    assert control["type"] == "control_request"
+    assert control["request"]["subtype"] == "set_max_thinking_tokens"
+    assert control["request"]["thinking_display"] == "summarized"
+    payload = json.loads(lines[1])
     assert payload["type"] == "user"
     assert payload["message"]["content"][0]["text"] == "hi"
 

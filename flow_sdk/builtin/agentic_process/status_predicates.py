@@ -25,12 +25,20 @@ from typing import TYPE_CHECKING
 from flow_sdk._compat import StrEnum
 from flow_sdk.builtin.process_lifecycle import (
     ProcessStatus,
+)
+from flow_sdk.builtin.process_lifecycle import (
     is_running as is_process_running,
+)
+from flow_sdk.builtin.process_lifecycle import (
     is_startable as is_process_startable,
 )
-from flow_sdk.builtin.worker_status import (
+from flow_sdk.transcript_analyzer.worker_status import (
     WorkerStatus,
+)
+from flow_sdk.transcript_analyzer.worker_status import (
     is_running as is_worker_running,
+)
+from flow_sdk.transcript_analyzer.worker_status import (
     is_terminal as is_worker_terminal,
 )
 

@@ -28,20 +28,9 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import Wiki entities: {e}")
 
-try:
-    from flow_sdk.builtin.data_source_spec import DataSourceSpec  # noqa: F401
-except Exception as e:
-    print(f"[WARN] Failed to import DataSourceSpec: {e}")
-
-try:
-    from flow_sdk.builtin.credential_spec import CredentialSpec  # noqa: F401
-except Exception as e:
-    print(f"[WARN] Failed to import CredentialSpec: {e}")
-
-try:
-    from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import SecretOrigin: {e}")
+# A core type: a failure here must be loud, not a WARN that leaves the type unregistered.
+from flow_sdk.builtin.data_driver import DataDriver  # noqa: F401
+from flow_sdk.builtin.secret_pack import SecretPack  # noqa: F401
 
 try:
     from flow_sdk.builtin.workspace import Workspace  # noqa: F401
@@ -314,8 +303,8 @@ except ImportError as e:
     print(f"[WARN] Failed to import Tab: {e}")
 
 try:
-    from flow_sdk.builtin.inbox_manager import InboxManager  # noqa: F401
+    from flow_sdk.builtin.stream_inbox_manager import StreamInboxManager  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import InboxManager: {e}")
+    print(f"[WARN] Failed to import StreamInboxManager: {e}")
 
 __all__ = []

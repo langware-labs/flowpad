@@ -19,9 +19,8 @@ breaks this pipeline.
 
 Use your Slack connector's channel-reading tool to fetch messages from each
 requested channel id in the requested window (both given below). Use the
-connector — do not shell out, do not guess. The segment keys you are given are
-channel IDs (`C…`), and they go into `segment_key` exactly as given — never a
-channel *name*.
+connector — do not shell out, do not guess. The channel you are given is a
+channel ID (`C…`) — read by that id, never by a channel *name*.
 
 If you have no Slack tool available in this session, write the receipt with
 `"error": "no_connector"` and stop. Do not pretend.
@@ -59,7 +58,7 @@ strings and `json.dump` performs every escape:
 import json
 items = [
     {"data_source_id": "<id>", "provider": "slack", "kind": "content.message.chat",
-     "segment_key": "C0123ABCD", "external_id": "1725000000.000100",
+     "external_id": "1725000000.000100",
      "name": "", "body": "deploy is blocked on the `flow-api` rollout :sadge:",
      "author_external_id": "U0456EFGH"},
 ]
@@ -81,7 +80,6 @@ it validates against `SourceItemSpec`, which forbids unknown keys. Send these:
 | `data_source_id` | the data-source id given below, verbatim |
 | `provider` | the provider given below, verbatim |
 | `kind` | `content.message.chat` |
-| `segment_key` | the channel ID this message was read from (`C…`), verbatim |
 | `external_id` | **the message's `ts`**, copied exactly — every digit, the dot included. `ts` is Slack's message id; unique within a channel |
 | `name` | leave empty — a chat message has no subject, and inventing one breaks convergence |
 | `body` | the message text, copied exactly — mrkdwn markers, emoji codes and all |

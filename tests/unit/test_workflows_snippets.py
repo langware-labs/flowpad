@@ -1,6 +1,6 @@
 """``docs/snippets/workflows.md`` §1–3, run as written.
 
-The provider is a ``ScriptedDriver`` registered under the snippet's own provider name and the
+The provider is a ``ScriptedSource`` registered under the snippet's own provider name and the
 worker is ``MockDriver``, so each program runs verbatim with no network: one inbound message,
 one agent turn, one reply, one ack. What is pinned is the shape — every item gets exactly one
 of ``ack()`` / ``reply()`` — not the words the mock replies with.
@@ -12,6 +12,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.data_source import DataSource
 from tests.utils.fake_source import scripted_provider
 from tests.utils.mock_worker import MockDriver
 from tests.utils.snippets import doc, fence_under, run_fence_until
@@ -63,10 +64,10 @@ async def test_1_control_flow_acks_what_it_ignores(worker):
             {"name": "URGENT: prod", "body": "help", "author": "boss@corp.com", "thread_key": "t2"},
         )
         # The variant assumes §1's imports and agent are in scope.
-        from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
+        from flow_sdk.blocks import EmailMessageSpec, StreamInbox, workflow
         from flow_sdk.builtin.agent_registry import get_agent
 
-        ns = {"KEY": "k", "EmailMessageSpec": EmailMessageSpec, "Inbox": Inbox, "workflow": workflow,
+        ns = {"KEY": "k", "EmailMessageSpec": EmailMessageSpec, "StreamInbox": StreamInbox, "workflow": workflow,
               "agent": await get_agent("email-summarizer")}
         await _run("1.", "agentmail", ns, mail, nth=1)
     assert worker.received_prompts == ["help"], "the newsletter never reached the agent"
@@ -106,3 +107,40 @@ async def test_a_second_run_under_the_same_name_resumes_after_the_reply(worker):
         await run_fence_until(source, {"KEY": "k"}, mail.settled, filename=DOC)
     assert worker.received_prompts == ["first", "second"], "one turn per item, none repeated"
     assert len(mail.sent) == 2
+
+
+#: The channel's own id a stream inbox is about, per channel of the matrix; who writes in and whose
+#: address it is come from the driver's ``Double`` (``tests/unit/_stream_inbox_matrix``).
+_MATRIX_ADDRESSES = {
+    "gmail": "me@gmail.com",
+    "slack": "C0123456789",
+    "whatsapp": "15551234567",
+    "telegram": "@my_bot",
+    "cloud_email": "agent-7@mail.flowpad.ai",
+}
+
+
+@pytest.mark.parametrize("owner_kind", ["user", "agent"])
+@pytest.mark.parametrize("channel", list(_MATRIX_ADDRESSES))
+async def test_4_the_same_loop_on_every_channel_for_a_user_or_an_agent(worker, owner_kind, channel):
+    """One fence, ten cells: the loop body never names the channel, and the source it adopts is
+    the owner's — a user's stream inbox or the agent's own."""
+    from flow_sdk.stream_inbox.projection import owner_of
+    from tests.unit._stream_inbox_matrix import double_for, local_user_typeid, not_applicable
+
+    if reason := not_applicable(owner_kind, channel):
+        pytest.skip(f"n/a: {reason}")
+    helper = await _agent("channel-helper")
+    owner = await _agent(f"channel-owner-{channel}") if owner_kind == "agent" else None
+    address = _MATRIX_ADDRESSES[channel]
+    sender = double_for(channel).sender
+    with scripted_provider(channel) as script:
+        script.push({"body": f"hello on {channel}", "author": sender, "thread_key": "t1"})
+        await _run("4.", channel, {"CHANNEL": channel, "ADDRESS": address, "OWNER": owner}, script)
+        sources = [s for s in await DataSource.get_all({"provider": channel}) if s.account_key == address or (s.config or {}).get("address") == address]
+    assert worker.received_prompts[-1] == f"hello on {channel}"
+    assert len(script.sent) == 1 and script.sent[0]["text"].startswith("Mock reply")
+    assert sources, "the fence adopted or created the owner's source"
+    expected = owner.typeid if owner is not None else await local_user_typeid()
+    assert str(await owner_of(sources[-1])) == str(expected)
+    assert helper.id != (owner.id if owner else None)

@@ -28,6 +28,7 @@ export interface DiscoverItem {
   body: BodyState | null;
   /** What the publishing desk did about the hub body; desk rows only. */
   hubBody: PublishedRow['hub_body'] | null;
+  bodyRef?: import('@sdk').BodyRef | null;
 }
 
 export type SortKey = 'published_at' | 'name' | 'type';
@@ -48,6 +49,7 @@ export function fromDirectoryRow(r: DirectoryRow): DiscoverItem {
     sourceProjectName: r.source_project_name,
     body: { body_supported: r.body_supported, body_available: r.body_available, body_reason: r.body_reason, body_ref: r.body_ref },
     hubBody: null,
+    bodyRef: r.body_ref ?? null,
   };
 }
 
@@ -67,6 +69,7 @@ export function fromPublished(r: PublishedRow, project: { id: string; name: stri
     sourceProjectName: project?.name ?? null,
     body: null,
     hubBody: r.hub_body ?? null,
+    bodyRef: r.body_ref ?? null,
   };
 }
 
@@ -87,6 +90,7 @@ export function fromUnpublished(r: UnpublishedRow, project: { id: string; name: 
     sourceProjectName: project?.name ?? null,
     body: null,
     hubBody: null,
+    bodyRef: r.body_ref ?? null,
   };
 }
 

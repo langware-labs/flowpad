@@ -83,7 +83,7 @@ test('2. connect: an rss source over the dialog, pointed at the loopback feed', 
   await expect(dialog).toBeVisible();
   await dialog.getByTestId('provider-rss').click();
   await dialog.locator('#ds-name').fill(SOURCE_NAME);
-  await dialog.locator('#ds-feed_urls').fill(feedUrl);
+  await dialog.locator('#ds-feed_url').fill(feedUrl);
   const submit = dialog.getByRole('button', { name: 'Add source' });
   await expect(submit).toBeEnabled();
   await submit.click();
@@ -95,13 +95,13 @@ test('2. connect: an rss source over the dialog, pointed at the loopback feed', 
   const rows = ((await (await api.get('/api/v1/graph/data_source')).json()).data ?? []) as { id: string; name: string }[];
   sourceId = rows.find((r) => r.name === SOURCE_NAME)?.id ?? '';
   expect(sourceId, 'the source row exists').toBeTruthy();
-  const specs = ((await (await api.get('/api/v1/graph/data_source_spec')).json()).data ?? []) as { id: string; name: string }[];
+  const specs = ((await (await api.get('/api/v1/graph/data_driver')).json()).data ?? []) as { id: string; name: string }[];
   specId = specs.find((s) => s.name === 'rss')?.id ?? '';
   expect(specId, 'the rss definition is indexed').toBeTruthy();
   // The editor is a webapp asset NESTED in the definition, so finding it is a
   // containment query — there is no registry of editors to read.
   const apps = ((await (await api.get(
-    `/api/v1/graph/micro_app?filter=${encodeURIComponent(JSON.stringify({ parent_type_id: `data_source_spec-${specId}` }))}`,
+    `/api/v1/graph/micro_app?filter=${encodeURIComponent(JSON.stringify({ parent_type_id: `data_driver-${specId}` }))}`,
   )).json()).data ?? []) as { id: string; kind?: string }[];
   editorTypeId = `micro_app-${apps.find((a) => a.kind === 'application.web.editor')?.id ?? ''}`;
   expect(editorTypeId, "the definition's editor is indexed as its child").not.toBe('micro_app-');
@@ -134,7 +134,7 @@ test('4. the editor: config form + live items in the asset dock', async ({ page 
   await page.getByTestId('source-open-editor-editor').click();
   await expect(page).toHaveURL(/\/dock\/app\/micro_app-[0-9a-f-]+/);
   const frame = editorFrame(page);
-  await expect(frame.getByTestId('spec-editor-field-feed_urls')).toHaveValue(feedUrl);
+  await expect(frame.getByTestId('spec-editor-field-feed_url')).toHaveValue(feedUrl);
   await expect(frame.getByTestId('spec-editor-items').locator('li').nth(1)).toBeVisible();
   // The editor is a CHILD of the definition, so the address bar says so. This is
   // the whole reason it is addressed by its own row rather than through its parent.

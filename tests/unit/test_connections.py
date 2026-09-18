@@ -6,7 +6,7 @@ import pytest
 
 from flow_sdk import connections
 from flow_sdk.connections import NotConnected, TokenUnavailable, get_connection, get_connections, require
-from flow_sdk.core.connections.types import (
+from flow_sdk.schema.data_spec.connection_spec import (
     BrowserAuthorization,
     ConnectionResult,
     ConnectionSpec,
@@ -14,6 +14,7 @@ from flow_sdk.core.connections.types import (
     ConnectionTokenResult,
     ConnectionTokenStatus,
 )
+from tests.utils.connection_rows import fake_connections
 
 pytestmark = pytest.mark.asyncio
 
@@ -30,19 +31,8 @@ def _spec(provider: str, *, connected: bool = False, identity: str = "") -> Conn
     )
 
 
-def _catalogue(monkeypatch, rows: list[ConnectionSpec]) -> None:
-    async def list_rows(project_id: str = ""):
-        return rows
-
-    async def resolve(provider: str):
-        return next((row for row in rows if row.provider == provider), None)
-
-    monkeypatch.setattr(connections, "list_connections", list_rows)
-    monkeypatch.setattr(connections, "resolve_connection_spec", resolve)
-
-
 async def test_rows_preserve_canonical_order_and_metadata(monkeypatch):
-    _catalogue(monkeypatch, [_spec("slack"), _spec("googledrive", connected=True)])
+    fake_connections(monkeypatch, [_spec("slack"), _spec("googledrive", connected=True)])
 
     rows = await get_connections()
 
@@ -59,10 +49,10 @@ async def test_rows_preserve_canonical_order_and_metadata(monkeypatch):
 async def test_connect_returns_new_verified_row_and_manual_url(monkeypatch, capsys):
     original_spec = _spec("slack")
     verified_spec = _spec("slack", connected=True)
-    _catalogue(monkeypatch, [original_spec])
+    fake_connections(monkeypatch, [original_spec])
     monkeypatch.setattr(connections, "open_authorization_in_system_browser", lambda _authorization: False)
 
-    async def connect(_provider, presenter):
+    async def connect(_provider, presenter, *, reauthorize=False):
         await presenter.present(BrowserAuthorization("opaque-state", "slack", "https://auth.example/connect"))
         return ConnectionResult(verified_spec, ConnectionTestResult(ok=True, identity="me"))
 
@@ -80,7 +70,7 @@ async def test_connect_returns_new_verified_row_and_manual_url(monkeypatch, caps
 
 async def test_test_and_token_delegate_to_core(monkeypatch):
     spec = _spec("slack", connected=True)
-    _catalogue(monkeypatch, [spec])
+    fake_connections(monkeypatch, [spec])
     monkeypatch.setattr(connections, "_test", lambda _provider: _async_value(ConnectionTestResult(ok=True)))
     monkeypatch.setattr(
         connections,
@@ -95,7 +85,7 @@ async def test_test_and_token_delegate_to_core(monkeypatch):
 
 async def test_nonexportable_held_token_is_not_not_connected(monkeypatch):
     spec = _spec("opaque", connected=True)
-    _catalogue(monkeypatch, [spec])
+    fake_connections(monkeypatch, [spec])
     monkeypatch.setattr(
         connections,
         "token_for_spec",
@@ -109,7 +99,7 @@ async def test_nonexportable_held_token_is_not_not_connected(monkeypatch):
 
 async def test_token_uses_fresh_core_state_not_the_row_snapshot(monkeypatch):
     spec = _spec("slack", connected=True)
-    _catalogue(monkeypatch, [spec])
+    fake_connections(monkeypatch, [spec])
     monkeypatch.setattr(
         connections,
         "token_for_spec",
@@ -122,13 +112,43 @@ async def test_token_uses_fresh_core_state_not_the_row_snapshot(monkeypatch):
 
 
 async def test_require_remains_the_cheap_credential_gate(monkeypatch):
-    _catalogue(monkeypatch, [_spec("slack", connected=True), _spec("google")])
+    fake_connections(monkeypatch, [_spec("slack", connected=True), _spec("google")])
 
     assert (await require("slack")).connected
     with pytest.raises(NotConnected):
         await require("google")
     with pytest.raises(NotConnected):
         await require("nonesuch")
+
+
+async def test_no_local_user_reads_every_provider_as_a_status_row(monkeypatch):
+    """Without a user the table is still ``EnvVarStatus`` rows (MISSING), so the
+    projection reads ``var_status`` directly and lists each provider disconnected."""
+    from flow_sdk.core import oauth
+    from flow_sdk.core.connections import specs
+    from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars, EnvStatusEnum, EnvVarStatus
+    from flow_sdk.core.oauth import hub_providers, provider_env_var
+
+    async def no_user():
+        return None
+
+    async def no_hub():
+        return EntityEnvVars(values=[])
+
+    monkeypatch.setattr(
+        oauth,
+        "oauth_provider_rows",
+        lambda: EntityEnvVars(values=[provider_env_var("slack", "Slack", "SLACK_OAUTH_USER_TOKEN", "Slack")]),
+    )
+    monkeypatch.setattr(hub_providers, "hub_provider_rows", no_hub)
+    monkeypatch.setattr(specs, "_connection_user", no_user)
+
+    table = await oauth.get_oauth_providers_as_env_table(None)
+    assert [(type(r), r.var_status) for r in table.values] == [(EnvVarStatus, EnvStatusEnum.MISSING)]
+
+    rows = await specs._list_connection_specs_local()
+
+    assert [(r.provider, r.connected, str(r.state)) for r in rows] == [("slack", False, "disconnected")]
 
 
 async def _async_value(value):

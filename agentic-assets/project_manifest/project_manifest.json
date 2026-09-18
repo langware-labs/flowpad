@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "requires": {},
+  "entries": [
+    {
+      "typeid": "markdown-965060ed-45d0-4d0b-9ff5-74d397d68ea3",
+      "rel_path": "docs/snippets/message-block.md",
+      "name": "message-block",
+      "description": "",
+      "published_at": "2026-09-14T19:22:21Z",
+      "origin": {
+        "kind": "git",
+        "rel_path": "docs/snippets/message-block.md",
+        "provider": "github",
+        "owner": "langware-labs",
+        "name": "flowpad",
+        "branch": "feat/agent-schedule-triggers",
+        "head_commit": "5904670bd1bd9b46d88e4bd55ad713d98f2e0abd"
+      }
+    }
+  ]
+}

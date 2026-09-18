@@ -22,7 +22,7 @@ See ``docs/snippets/activity.md`` for the shelf page and the same verbs in TypeS
 the CLI and HTTP.
 """
 
-from flow_sdk.activity.activity import SEP, Activity, canonical_verb, split_path
+from flow_sdk.activity.activity import SEP, Activity, ActivityEnded, canonical_verb, split_path
 from flow_sdk.activity.progress_monitor import (
     ActivityProgressMonitor,
     Subscriber,
@@ -39,6 +39,7 @@ __all__ = [
     "SEP",
     "TERMINAL",
     "Activity",
+    "ActivityEnded",
     "ActivityErrorSpec",
     "ActivityProgressMonitor",
     "ActivityProgressSpec",

@@ -7,16 +7,13 @@ from pathlib import Path
 from pydantic import field_validator
 
 from flow_sdk.assets.asset import Asset, NotAnAsset, entry_path
-from flow_sdk.fs_store.identity_carrier import Absent
-from flow_sdk.fs_store.placement import mount_matches
+from flow_sdk.assets.identity_carrier import Absent
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.placement import mount_matches
+from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult
+from flow_sdk.fs_store.gitignore import is_ignored, load_gitignore_stack, push_gitignore
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.schema.layout import Folder
-
-
-class AssetScanIssue(DataSpec):
-    path: Path
-    message: str
 
 
 class AssetScanError(ValueError):
@@ -73,7 +70,7 @@ class AssetFolder(DataSpec):
                     mounts[candidate] = (previous_recursive or recursive, previous_types | {str(info.type_name)})
         return mounts
 
-    def assets(self) -> list[Asset]:
+    def scan(self) -> AssetScanResult:
         """List distinct occurrences; malformed candidates are explicit errors.
 
         Optional missing roots are empty. Ordinary unclaimed files are ignored;
@@ -85,6 +82,12 @@ class AssetFolder(DataSpec):
         failed: set[Path] = set()
         scanned: set[tuple[Path, bool, frozenset[str]]] = set()
         expanded_roots: set[Path] = set()
+        # Same skip policy as every other tree walker (the indexer, the
+        # markdown walk): the hardcoded vendor/build denylist plus the scanned
+        # root's `.gitignore` stack. A recursive PROJECT_DIR scan of a checkout
+        # otherwise descends `ui/node_modules` and classifies tens of thousands
+        # of entries — `get-assets` on a live worker took minutes for it.
+        ignore_stack = load_gitignore_stack(self.path)
 
         def issue(path: Path, message: str) -> None:
             if path not in failed:
@@ -139,14 +142,22 @@ class AssetFolder(DataSpec):
             except OSError as error:
                 issue(directory, str(error))
                 return
-            for child in entries:
-                if child.name.startswith("."):
-                    continue
-                asset = collect(child, allowed)
-                if asset is not None and isinstance(asset.info.shape, Folder):
-                    scan_mounts(asset.path, chain)
-                elif recursive and child.is_dir() and child not in failed:
-                    walk(child, recursive, chain, allowed)
+            # The root's own file is already seeded; nested ones stack for
+            # the subtree only, last match wins, and unwind on the way out.
+            pushed = 0 if directory == self.path else push_gitignore(ignore_stack, directory)
+            try:
+                for child in entries:
+                    if child.name.startswith("."):
+                        continue
+                    if is_ignored(child, child.is_dir(), ignore_stack, self.path):
+                        continue
+                    asset = collect(child, allowed)
+                    if asset is not None and isinstance(asset.info.shape, Folder):
+                        scan_mounts(asset.path, chain)
+                    elif recursive and child.is_dir() and child not in failed:
+                        walk(child, recursive, chain, allowed)
+            finally:
+                del ignore_stack[len(ignore_stack) - pushed:]
 
         def scan_mounts(root: Path, ancestors: frozenset[Path]) -> None:
             if root in expanded_roots:
@@ -182,15 +193,23 @@ class AssetFolder(DataSpec):
         if not self.path.exists():
             broken = _broken_link(self.path)
             if broken is not None:
-                raise AssetScanError([AssetScanIssue(path=broken, message="Broken asset folder link")])
-            return []
+                return AssetScanResult(issues=[AssetScanIssue(path=broken, message="Broken asset folder link")])
+            return AssetScanResult()
         if not self.path.is_dir():
             collect(self.path)
         else:
             scan_mounts(self.path, frozenset())
-        if issues:
-            raise AssetScanError(issues)
-        return [found[path] for path in sorted(found)]
+        return AssetScanResult(
+            candidates=[AssetCandidate(asset.path, str(asset.typeid.type), asset.layout, asset=asset)
+                        for path in sorted(found) for asset in [found[path]]],
+            issues=issues,
+        )
+
+    def assets(self) -> list[Asset]:
+        result = self.scan()
+        if result.issues:
+            raise AssetScanError(result.issues)
+        return result.assets
 
     def destination_for(self, asset: Asset) -> Path:
         """Place by the folder's declared layout; no user/project lookup."""
@@ -219,12 +238,26 @@ class AssetFolder(DataSpec):
         return folder if info.singleton else folder / asset.path.name
 
 
-def collect_assets(folders: list[AssetFolder]) -> list[Asset]:
-    """Deduplicate overlapping scans by entry path, retaining separate copies."""
-    found: dict[Path, Asset] = {}
+def collect_asset_scan(folders: list[AssetFolder]) -> AssetScanResult:
+    """Aggregate occurrences and diagnostics without losing caller attribution."""
+    found: dict[Path, AssetCandidate] = {}
+    issues: dict[tuple[Path, str, str | None], AssetScanIssue] = {}
     for folder in folders:
-        for asset in folder.assets():
-            previous = found.get(asset.path)
-            if previous is None or (previous.project_id is None and asset.project_id is not None):
-                found[asset.path] = asset
-    return [found[path] for path in sorted(found)]
+        result = folder.scan()
+        for candidate in result.candidates:
+            previous = found.get(candidate.path)
+            if previous is None or (
+                candidate.asset is not None and candidate.asset.project_id is not None
+                and (previous.asset is None or previous.asset.project_id is None)
+            ):
+                found[candidate.path] = candidate
+        for issue in result.issues:
+            issues.setdefault((issue.path, issue.message, issue.type_name), issue)
+    return AssetScanResult([found[path] for path in sorted(found)], list(issues.values()))
+
+
+def collect_assets(folders: list[AssetFolder]) -> list[Asset]:
+    result = collect_asset_scan(folders)
+    if result.issues:
+        raise AssetScanError(result.issues)
+    return result.assets

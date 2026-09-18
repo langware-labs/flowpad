@@ -8,7 +8,7 @@ instructions would test the prompt; this tests the skill.
 
 Two layers of the same primitive, on purpose. The test drives an AgenticProcess to
 ask for the source; the source it builds fetches by driving an AgenticProcess of
-its own (`provider: agent` — flow_sdk/ingest/drivers/agent.py).
+its own (`provider: agent` — flow_sdk/sources/providers/agent).
 
 **Why a real backend, in a test that makes no HTTP calls of its own.** The
 worker's side of this flow is CLI-shaped — the skill's `source_ctl.py`,
@@ -35,7 +35,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped drivers
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.source_item import SourceItem

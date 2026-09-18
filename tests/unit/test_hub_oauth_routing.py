@@ -60,11 +60,11 @@ def _routing_probe(monkeypatch, *, hub_available: bool):
 
     calls = []
 
-    async def desktop(provider, user_id):
+    async def desktop(provider, user_id, *_args):
         calls.append(("desktop", provider))
         return ApiSuccessResponse(data={"kind": "device"})
 
-    async def hub(provider):
+    async def hub(provider, **_kwargs):
         calls.append(("hub", provider))
         if not hub_available:
             return None
@@ -119,13 +119,13 @@ async def test_hub_providers_delegate(monkeypatch):
 
     calls = []
 
-    async def desktop(provider, user_id):
+    async def desktop(provider, user_id, *_args):
         calls.append(("desktop", provider))
         from flow_sdk.responses.response import ApiFailResponse
 
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
 
-    async def hub(provider):
+    async def hub(provider, **_kwargs):
         calls.append(("hub", provider))
         return {"auth_url": "https://slack.com/oauth/v2/authorize?x=1", "oauth_request_id": "sess-1"}
 
@@ -144,12 +144,12 @@ async def test_hub_providers_delegate(monkeypatch):
 async def test_a_provider_neither_side_knows_keeps_the_desktop_refusal(monkeypatch):
     from flow_sdk.app.actions import oauth_action
 
-    async def desktop(provider, user_id):
+    async def desktop(provider, user_id, *_args):
         from flow_sdk.responses.response import ApiFailResponse
 
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
 
-    async def hub(provider):
+    async def hub(provider, **_kwargs):
         return None  # hub unreachable, or does not define it either
 
     monkeypatch.setattr(oauth_action, "get_desktop_oauth_auth_url", desktop)
@@ -173,11 +173,11 @@ async def test_a_dead_callback_host_falls_back_instead_of_refusing(monkeypatch):
 
     calls = []
 
-    async def desktop(provider, user_id):
+    async def desktop(provider, user_id, *_args):
         calls.append(("desktop", provider))
         return ApiSuccessResponse(data={"kind": "device"})
 
-    async def hub(provider):
+    async def hub(provider, **_kwargs):
         calls.append(("hub", provider))
         return {"auth_url": "https://github.com/login/oauth/authorize?redirect_uri=https%3A%2F%2Fgone.test%2Fcb"}
 
@@ -205,10 +205,10 @@ async def test_a_dead_callback_host_with_no_local_grant_says_why(monkeypatch):
     from flow_sdk.app.actions import oauth_action
     from flow_sdk.responses.response import ApiFailResponse
 
-    async def desktop(provider, user_id):
+    async def desktop(provider, user_id, *_args):
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
 
-    async def hub(provider):
+    async def hub(provider, **_kwargs):
         return {"auth_url": "https://auth.atlassian.com/authorize?redirect_uri=https%3A%2F%2Fgone.test%2Fcb"}
 
     async def dead(auth_url):

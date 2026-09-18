@@ -2,6 +2,8 @@
 
 Each of these covers a bug that a real launch found, not a hypothetical.
 """
+import json
+
 import pytest
 
 from flow_sdk.builtin.agent import Agent, driver_key, worker_type_value
@@ -9,7 +11,7 @@ from flow_sdk.builtin.agent_registry import _shipped_agent
 
 # ── the two worker vocabularies ───────────────────────────────────────────────
 #
-# An agent.md says "claude"; AgenticProcess.worker_type wants "claude_code".
+# An agent.json says "claude"; AgenticProcess.worker_type wants "claude_code".
 # Feeding one where the other belongs is what made the first live launch fail
 # pydantic validation, so both directions are pinned here.
 
@@ -84,16 +86,15 @@ def test_unknown_shipped_agent_is_none_not_an_error():
     assert _shipped_agent("no-such-agent") is None
 
 
-# ── frontmatter rendering ─────────────────────────────────────────────────────
+# ── agent.json rendering ─────────────────────────────────────────────────────
 
-def test_rendered_frontmatter_is_plain_yaml_not_a_pickle():
-    """`agent.md` must stay a document, not a Python object graph.
+def test_rendered_document_is_plain_json_not_a_pickle():
+    """`agent.json` must stay a document, not a Python object graph.
 
     Entity fields arrive as TrackedList/TrackedDict, which carry a `_parent`
-    backref to the entity. PyYAML has no representer for them, so without the
-    plain-value coercion it emits `!!python/object/new:` and drags the WHOLE
-    Agent — absolute paths, pydantic internals — into the frontmatter. A live
-    UI edit produced exactly that.
+    backref to the entity. Without the plain-value coercion a serializer drags
+    the WHOLE Agent — absolute paths, pydantic internals — into the header. A
+    live UI edit (then YAML frontmatter) produced exactly that.
     """
     from tests.unit.agent._parse import agent_default_body
 
@@ -108,14 +109,15 @@ def test_rendered_frontmatter_is_plain_yaml_not_a_pickle():
     assert "python/object" not in rendered
     assert "TrackedDict" not in rendered and "TrackedList" not in rendered
     # and the values still survive, nested shape intact
-    assert "chrome: true" in rendered
-    assert "nested:" in rendered
-    assert "- helper" in rendered
+    doc = json.loads(rendered)
+    assert doc["cli_options"]["chrome"] is True
+    assert doc["cli_options"]["nested"] == {"a": 1}
+    assert doc["subagents"] == ["helper"]
 
 
-def test_rendered_frontmatter_round_trips_through_the_parser():
+def test_rendered_document_round_trips_through_the_parser():
     """Whatever we render must parse back to the same values."""
-    from tests.unit.agent._parse import agent_default_body, parse_agent_markdown
+    from tests.unit.agent._parse import agent_default_body, parse_agent_document
 
     agent = Agent(
         name="probe",
@@ -125,7 +127,7 @@ def test_rendered_frontmatter_round_trips_through_the_parser():
         cli_options={"chrome": True},
         subagents=["a", "b"],
     )
-    parsed = parse_agent_markdown(agent_default_body(agent), "probe")
+    parsed = parse_agent_document(agent_default_body(agent), "probe")
 
     assert parsed["avatar"] == "🌐"
     assert parsed["cli_options"] == {"chrome": True}
@@ -134,12 +136,12 @@ def test_rendered_frontmatter_round_trips_through_the_parser():
 
 def test_q_identity_round_trips_as_a_portable_bundle():
     """Name, display title, and sibling image ref survive a clean parse."""
-    from tests.unit.agent._parse import agent_default_body, parse_agent_markdown
+    from tests.unit.agent._parse import agent_default_body, parse_agent_document
 
     rendered = agent_default_body(
         Agent(name="Q", title="QA manager", avatar="./avatar.png")
     )
-    parsed = parse_agent_markdown(rendered, "q")
+    parsed = parse_agent_document(rendered, "q")
 
     assert parsed["name"] == "Q"
     assert parsed["title"] == "QA manager"

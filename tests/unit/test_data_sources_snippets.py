@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — the page's own first fence
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
-from tests.unit._ingest_helpers import fixture_bytes, local_http_server, with_token
+from tests.unit._ingest_helpers import fixture_bytes, local_http_server
 from tests.utils.snippets import doc, fence_under, run_fence
 
-pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+# Doc snippets name their sources for a reader, so each runs in its own user scope.
+pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope")]  # do not increase timeout without approval
 
 DOC = "data-sources.md"
 REPO = Path(__file__).resolve().parents[2]
@@ -29,11 +29,9 @@ def _fresh_feed():
     The page says a first run takes only items inside ``window_days``; the fixture's entries
     are months old, so served as-is the snippet's sync would honestly create nothing.
     """
-    import re
-    from datetime import datetime, timezone
+    from flow_sdk.ingest.testing import fresh_timestamps
 
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    body = re.sub(rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", stamp.encode(), fixture_bytes("atom.xml"))
+    body = fresh_timestamps(fixture_bytes("atom.xml"))
 
     def respond(_path, _headers):
         return 200, body, {"Content-Type": "application/xml"}
@@ -47,7 +45,7 @@ def feed_server():
         yield url
 
 
-async def _section(heading: str, ns: dict, *, nth: int = 0) -> dict:
+async def _section(heading: str, ns: dict | None = None, *, nth: int = 0) -> dict:
     return await run_fence(fence_under(doc(DOC), heading, nth=nth), ns, filename=f"{DOC} § {heading}")
 
 
@@ -62,10 +60,9 @@ async def test_1_connect_a_feed_and_sync_it_once(feed_server):
 
 
 async def test_2_reuse_instead_of_duplicate():
-    # §2 assumes §1 is in scope, so DataSource is already imported.
-    ns = await _section("2.", {"KEY": "not-a-real-key", "DataSource": DataSource})
+    ns = await _section("2.")
     first = ns["src"]
-    ns = await _section("2.", {"KEY": "not-a-real-key", "DataSource": DataSource})
+    ns = await _section("2.")
     assert ns["src"].id == first.id, "the second run must find the row, not mint a twin"
 
 
@@ -87,7 +84,7 @@ async def test_4_watch_a_folder_and_mirror_it(tmp_path):
 async def test_5_subscribe_to_arrivals(feed_server, capsys):
     ns = await _section("1.", {"FEED_URL": f"{feed_server}/atom"})
     await ns["src"].purge_items()          # so the subscribed sync has something to announce
-    await ns["src"].reset_cursors()
+    await ns["src"].reset()
     ns = await _section("5.", ns)
     assert "ingest.rss.item.created" in capsys.readouterr().out
 
@@ -97,7 +94,7 @@ async def test_7_operate_a_source(tmp_path):
     watched.mkdir()
     ns = await _section("4.", {"WATCHED": str(watched), "DESTINATION": str(dest)})
     src: DataSource = ns["src"]
-    await _section("7.", ns)                  # verify, poll_now, replay, reset_cursors, purge_items, delete
+    await _section("7.", ns)                  # verify, poll_now, replay, reset, purge_items, delete
     assert await DataSource.get_one({"id": src.id}) is None, "delete() cascades"
 
 
@@ -107,6 +104,60 @@ async def test_7_read_the_row_first(tmp_path):
     ns = await _section("4.", {"WATCHED": str(watched), "DESTINATION": str(dest)})
     ns = await _section("7.", ns, nth=1)
     assert ns["src"].status in {"new", "setup", "active"}
+
+
+async def test_11_consume_a_source_yourself(tmp_path):
+    watched, dest = tmp_path / "w", tmp_path / "d"
+    (watched / "notes").mkdir(parents=True)
+    (watched / "notes" / "a.md").write_text("# A\n")
+    (watched / "b.md").write_text("# B\n")
+    ns = await _section("4.", {"WATCHED": str(watched), "DESTINATION": str(dest)})
+    src: DataSource = ns["src"]
+    src.cursor = None
+    await src.save_runtime()
+
+    ns = await _section("11.", ns)
+
+    assert [item.origin.key for item in ns["notes"]] == ["notes/a.md"]
+    assert (await DataSource.get_one({"id": src.id})).cursor is None, "reset() forgets the position"
+
+
+async def _folder_source(name: str, root: Path):
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.ingest.reflect import ReflectMode
+
+    driver = await DataDriver.get("folder")
+    src = driver.create_source(driver.create_config(root=str(root)), name=name, reflect=ReflectMode.NONE.value)
+    await src.save()
+    return src
+
+
+async def test_12_read_two_sources_as_one(tmp_path):
+    for tree in ("notes", "docs"):
+        (tmp_path / tree / "2026").mkdir(parents=True)
+        (tmp_path / tree / "2026" / "a.md").write_text("# a\n")
+        (tmp_path / tree / "old.md").write_text("# old\n")
+    ns = await _section("12.", {
+        "notes": await _folder_source("notes", tmp_path / "notes"),
+        "docs": await _folder_source("docs", tmp_path / "docs"),
+    })
+    assert [item.origin.key for item in ns["recent"]] == ["2026/a.md", "2026/a.md"], "narrowed on both sources"
+    assert ns["owner"].name in {"notes", "docs"}
+    assert set(ns["seen"]) <= {"notes", "docs"}
+
+
+async def test_12_a_reply_goes_through_the_source_the_item_came_from():
+    from tests.utils.fake_source import scripted_provider
+
+    with scripted_provider("merge-support") as support, scripted_provider("merge-sales") as sales:
+        support.push({"body": "help", "author": "a@example.com"})
+        sales.push({"body": "quote?", "author": "b@example.com"})
+        rows = {}
+        for name, provider in (("support", "merge-support"), ("sales", "merge-sales")):
+            rows[name] = DataSource(name=f"{name} box", provider=provider, account_key=f"acct-{name}")
+            await rows[name].save()
+        await _section("12.", dict(rows), nth=1)
+    assert [s["text"] for s in support.sent] == ["on it"] and [s["text"] for s in sales.sent] == ["on it"]
 
 
 async def _gcs_spec():
@@ -119,15 +170,16 @@ async def _gcs_spec():
     """
     import json
 
-    from flow_sdk.builtin.data_source_spec import DataSourceSpec, ManifestSpec
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
 
-    path = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/gcs/data_source.json"
-    manifest = ManifestSpec.model_validate(json.loads(path.read_text()))
+    path = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/gcs/data_driver.json"
+    manifest = DataDriverSpec.model_validate(json.loads(path.read_text()))
     assert manifest.config["bucket"].choices is True, "the shipped manifest is what the form reads"
-    existing = await DataSourceSpec.get_all({"name": manifest.name})
+    existing = await DataDriver.get_all({"name": manifest.name})
     if existing:
         return existing[0]
-    row = DataSourceSpec(name=manifest.name, title=manifest.title, config=manifest.config)
+    row = DataDriver(name=manifest.name, title=manifest.title, config=manifest.config)
     await row.save()
     return row
 
@@ -141,12 +193,19 @@ async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
     """
     import json
 
-    from flow_sdk.ingest.drivers.gcs import GoogleCloudStorageDriver
+    from pydantic import SecretStr
+
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.sources.credentials import AuthShape, Credentials
 
     await _gcs_spec()
+
     # The one thing a loopback server cannot supply: the credential comes from the
     # machine's connection store, not over the wire.
-    with_token(monkeypatch, GoogleCloudStorageDriver)
+    async def _token(_row):
+        return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
+
+    monkeypatch.setattr(DataDriver.loaded("gcs"), "credentials_for", _token)
 
     def storage(_path, _headers):
         body = {"items": [{"name": "acme-docs", "location": "US"}, {"name": "acme-logs", "location": "EU"}]}
@@ -169,3 +228,39 @@ async def test_9_a_refusal_is_a_sentence_not_an_exception():
     assert await DataSource.choices_for("gcs", "cache_root") is None, (
         "a field the manifest never marked is a caller bug, not a refusal"
     )
+
+
+async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
+    """The Drive fence, against the gdrive asset's own loopback Drive and a
+    doubled `google` connection. Two runs pin the section's two sentences: with
+    no connection `verify()` says so, parks the row and fetches nothing; with
+    one, the first `sync()` lands the drive in `cache_root` and the mirror.
+    """
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
+    from flow_sdk.sources.credentials import Credentials
+
+    drive = load_module(SHIPPED_ROOT / "gdrive" / "tests", "test_gdrive_source")
+    cache, dest = tmp_path / "cache", tmp_path / "dest"
+
+    def names(root):
+        return sorted(p.name for p in root.rglob("*.txt"))
+
+    with local_http_server(drive._Drive(drive.SEEDED)) as base:
+        env = {"CACHE_ROOT": str(cache), "BASE_URL": base, "DESTINATION": str(dest)}
+
+        monkeypatch.setattr(DataDriver.loaded("gdrive"), "credentials_for", drive._credentials(Credentials()))
+        ns = await _section("10.", dict(env))
+        assert ns["verdict"]["ready"] is False
+        assert "Google" in ns["verdict"]["detail"]
+        assert ns["src"].status == "setup"
+        assert names(cache) == [], "nothing is fetched without a connection"
+        await ns["src"].delete()
+
+        monkeypatch.setattr(DataDriver.loaded("gdrive"), "credentials_for", drive._credentials(drive.TOKEN))
+        ns = await _section("10.", dict(env))
+        assert ns["verdict"]["ready"] is True
+        assert ns["src"].status == "active"
+        assert names(cache) == names(dest) == ["one.txt", "three.txt", "two.txt"]
+        assert ns["outcome"].created == 0, "the report counts records; a file source shows in the tree"
+        await ns["src"].delete()

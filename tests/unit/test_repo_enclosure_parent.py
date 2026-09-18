@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
-from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase without approval
 

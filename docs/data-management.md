@@ -141,7 +141,7 @@ One legacy type registry shim remains: the Entity `type_registry` (`schema/entit
 
 ### [Items & Origins](data-management/items_origins.md)
 
-Where the real thing lives. The three parallel origin families — `FSOrigin` (an asset's **bytes**), `CloudOrigin` (a record's **truth**), `SecretOrigin` (a **value**, resolved at worker launch and never persisted) — and why they are deliberately not one type. Covers the `FSOrigin` model and its `kind`-tagged discriminated union (`git`, `local`), the kind-keyed driver registry (`materialize`/`matches`/`detect`/`key`), the tolerant kind-less-reads-as-git rule, and `key()` as a cross-machine dedup handle that is an entity id in exactly one place (`Folder.id_for_origin`). Also documents the four *different jobs* origin-shaped fields do (polymorphic `OriginField` on Folder/Artifact, deliberately git-narrow on Project/Task, the SHARED hub wire dict on `Entity`, a raw bundle buffer on `MessageAttachment`), the byte-exact wire contract that dict carries, and the checklist for adding a new kind.
+Where the real thing lives. The two parallel origin families — `FSOrigin` (an asset's **bytes**) and `CloudOrigin` (a record's **truth**) — and why they are deliberately not one type. Covers the `FSOrigin` model and its `kind`-tagged discriminated union (`git`, `local`), the kind-keyed driver registry (`materialize`/`matches`/`detect`/`key`), the tolerant kind-less-reads-as-git rule, and `key()` as a cross-machine dedup handle that is an entity id in exactly one place (`Folder.id_for_origin`). Also documents the four *different jobs* origin-shaped fields do (polymorphic `OriginField` on Folder/Artifact, deliberately git-narrow on Project/Task, the SHARED hub wire dict on `Entity`, a raw bundle buffer on `MessageAttachment`), the byte-exact wire contract that dict carries, and the checklist for adding a new kind.
 
 **Key source files:** `flow_sdk/builtin/fs_origin.py`, `fs_origin_field.py`, `fs_origin_driver.py`, `git_origin.py`, `local_origin.py`, `flow_sdk/builtin/drivers/`, `flow_sdk/assets/git_origin.py`, `flow_sdk/builtin/flow_message_bundle.py`
 
@@ -149,21 +149,21 @@ Where the real thing lives. The three parallel origin families — `FSOrigin` (a
 
 ### [Data Sources](data-management/data-sources.md)
 
-How something that is not the local filesystem gets into the graph. The `DataSource` → `DataSourceCursor` → driver shape, the heartbeat-not-jobs dispatcher, and the three properties one poll cycle guarantees (per-stream isolation, records before cursor, a budget rather than a backoff). Covers the driver contract and its *declared* traits (`stream_budget`, `stamps_identity`, `origin_id_for`, `source_root`, `verify`, `send`), the opaque cursor `state` that lets one loop serve conditional-GET, changed-ids and a commit sha without branching, and the separation of `status` (should this run) from `health` (is it working) with `config_error` as the only thing that parks a scope. Documents the **two destinations** — `ingest_items` as the single `SourceItem` chokepoint versus reflection onto disk — the seven reflect modes and the two warts in them (`none` and `in-place` are one behaviour, `symlink` is an addressing no-op), identity resolved by `origin_id` lookup rather than read out of the bytes, and the change envelope whose `refs` are an optimization and never a guarantee.
+How something that is not the local filesystem gets into the graph. One `DataSource` reads one stream: its driver builds the query from its config, and the row holds the opaque `cursor`. The heartbeat-not-jobs dispatcher, and the two properties one poll cycle guarantees (records before cursor, failure as health rather than a backoff). Covers the driver contract and its *declared* traits (`durable_cursor`, `stamps_identity`, `origin_id_for`, `verify`, `send`), reading a source by hand (`live.pages()` + `page.ack()`, `live.items(**narrow)`), and the separation of `status` (should this run) from `health` (is it working) with `config_error` as the only thing that parks a source. Documents the **two destinations** — `ingest_items` as the single `SourceItem` chokepoint versus reflection onto disk — the seven reflect modes and the two warts in them (`none` and `in-place` are one behaviour, `symlink` is an addressing no-op), identity resolved by `origin_id` lookup rather than read out of the bytes, and the change envelope whose `refs` are an optimization and never a guarantee.
 
-**Key source files:** `flow_sdk/builtin/data_source.py`, `data_source_cursor.py`, `source_item.py`, `flow_sdk/ingest/`
+**Key source files:** `flow_sdk/builtin/data_source.py`, `source_item.py`, `flow_sdk/ingest/`
 
 ***
 
 ### [Data Source Assets](data-management/data-source-asset.md)
 
-A data source as a **folder asset**: `data_source.json` is the manifest and everything else in the folder is discovered by convention, so a source is loaded from disk rather than registered per source in `flow_sdk`.
+A data source as a **folder asset**: `data_driver.json` is the manifest and everything else in the folder is discovered by convention, so a source is loaded from disk rather than registered per source in `flow_sdk`.
 
 ***
 
-### [Inbox Projection](data-management/inbox-projection.md)
+### [Stream Inbox Projection](data-management/stream-inbox-projection.md)
 
-The one-way projection from ingested cloud records (`SourceItem`) to Inbox conversations (`FlowMessage` reference rows whose `text` is hydrated at read time), owned by `flow_sdk/inbox/projection.py`.
+The one-way projection from ingested cloud records (`SourceItem`) to stream inbox conversations (`FlowMessage` reference rows whose `text` is hydrated at read time), owned by `flow_sdk/stream_inbox/projection.py`.
 
 ***
 
@@ -185,7 +185,7 @@ The `FSRecord` base class (formerly `Record`): on-disk manifest at `<records_roo
 
 On-disk directory structure for both FlowPad records (`~/.flow/records/`) and Claude Code records (`~/.claude/`). Covers naming conventions (shadow folder = bare `<id>`; portable stem = `<type>-<id>`), the canonical per-record folder (`metadata.json` + `<epoch>_<contenthash>_<pathdigest>.hash` sentinel), project directory encoding, the commonly used `EntityType` constants grouped by category (and which of them the indexer actually walks — `indexable_types()`, derived from the walker graph), and the `is_allowed_source_path()` security whitelist check. (Note: the type enum is now `EntityType` in `flow_sdk/schema/types.py`; `RecordType` is a backward-compat alias.)
 
-**Key source files:** `flow_sdk/schema/types.py` (`EntityType`), `flow_sdk/fs_store/record_types.py` (alias shim), `flow_sdk/fs_store/source_file_records.py` (`is_allowed_source_path`), `flow_sdk/instance_settings/base_settings.py` (per-instance paths), `flow_sdk/fs_store/indexer/builtin.py` (`indexable_types()`), `flow_sdk/fs_store/indexer/functions/` (per-type walkers)
+**Key source files:** `flow_sdk/schema/types.py` (`EntityType`), `flow_sdk/fs_store/record_types.py` (alias shim), `flow_sdk/assets/types/source_file_records.py` (`is_allowed_source_path`), `flow_sdk/instance_settings/base_settings.py` (per-instance paths), `flow_sdk/fs_store/indexer/builtin.py` (`indexable_types()`), `flow_sdk/fs_store/indexer/functions/` (per-type walkers)
 
 ***
 
@@ -217,7 +217,7 @@ The filesystem scan layer: `FSRecord.discover(type)` (O(N) directory scan over `
 
 The single shared filesystem traversal (`gitignore_walk()`) used by the indexer's folder walkers, the asset-menu walk, and the LLM index scanner. Covers the hardcoded `_WALK_IGNORED` denylist, the per-directory `.gitignore` stack (last-match-wins, deliberately monotonic — child `!` re-includes of ancestor-ignored paths are not honored), the `.claude/` force-include with the `.claude/worktrees` carve-out, symlink policy, and the `IndexerOptions.gitignore` flag.
 
-**Key source files:** `flow_sdk/fs_store/indexer/walk.py`, `flow_sdk/fs_store/indexer/gitignore.py`
+**Key source files:** `flow_sdk/fs_store/indexer/walk.py`, `flow_sdk/fs_store/gitignore.py`
 
 ***
 
@@ -257,7 +257,7 @@ FTS5-backed full-text search for Records. Covers the `search_*` readers (default
 
 The `fs-records` custom action on `ComputeNode` -- the primary HTTP API for reading and writing Records. Full routing table (GET list, GET single, POST create, PUT update, DELETE, plus file-path variants), `_parse_record_query()` supported parameters, `_embed_includes()` session join, path-based source-file routing, security checks, TypeRegistry lookup, error response format, and DataOp broadcast on mutations.
 
-**Key source files:** `flow_sdk/builtin/faas/fs_records_actions.py` (`_fs_records_action` and helpers; `ComputeNode.fs_records_action` delegates to it), `flow_sdk/fs_store/source_file_records.py`, `flow_sdk/fs_store/record_query.py`
+**Key source files:** `flow_sdk/builtin/faas/fs_records_actions.py` (`_fs_records_action` and helpers; `ComputeNode.fs_records_action` delegates to it), `flow_sdk/assets/types/source_file_records.py`, `flow_sdk/fs_store/record_query.py`
 
 ***
 

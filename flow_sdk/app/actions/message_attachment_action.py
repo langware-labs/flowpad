@@ -73,7 +73,8 @@ def _user_scope_root() -> Path:
     ``placement.root_for_scope`` authority (shared with the create path), so the
     two can't diverge on what "user root" means. Kept as a named seam because
     tests monkeypatch it to redirect installs to a temp home."""
-    from flow_sdk.fs_store.placement import Scope, root_for_scope  # noqa: PLC0415
+    from flow_sdk.assets.placement import Scope
+    from flow_sdk.builtin.asset_placement import root_for_scope
 
     return root_for_scope(Scope.USER)
 
@@ -533,7 +534,7 @@ async def handle_attachment_install(
     # TypeInfo, so its class comes from the filename via the same fallback the
     # staged relpath was built from — which is what lets the ONE user-scope
     # policy below (``user_scope_allowed``) govern it like every other class.
-    from flow_sdk.fs_store.placement import untyped_fallback_class, user_scope_allowed  # noqa: PLC0415
+    from flow_sdk.assets.placement import untyped_fallback_class, user_scope_allowed  # noqa: PLC0415
 
     if is_raw_file:
         asset_class = untyped_fallback_class(ma.name or "")

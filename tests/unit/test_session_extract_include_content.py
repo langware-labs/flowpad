@@ -15,17 +15,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from types import SimpleNamespace
-
+from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
+from flow_sdk.assets.types.codex_sessions import extract_codex_session_from_path
 from flow_sdk.fs_store.indexer.functions import claude_sessions as _claude_sessions
-from flow_sdk.fs_store.indexer.functions.claude_sessions import (
-    extract_claude_session_from_path,
-    get_claude_session,
-)
-from flow_sdk.fs_store.indexer.functions.codex_sessions import extract_codex_session_from_path
+from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
 
 _CLAUDE_SID = "11111111-1111-4111-8111-111111111111"
 _NEEDLE = "hello world unit test needle"
@@ -64,7 +61,7 @@ def test_claude_include_content_false_skips_parse_keeps_envelope(tmp_path):
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_claude_include_content_true_renders_searchable_text(tmp_path):
     p = _write_claude_jsonl(tmp_path)
-    rec = extract_claude_session_from_path(p, include_content=True)  # default
+    rec = extract_claude_session_from_path(p, include_content=True)  # the indexer path
     assert rec.session_id == _CLAUDE_SID
     assert _NEEDLE in rec.content  # the full parse ran and indexed the message
 

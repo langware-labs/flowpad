@@ -68,18 +68,28 @@ const ASSET_IMPROVEMENT_WIKI = 'Asset improvement';
  * One column template, applied identically to every row (asset rows and dir
  * rows alike) so cells line up down the list:
  *
- *   name chip │ scope icon │ scope name │ explorer │ wand │ select
+ *   name chip │ scope (icon + name) │ explorer │ wand │ select
  *
  * Deliberately not CSS subgrid: a row carries its own background (selected rows
  * are tinted) and bottom border, which `display: contents` would throw away.
- * Fixed tracks on a fixed-width popover align by construction, and cost nothing.
+ * Fixed tracks align by construction, and cost nothing.
  *
  * The corollary is that optional cells still have to occupy their track — see
  * `GridCellSpacer`. Rows whose wand or un-select button is absent were the whole
  * reason nothing lined up before.
+ *
+ * The track widths live in styles/index.css (`.asset-grid-row`) because they
+ * respond to the row's width: a narrow host gets the dense layout, where the
+ * scope name drops out and only its icon remains. A grid can't container-query
+ * itself, so the outer div is the container and the inner one is the grid.
  */
-const ASSET_GRID_ROW =
-  'grid grid-cols-[minmax(0,1fr)_1.25rem_4.5rem_1.5rem_1.5rem_1.5rem] items-center gap-2 px-3 py-1.5';
+function AssetGridRow({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn('asset-grid-row-host border-b last:border-b-0', className)} {...rest}>
+      <div className="asset-grid-row grid items-center gap-2 px-3 py-1.5">{children}</div>
+    </div>
+  );
+}
 
 /** Holds a grid track open where an optional cell isn't rendered. */
 function GridCellSpacer() {
@@ -293,8 +303,8 @@ export function AssetManagerPopover({
   // source and loading flag, one section, no host filter, no dirs, no select or
   // improve. Decided once here so the rest of the render reads a value instead
   // of re-asking "are we in the drill-down?" at every row and section.
-  const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError } = browsingAssistant
-    ? { descriptors: assistantDescriptors, isLoading: assistantAssets.isLoading || !!assets?.isLoading, error: assistantAssets.error || assets?.error }
+  const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError, scanIssues, truncated } = browsingAssistant
+    ? { descriptors: assistantDescriptors, isLoading: assistantAssets.isLoading || !!assets?.isLoading, error: assistantAssets.error || assets?.error, scanIssues: assistantAssets.scanIssues, truncated: assistantAssets.truncated }
     : (assets ?? ownAssets);
 
   // Project picker — load once when entering pick-project mode.
@@ -429,7 +439,12 @@ export function AssetManagerPopover({
       {
         key: 'available' as const,
         label: assets?.workerScoped ? t`Available assets` : t`Project assets`,
-        groups: groupByType(filtered.filter((r) => !r.selected && !r.used)),
+        groups: groupByType(filtered.filter((r) => !r.selected && !r.used && (!assets?.workerScoped || r.d.available === true))),
+      },
+      {
+        key: 'other' as const,
+        label: t`Other assets`,
+        groups: groupByType(filtered.filter((r) => assets?.workerScoped && !r.selected && !r.used && r.d.available !== true)),
       },
     ].filter((s) => s.groups.length > 0);
   }, [assets?.workerScoped, browsingAssistant, canImprove, entityVersion, filter, listDescriptors, listFilter, selectedTypeIds, sortBy, t]);
@@ -663,6 +678,13 @@ export function AssetManagerPopover({
                 </div>
               </div>
             ))}
+            {!!scanIssues?.length && (
+              <details className="px-3 py-2 text-xs text-amber-700" data-testid="asset-scan-issues">
+                <summary><Trans>Some assets could not be read.</Trans></summary>
+                {scanIssues.map((issue, index) => <div key={`${issue.path}:${index}`} className="mt-1 break-words">{issue.path}: {issue.message}</div>)}
+              </details>
+            )}
+            {truncated && <div className="px-3 py-2 text-xs text-muted-foreground"><Trans>Asset list truncated. Narrow the selection to see more.</Trans></div>}
             {listError && (
               <div role="alert" className="px-3 py-4 text-center text-[11px] text-destructive">
                 <Trans>Could not verify available assets.</Trans>
@@ -785,7 +807,7 @@ export function AssetManagerPopover({
 function DirRow({ path, onRemove }: { path: string; onRemove?: (path: string) => void | Promise<void> }) {
   const { t } = useLingui();
   return (
-    <div className={cn(ASSET_GRID_ROW, 'border-b last:border-b-0')} data-testid={`asset-manager-dir-row-${path}`}>
+    <AssetGridRow data-testid={`asset-manager-dir-row-${path}`}>
       <span className="flex min-w-0 items-center gap-1.5 text-xs text-foreground" title={path}>
         <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate">{_basename(path) || path}</span>
@@ -809,7 +831,7 @@ function DirRow({ path, onRemove }: { path: string; onRemove?: (path: string) =>
       ) : (
         <GridCellSpacer />
       )}
-    </div>
+    </AssetGridRow>
   );
 }
 
@@ -978,8 +1000,8 @@ export function AssetRow({
   }, [navigation, type, id, readOnly, openable, openAction, descriptor]);
 
   return (
-    <div
-      className={cn(ASSET_GRID_ROW, 'border-b last:border-b-0', selected && 'bg-primary/5')}
+    <AssetGridRow
+      className={selected ? 'bg-primary/5' : undefined}
       data-testid={`asset-manager-row-${descriptor.typeid}-${descriptor.source}`}
       data-read-only={readOnly ? 'true' : 'false'}
       data-selected={selected ? 'true' : 'false'}
@@ -1073,6 +1095,6 @@ export function AssetRow({
       ) : (
         <GridCellSpacer />
       )}
-    </div>
+    </AssetGridRow>
   );
 }

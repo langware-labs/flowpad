@@ -8,13 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-import flow_sdk.ingest.drivers  # noqa: F401 — registers the shipped providers
-from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.ingest.reflect import ReflectMode
 from flow_sdk.tags import on_tag
-from tests.utils.snippets import doc
+from tests.utils.snippets import doc, fence_under, run_fence
 
-pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+# Doc snippets name their sources for a reader, so each runs in its own user scope.
+pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope")]  # do not increase timeout without approval
 
 
 @pytest.fixture
@@ -30,24 +28,20 @@ def _placed(dst):
     return sorted(p.relative_to(dst).as_posix() for p in dst.rglob("*.md"))
 
 
+async def _section(heading: str, ns: dict) -> dict:
+    return await run_fence(fence_under(doc("pipes.md"), heading), ns, filename=f"pipes.md § {heading}")
+
+
 async def test_snippet_1_one_source_one_cycle(tree):
     src, _ = tree
-    source = DataSource(name="Notes", provider="folder", config={"root": str(src)})
-    await source.save()
-    assert (await source.verify())["ready"] is True
-    await source.sync()  # never raises; failure is health, not an exception
+    ns = await _section("1.", {"SRC": str(src)})  # sync() never raises: a failure is health on the row
+    assert ns["source"].exist_in_db and ns["source"].provider == "folder"
 
 
 async def test_snippet_2_mirror_one_folder_into_another(tree):
     src, dst = tree
-    source = DataSource(
-        name="Mirror notes",
-        provider="folder",
-        reflect=ReflectMode.COPY.value,
-        reflect_into=str(dst),
-        config={"root": str(src)},
-    )
-    await source.save()
+    ns = await _section("2.", {"SRC": str(src), "DEST": str(dst)})
+    source = ns["source"]
     await source.verify()
 
     await source.sync()
@@ -109,7 +103,7 @@ def _pipes_doc(name: str) -> str:
     from flow_sdk.api.api_types.identifier import mint_uuid
 
     text = doc("pipes.md")
-    for wf in ("mirror", "triage", "docs-rag"):
+    for wf in ("mirror", "triage", "docs-rag", "digest"):
         text = text.replace(f'workflow("{wf}")', f'workflow("{wf}-{mint_uuid()}")')
     return text
 
@@ -192,3 +186,22 @@ async def test_snippet_6_keep_a_search_index_level(tmp_path, monkeypatch):
     assert ns["report"].embedded > 0
     hits = await ns["index"].search("which directories does the walker skip", top_k=1)
     assert hits and hits[0].doc_ref.endswith("walk.md")
+
+
+async def test_snippet_7_pages_fifty_at_a_time(monkeypatch):
+    """Two stream inboxes on one loop, a page at a time: the first ack commits a whole page of one source."""
+    from flow_sdk.builtin.consumer_position import ConsumerPosition
+    from tests.utils.fake_source import scripted_provider
+    from tests.utils.snippets import fence_under, run_fence_until
+
+    acked = await _acked_signal(monkeypatch)
+    with scripted_provider("agentmail") as mail:
+        mail.push(*({"body": f"m{i:03d}", "author": "alice@example.com", "thread_key": f"t{i}"} for i in range(120)))
+        ns = await run_fence_until(
+            fence_under(_pipes_doc("pipes.md"), "7."), {"KEY": "k"}, acked, filename="pipes.md §7"
+        )
+    assert len(ns["digest"]) == 50, "the first page is 50 deliveries"
+    # The fence is cancelled on the first ack; the other source's page may or may not have been
+    # acked by then. Whatever was: one page is one write on ITS source's position.
+    positions = [p for p in await ConsumerPosition.get_all({}) if p.consumer.startswith("digest-") and p.acked_count]
+    assert 1 <= len(positions) <= 2 and {p.acked_count for p in positions} == {1}, "one page, one write, one source's position"

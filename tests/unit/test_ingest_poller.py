@@ -23,7 +23,7 @@ async def _source(**kw) -> DataSource:
     fields = {
         "provider": "faketest",
         "account_key": account,
-        "name": "poll fixture",
+        "name": f"poll fixture {account}",
         # Far future by default so unrelated rows from other tests never make a
         # given assertion flaky.
         "next_poll_at": NOW + timedelta(days=365),
@@ -172,9 +172,9 @@ async def test_a_change_event_does_not_wake_a_disabled_source(monkeypatch):
     """Disabled is a person's decision, and a provider nudge must not override
     it. The gate is deliberately narrower than `poll_refusal`: a source still in
     SETUP does reconcile from a bare event (a git watch is exactly that)."""
-    import flow_sdk.ingest.sync as sync_mod
     from types import SimpleNamespace
 
+    import flow_sdk.ingest.sync as sync_mod
     from flow_sdk.builtin.data_source import SourceStatus
     from flow_sdk.ingest.change_event import handle_change
 

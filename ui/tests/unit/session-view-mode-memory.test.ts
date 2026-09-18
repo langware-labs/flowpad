@@ -1,49 +1,35 @@
 /**
- * Per-SESSION view-mode memory (`AgenticProcess.last_mode`).
+ * Per-SESSION view-mode memory (`AgenticProcess.last_mode`) under the default
+ * `VIEW_MODE_STORE` policy: memory is READ on every open, but WRITTEN only on a
+ * mode switch.
  *
- * The bug this pins: view mode was one global preference, so switching to
- * Terminal repainted every session at once and clicking between chats dragged
- * the ambient mode along. Mode is a property of the session you are looking at
- * — each one opens in the mode it was last seen in, and switching mode while it
- * is open records the new one onto THAT session.
- *
- * Two seams, matching the two directions:
+ * Seams:
  *   - `NavigationActions.openDock` seeds a session dock's `?viewMode` from the
- *     session's own memory instead of inheriting the live URL's mode (click
- *     path, cache-only).
- *   - `applyProcessViewMode` does the same for a cold URL that carries no mode
- *     (deep link / hard refresh), and adopts + records the ambient mode for a
- *     session that has no memory yet.
+ *     session's own memory (read side, cache-only).
+ *   - `tabManager.recordViewModeEvent` reports tab opens/creates — which the
+ *     default policy ignores.
+ *   - `setViewMode(mode, dock)` is the switch — it writes the preference, the
+ *     session and the current project.
  */
-import { AgenticProcess, ViewType } from '@sdk';
+import { AgenticProcess, dataContext, dataManager, Tab, tabManager, ViewModeEvent, ViewType } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DockPointer } from '@src/navigation/DockPointer';
 import { NavigationActions } from '@src/navigation/NavigationActions';
-import {
-  applyProcessViewMode,
-  getViewMode,
-  setViewMode,
-  stampProcessViewMode,
-  ViewMode,
-} from '@src/contexts/view-mode-context';
+import { getViewMode, setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 
 const SESSION_ID = '024a9d07-6b07-4ab8-bd0b-9a41a133caee';
 const SESSION_POINTER = `agentic_process-${SESSION_ID}`;
 
 /** A stand-in for the cached entity: only `last_mode` and `save` are read. */
 function fakeSession(lastMode: string | null = null) {
-  return {
-    id: SESSION_ID,
-    last_mode: lastMode,
-    save: vi.fn().mockResolvedValue(undefined),
-  };
+  return { id: SESSION_ID, last_mode: lastMode, save: vi.fn().mockResolvedValue(undefined) };
 }
 
 /** Put a session in the entity cache, as a real navigation would find it. */
 function cacheSession(session: ReturnType<typeof fakeSession> | null) {
-  vi.spyOn(AgenticProcess, 'getByIdFromCache').mockImplementation((id: string) =>
-    session && id === SESSION_ID ? (session as unknown as AgenticProcess) : null,
+  vi.spyOn(dataManager, 'getByTypeIdFromCache').mockImplementation((typeId) =>
+    session && typeId.type === AgenticProcess.type && typeId.id === SESSION_ID ? (session as never) : null,
   );
 }
 
@@ -55,6 +41,8 @@ function sitOnSomewhereIn(mode: ViewMode): void {
 
 const lastUrl = (navigate: ReturnType<typeof vi.fn>): string =>
   String(navigate.mock.calls[navigate.mock.calls.length - 1][0]);
+
+const sessionDock = () => new DockPointer(ViewType.SHELL, SESSION_POINTER);
 
 describe('per-session view-mode memory (AgenticProcess.last_mode)', () => {
   beforeEach(() => {
@@ -72,17 +60,17 @@ describe('per-session view-mode memory (AgenticProcess.last_mode)', () => {
       sitOnSomewhereIn(ViewMode.Advanced);
       const navigate = vi.fn();
 
-      new NavigationActions(navigate, null).openDock(new DockPointer(ViewType.SHELL, SESSION_POINTER));
+      new NavigationActions(navigate, null).openDock(sessionDock());
 
       expect(lastUrl(navigate)).toContain(`viewMode=${ViewMode.Vibe}`);
     });
 
-    it('a session with no memory adopts the mode we are in', () => {
+    it('a session with no memory displays the mode we are in', () => {
       cacheSession(fakeSession(null));
       sitOnSomewhereIn(ViewMode.Advanced);
       const navigate = vi.fn();
 
-      new NavigationActions(navigate, null).openDock(new DockPointer(ViewType.SHELL, SESSION_POINTER));
+      new NavigationActions(navigate, null).openDock(sessionDock());
 
       expect(lastUrl(navigate)).toContain(`viewMode=${ViewMode.Advanced}`);
     });
@@ -92,22 +80,33 @@ describe('per-session view-mode memory (AgenticProcess.last_mode)', () => {
       sitOnSomewhereIn(ViewMode.Advanced);
       const navigate = vi.fn();
 
-      new NavigationActions(navigate, null).openDock(new DockPointer(ViewType.SHELL, SESSION_POINTER));
+      new NavigationActions(navigate, null).openDock(sessionDock());
 
-      const url = lastUrl(navigate);
-      expect(url).toContain(`viewMode=${ViewMode.Advanced}`);
-      expect(url).not.toContain('bogus-mode');
+      expect(lastUrl(navigate)).toContain(`viewMode=${ViewMode.Advanced}`);
+      expect(lastUrl(navigate)).not.toContain('bogus-mode');
     });
 
     it('an explicitly requested mode (the footer toggle) beats the memory', () => {
       cacheSession(fakeSession(ViewMode.Vibe));
       sitOnSomewhereIn(ViewMode.Vibe);
       const navigate = vi.fn();
-      const dock = new DockPointer(ViewType.SHELL, SESSION_POINTER);
 
-      new NavigationActions(navigate, dock).openDock(dock.withViewMode(ViewMode.Advanced));
+      new NavigationActions(navigate, sessionDock()).openDock(sessionDock().withViewMode(ViewMode.Advanced));
 
       expect(lastUrl(navigate)).toContain(`viewMode=${ViewMode.Advanced}`);
+    });
+
+    it('opens a bare project dock in the project’s remembered mode', () => {
+      const PROJECT_ID = '5d3f0a52-8c1e-4b7a-9f0e-2a6c1b3d4e5f';
+      vi.spyOn(dataManager, 'getByTypeIdFromCache').mockImplementation((typeId) =>
+        typeId.type === 'project' && typeId.id === PROJECT_ID ? ({ last_mode: ViewMode.Dev, save: vi.fn() } as never) : null,
+      );
+      sitOnSomewhereIn(ViewMode.Advanced);
+      const navigate = vi.fn();
+
+      new NavigationActions(navigate, null).openDock(new DockPointer(ViewType.PROJECT, PROJECT_ID));
+
+      expect(lastUrl(navigate)).toContain(`viewMode=${ViewMode.Dev}`);
     });
 
     it('leaves non-session docks on the inherited mode', () => {
@@ -121,48 +120,32 @@ describe('per-session view-mode memory (AgenticProcess.last_mode)', () => {
     });
   });
 
-  describe('applyProcessViewMode (the loader side)', () => {
-    it('applies the remembered mode when the URL names none', () => {
-      const session = fakeSession(ViewMode.Advanced);
-      applyProcessViewMode(session as unknown as AgenticProcess, null);
-
-      expect(getViewMode()).toBe(ViewMode.Advanced);
-      expect(session.save).not.toHaveBeenCalled();
-    });
-
-    it('adopts and records the current mode for a session with no memory', () => {
+  describe('opening a tab never mints memory (default policy)', () => {
+    it.each([ViewModeEvent.TabOpen, ViewModeEvent.TabCreate])('%s saves nothing', (event) => {
       const session = fakeSession(null);
-      applyProcessViewMode(session as unknown as AgenticProcess, null);
+      cacheSession(session);
+      const tab = new Tab({ id: 'tab-1', pointer: SESSION_POINTER, target_type: AgenticProcess.type, target_id: SESSION_ID });
 
-      expect(getViewMode()).toBe(ViewMode.Standard);
-      expect(session.last_mode).toBe(ViewMode.Standard);
-      expect(session.save).toHaveBeenCalledTimes(1);
-    });
+      tabManager.recordViewModeEvent(tab, event, ViewMode.Advanced);
 
-    it('stands aside when the URL names a mode — that one is authoritative', () => {
-      const session = fakeSession(ViewMode.Advanced);
-      applyProcessViewMode(session as unknown as AgenticProcess, ViewMode.Vibe);
-
-      expect(getViewMode()).toBe(ViewMode.Standard);
-      expect(session.last_mode).toBe(ViewMode.Advanced);
+      expect(session.last_mode).toBeNull();
       expect(session.save).not.toHaveBeenCalled();
     });
   });
 
-  describe('stampProcessViewMode', () => {
-    it('records a new mode', () => {
+  describe('setViewMode is the switch', () => {
+    it('records the mode onto the session, the project and the preference', () => {
       const session = fakeSession(ViewMode.Vibe);
-      stampProcessViewMode(session as unknown as AgenticProcess, ViewMode.Advanced);
+      const project = { last_mode: null, save: vi.fn().mockResolvedValue(undefined) };
+      cacheSession(session);
+      // `project` is a MobX computed over `getContextEntity`, so stub the source it reads.
+      vi.spyOn(dataContext, 'getContextEntity').mockReturnValue(project as never);
+
+      setViewMode(ViewMode.Advanced, sessionDock());
 
       expect(session.last_mode).toBe(ViewMode.Advanced);
-      expect(session.save).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not save when the mode already matches (breaks the apply→record loop)', () => {
-      const session = fakeSession(ViewMode.Advanced);
-      stampProcessViewMode(session as unknown as AgenticProcess, ViewMode.Advanced);
-
-      expect(session.save).not.toHaveBeenCalled();
+      expect(project.last_mode).toBe(ViewMode.Advanced);
+      expect(getViewMode()).toBe(ViewMode.Advanced);
     });
   });
 });

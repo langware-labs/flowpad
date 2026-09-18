@@ -55,7 +55,7 @@ async def test_status_counts_lines_of_untracked_modified_and_deleted(repo: Path)
     (repo / "gone.txt").unlink()
     (repo / "brand_new.txt").write_text("1\n2\n3\n4\n5\n")
 
-    status = await GitRepo(str(repo), LocalNode()).get_status()
+    status = await GitRepo(str(repo), LocalNode()).get_status(line_counts=True)
     counts = {f.path: (f.status, f.insertions, f.deletions) for f in status.files}
 
     # The untracked file is the point: it carries its own line count.
@@ -71,7 +71,7 @@ async def test_status_leaves_the_real_index_and_worktree_alone(repo: Path):
     (repo / "brand_new.txt").write_text("1\n")
     before = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True).stdout
 
-    await GitRepo(str(repo), LocalNode()).get_status()
+    await GitRepo(str(repo), LocalNode()).get_status(line_counts=True)
 
     after = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True).stdout
     assert after == before
@@ -79,10 +79,47 @@ async def test_status_leaves_the_real_index_and_worktree_alone(repo: Path):
 
 
 @pytest.mark.asyncio
+async def test_status_skips_line_counts_unless_asked(repo: Path):
+    """Counts are opt-in: the default call lists the same files with no counts,
+    and never builds the throwaway index."""
+    (repo / "tracked.txt").write_text("a\nb\nc\nd\n")
+    (repo / "brand_new.txt").write_text("1\n2\n")
+    git_dir = repo / ".git"
+    before = set(git_dir.iterdir())
+
+    status = await GitRepo(str(repo), LocalNode()).get_status()
+
+    assert {f.path: (f.status, f.insertions, f.deletions) for f in status.files} == {
+        "tracked.txt": ("M", None, None),
+        "brand_new.txt": ("?", None, None),
+    }
+    assert not list(git_dir.glob("flowpad-status-index-*"))
+    assert set(git_dir.iterdir()) == before
+
+
+@pytest.mark.asyncio
 async def test_status_counts_a_repo_with_no_commits(tmp_path: Path):
     _git(tmp_path, "init", "-q", "-b", "main", ".")
     (tmp_path / "first.txt").write_text("q\nw\n")
 
-    status = await GitRepo(str(tmp_path), LocalNode()).get_status()
+    status = await GitRepo(str(tmp_path), LocalNode()).get_status(line_counts=True)
 
     assert [(f.path, f.insertions, f.deletions) for f in status.files] == [("first.txt", 2, 0)]
+
+
+@pytest.mark.asyncio
+async def test_status_reports_remote_and_its_browser_url(repo: Path):
+    status = await GitRepo(str(repo), LocalNode()).get_status()
+    assert (status.remote_url, status.remote_web_url) == (None, None)
+
+    _git(repo, "remote", "add", "origin", "https://x-access-token:secret@github.com/org/repo.git")
+    status = await GitRepo(str(repo), LocalNode()).get_status()
+    # Credentials never reach the UI; the browser form drops .git.
+    assert status.remote_url == "https://github.com/org/repo.git"
+    assert status.remote_web_url == "https://github.com/org/repo"
+
+    _git(repo, "remote", "set-url", "origin", "git@github.com:org/repo.git")
+    status = await GitRepo(str(repo), LocalNode()).get_status()
+    assert status.remote_url == "git@github.com:org/repo.git"
+    assert status.remote_web_url == "https://github.com/org/repo"
+

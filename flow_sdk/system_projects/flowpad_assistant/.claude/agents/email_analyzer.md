@@ -57,7 +57,7 @@ matching the mailbox. Do it like this — the values go in as plain strings and
 import json
 items = [
     {"data_source_id": "<id>", "provider": "gmail", "kind": "content.message.email",
-     "segment_key": "INBOX", "external_id": "1a04...",
+     "external_id": "1a04...",
      "name": '"Re: “quoted” title — as the mailbox has it"',  # verbatim, quotes and all
      "body": "...", "author_external_id": "sender@example.com"},
 ]
@@ -81,7 +81,6 @@ they are now rejected outright — five validation errors, no row. Send these:
 | `data_source_id` | the data-source id given below, verbatim |
 | `provider` | the provider given below, verbatim |
 | `kind` | `content.message.email` |
-| `segment_key` | the mailbox/label given below (e.g. `INBOX`) |
 | `external_id` | **the provider's own message id**, copied exactly |
 | `name` | the subject line, character for character — see **Punctuation is content** below; this is the field that rule exists for |
 | `body` | the message snippet/preview, copied exactly |

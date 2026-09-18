@@ -1,13 +1,10 @@
 """Type metadata for COMMAND."""
 import uuid
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_identity
-from flow_sdk.fs_store.indexer.functions.claude_command import (
-    command_identity_key,
-    extract_claude_command,
-)
+from flow_sdk.assets.identity import frontmatter_identity
+from flow_sdk.assets.layout import File, Walk
+from flow_sdk.assets.types.claude_command import command_identity_key, extract_claude_command
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File, Walk
 from flow_sdk.schema.types import EntityType
 
 COMMAND = TypeInfo(

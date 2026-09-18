@@ -30,7 +30,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.consumer_position import ConsumerPosition
     from flow_sdk.builtin.source_item import MessageSpec
     from flow_sdk.core.entity.entity_model import Entity
-    from flow_sdk.ingest.driver import SendOutcome
+    from flow_sdk.ingest.driver_runtime import SendOutcome
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
@@ -114,7 +114,7 @@ class Delivered(Generic[T]):
         from datetime import datetime, timezone  # noqa: PLC0415
 
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-        from flow_sdk.ingest.driver import SendOutcome  # noqa: PLC0415
+        from flow_sdk.ingest.driver_runtime import SendOutcome  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
         position, row = self._position, self._row
@@ -165,4 +165,42 @@ class Delivered(Generic[T]):
             await self._position.commit()
 
 
-__all__ = ["Delivered"]
+class DeliveredPage:
+    """One page a listener handed you — up to ``size`` deliveries from ONE source — and the
+    handle to say you are done with all of them.
+
+    ``ack()`` commits the position at the page's last row: one write per page, because
+    ``ConsumerPosition.advance_to`` is an offset. Each item inside still has its own ``ack()``
+    for a consumer that wants the finer grain. A page is always one source's — a merge of
+    several sources yields their pages side by side, never a page that spans two positions.
+    """
+
+    __slots__ = ("items", "source_id", "_position", "_last")
+
+    def __init__(self, items: "list[Delivered]", *, position: "ConsumerPosition", source_id: str, last: "Entity") -> None:
+        self.items = items
+        self.source_id = source_id
+        self._position = position
+        #: The last ROW the page covers — filtered rows included, so the ack never leaves a gap.
+        self._last = last
+
+    def __iter__(self):
+        return iter(self.items)
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __repr__(self) -> str:
+        return f"DeliveredPage({len(self.items)} items, source={self.source_id})"
+
+    @property
+    def acked(self) -> bool:
+        return self._position.is_acked(self._last)
+
+    async def ack(self) -> None:
+        """Commit the position at this page's last row. Idempotent; a no-op once a newer row is acked."""
+        if self._position.advance_to(self._last):
+            await self._position.commit()
+
+
+__all__ = ["Delivered", "DeliveredPage"]

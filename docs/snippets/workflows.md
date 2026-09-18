@@ -1,3 +1,6 @@
+---
+id: 8b46e44c-566c-4867-8611-b25acf83c86a
+---
 # Workflows — snippets
 
 `flow_sdk.blocks` is the plain-Python workflow surface. No engine, no hidden
@@ -17,16 +20,15 @@ The canonical program. Pinned by `tests/unit/test_workflows_snippets.py`
 typed reply → delivery verified at the counterpart inbox, 17–18s end to end).
 
 ```python
-import flow_sdk.ingest.drivers  # noqa: F401
-from flow_sdk.blocks import EmailMessageSpec, Inbox, workflow
+from flow_sdk.blocks import EmailMessageSpec, StreamInbox, workflow
 from flow_sdk.builtin.agent_registry import get_agent
 
 async with workflow("mail-concierge"):
-    inbox  = Inbox("me@agentmail.to", api_key=KEY)
-    agent  = await get_agent("email-summarizer")
+    stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY)
+    agent = await get_agent("email-summarizer")
 
     async with agent.process_messages():
-        async for m in inbox.listen():                # m: Delivered[SourceItemSpec]
+        async for m in stream_inbox.listen():         # m: Delivered[SourceItemSpec]
             out = await agent.process_message(m)      # out: RunOutput
             await m.reply(EmailMessageSpec.reply_to(m, body=out.text))   # send → record → ack
 ```
@@ -37,10 +39,10 @@ What each line does:
   the name in its `context_data`, and — the part that matters — the loop's
   position is stored under it: a restart resumes from the last `ack()`.
   Outside a workflow the position lives only for the loop.
-* `Inbox(address, ...)` finds or creates the `DataSource` for that account
+* `StreamInbox(address, ...)` finds or creates the `DataSource` for that account
   (`DataSource.find_for_account` on the driver's `identity_config_key`). Extra
   keyword config lands on the row verbatim.
-* `inbox.listen()` syncs the source every `poll_every` seconds, projects what
+* `stream_inbox.listen()` syncs the source every `poll_every` seconds, projects what
   landed into its conversation, and yields arrivals in ingest order, each
   wrapped as a `Delivered` that reads like the item and adds `ack()` and
   `reply()`. Items present when the position was first created are the
@@ -64,10 +66,10 @@ What each line does:
 Control flow is Python, not configuration:
 
 ```python
-inbox = Inbox("me@agentmail.to", api_key=KEY, senders=["boss@corp.com"])
+stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY, senders=["boss@corp.com"])
 
 async with agent.process_messages():
-    async for m in inbox.listen():
+    async for m in stream_inbox.listen():
         if "urgent" not in m.name.lower():
             await m.ack()                        # handled: deliberately ignored
             continue
@@ -85,15 +87,15 @@ across turns). Pinned by `tests/unit/test_workflows_snippets.py`; the send leg
 live by `tests/long_tests/test_telegram_send.py`.
 
 ```python
-from flow_sdk.blocks import Inbox, TelegramMessageSpec, workflow
+from flow_sdk.blocks import StreamInbox, TelegramMessageSpec, workflow
 from flow_sdk.builtin.agent_registry import get_agent
 
 async with workflow("support-bot"):
-    inbox  = Inbox("@my_support_bot", provider="telegram", bot_token=TOKEN)
-    agent  = await get_agent("support-agent")
+    stream_inbox = StreamInbox("@my_support_bot", provider="telegram", bot_token=TOKEN)
+    agent = await get_agent("support-agent")
 
     async with agent.process_messages():
-        async for m in inbox.listen():
+        async for m in stream_inbox.listen():
             out = await agent.process_message(m)     # session per chat
             await m.reply(TelegramMessageSpec.reply_to(m, body=out.text))
 ```
@@ -104,7 +106,7 @@ so the loop body does not change between them.
 
 Name the class only when the loop already knows its channel, as these do. Code
 that handles whichever source it is given should ask instead —
-`await m.reply_spec(body=out.text)` (or `await inbox.reply_spec(m, body=...)`),
+`await m.reply_spec(body=out.text)` (or `await stream_inbox.reply_spec(m, body=...)`),
 which routes to the driver's own rule. Naming `EmailMessageSpec` on a Slack
 source is not a type error: it sends a DM to the person instead of posting where
 everyone is reading.
@@ -114,30 +116,30 @@ everyone is reading.
 Slack differs from both: the reply targets the channel, inside the message's
 thread, and Slack echoes the bot's own post back through history, so the
 driver records nothing itself. Pinned by `tests/unit/test_workflows_snippets.py`,
-and by `tests/unit/test_slack_driver.py` (send, identity stamp, channel reuse)
+and by `flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/slack/tests/test_slack_source.py` (send, identity stamp, channel reuse)
 against a loopback Slack.
 
 ```python
-from flow_sdk.blocks import Inbox, SlackMessageSpec, workflow
+from flow_sdk.blocks import StreamInbox, SlackMessageSpec, workflow
 from flow_sdk.builtin.agent_registry import get_agent
 
 async with workflow("channel-helper"):
-    inbox  = Inbox("C0123456789", provider="slack")   # the channel id, not its name
-    agent  = await get_agent("slack-summarizer")
+    stream_inbox = StreamInbox("C0123456789", provider="slack")   # the channel id, not its name
+    agent = await get_agent("slack-summarizer")
 
     async with agent.process_messages():
-        async for m in inbox.listen():
+        async for m in stream_inbox.listen():
             out = await agent.process_message(m)       # session per thread
             await m.reply(SlackMessageSpec.reply_to(m, body=out.text))
 ```
 
 * The Slack token is the machine's connected Slack credential; there is no
-  per-source key. `Inbox` checks `require("slack")` before it touches a row,
+  per-source key. `StreamInbox` checks `require("slack")` before it touches a row,
   so an unconnected instance fails on that line with the fix in the message
-  (see [connections](connections.md)). It reuses the source whose `channels`
-  list contains that id.
-* `SlackMessageSpec.reply_to(m, ...)` sets `to=[m.segment_key]` (the
-  channel) and carries `m.thread_key` through as `thread_ts`, so the answer
+  (see [connections](connections.md)). It reuses the source whose `channel`
+  is that id — one source per channel.
+* `SlackMessageSpec.reply_to(m, ...)` sets `to` to the channel the message's
+  origin names (the last part of `m.origin_namespace`) and carries `m.thread_key` through as `thread_ts`, so the answer
   lands in the thread. A top-level message is its own thread root.
 * The loop never answers itself: the first `send` stamps the bot's user id
   onto the source via `auth.test`, and `listen()` drops items whose author is
@@ -145,7 +147,33 @@ async with workflow("channel-helper"):
 * Slack allows one history read per channel per minute for a non-Marketplace
   app, so `listen()` on a busy channel samples it rather than mirroring it.
 
-## 4. Values only
+## 4. The same loop on every channel, for a user or an agent
+
+One body serves every channel and both owners. `OWNER` is `None` — the local user's stream
+inbox — or an `Agent`, whose stream inbox is its own (`/dock/agent/<id>/stream_inbox`) and whose
+replies go out as the agent. `m.reply_spec(body=…)` asks the channel who a reply is addressed to,
+so nothing here names a channel. Pinned by `tests/unit/test_workflows_snippets.py` over
+gmail, slack, whatsapp, telegram and agent email, for both owners.
+
+```python
+from flow_sdk.blocks import StreamInbox, workflow
+from flow_sdk.builtin.agent_registry import get_agent
+
+async with workflow("any-channel"):
+    stream_inbox = StreamInbox(ADDRESS, provider=CHANNEL, owner=OWNER)   # the channel's own id: a mailbox, a channel, a chat
+    agent = await get_agent("channel-helper")
+
+    async with agent.process_messages():
+        async for m in stream_inbox.listen():
+            out = await agent.process_message(m)
+            await m.reply(await m.reply_spec(body=out.text))          # addressed the way THIS channel replies
+```
+
+An agent email address (`cloud_email`) is an agent's by definition: there is no user-owned cell
+for it, and `StreamInbox("…", provider="cloud_email")` without an agent owner has no mailbox to
+adopt.
+
+## 5. Values only
 
 The unit pins in `tests/unit/test_blocks_email.py`. Useful when you want the
 shapes without a provider.
@@ -164,7 +192,7 @@ EmailMessageSpec(to=["a@b"], body="x", cc=["nope"])   # raises: extra="forbid"
 
 RunOutput(text="done", files=[])   # what a turn returns; files carry FileRef
 
-SlackMessageSpec.reply_to(m, body="x").to      # [m.segment_key] — the channel
+SlackMessageSpec.reply_to(m, body="x").to      # [channel id] — from m.origin_namespace
 TelegramMessageSpec.reply_to(m, body="x").to   # [chat id] — the leading part of thread_key
 ```
 
@@ -174,7 +202,7 @@ that rule, so the loop body is the same line in all three.
 
 ## Limits today
 
-* `Inbox.send` takes exactly one recipient and no attachments.
+* `StreamInbox.send` takes exactly one recipient and no attachments.
 * `RunOutput` carries the captured chat text; parsing it against the agent's
   declared `output` shape is the planned upgrade and lands without changing a
   caller.

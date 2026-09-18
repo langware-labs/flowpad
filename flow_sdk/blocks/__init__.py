@@ -13,13 +13,13 @@ its own.
 The canonical program::
 
     async with workflow("mail-concierge"):
-        inbox  = Inbox("me@agentmail.to", api_key=KEY)
-        agent  = await get_agent("email-summarizer")
+        stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY)
+        agent        = await get_agent("email-summarizer")
 
         async with agent.process_messages():
-            async for m in inbox.listen():                # m: SourceItemSpec
+            async for m in stream_inbox.listen():         # m: SourceItemSpec
                 out   = await agent.process_message(m)    # out: RunOutput
-                await inbox.send(await inbox.reply_spec(m, body=out.text))
+                await stream_inbox.send(await stream_inbox.reply_spec(m, body=out.text))
 
 Verbs live on their owners (``listen``, ``process_message``, ``send``);
 control flow — allow lists, branches, errors, prints — is never configuration,
@@ -37,41 +37,33 @@ from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
 
 from pydantic import ConfigDict
 
-from flow_sdk.builtin.source_item import (
-    EmailMessageSpec,
-    MessageSpec,
-    SlackMessageSpec,
-    SourceItemSpec,
-    TelegramMessageSpec,
-)
+from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SlackMessageSpec, TelegramMessageSpec
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
-from .delivery import Delivered
-from .folder_source import FolderChange, FolderSource
-from .merge import listen
+from .delivery import Delivered, DeliveredPage
+from .folder_changes import FolderChange, FolderChanges
+from .merge import listen, pages
 from .message_block import MessageBlock, MessageRequest, _MessageRequestExpired
-
-#: Deprecated alias, kept so scripts written against the first release keep importing.
-#: ``MessageSource`` is the domain term for a bidirectional ``DataSource``; the
-#: prompt/reply block is ``MessageBlock``. Deliberately not in ``__all__``.
-MessageSource = MessageBlock
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent_registry import AgentRef
 
 __all__ = [
     "Delivered",
+    "DeliveredPage",
     "EmailMessageSpec",
     "FolderChange",
-    "FolderSource",
+    "FolderChanges",
     "FileRef",
     "MessageSpec",
     "MessageRequest",
     "MessageBlock",
-    "Inbox",
+    "StreamInbox",
     "RunOutput",
     "listen",
+    "pages",
     "SlackMessageSpec",
     "TelegramMessageSpec",
     "workflow",
@@ -133,11 +125,13 @@ def _turns(ap) -> dict:
 
 
 def _turn_key(m: _AgentInput) -> str:
-    """One message, one key. The natural key when the message has one, else its own id."""
+    """One message, one key. The natural key (source + origin) when the message has one, else its own id."""
     source = getattr(m, "data_source_id", "") or ""
-    segment = getattr(m, "segment_key", "") or ""
     external = str(getattr(m, "external_id", "") or "")
-    return f"{source}:{segment}:{external}" if source else external
+    if not source:
+        return external
+    parts = (getattr(m, "origin_kind", ""), getattr(m, "origin_namespace", ""), getattr(m, "origin_key", "") or external)
+    return ":".join([source, *(str(p or "") for p in parts)])
 
 
 class _AgentRunner:
@@ -183,7 +177,7 @@ class _AgentRunner:
 
         The spawn goes through the agent's ``Deployment`` (the one sanctioned
         spawner from a persona) so worker, model, permission mode and
-        subagents are the ones the ``agent.md`` declares — never hand-rolled.
+        subagents are the ones the ``agent.json`` declares — never hand-rolled.
         """
         self._ensure_open()
         key = str(self.session_key(m))
@@ -370,12 +364,12 @@ def _cadence(poll_every, driver) -> float:
     return float(declared) if declared else 3.0
 
 
-class Inbox:
+class StreamInbox:
     """One watched mailbox: the conversation surface of a message source.
 
     A view over the existing pair — the ``DataSource`` that watches the
     address (connected or reused here) and the projection that turns its
-    items into conversations. No third "inbox" thing is created.
+    items into conversations. No third "stream inbox" thing is created.
     """
 
     def __init__(
@@ -391,10 +385,12 @@ class Inbox:
         """``address`` is the mailbox/handle the block is ABOUT (an email
         address, a bot's @username); the provider decides what identifies the
         source (the driver's ``identity_config_key``). Provider-specific
-        credentials pass as keyword config (``api_key=...``,
-        ``bot_token=...``) and land on the DataSource verbatim.
+        config passes as keywords. A keyword the driver's ``auth`` names as a
+        secret (``api_key=...``, ``bot_token=...``) is saved to the current
+        project's secret store under its variable name — never into the
+        source's config, which is a file a project may share.
 
-        ``owner`` says whose inbox this is — a user or Agent ``TypeId``, or an
+        ``owner`` says whose stream inbox this is — a user or Agent ``TypeId``, or an
         ``Agent`` entity. Omitted, the block is the local user's. ``agent_id=``
         in the config keeps working as the compatibility alias: it is the
         cloud mailbox driver's identity key and implies ``owner`` when none is
@@ -427,10 +423,12 @@ class Inbox:
         """(config key, value) that names WHICH account this block watches —
         the driver owns the key; the value is the address unless the config
         already carries that key (a telegram bot's identity is its token)."""
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        driver = get_driver(self.provider)
-        key = getattr(driver, "identity_config_key", "inbox") if driver else "inbox"
+        driver = DataDriver.loaded(self.provider)
+        key = getattr(driver, "identity_config_key", "address") if driver else "address"
+        if not key:  # the driver names its account itself (a bot's getMe), not a config field
+            return "", self.address
         return key, str(self._config.get(key) or self.address).strip()
 
     async def ensure_source(self):
@@ -442,51 +440,71 @@ class Inbox:
         """
         if self._source is not None:
             return self._source
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
         from flow_sdk.connections import require  # noqa: PLC0415
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
 
         # A provider that reads with a machine-level connection (Slack, Drive)
         # is checked HERE, before any row exists: ``NotConnected`` names the
         # fix, whereas a source created without it parks on its first poll.
-        driver = get_driver(self.provider)
+        driver = DataDriver.loaded(self.provider)
         if driver is not None and driver.connection:
             await require(driver.connection)
 
         key, value = self._identity()
         owner = self._owner()
+        config = await self._store_secrets(driver)
         existing = await DataSource.find_for_account(self.provider, key, value, owner=owner)
         if existing is not None:
             self._source = existing
             return existing
+        # The name is the asset folder, and the user and an agent may each watch one account.
+        whose = getattr(self._owner_arg, "name", "") or (owner.id[:8] if owner is not None else "")
         source = DataSource(
-            name=f"Inbox {self.address}",
+            name=f"{self.provider} {self.address} for {whose}" if whose else f"{self.provider} {self.address}",
             provider=self.provider,
-            config={key: value, **self._config},
+            config={key: value, **config} if key else config,
+            account_key="" if key else value,
             owner=owner,
         )
         await source.save()
         self._source = source
         return source
 
-    async def listen(
+    async def _store_secrets(self, driver) -> dict:
+        """The keyword config minus the secrets the driver's ``auth`` names; those are saved to the
+        default secret store (the current project's) under the name the resolver reads them by."""
+        auth = getattr(getattr(driver, "manifest", None), "auth", None)
+        if auth is None:
+            return dict(self._config)
+        names = {**{k: k for k in auth.secrets}, **auth.vars}
+        secrets = {names[k]: v for k, v in self._config.items() if k in names and v}
+        if secrets:
+            from flow_sdk.secrets import SecretStore  # noqa: PLC0415
+
+            await (await SecretStore.get()).save(secrets)
+        return {k: v for k, v in self._config.items() if k not in names}
+
+    async def pages(
         self,
         *,
+        size: int = 50,
         poll_every: "float | timedelta | None" = None,
-        page: int = 100,
-    ) -> AsyncIterator["Delivered[SourceItemSpec]"]:
-        """Async-iterate inbound messages as they arrive, each with an ``ack()``.
+    ) -> AsyncIterator["DeliveredPage"]:
+        """Async-iterate inbound messages as they arrive, ``size`` at a time, each page with an
+        ``ack()`` that commits it whole.
 
-        Each cycle polls the source through the poller's slot (a poll already in flight is
-        skipped, not stacked), then drains what landed in INGEST order from the consumer's
-        position. The position is durable inside a named ``workflow()`` — a restart resumes
-        from the last ``ack()`` and hands back anything that was in flight with
-        ``redelivered=True``. Outside a workflow it lives for the loop, as before.
+        THE drain — ``listen()`` is this, flattened. Each cycle polls the source through the
+        poller's slot (a poll already in flight is skipped, not stacked), then drains what landed
+        in INGEST order from the consumer's position, a page of rows at a time. The position is
+        durable inside a named ``workflow()`` — a restart resumes from the last ``ack()`` and hands
+        back anything that was in flight with ``redelivered=True``. Outside a workflow it lives
+        for the loop.
 
-        Items already present when a position is first created are the baseline: an inbox
-        yields arrivals, not history. Our own sent copies and senders outside ``senders``
-        are filtered — and ACKED, so a filtered row never becomes a gap the next drain
-        stops at.
+        Items already present when a position is first created are the baseline: a stream inbox
+        yields arrivals, not history. Our own sent copies and senders outside ``senders`` are
+        dropped from the page — and still covered by its ack, so a filtered row never becomes a
+        gap the next drain stops at. A page with nothing left is acked and skipped.
 
         ``poll_every`` defaults to the driver's attention cadence when it declares one, else
         3 s. The row's own ``poll_interval_seconds`` still governs the heartbeat; this is the
@@ -494,8 +512,8 @@ class Inbox:
         """
         from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-        from flow_sdk.inbox.projection import is_self_address, project_source_item  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import is_self_address, project_source_item  # noqa: PLC0415
 
         source = await self.ensure_source()
         position = await ConsumerPosition.ensure_for(
@@ -511,17 +529,16 @@ class Inbox:
         while True:
             await poll_source(source, datetime.now(timezone.utc))
             while True:
-                rows = await SourceItem.page_after(str(source.id), last_seen, limit=page)
+                rows = await SourceItem.page_after(str(source.id), last_seen, limit=max(1, int(size)))
                 if not rows:
                     break
+                handed: list[Delivered] = []
                 for item in rows:
                     key = key_of(item)
                     last_seen = key
                     redelivered = in_flight_at_start is not None and key <= in_flight_at_start
-                    if position.mark_in_flight(item):
-                        await position.commit()
                     # Place it in its conversation regardless of the filters below — the
-                    # inbox UI shows everything; the LOOP only acts on what passes.
+                    # stream inbox UI shows everything; the LOOP only acts on what passes.
                     try:
                         await project_source_item(item, source=source, announce=False)
                     except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
@@ -530,22 +547,44 @@ class Inbox:
                     if is_self_address(source, item.author_external_id or "") or (
                         self.senders and sender not in self.senders
                     ):
-                        if position.advance_to(item):
+                        # Acked now while nothing in this page has been handed over — an ack is an
+                        # offset, so once something has, the page's own ack (or a later item's) covers it.
+                        if not handed and position.advance_to(item):
                             await position.commit()
                         continue
                     spec = SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
-                    yield Delivered(
+                    handed.append(Delivered(
                         spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered
-                    )
+                    ))
+                page = DeliveredPage(handed, position=position, source_id=str(source.id), last=rows[-1])
+                if not handed:
+                    await page.ack()          # nothing to hand over; the filtered rows are covered
+                    continue
+                # The in-flight stamp names the LAST row handed, so a restart redelivers the page.
+                if position.mark_in_flight(rows[-1]):
+                    await position.commit()
+                yield page
             await asyncio.sleep(cadence)
 
-    def _driver(self):
-        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+    async def listen(
+        self,
+        *,
+        poll_every: "float | timedelta | None" = None,
+        page: int = 100,
+    ) -> AsyncIterator["Delivered[SourceItemSpec]"]:
+        """Async-iterate inbound messages as they arrive, each with an ``ack()`` — ``pages()``
+        flattened, one delivery at a time. ``page`` is the size of the read underneath."""
+        async for delivered_page in self.pages(size=page, poll_every=poll_every):
+            for m in delivered_page:
+                yield m
 
-        return get_driver(self.provider)
+    def _driver(self):
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        return DataDriver.loaded(self.provider)
 
     async def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
-        """The reply to ``item``, in this inbox's own channel shape — the rule
+        """The reply to ``item``, in this stream inbox's own channel shape — the rule
         and the reason are ``DataSource.reply_spec``'s."""
         source = await self.ensure_source()
         return source.reply_spec(item, body=body, attachments=attachments)

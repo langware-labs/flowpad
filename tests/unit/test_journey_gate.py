@@ -6,8 +6,8 @@ import json
 import pytest
 
 import flow_sdk.core.capabilities as caps_mod
+from flow_sdk.assets.types.journey import read_gate
 from flow_sdk.builtin.journey import Journey
-from flow_sdk.fs_store.indexer.functions.journey import read_gate
 
 
 def _journey_dir(tmp_path, gate=None):

@@ -46,6 +46,7 @@ import {
   ProcessIconKey,
   ProcessStatus,
   WorkerMode,
+  type SwitchModeBody,
   WorkerStatus,
   isBusy,
   isProcessRunning,
@@ -62,6 +63,18 @@ import {
   type ProcessHookCallback,
 } from './process-hooks';
 import type { HookEventType } from '../claude_hook_events/event-types';
+
+/** Read-only projection of the backend session naming FSM. */
+export interface SessionNameState {
+  readonly phase: 'unnamed' | 'prompt_fallback' | 'harness' | 'user_pinned' | 'protected_unknown';
+  readonly title: string | null;
+  readonly revision: number;
+  readonly session_id: string | null;
+  readonly source: string | null;
+  readonly fallback: string | null;
+  readonly cursors: Readonly<Record<string, { readonly revision: string; readonly sequence: number | null }>>;
+  readonly legacy_candidates: Readonly<Record<string, string>>;
+}
 
 // Connection membership and PTY recovery are now fully backend-owned:
 //   - membership: PtyRegistry.on_ws_connect/on_ws_disconnect (park/resume) wired
@@ -253,6 +266,21 @@ export interface QueueEntry {
 }
 
 /**
+ * A shown page's live state as the agent receives it (`display-context` action).
+ * `fresh` is false when nothing is stored for the target currently on display.
+ */
+/** `context_data` keys the backend rewrites whole; merged by replacement, never deep-merged. */
+const WHOLESALE_CONTEXT_KEYS = ['display_stack', 'display_context'] as const;
+
+export interface DisplayContextState {
+  fresh: boolean;
+  target: Record<string, unknown> | null;
+  version: number | null;
+  updated_at: string | null;
+  data: Record<string, unknown> | null;
+}
+
+/**
  * Reflected state of a process's prompt queue. Read-only on the frontend:
  * the backend owns the file + the drain; the UI mutates only via the
  * `enqueue` / `dequeue` / `clear-queue` / `set-queue-enabled` actions.
@@ -325,11 +353,12 @@ export interface IAgenticProcess extends IEntity {
   sidecar_shell_id?: string | null;
   /** WebSocket connection ID of the browser tab that opened this process (runtime field, not persisted) */
   connection_id?: string | null;
-  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  /** Compatibility projection: false when the backend naming state protects this name. */
   auto_rename?: boolean;
+  readonly naming_state?: SessionNameState | null;
   /** Last view mode this session was viewed in (`vibe|standard|advanced|dev`).
-   *  Per-session memory: opening the session applies it, changing mode while it
-   *  is open records the new one. See `applyProcessViewMode`. */
+   *  Per-session memory: opening the session applies it. Written only through
+   *  `viewModeMemory` under `VIEW_MODE_STORE` (default: on a mode switch). */
   last_mode?: string | null;
   /**
    * Derived: true when the worker is ready for a new user prompt.
@@ -987,8 +1016,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
 
-  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  /** Compatibility projection: false when the backend naming state protects this name. */
   auto_rename: boolean = true;
+  readonly naming_state: SessionNameState | null;
 
   /**
    * The view mode this session was last seen in — per-SESSION mode memory.
@@ -996,10 +1026,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * Mode used to be one global preference (plus a per-project `last_mode`), so
    * switching to Terminal repainted every open session, not the one in hand.
    * The mode is a property of the session you are looking at: opening a session
-   * applies this, and switching mode while it is open writes it back. Null on a
-   * session that has never been opened under a mode — it adopts (and records)
-   * the current one on first open. Written only through
-   * `applyProcessViewMode` / `stampProcessViewMode` in `view-mode-context`.
+   * applies this. Null until the policy mints it — written only through
+   * `viewModeMemory` (`ts_sdk/src/tabs/view-mode-memory.ts`) under
+   * `VIEW_MODE_STORE`, whose default is: on a mode switch, never on an open.
    */
   last_mode: string | null = null;
 
@@ -1270,6 +1299,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   async removeDir(path: string): Promise<void> {
     await this.post('remove-dir', { path });
     this.additional_dirs = (this.additional_dirs ?? []).filter((d) => d !== path);
+  }
+
+  // ── Display context (the shown page speaks for itself) ─────────────────────
+  // A page shown in this process's display reports its live state. It is bound
+  // to the target on display when written, never starts a turn, and reaches the
+  // agent on its next turn (prompt hook) or via `flow context display`.
+  // `flow_sdk/builtin/agentic_process/display_context.py` owns the semantics.
+
+  /** Replace the shown page's display context with `data` (a JSON object). */
+  async setDisplayContext(data: Record<string, unknown>): Promise<DisplayContextState> {
+    return this.post<DisplayContextState>('set-display-context', { data });
+  }
+
+  /** The display context as the agent sees it; `fresh: false` when nothing current is stored. */
+  async getDisplayContext(): Promise<DisplayContextState> {
+    return this.get<DisplayContextState>('display-context');
   }
 
   // ── Prompt queue (backend-owned; these are thin action wrappers) ───────────
@@ -1631,6 +1676,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.connection_id = entity.connection_id;
     this.auto_rename = entity.auto_rename ?? true;
+    this.naming_state = entity.naming_state ?? null;
     this.last_mode = entity.last_mode ?? null;
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
@@ -2972,6 +3018,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     const theme = hostTerminalTheme();
     actionInfo.bodyParameters = { ...(options ?? {}), ...(theme ? { theme } : {}) };
     const tOpen = performance.now();
+    toplog.log('agentic_process.load', `AgenticProcess.start POST /open sent proc=${this.id.slice(0, 8)}`);
     const result = await dataManager.callAction<
       unknown,
       {
@@ -2983,9 +3030,29 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       } | null
     >(actionInfo);
     toplog.log(
-      'process_load',
+      ['process_load', 'agentic_process.load'],
       `AgenticProcess.start POST /open took ${msSince(tOpen)}ms proc=${this.id.slice(0, 8)} ok=${!!result}`,
     );
+    return this.adoptOpenPayload(result, options);
+  }
+
+  /**
+   * Client half of a PTY launch: adopt the server's open payload and attach.
+   * Shared by {@link start} (`open`) and {@link switchMode}'s Interactive
+   * direction (`switch-mode`), which return the same `_build_open_payload`.
+   * That parity is what lets the toggle avoid `open`, which has no mid-turn
+   * guard and so let a switch put two workers on one transcript (FLOWPAD-2130).
+   */
+  private async adoptOpenPayload(
+    result: {
+      shell_id: string;
+      pty_id: string;
+      session_id: string | null;
+      status?: string;
+      shell: Record<string, unknown>;
+    } | null,
+    options?: { cols?: number; rows?: number; ptyTimeout?: number },
+  ): Promise<boolean> {
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
       this.status = result.status as ProcessStatus;
@@ -3010,7 +3077,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       ptyId: result.pty_id,
     });
     toplog.log(
-      'process_load',
+      ['process_load', 'pty', 'agentic_process.load'],
       `AgenticProcess.start attachPty took ${msSince(tAttach)}ms pty=${result.pty_id?.slice(0, 8)}`,
     );
     // Successful open clears any prior user-stop intent.
@@ -3094,55 +3161,56 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   }
 
   /**
-   * Standardized transport switch — the single way to flip a session between the
-   * interactive PTY terminal (`WorkerMode.Interactive`) and headless CLI /
-   * JSON-stream (`WorkerMode.CLI`). One logical session (one `session_id` /
-   * transcript); routing stays `headless == !visible`, and the durable `pty_mode`
-   * intent is persisted so a reload keeps the chosen transport.
-   *
-   * Frontend → backend: the CLI direction calls the `switch-mode` action (kill
-   * PTY, visible=False, pty_mode=False); the PTY direction routes through the
-   * canonical `start()`/`open` path (which the backend `switch-mode` INTERACTIVE
-   * branch mirrors for non-UI callers) so the live PTY attach happens, plus the
-   * `restarted` event so the terminal clears + re-attaches. Rejected mid-turn
-   * (backend 409); the caller disables the toggle while a turn is in flight.
+   * Flip a session between PTY terminal and headless CLI — one logical session,
+   * durable `pty_mode`, ONE route both ways (`switch-mode`, which 409s
+   * mid-turn). Interactive used to take the unguarded `open` (FLOWPAD-2130).
+   * Only pre/post work differs: Interactive attaches via {@link adoptOpenPayload}
+   * and emits `restarted`; CLI must NOT (it would re-attach a dead PTY).
    */
-  async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
-    if (mode === WorkerMode.Interactive) {
-      const restoreTransport = this.stageTransportIntent({ pty_mode: true, visible: true });
-      try {
-        await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
-        this.emit('restarted', { process: this });
-      } catch (error) {
-        // The open action rejected, so the optimistic transport intent never
-        // became durable. Restore the durable fields and their stale-wire
-        // latch in one scoped step; otherwise later headless broadcasts are
-        // discarded and the UI stays pinned to a terminal that never started.
-        restoreTransport();
-        throw error;
+  async switchMode(
+    mode: WorkerMode,
+    /** Client-only xterm grid, NOT wire data: it seeds `attachPty` so the
+     *  worker's first paint isn't wrapped at 80 cols on a wide viewport. */
+    opts?: { cols?: number; rows?: number },
+  ): Promise<void> {
+    const wantPty = mode === WorkerMode.Interactive;
+    if (!wantPty) {
+      this._userInitiatedStop = true;
+      const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
+      if (shell) {
+        shell.status = ShellStatus.CLOSING;
+        dataManager.notifyEntityChanged(shell);
       }
-      return;
     }
-    // CLI: one `switch-mode` round-trip. Mirror exit()'s optimistic CLOSING +
-    // user-stop guard. Do NOT emit 'restarted' — it drives re-attachPty, wrong
-    // after the PTY is killed; the view's toggle handler owns the chat reconcile.
-    this._userInitiatedStop = true;
-    const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
-    if (shell) {
-      shell.status = ShellStatus.CLOSING;
-      dataManager.notifyEntityChanged(shell);
-    }
-    // Stage the desired CLI transport BEFORE the request, symmetric with the
-    // Interactive branch above. Backend exit/final-save broadcasts happen
-    // before the HTTP response; keeping the prior PTY latch during that window
-    // can discard the authoritative false frame as stale. Roll back both the
-    // fields and latch if the action is rejected.
-    const restoreTransport = this.stageTransportIntent({ pty_mode: false, visible: false });
+    // Staged BEFORE the request: backend broadcasts land before the response,
+    // and the prior latch would discard the authoritative frame as stale.
+    const restoreTransport = this.stageTransportIntent({ pty_mode: wantPty, visible: wantPty });
     const actionInfo = new ActionInfo('switch-mode', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { mode };
+    // Theme is sampled per launch (the CLI reads it at startup) and belongs to
+    // the Interactive arm only — the union makes putting it on CLI a type error.
+    const theme = wantPty ? hostTerminalTheme() : undefined;
+    const body: SwitchModeBody = wantPty
+      ? { mode: WorkerMode.Interactive, ...(theme ? { theme } : {}) }
+      : { mode: WorkerMode.CLI };
+    actionInfo.bodyParameters = body;
     try {
-      await dataManager.callAction(actionInfo);
+      const result = await dataManager.callAction<
+        unknown,
+        {
+          shell_id: string;
+          pty_id: string;
+          session_id: string | null;
+          status?: string;
+          shell: Record<string, unknown>;
+        } | null
+      >(actionInfo);
+      if (wantPty) {
+        await this.adoptOpenPayload(result, { cols: opts?.cols, rows: opts?.rows });
+        this.emit('restarted', { process: this });
+      }
     } catch (error) {
+      // Rejected (409 mid-turn, or a launch failure) — the intent never became
+      // durable, so roll fields and latch back or the UI stays pinned to it.
       restoreTransport();
       throw error;
     }
@@ -3446,20 +3514,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       this.queue = q ? { enabled: !!q.enabled, entries: [...(q.entries ?? [])] } : null;
       delete data.queue;
     }
-    // ``context_data.display_stack`` (the flow-show history) has the SAME
+    // Backend-owned ``context_data`` keys that hold arrays have the SAME
     // array-index-merge hazard as ``queue``: deepAssign recurses into
-    // ``context_data`` and then index-merges the nested array, never shrinking
-    // it — so a dedupe/cap/reorder would leave stale tail entries. Replace the
-    // stack wholesale and strip it from the payload, letting the following
-    // deepAssign deep-merge the REST of context_data untouched.
-    if (data.context_data && typeof data.context_data === 'object' && 'display_stack' in data.context_data) {
-      const ctx = data.context_data as Record<string, unknown>;
-      const stack = ctx.display_stack;
-      this.context_data = {
-        ...(this.context_data ?? {}),
-        display_stack: Array.isArray(stack) ? [...stack] : stack,
-      };
-      const { display_stack: _omit, ...rest } = ctx;
+    // ``context_data`` and index-merges nested arrays, never shrinking them — so a
+    // dedupe/cap/reorder (``display_stack``) or a shorter page state
+    // (``display_context.data``) would leave stale tail entries. Replace these keys
+    // wholesale and strip them from the payload, letting the following deepAssign
+    // deep-merge the REST of context_data untouched.
+    if (data.context_data && typeof data.context_data === 'object') {
+      const rest = { ...(data.context_data as Record<string, unknown>) };
+      for (const key of WHOLESALE_CONTEXT_KEYS) {
+        if (!(key in rest)) continue;
+        const value = rest[key];
+        this.context_data = { ...(this.context_data ?? {}), [key]: Array.isArray(value) ? [...value] : value };
+        delete rest[key];
+      }
       data.context_data = rest as IAgenticProcess['context_data'];
     }
     // Desired-value latch: once the client optimistically sets the transport /

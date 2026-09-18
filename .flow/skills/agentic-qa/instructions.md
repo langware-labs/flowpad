@@ -872,8 +872,8 @@ Any Playwright test whose duration exceeds 60s is reported as **timeout** — a 
 **Deliverable GREEN via isolated runs; full serialized run contaminated by cloud-login TTL.** Validated the staged-reception feature (f1276cd5: download→stage MessageAttachment→explicit install) across the whole share surface. Key learnings:
 - **A long single-threaded hub vitest run outlives the dev instances' cloud-login TTL.** The full `--project hub` run (~29 min serialized, `singleThread:true`) fails its later suites with `Action failed: share, Cloud login required before share()` → share-path 500s + STACK_TRACE_ERROR + download_body 401. The instances were auto-cloud-logged-in at launch but the token lapsed mid-run. PROOF protocol: re-run the 500-failing suites isolated (still fail while logged-out) → `instance_ctl kill+launch dev-1/dev-2` (relaunch re-triggers auto cloud-login; the launch output prints `cloud status ... logged_in`) → re-run isolated = green. **The reliable verdict for the share surface is the machine-read ISOLATED per-suite run, not the full serialized run** (matches the 2026-06-21 "run ONE suite at a time" learning; here the mechanism is token TTL, not host contention).
 - **Staged-reception test-contract rewrites** (the bulk of this cycle's test edits): any receiver-side test that asserted "download materializes the asset into the project" must now do download → poll the staged `MessageAttachment` (scope=null) → POST `/graph/message_attachment/<id>/install {scope,project_id}` → then assert on-disk/entity. Pattern applied to: `test_git_origin_share_roundtrip.py` (pytest, `_install_staged` helper), `asset_share_index_matrix.test.ts`, `plan_share.test.ts`, `skill_share_two_client.test.ts`, `share_matrix.ui.test.ts` (`downloadAndOpenAssetClean` → install then open editor at dock URL), and `test_received_markdown_project_stamping.py`. The no-project case flipped: download now SUCCEEDS+stages (no 409 needs_project); install-without-project_id is the 400.
-- **dev-2 was stuck in VIBE view mode** (`~/.flow/instances/dev-2/preferences.json` `preferences.ui.view_mode:vibe`, persisted Jul 4, pre-dating the cycle; `instance_ctl` bounces do NOT reset preferences.json). Vibe hides the inbox AND the asset editors → browser suites saw "(not rendered)" / 120s warm-up hook timeouts that looked like an assets-refactor regression (7aab4e86 — wrongly suspected, then EXONERATED). Fix: reset the pref + pin `?viewMode=advanced` on browser-driving gotos (matches project_standard_view_default_test_breakage). **When a fresh-context browser suite can't find ANY testid on a route, check the instance's persisted view_mode before blaming code.**
-- **Real product fixes shipped this cycle:** #13 per-fm-id upload coalescing (double fs/upload race × hub non-atomic FSItem upsert lost the blob → receiver 500); #15 readiness predicate treats CLI-transport+live-session+STOPPED as ready (headless-idle toggle wedge; lockstep ts_sdk+flow_sdk); #16 community_tickets_list propagates hub FAIL instead of synthesizing {tickets:[]}; #18 inbox invitation rows render from firstMessage (don't hide behind an unresolved LATEST message). All debugger-approved.
+- **dev-2 was stuck in VIBE view mode** (`~/.flow/instances/dev-2/preferences.json` `preferences.ui.view_mode:vibe`, persisted Jul 4, pre-dating the cycle; `instance_ctl` bounces do NOT reset preferences.json). Vibe hides the stream inbox AND the asset editors → browser suites saw "(not rendered)" / 120s warm-up hook timeouts that looked like an assets-refactor regression (7aab4e86 — wrongly suspected, then EXONERATED). Fix: reset the pref + pin `?viewMode=advanced` on browser-driving gotos (matches project_standard_view_default_test_breakage). **When a fresh-context browser suite can't find ANY testid on a route, check the instance's persisted view_mode before blaming code.**
+- **Real product fixes shipped this cycle:** #13 per-fm-id upload coalescing (double fs/upload race × hub non-atomic FSItem upsert lost the blob → receiver 500); #15 readiness predicate treats CLI-transport+live-session+STOPPED as ready (headless-idle toggle wedge; lockstep ts_sdk+flow_sdk); #16 community_tickets_list propagates hub FAIL instead of synthesizing {tickets:[]}; #18 stream inbox invitation rows render from firstMessage (don't hide behind an unresolved LATEST message). All debugger-approved.
 - **Flagged (senior/hub-repo):** FlowPad hub `fs/upload` non-atomic per-VFSPath (needs standalone hub repro); PTY `submit()` emits no flow_data vs `prompt()` (switch_stress PTY-turn token-miss, #20 — test-issue, #21 rewrites PTY iterations to the prompt action); `input()`/`wait_for_input_ready` doesn't gate a freshly-resumed TUI; hub launch env gaps `COMMUNITY_STAFF_EMAILS` + `TESTING=true`; receiver pre-accept latest-FM materialization.
 - **UX note (not a defect):** the asset review/install modal has no post-install "Open" affordance — receivers open an installed shared asset via the context panel.
 
@@ -938,3 +938,35 @@ Any Playwright test whose duration exceeds 60s is reported as **timeout** — a 
   (:6001/:5002), qa-w2, qa-w3. Local hub :8093 was already UP and healthy all cycle and was never
   restarted. The user's backends :9008 (oss) and :9007 (prod) were never targeted. Playwright:
   headless Chromium, per-category config, JSON reporter per file, private `--output` per runner.
+
+### 2026-09-12 — Staging OAuth preflight
+
+- Staging https://staging.flowpad.ai returned hub-only bootstrap successfully. Fresh Playwright session redirected to login.dev.flowpad.ai; all eight OAuth test routes rejected anonymous requests with 401. This is blocked live validation, not a provider failure or pass. Existing desktop prod session targets app.flowpad.ai and is not staging authentication. Evidence: `_results/2026-09-12-staging-oauth/`.
+
+### User browser preference — 2026-09-12
+
+- For staging hub/OAuth validation, use Google Chrome with the `eran@langware.ai` profile (Chrome profile label `langware.ai`). Explicit user instruction supersedes the generic fresh/headless-browser policy for this task. Continue with the existing account session.
+- Authenticated staging follow-up: GitLab live Test passed as eran@langware.ai. Atlassian/Notion Connected rows returned Not shared with this project while picker showed Select a project; hidden fallback target suspected. GitHub/Slack/Linear reached consent; Google Drive/Microsoft absent. See `_results/2026-09-12-staging-oauth/report.md`.
+
+### 2026-09-15 — cycle stopped after Phase 3 at user request (commit 0ccac558a)
+
+- **Bail 1, always.** Run every phase with `-x` / `--bail 1` and debug the first failure. Phase 3 run to
+  completion produced 33 failures that were ~5 causes, one cascading harness leak among them.
+- **`live_backend` shares the session DB but inherits the sandbox HOME.** Its boot sweep probes vendor CLIs
+  (`claude auth status` → logged out under sandbox HOME) and persists `login_state=IDLE`; every later worker
+  test then refuses to spawn as "signed out". Order-dependent: prove with a pair run, not the full suite.
+  Monkeypatching the pytest process never reaches the subprocess — a lever must run in the subprocess
+  (sitecustomize on PYTHONPATH gated on `FLOW_INSTANCE=live-e2e-*`) or change its env.
+- **Two long tests defaulted to `LOCAL_SERVER_PORT or 9007`** while `pytest_plugin` strips that variable —
+  they wrote rows into the user's `prod` instance. Now fail closed; always export `QA_API_URL` /
+  `SCHEDULE_E2E_API_URL` pointing at the cycle-owned instance.
+- **A timeout after ~12 minutes of transcript silence: check `pmset -g log` first.** "Clamshell Sleep" mid-turn
+  shows in claude's transcript as "Your computer went to sleep mid-response". Prove with the pmset window plus
+  a passing comparable before calling it environmental; `caffeinate` does not stop lid-close sleep.
+- **Copilot interactive PTY:** a bare `pty.fork()` gives a 0x0 window and the TUI paints nothing — set
+  TIOCSWINSZ before judging a capture. Copilot shows "Session in use" when a second process resumes a live
+  session. `prompt()` must type for stdin-channel vendors; IDLE (`assistant.turn_end`) is copilot's turn end.
+- **Codex `sm`/`md` tiers (`gpt-5.4-mini`, `gpt-5.4`) are rejected with a 400 for ChatGPT-account logins** —
+  flagged; read the rollout's `turn_context model=` and `task_complete.error` before debugging a codex turn.
+- **A skill that names a repo-relative source path is unreachable from the worker's cwd** (a temp docs tree);
+  the agent then runs `find /` and blows the budget. Give a cwd-independent command instead.

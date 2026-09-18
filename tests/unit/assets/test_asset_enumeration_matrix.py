@@ -12,8 +12,8 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.assets import Asset, AssetFolder
 from flow_sdk.assets.folder import AssetScanError
+from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from tests.fixtures.asset_tree import write_asset
 
@@ -24,7 +24,6 @@ EXCLUDED_EXTRACTORS = {
     "mcp_server": "a JSON fragment needs its configuration ref",
     "plugin": "a JSON fragment needs its configuration ref",
     "claude_memory": "runtime project-memory roots have no generic mount declaration",
-    "project": "Project identity is application scope, not a declared asset mount",
     "workflow_run": "provider runtime journals have no generic mount declaration",
 }
 REGISTERED = {
@@ -55,8 +54,6 @@ def _write(root: Path, type_name: str, *, mount: str | None = None, name: str = 
         body = f"export const meta = {{id: '{identity}', name: '{name}'}};\n"
     elif main.suffix == ".csv":
         body = "name,value\nfixture,1\n"
-    elif type_name == "secret_origin":
-        body = json.dumps({"data": {"project_id": identity, "env_var": "FIXTURE_TOKEN", "locator": {"kind": "local", "sod_name": "fixture"}}})
     elif type_name == "claude_session":
         body = json.dumps({"sessionId": identity}) + "\n"
     elif type_name == "codex_session":
@@ -131,14 +128,14 @@ def test_skill_bundled_workflow_is_a_declared_child_but_readme_is_support(tmp_pa
 
 
 def test_nested_native_family_keeps_child_identity_and_support_ownership(tmp_path):
-    parent = _write(tmp_path, "data_source_spec")
+    parent = _write(tmp_path, "data_driver")
     child = _write(parent, "micro_app", name="editor")
     support = parent / "README.md"
     support.write_text("Supporting data-source documentation")
     assert Asset.containing(child / "webapp.json").path == child.resolve()
     assert Asset.containing(support).path == parent.resolve()
     assert {(asset.typeid.type, asset.path) for asset in AssetFolder(path=tmp_path, recursive=True).assets()} == {
-        ("data_source_spec", parent.resolve()), ("micro_app", child.resolve()),
+        ("data_driver", parent.resolve()), ("micro_app", child.resolve()),
     }
 
 

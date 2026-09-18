@@ -6,11 +6,11 @@ from pydantic import BaseModel, field_validator
 
 from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.config import default_service_config
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.type_id import TypeId
 
 
 class InvitationTarget(BaseModel):
@@ -47,14 +47,14 @@ class Invitation(Entity):
     sent: Optional[bool] = APIField(False)
     message: Optional[str] = APIField(None)
     # Membership invitations (organization / team) carry a lightweight target
-    # descriptor instead of a backing conversation, so the inbox can render a
+    # descriptor instead of a backing conversation, so the stream inbox can render a
     # generic "Organization/Team invitation" row and accept knows what was
     # joined. None for conversation invitations.
     target_type: Optional[str] = APIField(None)
     target_id: Optional[str] = APIField(None)
     target_name: Optional[str] = APIField(None)
     target_role: Optional[str] = APIField(None)
-    # The inviter, resolved hub-side from the InvitedBy edge — so the inbox row
+    # The inviter, resolved hub-side from the InvitedBy edge — so the stream inbox row
     # can say WHO invited ("<name> invited you to …"), not just what.
     sender_name: Optional[str] = APIField(None)
     sender_user_id: Optional[str] = APIField(None)

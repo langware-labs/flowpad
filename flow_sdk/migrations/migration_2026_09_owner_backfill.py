@@ -2,7 +2,7 @@
 
 ``owner`` (a user or agent typeid) became a field on ``DataSource``,
 ``MessageThread`` and ``Conversation``. Every reader already resolves a row
-that lacks it through ``inbox.projection.owner_of`` — a legacy source that
+that lacks it through ``stream_inbox.projection.owner_of`` — a legacy source that
 carries ``config.agent_id`` is that agent's, everything else is the local
 user's — and the projection adopts an unowned thread into the owner that next
 touches it. So nothing is WRONG on an un-backfilled instance; what is slow is
@@ -43,7 +43,7 @@ async def _repair(dry_run: bool) -> dict[str, int]:
     from flow_sdk.builtin.message_thread import MessageThread
     from flow_sdk.builtin.source_item import SourceItem
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
-    from flow_sdk.inbox.projection import default_owner, owner_of
+    from flow_sdk.stream_inbox.projection import default_owner, owner_of
 
     def unowned() -> QueryFilter:
         # A fresh filter per query: the driver may fold type/scope constraints

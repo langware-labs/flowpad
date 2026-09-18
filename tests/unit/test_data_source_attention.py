@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.ingest.health import SourceHealth
 
@@ -29,7 +30,7 @@ NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 
 async def _source(**kw) -> DataSource:
-    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name="Feed")
+    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"Feed {uuid.uuid4().hex[:8]}", config={"feed_url": "http://127.0.0.1:1/feed"})
     base.update(kw)
     src = DataSource(**base)
     await src.save()
@@ -126,14 +127,13 @@ class TestAttentionFastLane:
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_a_declaring_driver_arms_the_lease(self, monkeypatch):
-        import flow_sdk.ingest.drivers  # noqa: F401 — registers telegram
         from flow_sdk.ingest import poller
 
         async def _no_poll(source, now):
             poller._inflight.discard(str(source.id))
 
         monkeypatch.setattr(poller, "_run_poll", _no_poll)  # no network in a unit test
-        src = await _source(provider="telegram", config={"bot_token": "t"})
+        src = await _source(provider="telegram", config={}, account_key=f"@bot-{uuid.uuid4().hex[:8]}")
         out = await src.request_poll_action()
         assert out.data["attention_seconds"] == 5
         assert str(src.id) in poller._attention
@@ -150,14 +150,14 @@ class TestAttentionFastLane:
         assert str(src.id) not in poller._attention
 
     @pytest.mark.asyncio
+    @pytest.mark.long  # 2.59s — one real 2.5s attention lease, arm → poll → poll → lapse
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_the_loop_polls_at_cadence_and_expires_with_the_lease(self, monkeypatch):
         import time as _time
 
-        import flow_sdk.ingest.drivers  # noqa: F401
         from flow_sdk.ingest import poller
 
-        src = await _source(provider="telegram", config={"bot_token": "t"})
+        src = await _source(provider="telegram", config={}, account_key=f"@bot-{uuid.uuid4().hex[:8]}")
         polled: list[str] = []
 
         async def _fake_run_poll(source, now):
@@ -174,7 +174,7 @@ class TestAttentionFastLane:
         monkeypatch.setattr(poller.asyncio, "sleep", lambda s: real_sleep(min(s, 0.02)))
         monkeypatch.setattr(poller, "ATTENTION_LEASE_SECONDS", 2.5)
         monkeypatch.setattr(
-            "flow_sdk.ingest.drivers.telegram.TelegramDriver.attention_poll_seconds", 1
+            DataDriver.loaded("telegram").cls, "attention_poll_seconds", 1
         )
 
         await src.request_poll_action()
@@ -189,7 +189,6 @@ class TestAttentionFastLane:
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_a_source_parked_mid_lease_drops_off_the_lane(self, monkeypatch):
-        import flow_sdk.ingest.drivers  # noqa: F401
         from flow_sdk.ingest import poller
         from flow_sdk.ingest.health import SourceHealth
 
@@ -197,7 +196,7 @@ class TestAttentionFastLane:
             poller._inflight.discard(str(source.id))
 
         monkeypatch.setattr(poller, "_run_poll", _no_poll)  # no network in a unit test
-        src = await _source(provider="telegram", config={"bot_token": "t"})
+        src = await _source(provider="telegram", config={}, account_key=f"@bot-{uuid.uuid4().hex[:8]}")
         await src.request_poll_action()
         assert str(src.id) in poller._attention
         src.health = SourceHealth.CONFIG_ERROR.value
@@ -214,7 +213,10 @@ class TestAttentionFastLane:
         # the bell returns it. Poking `next` without ringing is an incomplete
         # simulation, and it raced the loop's own wait — which is how this
         # test failed on a loaded machine.
-        poller._attention[str(src.id)]["next"] = 0
+        # The lane may already have made its re-check and dropped the source — the outcome under test.
+        entry = poller._attention.get(str(src.id))
+        if entry is not None:
+            entry["next"] = 0
         poller.wake_attention_lane()
         import time as _time
 
@@ -236,7 +238,6 @@ class TestAttentionFastLane:
         the lane advertises."""
         import time as _time
 
-        import flow_sdk.ingest.drivers  # noqa: F401
         from flow_sdk.ingest import poller
 
         polled: list[str] = []
@@ -246,14 +247,14 @@ class TestAttentionFastLane:
             poller._inflight.discard(str(source.id))
 
         monkeypatch.setattr(poller, "_run_poll", _fake_run_poll)
-        first = await _source(provider="telegram", config={"bot_token": "t"})
+        first = await _source(provider="telegram", config={}, account_key=f"@bot-{uuid.uuid4().hex[:8]}")
         await first.request_poll_action()
         # The loop has now read the schedule and is waiting on it: the only
         # edge it knows is `first`'s next round, a full cadence away.
         await asyncio.sleep(0.2)
         assert polled == [str(first.id)], "the armed source is polled once up front"
 
-        second = await _source(provider="telegram", config={"bot_token": "t"})
+        second = await _source(provider="telegram", config={}, account_key=f"@bot-{uuid.uuid4().hex[:8]}")
         t0 = _time.monotonic()
         await second.request_poll_action()
         while str(second.id) not in polled and _time.monotonic() - t0 < 5:
@@ -271,7 +272,7 @@ class TestTickGridSchedule:
     def test_the_stamp_lands_on_the_minute_grid(self):
         # The RCA's switch: a stamp of :00.031 vs a tick firing :00.019 —
         # 12ms apart — cost a full minute. Flooring removes the coin flip.
-        src = DataSource(provider="rss", name="f", poll_interval_seconds=60)
+        src = DataSource(provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=60, config={"feed_url": "http://127.0.0.1:1/feed"})
         jittered_now = NOW + timedelta(milliseconds=31)  # a real dispatch time
         due = src.schedule_next(jittered_now)
         assert due == NOW + timedelta(seconds=60)
@@ -281,7 +282,7 @@ class TestTickGridSchedule:
         # The next tick fires at :00 plus SMALLER jitter than the stamp's —
         # the exact losing coin flip. On the grid, it is always due.
         src = DataSource(
-            provider="rss", name="f", poll_interval_seconds=60,
+            provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=60, config={"feed_url": "http://127.0.0.1:1/feed"},
             status=SourceStatus.ACTIVE.value,  # is_due gates on lifecycle first
         )
         src.schedule_next(NOW + timedelta(milliseconds=31))
@@ -289,6 +290,6 @@ class TestTickGridSchedule:
         assert src.is_due(next_tick) is True
 
     def test_longer_intervals_keep_their_cadence(self):
-        src = DataSource(provider="rss", name="f", poll_interval_seconds=300)
+        src = DataSource(provider="rss", name=f"f {uuid.uuid4().hex[:8]}", poll_interval_seconds=300, config={"feed_url": "http://127.0.0.1:1/feed"})
         due = src.schedule_next(NOW + timedelta(seconds=3, milliseconds=200))
         assert due == NOW + timedelta(seconds=300), "mid-minute drift floors back to the grid"

@@ -1,15 +1,15 @@
 """Type metadata for SKILL."""
+from flow_sdk.assets.identity import (
+    frontmatter_identity,
+)
+from flow_sdk.assets.layout import Folder, Walk
 from flow_sdk.assets.process_projection import _skill as project_process_asset
 from flow_sdk.assets.types.skill import (
     derive_skill,
     skill_asset_hash,
 )
-from flow_sdk.builtin.skill import SkillSpec
-from flow_sdk.fs_store.indexer.functions._asset_identity import (
-    frontmatter_identity,
-)
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder, Walk
+from flow_sdk.schema.data_spec.skill_spec import SkillSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 

@@ -13,6 +13,8 @@ walk, the real HTTP route. No mock stands in for the nesting.
 
 from __future__ import annotations
 
+import json
+
 import uuid
 from pathlib import Path
 
@@ -57,9 +59,10 @@ def _seed_duplicate_shape(root: Path, agent_name: str) -> None:
     _write_mcp(root / "agentic-assets" / "mcp" / SPEC.name)
     agent_dir = root / "agentic-assets" / "agent" / agent_name
     agent_dir.mkdir(parents=True, exist_ok=True)
-    (agent_dir / "agent.md").write_text(
-        f"---\nname: {agent_name}\nworker_type: claude\n---\n\nA test agent.\n", encoding="utf-8"
+    (agent_dir / "agent.json").write_text(
+        json.dumps({"type": "agent", "name": agent_name, "worker_type": "claude"}) + "\n", encoding="utf-8"
     )
+    (agent_dir / "system_prompt.md").write_text("A test agent.\n", encoding="utf-8")
     _write_mcp(agent_dir / "agentic-assets" / "mcp" / SPEC.name)
 
 

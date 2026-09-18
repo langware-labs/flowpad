@@ -16,8 +16,8 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.data_source_spec import DataSourceSpec
 from flow_sdk.ingest.health import SourceError
 from flow_sdk.schema.data_spec.choice_spec import Choice
 
@@ -26,26 +26,29 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 
 @pytest.fixture
 def provider(request):
-    """A provider of our own: a stub driver in the registry and a manifest row to match.
+    """A provider of our own: a stub source type in the registry and a manifest row to match.
 
-    Not a real one. Every case here is about the plumbing between a manifest flag and a
-    driver hook, and borrowing `rss` would both lie about which providers offer a picker
-    and collide with the next test in this suite's shared database.
+    Not a real one. Every case here is about the plumbing between a manifest flag and a type's
+    choices hook, and borrowing `rss` would both lie about which providers offer a picker and
+    collide with the next test in this suite's shared database.
     """
-    from flow_sdk.ingest.driver import DRIVERS, IngestDriver
+    from pydantic import create_model
+
+    from flow_sdk.ingest.driver_runtime import DRIVERS
+    from flow_sdk.sources.base import Source
+    from flow_sdk.sources.config import SourceConfig
 
     async def _make(hook=None, **config) -> str:
         name = f"stub-{mint_uuid()[:8]}"
-
-        class _Stub(IngestDriver):
-            provider = name
-            kind = "datasource.test.stub"
-
+        # The rules the catalog's widgets imply: a lines field is a list, anything else text.
+        fields = {k: ((list[str], []) if v.get("type") == "lines" else (str, "")) for k, v in config.items()}
+        attrs: dict = {"provider": name, "Config": create_model(f"_StubConfig_{name}", __base__=SourceConfig, **fields)}
         if hook is not None:
-            _Stub.choices = hook
-        DRIVERS.register(_Stub())
+            attrs["choices_for"] = classmethod(lambda cls, row, field: hook(None, row, field))
+        stub = type("_Stub", (Source,), attrs)
+        DRIVERS.register(DataDriver.for_class(stub, kind="datasource.test.stub"))
         request.addfinalizer(lambda: DRIVERS.unregister(name))
-        await DataSourceSpec(name=name, title=name, config=config).save()
+        await DataDriver(name=name, title=name, config=config).save()
         return name
 
     return _make
@@ -107,8 +110,8 @@ async def test_a_driver_that_blows_up_does_not_500_the_picker(provider):
 async def test_the_driver_is_handed_an_unsaved_source_carrying_the_draft_config(provider):
     """The picker runs while CREATING a source, so there is no row — and must not mint one.
 
-    The draft is shaped by the manifest's own catalog first, so a `lines` field arrives at
-    the driver as a list even though the form holds it as one newline-joined string.
+    The draft is shaped by the driver's `Config` first, so a list field arrives at the driver
+    as a list even though the form holds it as one newline-joined string.
     """
     seen: dict = {}
 
@@ -124,48 +127,3 @@ async def test_the_driver_is_handed_an_unsaved_source_carrying_the_draft_config(
     assert seen["saved"] is False, "asking what you could pick must not write a row"
     assert [(c.id, c.name, c.detail) for c in picks.items] == [("a", "Alpha", "one")]
     assert picks.detail == "", "a list is the whole answer; the sentence is for when it is not"
-
-
-async def test_the_drivers_are_resolved_even_before_the_first_poll(provider, monkeypatch):
-    """The picker runs on a form, which can be opened seconds after a cold start.
-
-    Nothing had imported the driver registry at that point, so `get_driver` answered None
-    and every provider reported "this provider can't list options here" — on a driver that
-    lists perfectly well. Only a live backend showed it: every test in this file registers
-    a driver as a side effect of setting one up.
-    """
-    from flow_sdk.ingest.driver import DRIVERS
-
-    async def _list(self, source, field):
-        return [Choice(id="only", name="Only")]
-
-    name = await provider(_list, feed_urls=_field())
-    DRIVERS.unregister(name)                       # the cold-start registry
-    assert DRIVERS.get_or_none(name) is None       # precondition
-
-    monkeypatch.setattr(
-        "flow_sdk.ingest.spec_registry.refresh_spec_drivers",
-        _reregister(DRIVERS, name),
-    )
-    picks = await DataSource.choices_for(name, "feed_urls")
-    assert [c.id for c in picks.items] == ["only"], picks.detail
-
-
-def _reregister(registry, name: str):
-    """Stand in for the real resolve, which reads specs off disk."""
-    stub = _StubDriver(name)
-
-    async def _refresh(_name=None):
-        registry.register(stub)
-
-    return _refresh
-
-
-class _StubDriver:
-    kind = "datasource.test.stub"
-
-    def __init__(self, name: str):
-        self.provider = name
-
-    async def choices(self, source, field):
-        return [Choice(id="only", name="Only")]

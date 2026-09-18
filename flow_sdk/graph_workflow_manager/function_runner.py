@@ -34,8 +34,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.assets.types.graph_workflow_doc import GraphWorkflowNodeDef
     from flow_sdk.graph_workflow_manager.envelope import RunEvent
-    from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowNodeDef
     from flow_sdk.graph_workflow_manager.manager import _Run
 
 logger = logging.getLogger(__name__)
@@ -218,8 +218,10 @@ def _resolve_handler(target: str):
             print("script defines no on_graph_workflow_event(event_name, data, flow_ctx)", file=sys.stderr)
             return None
         return handler
-    from flow_sdk.graph_workflow_manager import graph_workflow_functions
-    from flow_sdk.graph_workflow_manager import demo_callbacks  # noqa: F401 — registration side effect
+    from flow_sdk.graph_workflow_manager import (
+        demo_callbacks,  # noqa: F401 — registration side effect
+        graph_workflow_functions,
+    )
     from flow_sdk.usage_report import callback as _usage_cb  # noqa: F401 — registration side effect
 
     handler = graph_workflow_functions.get(target)

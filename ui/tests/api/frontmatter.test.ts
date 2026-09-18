@@ -1,85 +1,59 @@
-/**
- * Frontmatter accessor API tests — via compute node fs over HTTP (no mocks).
- *
- * Proves `entity.frontmatter`-style get/set (here driven through a real
- * FrontMatterFsRef, the same backing the `slick` skill's `doc`): a write-through
- * `set('version', n)` lands on disk AND preserves the body + all other keys —
- * the guard against the `FrontMatterFsRef.save()` key-drop bug.
- */
-
-import { TypeId, fsManager, FrontMatterFsRef, Frontmatter } from '@sdk';
+import { TypeId, fsManager, FSRef } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
-const COMPUTE_NODE_TYPEID = new TypeId('compute_node', '@local');
-
-const SKILL_MD = `---
+const NODE = new TypeId('compute_node', '@local');
+const CONTENT = `---
 id: 9fe9bee3-ce84-58c1-b047-90629fa5dfd3
-name: slick
-description: A code design lens
-tags: design
+name: sample
+allowed-tools:
+  - Read
+  - Write
+metadata:
+  owner: team
 ---
-
-# slick
 
 Body line one.
 `;
-
-describe('Frontmatter accessor', () => {
-  const signupInfo = getTestSignupInfo();
-  let mdPath: string;
-
-  beforeEach(async (context: any) => {
+describe('asset document action', () => {
+  const signupInfo = getTestSignupInfo(); let ref: FSRef;
+  beforeEach(async (context) => {
     await apiTestSetup(signupInfo, context.task.name);
-    mdPath = `/tmp/flow-test-fm-${Date.now()}/SKILL.md`;
-    await fsManager.writeFile(COMPUTE_NODE_TYPEID, mdPath, SKILL_MD);
+    ref = new FSRef(`/tmp/flow-test-document-${Date.now()}/SKILL.md`, NODE);
+    await ref.write(CONTENT);
+  });
+  afterEach(async () => { await fsManager.delete(NODE, ref.parent.path); });
+  it('preserves structured metadata when editing body', async () => {
+    const before = await ref.readDocument();
+    const after = await ref.updateDocument({ expected_revision: before.revision, body: 'Edited\n' });
+    expect(after.fields['allowed-tools']).toEqual(['Read', 'Write']);
+    expect(after.fields.metadata).toEqual({ owner: 'team' });
+    expect(await ref.read()).toContain('Edited');
+  });
+  it('rejects a stale save without replacing externally edited bytes', async () => {
+    const before = await ref.readDocument(); await ref.write(CONTENT + 'External\n');
+    await expect(ref.updateDocument({ expected_revision: before.revision, body: 'Stale' })).rejects.toMatchObject({ response: { status: 409 } });
+    expect(await ref.read()).toContain('External');
+  });
+  it('patches one typed metadata field and returns a reusable revision', async () => {
+    const before = await ref.readDocument();
+    const after = await ref.updateDocument({ expected_revision: before.revision, set_fields: { eval: true } });
+    const final = await ref.updateDocument({ expected_revision: after.revision, set_fields: { eval: false } });
+    expect(final.fields.eval).toBe(false); expect(final.fields.metadata).toEqual({ owner: 'team' });
+  });
+  it('repairs an exact legacy whiteboard document while preserving its board and later prose', async () => {
+    const board = ref.parent.child('agentic-assets/whiteboard/legacy/board.json');
+    const document = ref.parent.child('agentic-assets/whiteboard/legacy/WHITE_BOARD.md');
+    const typeid = new TypeId('whiteboard', 'bc8a85f1-8ca3-4081-bcd4-5429a0e1c753');
+    await board.write('{"sentinel":"preserve"}');
+    await expect(document.readDocument()).rejects.toMatchObject({response: {status: 404}});
+    await document.ensureDocument(typeid, {name: 'Legacy', description: 'Repair fixture'});
+    const loaded = await document.readDocument();
+    expect(loaded.fields.id).toBe(typeid.id);
+    await document.updateDocument({expected_revision: loaded.revision, body: 'Keep my prose'});
+    await document.ensureDocument(typeid, {name: 'Must not replace'});
+    expect((await document.readDocument()).body).toContain('Keep my prose');
+    expect(await board.read()).toBe('{"sentinel":"preserve"}');
   });
 
-  afterEach(async () => {
-    try {
-      await fsManager.delete(COMPUTE_NODE_TYPEID, mdPath);
-    } catch {
-      // ignore
-    }
-  });
-
-  it('get() reads frontmatter through to disk', async () => {
-    const fm = new Frontmatter(new FrontMatterFsRef(mdPath, COMPUTE_NODE_TYPEID));
-    await fm.load();
-    expect(fm.get('name')).toBe('slick');
-    expect(fm.get('description')).toBe('A code design lens');
-    expect(fm.version).toBe(0); // absent → 0
-  });
-
-  it('set("version", n) writes through and preserves body + other keys', async () => {
-    const fm = new Frontmatter(new FrontMatterFsRef(mdPath, COMPUTE_NODE_TYPEID));
-    await fm.load();
-    await fm.set('version', 7);
-
-    // Independent re-read from disk (fresh accessor) proves persistence.
-    const reloaded = new Frontmatter(new FrontMatterFsRef(mdPath, COMPUTE_NODE_TYPEID));
-    await reloaded.load();
-    expect(reloaded.version).toBe(7);
-    // Other keys survived the write (guards the save() key-drop bug).
-    expect(reloaded.get('id')).toBe('9fe9bee3-ce84-58c1-b047-90629fa5dfd3');
-    expect(reloaded.get('name')).toBe('slick');
-    expect(reloaded.get('description')).toBe('A code design lens');
-
-    // Body preserved verbatim.
-    const raw = await fsManager.download(COMPUTE_NODE_TYPEID, mdPath);
-    expect(raw).toContain('# slick');
-    expect(raw).toContain('Body line one.');
-  });
-
-  it('second set() overwrites in place, not duplicating the key', async () => {
-    const fm = new Frontmatter(new FrontMatterFsRef(mdPath, COMPUTE_NODE_TYPEID));
-    await fm.load();
-    await fm.set('version', 2);
-    await fm.set('version', 5);
-
-    const raw = await fsManager.download(COMPUTE_NODE_TYPEID, mdPath);
-    const occurrences = raw.split('\n').filter((l) => l.startsWith('version:')).length;
-    expect(occurrences).toBe(1);
-    expect(fm.version).toBe(5);
-  });
 });

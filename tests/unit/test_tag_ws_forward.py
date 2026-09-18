@@ -77,9 +77,9 @@ def test_the_ingest_item_lane_is_never_forwarded(monkeypatch):
         )
 
         # Placement is the bounded, post-commit message lane. It must cross so
-        # an open inbox can refresh only after the FlowMessage + pointer exist.
+        # an open stream inbox can refresh only after the FlowMessage + pointer exist.
         projected = ws_forward.event_bus.emit(
-            "inbox.cloud_email.message.projected",
+            "stream_inbox.cloud_email.message.projected",
             "source_item:i-1",
             {"source_id": "s-1", "entity_id": "i-1"},
             ctx={"scope": ["data_source:s-1"]},

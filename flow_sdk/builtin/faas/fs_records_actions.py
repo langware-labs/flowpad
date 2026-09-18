@@ -259,6 +259,7 @@ class FsRecordsActionsMixin:
         from datetime import datetime, timezone  # noqa: PLC0415
 
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+        from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
         from flow_sdk.builtin.worker_history import (  # noqa: PLC0415
             _build_agentic_process_index,
             _load_agentic_processes,
@@ -272,9 +273,6 @@ class FsRecordsActionsMixin:
             IndexProgressTable,
             TypeProgressRow,
             get_shared_indexer,
-        )
-        from flow_sdk.fs_store.indexer.functions.claude_sessions import (  # noqa: PLC0415
-            extract_claude_session_from_path,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
         from flow_sdk.transcript_analyzer.entry import EntryKind  # noqa: PLC0415
@@ -404,7 +402,7 @@ class FsRecordsActionsMixin:
         """
         import os  # noqa: PLC0415
 
-        from flow_sdk.assets.versioning import commit_asset_change  # noqa: PLC0415
+        from flow_sdk.actions.fs.asset_versioning import commit_asset_change  # noqa: PLC0415
 
         body = await request_info.get_post_data() if request_info else {}
         params = {**(request_info.request_parameters or {}), **(body or {})} if request_info else {}
@@ -551,7 +549,7 @@ class FsRecordsActionsMixin:
             # Marker presence is the explicit enrollment signal: only UI paths
             # that represent a real edit call markEdit(). Registry visibility
             # keeps the projection constructible by clients, while db_only
-            # generically removes infrastructure rows (Tab/DataSourceCursor).
+            # generically removes infrastructure rows (Tab/ConsumerPosition).
             eligible_types = None
             if recent_activity:
                 from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
@@ -1855,10 +1853,8 @@ class FsRecordsActionsMixin:
                 return ApiFailResponse(message=f"Project '{project_id}' not found", status_code=404)
             project_cwd = getattr(proj, "fs_storage_mount_path", None)
             if project_cwd:
-                from flow_sdk.fs_store.indexer.functions._claude_projects import (  # noqa: PLC0415
-                    _claude_projects_dir,
-                    decode_claude_project_dir,
-                )
+                from flow_sdk.assets.types.claude_project_path import decode_claude_project_dir
+                from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
 
                 try:
                     target = Path(project_cwd).resolve()
@@ -2076,7 +2072,7 @@ class FsRecordsActionsMixin:
 
     async def _materialize_main_body(self, rec, record_type: str) -> None:
         """Write a just-created asset to disk through the type's serializer
-        (``SKILL.md``, ``agent.md``…) so the new asset is discoverable by a
+        (``SKILL.md``, ``agent.json``…) so the new asset is discoverable by a
         disk-walking scan. Bridges the gap that ``sync_to_db`` (DB row +
         metadata shadow only) leaves for the FSRecord create path."""
         from pathlib import Path  # noqa: PLC0415
@@ -2323,13 +2319,9 @@ class FsRecordsActionsMixin:
                 ar = getattr(record, "_asset_ref", None)
                 if ar is not None:
                     try:
-                        import shutil as _shutil
+                        from flow_sdk.assets.materialize import remove_path
 
-                        ar_path = ar._path
-                        if ar_path.is_dir():
-                            _shutil.rmtree(ar_path, ignore_errors=True)
-                        elif ar_path.exists():
-                            ar_path.unlink()
+                        remove_path(ar._path)
                     except OSError:
                         pass
                 await record_list.delete(uid)
@@ -2383,14 +2375,13 @@ class FsRecordsActionsMixin:
 
         ids_raw = qp.get("ids")
         modified_after_raw = qp.get("modified_after")
-        parent_id = qp.get("parent_id")
         status = qp.get("status")
         limit_raw = qp.get("limit")
         offset_raw = qp.get("offset")
         sort_by = qp.get("sort_by")
         sort_desc_raw = qp.get("sort_desc")
 
-        if not any([ids_raw, modified_after_raw, parent_id, status, limit_raw, offset_raw, sort_by]):
+        if not any([ids_raw, modified_after_raw, status, limit_raw, offset_raw, sort_by]):
             return None
 
         sort_desc = True
@@ -2400,7 +2391,6 @@ class FsRecordsActionsMixin:
         return RecordQuery(
             ids=ids_raw.split(",") if ids_raw else None,
             modified_after=datetime.fromisoformat(modified_after_raw) if modified_after_raw else None,
-            parent_id=parent_id,
             status=status,
             limit=int(limit_raw) if limit_raw else None,
             offset=int(offset_raw) if offset_raw else 0,
@@ -2415,11 +2405,11 @@ class FsRecordsActionsMixin:
     ) -> ApiResponse:
         """Handle path-based source file CRUD: ``/fs-records/file?path=...&json_path=...``.
 
-        Uses ``flow_sdk.fs_store.source_file_records`` to extract a flat list of
+        Uses ``flow_sdk.assets.types.source_file_records`` to extract a flat list of
         typed records keyed by JSON Pointer. Each record carries ``type``,
         ``json_path``, ``source_file``, plus the JSON fragment's own fields.
         """
-        from flow_sdk.fs_store.source_file_records import (  # noqa: PLC0415
+        from flow_sdk.assets.types.source_file_records import (  # noqa: PLC0415
             _delete_pointer,
             _set_pointer,
             extract_from_data,

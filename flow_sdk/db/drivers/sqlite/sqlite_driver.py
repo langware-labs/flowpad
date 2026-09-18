@@ -11,9 +11,10 @@ from collections import defaultdict
 from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from datetime import datetime
-from typing import Any, AsyncIterator, Callable, Dict, List, Literal, Optional, Sequence, Set, Tuple
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Optional, Sequence, Set, Tuple
 
 from fastapi import HTTPException
+from pydantic import TypeAdapter
 from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -62,6 +63,16 @@ from .connection import (
 _standalone_session_var: "ContextVar[Optional[AsyncSession]]" = ContextVar(
     "_sqlite_driver_standalone_session", default=None
 )
+_AFTER_COMMIT_KEY = "flow_after_commit"
+
+
+async def _run_commit_callbacks(session: AsyncSession) -> None:
+    for callback in session.info.pop(_AFTER_COMMIT_KEY, []):
+        try:
+            await callback()
+        except Exception:
+            # The data is already durable; notification failure cannot undo it.
+            logger.exception("Post-commit notification failed")
 
 
 @dataclass
@@ -188,13 +199,16 @@ class SQLiteTransactionHandler(TransactionHandler):
     async def commit(self):
         """Commit the transaction."""
         await self._session.commit()
+        await _run_commit_callbacks(self._session)
 
     async def rollback(self):
         """Rollback the transaction."""
+        self._session.info.pop(_AFTER_COMMIT_KEY, None)
         await self._session.rollback()
 
     async def close(self):
         """Close the session."""
+        self._session.info.pop(_AFTER_COMMIT_KEY, None)
         await self._session.close()
 
 
@@ -491,20 +505,19 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
-        # Partial expression index on a SourceItem's natural key. Ingestion
-        # resolves every record by (data_source, stream, external id) rather
-        # than by a derived id, and does it on EVERY poll to consult the digest
-        # gate — the read that is supposed to cost one indexed lookup and
-        # nothing else. These are JSON fields, not columns, so without this the
-        # gate degrades to a full scan of the type: a 500-item page against a
-        # source holding 50k records compares the IN list against every row,
-        # every minute, forever.
+        # Partial expression index on a SourceItem's natural key (``SOURCE_ITEM.natural_key``).
+        # Ingestion resolves every record by its origin rather than by a derived id, and does it
+        # on EVERY poll to consult the digest gate — the read that is supposed to cost one indexed
+        # lookup and nothing else. These are JSON fields, not columns, so without this the gate
+        # degrades to a full scan of the type.
+        await conn.execute(text("DROP INDEX IF EXISTS ix_entities_source_item_natural_key_v2"))
         await conn.execute(
             text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_natural_key_v2 "
+                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_origin_v3 "
                 "ON entities(json_extract(data, '$.data_source_id'), "
-                "json_extract(data, '$.segment_key'), "
-                "json_extract(data, '$.external_id')) "
+                "json_extract(data, '$.origin_kind'), "
+                "json_extract(data, '$.origin_namespace'), "
+                "json_extract(data, '$.origin_key')) "
                 "WHERE type = 'source_item'"
             )
         )
@@ -528,16 +541,7 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
-        # The same lookup for cursors: `ensure_for` resolves one per stream per
-        # source on every poll, and `data_source_id` alone is selective enough
-        # (a source has streams in the tens, not thousands).
-        await conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_entities_cursor_by_source "
-                "ON entities(json_extract(data, '$.data_source_id')) "
-                "WHERE type = 'data_source_cursor'"
-            )
-        )
+        await conn.execute(text("DROP INDEX IF EXISTS ix_entities_cursor_by_source"))
 
         # A consumer drains a source in INGEST order — `(created_date, id)`, both real
         # columns, so ORDER BY and LIMIT push to SQL. Without this the drain is a type scan
@@ -604,6 +608,18 @@ class SQLiteDBDriver(DBDriver):
                 "ON entities(json_extract(data, '$.channel'), "
                 "json_extract(data, '$.thread_key'), "
                 "json_extract(data, '$.owner')) "
+                "WHERE type = 'message_thread'"
+            )
+        )
+        # ...and its account: the source that read it (`MessageThread.data_source_id`).
+        # `_v3` for the same reason; v1/v2 stay for the pre-account adoption lookup.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_message_thread_natural_key_v3 "
+                "ON entities(json_extract(data, '$.channel'), "
+                "json_extract(data, '$.thread_key'), "
+                "json_extract(data, '$.owner'), "
+                "json_extract(data, '$.data_source_id')) "
                 "WHERE type = 'message_thread'"
             )
         )
@@ -1338,10 +1354,12 @@ class SQLiteDBDriver(DBDriver):
                 yield session
                 await session.commit()
             except Exception:
+                session.info.pop(_AFTER_COMMIT_KEY, None)
                 await session.rollback()
                 raise
             finally:
                 _standalone_session_var.reset(token)
+        await _run_commit_callbacks(session)
 
     # ==================== Entity CRUD ====================
 
@@ -1520,6 +1538,77 @@ class SQLiteDBDriver(DBDriver):
         """Patch one field on an existing row; a missing row stays missing."""
         return await self._patch_data_field(entity_id, entity_type, field_name, value)
 
+    @asynccontextmanager
+    async def write_transaction(self) -> AsyncIterator[None]:
+        """Reuse the request/task writer, or own a short standalone transaction."""
+        async with self._session_ctx():
+            yield
+
+    async def after_commit(self, callback: Callable[[], Awaitable[None]]) -> None:
+        from flow_sdk.request_context.methods import get_current_transaction
+
+        bound = get_current_transaction()
+        if not isinstance(bound, AsyncSession):
+            bound = _standalone_session_var.get()
+        if bound is None:
+            await callback()
+        else:
+            bound.info.setdefault(_AFTER_COMMIT_KEY, []).append(callback)
+
+    async def update_existing_data_fields(
+        self, entity_id: str, entity_type: str, values: dict[str, object]
+    ) -> tuple[DBBaseRecord | None, bool]:
+        """One UPDATE for a maintained aggregate; never upsert a deleted row."""
+        if not values:
+            return None, False
+        for field_name in values:
+            if not field_name or not field_name.replace("_", "").isalnum():
+                raise ValueError(f"Invalid entity data field: {field_name!r}")
+        async with self._session_ctx() as session:
+            result = await session.execute(select(EntitySchema).where(
+                EntitySchema.id == entity_id, EntitySchema.type == entity_type.lower(),
+            ))
+            schema = result.scalar_one_or_none()
+            if schema is None:
+                return None, False
+            current = self._schema_to_entity(schema)
+            arguments: list = []
+            for field_name, value in values.items():
+                field = current.__class__.model_fields.get(field_name)
+                if field is None:
+                    raise ValueError(f"Unknown {entity_type} data field: {field_name!r}")
+                validated = TypeAdapter(field.annotation).validate_python(value)
+                setattr(current, field_name, validated)
+                arguments.extend((f"$.{field_name}", func.json(json.dumps(value, cls=SafeJSONEncoder))))
+            self.apply_update_fields(current)
+            await session.execute(update(EntitySchema).where(
+                EntitySchema.id == entity_id, EntitySchema.type == entity_type.lower(),
+            ).values(
+                updated_by=current.updated_by, updated_date=current.updated_date,
+                updated_through=current.updated_through,
+                data=func.json_set(func.coalesce(EntitySchema.data, "{}"), *arguments),
+            ))
+            current._dirty = False
+            return current, True
+
+    async def _preserve_managed_data_fields(self, entity, session: AsyncSession) -> None:
+        """A type's service-owned fields survive stale ordinary and bulk saves.
+
+        Read under the SAME writer transaction as the following UPDATE. A
+        pre-save entity hook cannot provide this guarantee: another writer can
+        commit between its read and the actual database update.
+        """
+        field_policy = getattr(entity.__class__, "preserved_fields_on_save", None)
+        if field_policy is None:
+            return
+        result = await session.execute(select(EntitySchema.data).where(EntitySchema.id == entity.id))
+        raw = result.scalar_one_or_none()
+        current_data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        for field_name in field_policy(current_data):
+            field = entity.__class__.model_fields[field_name]
+            value = TypeAdapter(field.annotation).validate_python(current_data.get(field_name))
+            setattr(entity, field_name, value)
+
     async def _create_entity(self, entity: DBBaseRecord, owner: TypeId | None, session: AsyncSession) -> DBBaseRecord:
         """Create a new entity.
 
@@ -1575,6 +1664,7 @@ class SQLiteDBDriver(DBDriver):
         if not hasattr(entity, "created_by"):
             raise HTTPException(status_code=400, detail=f"Entity with ID {entity.id} already exists")
 
+        await self._preserve_managed_data_fields(entity, session)
         self.apply_update_fields(entity)
 
         # Get data dict for dynamic fields
@@ -1621,6 +1711,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def _bulk_update_entity(self, session, entity) -> None:
         """UPDATE a single entity row inside an open session."""
+        await self._preserve_managed_data_fields(entity, session)
         self.apply_update_fields(entity)
         data_dict = self._get_entity_data_dict(entity)
         entity_type = (entity.type or entity.get_type()).lower()

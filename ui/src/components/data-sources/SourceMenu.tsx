@@ -8,12 +8,14 @@
  * (Runs). Both links are URL-first: they navigate, and the destination reads its
  * own scope off the URL.
  */
-import type { DataSource, DataSourceSpec } from '@sdk';
-import { History, LayoutPanelLeft, MoreHorizontal, Pencil, RadioTower, Rewind, Trash2 } from 'lucide-react';
+import { FSRef, TypeId, type DataSource, type DataDriver } from '@sdk';
+import { FolderOpen, History, LayoutPanelLeft, MoreHorizontal, Pencil, RadioTower, Rewind, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useAssetApps } from '@src/hooks/flow-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { notify } from '@src/notifications';
+import { errorMessage } from '@src/lib/error-message';
 import { Button } from '@src/components/ui/button';
 import {
   DropdownMenu,
@@ -26,7 +28,7 @@ import {
 interface Props {
   source: DataSource;
   /** The source's definition — the apps NESTED INSIDE it are offered here. */
-  spec?: DataSourceSpec | null;
+  spec?: DataDriver | null;
   onToggleEnabled: () => void;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
@@ -86,6 +88,19 @@ export function SourceMenu({ source, spec, onToggleEnabled, onEdit, onReplay, on
             {t`Open ${app.name}`}
           </DropdownMenuItem>
         ))}
+        {/* The definition's folder — its manifest, driver and the apps above. */}
+        {spec?.asset_ref && (
+          <DropdownMenuItem
+            data-testid={`source-reveal-${source.id}`}
+            onSelect={() =>
+              void new FSRef(spec.asset_ref!, new TypeId('compute_node', '@local')).open().catch((error) =>
+                notify.error({ title: t`Could not open the folder`, message: errorMessage(error, spec.asset_ref!) }),
+              )
+            }
+          >
+            <FolderOpen className="size-3.5" /> {t`Reveal in Finder/Explorer`}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onSelect={() => navigation.openDock(DockPointer.forEvents(undefined, { target: `data_source:${source.id}` }))}
         >

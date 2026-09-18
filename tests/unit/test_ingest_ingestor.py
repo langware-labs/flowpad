@@ -22,7 +22,6 @@ def _item(**kw) -> SourceItemSpec:
         data_source_id="ds-ingest-test",
         provider="rss",
         kind="content.feed.item",
-        segment_key="https://example.test/feed.xml",
         external_id=f"ext-{uuid.uuid4().hex[:10]}",
         name="A title",
         body="Some prose",

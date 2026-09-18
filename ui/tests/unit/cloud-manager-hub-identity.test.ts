@@ -219,6 +219,38 @@ describe('CloudManager hub identity', () => {
     expect(sdk.dataContext.currentUser?.email).toBe('bob@local.test');
   });
 
+  it('announces a connection change learned from a status refresh', async () => {
+    // Staging 2026-09-15: the bootstrap seed carried no connection slot, and the
+    // /cloud/status refresh applied `connected` silently. Login did not change,
+    // so nothing emitted and the Connections row read "Not connected" for a
+    // signed-in account with a live hub socket.
+    const { sdk } = await createIdentityRealm('http://localhost:6001/api/v1');
+    sdk.setSupportedPagesForHubMode(['desk']);
+    const login = {
+      status: 'logged_in' as const,
+      user: { id: 'b0b00000-0000-4000-8000-000000000001', type: 'user', email: 'bob@local.test', name: 'Bob' },
+      reason: null,
+    };
+    await sdk.cloudManager.bootstrap({
+      user: LOCAL_USER,
+      desktop_info: { cloud_url: 'https://cloud.flowpad.test', login },
+    });
+    expect(sdk.cloudManager.connectionSlot.status).toBe('disconnected');
+
+    vi.mocked(sdk.apiClient.get).mockResolvedValue({
+      cloud_url: 'https://cloud.flowpad.test',
+      login,
+      connection: { status: 'connected', error: null },
+    } as never);
+    const changed = vi.fn();
+    sdk.cloudManager.on('connection_status_changed', changed);
+
+    await sdk.cloudManager.fetchStatus();
+
+    expect(sdk.cloudManager.connectionSlot).toEqual({ status: 'connected', error: null });
+    expect(changed).toHaveBeenCalledWith({ status: 'connected', error: null });
+  });
+
   it('bypasses desktop secret provisioning before hub navigation login', async () => {
     const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);

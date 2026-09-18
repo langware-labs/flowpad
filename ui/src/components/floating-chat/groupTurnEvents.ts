@@ -6,9 +6,13 @@ import { transcriptEntry } from './transcriptEntry';
 /**
  * Groups a flat FlowData stream into a sequence of "turn groups" suitable for
  * the dense floating-chat layout: text-shaped messages stay as-is, and any
- * contiguous run of tool/reasoning/status/error events between two messages
- * collapses into a single dense group that the UI renders as one row with an
- * expand toggle.
+ * contiguous run of tool/status/error events between two messages collapses
+ * into a single dense group that the UI renders as one row with an expand
+ * toggle.
+ *
+ * A contiguous run of REASONING frames collapses the same way into its own
+ * collapsible `thinking` row (`ThinkingSummary`), independent of the
+ * dense group's "show tool calls" gate.
  *
  * Why this lives client-side: the worker drivers (Claude / Codex
  * `event_to_flowdata.py`) emit each event individually with no notion of
@@ -29,7 +33,9 @@ export type TurnGroup =
       skillName?: string;
     }
   | { kind: 'worker-unavailable'; flowData: FlowData; index: number }
-  | { kind: 'dense'; events: FlowData[]; index: number };
+  | { kind: 'dense'; events: FlowData[]; index: number }
+  /** Every REASONING frame between two messages, collected into its own collapsible row (`ThinkingSummary`), separate from `dense` and its "show tool calls" gate. */
+  | { kind: 'thinking'; events: FlowData[]; index: number };
 
 const MESSAGE_TYPES = new Set<string>([
   FlowElementTypes.USER_MESSAGE,
@@ -40,7 +46,6 @@ const MESSAGE_TYPES = new Set<string>([
 const DENSE_TYPES = new Set<string>([
   FlowElementTypes.TOOL_CALL,
   FlowElementTypes.TOOL_RESULT,
-  FlowElementTypes.REASONING,
   FlowElementTypes.STATUS,
   FlowElementTypes.ERROR,
 ]);
@@ -58,12 +63,12 @@ const NON_ACTIVITY_SUBTYPES = new Set<string>(['token_usage', 'meta', 'summary']
 const NO_LIVE_EVENTS: FlowData[] = [];
 
 /**
- * Split the trailing "in-flight" dense group off a grouped turn stream: while a
- * turn is `active`, its still-running tool/reasoning events are the last dense
- * group, which a chat surface can surface separately (e.g. a live footer chip)
- * instead of inline. Returns the groups to render inline plus the live turn's
- * events (empty when idle or the last group is a message). The notion of a
- * "live group" lives here, next to `groupTurnEvents`, rather than in a consumer.
+ * Split the trailing "in-flight" dense group off a grouped turn stream: while
+ * `active`, its still-running tool/status/error events are the last dense
+ * group, split out so a chat surface can show it separately (e.g. a footer chip).
+ *
+ * A live `thinking` group is NOT split off this way — it stays inline,
+ * growing in place; see `ThinkingSummary`.
  */
 export function splitLiveGroup(
   groups: TurnGroup[],
@@ -109,6 +114,9 @@ export function createTurnGrouper(): TurnGrouper {
   let committed: TurnGroup[] = [];
   /** Trailing dense run, not yet sealed — rebuilt with fresh identity per call. */
   let tail: FlowData[] = [];
+  /** Trailing reasoning run, not yet sealed — parallels `tail` but for REASONING
+   *  frames, so a thinking block never merges into the tool/status chip. */
+  let thinkingTail: FlowData[] = [];
   let skillCallIds = new Set<string>();
   /** Name from the most recent dropped Skill call, awaiting its meta message. */
   let pendingSkillName: string | null = null;
@@ -124,6 +132,7 @@ export function createTurnGrouper(): TurnGrouper {
   const reset = () => {
     committed = [];
     tail = [];
+    thinkingTail = [];
     skillCallIds = new Set<string>();
     pendingSkillName = null;
     emittedByEntryId = new Map<string, FlowData>();
@@ -167,17 +176,34 @@ export function createTurnGrouper(): TurnGrouper {
     tail = [];
   };
 
+  /** Seal the reasoning run collected since the last message, if any. Kept
+   *  distinct from `flushTail` so a caller could flush one without the
+   *  other, though every current call site flushes both together. */
+  const flushThinkingTail = () => {
+    if (thinkingTail.length === 0) return;
+    committed.push({ kind: 'thinking', events: thinkingTail, index: committed.length });
+    thinkingTail = [];
+  };
+
   const consume = (item: FlowData) => {
     const t: string = item.elementType;
     if (MESSAGE_TYPES.has(t)) {
+      // Thinking precedes the tool/status summary, which precedes the
+      // message it explains — "the agent thought, then acted, then replied".
+      flushThinkingTail();
       flushTail();
       const isMeta = item.attributes['is-meta'] === 'true';
       const skillName = isMeta && pendingSkillName ? pendingSkillName : undefined;
       if (isMeta) pendingSkillName = null;
       committed.push({ kind: 'message', flowData: item, index: committed.length, skillName });
     } else if (t === FlowElementTypes.WORKER_UNAVAILABLE) {
+      flushThinkingTail();
       flushTail();
       committed.push({ kind: 'worker-unavailable', flowData: item, index: committed.length });
+    } else if (t === FlowElementTypes.REASONING) {
+      // Collected separately from DENSE_TYPES so a thinking summary never
+      // merges into the generic tool/status chip — see the `thinking` TurnGroup.
+      thinkingTail.push(item);
     } else if (DENSE_TYPES.has(t)) {
       if (NON_ACTIVITY_SUBTYPES.has(item.attributes['subtype'])) return;
       // A skill invocation is already represented in the chat by the skill's
@@ -238,10 +264,16 @@ export function createTurnGrouper(): TurnGrouper {
       }
       for (let i = start; i < items.length; i++) consume(items[i]);
       prevItems = items;
-      lastOutput =
-        tail.length > 0
-          ? [...committed, { kind: 'dense', events: [...tail], index: committed.length }]
-          : [...committed];
+      // Mirrors commit order: a still-open thinking run renders before the
+      // still-open tool/status run, both after the last committed group.
+      const trailing: TurnGroup[] = [];
+      if (thinkingTail.length > 0) {
+        trailing.push({ kind: 'thinking', events: [...thinkingTail], index: committed.length + trailing.length });
+      }
+      if (tail.length > 0) {
+        trailing.push({ kind: 'dense', events: [...tail], index: committed.length + trailing.length });
+      }
+      lastOutput = trailing.length > 0 ? [...committed, ...trailing] : [...committed];
       return lastOutput;
     },
   };

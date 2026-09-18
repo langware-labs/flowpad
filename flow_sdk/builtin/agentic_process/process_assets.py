@@ -20,6 +20,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: The SDK-shipped persona of a Vibe session (``.claude/agents/vibe.md``). A
+#: session carrying it has a display pane beside the chat.
+VIBE_PERSONA_NAME = "vibe"
+
 class SystemInstructionAssets(DataSpec):
     """This process's asset MOUNT, plus the instruction text when there is any.
 
@@ -83,6 +87,14 @@ class ProcessAssets:
                 projection = await self._place_projection(ref, projection)
             if set_ap_persona:
                 self.process.process_persona_path = projection.path.relative_to(self._process_assets_path()).as_posix()
+            # The hook follows the VIBE LAYER, not the persona. An agent session
+            # (`prepareAgentSession`) embeds vibe with `set_ap_persona=False` on
+            # purpose — the agent must keep its own identity rather than becoming
+            # "the vibe agent" — but it has exactly the same display beside it,
+            # and gating the hook on the persona left every auto-launched agent
+            # blind to the page it had just opened.
+            if projection.name == VIBE_PERSONA_NAME:
+                self._enable_display_context_hook()
             self._drop_legacy_agent_name(projection.name)
             self._normalize_process_asset_mount()
             self._record_embedded_ref(ref)
@@ -90,6 +102,22 @@ class ProcessAssets:
             return ApiSuccessResponse(data={"ok": True, "name": projection.name, "ref": str(ref)})
         except (OSError, ValueError, LookupError) as exc:
             return ApiFailResponse(message=str(exc))
+
+    def _enable_display_context_hook(self) -> None:
+        """A Vibe session has a display, so its worker answers ``UserPromptSubmit``
+        with the shown page's display context (``display_context.py``).
+
+        Set here, while the persona is loaded before launch, so it never flips
+        ``restart_required``. Only for drivers that read the hook's answer back.
+        """
+        from flow_sdk.builtin.hooks.types import HookEventType  # noqa: PLC0415
+
+        event = HookEventType.USER_PROMPT_SUBMIT
+        if not self.process.hooks.supports_response(event):
+            return
+        events = set(self.process.process_hook_events or [])
+        if event.value not in events:
+            self.process.process_hook_events = sorted({*events, event.value})
 
     def _drop_legacy_agent_name(self, name: str | None) -> None:
         """Migrate-on-touch: strip a legacy ``embedded_subagent_ids`` name entry."""
@@ -449,8 +477,11 @@ class ProcessAssets:
 
     async def _materialize_source(self, ref: TypeId, *, source=None,
                                   mode: MaterializationMode = MaterializationMode.COPY):
+        from flow_sdk.assets import Asset
         from flow_sdk.assets.process_projection import resolve_embedding
+        from flow_sdk.fs_store.record_paths import get_default_records_root
 
+        source = source or Asset.from_typeid(ref, records_root=get_default_records_root())
         root = self.ensure_process_assets().os_path
         skills_root = self._skills_root(root)
         if ref.type == EntityType.SKILL and not skills_root.resolve().is_relative_to(root.resolve()):

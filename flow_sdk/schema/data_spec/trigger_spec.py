@@ -36,10 +36,26 @@ from typing import Annotated, Any, ClassVar, Optional
 
 from pydantic import ConfigDict, StringConstraints, model_validator
 
-from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class RunAgentActionSpec(DataSpec):
+    """Run an Agent headlessly with one prompt.
+
+    The agent's own launch bundle (worker, model, system prompt, MCP) applies —
+    this names WHO and WHAT TO ASK, never how. ``agent`` empty means "my parent":
+    the trigger nested at ``agent/<name>/agentic-assets/trigger/<t>/`` runs the
+    agent it lives in, exactly as ``run_wizard: ""`` does for a wizard.
+    """
+
+    spec_kind: ClassVar[str] = "trigger.run_agent"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    #: The agent to run, by TypeId (``agent-<uuid>``). Empty = the parent agent.
+    agent: str = ""
+    prompt: NonBlank
 
 
 class TriggerActionSpec(DataSpec):
@@ -80,8 +96,10 @@ class TriggerActionSpec(DataSpec):
     callback: Optional[str] = None
     #: A TypeId to notify.
     notify_entity: Optional[str] = None
+    #: An agent to run with a prompt — the scheduled-agent-run verb.
+    run_agent: Optional[RunAgentActionSpec] = None
 
-    VERBS: ClassVar[tuple[str, ...]] = ("run_wizard", "run_script", "callback", "notify_entity")
+    VERBS: ClassVar[tuple[str, ...]] = ("run_wizard", "run_script", "callback", "notify_entity", "run_agent")
 
     @model_validator(mode="after")
     def _exactly_one_verb(self) -> "TriggerActionSpec":
@@ -131,7 +149,14 @@ class ScheduleTriggerSpec(DataSpec):
     #: cron / interval / date.
     every: NonBlank
     expr: NonBlank
-    #: Prompt handed to the agentic process this schedule spawns.
+    #: IANA zone the clock is read in (``Asia/Jerusalem``). Empty = the machine's
+    #: local zone. Carried in the document because a schedule travels with its
+    #: agent: "daily at 09:00" must mean the author's 09:00 on a UTC sandbox too.
+    timezone: str = ""
+    #: The place (Deployment id) this schedule runs on. Only the machine that
+    #: place runs on arms it. Empty = legacy: armed on every machine that indexes it.
+    runs_on: str = ""
+    #: LEGACY: prompt for a bare agentic process. Use a ``run_agent`` action instead.
     instruction: str = ""
     workdir: str = ""
 

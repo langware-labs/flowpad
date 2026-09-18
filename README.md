@@ -14,8 +14,7 @@ Download the latest release for your platform:
 
 | Platform | Download                                                                                                          |
 |----------|-------------------------------------------------------------------------------------------------------------------|
-| **macOS (Apple Silicon)** | [Flowpad-arm64.dmg](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-arm64.dmg)          |
-| **macOS (Intel)** | [Flowpad-x64.dmg](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-x64.dmg)              |
+| **macOS (Apple Silicon & Intel)** | [Flowpad-universal.dmg](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-universal.dmg) |
 | **Windows** | [Flowpad-Setup.exe](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-Setup.exe)          |
 | **Linux (AppImage)** | [Flowpad-x64.AppImage](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-x86_64.AppImage) |
 | **Linux (deb)** | [Flowpad-x64.deb](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-amd64.deb)            |

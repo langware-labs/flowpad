@@ -142,7 +142,7 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
             action: 'render_error',
             title: t`Conversation not found`,
             message: t`This conversation no longer exists or is unavailable.`,
-            link: { label: t`Go to inbox`, pointer: DockPointer.forInbox() },
+            link: { label: t`Go to stream inbox`, pointer: DockPointer.forStreamInbox() },
           },
           'conversation',
           e,

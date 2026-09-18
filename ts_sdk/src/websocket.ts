@@ -79,9 +79,14 @@ export interface ControlMessage extends BaseMessage {
 
 export interface OAuthMessage extends BaseMessage {
   oauth_request_id: string;
-  status: 'success' | 'error';
+  status: 'success' | 'error' | 'cancelled';
   message?: string | null;
   user?: Record<string, any> | null;
+  // Sent to the initiating connection only (flow_sdk/core/oauth/flows.py), so
+  // that screen can confirm without a follow-up read. Absent from older senders.
+  provider?: string | null;
+  identity?: string | null;
+  code?: string | null;
 }
 
 export interface HubClientErrorMessage extends BaseMessage {
@@ -120,6 +125,7 @@ export interface ToplogStateMessage extends BaseMessage {
   message_type: 'toplog_state_msg';
   enabled: boolean;
   filter: Record<string, boolean>;
+  persist?: boolean;
 }
 
 /** The unified event-bus frame — one serialized FlowEvent (docs/flow-events.md). */
@@ -205,6 +211,9 @@ export interface RestApiMessage extends BaseMessage {
   // Per-call hub-reflection opt-in (default false). The WS-REST handler copies
   // this onto request_info.hub_reflect (the HTTP path uses the Hub-Reflect header).
   hub_reflect?: boolean;
+  // This call names its socket as the initiator (the HTTP path sends
+  // X-Flow-Connection-Id). The handler already knows the connection id.
+  carries_initiator?: boolean;
 }
 
 export interface ResponseMessage extends BaseMessage {
@@ -802,7 +811,7 @@ export class ConnectionManager extends EventEmitter {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(message.message_id);
         toplog.log(
-          'process_load',
+          ['process_load', 'pty', 'agentic_process.load'],
           `WS request TIMEOUT after ${(performance.now() - tSent).toFixed(0)}ms (budget ${timeoutMs}ms) ` +
             `${message.method} action=${message.action ?? ''} target=${message.target_typeid?.type ?? ''}-${(message.target_typeid?.id ?? '').slice(0, 8)} pending=${this.pendingRequests.size}`,
         );

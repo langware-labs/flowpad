@@ -12,18 +12,19 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.source_item import EmailMessageSpec, SlackMessageSpec
-from flow_sdk.inbox.outbound import ChannelSendUnavailable, resolve_reply_target
+from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+from flow_sdk.stream_inbox.outbound import ChannelSendUnavailable, resolve_reply_target
 
 LOCAL_USER_ID = "9f0b1c2d-3e4f-4a5b-8c7d-6e5f4a3b2c1d"
 AGENT_ID = "5a1c9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c"
-AGENT_SENDER = f"agent:{AGENT_ID}"
+AGENT_SENDER = MessageSender.agent(AGENT_ID).wire_id
 CONVERSATION = "023f16d6-ba1d-5f8b-8337-78bf9a2e9264"
 
 
 def _message(sender_id: str, item_id: str, kind: str = "agentmail", source_id: str = "ds-1"):
     # Two halves, mirroring the entity: `origin` travels, `origin_local` does not.
     return SimpleNamespace(
-        sender_id=sender_id,
+        sender=MessageSender.from_wire(sender_id),
         origin=SimpleNamespace(kind=kind),
         origin_local=SimpleNamespace(data_source_id=source_id, source_item_id=item_id),
     )
@@ -31,19 +32,19 @@ def _message(sender_id: str, item_id: str, kind: str = "agentmail", source_id: s
 
 def _shared_message(sender_id: str, kind: str = "agentmail"):
     return SimpleNamespace(
-        sender_id=sender_id,
+        sender=MessageSender.from_wire(sender_id),
         origin=SimpleNamespace(kind=kind),
         origin_local=None,
     )
 
 
-def _item(item_id: str, author: str, subject: str, segment_key: str = ""):
-    # `segment_key` is the CHANNEL on a chat record — what a channel-addressed
-    # driver replies to, and what an author-addressed one ignores.
+def _item(item_id: str, author: str, subject: str, origin_namespace: str = ""):
+    # The origin namespace's trailing component is the CHANNEL on a chat record —
+    # what a channel-addressed driver replies to, and what an author-addressed one ignores.
     return SimpleNamespace(
         id=item_id, author_external_id=author, name=subject,
         thread_key="t-1", external_id=f"<{item_id}@mail>",
-        segment_key=segment_key,
+        origin_namespace=origin_namespace,
     )
 
 
@@ -70,6 +71,11 @@ def wire(monkeypatch):
 
     monkeypatch.setattr("flow_sdk.builtin.flow_message.FlowMessage.get_all", _get_all)
     monkeypatch.setattr("flow_sdk.builtin.user.User.get_local", _get_local)
+    # The cloud identity comes from the login state, not the DB — pinned so the
+    # developer's own hub login never leaks in. A test sets `state["cloud"]`.
+    state["cloud"] = None
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.is_logged_in", lambda: state["cloud"] is not None)
+    monkeypatch.setattr("flow_sdk.cli.app_config.get_user", lambda: {"id": state["cloud"]})
     monkeypatch.setattr("flow_sdk.builtin.data_source.DataSource.get_one", _source_one)
     monkeypatch.setattr("flow_sdk.builtin.source_item.SourceItem.get_one", _item_one)
     # A real driver answers `outbound_spec()`; the default is the email rule.
@@ -77,7 +83,7 @@ def wire(monkeypatch):
     state["spec"] = EmailMessageSpec
 
     monkeypatch.setattr(
-        "flow_sdk.ingest.driver.get_driver",
+        "flow_sdk.builtin.data_driver.DataDriver.loaded",
         lambda _p: SimpleNamespace(sends=state["sends"], outbound_spec=lambda _source: state["spec"]),
     )
     return state
@@ -100,6 +106,18 @@ class TestItRepliesToTheCorrespondent:
         # The whole point. Addressing "mine" would mail us our own reply.
         assert target.to == "joe@agentmail.to"
         assert target.in_reply_to == "<theirs@mail>"
+
+    @pytest.mark.asyncio
+    async def test_our_reply_mirrored_back_under_the_cloud_id_is_skipped(self, wire):
+        # A reply sent through the hub mirror comes back stamped with the CLOUD user id.
+        wire["cloud"] = "cloud-7"
+        wire["messages"] = [_message("cloud-7", "mine"), _message("agentmail:joe@agentmail.to", "theirs")]
+        wire["items"] = {
+            "mine": _item("mine", "eran-1968@agentmail.to", "Re: Round trip"),
+            "theirs": _item("theirs", "joe@agentmail.to", "Round trip"),
+        }
+
+        assert (await resolve_reply_target(CONVERSATION)).to == "joe@agentmail.to"
 
     @pytest.mark.asyncio
     async def test_the_newest_inbound_wins_not_the_oldest(self, wire):
@@ -190,7 +208,7 @@ class TestItKnowsBothOfOurIdentities:
     """An agent's mailbox is ours too, even though it is not the local user.
 
     ``_sender_for`` deliberately stamps an agent's own sent copies with
-    ``agent:<id>`` rather than the human's id, so the owner does not appear to
+    ``MessageSender.agent`` rather than the human's id, so the owner does not appear to
     have written replies they never saw. A reply resolver that knows only the
     user id therefore reads those copies as a stranger — and since the recipient
     IS the target message's sender, the agent ends up mailing itself.
@@ -264,7 +282,7 @@ class TestAChannelRepliesToTheChannel:
         wire["spec"] = SlackMessageSpec
         wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
         wire["messages"] = [_message("slack:U06L8JSQJ1X", "i-1", kind="slack")]
-        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", segment_key="C08L1P4C95J")}
+        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", origin_namespace="T0123/C08L1P4C95J")}
 
         target = await resolve_reply_target(CONVERSATION)
 
@@ -276,7 +294,7 @@ class TestAChannelRepliesToTheChannel:
         wire["spec"] = SlackMessageSpec
         wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
         wire["messages"] = [_message("slack:U06L8JSQJ1X", "i-1", kind="slack")]
-        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", segment_key="")}
+        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", origin_namespace="")}
 
         with pytest.raises(ChannelSendUnavailable):
             await resolve_reply_target(CONVERSATION)

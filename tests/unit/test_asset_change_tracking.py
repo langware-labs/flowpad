@@ -299,11 +299,13 @@ def test_versioning_never_selects_a_non_frontmatter_type():
     ``test_json_main_file_survives_the_version_stamp`` catches the corruption for
     ONE type through the real hook; this catches the next one the day it is
     registered, without needing a fixture per family. A type is eligible for
-    asset-scoped versioning only if its main file can hold the ``version:`` header
-    the stamper writes — which is exactly what a ``Frontmatter`` declares.
+    asset-scoped versioning only if its main file can hold the ``version`` the
+    stamper writes — a ``Frontmatter`` header, or the ``"version"`` key of an entity
+    document (``<type>.json``, ``ENTITY_LAYOUT``).
     """
+    from flow_sdk.assets.identity_carrier import Frontmatter
     from flow_sdk.assets.versioning import _versionable_folder_types
-    from flow_sdk.fs_store.identity_carrier import Frontmatter
+    from flow_sdk.fs_store.schema_registry import ENTITY_LAYOUT
 
     selected = _versionable_folder_types()
     assert selected, "registry unavailable — the predicate returned nothing"
@@ -312,8 +314,9 @@ def test_versioning_never_selects_a_non_frontmatter_type():
         (t.type_name, t.shape.main, type(t.identity_carrier).__name__)
         for t in selected
         if not isinstance(t.identity_carrier, Frontmatter)
+        and not (t.manifest_layout == ENTITY_LAYOUT and t.shape.main.endswith(".json"))
     ]
     assert not offenders, (
-        "these types would get a YAML `version:` header stamped into a main file "
+        "these types would get a `version` stamped into a main file "
         f"that cannot carry one: {offenders}"
     )

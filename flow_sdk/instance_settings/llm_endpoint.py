@@ -261,7 +261,7 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     # box: every surface that lists endpoints (the Assets tree root, the funding chip, the picker)
     # drives this read on open, ``client_hooks._on_response`` reports every 401 verbatim, and
     # enough of them in one window pull the "hub errors suppressed" toast in behind it. Same
-    # predicate, same reason, as the gates in ``handle_conversation_list`` and ``inbox.catchup``.
+    # predicate, same reason, as the gates in ``handle_conversation_list`` and ``stream_inbox.catchup``.
     #
     # BELOW the memo deliberately, so a cache hit still costs nothing -- the comment above stays
     # true, and the ``cached_only`` spawn path (documented as never calling out, and already

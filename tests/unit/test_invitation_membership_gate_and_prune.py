@@ -1,7 +1,7 @@
 """Invitation routing + expired-invitation pruning.
 
 Regression tests for the "10 phantom Organization invitations" incident:
-expired flow_message-share invitations sat in the inbox forever, mislabeled
+expired flow_message-share invitations sat in the stream inbox forever, mislabeled
 as organization invitations.
 
 Covered here:

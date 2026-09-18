@@ -21,7 +21,6 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
-from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.server.pty_recovery import reconcile_orphaned_workers
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval

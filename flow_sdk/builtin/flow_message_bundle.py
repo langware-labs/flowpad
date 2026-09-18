@@ -34,9 +34,9 @@ from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
+from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.transfer import (
     _attachment_snapshot,
-    _mint_rendered_asset_identity,
     pack_tree,
 )
 from flow_sdk.builtin.flow_message import (
@@ -49,7 +49,6 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER
 from flow_sdk.fs_store.record_paths import parse_record_stem, record_stem
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -781,16 +780,10 @@ async def _pack_file_backed_attachment(
         text = info.serializer().render(ent, info)
         if text is None:
             return  # nothing renderable to ship
-        safe = _safe_entity_name(ent)
-        if isinstance(info.shape, Folder):
-            if not info.shape.main:
-                return  # folder type without a main doc: nothing to ship
-            dest = subdir / safe / info.shape.main
-        else:
-            dest = subdir / f"{safe}{info.shape.ext}"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text, encoding="utf-8")
-        _mint_rendered_asset_identity(info, dest, entry_type, entry_id)
+        from flow_sdk.assets.transfer import materialize_rendered_asset
+
+        materialize_rendered_asset(info, subdir, _safe_entity_name(ent), text,
+                                   TypeId(type=entry_type, id=entry_id))
         return
 
     # Origin present → key by repo-relative path (mirror sender layout); else the
@@ -806,7 +799,9 @@ async def _pack_file_backed_attachment(
 def _safe_entity_name(entity) -> str:
     """Filesystem-safe leaf name from an entity's name/title (fallback path)."""
     raw = getattr(entity, "name", None) or getattr(entity, "title", None) or getattr(entity, "id", "asset")
-    return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in str(raw)) or "asset"
+    from flow_sdk.assets.transfer import portable_asset_name
+
+    return portable_asset_name(str(raw))
 
 
 def _restore_file_backed_entry(entry_dir: Path, project_root: Path, overwrite: bool) -> bool:
@@ -1465,10 +1460,10 @@ async def _stage_attachment(
     (raw ``file`` entries have no TypeInfo to derive it from, and are always
     user-installable under ``~/.claude``).
     """
-    from flow_sdk.builtin.message_attachment import MessageAttachment, TransferMode  # noqa: PLC0415
-    from flow_sdk.fs_store.placement import (  # noqa: PLC0415
+    from flow_sdk.assets.placement import (  # noqa: PLC0415
         user_scope_allowed as user_scope_allowed_policy,
     )
+    from flow_sdk.builtin.message_attachment import MessageAttachment, TransferMode  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     ma_id = MessageAttachment.allocate_deterministic_id(top_fm_id, entry_key)
@@ -1533,7 +1528,7 @@ def file_attachment_rel_subdir(filename: str, *, origin: object | None = None) -
     the attachment carries one, puts the file back at its position in the sender's
     tree; without one the fallback is ``docs/`` for markdown, the project root
     otherwise."""
-    from flow_sdk.fs_store.placement import untyped_rel_subdir  # noqa: PLC0415
+    from flow_sdk.assets.placement import untyped_rel_subdir  # noqa: PLC0415
 
     return untyped_rel_subdir(filename, origin=origin)
 
@@ -1559,8 +1554,8 @@ async def _stage_file_attachments(
     upserts the same row, preserving install state. Images/videos and
     transcripts are skipped (see ``_should_stage_file_attachment``)."""
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.assets.placement import untyped_fallback_class, user_scope_allowed  # noqa: PLC0415
     from flow_sdk.fs_store.operations import flow_message as fm_data_ops  # noqa: PLC0415
-    from flow_sdk.fs_store.placement import untyped_fallback_class, user_scope_allowed  # noqa: PLC0415
 
     staged: list = []
     for att in msg_data.get("attachment", []) or []:
@@ -1883,7 +1878,7 @@ def _read_task_md_header(entry_dir: Path) -> dict | None:
     task_md = next(entry_dir.glob("tasks/*/task.md"), None) or next(entry_dir.rglob("task.md"), None)
     if task_md is None:
         return None
-    from flow_sdk.fs_store.indexer.functions.task import _read_task_md_fields  # noqa: PLC0415
+    from flow_sdk.assets.types.task import _read_task_md_fields
 
     fields = _read_task_md_fields(task_md)
     return fields or None
@@ -1958,7 +1953,7 @@ def _send_time_from_pointer_index(tmp_root: Path, fm_id: str) -> str | None:
     ``_FM_FIELDS`` only gained ``created_date`` on 2026-06-30, so every bundle
     packed by an older sender ships a header with no send-time — and those bundles
     are frozen that way on the hub forever. Without a fallback the receiver stamps
-    ``now()``, which for a months-old message re-download throws the inbox order
+    ``now()``, which for a months-old message re-download throws the stream inbox order
     out (and, once stamped, looks newer than the hub, so no later sync repairs it).
 
     The time is not actually lost: ``_pack_conversation_attachment`` copies the
@@ -2002,7 +1997,7 @@ def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: s
     row is already born stamped ``now()``, and the materialize then takes its
     existing-row branch and never applies the recovered value.
 
-    Both clocks, not just ``created_date``: inbox recency is
+    Both clocks, not just ``created_date``: stream inbox recency is
     ``max(message.updated_date)``, so leaving ``updated_date`` at ``now()``
     drags the whole conversation to the sync instant.
 
@@ -2013,7 +2008,7 @@ def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: s
     diverge by however long the message sat undelivered: days, for a backlog.
     The pointer index only knows the send-time, so filling ``updated_date`` from
     it sends the conversation DAYS into the past until the hub corrects it a
-    beat later — measured live at 10–11 inbox positions, dipping and snapping
+    beat later — measured live at 10–11 stream inbox positions, dipping and snapping
     back. Hence ``hub_updated``: the caller passes the hub's authoritative value
     when it has one (it is sitting in the same payload that triggered the
     download), so the row is born correct instead of corrected afterwards.
@@ -2347,8 +2342,8 @@ async def unpack_bundle(
 
         # Persist the bundle into the message's record-data dir: raw zip under
         # download/, extracted tree under unpacked/ (the STAGING area install
-        # reads from later). rmtree-then-copy makes a re-download an atomic
-        # refresh of staging; install state lives on MessageAttachment rows,
+        # reads from later). The materializer stages each replacement before
+        # publishing it; install state lives on MessageAttachment rows,
         # not in these folders, so it survives.
         from flow_sdk.builtin.flow_message import BODY_FILENAME as _BODY_FILENAME  # noqa: PLC0415
         from flow_sdk.fs_store.operations import flow_message as fm_data_ops  # noqa: PLC0415
@@ -2376,12 +2371,11 @@ async def unpack_bundle(
         _canonicalize_arcs()
 
         def _persist_staging() -> None:
+            from flow_sdk.assets.materialize import materialize_asset_sync
+
             dl_dir = fm_data_ops.download_dir(top_fm_id)
-            dl_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(zip_path, dl_dir / _BODY_FILENAME)
-            staged_root = fm_data_ops.unpacked_dir(top_fm_id)
-            shutil.rmtree(staged_root, ignore_errors=True)
-            shutil.copytree(tmp_root, staged_root)
+            materialize_asset_sync(Path(zip_path), dl_dir / _BODY_FILENAME, overwrite=True)
+            materialize_asset_sync(tmp_root, fm_data_ops.unpacked_dir(top_fm_id), overwrite=True)
 
         await asyncio.to_thread(_persist_staging)
 
@@ -2712,7 +2706,7 @@ async def unpack_bundle(
         # Send-time precedence, one place: the header (post-2026-06-30 senders) →
         # the pointer index the bundle already carries (pre-fix senders) → now().
         # Recovered time goes onto the ROW too, not just the pointer: the row's
-        # ``created_date`` is what the inbox sorts on, and a ``now()`` there is
+        # ``created_date`` is what the stream inbox sorts on, and a ``now()`` there is
         # self-sealing (it outranks the hub, so no later sync repairs it).
         # Same restore as the attachment entry above — this path is reached when the
         # bundle has no per-message attachment entry, so the row is born here instead.

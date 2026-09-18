@@ -12,15 +12,16 @@ The ``add_translation`` action's data logic is the model + these operations
 
 import pytest
 
-import flow_sdk.fs_store.operations.translation as T
+import flow_sdk.assets.translations as T
 from flow_sdk.builtin.claude_memory_entities import Docs, Markdown, Translation
 from flow_sdk.fs_store.fs_ref.base import FSRef
+from flow_sdk.fs_store.record_paths import data_dir_for
+from flow_sdk.i18n.supported_locales import SUPPORTED_LOCALES
 from flow_sdk.i18n.translation_targets import (
     TRANSLATION_TARGETS,
     get_translation_target,
     get_translation_targets,
 )
-from flow_sdk.i18n.supported_locales import SUPPORTED_LOCALES
 
 
 @pytest.fixture
@@ -72,14 +73,14 @@ def test_translations_field_lives_on_the_abstract_base():
 # ── path operations ──────────────────────────────────────────────────────────
 
 def test_translation_path_grammar(records_data_root):
-    p = T.translation_path("markdown", "abc-123", "he")
+    p = T.translation_path(data_dir_for("markdown", "abc-123"), "he")
     assert p == records_data_root / "markdown" / "abc-123" / "translations" / "he.md"
 
 
 def test_translation_path_rejects_traversal(records_data_root):
     for bad in ["../../etc/passwd", "he/../..", "a b", "he.md", ""]:
         with pytest.raises(ValueError):
-            T.translation_path("markdown", "abc", bad)
+            T.translation_path(data_dir_for("markdown", "abc"), bad)
 
 
 def test_normalize_lang_accepts_bcp47ish():
@@ -88,17 +89,17 @@ def test_normalize_lang_accepts_bcp47ish():
 
 
 def test_ensure_placeholder_is_idempotent_and_empty(records_data_root):
-    ref1 = T.ensure_placeholder("plan", "id1", "fr")
-    path = T.translation_path("plan", "id1", "fr")
+    ref1 = T.ensure_placeholder(data_dir_for("plan", "id1"), "fr")
+    path = T.translation_path(data_dir_for("plan", "id1"), "fr")
     assert path.exists()
     assert path.read_text() == ""  # empty pending placeholder
     assert "id:" not in path.read_text()  # never an entity
 
     # Idempotent: a second call must not clobber real content the worker wrote.
     path.write_text("# Bonjour")
-    ref2 = T.ensure_placeholder("plan", "id1", "fr")
+    ref2 = T.ensure_placeholder(data_dir_for("plan", "id1"), "fr")
     assert path.read_text() == "# Bonjour"
-    assert ref1.path == ref2.path
+    assert ref1 == ref2
 
 
 def test_upsert_by_lang_semantics(records_data_root):
@@ -107,7 +108,7 @@ def test_upsert_by_lang_semantics(records_data_root):
     doc.id = "doc-1"
 
     def add(lang, process_id=None):
-        ref = T.ensure_placeholder(doc.get_type(), str(doc.id), lang)
+        ref = FSRef(T.ensure_placeholder(data_dir_for(doc.get_type(), str(doc.id)), lang))
         existing = next((t for t in doc.translations if t.lang == lang), None)
         if existing is not None:
             existing.ref = ref

@@ -15,17 +15,16 @@ import {
   QueryRequest,
   TypeId,
   latestPointer,
+  ChannelTransport,
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
-import { isViewer } from './conversation-category';
 import { ThreadStack } from './ThreadStack';
-import { channelLabel, sourceForOrigin } from './channel-attribution';
-import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
-import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
+import { syncConversationMessages, updateMessage } from '@src/components/stream-inbox-view/stream-inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
+import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { SessionEventLine } from './SessionEventLine';
 import { SessionCard } from './SessionCard';
@@ -80,7 +79,7 @@ interface ConversationViewProps {
   /** Open a thread (id) or return to the packed list (null). URL-first — the
    *  view never filters itself, it asks the host to navigate. */
   onThreadNavigate?: (threadId: string | null) => void;
-  /** Restrict this view and every mutation to one Agent's formal inbox. */
+  /** Restrict this view and every mutation to one Agent's formal stream inbox. */
   agentId?: string | null;
 }
 
@@ -133,14 +132,14 @@ export function ConversationView({
   const { members: memberRoster, ready: rosterReady, refresh: refreshMembers } = useMembers(conversationTypeId);
   const participants = memberRoster;
 
-  const [agentScope, setAgentScope] = useState<Awaited<ReturnType<Agent['inboxScope']>> | null>(null);
+  const [agentScope, setAgentScope] = useState<Awaited<ReturnType<Agent['streamInboxScope']>> | null>(null);
   const refreshAgentScope = useCallback(async () => {
     if (!agentId) {
       setAgentScope(null);
       return;
     }
     try {
-      setAgentScope(await new Agent({ id: agentId }).inboxScope());
+      setAgentScope(await new Agent({ id: agentId }).streamInboxScope());
     } catch {
       setAgentScope({ agent_id: agentId, source_id: null, conversation_ids: [], thread_ids: [], flow_message_ids: [] });
     }
@@ -270,36 +269,27 @@ export function ConversationView({
 
   const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
 
-  // The cloud thread this conversation caches, if any — the first message that
-  // carries an `origin`. Every message in a source-backed conversation shares a
-  // channel, so the first one found answers for the conversation.
-  const channelOrigin = useMemo(() => {
-    for (const fm of messagesById.values()) {
-      if (fm.origin?.kind) return fm.origin;
-    }
-    return null;
-  }, [messagesById]);
+  // What this conversation's channel is — the backend's `channel_spec`. A reply goes out
+  // through a data source only when the channel's transport says so; Flowpad's own chat is
+  // a channel too, not the absence of one. A hub runtime carries no spec: its rows are the
+  // hub's own conversations, which never reply through a local source.
+  const channelSpec = conversation?.channel_spec ?? null;
+  const channel = channelSpec?.transport === ChannelTransport.Source ? channelSpec.name : undefined;
 
   // Attention-driven polling: while this source-backed conversation is the
   // SELECTED dock, keep its DataSource due (request_poll on an interval) so
   // new messages land fast; deselect and the requests stop on their own.
-  // Source resolution is the SAME rule the attribution chip uses.
-  const { data: attentionSources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
-  const attentionSourceId = useMemo(() => {
-    if (agentId) return agentScope?.source_id ?? undefined;
-    const withPointer = [...messagesById.values()].find((fm) => fm.origin_local?.data_source_id);
-    return sourceForOrigin(
-      attentionSources, channelOrigin, withPointer?.origin_local ?? null,
-    )?.id;
-  }, [agentId, agentScope?.source_id, channelOrigin, messagesById, attentionSources]);
+  const attentionSourceId = agentId
+    ? agentScope?.source_id ?? undefined
+    : conversation?.channel_source_id ?? undefined;
   useAttentionPolling(attentionSourceId, conversationId);
 
-  // The ingest sync boundary is too early: inbox projection runs as a detached
+  // The ingest sync boundary is too early: stream inbox projection runs as a detached
   // subscriber and writes the FlowMessage + conversation pointer afterward.
   // Refresh on the existing post-projection event instead, scoped to this
   // Agent's DataSource so another active source cannot disturb this thread.
   useOnTag(
-    'inbox.*.message.projected',
+    'stream_inbox.*.message.projected',
     () => {
       if (!agentId || !attentionSourceId) return;
       void Promise.all([
@@ -541,10 +531,10 @@ export function ConversationView({
       (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
 
   // Open-to-read (URL-first): viewing a conversation marks its latest received
-  // message read — the mutation lives HERE, on the mounted view, so the Inbox
+  // message read — the mutation lives HERE, on the mounted view, so the Stream Inbox
   // row click / banner click / direct link only navigate (single writer:
   // navigation → view → action; the backend then reconciles
-  // InboxManager.unread). Focus-gated: a message arriving while the window is
+  // StreamInboxManager.unread). Focus-gated: a message arriving while the window is
   // backgrounded must stay unread (it drives the badge) until the user
   // actually returns — hence the re-run on window focus.
   const readMarkedRef = useRef<string | null>(null);
@@ -554,7 +544,7 @@ export function ConversationView({
       const latestId = latestPointer(pointers)?.id;
       const latest = latestId ? messagesById.get(latestId) : undefined;
       if (!latest?.id || latest.is_read) return;
-      if (isViewer(latest.sender_id, { email: '', cloudUserId, localUserId: localUser?.id ?? null })) return;
+      if (authoredBy(senderOf(latest), [cloudUserId, localUser?.id])) return;
       const key = `${conversationId}:${latest.id}`;
       if (readMarkedRef.current === key) return;
       readMarkedRef.current = key;
@@ -764,18 +754,18 @@ export function ConversationView({
           ordinary ingest route once it exists. */}
       {sendingText && (
         <SessionEventLine
-          text={t`Sending in ${channelLabel(channelOrigin?.kind)}: “${sendingText}”`}
+          text={t`Sending in ${channelSpec?.title}: “${sendingText}”`}
         />
       )}
       <MessageComposer
         conversationId={conversationId}
         onSent={() => void refetch()}
         // A source-backed conversation replies into its channel, not the hub.
-        channel={channelOrigin?.kind}
+        channel={channel}
         onChannelSent={setSendingText}
-        placeholder={channelOrigin ? t`Reply in ${channelLabel(channelOrigin.kind)}` : undefined}
+        placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
         agentId={agentId ?? undefined}
-        sessionHost={channelOrigin ? null : sessionHost}
+        sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
       />
     </div>
   );

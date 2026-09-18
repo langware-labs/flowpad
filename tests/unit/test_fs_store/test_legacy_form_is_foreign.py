@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.identity_carrier import RETIRED_FORM_MIGRATION, Foreign, Frontmatter, Sidecar
+from flow_sdk.assets.layout import File, Folder
 from flow_sdk.capsules import AssetCapsule, CapsuleData
-from flow_sdk.fs_store.identity_carrier import RETIRED_FORM_MIGRATION, Foreign, Frontmatter, Sidecar
 from flow_sdk.fs_store.indexer import index_log
 from flow_sdk.fs_store.indexer.reconcile import reconcile
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import File, Folder
 
 OLD = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 DOC = TypeInfo(type_name="legacy_doc", shape=File(ext=".md"), identity_carrier=Frontmatter())

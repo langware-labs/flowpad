@@ -24,8 +24,8 @@ import logging
 from typing import Any, Optional
 
 from flow_sdk.activity import Activity, ActivityState
-from flow_sdk.builtin.worker_status import WorkerStatus
-from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
+from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
 logger = logging.getLogger(__name__)
 

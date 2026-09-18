@@ -14,6 +14,10 @@ The single source of truth is the per-instance file
 * ``enabled`` — master switch. When false, every ``log()`` is a no-op.
 * ``filter``  — tag→bool. A tag is *on* when present and truthy. Everything
   is off by default (empty filter).
+* ``persist`` — optional. Tracing is a per-run debugging state, so a backend
+  restart resets the file (empty filter, master switch back to the instance
+  default) UNLESS ``persist`` is true. Set it only when a trace has to span a
+  restart (recovery bugs) — :func:`persist` / ``POST /api/v1/toplog/persist``.
 
 Design (see toplog.md):
 
@@ -45,6 +49,7 @@ _logger = logging.getLogger("toplog")
 # In-memory state — ALWAYS derived from the file via _apply_from_file().
 _active_tags: set[str] = set()
 _enabled: bool = False
+_persist: bool = False
 
 Tags = Union[str, Iterable[str]]
 
@@ -86,7 +91,7 @@ def _apply_from_file(config: dict[str, Any] | None = None) -> None:
     import, by the mutators, and by the FSOp trigger callback. Pass ``config`` to
     re-derive from an already-loaded dict (the mutators do, to avoid re-reading
     the file they just wrote)."""
-    global _enabled
+    global _enabled, _persist
     if config is None:
         config = _read_file()
     flt = config.get("filter") or {}
@@ -97,6 +102,7 @@ def _apply_from_file(config: dict[str, Any] | None = None) -> None:
     _active_tags.clear()
     _active_tags.update(active)
     _enabled = bool(config.get("enabled", False))
+    _persist = bool(config.get("persist", False))
 
 
 def _merge_write(mutate: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
@@ -155,8 +161,12 @@ def active_tags() -> set[str]:
 
 
 def state() -> dict[str, Any]:
-    """The current state as broadcast/serialized: ``{enabled, filter}``."""
-    return {"enabled": _enabled, "filter": {t: True for t in sorted(_active_tags)}}
+    """The current state as broadcast/serialized: ``{enabled, filter, persist}``."""
+    return {
+        "enabled": _enabled,
+        "filter": {t: True for t in sorted(_active_tags)},
+        "persist": _persist,
+    }
 
 
 def _mutate(mutate: Callable[[dict[str, Any]], None]) -> None:
@@ -190,12 +200,31 @@ def disable() -> None:
     _mutate(lambda cfg: cfg.__setitem__("enabled", False))
 
 
+def persist(value: bool = True) -> None:
+    """Make the current state survive (``True``) or not survive (``False``) the
+    next backend restart. Off by default — see :func:`seed_file`."""
+    def _mut(cfg: dict[str, Any]) -> None:
+        if value:
+            cfg["persist"] = True
+        else:
+            cfg.pop("persist", None)
+
+    _mutate(_mut)
+
+
 def seed_file(enabled: bool) -> None:
-    """Create toplog.json with the given master-switch default if it's absent,
-    then apply. Boot hook for the server: toplog.py owns the on-disk schema, so
-    the seed routes through ``_merge_write`` rather than hand-building the JSON."""
-    if not _config_path().exists():
-        _merge_write(lambda cfg: cfg.__setitem__("enabled", enabled))
+    """Boot hook: reset toplog.json to its quiet default (no tags, master switch
+    at the instance default ``enabled``) unless the file asks to ``persist``,
+    then apply. Tracing turned on while chasing a bug must not silently keep
+    logging after a restart. toplog.py owns the on-disk schema, so the reset
+    routes through ``_merge_write`` rather than hand-building the JSON."""
+    if not _read_file().get("persist"):
+        def _reset(cfg: dict[str, Any]) -> None:
+            cfg["enabled"] = enabled
+            cfg["filter"] = {}
+            cfg.pop("persist", None)
+
+        _merge_write(_reset)
     _apply_from_file()
 
 

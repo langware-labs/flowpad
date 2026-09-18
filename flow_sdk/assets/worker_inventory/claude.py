@@ -5,12 +5,7 @@ from pathlib import Path
 
 from flow_sdk.assets.asset_discovery import AssetSearchRoot
 from flow_sdk.assets.asset_inventory import (
-    InventoryInputs,
     WorkerAsset,
-    inventory_process,
-    inventory_rows,
-    inventory_spawn,
-    json_request,
 )
 from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.schema.types import EntityType
@@ -90,22 +85,3 @@ def resolve_subagents(inputs, agents: list[dict]) -> list[WorkerAsset]:
             if native_name in native and native_name not in winners:
                 winners[native_name] = WorkerAsset(asset_type=EntityType.SUBAGENT, name=native_name, path=path)
     return list(winners.values())
-
-
-async def available_assets(inputs: InventoryInputs):
-    argv = ["claude", "--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
-    for directory in inputs.add_dirs:
-        argv.extend(["--add-dir", directory])
-    for directory in inputs.plugin_dirs:
-        argv.extend(["--plugin-dir", directory])
-    if inputs.settings_json:
-        argv.extend(["--settings", json.dumps(inputs.settings_json)])
-    if inputs.agents_json:
-        argv.extend(["--agents", json.dumps(inputs.agents_json)])
-    argv, env = inventory_spawn(inputs, argv)
-    async with inventory_process(argv, cwd=inputs.workdir, env=env) as probe:
-        response = await json_request(probe, {
-            "type": "control_request", "request_id": "inventory", "request": {"subtype": "initialize"},
-        }, response_id="inventory")
-    return (resolve_skills(inputs, inventory_rows(response, "commands"))
-            + resolve_subagents(inputs, inventory_rows(response, "agents")))

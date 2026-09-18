@@ -21,7 +21,7 @@ const { notificationText } = await import('@src/notifications/types');
 import type { NotificationData } from '@src/notifications/types';
 
 const data = (over: Partial<NotificationData> = {}): NotificationData =>
-  ({ id: 'n1', level: 'error', title: 'Could not allocate an inbox', message: 'Inbox limit exceeded', timestamp: 0, ...over }) as NotificationData;
+  ({ id: 'n1', level: 'error', title: 'Could not allocate a mailbox', message: 'Inbox limit exceeded', timestamp: 0, ...over }) as NotificationData;
 
 describe('notification copy affordance', () => {
   // Queries are scoped to each render's own container: `screen` searches the
@@ -39,8 +39,8 @@ describe('notification copy affordance', () => {
   });
 
   it('copies the title and the message, which is what the popover copies too', () => {
-    expect(notificationText({ title: 'Could not allocate an inbox', message: 'Inbox limit exceeded' })).toBe(
-      'Could not allocate an inbox\nInbox limit exceeded',
+    expect(notificationText({ title: 'Could not allocate a mailbox', message: 'Inbox limit exceeded' })).toBe(
+      'Could not allocate a mailbox\nInbox limit exceeded',
     );
     // A titled alert with nothing under it copies as just the title — no stray newline.
     expect(notificationText({ title: 'Disconnected', message: undefined })).toBe('Disconnected');

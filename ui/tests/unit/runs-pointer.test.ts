@@ -31,6 +31,11 @@ describe('forProcessRuns', () => {
     expect(back.processRunScope).toEqual({ agent: 'email-summarizer' });
   });
 
+  it('scopes to the trigger that spawned a scheduled run', () => {
+    const back = DockPointer.fromUrl(DockPointer.forProcessRuns({ trigger_id: 't-1' }).toUrl());
+    expect(back.processRunScope).toEqual({ trigger_id: 't-1' });
+  });
+
   it('drops empty scope keys rather than sending blanks to the backend', () => {
     expect(DockPointer.forProcessRuns({ flow_id: '', run: null }).options).toEqual({});
     expect(DockPointer.forProcessRuns().processRunScope).toEqual({});

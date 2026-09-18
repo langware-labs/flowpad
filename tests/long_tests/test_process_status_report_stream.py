@@ -18,10 +18,10 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.worker_status import ApiErrorTimeoutError, WorkerStatus
 from flow_sdk.transcript_analyzer.counters import ProcessCounters, ProcessStatusReport
-from tests.test_settings import test_service_config
+from flow_sdk.transcript_analyzer.worker_status import ApiErrorTimeoutError, WorkerStatus
 from tests.long_tests._transcript_helpers import fail_worker_timeout
+from tests.test_settings import test_service_config
 
 pytestmark = [
     pytest.mark.skipif(

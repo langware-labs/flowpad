@@ -5,9 +5,9 @@ producer. Each family supplies only what differs."""
 
 from typing import Callable, Optional
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import NATIVE_JSON_IDENTITY, resolved_path_key
+from flow_sdk.assets.identity import NATIVE_JSON_IDENTITY, resolved_path_key
+from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.layout import Folder
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 

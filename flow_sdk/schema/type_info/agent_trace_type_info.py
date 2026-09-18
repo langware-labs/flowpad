@@ -1,5 +1,5 @@
 """Type metadata for AGENT_TRACE."""
-from flow_sdk.builtin.agent_trace import AgentTraceSpec
+from flow_sdk.schema.data_spec.agent_trace_spec import AgentTraceSpec
 from flow_sdk.schema.type_info._report import report_type_info
 from flow_sdk.schema.types import EntityType
 

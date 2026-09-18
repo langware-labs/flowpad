@@ -28,6 +28,15 @@ export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_e
  */
 export type SourceStatus = 'new' | 'setup' | 'active' | 'disabled';
 
+/** What the channel confirmed about one sent message (data_source.py `_outcome_dict`).
+ *  `recorded: false` on a sent message means the local copy is missing — never re-send to fix it. */
+export interface DataSourceSendOutcome {
+  external_id: string;
+  status: 'sent' | 'drafted';
+  recorded: boolean;
+  artifact_id: string;
+}
+
 export interface IDataSource extends IEntity {
   owner?: string | null;
   name: string;
@@ -44,7 +53,11 @@ export interface IDataSource extends IEntity {
   verified_at?: string | null;
   poll_interval_seconds?: number;
   window_days?: number;
-  segment_count?: number;
+  cursor?: string | null;
+  manifest?: Record<string, unknown>;
+  high_water?: string | null;
+  last_attempted_at?: string | null;
+  consecutive_failures?: number;
   next_poll_at?: string | null;
   last_synced_at?: string | null;
   health?: SourceHealth;
@@ -95,7 +108,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   account_identities: string[] = [];
   /** Who may drive the owning agent from this channel — sender external ids
    *  (a Slack member id, an email address), one per provider's own namespace.
-   *  Empty admits nobody: see `EmailInbox.allowed`, the gate this backs for
+   *  Empty admits nobody: see `AgentMailbox.allowed`, the gate this backs for
    *  every channel-bound agent, not only an allocated mailbox. */
   inbound_allowed_senders: string[] = [];
   required_capabilities: string[] = [];
@@ -108,10 +121,17 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   verified_at: string | null = null;
   poll_interval_seconds: number = 300;
   window_days: number = 7;
-  /** Streams this source has, rolled up by the poller. Read from here rather
-   *  than counting cursor rows: cursors churn on every poll, so watching them
-   *  live for a count repaints a list every tick. */
-  segment_count: number = 0;
+  /** The provider's opaque resume token — one per source, since a source is ONE
+   *  stream. Null until the first pass completes, and after `reset`. */
+  cursor: string | null = null;
+  /** The last pass's listing snapshot, for drivers that diff rather than resume.
+   *  A dict on the wire (never null) — the backend declares it one. */
+  manifest: Record<string, unknown> = {};
+  /** ISO timestamp of the newest item synced so far. */
+  high_water: string | null = null;
+  last_attempted_at: string | null = null;
+  /** Failed polls in a row; resets on the next success. */
+  consecutive_failures: number = 0;
   next_poll_at: string | null = null;
   last_synced_at: string | null = null;
   health: SourceHealth = 'never_synced';
@@ -135,7 +155,11 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.verified_at = entity.verified_at ?? this.verified_at;
     this.poll_interval_seconds = entity.poll_interval_seconds ?? this.poll_interval_seconds;
     this.window_days = entity.window_days ?? this.window_days;
-    this.segment_count = entity.segment_count ?? this.segment_count;
+    this.cursor = entity.cursor ?? this.cursor;
+    this.manifest = entity.manifest ?? this.manifest;
+    this.high_water = entity.high_water ?? this.high_water;
+    this.last_attempted_at = entity.last_attempted_at ?? this.last_attempted_at;
+    this.consecutive_failures = entity.consecutive_failures ?? this.consecutive_failures;
     this.next_poll_at = entity.next_poll_at ?? this.next_poll_at;
     this.last_synced_at = entity.last_synced_at ?? this.last_synced_at;
     this.health = entity.health ?? this.health;
@@ -222,8 +246,8 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    * deterministic and the content digest still matches, so pair it with
    * `purgeItems` for a re-fetch you can actually see.
    */
-  async resetCursors(): Promise<{ status: string; streams: number; detail: string }> {
-    return this.post('reset_cursors');
+  async reset(): Promise<{ status: string; detail: string }> {
+    return this.post('reset');
   }
 
   /** Drop this source's records. Re-ingest rebuilds equivalent rows (new ids —
@@ -234,7 +258,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   }
 
   /**
-   * Re-fetch: drop the records AND clear the cursor position, then go.
+   * Re-fetch: drop the records AND clear the sync position, then go.
    *
    * The composite the UI should call, because either primitive alone is
    * invisible — clearing position re-reads records that are already present and
@@ -249,13 +273,38 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   async replay(since?: string): Promise<{
     status: string;
     removed: number;
-    streams: number;
     since: string | null;
     window_days: number;
     window_widened: boolean;
     detail: string;
   }> {
     return this.post('replay', since ? { since } : undefined);
+  }
+
+  /** Send one message into the channel. `to` is what the channel addresses (a chat, a channel
+   *  id, an address); the source class decides how it reads it. */
+  async send(message: { to: string; text: string; thread_key?: string; subject?: string; in_reply_to?: string }): Promise<DataSourceSendOutcome> {
+    return this.post('send', message);
+  }
+
+  /** Reply to one of this source's records; who it reaches is the channel's rule. */
+  async reply(itemId: string, text: string): Promise<DataSourceSendOutcome> {
+    return this.post('reply', { item_id: itemId, text });
+  }
+
+  /** This source's records, newest first. */
+  async items(limit = 20): Promise<{ items: Array<Record<string, unknown>> }> {
+    return this.post('items', { limit });
+  }
+
+  /** One sync cycle NOW, reported — unlike `pollNow`, which only marks the source due. */
+  async syncNow(): Promise<{ created: number; updated: number; unchanged: number; health: SourceHealth; status: SourceStatus }> {
+    return this.post('sync');
+  }
+
+  /** Resume or stop polling. */
+  async setEnabled(enabled: boolean): Promise<{ status: SourceStatus }> {
+    return this.post('set_enabled', { enabled });
   }
 
   /**
@@ -272,8 +321,8 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
      *  source in `setup`, but they are fixed in different places. */
     layer: 'connection' | 'setup';
     detail: string;
-    /** Stream keys still not ready. Absent when the connection layer answered —
-     *  it never got as far as looking at streams. */
+    /** What is still not ready. Absent when the connection layer answered —
+     *  it never got as far as the driver's own check. */
     pending?: string[];
   }> {
     return this.post('verify');

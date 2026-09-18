@@ -290,12 +290,21 @@ any -> failed
 - `error`
 - `unknown`
 
-`ready_for_input` is true only when:
+`ready_for_input` is true only when no turn is in flight and the process is up,
+freshly headless, or headless-idle (`is_ready_for_input` in
+`flow_sdk/builtin/agentic_process/status_predicates.py`):
 
 ```text
-status == running
-and worker_status in { idle, complete, interrupted }
+not is_turn_busy(p)
+and (
+  status == running
+  or (status == new and not pty_mode)
+  or (status == stopped and not pty_mode and session_id)
+)
 ```
+
+`is_turn_busy` counts a mid-turn `worker_status` only for PTY processes; headless
+turns are tracked by the prompt lock, the registered worker, or `_turn_in_flight`.
 
 The transcript parser lives in `flow_sdk/fs_records/agent_status.py`. The
 TypeScript mirror lives in `ts_sdk/src/process/agentic-types.ts`.
@@ -365,23 +374,17 @@ sends keyboard input through the shell's `PtyConnection`.
 ## Architectural concerns (transport vs visibility)
 
 The `visible`/`pty_mode` decoupling is real in the data model and the hot paths,
-but the derived helpers have not fully caught up, which leaves two mixed-axis
-seams worth tracking:
+and the two derived helpers that used to mix the axes now key on the transport:
 
-- **`WorkerMode` / `get_worker_mode` still derive from `visible`**
-  (`status_predicates.py:60`) even though the transport is `pty_mode`. Today this
-  is only used by `switch-mode` label parsing, where `visible` and `pty_mode`
-  move together, so it is correct by coincidence. If a caller ever sets
-  `visible` in isolation via `set-visible` (a supported action) and then reads
-  `get_worker_mode`, it will report the wrong transport. The safe fix is to
-  derive it from `pty_mode`.
-- **Restart recovery keys on `visible`, not `pty_mode`**
-  (`reconcile_orphaned_workers`, `pty_recovery.py:157`; `run_pty_recovery`
-  respawns visible PTYs). A process that is `pty_mode=true` but `visible=false`
-  (a live PTY whose tab was hidden via `set-visible`) would be treated as a
-  headless orphan and stamped `STOPPED` on restart rather than respawned. Whether
-  that state is reachable in practice depends on whether any UI path hides a PTY
-  tab without also flipping `pty_mode` — worth an explicit check.
+- **`WorkerMode` / `get_worker_mode` derive from `pty_mode`**
+  (`status_predicates.py:80`): a hidden live PTY (`visible=false`,
+  `pty_mode=true`) still reports `INTERACTIVE`, so `set-visible` alone never
+  changes the reported transport.
+- **Restart recovery keys on `pty_mode`, not `visible`**:
+  `reconcile_orphaned_workers` (`pty_recovery.py:126`) stamps only headless
+  (`pty_mode=false`) orphans `STOPPED`, and `run_pty_recovery`
+  (`pty_recovery.py:184`) respawns every `pty_mode=true` process — so a PTY whose
+  tab was hidden is respawned on restart, not treated as a headless orphan.
 - **`ExecutionMode.classify_execution_mode` labels the footer chip from
   `visible`.** A hidden-but-PTY process would be miscategorized as `BACKGROUND`.
 

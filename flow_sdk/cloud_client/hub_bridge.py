@@ -18,7 +18,7 @@ import logging
 import uuid
 from typing import Any, Optional
 
-from flow_sdk import inbox
+from flow_sdk import stream_inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
 from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.preferences import message_status_sharing_enabled
@@ -246,7 +246,23 @@ class HubWsBridge:
             return
         self.manager.register_handler("data_op_msg", self._on_data_op)
         self.manager.register_handler("install_request", self._on_install_request)
+        self.manager.register_handler("oauth_msg", self._on_oauth_msg)
         self._installed = True
+
+    async def _on_oauth_msg(self, message: dict) -> None:
+        """The hub says a grant it runs ended: finish the matching flow here too.
+
+        Covers a browser whose return to this instance never arrives (tab closed,
+        redirect blocked). Same completion as the landing route and the poll.
+        """
+        from flow_sdk.app.actions.oauth_action import complete_hub_flow  # noqa: PLC0415
+        from flow_sdk.core.oauth.flows import AuthFlowKind, get_flow  # noqa: PLC0415
+
+        flow_id = str(message.get("oauth_request_id") or "")
+        flow = get_flow(flow_id)
+        if flow is None or flow.kind != AuthFlowKind.HUB_CODE:
+            return
+        await complete_hub_flow(flow.provider, flow_id)
 
     def is_hub_conversation(self, conversation_id: str) -> bool:
         """Whether this conversation has been seen on the hub WS — i.e., is
@@ -279,7 +295,7 @@ class HubWsBridge:
 
         The tombstone is an in-flight guard, not an account-scoped one: it stops a
         queued hub materializer from recreating a parent a delete just removed.
-        Logout's bulk wipe (``clear_inbox``) borrows the same guard, but logout is
+        Logout's bulk wipe (``clear_stream_inbox``) borrows the same guard, but logout is
         not delete — those conversations still exist on the hub and the next login's
         catch-up pulls them back. The tombstones are memory-only and nothing else
         clears them, so a stale one silently drops every future inbound frame for
@@ -620,14 +636,14 @@ class HubWsBridge:
 
                     # Republish the unread projection now that the row + pointer
                     # projection have settled (never on the intermediate CREATE).
-                    inbox.touch("inbound-message")
+                    stream_inbox.touch("inbound-message")
 
                     # OS-level desktop notification for an inbound message from
                     # *another* user. Emitted HERE — after the message is
-                    # persisted — not alongside the persist task: the renderer
-                    # re-derives the unread count via ``listInboxMessages`` on
-                    # receipt, so broadcasting before the row lands would count a
-                    # stale inbox and the badge/pip would never increment.
+                    # persisted — not alongside the persist task: the unread count
+                    # is recomputed from the persisted rows (``stream_inbox.touch``
+                    # above), so broadcasting before the row lands would count a
+                    # stale stream inbox and the badge/pip would never increment.
                     # Broadcast to every desktop window so a backgrounded window
                     # still fires the banner/badge/dock-bounce. Skipped for our
                     # own messages (self-sends the hub echoes back — same guard as
@@ -750,7 +766,7 @@ class HubWsBridge:
             from flow_sdk.builtin.flow_message import delivery_advances  # noqa: PLC0415
 
             # ``is_read`` / ``is_archived`` are declared ``Sharing.HUB_WRITE`` (see
-            # flow_message.py) — per-machine inbox state the hub must NOT
+            # flow_message.py) — per-machine stream inbox state the hub must NOT
             # dictate. A body-READY UPDATE fans the full FlowMessage back to
             # every participant *including the sender*, carrying the hub's
             # is_read=False; copying it here clobbered the local read state
