@@ -5,6 +5,7 @@ const log = require('electron-log');
 const crypto = require('crypto');
 const UvManager = require('./uv-manager');
 const { createShutdown, relaunchAfterStop } = require('./shutdown');
+const { waitForBackend: runBackendGate, createLogActivityProbe } = require('./backend-wait');
 const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
 
 // Exact, copy-pasteable terminal commands surfaced to the user when the backend
@@ -240,11 +241,23 @@ const MAX_HEALTH_CHECKS = 240; // 120 seconds — cold-start window. Sized to ri
                                // isn't misread as "failed to start". Observed cold
                                // boots reach health in ~35-40s, so 120s keeps a ~3x
                                // margin. Do NOT raise to mask a slow boot — fix the
-                               // slow path instead.
+                               // slow path instead. A boot that is provably still
+                               // in progress gets more time on EVIDENCE, not on a
+                               // bigger number: see LOG_STALL_CHECKS below.
 const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — the just-upgraded path is the
                                         // slower one (all venv files freshly written →
                                         // heaviest AV scan), so this is the riskiest
                                         // window to tighten; kept == the normal window.
+// Past the base window the gate (backend-wait.js) keeps polling only while the
+// SERVER log (~/.flow/logs/server/, the backend's own stderr) keeps growing —
+// a weak machine still importing the backend writes to it, a hung or dead one
+// does not. LOG_STALL_CHECKS is how long that log may stay silent before the
+// wait ends anyway; MAX_EXTENDED_HEALTH_CHECKS bounds the whole wait even if the
+// log never goes quiet (the monitor restarting an unhealthy backend opens a
+// fresh log per attempt). The monitor log is deliberately NOT the signal: it
+// grows on every failed health check, i.e. fastest when the backend is broken.
+const LOG_STALL_CHECKS = 60;             // 30 seconds of server-log silence
+const MAX_EXTENDED_HEALTH_CHECKS = 1200; // 10 minutes, restart loops included
 
 let mainWindow = null;
 let uvManager = null;
@@ -590,25 +603,42 @@ function createWindow() {
   return mainWindow;
 }
 
+// Resolves `{ ready, reason, extended, elapsedSec, checks }` — see backend-wait.js.
+// `reason` is 'healthy' | 'timeout' | 'stalled' | 'hard-cap'.
 async function waitForBackend({ maxChecks = MAX_HEALTH_CHECKS } = {}) {
-  const timeoutSec = Math.round((maxChecks * HEALTH_CHECK_INTERVAL) / 1000);
-  log.info(`Waiting for backend at ${BACKEND_URL} (up to ${timeoutSec}s)...`);
+  const baseSec = Math.round((maxChecks * HEALTH_CHECK_INTERVAL) / 1000);
+  const serverLogDir = path.join(LOGS_BASE, 'server');
+  log.info(
+    `Waiting for backend at ${BACKEND_URL} (${baseSec}s, longer while ${serverLogDir} keeps growing)...`,
+  );
 
-  for (let i = 0; i < maxChecks; i++) {
-    try {
-      const response = await fetch(`${BACKEND_URL}/health/status`);
-      if (response.ok) {
-        log.info('Backend is ready!');
-        return true;
+  const result = await runBackendGate({
+    probeHealth: async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/health/status`);
+        return response.ok;
+      } catch {
+        return false; // Backend not ready yet
       }
-    } catch (error) {
-      // Backend not ready yet
-    }
-    await new Promise(resolve => setTimeout(resolve, HEALTH_CHECK_INTERVAL));
-  }
+    },
+    logActivity: createLogActivityProbe({
+      newestLogFile: () => getNewestLogFile(serverLogDir),
+      fileSize: (file) => fs.statSync(file).size,
+    }),
+    maxChecks,
+    stallChecks: LOG_STALL_CHECKS,
+    hardCapChecks: MAX_EXTENDED_HEALTH_CHECKS,
+    intervalMs: HEALTH_CHECK_INTERVAL,
+    onExtended: (elapsedSec) => sendStatus(`Waiting for server — still starting (${elapsedSec}s, the server log is active)`),
+    log,
+  });
 
-  log.error(`Backend failed to start within ${timeoutSec}s timeout`);
-  return false;
+  if (result.ready) {
+    log.info(`Backend is ready! (${result.elapsedSec}s, ${result.checks} checks${result.extended ? ', extended on log activity' : ''})`);
+  } else {
+    log.error(`Backend failed to start: ${result.reason} after ${result.elapsedSec}s (${result.checks} checks)`);
+  }
+  return result;
 }
 
 function sendStatus(message) {
@@ -824,15 +854,12 @@ async function startApp() {
   // window when we know we just ran uv install/upgrade.
   sendStatus('Waiting for server');
   const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
-  const backendReady = await waitForBackend(waitOpts);
+  const backendWait = await waitForBackend(waitOpts);
 
-  if (!backendReady) {
+  if (!backendWait.ready) {
     // Try to gather diagnostics for the error dialog
-    const timeoutSec = Math.round(
-      ((backendJustUpgraded ? POST_UPGRADE_HEALTH_CHECKS : MAX_HEALTH_CHECKS) *
-        HEALTH_CHECK_INTERVAL) / 1000,
-    );
-    let detail = `Backend server failed to respond within ${timeoutSec} seconds.`;
+    const timeoutSec = backendWait.elapsedSec;
+    let detail = `Backend server failed to respond within ${timeoutSec} seconds (${backendWait.reason}).`;
     try {
       const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
       if (newest) {
@@ -861,8 +888,12 @@ async function startApp() {
     // Surface the in-app recovery panel with copy-pasteable commands instead of
     // the native OS error box. The user quits from the panel's Quit button; the
     // next launch re-runs startApp() (including the upgrade path) from scratch.
+    const why = {
+      stalled: 'It was starting but its log went quiet, so it has most likely hung. ',
+      'hard-cap': 'It kept restarting without ever becoming healthy. ',
+    }[backendWait.reason] || '';
     showStartupTimeoutError(
-      `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ` +
+      `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ${why}` +
         'This usually means the installed Flowpad package is out of date or broken.',
     );
     return;
@@ -1218,7 +1249,7 @@ ipcMain.on('unwatch-startup-logs', () => {
 ipcMain.handle('restart-backend', async () => {
   if (uvManager) {
     await uvManager.restart();
-    return waitForBackend();
+    return (await waitForBackend()).ready;
   }
   return false;
 });
@@ -1245,7 +1276,7 @@ ipcMain.handle('upgrade-flowpad', async () => {
     await uvManager.start();
 
     sendStatus('Waiting for server');
-    const ready = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
+    const { ready } = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
 
     if (ready && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(BACKEND_URL);
