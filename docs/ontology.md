@@ -1,6 +1,6 @@
 ---
 id: 34e4f26a-5e06-47fa-8c37-5250bfd397f7
-version: 2
+version: 3
 ---
 # Ontology — type, subkind, kind
 
@@ -19,7 +19,7 @@ A *type* is a join key. A *subkind* is a discriminator. A *kind* is an ontology
 entry — the only one of the three that is open, prefix-matchable
 (`tag_is_within`, glob subscriptions) and extensible without an SDK release.
 
-## A kind always names a `DataSpec`
+## A kind names a SHAPE, never a row
 
 This is the rule the rest follows from, and it was not true before.
 
@@ -32,10 +32,17 @@ parse("compute_op")  -> ComputeOpSpec   # a document SHAPE — that spec declare
 parse("task")        -> Task            # a database ROW model
 ```
 
-A row model is not a `DataSpec`. A `SpecType` field holding one cannot validate a
+A row model is not a shape. A `SpecType` field holding one cannot validate a
 value against it — it would demand ids and DB columns the value has never heard
 of. So the fallback is gone and an asset type resolves to its **`asset_spec`**,
 its document shape, derived from the type name and never declared twice.
+
+Almost every kind names a `DataSpec`. The one exception is `fs_ref`, bound
+explicitly by `register_builtin_kinds()` to `FSRef` — a plain value class
+pydantic can still validate, and the shape a capability's discovered value takes.
+It is an SDK-registered exception, not a door: nothing else binds a kind to a
+non-`DataSpec`, and the half of the rule that matters — never an Entity row —
+holds without exception.
 
 A registered type with **no** asset document names no shape: `resolve_kind`
 raises rather than answering `Any`, because the author meant a real thing.
@@ -95,23 +102,39 @@ kinds register at class-definition time, where there is no database and may not
 yet be a running server. The row is where a human declares; the file is where the
 resolver looks.
 
-### Resolution — a walk up from the class's own file
+### Resolution — the loader declares
 
-`flow_sdk/schema/data_spec/_namespace.py`. A class resolves its own namespace at
-definition time from its own file (`cls.__module__` → the module's `__file__`,
-which the import machinery sets before the class body runs). Walking up, the
-first top-level `*.json` declaring an `ns` wins; nothing found means ours.
+`flow_sdk/schema/data_spec/_namespace.py` holds only `loading()` / `current()` /
+`qualified()`: stdlib, no I/O. A kind is minted when a class body runs, i.e.
+during an import, and the loader that started that import has already read the
+asset's manifest — so it knows the namespace before any class exists and says so
+for the duration:
 
-Matching on the document's *name* (`<family>/<name>/<family>.json`) was the
-obvious rule and is wrong: `load_driver` accepts any folder holding a
-`data_driver.json`, canonical layout or not, so a name rule would namespace an
-asset in its shipped home and silently miss the same asset anywhere else.
-**Declaring** **`ns`** **is the opt-in; the filename is not.**
+```python
+with loading(ns):                    # flow_sdk/ingest/driver_registry.py
+    cls = driver_class(load_module(folder, digest=digest))
+```
 
-No context variable, no ordering dependency, no second pass, no database. A
-module nested inside an asset (`data_driver/x/transport.py`) walks up to the same
-answer; a shared SDK module imported *by* an external driver resolves to ours,
-correctly, because its own path answers for it.
+Resolving, refusing and declaring are one seam (`_importing`), because they must
+always fire together and must fire *before* the import: a driver that has not
+named its ontology is refused while its classes are still undefined.
+
+The namespace itself is the driver's own `ns`, else its project's, resolved by
+the layer that owns manifests (`flow_sdk/assets/project_manifest.namespace_for`)
+— so a project declares once and every asset under it inherits.
+
+An earlier version DISCOVERED the namespace instead, by walking up from the
+class's own file. It is worth remembering why it was deleted: it put filesystem
+work in a layer that states it does none, re-spelled the assets directory, the
+project root and the manifest's fields that three other modules already own, and
+— because it scanned each directory it passed — climbed out of the project and
+parsed whatever JSON sat in the user's home, credential files included, on every
+import. A namespace that is *declared* cannot have that failure mode; a namespace
+that is *discovered* always can.
+
+Resolving to `flow` emits **no prefix** — that is what "the default is silent"
+means mechanically. What we ship is ours by definition, so shipped assets declare
+nothing and are never asked.
 
 A namespace is **frozen at first publish**: changing it re-keys every kind the
 asset ever minted.
@@ -125,15 +148,16 @@ with the shipped one and one of them would lose in silence.
 
 ## Coverage — every path a kind is minted
 
-| # | path                                                                                    | namespace                                     |
-| - | --------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 1 | `DataSpec.__pydantic_init_subclass__` (`spec.py`) — any spec class, on import           | the walk above                                |
-| 2 | `register_builtin_kinds()` (`_kinds.py`) — explicit SDK kinds (`fs_ref`)                | always ours                                   |
-| 3 | an asset loaded from a folder — `load_driver`, the lazy `add_kind_loader("ingest.", …)` | the walk; refused when an external names none |
-| 4 | an `asset_spec` registered under its type name (rule 4)                                 | the type's own project                        |
+| # | path                                                                                    | namespace                                                    |
+| - | --------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| 1 | `DataSpec.__pydantic_init_subclass__` (`spec.py`) — any spec class, on import           | whatever the loader declared; nothing ⇒ ours                 |
+| 2 | `register_builtin_kinds()` (`_kinds.py`) — explicit SDK kinds (`fs_ref`)                | always ours                                                  |
+| 3 | an asset loaded from a folder — `load_driver`, the lazy `add_kind_loader("ingest.", …)` | declared by `_importing`; an external naming none is refused |
+| 4 | an `asset_spec` registered under its type name (rule 4)                                 | the type's own project                                       |
 
 Paths 1 and 3 are one mechanism: loading an asset imports its module, and the
-class declaration is what registers. The walk is what makes that safe.
+class declaration is what registers. Scoping the declaration to that import
+is what makes it safe — a name cannot be claimed before the loader has had its say.
 
 ## Not yet done
 
