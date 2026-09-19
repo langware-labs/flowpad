@@ -2,19 +2,17 @@
   "type": "compute_op",
   "name": "jq-on-path",
   "label": "jq",
-  "icon": "Terminal",
   "description": "jq is on the PATH.",
-  "check": {
+  "completion_check": {
     "commands": {
       "linux": "command -v jq"
     }
   },
   "attempts": [
     {
-      "command": {
-        "commands": {
-          "linux": "apt-get update && apt-get install -y jq"
-        }
+      "kind": "command",
+      "commands": {
+        "linux": "apt-get update && apt-get install -y jq"
       }
     }
   ]

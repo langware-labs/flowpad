@@ -15,9 +15,11 @@ import pytest
 
 from flow_sdk.activity import Activity, ActivityState
 from flow_sdk.core.wizard import run_wizard
-from flow_sdk.core.wizard.exec import ShellResult
-from flow_sdk.core.wizard.process_step import ProcessResult
+from flow_sdk.core.compute.exec import ShellResult
+from flow_sdk.core.compute.process_step import ProcessResult
 from flow_sdk.schema.data_spec.activity_spec import MAX_DEPTH
+from flow_sdk.core.wizard.runner import Resolved
+from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 pytestmark = pytest.mark.timeout(5)
@@ -26,21 +28,34 @@ SPEC = WizardSpec.model_validate({
     "name": "Developer toolchain",
     "icon": "Wand2",
     "steps": [
-        {"id": "python3", "label": "Python 3", "on_fail": "continue",
-         "precondition": {"commands": {"linux": "have python3"}},
-         "process": {"prompt": "install python"},
-         "verify": {"commands": {"linux": "python3 --version"}}},
-        {"id": "git", "label": "Git", "on_fail": "continue",
-         "precondition": {"commands": {"linux": "have git"}},
-         "process": {"prompt": "install git"},
-         "verify": {"commands": {"linux": "git --version"}}},
+        {"id": "python3", "label": "Python 3", "kind": "compute",
+         "ref": "python3-on-path", "on_fail": "continue"},
+        {"id": "git", "label": "Git", "kind": "compute",
+         "ref": "git-on-path", "on_fail": "continue"},
     ],
 })
+
+#: The ops the steps call. The Activity tree is what is under test, so each is
+#: the smallest legal op: one question, one rung.
+OPS = {
+    name: ComputeOpSpec.model_validate({
+        "name": name,
+        "completion_check": {"commands": {"linux": f"have {name}"}},
+        "attempts": [{"kind": "agent", "agent": "provisioner", "prompt": f"install {name}"}],
+    })
+    for name in ("python3-on-path", "git-on-path")
+}
+
+
+async def _resolve_op(name):
+    spec = OPS.get(name)
+    return Resolved(spec, True) if spec is not None else None
 
 
 async def _run(shell, launch, *, path, subject_entity, tmp_path):
     await run_wizard(SPEC, subject_entity=subject_entity, activity_path=path, trusted=True,
-                     workdir=Path(tmp_path), shell=shell, launch=launch, platform="linux")
+                     workdir=Path(tmp_path), shell=shell, launch=launch, platform="linux",
+                     resolve_op=_resolve_op)
     return Activity.get(path, subject_entity=subject_entity).spec()
 
 

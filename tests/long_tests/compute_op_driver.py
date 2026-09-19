@@ -8,7 +8,7 @@ The agent rung still spawns a real worker through the backend running beside it.
 
     python3 tests/long_tests/compute_op_driver.py [name ...]
 
-Each case prints ``{"case": …, "ready": …, "detail": …, "seconds": …}`` and the
+Each case prints ``{"case": …, "ok": …, "exit_code": …, "detail": …, "seconds": …}`` and the
 script exits 0 whatever the verdicts say: the HOST test decides what "correct"
 means per case, because for one of them the correct answer is failure.
 """
@@ -86,14 +86,61 @@ async def main(names: list[str]) -> None:
                 load(name), trusted=True, platform="linux",
                 workdir=Path("/work"), resolve=resolve,
             )
-            row = {"case": name, "ready": verdict.ready, "detail": verdict.detail,
-                   "pending": list(verdict.pending)}
+            row = {"case": name, "ok": verdict.ok, "exit_code": int(verdict.exit_code),
+                   "detail": verdict.detail, "pending": list(verdict.pending),
+                   "value": verdict.value}
         except Exception as error:  # a raise is a result too — the host asserts on it
-            row = {"case": name, "ready": False, "error": f"{type(error).__name__}: {error}"}
+            row = {"case": name, "ok": False, "error": f"{type(error).__name__}: {error}"}
         row["seconds"] = round(time.monotonic() - started, 1)
         print("CASE " + json.dumps(row), flush=True)
 
 
+async def wizard(names: list[str]) -> None:
+    """Run the named ops as ONE wizard, and report what the sequence did.
+
+    The point is composition: a step calls an op, the op's answer is the step's,
+    a bound value reaches the next step, and the whole thing reports into one
+    Activity tree rather than one per call.
+    """
+    from flow_sdk.activity import Activity
+    from flow_sdk.core.wizard.runner import Resolved, run_wizard
+    from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
+
+    seed_origin()
+
+    async def resolve_op(name: str):
+        return Resolved(load(name), True) if (OPS / name).is_dir() else None
+
+    spec = WizardSpec.model_validate({
+        "name": "rig", "description": "the ops, sequenced",
+        "steps": [
+            {"id": name, "label": name, "kind": "compute", "ref": name, "on_fail": "continue"}
+            for name in names
+        ],
+    })
+    started = time.monotonic()
+    address = "wizard/rig"
+    result = await run_wizard(
+        spec, subject_entity="rig", activity_path=address, trusted=True,
+        workdir=Path("/work"), platform="linux", resolve_op=resolve_op,
+    )
+    tree = Activity.get(address, subject_entity="rig")
+    node = tree.spec() if tree is not None else None
+    print("WIZARD " + json.dumps({
+        "status": result.status,
+        "steps": [{"id": o.step_id, "status": o.status} for o in result.outcomes],
+        # ONE tree: a child per step, under one root, with the counters summed.
+        "children": [c.name for c in (node.children if node else [])],
+        "total": getattr(node, "total", None),
+        "seconds": round(time.monotonic() - started, 1),
+    }), flush=True)
+
+
 if __name__ == "__main__":
-    requested = sys.argv[1:] or sorted(p.name for p in OPS.iterdir() if p.is_dir())
-    asyncio.run(main(requested))
+    argv = sys.argv[1:]
+    if argv and argv[0] == "--wizard":
+        asyncio.run(wizard(argv[1:]))
+    else:
+        asyncio.run(main(argv or sorted(p.name for p in OPS.iterdir() if p.is_dir())))
+
+

@@ -31,6 +31,12 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 SHIPPED = (
     system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "dev-toolchain"
 )
+#: The ops its steps call. A step names one; the row has to be indexed for the
+#: resolver to find it, exactly as it is on a real machine.
+OPS = [
+    system_projects_root() / "flowpad_assistant" / "agentic-assets" / "compute_op" / name
+    for name in ("python3-on-path", "git-on-path")
+]
 #: The shipped wizard's trigger, as a child asset — the standard shape.
 SHIPPED_TRIGGER = SHIPPED / "agentic-assets" / "trigger" / "on-app-ready"
 UNAME = f"{WIZARD_TRIGGER_UNAME_PREFIX}dev_toolchain_0"
@@ -131,9 +137,17 @@ async def test_the_run_reports_through_the_activity_tree():
     try:
         spec = wizard.spec()
         assert spec is not None
+        # A step names an op; only the entity layer knows what is indexed and
+        # whether a callee is trusted here, so it supplies the resolvers.
+        from flow_sdk.core.wizard.execute import _resolve_op, _resolve_wizard
+
+        for folder in OPS:
+            await index_path("compute_op", folder, write=False)
+
         result = await run_wizard(
             spec, subject_entity=str(wizard.typeid), activity_path="wizard/chain-check",
             trusted=True, workdir=SHIPPED.parent,
+            resolve_op=_resolve_op, resolve_wizard=_resolve_wizard,
         )
         assert [o.step_id for o in result.outcomes] == ["python3", "git"]
         # This machine is a developer machine, so both are already there.

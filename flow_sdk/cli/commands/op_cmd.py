@@ -26,6 +26,9 @@ from typing import Any, NoReturn, Optional
 import typer
 from typing_extensions import Annotated
 
+from flow_sdk.schema.data_spec.compute_op_spec import AGENT_TIMEOUT
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
 from flow_sdk.cli.commands._common import (
     discover_port,
     fail,
@@ -42,17 +45,19 @@ op_app = typer.Typer(
     no_args_is_help=True,
 )
 
-EXIT_NOT_YET = 1
-#: NOT 2 — that is the CLI-wide "invalid argument", and a check whose skip
-#: is indistinguishable from a typo is worse than no skip at all.
-EXIT_NOT_APPLICABLE = 3
-EXIT_NOT_FOUND = 4
-EXIT_ACTION_FAILED = 7
+#: The exit codes ARE `ExitCode` — the same enum an in-process call returns,
+#: so a shell pipeline and Python agree by construction. (2 is absent on
+#: purpose: the CLI spends it on "invalid argument".)
+EXIT_NOT_YET = int(ExitCode.NOT_YET)
+EXIT_NOT_APPLICABLE = int(ExitCode.NOT_APPLICABLE)
+EXIT_NOT_FOUND = int(ExitCode.NOT_FOUND)
+EXIT_ACTION_FAILED = int(ExitCode.REFUSED)
 
-#: Mirrors ``ProcessActionSpec.timeout_seconds`` — the budget the DOCUMENT already
-#: declares for its slowest rung. The client waits as long as the server may
-#: legitimately take, so a run still in progress is never reported as a failure.
-RUN_TIMEOUT_SECONDS = 1800
+#: The budget the DOCUMENT already declares for its slowest rung, taken from the
+#: one place that defines it rather than re-spelled here. The client waits as
+#: long as the server may legitimately take, so a run still in progress is never
+#: reported as a failure.
+RUN_TIMEOUT_SECONDS = int(AGENT_TIMEOUT)
 
 
 def _on_error(not_found: str = ""):
@@ -119,12 +124,12 @@ def run(
     approved: Annotated[bool, typer.Option("--approved", help="Authorize an op this instance does not ship.")] = False,
 ) -> None:
     row = _find(name)
-    verdict: Optional[dict] = post_graph_json(
+    returned: Optional[dict] = post_graph_json(
         _url(f"compute_op/{row['id']}/run"),
         {"approved": approved},
         timeout=RUN_TIMEOUT_SECONDS,
         on_error=_on_error(f"Compute op not found: {name}"),
     )
-    verdict = verdict or {}
-    ok({"op": name, "verdict": verdict})
-    raise typer.Exit(0 if verdict.get("ready") else EXIT_NOT_YET)
+    returned = returned or {}
+    ok({"op": name, "returned": returned})
+    raise typer.Exit(int(returned.get("exit_code", EXIT_NOT_YET)))

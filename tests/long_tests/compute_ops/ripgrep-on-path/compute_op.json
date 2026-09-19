@@ -2,26 +2,23 @@
   "type": "compute_op",
   "name": "ripgrep-on-path",
   "label": "ripgrep",
-  "icon": "Search",
   "description": "The rg CLI is on the PATH.",
-  "check": {
+  "completion_check": {
     "commands": {
       "linux": "command -v rg"
     }
   },
   "attempts": [
     {
-      "command": {
-        "commands": {
-          "linux": "apt-get install -y ripgrep"
-        }
+      "kind": "command",
+      "commands": {
+        "linux": "apt-get install -y ripgrep"
       }
     },
     {
-      "process": {
-        "agent": "provisioner",
-        "prompt": "Reach this goal on this machine."
-      }
+      "kind": "agent",
+      "agent": "provisioner",
+      "prompt": "Reach this goal on this machine."
     }
   ]
 }

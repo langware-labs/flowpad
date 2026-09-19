@@ -14,24 +14,37 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.core.wizard import run_wizard
-from flow_sdk.core.wizard.exec import ShellResult
-from flow_sdk.core.wizard.process_step import ProcessResult
+from flow_sdk.core.compute.exec import ShellResult
+from flow_sdk.core.compute.process_step import ProcessResult
 from flow_sdk.core.wizard.runner import AWAITING_INPUT, COMPLETED, PENDING, SATISFIED
 from flow_sdk.core.wizard.state import input_env
+from flow_sdk.core.wizard.runner import Resolved
+from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
 SPEC = WizardSpec.model_validate({
     "name": "clone",
+    "inputs": {"repo_url": {"shape": "string", "label": "Repository URL"}},
     "steps": [
-        {"id": "ask-url", "label": "Repository URL",
-         "input": {"name": "repo_url", "shape": "string", "label": "Repository URL"}},
-        {"id": "clone", "label": "Clone", "on_fail": "abort",
-         "command": {"commands": {"linux": "git clone \"$FLOWPAD_WIZARD_INPUT_REPO_URL\""}},
-         "verify": {"commands": {"linux": "test -d repo"}}},
+        {"id": "ask-url", "label": "Repository URL", "kind": "ask", "ref": "repo_url"},
+        {"id": "clone", "label": "Clone", "kind": "compute", "ref": "clone-repo",
+         "on_fail": "abort"},
     ],
 })
+
+#: The work the step calls. The value reaches its command as ENVIRONMENT — the
+#: quoting here is the injection guard's subject, not decoration.
+CLONE_OP = ComputeOpSpec.model_validate({
+    "name": "clone-repo",
+    "completion_check": {"commands": {"linux": "test -d repo"}},
+    "attempts": [{"kind": "command", "commands": {"linux": 'git clone "$FLOWPAD_WIZARD_INPUT_REPO_URL"'}}],
+})
+
+
+async def _resolve_op(name):
+    return Resolved(CLONE_OP, True) if name == "clone-repo" else None
 
 
 async def _run(tmp_path, inputs=None, shell=None, launch=None, path="wizard-inp", resume=True):
@@ -47,6 +60,7 @@ async def _run(tmp_path, inputs=None, shell=None, launch=None, path="wizard-inp"
         # passes down: the stored answers on a resume, nothing on a fresh run.
         inputs=(inputs if resume else None),
         shell=shell or _ok, launch=launch or _launch, platform="linux",
+        resolve_op=_resolve_op,
     )
 
 
@@ -82,13 +96,15 @@ async def test_parking_does_not_run_the_steps_after_it(tmp_path):
 async def test_given_the_value_the_run_completes(tmp_path):
     result = await _run(tmp_path, inputs={"repo_url": "https://x/y"}, path="wizard-inp-c")
     assert result.status == COMPLETED
-    assert [o.status for o in result.outcomes] == [SATISFIED, COMPLETED]
+    # Both skip: the value was supplied, and the stub shell says the clone is
+    # already there. "Nothing to do" is the right answer to both questions.
+    assert [o.status for o in result.outcomes] == [SATISFIED, SATISFIED]
 
 
 @pytest.mark.asyncio
 async def test_an_optional_input_skips_instead_of_parking(tmp_path):
     body = SPEC.model_dump()
-    body["steps"][0]["input"]["optional"] = True
+    body["inputs"]["repo_url"]["optional"] = True
     spec = WizardSpec.model_validate(body)
 
     async def _ok(_c, **_kw):
@@ -98,9 +114,14 @@ async def test_an_optional_input_skips_instead_of_parking(tmp_path):
         return ProcessResult("p", True)
 
     result = await run_wizard(spec, subject_entity=None, activity_path="wizard-inp-d", trusted=True,
-                              workdir=Path(tmp_path), shell=_ok, launch=_launch, platform="linux")
+                              workdir=Path(tmp_path), shell=_ok, launch=_launch, platform="linux",
+                              resolve_op=_resolve_op)
     assert result.status == COMPLETED
-    assert result.outcomes[0].status == "not_applicable"
+    # A skip, not a "does not apply here": `not_applicable` means this machine
+    # is the wrong one, and an unanswered optional question is neither wrong
+    # nor outstanding. The message says which kind of skip it was.
+    assert result.outcomes[0].skipped
+    assert "optional" in result.outcomes[0].message
 
 
 @pytest.mark.asyncio
@@ -139,25 +160,28 @@ async def test_resume_is_just_a_re_run_and_redoes_nothing(tmp_path):
             return ShellResult(returncode=0)
         return ShellResult(returncode=0 if done["cloned"] else 1)
 
-    body = SPEC.model_dump()
-    body["steps"][1]["precondition"] = {"commands": {"linux": "test -d repo"}}
-    spec = WizardSpec.model_validate(body)
+    # The op already asks `test -d repo` before it acts — one question, asked
+    # before and after, is what makes the re-run redo nothing.
+    spec = SPEC
 
     async def _launch(**_kw):
         return ProcessResult("p", True)
 
     first = await run_wizard(spec, subject_entity=None, activity_path="wizard-inp-f", trusted=True,
-                             workdir=Path(tmp_path), shell=shell, launch=_launch, platform="linux")
+                             workdir=Path(tmp_path), shell=shell, launch=_launch, platform="linux",
+                             resolve_op=_resolve_op)
     assert first.status == PENDING
 
     second = await run_wizard(spec, subject_entity=None, activity_path="wizard-inp-f", trusted=True,
                               workdir=Path(tmp_path), inputs={"repo_url": "u"},
-                              shell=shell, launch=_launch, platform="linux")
+                              shell=shell, launch=_launch, platform="linux",
+                              resolve_op=_resolve_op)
     assert second.status == COMPLETED
 
     third = await run_wizard(spec, subject_entity=None, activity_path="wizard-inp-f", trusted=True,
                              workdir=Path(tmp_path), inputs={"repo_url": "u"},
-                             shell=shell, launch=_launch, platform="linux")
+                             shell=shell, launch=_launch, platform="linux",
+                              resolve_op=_resolve_op)
     assert [o.status for o in third.outcomes] == [SATISFIED, SATISFIED], (
         "a third run must do nothing — verify re-asks and everything is already true"
     )

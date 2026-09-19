@@ -2,22 +2,20 @@
   "type": "compute_op",
   "name": "apk-cache-warm",
   "label": "the apk cache",
-  "icon": "Layers",
   "description": "Alpine's package index is warm \u2014 on Alpine only.",
-  "check": {
+  "completion_check": {
     "commands": {
       "linux": "test -f /etc/alpine-release || exit 3"
-    },
-    "not_applicable_codes": [
-      3
-    ]
+    }
   },
+  "not_applicable_codes": [
+    3
+  ],
   "attempts": [
     {
-      "command": {
-        "commands": {
-          "linux": "apk update"
-        }
+      "kind": "command",
+      "commands": {
+        "linux": "apk update"
       }
     }
   ]

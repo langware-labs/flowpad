@@ -155,7 +155,7 @@ def test_glm_answers_through_claude_code(funded):
     _exec(funded["name"], "mkdir -p /work")
     answered = _exec(funded["name"], "python3 - <<'PY'\n"
         "import asyncio\n"
-        "from flow_sdk.core.wizard.process_step import launch_step_process\n"
+        "from flow_sdk.core.compute.process_step import launch_step_process\n"
         "async def main():\n"
         "    out = await launch_step_process(agent='provisioner',\n"
         "        prompt='Reply with exactly: RIG-OK. Do not run any command.',\n"
@@ -172,29 +172,29 @@ def test_glm_answers_through_claude_code(funded):
 def test_a_goal_already_true_on_arrival_runs_nothing(funded):
     # git ships in this image, so the check answers and no attempt runs.
     row = _drive(funded, "git-on-path")["git-on-path"]
-    assert row["ready"] and "already satisfied" in row["detail"]
+    assert row["ok"] and "already satisfied" in row["detail"]
 
 
 def test_not_applicable_is_a_pass_not_a_failure(funded):
     # Alpine-only, on a Debian image: the check says "not mine" with exit 3.
     row = _drive(funded, "apk-cache-warm")["apk-cache-warm"]
-    assert row["ready"] and "not applicable here" in row["detail"]
+    assert row["ok"] and "not applicable here" in row["detail"]
 
 
 def test_the_plain_case_installs_once_then_does_nothing(funded):
     first = _drive(funded, "jq-on-path")["jq-on-path"]
-    assert first["ready"], first
+    assert first["ok"], first
     assert "the command attempt did it" in first["detail"]
 
     second = _drive(funded, "jq-on-path")["jq-on-path"]
-    assert second["ready"] and "already satisfied" in second["detail"]
+    assert second["ok"] and "already satisfied" in second["detail"]
     # The whole idempotency claim: the second run is one check and nothing else.
     assert second["seconds"] < first["seconds"]
 
 
 def test_an_unreachable_goal_reports_pending_and_does_not_raise(funded):
     row = _drive(funded, "unreachable")["unreachable"]
-    assert row["ready"] is False
+    assert row["ok"] is False
     assert row["pending"] == ["unreachable"]
     assert "error" not in row, "attempts exhausted is a verdict, not an exception"
 
@@ -210,16 +210,16 @@ def test_the_agent_rescues_an_install_the_cheap_rung_could_not_do(funded):
     does not depend on which case ran before it.
     """
     row = _drive(funded, "ripgrep-on-path")["ripgrep-on-path"]
-    assert row["ready"], row
-    assert "the process attempt did it" in row["detail"]
+    assert row["ok"], row
+    assert "the agent attempt did it" in row["detail"]
 
 
 def test_a_rung_that_exits_zero_without_reaching_the_goal_escalates(funded):
     """`pip install --user` exits 0 and lands the script in ~/.local/bin, which is
     not on a non-login shell's PATH. The rung succeeded; the goal is not reached."""
     row = _drive(funded, "cowsay-on-path")["cowsay-on-path"]
-    assert row["ready"], row
-    assert "the process attempt did it" in row["detail"]
+    assert row["ok"], row
+    assert "the agent attempt did it" in row["detail"]
 
 
 def test_a_started_service_that_answers_the_wrong_thing_is_not_done(funded):
@@ -229,22 +229,22 @@ def test_a_started_service_that_answers_the_wrong_thing_is_not_done(funded):
     design that trusts the attempt instead of the question.
     """
     row = _drive(funded, "app-answers")["app-answers"]
-    assert row["ready"], row
-    assert "the process attempt did it" in row["detail"]
+    assert row["ok"], row
+    assert "the agent attempt did it" in row["detail"]
 
 
 def test_a_service_goal_is_reached_and_then_left_alone(funded):
     first = _drive(funded, "redis-running")["redis-running"]
-    assert first["ready"], first
+    assert first["ok"], first
     second = _drive(funded, "redis-running")["redis-running"]
-    assert second["ready"] and "already satisfied" in second["detail"]
+    assert second["ok"] and "already satisfied" in second["detail"]
 
 
 # ── composition ──────────────────────────────────────────────────────────────
 
 def test_a_chain_three_deep_proves_each_link_before_the_next(funded):
     rows = _drive(funded, "deps-installed")
-    assert rows["deps-installed"]["ready"], rows
+    assert rows["deps-installed"]["ok"], rows
     # Only the goal reports; its dependencies ran inside it. That they ran is
     # visible in the machine: git exists, the clone is there, the import works.
     checks = _exec(funded["name"],
@@ -265,8 +265,8 @@ def test_the_asset_layer_round_trips_and_answers_flow_op_check(funded):
         "name": "rig-workspace",
         "label": "the rig workspace",
         "description": "/work exists.",
-        "check": {"commands": {"linux": "test -d /work"}},
-        "attempts": [{"command": {"commands": {"linux": "mkdir -p /work"}}}],
+        "completion_check": {"commands": {"linux": "test -d /work"}},
+        "attempts": [{"kind": "command", "commands": {"linux": "mkdir -p /work"}}],
         "setup": "The container already has /work.\n",
     })
     assert created.status_code == 200, created.text[:300]
@@ -287,3 +287,31 @@ def test_the_asset_layer_round_trips_and_answers_flow_op_check(funded):
     assert refused.returncode != 0 and "Approve it" in refused.stdout + refused.stderr
     approved = _exec(funded["name"], "cd /app && flow op run rig-workspace --approved")
     assert approved.returncode == 0, f"{approved.stdout}\n{approved.stderr[-800:]}"
+
+
+# ── the wizard on top of the ops ─────────────────────────────────────────────
+
+def test_a_wizard_sequences_ops_into_one_activity_tree(funded):
+    """The refactor's whole claim, in a container.
+
+    A Wizard is a sequencer: each step CALLS an op, the op's answer is the step's
+    verdict, and the run reports into ONE tree — a root with a child per step —
+    rather than a root per call. The escalation case is in the sequence on
+    purpose, so the agent rung runs under a step's node and not beside it.
+    """
+    done = _sh(
+        "docker", "exec", "-i", funded["name"], "sh", "-c",
+        "cd /app && python3 tests/long_tests/compute_op_driver.py --wizard "
+        "git-on-path jq-on-path cowsay-on-path",
+        check=False, timeout=1500,
+    )
+    line = next((l for l in done.stdout.splitlines() if l.startswith("WIZARD ")), "")
+    assert line, f"the driver produced no wizard run:\n{done.stdout[-2000:]}\n{done.stderr[-2000:]}"
+    run = json.loads(line[len("WIZARD "):])
+
+    assert run["status"] == "completed", run
+    assert [s["id"] for s in run["steps"]] == ["git-on-path", "jq-on-path", "cowsay-on-path"]
+    assert all(s["status"] in ("satisfied", "completed") for s in run["steps"]), run
+    # ONE tree: a child per step under a single root, not three roots.
+    assert run["children"] == ["git-on-path", "jq-on-path", "cowsay-on-path"], run
+    assert run["total"] == 3

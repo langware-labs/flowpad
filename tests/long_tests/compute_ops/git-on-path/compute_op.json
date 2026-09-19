@@ -2,19 +2,17 @@
   "type": "compute_op",
   "name": "git-on-path",
   "label": "git",
-  "icon": "GitBranch",
   "description": "git is on the PATH.",
-  "check": {
+  "completion_check": {
     "commands": {
       "linux": "command -v git"
     }
   },
   "attempts": [
     {
-      "command": {
-        "commands": {
-          "linux": "apt-get update && apt-get install -y git"
-        }
+      "kind": "command",
+      "commands": {
+        "linux": "apt-get update && apt-get install -y git"
       }
     }
   ]
