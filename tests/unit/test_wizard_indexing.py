@@ -27,12 +27,8 @@ DOC = {
     "name": "Developer toolchain",
     "description": "python3 and git",
     "steps": [
-        {"id": "python3", "label": "Python 3",
-         "precondition": {"commands": {"linux": "command -v python3"}},
-         "process": {"prompt": "install python"}},
-        {"id": "git", "label": "Git",
-         "precondition": {"commands": {"linux": "command -v git"}},
-         "process": {"prompt": "install git"}},
+        {"id": "python3", "label": "Python 3", "kind": "compute", "ref": "python3-on-path"},
+        {"id": "git", "label": "Git", "kind": "compute", "ref": "git-on-path"},
     ],
 }
 

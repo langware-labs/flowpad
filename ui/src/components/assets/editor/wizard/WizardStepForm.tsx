@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import type { WizardIssue } from '@sdk';
 
 import { Button } from '@src/components/ui/button';
@@ -12,13 +12,7 @@ import {
   SelectValue,
 } from '@src/components/ui/select';
 
-import {
-  ACTION_KINDS,
-  actionKindOf,
-  PLATFORMS,
-  type ActionKind,
-  type WizardStepDoc,
-} from './wizard-doc';
+import { ON_FAIL, STEP_KINDS, nextFreeName, type StepKind, type WizardStepDoc } from './wizard-doc';
 
 /** A text field that commits on BLUR, never per keystroke — a keystroke-level
  *  write would rewrite `wizard.json` on every character, and each write costs a
@@ -56,7 +50,7 @@ export function CommitField({
   );
 }
 
-function IssueList({ issues }: { issues: WizardIssue[] }) {
+export function IssueList({ issues }: { issues: WizardIssue[] }) {
   if (!issues.length) return null;
   return (
     <ul className="mt-1">
@@ -73,81 +67,43 @@ function IssueList({ issues }: { issues: WizardIssue[] }) {
 }
 
 /**
- * The per-OS command map, which appears three times in a step (precondition,
- * command, verify) with identical shape — hence one component rather than three
- * copies that drift.
+ * A field that OFFERS known names without refusing an unknown one.
  *
- * An empty box REMOVES that platform's key rather than writing `""`: an empty
- * string is a command, and it is one that succeeds, which would silently turn a
- * precondition into "always satisfied".
- */
-function CommandsField({
-  commands,
-  onSet,
-  onRemove,
-  readOnly,
-  issues,
-  testIdPrefix,
-}: {
-  commands: Record<string, string> | undefined;
-  onSet: (platform: string, command: string) => void;
-  onRemove: (platform: string) => void;
-  readOnly?: boolean;
-  issues: WizardIssue[];
-  testIdPrefix: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      {PLATFORMS.map((platform) => (
-        <label key={platform} className="grid grid-cols-[4.5rem_1fr] items-center gap-2">
-          <span className="font-mono text-[11px] text-muted-foreground">{platform}</span>
-          <CommitField
-            mono
-            readOnly={readOnly}
-            testId={`${testIdPrefix}-${platform}`}
-            value={commands?.[platform] ?? ''}
-            onCommit={(next) => (next.trim() ? onSet(platform, next) : onRemove(platform))}
-          />
-        </label>
-      ))}
-      <IssueList issues={issues} />
-    </div>
-  );
-}
-
-/**
- * One step, as an editable form.
+ * A datalist, not a Select: a document written elsewhere may name an op, a
+ * wizard or a parameter this machine does not have, and a Select would silently
+ * render that as empty — erasing the name on the next save. The list offers what
+ * is known; the field still accepts anything.
  *
- * Every edit is expressed as a PATH into the document (`['steps', 3, 'verify',
- * 'commands', 'darwin']`) rather than as a reshaped step object, so a key this
- * form does not render — a `satisfied_codes`, a `timeout_seconds` — survives an
- * edit to the field beside it.
+ * `unknown` says nothing when the roster is EMPTY, because an empty roster means
+ * the list has not loaded, not that everything is missing.
  */
-function AgentField({
+export function SuggestField({
   value,
-  agents,
+  options,
   onCommit,
   readOnly,
   testId,
+  placeholder,
+  unknownHint,
 }: {
   value: string;
-  agents: string[];
+  options: string[];
   onCommit: (next: string) => void;
   readOnly?: boolean;
   testId: string;
+  placeholder?: string;
+  /** Rendered when `value` is set and not among a non-empty `options`. */
+  unknownHint?: string;
 }) {
-  const known = agents.length === 0 || agents.includes(value);
+  const known = options.length === 0 || options.includes(value);
   return (
     <>
-      {/* A datalist, not a Select: a document written elsewhere may name an
-          agent this machine does not have, and a Select would silently show it
-          as empty — erasing the name on the next save. The list OFFERS what is
-          installed; the field still accepts anything. */}
       <input
         key={value}
         list={`${testId}-options`}
         defaultValue={value}
         readOnly={readOnly}
+        placeholder={placeholder}
         data-testid={testId}
         className="h-8 w-full rounded-md border border-input bg-transparent px-3 font-mono text-xs"
         onBlur={(e) => {
@@ -155,47 +111,157 @@ function AgentField({
         }}
       />
       <datalist id={`${testId}-options`}>
-        {agents.map((name) => (
+        {options.map((name) => (
           <option key={name} value={name} />
         ))}
       </datalist>
-      {value && !known ? (
+      {value && !known && unknownHint ? (
         <p className="text-[11px] text-amber-600 dark:text-amber-500" data-testid={`${testId}-unknown`}>
-          <Trans>No agent named "{value}" on this machine — the step will fail when it runs.</Trans>
+          {unknownHint}
         </p>
       ) : null}
     </>
   );
 }
 
+/**
+ * The step's arguments: a FLAT map from the callee's parameter name to a value.
+ *
+ * Deliberately two plain boxes per row. `args` is not a template language —
+ * there is no `${...}`, and a value is either a name in scope or a literal — so
+ * anything more elaborate than key/value would be inventing syntax the runner
+ * does not read. The value box offers the names in scope; it accepts any
+ * literal, because the form cannot tell which was meant.
+ */
+function ArgsField({
+  args,
+  scope,
+  readOnly,
+  testIdPrefix,
+  onSet,
+  onRemove,
+  onRename,
+}: {
+  args: Record<string, string> | undefined;
+  scope: string[];
+  readOnly?: boolean;
+  testIdPrefix: string;
+  onSet: (key: string, value: string) => void;
+  onRemove: (key: string) => void;
+  onRename: (from: string, to: string) => void;
+}) {
+  const { t } = useLingui();
+  const entries = Object.entries(args ?? {});
+
+  return (
+    <div className="flex flex-col gap-1">
+      {entries.map(([key, value]) => (
+        <div key={key} className="flex items-center gap-1.5">
+          <div className="w-40 shrink-0">
+            <CommitField
+              mono
+              readOnly={readOnly}
+              value={key}
+              testId={`${testIdPrefix}-key-${key}`}
+              placeholder={t`parameter`}
+              onCommit={(next) => next.trim() && onRename(key, next.trim())}
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <SuggestField
+              readOnly={readOnly}
+              value={value}
+              options={scope}
+              testId={`${testIdPrefix}-value-${key}`}
+              placeholder={t`a name in scope, or a literal`}
+              onCommit={(next) => onSet(key, next)}
+            />
+          </div>
+          {!readOnly && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 shrink-0 p-0"
+              onClick={() => onRemove(key)}
+              title={t`Remove this argument`}
+              data-testid={`${testIdPrefix}-remove-${key}`}
+            >
+              <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+          )}
+        </div>
+      ))}
+      {!readOnly && (
+        <div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 px-1.5 text-[11px]"
+            data-testid={`${testIdPrefix}-add`}
+            // A blank key is a legal placeholder in the FORM but not in the
+            // document, so the new row is named rather than empty — an empty
+            // key would fail validation before it could be typed into.
+            onClick={() => onSet(nextFreeName(Object.keys(args ?? {}), 'arg_'), '')}
+          >
+            <Plus className="h-3 w-3" />
+            <Trans>Add argument</Trans>
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** What each kind's `ref` names, said in the field's own label. The three words
+ *  are the difference between the kinds, so they are not left to be guessed. */
+const REF_LABEL: Record<StepKind, string> = {
+  compute: 'Op',
+  wizard: 'Wizard',
+  ask: 'Input',
+};
+
+/**
+ * One step, as an editable form.
+ *
+ * Every edit is expressed as a PATH into the document (`['steps', 3, 'args',
+ * 'API_KEY']`) rather than as a reshaped step object, so a key this form does
+ * not render survives an edit to the field beside it.
+ */
 export function WizardStepForm({
   step,
   index,
-  agents,
   expanded,
   onToggle,
   onSet,
   onRemove,
-  onSetAction,
+  onSetKind,
   onDelete,
   readOnly,
   issuesAt,
+  refOptions,
+  scope,
+  duplicateId,
 }: {
   step: WizardStepDoc;
   index: number;
-  /** Agents installed here, to OFFER — never to restrict. */
-  agents: string[];
   expanded: boolean;
   onToggle: () => void;
   onSet: (path: (string | number)[], value: unknown) => void;
   onRemove: (path: (string | number)[]) => void;
-  onSetAction: (kind: ActionKind) => void;
+  onSetKind: (kind: StepKind) => void;
   onDelete: () => void;
   readOnly: boolean;
   issuesAt: (path: (string | number)[]) => WizardIssue[];
+  /** Names this step's `kind` can refer to — offered, never enforced. */
+  refOptions: string[];
+  /** Names an `args` value may refer to: the wizard's parameters and the steps
+   *  before this one. */
+  scope: string[];
+  /** Another step declares this id too, so their outcomes collide. */
+  duplicateId?: boolean;
 }) {
   const { t } = useLingui();
-  const kind = actionKindOf(step);
+  const kind: StepKind = step.kind ?? 'compute';
   const at = (...rest: (string | number)[]) => ['steps', index, ...rest];
   const Chevron = expanded ? ChevronDown : ChevronRight;
 
@@ -211,6 +277,10 @@ export function WizardStepForm({
           <Chevron className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="font-mono text-xs text-muted-foreground">{step.id}</span>
           <span className="text-sm">{step.label || ''}</span>
+          <span className="font-mono text-[11px] text-muted-foreground/70">
+            {kind}
+            {step.ref ? ` · ${step.ref}` : ''}
+          </span>
         </button>
         {!readOnly && (
           <Button
@@ -225,6 +295,18 @@ export function WizardStepForm({
           </Button>
         )}
       </div>
+
+      {duplicateId ? (
+        <p
+          className="px-2 pb-2 text-[11px] text-amber-600 dark:text-amber-500"
+          data-testid={`wizard-step-duplicate-${step.id}`}
+        >
+          {/* Not cosmetic: the id is the activity address and the key an outcome
+              joins on, so two steps sharing one collapse into a single node and
+              one result silently replaces the other. */}
+          <Trans>Another step already uses this id — their results will overwrite each other.</Trans>
+        </p>
+      ) : null}
 
       {expanded && (
         <div className="flex flex-col gap-3 border-t border-border p-3">
@@ -253,25 +335,38 @@ export function WizardStepForm({
               onCommit={(v) => (v.trim() ? onSet(at('label'), v) : onRemove(at('label')))}
             />
           </label>
+          <label className="grid grid-cols-[5.5rem_1fr] items-center gap-2">
+            <span className="text-xs uppercase tracking-wider text-muted-foreground">
+              <Trans>About</Trans>
+            </span>
+            <CommitField
+              readOnly={readOnly}
+              value={step.description ?? ''}
+              testId={`wizard-step-description-${step.id}`}
+              onCommit={(v) =>
+                v.trim() ? onSet(at('description'), v) : onRemove(at('description'))
+              }
+            />
+          </label>
 
           <label className="grid grid-cols-[5.5rem_1fr] items-center gap-2">
             <span className="text-xs uppercase tracking-wider text-muted-foreground">
-              <Trans>Action</Trans>
+              <Trans>Kind</Trans>
             </span>
             <Select
-              value={kind ?? ''}
+              value={kind}
               disabled={readOnly}
-              // ATOMIC: the old action is dropped and the new one seeded in one
-              // transition, so the document never passes through a state with
-              // zero or two actions — which the backend rejects, and which would
-              // put an error banner on a change not yet finished.
-              onValueChange={(value) => onSetAction(value as ActionKind)}
+              // ATOMIC with the `ref` it invalidates: the same string means an
+              // op under `compute` and a parameter under `ask`, so they change
+              // in one transition rather than leaving a step that points at
+              // something which does not exist while looking deliberate.
+              onValueChange={(value) => onSetKind(value as StepKind)}
             >
               <SelectTrigger className="h-8" data-testid={`wizard-step-kind-${step.id}`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ACTION_KINDS.map((option) => (
+                {STEP_KINDS.map((option) => (
                   <SelectItem key={option} value={option}>
                     {option}
                   </SelectItem>
@@ -280,110 +375,71 @@ export function WizardStepForm({
             </Select>
           </label>
 
-          {kind === 'command' && (
-            <Section title={t`Runs`}>
-              <CommandsField
+          <Section title={REF_LABEL[kind]}>
+            <SuggestField
+              readOnly={readOnly}
+              value={step.ref ?? ''}
+              options={refOptions}
+              testId={`wizard-step-ref-${step.id}`}
+              placeholder={
+                kind === 'compute'
+                  ? t`an op name`
+                  : kind === 'wizard'
+                    ? t`a wizard name`
+                    : t`one of this wizard's inputs`
+              }
+              unknownHint={
+                kind === 'ask'
+                  ? t`This wizard declares no input named "${step.ref ?? ''}".`
+                  : t`Nothing named "${step.ref ?? ''}" on this machine — the step will fail when it runs.`
+              }
+              onCommit={(v) => v.trim() && onSet(at('ref'), v.trim())}
+            />
+            <IssueList issues={issuesAt(at('ref'))} />
+          </Section>
+
+          {/* An `ask` step passes nothing on: it reads a value the wizard was
+              given, which is what its `ref` already names. */}
+          {kind === 'ask' ? null : (
+            <Section title={t`Arguments`}>
+              <ArgsField
                 readOnly={readOnly}
-                testIdPrefix={`wizard-step-command-${step.id}`}
-                commands={step.command?.commands}
-                issues={issuesAt(at('command', 'commands'))}
-                onSet={(p, c) => onSet(at('command', 'commands', p), c)}
-                onRemove={(p) => onRemove(at('command', 'commands', p))}
+                args={step.args}
+                scope={scope}
+                testIdPrefix={`wizard-step-args-${step.id}`}
+                onSet={(key, value) => onSet(at('args', key), value)}
+                onRemove={(key) => onRemove(at('args', key))}
+                onRename={(from, to) => {
+                  if (from === to) return;
+                  onSet(at('args', to), step.args?.[from] ?? '');
+                  onRemove(at('args', from));
+                }}
               />
+              <IssueList issues={issuesAt(at('args'))} />
             </Section>
           )}
 
-          {kind === 'input' && (
-            <Section title={t`Asks for`}>
-              <CommitField
-                mono
-                readOnly={readOnly}
-                value={step.input?.name ?? ''}
-                testId={`wizard-step-input-${step.id}`}
-                placeholder={t`value name`}
-                onCommit={(v) => v.trim() && onSet(at('input', 'name'), v.trim())}
-              />
-              <IssueList issues={issuesAt(at('input'))} />
-            </Section>
-          )}
-
-          {kind === 'process' && (
-            <>
-              <Section title={t`Agent`}>
-                <AgentField
-                  readOnly={readOnly}
-                  value={step.process?.agent ?? ''}
-                  agents={agents}
-                  testId={`wizard-step-agent-${step.id}`}
-                  onCommit={(v) => v.trim() && onSet(at('process', 'agent'), v.trim())}
-                />
-                <IssueList issues={issuesAt(at('process', 'agent'))} />
-              </Section>
-
-              <Section title={t`Ask it to`}>
-                {/* A prompt is paragraphs, not a line. The same commit-on-blur
-                    rule as every other field — a keystroke-level write would
-                    validate and reindex on every character. */}
-                <textarea
-                  key={step.process?.prompt ?? ''}
-                  defaultValue={step.process?.prompt ?? ''}
-                  readOnly={readOnly}
-                  rows={5}
-                  data-testid={`wizard-step-prompt-${step.id}`}
-                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs"
-                  onBlur={(e) => {
-                    if (!readOnly && e.target.value !== (step.process?.prompt ?? '')) {
-                      onSet(at('process', 'prompt'), e.target.value);
-                    }
-                  }}
-                />
-                <IssueList issues={issuesAt(at('process', 'prompt'))} />
-              </Section>
-
-              <Section title={t`Returns`}>
-                <CommitField
-                  mono
-                  readOnly={readOnly}
-                  value={step.process?.output ?? ''}
-                  testId={`wizard-step-output-${step.id}`}
-                  placeholder={t`a name — leave empty and the step only reports that the agent stopped`}
-                  onCommit={(v) =>
-                    v.trim() ? onSet(at('process', 'output'), v.trim()) : onRemove(at('process', 'output'))
-                  }
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  {/* Says what naming it BUYS, because the field is opt-in and
-                      its value is entirely in the consequences. */}
-                  <Trans>
-                    Named, the agent must report its result — and the step fails if it reports a
-                    failure, or reports nothing. Later steps read it as an input.
-                  </Trans>
-                </p>
-              </Section>
-            </>
-          )}
-
-          <Section title={t`Skip if`}>
-            <CommandsField
-              readOnly={readOnly}
-              testIdPrefix={`wizard-step-precondition-${step.id}`}
-              commands={step.precondition?.commands}
-              issues={issuesAt(at('precondition', 'commands'))}
-              onSet={(p, c) => onSet(at('precondition', 'commands', p), c)}
-              onRemove={(p) => onRemove(at('precondition', 'commands', p))}
-            />
-          </Section>
-
-          <Section title={t`Proved by`}>
-            <CommandsField
-              readOnly={readOnly}
-              testIdPrefix={`wizard-step-verify-${step.id}`}
-              commands={step.verify?.commands}
-              issues={issuesAt(at('verify', 'commands'))}
-              onSet={(p, c) => onSet(at('verify', 'commands', p), c)}
-              onRemove={(p) => onRemove(at('verify', 'commands', p))}
-            />
-          </Section>
+          <label className="grid grid-cols-[5.5rem_1fr] items-center gap-2">
+            <span className="text-xs uppercase tracking-wider text-muted-foreground">
+              <Trans>If it fails</Trans>
+            </span>
+            <Select
+              value={step.on_fail ?? 'abort'}
+              disabled={readOnly}
+              onValueChange={(value) => onSet(at('on_fail'), value)}
+            >
+              <SelectTrigger className="h-8" data-testid={`wizard-step-onfail-${step.id}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ON_FAIL.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
 
           <IssueList issues={issuesAt(at())} />
         </div>

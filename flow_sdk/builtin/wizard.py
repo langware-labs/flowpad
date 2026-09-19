@@ -30,6 +30,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.core.wizard.runner import WizardRunResult
     from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,37 @@ class Wizard(Entity):
             return default
         return {**default, **state} if state else default
 
+    async def run(self, *, approved: bool = False, resume: Optional[bool] = None) -> "WizardRunResult":
+        """Run this wizard, and answer what it did.
+
+        The OOP twin of ``ComputeOp.run``: a caller in Python drives the entity,
+        not a route. ``run_action`` is this plus the HTTP shapes — the approval
+        it reads off a POST body, and the status codes a refusal maps to.
+
+        ``resume=None`` means "decide from what the last run left behind": a
+        ``pending`` run is mid-flight and its answers carry forward; anything
+        else is finished, so this is a new run and it asks again.
+        """
+        from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
+        from flow_sdk.core.wizard.runner import WizardNotApproved  # noqa: PLC0415
+        from flow_sdk.core.wizard.state import read_state  # noqa: PLC0415
+
+        spec = self.spec()
+        if spec is None:
+            raise ValueError(f"{self.name or self.asset_ref}: the document is missing or unreadable.")
+        trusted = approved or self.is_system()
+        if not trusted:
+            raise WizardNotApproved(
+                f"{self.name or 'This wizard'} is not shipped with Flowpad. It runs commands "
+                "on this machine, so it must be approved before it can run."
+            )
+        if resume is None:
+            resume = read_state(str(self.id)).get("status") == "pending"
+        return await execute_wizard(
+            str(self.id), spec, self.asset_ref or "",
+            trusted=True, approved=approved, resume=resume, subject_entity=str(self.typeid),
+        )
+
     @action.post(action_name="set-input")
     async def set_input_action(self) -> ApiResponse:
         """`POST /wizard/<id>/set-input` — `{name, value}`, then run again.
@@ -194,10 +226,9 @@ class Wizard(Entity):
         if spec is None:
             return ApiFailResponse(message="Wizard document is unreadable", status_code=400)
 
-        declared = next(
-            (step.input for step in spec.steps if step.input is not None and step.input.name == name),
-            None,
-        )
+        # Parameters are declared ONCE on the wizard, which is what lets a caller
+        # supply them through a step's `args` instead of a person answering.
+        declared = spec.inputs.get(name)
         if declared is None:
             return ApiFailResponse(
                 message=f"{self.name or 'This wizard'} declares no input named {name!r}",

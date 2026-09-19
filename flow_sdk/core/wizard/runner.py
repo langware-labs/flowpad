@@ -1,18 +1,29 @@
 """Execute a wizard to completion, reporting through the shared Activity tree.
 
-The state machine per step is: **ask, act, prove.**
+A Wizard SEQUENCES calls. Each step calls one of three things and reads the same
+answer back:
 
-    precondition  ->  satisfied      -> skip, report done
-                      not_applicable -> skip, report done
-                      execute        -> run the action, then verify
+    compute -> a ComputeOp   — reach a goal, or produce a value
+    wizard  -> another Wizard — a sequence, which may itself ask
+    ask     -> the person     — the ONLY waiting a Wizard does
 
-``verify`` is the precondition re-asked, and it is what makes a step honest. An
-agent that installs nothing and reports a cheerful summary still fails, because
-``python3 --version`` exiting 0 is the evidence and the summary is not.
+Everything about HOW work is done — the check, the per-OS command, the agent,
+the re-check that makes an agentic step honest — moved into ComputeOp. What is
+left here is what only a sequence can own: order, ``on_fail``, parking and
+resume, and the report.
 
-Two seams (``shell`` / ``launch``) are injected with real defaults. That is the
-whole testability story: this module does no I/O of its own and imports no
-entity, so the entire machine is exercisable in milliseconds with two stubs.
+**Parking does not block.** A missing value RETURNS ``pending`` and releases the
+caller; ``Wizard.set_input`` stores the answer and runs the wizard again. Resume
+is just a re-run, because every step asks its own question first and the ones
+already done skip. There is no cursor to persist, so none can go stale.
+
+**Trust does not compose.** A shipped wizard cannot lend its approval to a
+callee that lives somewhere else — the resolver reports each callee's own
+trust, and a run that reaches an untrusted one refuses and names it. Otherwise
+"open a project" becomes a code-execution primitive through one indirection.
+
+Every I/O seam is injected with a real default, which is the whole testability
+story: this module imports no entity and does no I/O of its own.
 """
 
 from __future__ import annotations
@@ -20,18 +31,20 @@ from __future__ import annotations
 import logging
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
-from flow_sdk.core.wizard.exec import ShellResult, capped, run_shell
-from flow_sdk.core.wizard.process_step import ProcessResult, launch_step_process
+from flow_sdk.core.compute.exec import PROBE_OUTPUT_CAP, ShellResult, run_shell
+from flow_sdk.core.compute.process_step import ProcessResult, launch_step_process
+from flow_sdk.core.compute_op.runner import AttemptResult, ComputeOpNotApproved, run_op
 from flow_sdk.core.wizard.state import input_env
+from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
 from flow_sdk.schema.data_spec.wizard_spec import (
     ON_FAIL_ABORT,
-    CheckOutcome,
-    WizardCheckSpec,
-    WizardInputActionSpec,
+    InputSpec,
+    StepKind,
     WizardSpec,
     WizardStepSpec,
 )
@@ -39,11 +52,11 @@ from flow_sdk.schema.data_spec.wizard_spec import (
 logger = logging.getLogger(__name__)
 
 #: A step's verdict.
-SATISFIED = "satisfied"            # precondition said it was already true
-NOT_APPLICABLE = "not_applicable"  # precondition said it does not apply here
-COMPLETED = "completed"            # acted, and verify agreed
-FAILED = "failed"                  # acted and it did not take, or the action errored
-PENDING = "pending"                # run-level: parked on a missing input
+SATISFIED = "satisfied"            # nothing had to be done
+NOT_APPLICABLE = "not_applicable"  # does not apply on this machine
+COMPLETED = "completed"            # the call reached its goal
+FAILED = "failed"                  # it did not, or the call errored
+PENDING = "pending"                # run-level: parked on a missing value
 NOT_REACHED = "not_reached"        # an earlier step aborted the run
 AWAITING_INPUT = "awaiting_input"  # the run needs a value it has not been given
 
@@ -52,16 +65,35 @@ SKIPPED_STATUSES = frozenset({SATISFIED, NOT_APPLICABLE})
 
 
 class WizardNotApproved(RuntimeError):
-    """A non-system wizard was asked to run without approval."""
+    """A non-system wizard — or a callee it reaches — was asked to run unapproved."""
+
+
+@dataclass(frozen=True)
+class Resolved:
+    """A callee and whether IT is trusted here.
+
+    The trust travels with the thing resolved, not with the run: a shipped
+    wizard that calls into a cloned project must not carry its own approval
+    across that edge.
+    """
+
+    spec: Any
+    trusted: bool = False
+
+
+#: Resolve a step's ``ref``. Injected: the runner does not know what an index is.
+OpResolver = Callable[[str], Awaitable[Optional[Resolved]]]
+WizardResolver = Callable[[str], Awaitable[Optional[Resolved]]]
 
 
 @dataclass(frozen=True)
 class StepProbe:
-    """One command a step ran. In-flight twin of `WizardStepProbeSpec`.
+    """One thing a step ran. In-flight twin of `WizardStepProbeSpec`.
 
-    A dataclass here for the same reason `StepOutcome` is one: this module stays
-    entity- and registry-free, which is what runs its tests in milliseconds. The
-    conversion happens at the one edge that serializes.
+    ``phase`` used to be one of precondition/action/verify — the three commands a
+    step ran. A step now makes ONE call, and the phases inside it are the op's
+    attempt kinds (``command`` / ``prompt`` / ``agent``), which is the same
+    question ("which thing produced this verdict?") asked of the new shape.
     """
 
     phase: str
@@ -72,16 +104,16 @@ class StepProbe:
     stdout: str = ""
     stderr: str = ""
     truncated: bool = False
+    process_id: str = ""
 
     @classmethod
-    def of(cls, phase: str, command: str, result: "ShellResult") -> "StepProbe":
-        """Record a shell result, keeping the tail of each stream."""
-        out, out_cut = capped(result.stdout or "")
-        err, err_cut = capped(result.stderr or "")
+    def of_attempt(cls, phase: str, result: AttemptResult) -> "StepProbe":
         return cls(
-            phase=phase, command=command, returncode=result.returncode,
+            phase=phase, command=result.command, returncode=result.returncode,
             timed_out=result.timed_out, duration_s=result.duration_s,
-            stdout=out, stderr=err, truncated=out_cut or err_cut,
+            stdout=result.stdout or result.output, stderr=result.stderr,
+            truncated=result.truncated,
+            process_id=result.process_id,
         )
 
     def to_payload(self) -> dict:
@@ -92,22 +124,6 @@ class StepProbe:
             timed_out=self.timed_out, duration_s=round(self.duration_s, 3),
             stdout=self.stdout, stderr=self.stderr, truncated=self.truncated,
         ).model_dump(mode="json")
-
-
-@dataclass(frozen=True)
-class ActionResult:
-    """What a step's ONE action did. A 5-tuple is where a return signature stops
-    being readable, and the probe is the fifth thing."""
-
-    ok: bool
-    message: str = ""
-    returncode: Optional[int] = None
-    process_id: Optional[str] = None
-    probe: Optional[StepProbe] = None
-    #: What an AGENTIC step's agent returned, under the name the step declared.
-    output: str = ""
-    value: Any = None
-    result_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -122,13 +138,10 @@ class StepOutcome:
     step_id: str
     status: str
     message: str = ""
-    returncode: Optional[int] = None
     process_id: Optional[str] = None
     duration_s: float = 0.0
     probes: tuple[StepProbe, ...] = ()
-    output: str = ""
     value: Any = None
-    result_path: str = ""
 
     @property
     def skipped(self) -> bool:
@@ -139,12 +152,12 @@ class StepOutcome:
 
         return WizardStepOutcomeSpec(
             step_id=self.step_id, status=self.status, message=self.message,
-            returncode=self.returncode, process_id=self.process_id,
+            process_id=self.process_id,
             # Rounded once, here: three decimals is the difference a person can
             # act on, and the raw float would churn `run.json` on every re-run.
             duration_s=round(self.duration_s, 3),
             probes=[p.to_payload() for p in self.probes],
-            output=self.output, result=self.value, result_path=self.result_path,
+            result=self.value,
         ).model_dump(mode="json")
 
 
@@ -179,20 +192,33 @@ class WizardRunResult:
     outcomes: list[StepOutcome] = field(default_factory=list)
     message: str = ""
     awaiting: list[AwaitingInput] = field(default_factory=list)
-    #: What the agentic steps returned, by declared name. Persisted by
-    #: `execute_wizard` so a resumed run does not have to re-derive them.
+    #: What the steps returned, by step id. Persisted by `execute_wizard` so a
+    #: resumed run does not have to re-derive them.
     outputs: dict = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
-        """Kept so existing callers keep reading. Pending is NOT ok — the work
-        is not done — but it is not a failure either, which is what `status` is
-        for."""
+        """Pending is NOT ok — the work is not done — but it is not a failure
+        either, which is what `status` is for."""
         return self.status == COMPLETED
 
     @property
     def pending(self) -> bool:
         return self.status == PENDING
+
+    def returned(self) -> ReturnedValue:
+        """This run as a call's answer, so a wizard composes like anything else."""
+        if self.status == COMPLETED:
+            # A wizard whose every step was already satisfied did nothing either.
+            # Without this a wizard called BY a wizard could never report
+            # `satisfied`, because only an op ever set the flag.
+            return ReturnedValue.satisfied(
+                self.message, value=self.outputs or None,
+                ran=any(not outcome.skipped for outcome in self.outcomes),
+            )
+        return ReturnedValue.not_yet(
+            self.message, pending=tuple(item.name for item in self.awaiting),
+        )
 
     def to_payload(self) -> dict:
         return {
@@ -204,140 +230,30 @@ class WizardRunResult:
         }
 
 
-async def _evaluate(
-    check: WizardCheckSpec,
-    *,
-    phase: str,
-    shell: Callable[..., Any],
-    workdir: Path,
-    platform: str,
-    env: dict,
-) -> tuple[CheckOutcome, Optional[StepProbe]]:
-    """Ask one check. No command for this platform ⇒ the check is silent here,
-    which is ``not_applicable`` — never a failure, and never a pass.
+@dataclass
+class _Run:
+    """One run's moving parts, so the step loop reads as a loop."""
 
-    Returns the probe as well: this function is the only place that holds both
-    the `ShellResult` and the RESOLVED command string, and it used to drop both.
-    The result itself is not returned — the probe already carries every field a
-    caller reads off it (returncode, timed_out, duration_s, both streams).
-    """
-    command = check.command_for(platform)
-    if not command:
-        return CheckOutcome.NOT_APPLICABLE, None
-    result = await shell(
-        command,
-        timeout_seconds=check.timeout_seconds,
-        workdir=workdir,
-        extra_env=env,
-        platform=platform,
-    )
-    outcome = check.outcome_for(result.returncode, timed_out=result.timed_out)
-    return outcome, StepProbe.of(phase, command, result)
-
-
-async def _act(
-    step: WizardStepSpec,
-    *,
-    shell: Callable[..., Any],
-    launch: Callable[..., Any],
-    workdir: Path,
-    platform: str,
-    env: dict,
-    subject_entity: str,
-    on_status: Optional[Callable[[Any], None]] = None,
-) -> ActionResult:
-    """Run the step's one action, and record what it ran."""
-    if step.command is not None:
-        command = step.command.command_for(platform)
-        if not command:
-            return ActionResult(False, f"no command for {platform}")
-        result: ShellResult = await shell(
-            command,
-            timeout_seconds=step.command.timeout_seconds,
-            workdir=workdir,
-            extra_env=env,
-            platform=platform,
-        )
-        probe = StepProbe.of("action", command, result)
-        if result.timed_out:
-            return ActionResult(
-                False, f"timed out after {step.command.timeout_seconds:.0f}s",
-                result.returncode, None, probe,
-            )
-        if not result.ok:
-            return ActionResult(
-                False, result.tail() or f"exit {result.returncode}", result.returncode, None, probe,
-            )
-        # Success used to report `message=""` and drop stdout entirely. The
-        # message stays empty — a green step should not shout — but the output
-        # now survives on the probe.
-        return ActionResult(True, "", result.returncode, None, probe)
-
-    assert step.process is not None, "spec validator guarantees exactly one action"
-    from flow_sdk.core.wizard.step_result import (  # noqa: PLC0415
-        clear_receipt, read_step_result, receipt_path, result_contract,
-    )
-
-    declared = step.process.output
-    prompt = step.process.prompt
-    path = receipt_path(workdir, step.id)
-    if declared:
-        # BEFORE the launch, always. A previous run's receipt read as this run's
-        # result would report the last run's success for a step that did
-        # nothing — invisible, and the worst failure this design can have.
-        clear_receipt(path)
-        prompt = prompt + result_contract(path, declared, step.process.shape)
-
-    outcome: ProcessResult = await launch(
-        agent=step.process.agent,
-        prompt=prompt,
-        name=step.process.name or step.display_label,
-        workdir=workdir,
-        context_data={"wizard_step": step.id},
-        target_typeid_str=subject_entity,
-        timeout_seconds=step.process.timeout_seconds,
-        on_status=on_status,
-    )
-    if not outcome.ok:
-        return ActionResult(False, outcome.message, None, outcome.process_id)
-    if not declared:
-        # No contract was asked for, so there is nothing to read and the verdict
-        # is what it has always been: the agent stopped. `verify` is still the
-        # only thing that can prove the work landed.
-        return ActionResult(True, outcome.message, None, outcome.process_id)
-
-    said = read_step_result(path, output=declared)
-    return ActionResult(
-        said.ok,
-        # The agent's own words either way — its summary when it worked, its
-        # explanation when it did not. Reporting "agent finished" over either
-        # is what made this step unreadable.
-        said.summary if said.ok else said.error,
-        None, outcome.process_id,
-        output=declared if said.ok else "",
-        value=said.value,
-        result_path=said.path,
-    )
-
-
-def _step_progress(child: Any) -> Callable[[Any], None]:
-    """Mirror an agent's ticks onto the step's OWN activity child.
-
-    Returns a callback, because the runner holds the child and the process code
-    holds the ticks, and neither should have to know the other's shape. Never
-    raises: a progress line is not a reason to fail a step that is working.
-    """
-    def write(progress: Any) -> None:
-        try:
-            text = getattr(progress, "text", "") or str(progress or "")
-            if text:
-                child.current(text)
-            for name, count in (getattr(progress, "counters", None) or {}).items():
-                child.set_counter(name, count)
-        except Exception:  # noqa: BLE001 — reporting must never fail a producer
-            logger.debug("wizard step progress write failed", exc_info=True)
-
-    return write
+    spec: WizardSpec
+    values: dict
+    workdir: Path
+    platform: str
+    trusted: bool
+    subject_entity: Optional[str]
+    shell: Callable[..., Awaitable[ShellResult]]
+    launch: Callable[..., Awaitable[ProcessResult]]
+    resolve_op: Optional[OpResolver]
+    resolve_wizard: Optional[WizardResolver]
+    #: A person explicitly approved THIS run, so its callees inherit that.
+    #: Being SHIPPED does not: a wizard Flowpad ships runs unprompted, and
+    #: letting it pull in an op from a cloned repo is the hole the gate exists
+    #: to close. An approval a person gave to a document that names its
+    #: callees is a different thing from a trust nobody was asked about.
+    approved: bool = False
+    depth: int = 0
+    outcomes: list[StepOutcome] = field(default_factory=list)
+    awaiting: list[AwaitingInput] = field(default_factory=list)
+    outputs: dict = field(default_factory=dict)
 
 
 async def run_wizard(
@@ -348,15 +264,19 @@ async def run_wizard(
     trusted: bool = False,
     workdir: Optional[Path] = None,
     inputs: Optional[dict] = None,
-    shell: Callable[..., Any] = run_shell,
-    launch: Callable[..., Any] = launch_step_process,
+    shell: Callable[..., Awaitable[ShellResult]] = run_shell,
+    launch: Callable[..., Awaitable[ProcessResult]] = launch_step_process,
+    resolve_op: Optional[OpResolver] = None,
+    resolve_wizard: Optional[WizardResolver] = None,
+    approved: bool = False,
     platform: str = "",
+    depth: int = 0,
+    parent: Any = None,
 ) -> WizardRunResult:
     """Run every step in order. Never raises except ``WizardNotApproved``.
 
-    ``trusted`` is checked FIRST — before the single-flight claim and before any
-    subprocess — so an unapproved wizard cannot even take the address, let alone
-    run a command.
+    ``trusted`` is checked FIRST — before the Activity claim and before any
+    subprocess — so an unapproved wizard cannot even take the address.
     """
     if not trusted:
         raise WizardNotApproved(
@@ -369,190 +289,207 @@ async def run_wizard(
     workdir = Path(workdir) if workdir else Path.cwd()
     workdir.mkdir(parents=True, exist_ok=True)
 
-    outcomes: list[StepOutcome] = []
-    aborted_at: Optional[str] = None
-    # WHY a reason and not just the id: a run parked for a value and a run that
-    # died are both "stopped here", but they read completely differently to a
-    # person. Saying a later step was "skipped after ask failed" when `ask` is
-    # merely waiting for input sends them debugging a step that is fine.
-    abort_reason: str = "failed"
-    values = dict(inputs or {})
-    awaiting: list[AwaitingInput] = []
-    # Inputs reach a command as ENV, never by substitution — see state.input_env.
-    input_environment = input_env(values)
+    run = _Run(
+        spec=spec, values=dict(inputs or {}), workdir=workdir, platform=platform,
+        trusted=trusted, subject_entity=subject_entity, shell=shell, launch=launch,
+        resolve_op=resolve_op, resolve_wizard=resolve_wizard,
+        approved=approved, depth=depth,
+    )
 
-    # The address IS the slot: one run of this wizard per subject_entity at a time.
-    # `claim` ends the root for us — including `fail(...)` on an exception —
-    # so nothing below has to unwind the activity by hand.
+    # A nested run reports INTO the caller's node, so the tree is one tree. Only
+    # a top-level run claims an address — and the address IS the slot, which is
+    # why a nested one must never claim its own.
+    if parent is not None:
+        return await _steps(run, parent)
     async with Activity.claim(activity_path, subject_entity=subject_entity, queue=False) as root:
         root.label(spec.name or activity_path).icon(spec.icon).total(len(spec.steps))
-
-        for step in spec.steps:
-            if aborted_at is not None:
-                # Never reached. Deliberately NO activity child: an absent node
-                # renders as "never got here", which is true, while a node we
-                # fabricated and failed would blame a step that never ran. Same
-                # semantics as `useStepFlow`, where a throw leaves later steps idle.
-                outcomes.append(StepOutcome(step.id, NOT_REACHED,
-                                            f"skipped after {aborted_at} {abort_reason}"))
-                continue
-
-            env = {"FLOWPAD_WIZARD_STEP": step.id, "FLOWPAD_WIZARD": spec.name or "",
-                   **input_environment}
-            child = root.child(step.id).label(step.display_label)
-            root.current(step.display_label)
-
-            # ── an input step: ask the dict, not the machine ──
-            if step.input is not None:
-                asked: WizardInputActionSpec = step.input
-                if asked.name in values:
-                    child.done("provided")
-                    root.inc_skipped()
-                    outcomes.append(StepOutcome(step.id, SATISFIED, "provided"))
-                    continue
-                if asked.optional:
-                    child.done("not provided (optional)")
-                    root.inc_skipped()
-                    outcomes.append(StepOutcome(step.id, NOT_APPLICABLE, "not provided (optional)"))
-                    continue
-                # PARK. Not "await" — the run returns and the caller is released;
-                # `set_input` runs the wizard again and verify makes the re-run
-                # skip everything already done.
-                child.block(f"waiting for {asked.label or asked.name}")
-                awaiting.append(AwaitingInput(
-                    name=asked.name, shape=asked.shape,
-                    label=asked.label or step.display_label,
-                    description=asked.description,
-                ))
-                outcomes.append(StepOutcome(step.id, AWAITING_INPUT,
-                                            f"needs {asked.name}"))
-                aborted_at = step.id
-                abort_reason = "asked for input"
-                continue
-
-            # Every terminal outcome below carries this. It used to be dropped
-            # for `completed`, `failed` and `not_applicable` alike — only
-            # `satisfied` reported one, and that was the PROBE's, not the step's.
-            step_started = time.monotonic()
-            probes: list[StepProbe] = []
-
-            # ── ask ──
-            if step.precondition is not None:
-                verdict, probe = await _evaluate(
-                    step.precondition, phase="precondition",
-                    shell=shell, workdir=workdir, platform=platform, env=env,
-                )
-                if probe is not None:
-                    probes.append(probe)
-                if verdict is CheckOutcome.SATISFIED:
-                    child.done("already satisfied")
-                    root.inc_skipped()
-                    outcomes.append(StepOutcome(
-                        step.id, SATISFIED, "already satisfied",
-                        returncode=probe.returncode if probe else None,
-                        duration_s=time.monotonic() - step_started,
-                        probes=tuple(probes),
-                    ))
-                    continue
-                if verdict is CheckOutcome.NOT_APPLICABLE:
-                    child.done(f"not applicable on {platform}")
-                    root.inc_skipped()
-                    outcomes.append(StepOutcome(
-                        step.id, NOT_APPLICABLE, f"not applicable on {platform}",
-                        duration_s=time.monotonic() - step_started,
-                        probes=tuple(probes),
-                    ))
-                    continue
-
-            # ── act ──
-            acted = await _act(
-                step, shell=shell, launch=launch, workdir=workdir,
-                platform=platform, env=env, subject_entity=subject_entity or "",
-                # An agentic step blocks for up to its timeout — half an hour by
-                # default. Without this the row sits frozen for all of it, so
-                # the agent's ticks are mirrored onto the child the runner
-                # already owns. A projection: the process keeps its own activity
-                # root under its own subject, and subject IS the WS routing key.
-                on_status=_step_progress(child),
-            )
-            # Only these three are reassigned below (by the verify block);
-            # everything else is read off `acted` where it is used.
-            ok, message, returncode = acted.ok, acted.message, acted.returncode
-            if acted.probe is not None:
-                probes.append(acted.probe)
-            if acted.output:
-                # One namespace with the answers a person gave: a later step's
-                # author should not have to know whether a value came from a
-                # human or an agent. `input_env` JSON-encodes and never
-                # interpolates, so its injection argument covers these too.
-                values[acted.output] = acted.value
-                input_environment = input_env(values)
-
-            # ── prove ──
-            if ok and step.verify is not None:
-                verdict, probe = await _evaluate(
-                    step.verify, phase="verify",
-                    shell=shell, workdir=workdir, platform=platform, env=env,
-                )
-                if probe is not None:
-                    probes.append(probe)
-                if verdict is not CheckOutcome.SATISFIED:
-                    ok = False
-                    # The action claimed success and the machine disagrees. Say
-                    # exactly that — it is the single most useful line in the run.
-                    # This no longer loses the action's own output: that is on
-                    # the action probe, and verify's exit code is on verify's.
-                    message = "the step ran but did not take effect (verify failed)"
-                    if probe is not None:
-                        returncode = probe.returncode
-
-            # Keyword args from here on: these two constructions were positional,
-            # which is how `duration_s` silently went missing in the first place.
-            if ok:
-                child.done(message or "done")
-                root.inc_success()
-                outcomes.append(StepOutcome(
-                    step.id, COMPLETED, message=message, returncode=returncode,
-                    process_id=acted.process_id, duration_s=time.monotonic() - step_started,
-                    probes=tuple(probes),
-                    output=acted.output, value=acted.value, result_path=acted.result_path,
-                ))
-            else:
-                child.fail(message or "failed")
-                root.inc_error(message or "failed", ref=step.id)
-                outcomes.append(StepOutcome(
-                    step.id, FAILED, message=message, returncode=returncode,
-                    process_id=acted.process_id, duration_s=time.monotonic() - step_started,
-                    probes=tuple(probes),
-                    result_path=acted.result_path,
-                ))
-                if step.on_fail == ON_FAIL_ABORT:
-                    aborted_at = step.id
-
-        failed = [outcome for outcome in outcomes if outcome.status == FAILED]
-        if awaiting and not failed:
-            status = PENDING
-            message = "waiting for " + ", ".join(item.name for item in awaiting)
-            # BLOCKED, not terminal — the chip keeps showing it as somebody's.
-            root.block(message)
+        result = await _steps(run, root)
+        if result.status == PENDING:
+            root.block(result.message)
             root.release()
-        ok = not failed and not awaiting
-        if ok:
-            done = sum(1 for outcome in outcomes if outcome.status == COMPLETED)
-            skipped = sum(1 for outcome in outcomes if outcome.skipped)
-            message = f"{done} completed, {skipped} already satisfied"
-            status = COMPLETED
-        elif failed:
-            status = FAILED
-            message = "; ".join(f"{outcome.step_id}: {outcome.message}" for outcome in failed)
-            # Terminal states are STICKY, so this wins over the `done(...)` the
-            # claim context manager issues on a clean exit. That is exactly why
-            # a failed run does not have to raise to be reported as failed.
-            root.fail(message)
+        elif result.status == FAILED:
+            root.fail(result.message)  # sticky: wins over the claim's exit done()
+        return result
 
-    return WizardRunResult(
-        status=status, outcomes=outcomes, message=message, awaiting=awaiting,
-        # Only what THIS run's agents returned: `values` also holds the answers
-        # a person gave, and those are already persisted as inputs.
-        outputs={o.output: o.value for o in outcomes if o.output},
+
+async def _steps(run: _Run, root: Any) -> WizardRunResult:
+    aborted_at: Optional[str] = None
+    abort_reason = "failed"
+
+    for step in run.spec.steps:
+        if aborted_at is not None:
+            # Deliberately NO activity child: an absent node renders as "never
+            # got here", which is true, while a fabricated failed one would
+            # blame a step that never ran.
+            run.outcomes.append(StepOutcome(step.id, NOT_REACHED,
+                                            f"skipped after {aborted_at} {abort_reason}"))
+            continue
+
+        child = root.child(step.id).label(step.display_label)
+        root.current(step.display_label)
+        started = time.monotonic()
+        try:
+            outcome = await _step(run, step, child)
+        except ComputeOpNotApproved as refusal:
+            raise WizardNotApproved(str(refusal)) from refusal
+
+        outcome = replace(outcome, duration_s=time.monotonic() - started)
+        run.outcomes.append(outcome)
+
+        if outcome.status == AWAITING_INPUT:
+            child.block(outcome.message)
+            aborted_at, abort_reason = step.id, "asked for input"
+            continue
+        if outcome.skipped:
+            child.done(outcome.message or "already done")
+            root.inc_skipped()
+            continue
+        if outcome.status == COMPLETED:
+            child.done(outcome.message or "done")
+            root.inc_success()
+            if outcome.value is not None:
+                run.outputs[step.id] = outcome.value
+                if step.bind:
+                    # One namespace with the answers a person gave: a step author
+                    # should not have to know whether a value came from a human,
+                    # a command or a model.
+                    run.values[step.bind] = outcome.value
+            continue
+
+        child.fail(outcome.message or "failed")
+        root.inc_error(outcome.message, ref=step.id)
+        if step.on_fail == ON_FAIL_ABORT:
+            aborted_at, abort_reason = step.id, "failed"
+
+    if run.awaiting:
+        names = ", ".join(item.name for item in run.awaiting)
+        return WizardRunResult(PENDING, run.outcomes, f"waiting for {names}",
+                               awaiting=run.awaiting, outputs=run.outputs)
+    failed = [o for o in run.outcomes if o.status == FAILED]
+    if failed:
+        return WizardRunResult(FAILED, run.outcomes, failed[0].message, outputs=run.outputs)
+    return WizardRunResult(COMPLETED, run.outcomes, "", outputs=run.outputs)
+
+
+async def _step(run: _Run, step: WizardStepSpec, child: Any) -> StepOutcome:
+    """One call, and what the sequence makes of its answer."""
+    if step.kind is StepKind.ASK:
+        return _ask(run, step)
+    if step.kind is StepKind.WIZARD:
+        return await _call_wizard(run, step, child)
+    return await _call_op(run, step, child)
+
+
+def _ask(run: _Run, step: WizardStepSpec) -> StepOutcome:
+    """Obtain a value from the person — or notice we already have it.
+
+    This is the unification that removes parking as a special case: an ask is a
+    goal whose check is "do I already have this value?", and a caller that
+    supplied it in ``args`` makes the step run nothing at all.
+    """
+    declared: InputSpec = run.spec.inputs.get(step.ref) or InputSpec()
+    if run.values.get(step.ref) not in (None, ""):
+        return StepOutcome(step.id, SATISFIED, f"{step.ref} is already set")
+    if declared.optional:
+        return StepOutcome(step.id, SATISFIED, f"{step.ref} was not given, and is optional")
+    run.awaiting.append(AwaitingInput(
+        name=step.ref, shape=declared.shape,
+        label=declared.label or step.display_label, description=declared.description,
+    ))
+    return StepOutcome(step.id, AWAITING_INPUT, f"waiting for {step.ref}")
+
+
+async def _call_op(run: _Run, step: WizardStepSpec, child: Any) -> StepOutcome:
+    """Call a ComputeOp. Its answer IS the step's."""
+    if run.resolve_op is None:
+        return StepOutcome(step.id, FAILED, f"nothing can resolve the op {step.ref!r} here")
+    found = await run.resolve_op(step.ref)
+    if found is None:
+        return StepOutcome(step.id, FAILED, f"there is no compute op named {step.ref!r}")
+    if not found.trusted and not run.approved:
+        # Shipped trust does not compose. An explicit approval does — see `_Run.approved`.
+        raise ComputeOpNotApproved(
+            f"step {step.id!r} calls {step.ref!r}, which this instance does not ship. "
+            "Approve the run to allow it."
+        )
+
+    probes: list[StepProbe] = []
+    answer = await run_op(
+        found.spec, subject=run.subject_entity or "", trusted=True,
+        workdir=run.workdir, platform=run.platform,
+        resolve=_op_specs(run), shell=run.shell, launch=run.launch,
+        env=input_env(_scope(run, step)),
+        on_status=lambda text: child.current(text),
+        on_probe=lambda phase, result: probes.append(StepProbe.of_attempt(phase, result)),
+    )
+    return _outcome_of(step, answer, tuple(probes))
+
+
+async def _call_wizard(run: _Run, step: WizardStepSpec, child: Any) -> StepOutcome:
+    """Call another wizard, reporting into this step's node so it is ONE tree."""
+    if run.resolve_wizard is None:
+        return StepOutcome(step.id, FAILED, f"nothing can resolve the wizard {step.ref!r} here")
+    found = await run.resolve_wizard(step.ref)
+    if found is None:
+        return StepOutcome(step.id, FAILED, f"there is no wizard named {step.ref!r}")
+    if not found.trusted and not run.approved:
+        raise WizardNotApproved(
+            f"step {step.id!r} calls the wizard {step.ref!r}, which this instance does not ship."
+        )
+
+    nested = await run_wizard(
+        found.spec, subject_entity=run.subject_entity, trusted=True,
+        workdir=run.workdir, inputs=_scope(run, step), shell=run.shell, launch=run.launch,
+        approved=run.approved, resolve_op=run.resolve_op, resolve_wizard=run.resolve_wizard,
+        platform=run.platform, depth=run.depth + 1, parent=child,
+    )
+    if nested.status == PENDING:
+        # Its questions become ours: the person answers once, at the top.
+        run.awaiting.extend(nested.awaiting)
+        return StepOutcome(step.id, AWAITING_INPUT, nested.message)
+    return _outcome_of(step, nested.returned(), ())
+
+
+def _scope(run: _Run, step: WizardStepSpec) -> dict:
+    """What the callee is given: its bound arguments over the run's own values.
+
+    ``args`` binds by NAME — ``{"API_KEY": "WAHA_API_KEY"}`` means "my API_KEY is
+    that value of mine" — and falls back to the literal when the name is not one
+    of ours. There is no template form, and there must not be.
+    """
+    values = dict(run.values)
+    for parameter, source in step.args.items():
+        values[parameter] = run.values.get(source, source)
+    return values
+
+
+def _op_specs(run: _Run):
+    """``requires`` resolution for the op runner: the spec only, trust already decided."""
+    async def resolve(name: str) -> Optional[ComputeOpSpec]:
+        if run.resolve_op is None:
+            return None
+        found = await run.resolve_op(name)
+        if found is None:
+            return None
+        if not found.trusted and not run.approved:
+            raise ComputeOpNotApproved(
+                f"{name!r} is required here but this instance does not ship it."
+            )
+        return found.spec
+
+    return resolve
+
+
+def _outcome_of(step: WizardStepSpec, answer: ReturnedValue, probes: tuple[StepProbe, ...]) -> StepOutcome:
+    """One `ReturnedValue`, read as a step's verdict."""
+    status = {
+        ExitCode.OK: COMPLETED,
+        ExitCode.NOT_APPLICABLE: NOT_APPLICABLE,
+    }.get(answer.exit_code, FAILED)
+    if status == COMPLETED and not answer.ran:
+        status = SATISFIED
+    return StepOutcome(
+        step.id, status, answer.detail, probes=probes, value=answer.value,
+        # The process a rung spawned stays linkable even when the step failed.
+        process_id=next((p.process_id for p in reversed(probes) if p.process_id), None),
     )

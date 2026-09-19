@@ -1,6 +1,9 @@
-"""Wizard execution — the runner behind ``Wizard.run``."""
-from flow_sdk.core.wizard.exec import ShellResult, run_shell
-from flow_sdk.core.wizard.process_step import ProcessResult, launch_step_process
+"""Wizard execution — the runner behind ``Wizard.run``.
+
+The shared execution machinery is NOT re-exported here: it moved to
+``core.compute`` precisely because it is not wizard-shaped, and a shim would
+keep the old address alive for the next reader to import from.
+"""
 from flow_sdk.core.wizard.runner import (
     COMPLETED,
     FAILED,
@@ -15,6 +18,5 @@ from flow_sdk.core.wizard.runner import (
 
 __all__ = [
     "COMPLETED", "FAILED", "NOT_APPLICABLE", "NOT_REACHED", "SATISFIED",
-    "ProcessResult", "ShellResult", "StepOutcome", "WizardNotApproved",
-    "WizardRunResult", "launch_step_process", "run_shell", "run_wizard",
+    "StepOutcome", "WizardNotApproved", "WizardRunResult", "run_wizard",
 ]

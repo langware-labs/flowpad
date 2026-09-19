@@ -35,7 +35,7 @@ def test_every_op_parses_and_is_addressable_by_its_folder(name):
     # whose `name` drifts from its folder is unreachable by the name people type.
     assert spec.name == name
     assert spec.display_label
-    assert spec.check.command_for("linux"), "a goal with no question cannot be proven"
+    assert spec.completion_check.command_for("linux"), "a goal with no question cannot be proven"
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -58,11 +58,11 @@ def test_the_cases_cover_the_mechanisms_they_were_chosen_for():
     # while the goal is still unmet, so the agent rung has to exist. git and uv
     # ship in the container image, so neither could ever escalate there.
     for name in ("ripgrep-on-path", "cowsay-on-path", "app-answers"):
-        kinds = [attempt.kind for attempt in specs[name].attempts]
-        assert kinds == ["command", "process"], f"{name} must escalate, got {kinds}"
+        kinds = [str(attempt.kind) for attempt in specs[name].attempts]
+        assert kinds == ["command", "agent"], f"{name} must escalate, got {kinds}"
 
     # A skip that is not a failure.
-    assert specs["apk-cache-warm"].check.not_applicable_codes == [3]
+    assert specs["apk-cache-warm"].not_applicable_codes == [3]
     # A chain three deep.
     assert specs["deps-installed"].requires == ["repo-cloned"]
     assert specs["repo-cloned"].requires == ["git-on-path"]

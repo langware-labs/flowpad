@@ -21,11 +21,7 @@ import pytest
 from flow_sdk.core.wizard import execute as wizard_execute
 from flow_sdk.core.wizard.execute import WizardAlreadyRunning, execute_wizard
 from flow_sdk.core.wizard.runner import WizardRunResult
-from flow_sdk.schema.data_spec.wizard_spec import (
-    WizardCommandActionSpec,
-    WizardSpec,
-    WizardStepSpec,
-)
+from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
@@ -35,7 +31,7 @@ WIZARD_ID = "11111111-1111-4111-8111-111111111111"
 # is stubbed in every test here — it just makes the document legal.
 SPEC = WizardSpec(
     name="Slot probe",
-    steps=[WizardStepSpec(id="probe", command=WizardCommandActionSpec(commands={"linux": "true"}))],
+    steps=[WizardStepSpec(id="probe", kind="compute", ref="probe-op")],
 )
 
 

@@ -2,26 +2,23 @@
   "type": "compute_op",
   "name": "redis-running",
   "label": "redis",
-  "icon": "Database",
   "description": "A local redis answers PING.",
-  "check": {
+  "completion_check": {
     "commands": {
       "linux": "redis-cli ping"
     }
   },
   "attempts": [
     {
-      "command": {
-        "commands": {
-          "linux": "apt-get install -y redis-server && redis-server --daemonize yes"
-        }
+      "kind": "command",
+      "commands": {
+        "linux": "apt-get install -y redis-server && redis-server --daemonize yes"
       }
     },
     {
-      "process": {
-        "agent": "provisioner",
-        "prompt": "Reach this goal on this machine."
-      }
+      "kind": "agent",
+      "agent": "provisioner",
+      "prompt": "Reach this goal on this machine."
     }
   ]
 }

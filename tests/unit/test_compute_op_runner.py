@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.core.compute_op import ComputeOpNotApproved, check_op, run_op
-from flow_sdk.core.wizard.exec import ShellResult
-from flow_sdk.core.wizard.process_step import ProcessResult
+from flow_sdk.core.compute.exec import ShellResult
+from flow_sdk.core.compute.process_step import ProcessResult
 from flow_sdk.schema.data_spec.compute_op_spec import CheckOutcome, ComputeOpSpec
 
 pytestmark = pytest.mark.timeout(5)
@@ -25,8 +25,8 @@ def _spec(**over) -> ComputeOpSpec:
     body = {
         "name": "jq-on-path",
         "label": "jq",
-        "check": {"commands": {"linux": "have jq"}},
-        "attempts": [{"command": {"commands": {"linux": "install jq"}}}],
+        "completion_check": {"commands": {"linux": "have jq"}},
+        "attempts": [{"kind": "command", "commands": {"linux": "install jq"}}],
     }
     body.update(over)
     return ComputeOpSpec.model_validate(body)
@@ -52,7 +52,7 @@ def _launch(prompts=None, *, ok=True, message="", process_id="proc-1"):
     return launch
 
 
-async def _run(spec, shell, launch=None, *, tmp_path, **over):
+async def _run_op(spec, shell, launch=None, *, tmp_path, **over):
     return await run_op(
         spec, trusted=True, workdir=Path(tmp_path), platform="linux",
         shell=shell, launch=launch or _launch(), **over,
@@ -63,7 +63,7 @@ async def _run(spec, shell, launch=None, *, tmp_path, **over):
 
 @pytest.mark.asyncio
 async def test_check_is_cheap_and_answers_three_ways(tmp_path):
-    spec = _spec(check={"commands": {"linux": "have jq"}, "not_applicable_codes": [99]})
+    spec = _spec(completion_check={"commands": {"linux": "have jq"}}, not_applicable_codes=[99])
     ask = lambda code: check_op(spec, workdir=tmp_path, platform="linux", shell=_shell(lambda _c: code))
 
     assert await ask(0) is CheckOutcome.SATISFIED
@@ -74,7 +74,7 @@ async def test_check_is_cheap_and_answers_three_ways(tmp_path):
 @pytest.mark.asyncio
 async def test_a_platform_with_no_command_is_not_applicable_never_a_failure(tmp_path):
     seen: list[str] = []
-    spec = _spec(check={"commands": {"darwin": "have jq"}})
+    spec = _spec(completion_check={"commands": {"darwin": "have jq"}})
     outcome = await check_op(spec, workdir=tmp_path, platform="linux",
                              shell=_shell(lambda _c: 0, seen=seen))
     assert outcome is CheckOutcome.NOT_APPLICABLE
@@ -95,9 +95,9 @@ async def test_a_timed_out_check_executes_rather_than_claiming_satisfied(tmp_pat
 @pytest.mark.asyncio
 async def test_satisfied_costs_one_check_and_runs_nothing(tmp_path):
     seen: list[str] = []
-    verdict = await _run(_spec(), _shell(lambda _c: 0, seen=seen), tmp_path=tmp_path)
+    verdict = await _run_op(_spec(), _shell(lambda _c: 0, seen=seen), tmp_path=tmp_path)
 
-    assert verdict.ready and "already satisfied" in verdict.detail
+    assert verdict.ok and "already satisfied" in verdict.detail
     assert seen == ["have jq"], "a satisfied goal must not run an attempt"
 
 
@@ -113,12 +113,12 @@ async def test_the_cheap_rung_fixes_it_and_the_agent_is_never_woken(tmp_path):
         return ShellResult(returncode=0 if installed["jq"] else 1)
 
     spec = _spec(attempts=[
-        {"command": {"commands": {"linux": "install jq"}}},
-        {"process": {"agent": "provisioner", "prompt": "get jq on the path"}},
+        {"kind": "command", "commands": {"linux": "install jq"}},
+        {"kind": "agent", "agent": "provisioner", "prompt": "get jq on the path"},
     ])
-    verdict = await _run(spec, shell, _launch(prompts), tmp_path=tmp_path)
+    verdict = await _run_op(spec, shell, _launch(prompts), tmp_path=tmp_path)
 
-    assert verdict.ready and "the command attempt did it" in verdict.detail
+    assert verdict.ok and "the command attempt did it" in verdict.detail
     assert prompts == [], "the expensive rung must not run once the goal holds"
 
 
@@ -144,15 +144,15 @@ async def test_a_rung_that_exits_zero_without_reaching_the_goal_escalates(tmp_pa
 
     spec = _spec(
         name="uv-on-path", label="uv",
-        check={"commands": {"linux": "uv --version"}},
+        completion_check={"commands": {"linux": "uv --version"}},
         attempts=[
-            {"command": {"commands": {"linux": "install uv"}}},
-            {"process": {"agent": "provisioner", "prompt": "get uv on the path"}},
+            {"kind": "command", "commands": {"linux": "install uv"}},
+            {"kind": "agent", "agent": "provisioner", "prompt": "get uv on the path"},
         ],
     )
-    verdict = await _run(spec, shell, launch, tmp_path=tmp_path)
+    verdict = await _run_op(spec, shell, launch, tmp_path=tmp_path)
 
-    assert verdict.ready and "the process attempt did it" in verdict.detail
+    assert verdict.ok and "the agent attempt did it" in verdict.detail
     assert len(prompts) == 1
 
 
@@ -164,11 +164,11 @@ async def test_the_agent_rung_is_told_what_the_cheap_rung_tried(tmp_path):
         description="jq parses JSON on the command line.",
         setup="Run `apt-get update` first — a fresh image ships an empty index.",
         attempts=[
-            {"command": {"commands": {"linux": "apt-get install -y jq"}}},
-            {"process": {"agent": "provisioner", "prompt": "install jq"}},
+            {"kind": "command", "commands": {"linux": "apt-get install -y jq"}},
+            {"kind": "agent", "agent": "provisioner", "prompt": "install jq"},
         ],
     )
-    await _run(spec, _shell(lambda c: 0 if c == "never" else 100), _launch(prompts), tmp_path=tmp_path)
+    await _run_op(spec, _shell(lambda c: 0 if c == "never" else 100), _launch(prompts), tmp_path=tmp_path)
 
     prompt = prompts[0]
     assert "apt-get install -y jq" in prompt, "the agent must know what was already tried"
@@ -179,9 +179,9 @@ async def test_the_agent_rung_is_told_what_the_cheap_rung_tried(tmp_path):
 
 @pytest.mark.asyncio
 async def test_exhausted_attempts_report_the_goal_as_pending(tmp_path):
-    verdict = await _run(_spec(), _shell(lambda _c: 1), tmp_path=tmp_path)
+    verdict = await _run_op(_spec(), _shell(lambda _c: 1), tmp_path=tmp_path)
 
-    assert verdict.ready is False
+    assert verdict.ok is False
     assert verdict.pending == ("jq-on-path",)
     assert "install jq" in verdict.detail, "the detail must name the last thing tried"
 
@@ -189,28 +189,28 @@ async def test_exhausted_attempts_report_the_goal_as_pending(tmp_path):
 @pytest.mark.asyncio
 async def test_a_goal_with_no_attempts_still_checks_and_says_pending(tmp_path):
     # A credential nobody can obtain from a script is still worth CHECKING.
-    verdict = await _run(_spec(attempts=[]), _shell(lambda _c: 1), tmp_path=tmp_path)
+    verdict = await _run_op(_spec(attempts=[]), _shell(lambda _c: 1), tmp_path=tmp_path)
 
-    assert verdict.ready is False and verdict.pending == ("jq-on-path",)
+    assert verdict.ok is False and verdict.pending == ("jq-on-path",)
     assert "nothing here can reach this goal" in verdict.detail
 
 
 @pytest.mark.asyncio
 async def test_not_applicable_is_a_pass_not_a_failure(tmp_path):
-    spec = _spec(check={"commands": {"linux": "locale | grep -q UTF-8"}, "not_applicable_codes": [2]})
-    verdict = await _run(spec, _shell(lambda _c: 2), tmp_path=tmp_path)
+    spec = _spec(completion_check={"commands": {"linux": "locale | grep -q UTF-8"}}, not_applicable_codes=[2])
+    verdict = await _run_op(spec, _shell(lambda _c: 2), tmp_path=tmp_path)
 
-    assert verdict.ready and "not applicable here" in verdict.detail
+    assert verdict.ok and "not applicable here" in verdict.detail
 
 
 @pytest.mark.asyncio
 async def test_a_rung_silent_on_this_platform_is_skipped_not_failed(tmp_path):
     spec = _spec(attempts=[
-        {"command": {"commands": {"darwin": "brew install jq"}}},
-        {"command": {"commands": {"linux": "apt-get install -y jq"}}},
+        {"kind": "command", "commands": {"darwin": "brew install jq"}},
+        {"kind": "command", "commands": {"linux": "apt-get install -y jq"}},
     ])
     seen: list[str] = []
-    await _run(spec, _shell(lambda c: 0 if "apt-get" in c else 1, seen=seen), tmp_path=tmp_path)
+    await _run_op(spec, _shell(lambda c: 0 if "apt-get" in c else 1, seen=seen), tmp_path=tmp_path)
 
     assert "brew install jq" not in seen
     assert "apt-get install -y jq" in seen
@@ -229,17 +229,17 @@ async def test_requires_run_first_and_in_order(tmp_path):
     seen: list[str] = []
     specs = {
         "git-on-path": _spec(name="git-on-path", label="git",
-                             check={"commands": {"linux": "have git"}}, attempts=[]),
+                             completion_check={"commands": {"linux": "have git"}}, attempts=[]),
         "repo-cloned": _spec(name="repo-cloned", label="repo",
-                             check={"commands": {"linux": "have repo"}},
+                             completion_check={"commands": {"linux": "have repo"}},
                              requires=["git-on-path"], attempts=[]),
     }
-    verdict = await _run(
+    verdict = await _run_op(
         specs["repo-cloned"], _shell(lambda _c: 0, seen=seen),
         tmp_path=tmp_path, resolve=_resolver(specs),
     )
 
-    assert verdict.ready
+    assert verdict.ok
     assert seen == ["have git", "have repo"], "a dependency is proven before the goal is asked"
 
 
@@ -247,26 +247,26 @@ async def test_requires_run_first_and_in_order(tmp_path):
 async def test_a_failed_dependency_stops_the_chain_and_keeps_its_own_detail(tmp_path):
     specs = {
         "git-on-path": _spec(name="git-on-path", label="git",
-                             check={"commands": {"linux": "have git"}}, attempts=[]),
+                             completion_check={"commands": {"linux": "have git"}}, attempts=[]),
         "repo-cloned": _spec(name="repo-cloned", label="repo",
-                             check={"commands": {"linux": "have repo"}},
+                             completion_check={"commands": {"linux": "have repo"}},
                              requires=["git-on-path"], attempts=[]),
     }
-    verdict = await _run(
+    verdict = await _run_op(
         specs["repo-cloned"], _shell(lambda c: 1 if "git" in c else 0),
         tmp_path=tmp_path, resolve=_resolver(specs),
     )
 
-    assert verdict.ready is False
+    assert verdict.ok is False
     assert verdict.pending == ("git-on-path",), "the blocker is named, not the thing it blocked"
 
 
 @pytest.mark.asyncio
 async def test_a_missing_dependency_is_named(tmp_path):
     spec = _spec(requires=["docker-running"], attempts=[])
-    verdict = await _run(spec, _shell(lambda _c: 0), tmp_path=tmp_path, resolve=_resolver({}))
+    verdict = await _run_op(spec, _shell(lambda _c: 0), tmp_path=tmp_path, resolve=_resolver({}))
 
-    assert verdict.ready is False and verdict.pending == ("docker-running",)
+    assert verdict.ok is False and verdict.pending == ("docker-running",)
     assert "does not exist" in verdict.detail
 
 
@@ -275,7 +275,7 @@ async def test_a_cycle_is_a_bug_in_the_documents_not_a_runtime_condition(tmp_pat
     a = _spec(name="a", requires=["b"], attempts=[])
     b = _spec(name="b", requires=["a"], attempts=[])
     with pytest.raises(ValueError, match="cycle"):
-        await _run(a, _shell(lambda _c: 1), tmp_path=tmp_path, resolve=_resolver({"a": a, "b": b}))
+        await _run_op(a, _shell(lambda _c: 1), tmp_path=tmp_path, resolve=_resolver({"a": a, "b": b}))
 
 
 # ── trust ────────────────────────────────────────────────────────────────────
