@@ -777,6 +777,14 @@ class CloudManager extends EventEmitter {
     await ctx.setContextEntityTypeId(await _currentUserKey(), null);
     ctx.setCloudLoggedIn?.(false);
     this._applyLoginStatus('logged_out', null, null);
+    // Drop every cached entity/query result, the same way a LOCAL user switch
+    // already does (`AuthManager.currentUser` setter, FlowSync/auth.ts). Without
+    // this, a tab left open through a cloud logout (or a shared sandbox handing
+    // the login over to someone else — FLOWPAD-2151) keeps showing the outgoing
+    // account's already-rendered conversations/messages until something else
+    // happens to refetch them.
+    const dm = await _dataManager();
+    dm.adoptReadScope('anonymous');
     // Connection state is owned by its own channel; logout-driven
     // DISCONNECTED arrives via cloud_connection_status_msg.
     this.emit('logout_complete');
