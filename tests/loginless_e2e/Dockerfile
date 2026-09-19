@@ -14,9 +14,11 @@ RUN apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends curl ca-certificates procps \
  && rm -rf /var/lib/apt/lists/*
 
-# The one thing an agentic process cannot exist without: a harness CLI. Pinned for the same
-# reason docker/Dockerfile.flow-backend pins it.
-RUN npm install -g @anthropic-ai/claude-code@2.1.197 && claude --version
+# The one thing an agentic process cannot exist without: a harness CLI. All four, so the worker
+# matrix (worker_matrix.py) can prove each of them; claude pinned for the same reason
+# docker/Dockerfile.flow-backend pins it.
+RUN npm install -g @anthropic-ai/claude-code@2.1.197 @openai/codex @github/copilot opencode-ai \
+ && claude --version && codex --version && copilot --version && opencode --version
 
 # Not root: claude refuses --dangerously-skip-permissions as root, and a real foreign machine
 # is a person's account, not uid 0.
@@ -35,4 +37,4 @@ RUN uv venv --python 3.10 /home/flow/venv \
  && flow --help > /dev/null
 
 # Staged into dist/ by run.sh: .dockerignore keeps tests/ out of the build context.
-COPY --chown=flow:flow dist/agentic_process_snippet.py /home/flow/agentic_process_snippet.py
+COPY --chown=flow:flow dist/agentic_process_snippet.py dist/worker_matrix.py /home/flow/

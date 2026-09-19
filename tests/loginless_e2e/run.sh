@@ -5,6 +5,7 @@
 #
 # HUB is a hub YOU started for this (it must run code that knows `public` endpoints, and it
 # gets a throwaway owner + endpoint). Reuse an endpoint with ENDPOINT_ID=<id> to skip creating one.
+# SCRIPT='worker_matrix.py [harness...]' runs every harness x cheap models instead of the snippet.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -16,7 +17,7 @@ HUB_IN_CONTAINER="${HUB_IN_CONTAINER:-${HUB/localhost/host.docker.internal}}"
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   rm -f dist/flowpad-*.whl
   uv build --wheel --out-dir dist/ >/dev/null
-  cp tests/loginless_e2e/agentic_process_snippet.py dist/
+  cp tests/loginless_e2e/agentic_process_snippet.py tests/loginless_e2e/worker_matrix.py dist/
   docker build -q -f tests/loginless_e2e/Dockerfile -t "$IMAGE" . >/dev/null
 fi
 
@@ -26,4 +27,4 @@ echo "public endpoint: $ENDPOINT_ID" >&2
 # THE two commands. Nothing before them, nothing between them.
 docker run --rm --add-host=host.docker.internal:host-gateway "$IMAGE" sh -c "
   flow llm user use $ENDPOINT_ID --hub $HUB_IN_CONTAINER &&
-  python agentic_process_snippet.py"
+  python ${SCRIPT:-agentic_process_snippet.py}"
