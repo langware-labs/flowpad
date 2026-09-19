@@ -39,6 +39,7 @@ from typing import Annotated, Any, ClassVar, get_args, get_origin
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, create_model, model_validator
 
+from flow_sdk.schema.data_spec._namespace import current as current_ns, qualified
 from flow_sdk.tags.grammar import normalize_tag
 
 # Compiled anonymous subclasses, keyed by canonical authoring form so two
@@ -87,10 +88,20 @@ class DataSpec(BaseModel):
         assert "spec_kind" not in cls.model_fields, (
             f"{cls.__name__}: `spec_kind` is a ClassVar — annotating it makes it a field"
         )
-        if cls.spec_kind and cls.__pydantic_generic_metadata__["origin"] is None:
+        # The class's OWN declaration, never an inherited one. A subclass that
+        # names no kind inherits the ClassVar, and registering it rebinds the
+        # parent's name to the narrower class: ``FileDataPage`` did exactly that
+        # to ``DataPage``, so ``source.page`` resolved to the subclass and a
+        # plain page no longer validated against its own kind.
+        declares_own = "spec_kind" in cls.__dict__
+        if declares_own and cls.spec_kind and cls.__pydantic_generic_metadata__["origin"] is None:
             from flow_sdk.fs_store.schema_registry import SchemaRegistry  # lazy: avoid import cycle
 
-            SchemaRegistry.register_kind(cls.spec_kind, cls)
+            # Whose ontology this kind belongs to. The loader importing an
+            # externally authored asset declares it, so such an asset cannot mint
+            # into ours even by declaring the same string a shipped asset does.
+            # Ours declares nothing and the kind is written bare.
+            SchemaRegistry.register_kind(qualified(cls.spec_kind, current_ns()), cls)
 
     @classmethod
     def parse(cls, data: Any) -> type:

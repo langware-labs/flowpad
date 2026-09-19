@@ -39,6 +39,7 @@ subfolder_count: 10
 - [Frontend Debug Cheatsheet](frontend-debug-cheatsheet.md) — Ordered frontend debugging recipes by symptom: health, entity data, PTY, process trace, hooks, WebSocket, navigation, auth, and end-to-end tracing.
 - [FSRef — declarative file/folder references](fs-ref.md) — FSRef doctrine: the class family, walk tags, read-only semantics, the freshness token, serialization to TypeScript, and how records use refs.
 - [fs_store: Record System Architecture](fs_store.md) — Directory page for the fs_store package: no single FsStore class exists; a table routes each subject to its current home under data-management.
+- [Ontology — type, subkind, kind](ontology.md) — The three join keys between the entity layer and the shape layer: a kind always names a DataSpec, an asset type is nameable by its own type name, and an externally authored asset mints into its own `--ns--` namespace while ours stays silent.
 - [Glossary — our nouns vs. the ecosystem's](glossary.md) — Cross-walk of Flowpad nouns against Claude Code and OpenClaw vocabulary, provider mirrors versus native assets, naming rules, and the agent capability fields.
 - [Flowpad](intro.md) — What Flowpad is: secure, AI-native collaborative agent work, the collaborative context conversation, and the use cases it addresses.
 - [Listen Webhook Pipeline](listen_webhook.md) — The listen webhook pipeline: the endpoint and request flow, webhook types and payload models, how a specific hook is identified, and the sniffer hook.

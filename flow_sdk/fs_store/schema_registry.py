@@ -940,16 +940,37 @@ class SchemaRegistry:
     # ---------------------------------------------------------------------------
 
     @classmethod
-    def register_kind(cls, kind: str, shape: Any) -> None:
-        """Bind a kind to a class or a ``DataSpec`` so a bare kind can name it."""
+    def register_kind(cls, kind: str, shape: Any, *, derived: bool = False) -> None:
+        """Bind a kind to a class or a ``DataSpec`` so a bare kind can name it.
+
+        ``derived`` is for a kind nobody declared — a type name bound to its own
+        ``asset_spec``. Such a binding yields to anything already there rather
+        than raising (the class's own ``spec_kind`` is the author's word and
+        wins), and it claims the inverse only if the shape has none, so
+        ``to_authoring_form`` keeps emitting exactly what it always did.
+        """
         from flow_sdk.schema.data_spec._kinds import PRIMITIVES  # noqa: PLC0415
         from flow_sdk.tags.grammar import normalize_tag  # noqa: PLC0415
 
         kind = normalize_tag(kind)
         if kind in PRIMITIVES:
             raise ValueError(f"{kind!r} is a reserved primitive and cannot be registered")
+        prior = cls._kinds.get(kind)
+        if prior is not None and prior is not shape:
+            if derived:
+                return
+            # A kind names exactly ONE shape. Silently rebinding meant the last
+            # import won and a document's kind resolved to whichever class the
+            # process happened to load second.
+            raise ValueError(
+                f"kind {kind!r} is already bound to "
+                f"{getattr(prior, '__name__', prior)}; a kind names exactly one shape"
+            )
         cls._kinds[kind] = shape
-        cls._kind_of_shape[id(shape)] = kind
+        if derived:
+            cls._kind_of_shape.setdefault(id(shape), kind)
+        else:
+            cls._kind_of_shape[id(shape)] = kind
 
     @classmethod
     def kind_for(cls, shape: Any) -> "str | None":
@@ -959,8 +980,18 @@ class SchemaRegistry:
 
     @classmethod
     def kind_type(cls, kind: str) -> Any:
-        """The class or ``DataSpec`` a kind names, or None (anonymous — not an
-        error). Entity type names resolve through the same table: ONE namespace."""
+        """The shape a kind names, or None (anonymous — not an error).
+
+        Almost always a ``DataSpec``; ``fs_ref`` → ``FSRef`` is the one
+        SDK-registered exception, a plain value class pydantic can validate.
+
+        What holds WITHOUT exception is the other half: an entity type name
+        resolves to that type's ``asset_spec`` — its document shape — and never
+        to the Entity class. A row model is not a shape, and a ``SpecType`` field
+        holding one could not validate a value against it: it would demand ids
+        and DB columns the value has never heard of. A registered type with no
+        asset document therefore names nothing here, and ``resolve_kind`` turns
+        that into an error rather than a silent ``Any``."""
         cls._ensure_loaded()
         hit = cls._kinds.get(kind)
         if hit is None and kind not in cls._types:
@@ -970,10 +1001,7 @@ class SchemaRegistry:
                 if kind.startswith(prefix):
                     loader()
             hit = cls._kinds.get(kind)
-        if hit is not None:
-            return hit
-        info = cls._types.get(kind)
-        return info.entity_cls if info is not None else None
+        return hit
 
     @classmethod
     def add_kind_loader(cls, prefix: str, loader: Callable[[], Any]) -> None:
@@ -1083,6 +1111,11 @@ class SchemaRegistry:
             for hook in cls._entity_bound_hooks:
                 hook()
         final = cls._types[info.type_name]
+        if final.asset_spec is not None:
+            # An asset spec is nameable by its own type name, so a document can
+            # write ``"output": "task"`` and get ``TaskSpec``. Derived, never
+            # declared: 16 of 20 asset specs carried no ``spec_kind`` at all.
+            cls.register_kind(final.type_name, final.asset_spec, derived=True)
         if final.from_disk_fn is None and final.asset_spec is not None and not final.db_only:
             from flow_sdk.fs_store.serializer.record import spec_extractor  # noqa: PLC0415
 
