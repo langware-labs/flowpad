@@ -209,6 +209,10 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+Every harness is proven the same way: `SCRIPT=worker_matrix.py tests/loginless_e2e/run.sh` runs
+claude, codex, copilot and opencode against three cheap open-weight models (Kimi K2.5, GLM 4.7
+Flash, Qwen3 Coder 30B) after the same single bind.
+
 Pinned by `tests/long_tests/test_loginless_in_docker.py`, which runs exactly those two commands
 in a clean container (`tests/loginless_e2e/`) holding no hub key, no provider key and no
 `FLOWPAD_HUB_URL`; the resolver and binding rules are pinned by
@@ -233,6 +237,11 @@ What to know before handing an id out:
   not the prompt: one `pong` from Claude Code is ~60k cache-write tokens (about $0.08 on haiku).
 * **An anonymous caller may `invoke` and list `models`, nothing else** — not read the endpoint,
   its usage or its chain, and a public endpoint appears in no listing, so ids cannot be enumerated.
+* **Pick the hosts, not just the model.** OpenRouter serves one slug from several hosts, and one
+  bad host is an intermittent failure in every harness at once: Novita answered
+  `qwen/qwen3-coder-30b-a3b-instruct` with an empty completion for about a third of requests, which
+  surfaces as a finished turn with nothing said. `PUT {"filters": {"providers_ignore": ["Novita"]}}`
+  routes the budget around it for everyone who spends it; `make_public_endpoint.py` sets it.
 * **`public` is an admin action, not a field.** A `PUT {"public": true}` is ignored, and a
   sandbox key is refused: the budget must not be openable by the thing that spends it.
 * On the box, a public binding is a hub endpoint that is eligible **without** a hub login

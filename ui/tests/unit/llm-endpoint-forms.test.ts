@@ -50,6 +50,9 @@ describe('filters round-trip', () => {
   const filters: LLMEndpointFilters = {
     models_allow: ['anthropic/*', 'openai/gpt-4*'],
     models_deny: ['*/preview'],
+    // In the identity fixture on purpose: a field the form does not round-trip is WIPED by the
+    // next unrelated save, and this one decides which hosts a budget pays.
+    providers_ignore: ['Novita'],
     max_tokens_ceiling: 4096,
     max_input_chars: null,
     temperature_max: 0.7,

@@ -83,6 +83,8 @@ class LLMFilters(BaseModel):
 
     models_allow: list[str] = Field(default_factory=list)
     models_deny: list[str] = Field(default_factory=list)
+    #: Upstream hosts an OpenRouter root must not be routed to (OpenRouter's names, e.g. ``"Novita"``).
+    providers_ignore: list[str] = Field(default_factory=list)
     max_tokens_ceiling: int | None = None
     max_input_chars: int | None = None
     temperature_max: float | None = None

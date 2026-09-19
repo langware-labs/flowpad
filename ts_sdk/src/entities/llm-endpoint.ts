@@ -18,6 +18,8 @@ export type LLMStreamingPolicy = 'allow' | 'require' | 'deny';
 export interface LLMEndpointFilters {
   models_allow: string[];
   models_deny: string[];
+  /** Upstream hosts an OpenRouter root must not be routed to (OpenRouter's names, e.g. `Novita`). */
+  providers_ignore: string[];
   max_tokens_ceiling: number | null;
   max_input_chars: number | null;
   temperature_max: number | null;
@@ -46,6 +48,7 @@ export type LLMEndpointKind = 'root' | 'chain';
 export const DEFAULT_LLM_FILTERS: LLMEndpointFilters = {
   models_allow: [],
   models_deny: [],
+  providers_ignore: [],
   max_tokens_ceiling: null,
   max_input_chars: null,
   temperature_max: null,

@@ -19,6 +19,11 @@ HUB = os.environ.get("HUB", "http://localhost:8094").rstrip("/")
 EMAIL = os.environ.get("HUB_OWNER_EMAIL", "loginless-owner@local.test")
 PASSWORD = os.environ.get("HUB_OWNER_PASSWORD", "owner-pw-1234")
 COST_USD_TOTAL = float(os.environ.get("PUBLIC_COST_USD_TOTAL", "1.0"))
+#: OpenRouter hosts this budget will not pay. Novita answers ``qwen/qwen3-coder-30b-a3b-instruct``
+#: with an EMPTY completion for about a third of requests (proven 2026-09-18: 26 of 26 empty
+#: answers were Novita's, 66 of 66 from other hosts had text), which a harness shows as a finished
+#: turn with nothing said. Set it empty to see that for yourself.
+PROVIDERS_IGNORE = [name for name in os.environ.get("PUBLIC_PROVIDERS_IGNORE", "Novita").split(",") if name]
 
 
 def _data(response: requests.Response) -> dict:
@@ -39,7 +44,13 @@ def main() -> None:
     endpoint = _data(requests.post(graph, headers=auth, json={"name": "loginless demo", "provider": "openrouter"}))
     one = f"{graph}/{endpoint['id']}"
     _data(requests.post(f"{one}/credential", headers=auth, json={"key": key}))
-    _data(requests.put(one, headers=auth, json={"limits": {"cost_usd_total": COST_USD_TOTAL}}))
+    _data(
+        requests.put(
+            one,
+            headers=auth,
+            json={"limits": {"cost_usd_total": COST_USD_TOTAL}, "filters": {"providers_ignore": PROVIDERS_IGNORE}},
+        )
+    )
     _data(requests.post(f"{one}/public", headers=auth, json={"enabled": True}))
     print(endpoint["id"])
 

@@ -101,3 +101,19 @@ def test_a_private_endpoint_is_refused_at_the_first_command(rig):
     done = _run(rig, ENDPOINT_ID=private, SKIP_BUILD="1")
     assert done.returncode == 6, done.stdout[-1000:] + done.stderr[-1000:]
     assert "NOT_PUBLIC" in done.stdout + done.stderr
+
+
+def test_every_harness_answers_on_cheap_open_models(rig):
+    """The same single bind funds all four harnesses, on models none of them ships with.
+
+    ``worker_matrix.py`` is claude/codex/copilot/opencode x Kimi, GLM and Qwen. The endpoint is the
+    one ``make_public_endpoint.py`` makes, which routes around Novita: that host answered the Qwen
+    slug with an EMPTY completion for about a third of requests, so without ``providers_ignore``
+    this test fails intermittently on whichever harness draws it.
+    """
+    if "ENDPOINT_ID" not in rig:
+        pytest.skip("the bind above did not run")
+    done = _run(rig, SKIP_BUILD="1", SCRIPT="worker_matrix.py")
+    cells = [line for line in done.stdout.splitlines() if line.startswith(("PASS", "FAIL", "SKIP"))]
+    assert done.returncode == 0 and len(cells) == 12, "\n".join(cells) + done.stderr[-1500:]
+    assert all(line.startswith("PASS") for line in cells), "\n".join(cells)
