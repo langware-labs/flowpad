@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FSRef, Project, Tab, tabKey, tabManager, TypeId } from '@sdk';
+import { FSRef, isHiddenProject, Project, Tab, tabKey, tabManager, TypeId } from '@sdk';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
@@ -378,14 +378,17 @@ export function useProjectListMenu({
   const { currentDock, navigation } = useDockNavigation();
   const { buckets: allBuckets, globalTabCount, closeGlobal } = useTabProjectBuckets();
 
-  // System projects (e.g. the shipped "Flowpad Assistant") are kept out of the
-  // chip entirely — they stay reachable via Preferences → UI → "Show system
-  // projects". We read the backend-computed `system` flag off the entity rather
-  // than re-deriving it client-side. A bucket whose entity is still loading
-  // (project == null) is kept — it resolves from cache and re-filters once known.
+  // App-managed projects (the shipped "Flowpad Assistant", a help-desk portal
+  // checkout) are kept out of the chip entirely — they stay reachable via
+  // Preferences → UI → "Show system projects". Same predicate the project
+  // CONTEXT rejects, so the chip can never list a project you cannot be in: the
+  // backend-computed `system` flag plus the portal's uname, whose hiddenness the
+  // backend derives from its location and never stamps on the entity. A bucket
+  // whose entity is still loading (project == null) is kept — it resolves from
+  // cache and re-filters once known.
   // The agent mount ROOT (~/Flowpad workspace) is excluded on the backend
   // (never minted, never listed), so no new tab can open on it here.
-  const buckets = useMemo(() => allBuckets.filter((b) => !b.project?.system), [allBuckets]);
+  const buckets = useMemo(() => allBuckets.filter((b) => !isHiddenProject(b.project)), [allBuckets]);
 
   const tabTotal = buckets.reduce((sum, b) => sum + b.tabCount, 0);
   const projectTotal = buckets.length;
