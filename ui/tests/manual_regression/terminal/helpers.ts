@@ -300,7 +300,7 @@ export async function getActiveTabName(page: Page): Promise<string> {
 
 /**
  * Navigate to Home via the sidebar Home button (client-side React Router nav).
- * Selects by lucide icon class to avoid positional-index drift (Refresh/Inbox
+ * Selects by lucide icon class to avoid positional-index drift (Refresh/Stream Inbox
  * shifted indices in the sidebar). Click-path is required because this
  * scenario verifies that no-reload nav preserves React state including active
  * xterm.js terminal sessions.

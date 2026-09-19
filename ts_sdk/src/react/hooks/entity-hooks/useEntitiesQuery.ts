@@ -51,7 +51,7 @@ function useWatchedEntitiesQuery<T extends APIEntity<T>>(
     isSuccess: boolean;
   };
   // Seed state from the in-memory query cache so a remount (e.g. reopening the
-  // inbox, which fully unmounts/remounts its view) renders the already-known rows
+  // stream inbox, which fully unmounts/remounts its view) renders the already-known rows
   // on the first frame instead of flashing an empty ``undefined``/loading state.
   // ``getCachedQueryResults`` is a synchronous keyed read; a miss (cold load)
   // yields the loading state, so cold starts are unchanged. Reused on resubscribe.

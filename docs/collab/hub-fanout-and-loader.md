@@ -55,17 +55,18 @@ visibility. Hold that distinction; the rest is bookkeeping.
 > `/Users/shlom/Documents/dev/test_flowpad/FlowPad/`. Paths in this section are
 > in the **hub repo**, not flowpad-oss.
 
-`Conversation.add_message` (`flowpad/hub/builtin/conversation.py:107-123`) runs
+`Conversation.add_message` (`flowpad/hub/builtin/conversation.py:281-308`) runs
 after the message is accepted and stored. The hub has accepted it, so it is
 `SENT` (one check on the sender's UI) — `CREATED` only ever exists client-side,
-pre-accept (`conversation.py:108-113`). The sequence is:
+pre-accept (`conversation.py:282-287`). The sequence is:
 
 ```
 add_message(fm):
-  if rank(fm.delivery_status) < rank(SENT): fm.delivery_status = SENT   # :112
-  add_child(fm); _recompute_message_count(); update()                   # :114-116
-  _fanout_message(fm)                                                   # :117  CONTENT, skip sender
-  _fanout_status_update(fm, only_user_id=fm.sender_id)                  # :122  STATUS, sender alone
+  if rank(fm.delivery_status) < rank(SENT): fm.delivery_status = SENT   # :286-287
+  reset_create_fields(fm)   # wire attribution is client-controlled      # :298
+  add_child(fm); _recompute_message_count(); update()                   # :299-301
+  _fanout_message(fm)                                                   # :302  CONTENT, skip sender
+  _fanout_status_update(fm, only_user_id=fm.sender_id)                  # :307  STATUS, sender alone
 ```
 
 ### The common iterator — `_dispatch_to_participants`
@@ -129,21 +130,22 @@ pointer index.
 ## 2. OSS receive / upsert — `hub_bridge`
 
 All inbound frames land on `HubBridge._on_data_op`
-(`flow_sdk/cloud_client/hub_bridge.py:277-341`). It parses `to_entity`
-(the changed entity) and `from_entity` (the parent envelope, `hub_bridge.py:285-289`),
-then routes by type (`hub_bridge.py:296-319`):
+(`flow_sdk/cloud_client/hub_bridge.py:361`). It parses `to_entity`
+(the changed entity) and `from_entity` (the parent envelope, `hub_bridge.py:370-374`),
+then routes by type (`hub_bridge.py:381-409`):
 
 ```
 _on_data_op(message):
   child_*                      → _handle_child_op       (envelope inverted: to=parent)
   to_entity.type == flow_message → _handle_flow_message_op(op, eid, data, parent_conv_id)
-                                    parent_conv_id = from_eid iff from_entity is a conversation  # :311-313
+                                    parent_conv_id = from_eid iff from_entity is a conversation  # :397
   to_entity.type == conversation → _handle_conversation_op(op, eid, data)
   to_entity.type == invitation   → _handle_invitation_op (nudge → HTTP pull)
-  always: _dispatch_event(...)   → generic cloud_watch subscribers                # :334-341
+  (also task / deployment / llm_endpoint / membership-mirror branches)            # :403-409
+  always: _dispatch_event(...)   → generic cloud_watch subscribers                # :426
 ```
 
-### `_handle_flow_message_op` (`hub_bridge.py:397-533`)
+### `_handle_flow_message_op` (`hub_bridge.py:490`)
 
 **Self-send drop (`hub_bridge.py:420-427`).** The hub fires *two* CREATE frames
 per `add_message`: the entity-save auto-notify (no `from_entity`, broadcast to
@@ -262,27 +264,26 @@ one place (`materialize_flow_message.py:1-12`).
 
 ### Load-bearing order: FM CREATE → Conversation UPDATE
 
-`materialize_flow_message` (`materialize_flow_message.py:153-324`) saves the FM
+`materialize_flow_message` (`materialize_flow_message.py:186-402`) saves the FM
 *before* it notifies the conversation, because the UI refetches the conversation
-on the UPDATE and must already have the FM row to render
-(`materialize_flow_message.py:165-175`):
+on the UPDATE and must already have the FM row to render:
 
 ```
 materialize_flow_message(payload, conversation_id, remote, emit_live_create):
-  1. upsert FlowMessage  (notify=False)                                   # :196-235
-       existing + remote + is_stale → LWW merge_hub_payload, reflect      # :206-213
-       new + remote → carry wire created_by verbatim, reflect             # :221-235
-  2. emit explicit CREATE  iff (is_new OR emit_live_create)               # :246-251
-  3. ensure conversation exists (bare build if caller skipped it)         # :254-264
-  4. append typed Pointer → conversation.jsonl                            # :274-282
-  5. project_pointers_to_entity(rec) → message_ids / message_count       # :283-284
-  6. sniffer EVENTs + conv.notify_updated()                              # :286-320
+  1. upsert FlowMessage  (notify=False)                                   # :230-281
+       existing + remote + is_stale → LWW merge_hub_payload, reflect      # :239-249
+       new + remote → carry wire created_by verbatim, reflect             # :259-276
+  2. emit explicit CREATE  iff notify AND (is_new OR emit_live_create)    # :289
+  3. ensure conversation exists (bare build if caller skipped it)         # :300-312
+  4. attach_child(fm) + append typed Pointer → conversation.jsonl         # :345-352
+  5. project_pointers_to_entity(rec) → message_ids / message_count       # :354
+  6. sniffer EVENTs + conv.notify_updated()                              # :367-398
 ```
 
 Step 2's `emit_live_create` flag is the fix for the "doorbell rings once" bug: a
 background catch-up that materialized the row first would otherwise swallow the
 live CREATE, so body-bearing messages never reached the open conversation
-(`materialize_flow_message.py:237-245`). The hub WS bridge always passes it.
+(`materialize_flow_message.py:283-289`). The hub WS bridge always passes it.
 
 The `remote=True` path preserves hub attribution via `remote_reflection()` (a
 contextvar that suppresses the driver's local-user stamp) and applies the
@@ -344,24 +345,24 @@ reconcile is non-fatal and drops the guard so a later mount retries
 The loader resolves a `/dock/conversation/<id>[/message/<id>]` URL into a fully
 populated conversation plus `dataContext`. It is a two-tier split mirroring
 `load-shell` / `load-project`: a pure primitive `loadConversation(id)`
-(`ui/src/routes/loaders/load-conversation.ts:58-126`) and a URL-aware wrapper
-`loadConversationRoute(pointer)` (`load-conversation.ts:132-179`).
+(`ui/src/routes/loaders/load-conversation.ts:51-113`) and a URL-aware wrapper
+`loadConversationRoute(pointer)` (`load-conversation.ts:120-168`).
 
 ```
 loadConversation(id):
-  Phase 1  conv = getByTypeId(Conversation, id)                # :61-77  HARD-required
+  Phase 1  conv = getByTypeId(Conversation, id)                # :55-69  HARD-required
              404/403 → throw ConversationLoadError('not_found')
              other   → throw ...('network_error')
-  Phase 2  taskTypeId = conv.firstContextOfType('task')        # :80-84  silent-optional
+  Phase 2  taskTypeId = conv.firstContextOfType('task')        # :74-76  silent-optional
              if present: task = getByTypeId(task).catch(null)
-  Phase 3  projectId = task?.project_id                        # :92     CASCADE
+  Phase 3  projectId = task?.project_id                        # :85     CASCADE
                        ?? conv.project_id
                        ?? undefined
-  Phase 4  dataContext.setActiveEntityTypeId(conv)             # :97
-           projectId ? setContext(CurrentProject, project)     # :99-108
+  Phase 4  dataContext.setActiveEntityTypeId(conv)             # :90
+           projectId ? setContextEntityTypeId(CurrentProjectTypeId, project)  # :92-99
                        + prefetch Project (best-effort)
-                     : setContext(CurrentProject, null)        # :109-119  → red "Select Project" pill
-  Phase 5  if task?.project_root: setWorkdir(root)             # :121-123
+                     : setContextEntityTypeId(CurrentProjectTypeId, null)     # :106  → red "Select Project" pill
+  Phase 5  if task?.project_root: setWorkdir(root)             # :109-111
 ```
 
 ### Why this shape (rationale folded from the old design doc)

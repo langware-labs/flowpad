@@ -46,7 +46,7 @@ async def _make_ap(status: WorkerStatus, monkeypatch) -> AgenticProcess:
     ap.status = ProcessStatus.RUNNING.value
     await ap.save(notify=False)
     # Settle initial naming migration before measuring status-only broadcasts.
-    await refresh_process_name(ap, watch=False)
+    await refresh_process_name(ap)
     monkeypatch.setattr(
         type(ap),
         "_discover_status_from_transcript",

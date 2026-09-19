@@ -6,14 +6,12 @@ what the Flowpad runtime asks a source beyond the contract."""
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
-from typing import Any, AsyncIterator, Optional, Protocol, runtime_checkable
+from typing import Any, AsyncIterator, Mapping, Optional, Protocol, runtime_checkable
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import FileItem, MessageData, MessageItem, SourceItemSpec, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import DataPage
-from flow_sdk.sources.values.query import DataQuery
-from flow_sdk.sources.values.segment import SegmentRef
 
 
 @runtime_checkable
@@ -23,11 +21,16 @@ class Readable(Protocol):
 
 @runtime_checkable
 class Listable(Protocol):
+    """One stream: the source's own ``query()``, paged by an opaque cursor. ``narrow`` updates fields of
+    that query for one read (``since``, ``prefix``) and never replaces it."""
+
     async def fetch(
-        self, query: Optional[DataQuery] = None, *, cursor: Optional[str] = None, page_size: Optional[int] = None
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
     ) -> DataPage: ...
 
-    def iterate(self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None) -> AsyncIterator[SourceItemSpec]: ...
+    def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncIterator[SourceItemSpec]: ...
 
 
 @runtime_checkable
@@ -58,13 +61,6 @@ class Drafting(Protocol):
 
 
 # ── beyond the contract: what the sync runtime asks ────────────────────────────
-
-
-@runtime_checkable
-class Segmented(Protocol):
-    """A source whose default selection splits into independently-cursored units."""
-
-    async def segments(self) -> list[SegmentRef]: ...
 
 
 @runtime_checkable
@@ -115,7 +111,6 @@ CAPABILITIES: dict[str, type] = {
     "byte_store": ByteStore,
     "messaging": Messaging,
     "drafting": Drafting,
-    "segmented": Segmented,
     "verifiable": Verifiable,
     "choosing": Choosing,
     "identified": Identified,
@@ -138,7 +133,6 @@ __all__ = [
     "Messaging",
     "Mutable",
     "Readable",
-    "Segmented",
     "StableHandle",
     "Verdict",
     "Verifiable",

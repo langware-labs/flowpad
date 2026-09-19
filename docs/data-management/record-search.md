@@ -85,8 +85,8 @@ These read directly from instance attrs (`__dict__`) — there is no longer a `c
 
 ```python
 # flow_sdk/schema/type_info/skill_type_info.py
-SKILL_TYPE_INFO = TypeInfo(
-    type_name="skill",
+SKILL = TypeInfo(
+    type_name=EntityType.SKILL,
     browseable_by=ViewMode.STANDARD,
     index_fields=["description"],
     ...
@@ -275,13 +275,21 @@ These are registered on the `SchemaRegistry` entry and consumed by the agent-rec
 
 ## 10. Testing
 
-FTS5 operations are driver-level methods. `fts_upsert` takes one `FtsEntry` (or a list); test them directly:
+FTS5 operations are driver-level methods. `fts_upsert` takes one `FtsEntry` (or a list); test them directly against the session driver that `tests/pytest_plugin.py` yields from its `initialize_test_db` fixture (there is no `db_driver` fixture). `fts_search` returns hydrated `Entity` rows, so seed the entity row as well:
 
 ```python
+import pytest
+from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
 
+
 @pytest.mark.asyncio
-async def test_fts_upsert_and_search(db_driver):
+async def test_fts_upsert_and_search(initialize_test_db):
+    db_driver = initialize_test_db  # the session SQLite driver from tests/pytest_plugin.py
+    # fts_search hydrates Entity rows, so the row must exist next to its FTS entry.
+    async with db_driver.session_factory() as session:
+        session.add(db_driver._entity_to_schema(Entity(type="skill", id="abc123", name="auth-flow")))
+        await session.commit()
     await db_driver.fts_upsert(FtsEntry(
         entity_id="abc123",
         entity_type="skill",

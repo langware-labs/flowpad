@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 
+from flow_sdk import toplog
 from flow_sdk.builtin.faas import scan_indexer
+from flow_sdk.builtin.faas.project_list import (
+    invalidate_project_list_cache,
+)
 from flow_sdk.builtin.faas.project_list import (
     list_projects_from_indexer as _list_projects_from_indexer,
 )
@@ -404,6 +409,9 @@ class ScanActionsMixin:
                 results.append({"project_id": project_id, "ok": False, "error": str(e)})
 
         succeeded = sum(1 for r in results if r["ok"])
+        if succeeded:
+            # Either action changes what the picker's cached disk scan would find.
+            invalidate_project_list_cache()
         return ApiSuccessResponse(data={"results": results, "succeeded": succeeded, "failed": len(results) - succeeded})
 
     async def _scan_project(self) -> ApiResponse:
@@ -457,6 +465,7 @@ class ScanActionsMixin:
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
         from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 
+        t0 = time.monotonic()
         try:
             request_info = get_current_request_info()
             owner = request_info.someone_typeid if request_info else None
@@ -561,6 +570,14 @@ class ScanActionsMixin:
             # with a missing CLI used to be born fine and only break on its first
             # prompt, where the failure rides a 200 stream and no status code can
             # reach the user.
+            toplog.log(
+                "agentic_process.load",
+                "createProcess start worker=%s visible=%s pty_mode=%s project=%s",
+                worker_type.value,
+                visible,
+                pty_mode,
+                project_id,
+            )
             if not await AgenticProcess.is_installed(worker_type.value):
                 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
                     worker_capability_kind,
@@ -608,6 +625,11 @@ class ScanActionsMixin:
             from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
 
             funding = await llm_picker_view(worker_type.value, LLMScope(project_id=project_id or ""))
+            toplog.log(
+                "agentic_process.load",
+                "createProcess preflight done (is_installed + llm_picker_view) ms=%.0f",
+                (time.monotonic() - t0) * 1000,
+            )
             if funding.chosen is None:
                 logging.info(f"ComputeNode {self.id} createProcess refused: {worker_type.value} has no LLM source")
                 # The SAME opening sentence ``LLMSourceError`` uses, then the
@@ -722,6 +744,12 @@ class ScanActionsMixin:
                 except Exception:
                     pass
 
+            toplog.log(
+                "agentic_process.load",
+                "createProcess project resolved project=%s ms=%.0f",
+                project_id,
+                (time.monotonic() - t0) * 1000,
+            )
             process = AgenticProcess(
                 worker_type=worker_type.value,
                 instruction_content="",
@@ -753,6 +781,12 @@ class ScanActionsMixin:
                 if tids:
                     process.add_shared_context_entities(*tids)
             await process.save(owner)
+            toplog.log(
+                "agentic_process.load",
+                "createProcess row saved process=%s ms=%.0f",
+                process.id,
+                (time.monotonic() - t0) * 1000,
+            )
 
             # ANALYSIS kind: the new process is a child of the entity it
             # analyzes (target_typeid_str) and each joins the other's private
@@ -795,6 +829,12 @@ class ScanActionsMixin:
                     logging.debug("ProcessResult entity not available, skipping result creation")
 
             logging.info(f"ComputeNode {self.id} created AgenticProcess {process.id}")
+            toplog.log(
+                "agentic_process.load",
+                "createProcess ready to start process=%s ms=%.0f",
+                process.id,
+                (time.monotonic() - t0) * 1000,
+            )
 
             # Seed the launch prompt onto the queue BEFORE any auto-start. Use
             # the PromptQueue directly (not the enqueue *action*) so we don't
@@ -841,6 +881,12 @@ class ScanActionsMixin:
                 # blocks on the turn; it also logs any drain-task exception.
                 process._schedule_queue_drain("enqueue")
 
+            toplog.log(
+                "agentic_process.load",
+                "createProcess done process=%s ms=%.0f",
+                process.id,
+                (time.monotonic() - t0) * 1000,
+            )
             data = process.model_dump(mode="json")
             # ``pty_pid`` is not an AgenticProcess field, but the legacy
             # identity-only response exposed it. Keep the key additively while
@@ -850,6 +896,9 @@ class ScanActionsMixin:
 
         except Exception as e:
             logging.exception(f"ComputeNode {self.id} createProcess error: {e}")
+            toplog.log(
+                "agentic_process.load", "createProcess failed ms=%.0f error=%s", (time.monotonic() - t0) * 1000, e
+            )
             return ApiFailResponse(message=str(e))
 
     async def _scan_upsert_session_process(self) -> ApiResponse:

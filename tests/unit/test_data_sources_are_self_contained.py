@@ -1,12 +1,12 @@
 """A data source is self-contained in its asset folder (CLAUDE.md, "Data sources are self-contained
 assets").
 
-Outside ``agentic-assets/data_source/<name>/`` only generic machinery may exist. This scans the
+Outside ``agentic-assets/data_driver/<name>/`` only generic machinery may exist. This scans the
 application tiers for the traces a provider leaves when its KNOWLEDGE escapes its folder: an import
 of provider code, a shipped source's class name, a query filtering rows by one source's name, or a
 per-source table row. It also requires every shipped asset to carry its own ``source.py``.
 
-Naming an asset to USE it — ``Inbox(provider="agentmail")``, ``source_type("cloud_email")`` — is
+Naming an asset to USE it — ``StreamInbox(provider="agentmail")``, ``DataDriver.loaded("cloud_email")`` — is
 not knowledge about it, the way opening a skill by name is not; what the machinery then needs, it
 asks the source for. ``EXCEPTIONS`` is the user's to grant.
 """
@@ -19,7 +19,7 @@ from functools import lru_cache
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-ASSETS_REL = "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source"
+ASSETS_REL = "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver"
 ASSETS = REPO / ASSETS_REL
 #: The application tiers. Other assets (skills, agents) are content, not machinery — they may talk
 #: about Slack; the engine may not.
@@ -37,7 +37,7 @@ EXCEPTIONS: dict[str, str] = {}
 
 @lru_cache(maxsize=1)
 def shipped_names() -> tuple[str, ...]:
-    return tuple(sorted(p.name for p in ASSETS.iterdir() if (p / "data_source.json").is_file()))
+    return tuple(sorted(p.name for p in ASSETS.iterdir() if (p / "data_driver.json").is_file()))
 
 
 @lru_cache(maxsize=1)

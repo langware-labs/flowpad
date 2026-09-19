@@ -501,6 +501,10 @@ class ClaudeDriver:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
 
+    def transcript_is_final(self, process: "AgenticProcess", path: Path) -> bool:
+        """``<session_id>.jsonl`` is the session's only record; a live turn only appends to it."""
+        return bool(process.session_id) and path.name == f"{process.session_id}.jsonl"
+
     async def available_assets(self, process: "AgenticProcess"):
         from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
         from flow_sdk.builtin.agentic_process.cli_drivers.claude.asset_inventory import available_assets

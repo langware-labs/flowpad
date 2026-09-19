@@ -83,9 +83,9 @@ describe('hub: matrix two-process — BOB', () => {
     // The assigned conversation is materialized on bob's backend; load it via SDK.
     const conv = await pollUntil(() => Conversation.getById<Conversation>(convId), 10_000, 'conversation materialized');
 
-    const inbox: IFlowMessage[] = [];
+    const receivedMessages: IFlowMessage[] = [];
     const offMessage = conv.on(ConversationEvents.MESSAGE, (m: IFlowMessage) => {
-      inbox.push(m);
+      receivedMessages.push(m);
     });
 
     try {
@@ -95,9 +95,9 @@ describe('hub: matrix two-process — BOB', () => {
 
       // ── Step 4: receive alice's first message, ack it, reply. ───────────
       // The hub fans the create frame straight to conv.on('message') —
-      // poll the inbox until alice's first message lands.
+      // poll receivedMessages until alice's first message lands.
       const aliceHi = await pollUntil(
-        () => inbox.find((m) => (m.text || '').trim() === 'hi-from-alice'),
+        () => receivedMessages.find((m) => (m.text || '').trim() === 'hi-from-alice'),
         15_000,
         'hi-from-alice',
       );
@@ -113,7 +113,7 @@ describe('hub: matrix two-process — BOB', () => {
       // uploading on alice's side; wait until the hub flips body_status to
       // READY before downloading.
       const skillMsg = await pollUntil(
-        () => inbox.find((m) => (m.text || '').trim() === 'matrix-skill-from-alice'),
+        () => receivedMessages.find((m) => (m.text || '').trim() === 'matrix-skill-from-alice'),
         20_000,
         'skill message',
       );

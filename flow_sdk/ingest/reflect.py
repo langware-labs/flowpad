@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Optional, Protocol
 from flow_sdk.assets.materialize import MaterializationMode, materialize_asset_sync, remove_path
 from flow_sdk.builtin.drivers.local_driver import _resolve_local_path
 from flow_sdk.fs_store.origin.fs_origin import safe_join
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.utils.kind_registry import KindRegistry
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -256,9 +256,9 @@ def origin_id_for(source: "DataSource", ref: str, root: Optional[Path]) -> str:
     The fallback is the source-relative path: always available, never wrong,
     only weaker (a rename reads as a new origin under it).
     """
-    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-    driver = source_type(source.provider)
+    driver = DataDriver.loaded(source.provider)
     if driver is not None:
         try:
             resolved = (driver.origin_id_for(source, ref) or "").strip()
@@ -347,9 +347,9 @@ async def _retire_row(path: str) -> None:
 
 def _stamps_identity(source: "DataSource") -> bool:
     """May we write into this source's bytes? The driver decides."""
-    from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-    driver = source_type(source.provider)
+    driver = DataDriver.loaded(source.provider)
     return driver is None or driver.stamps_identity
 
 

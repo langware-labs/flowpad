@@ -6,7 +6,7 @@
  * carries (and locally materializes) the full entity. Every incoming `create`
  * data-op therefore cost one redundant LIST GET (e.g. the triggers/cron
  * `graph/trigger` 7→15 idle climb), and this is the SHARED SDK path (tabs,
- * inbox, feed, workflows, triggers…).
+ * stream inbox, feed, workflows, triggers…).
  *
  * Fix: ts_sdk/src/FlowSync/store.ts `onDataOp` — on `create`, splice the
  * already-delivered entity into each matching WatchedQuery's results locally

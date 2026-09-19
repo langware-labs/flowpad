@@ -154,6 +154,34 @@ MCP UI is a specialization of the raw VFS case: a shown path ending in
 `.mcp.html` is rendered by the MCP App preview host instead of the generic HTML
 preview.
 
+### Display context (a shown page speaks for itself)
+
+A page shown in the display can report its live state to the agent beside it
+(`flow_sdk/builtin/agentic_process/display_context.py`).
+
+* **Page SDK access.** Both hosts give the page `globalThis.__FLOWPAD_API_URL__`
+  and `globalThis.__FLOWPAD_PROCESS_ID__` before its own scripts run: plain HTML
+  through `fs/serve?process=<id>` (server-side `inject_process_id`), MCP UI
+  through a head prelude plus a sandbox CSP opened to the backend origin. The page
+  then does `import(api + '/sdk/flowpad-sdk.js')`, `initSdk()`, and loads its
+  `AgenticProcess`.
+* **Write.** `process.setDisplayContext(data)` → `set-display-context` stores
+  `context_data.display_context = {target, data, version, updated_at}`. `target`
+  is `last_shown` at write time; the same target bumps `version`, `data` is
+  replaced wholesale, identical `data` is a no-op, max 64 KB (413), nothing shown
+  → 409. Writing never starts a turn.
+* **Fresh.** The context counts only while its `target` is still `last_shown`;
+  `on_show` of another target drops it. The key rides the display-state save
+  guard (`_preserve_latest_display_pin`), so stale saves cannot clobber them.
+* **Per-turn delivery.** A Vibe session (the `vibe` persona loaded as the
+  process persona, on a driver that reads hook answers) installs
+  `UserPromptSubmit`. After registered callbacks, `on_hook` answers with the
+  fresh context as `additionalContext` (`<display-context …>` block), once per
+  written version (the context's `delivered` flag; a write resets it).
+* **On demand.** `display-context` (GET) / `flow context display` →
+  `{fresh, target, version, updated_at, data}`.
+* **Waking the agent** is the page's call: `process.enqueue(prompt, source)`.
+
 ### Wizard result contract
 
 A wizard is an `AgenticProcess` with `process_type=WIZARD`, usually created by
@@ -300,6 +328,8 @@ hook and current drivers pass it through.
 | `cmd-line`               | GET  | `cmd_line_action` → `cmd_line`                                                      | both                  | Read-only; failure-tolerant (`cmd_line:None`).                                                                                                             | Live launch command, computed on demand (never serialized).                                                                                                                                                                                                                                                                                                   |
 | `status`                 | ALL  | `get_status` → `fetch_worker_status`                                                | both                  | Read-only.                                                                                                                                                 | `{status, worker_status, ready_for_input}` (transcript-derived).                                                                                                                                                                                                                                                                                              |
 | `get-host`               | ALL  | `get_host` → `compute_node.get_host`                                                | both                  | params `port` (1024–65535), `redirect?`.                                                                                                                   | Resolve public host for a dev-server port on this process's compute node (web preview).                                                                                                                                                                                                                                                                       |
+| `set-display-context`    | POST | `set_display_context_action` → `display_context.with_display_context`                | both                  | param `data` (JSON object); 409 nothing shown, 413 over 64 KB. Quiet — no turn.                                                                            | The shown page reports its live state (see Display context).                                                                                                                                                                                                                                                                                                   |
+| `display-context`        | GET  | `display_context_action` → `display_context.describe_display_context`                | both                  | none                                                                                                                                                        | `{fresh, target, version, updated_at, data}` — what `flow context display` prints.                                                                                                                                                                                                                                                                             |
 | `set-graph-context`      | POST | `set_graph_context_action` → `set_graph_context`                                    | both                  | param `graph_context_id`; GraphContext must exist (404). Pre-launch only.                                                                                  | Bind a GraphContext to this process before launch.                                                                                                                                                                                                                                                                                                            |
 | `add-dir`                | POST | `add_dir`                                                                           | both                  | param `path`.                                                                                                                                              | Append to `additional_dirs` (→ `--add-dir`) + one-shot index scan of the new path.                                                                                                                                                                                                                                                                            |
 | `remove-dir`             | POST | `remove_dir`                                                                        | both                  | param `path`. No-op if absent.                                                                                                                             | Remove a dir from `additional_dirs`.                                                                                                                                                                                                                                                                                                                          |

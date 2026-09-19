@@ -19,16 +19,13 @@ from flow_sdk.request_context.execution_context import (
 
 
 @pytest.fixture(autouse=True)
-async def claude_home(tmp_path, monkeypatch):
-    from flow_sdk.builtin.agentic_process.naming.runtime import shutdown_name_observation
-
-    await shutdown_name_observation()
-    directory = str(tmp_path / "claude")
+def claude_home(tmp_path, monkeypatch):
+    # ``.claude`` in the path is how a delivered transcript is attributed to its vendor.
+    directory = str(tmp_path / ".claude")
     monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", directory)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", directory)
     reset_instance_settings()
     yield
-    await shutdown_name_observation()
     reset_instance_settings()
 
 
@@ -193,11 +190,13 @@ async def test_terminal_first_prompt_event_names_before_native_session_exists():
         set_execution_context(previous)
 
 
-async def test_preassigned_session_init_watches_title_before_transcript_exists(monkeypatch):
-    import asyncio
-
-    from flow_sdk.builtin.agentic_process.naming.runtime import _runtime, shutdown_name_observation
+@pytest.mark.long  # 1.11s: the transcript flush debounce is a real 1s window
+async def test_titled_transcript_event_names_process_and_tab():
+    """A title arrives as a transcript event; nothing watches the file for it."""
     from flow_sdk.builtin.agentic_process.naming.state import reduce_name
+    from flow_sdk.transcript_streamer.registry import transcript_streamer_registry
+
+    from .conftest import settle_transcript_flushes
 
     sid = mint_uuid()
     process = AgenticProcess(id=mint_uuid(), worker_type=WorkerType.CLAUDE_CODE_CLI,
@@ -205,27 +204,12 @@ async def test_preassigned_session_init_watches_title_before_transcript_exists(m
                              naming_state=reduce_name(SessionNameState(), first_prompt="Explain blue oceans"))
     await process._db.save(process)
     tab = await _tab(process)
-    projects = get_instance_settings().claude_projects_dir.resolve()
-    projects.mkdir(parents=True, exist_ok=True)
-    published = asyncio.Event()
-    original_notify = AgenticProcess.notify_updated
+    await process.make_turn_session_adopter("test")(sid)
+    assert (await AgenticProcess.get_by_id(process.id)).name == "Explain blue oceans"
 
-    async def notify(self, *args, **kwargs):
-        await original_notify(self, *args, **kwargs)
-        if self.id == process.id and self.name == "Why oceans look blue":
-            published.set()
+    await transcript_streamer_registry.notify_change(_write_transcript(sid, title="Why oceans look blue"))
+    await settle_transcript_flushes()
 
-    monkeypatch.setattr(AgenticProcess, "notify_updated", notify)
-    try:
-        await process.make_turn_session_adopter("test")(sid)
-        assert (await AgenticProcess.get_by_id(process.id)).naming_state.session_id == sid
-        assert _runtime().bindings[str(process.id)] == (projects,)
-        path = await asyncio.to_thread(_write_transcript, sid, title="Why oceans look blue")
-        await published.wait()
-        durable = await AgenticProcess.get_by_id(process.id)
-        assert durable.naming_state.phase is NamePhase.HARNESS
-        assert durable.name == (await Tab.get_by_id(tab.id)).name == "Why oceans look blue"
-        assert _runtime().bindings[str(process.id)] == (path.resolve(),)
-        assert set(_runtime().watchers) == {path.parent.resolve()}
-    finally:
-        await shutdown_name_observation()
+    durable = await AgenticProcess.get_by_id(process.id)
+    assert durable.naming_state.phase is NamePhase.HARNESS
+    assert durable.name == (await Tab.get_by_id(tab.id)).name == "Why oceans look blue"

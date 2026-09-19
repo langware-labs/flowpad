@@ -9,14 +9,14 @@ import re
 from pathlib import Path
 
 import flow_sdk
-from flow_sdk.ingest.source_registry import asset_module
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
+from flow_sdk.ingest.driver_registry import asset_module
+from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
 
 agent_source = asset_module("agent")
 agent_driver = asset_module("agent", "transport")
 
 ROOT = Path(flow_sdk.__file__).parent
-MANIFEST = ROOT / "system_projects/flowpad_assistant/agentic-assets/data_source/agent/data_source.json"
+MANIFEST = ROOT / "system_projects/flowpad_assistant/agentic-assets/data_driver/agent/data_driver.json"
 
 
 def test_every_key_the_driver_reads_is_declared():
@@ -28,8 +28,9 @@ def test_every_key_the_driver_reads_is_declared():
 
 
 def test_the_declared_defaults_are_the_drivers():
-    spec = ManifestSpec.model_validate(json.loads(MANIFEST.read_text()))
-    assert spec.config["deadline_seconds"].default == agent_driver.DEFAULT_DEADLINE_SECONDS
-    assert spec.config["send_deadline_seconds"].default == agent_driver.DEFAULT_SEND_DEADLINE_SECONDS
-    for key in ("deadline_seconds", "send_agent", "send_subagent", "send_deadline_seconds", "stream", "streams"):
+    spec = DataDriverSpec.model_validate(json.loads(MANIFEST.read_text()))
+    fields = agent_source.AgentConfig.model_fields
+    assert fields["deadline_seconds"].default == agent_driver.DEFAULT_DEADLINE_SECONDS
+    assert fields["send_deadline_seconds"].default == agent_driver.DEFAULT_SEND_DEADLINE_SECONDS
+    for key in ("deadline_seconds", "send_agent", "send_subagent", "send_deadline_seconds"):
         assert spec.config[key].advanced, f"{key} is an override, not the form's first screen"

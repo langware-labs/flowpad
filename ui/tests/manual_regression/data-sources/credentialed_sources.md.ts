@@ -42,8 +42,8 @@ const specNamed = (name: string): Spec => {
 };
 
 test.beforeAll(async ({ request }) => {
-  const res = await request.get(`${apiOrigin()}/api/v1/graph/data_source_spec`);
-  expect(res.ok(), 'the backend did not serve data_source_spec').toBeTruthy();
+  const res = await request.get(`${apiOrigin()}/api/v1/graph/data_driver`);
+  expect(res.ok(), 'the backend did not serve data_driver').toBeTruthy();
   specs = (((await res.json()) as { data?: Spec[] }).data ?? []);
 });
 
@@ -74,7 +74,7 @@ test('slack: channel ids only — no account key in the form; a non-channel-id f
   const dialog = await openProvider(page, 'slack');
   await dialog.locator('#ds-name').fill('e2etest-slack-gate');
 
-  // `channels` is now a ChoiceField (`type: lines`, `choices: true`) — a picker,
+  // `channel` is a ChoiceField (`type: text`, `choices: true`) — a picker,
   // not a bare input. Its listing fires ON OPEN, not on mount, so the plain-input
   // fallback only appears once the picker has tried to list and been refused
   // (`fallsBackToTyping`). With no Slack connection on a QA instance that refusal

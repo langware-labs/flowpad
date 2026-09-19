@@ -8,6 +8,8 @@ export const AGENT_AUTO_LAUNCH_WARNING_KEY = 'flowpad.agent-auto-launch.warning'
 export interface AgentAutoLaunchWarning {
   winner: string;
   cancelled: string[];
+  /** The backend refused to launch. Present instead of a winner, never with one. */
+  error?: string;
 }
 
 /**
@@ -35,8 +37,12 @@ export function takeAgentAutoLaunchWarning(): AgentAutoLaunchWarning | null {
     if (!raw) return null;
     sessionStorage.removeItem(AGENT_AUTO_LAUNCH_WARNING_KEY);
     const parsed = JSON.parse(raw) as Partial<AgentAutoLaunchWarning>;
-    if (!parsed || typeof parsed.winner !== 'string' || !Array.isArray(parsed.cancelled)) return null;
-    return { winner: parsed.winner, cancelled: parsed.cancelled.map(String) };
+    if (typeof parsed?.winner !== 'string' || !Array.isArray(parsed.cancelled)) return null;
+    return {
+      winner: parsed.winner,
+      cancelled: parsed.cancelled.map(String),
+      ...(parsed.error ? { error: String(parsed.error) } : {}),
+    };
   } catch {
     return null;
   }
@@ -49,7 +55,18 @@ export function takeAgentAutoLaunchWarning(): AgentAutoLaunchWarning | null {
  */
 export function flushAgentAutoLaunchWarning(): void {
   const warning = takeAgentAutoLaunchWarning();
-  if (!warning || warning.cancelled.length === 0) return;
+  if (!warning) return;
+  if (warning.error) {
+    const reason = warning.error;
+    notify.warning({
+      id: 'agent-auto-launch-failed',
+      forceToast: true,
+      title: t`This project's agent could not start`,
+      message: t`Auto-launch failed: ${reason}. Open the project again to retry.`,
+    });
+    return;
+  }
+  if (warning.cancelled.length === 0) return;
   const names = warning.cancelled.join(', ');
   notify.warning({
     id: 'agent-auto-launch-cancelled',

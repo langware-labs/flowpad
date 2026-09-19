@@ -5,20 +5,20 @@ import { AGENT_PARAM, DockPointer } from '@src/navigation/DockPointer';
 const AGENT_ID = '11111111-1111-4111-8111-111111111111';
 const CONVERSATION_ID = '22222222-2222-4222-8222-222222222222';
 
-describe('Agent inbox navigation', () => {
+describe('Agent stream inbox navigation', () => {
   it('round-trips the exact deep-link and resolves the Agent target', () => {
-    const pointer = DockPointer.forAgentInbox(AGENT_ID);
-    expect(pointer.toUrl()).toBe(`/dock/agent/${AGENT_ID}/inbox`);
+    const pointer = DockPointer.forAgentStreamInbox(AGENT_ID);
+    expect(pointer.toUrl()).toBe(`/dock/agent/${AGENT_ID}/stream_inbox`);
 
     const rebuilt = DockPointer.fromUrl(pointer.toUrl());
     expect(rebuilt.viewType).toBe(ViewType.AGENT);
-    expect(DockPointer.parseAgentPointer(rebuilt.pointer)).toEqual({ agentId: AGENT_ID, view: 'inbox' });
+    expect(DockPointer.parseAgentPointer(rebuilt.pointer)).toEqual({ agentId: AGENT_ID, view: 'stream_inbox' });
     expect(rebuilt.targetTypeId?.toString()).toBe(`agent-${AGENT_ID}`);
   });
 
-  it('rejects every shape except <agent-id>/inbox', () => {
+  it('rejects every shape except <agent-id>/stream_inbox', () => {
     expect(DockPointer.parseAgentPointer(`${AGENT_ID}/settings`)).toEqual({ agentId: null, view: null });
-    expect(DockPointer.parseAgentPointer(`${AGENT_ID}/inbox/extra`)).toEqual({ agentId: null, view: null });
+    expect(DockPointer.parseAgentPointer(`${AGENT_ID}/stream_inbox/extra`)).toEqual({ agentId: null, view: null });
   });
 
   it('preserves Agent scope into a conversation and its message/thread URLs', () => {

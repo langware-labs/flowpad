@@ -47,7 +47,7 @@ connect request.
 | Skill arg | Load | What it does |
 | --- | --- | --- |
 | *(none)*, or a natural request — **the default** | `modes/connect.md` | Map the request onto a source, configure it, prove each gate, show it |
-| `author <system>` | `modes/author.md` | Write a NEW self-contained source folder (`data_source.json` + `source.py` + its tests), index it, then connect it |
+| `author <system>` | `modes/author.md` | Write a NEW self-contained source folder (`data_driver.json` + `source.py` + its tests), index it, then connect it |
 | `debug [<source>]` | `modes/debug.md` | Ordered diagnosis of a source that is failing, empty or stuck |
 | `define <source>` | `modes/define.md` | Sample the items, agree an output shape, create the dataset bound to the source, label an example |
 | `list` | *(inline, below)* | Read-only — what is connected and how healthy it is |

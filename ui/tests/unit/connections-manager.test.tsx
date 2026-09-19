@@ -24,7 +24,7 @@ const h = vi.hoisted(() => ({
   projects: [] as unknown[],
   usage: {} as Record<string, unknown[]>,
   checkHarnessLogins: vi.fn(),
-  save: vi.fn(() => Promise.resolve({ typeid: 'credential_spec-new', title: 'Twilio', project_id: null })),
+  save: vi.fn(() => Promise.resolve({ typeid: 'secret_pack-new', title: 'Twilio', project_id: null })),
   remove: vi.fn(() => Promise.resolve({ deleted: ['TWILIO_SID'], kept: [] as string[] })),
   refresh: vi.fn(() => Promise.resolve()),
   status: { project_id: null, vault_enabled: true, credentials: [], files: [] } as Record<string, unknown>,
@@ -353,7 +353,7 @@ const statusWith = (over: Record<string, unknown> = {}) => ({
 });
 
 const credential = (over: Record<string, unknown> = {}) => ({
-  typeid: 'credential_spec-1',
+  typeid: 'secret_pack-1',
   name: 'twilio',
   title: 'Twilio',
   description: '',
@@ -554,7 +554,7 @@ describe('ConnectionsManager — credential rows', () => {
 
     expect(document.body.textContent).toMatch(/deleted from the vault/i);
     await userEvent.click(screen.getByRole('button', { name: /^delete$/i }));
-    await waitFor(() => expect(h.remove).toHaveBeenCalledWith('credential_spec-1'));
+    await waitFor(() => expect(h.remove).toHaveBeenCalledWith('secret_pack-1'));
   });
 
   it('deleting an env-file credential names the lines that stay', async () => {

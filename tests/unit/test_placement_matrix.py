@@ -356,7 +356,7 @@ def test_owned_create_target_rejects_a_nonempty_agent_bundle(tmp_path):
 
     with pytest.raises(AssetPathCollisionError, match="already exists in this scope"):
         assert_create_target_available(
-            info, bundle / "agent.md", entity_type="agent", name="Q"
+            info, bundle / info.shape.main, entity_type="agent", name="Q"
         )
 
 
@@ -375,21 +375,23 @@ def test_owned_create_target_adopts_a_carrier_that_is_this_entitys_own(tmp_path)
     theirs = "8a4d1e77-0000-4000-8000-0000000000ff"
     bundle = tmp_path / "agentic-assets" / "agent" / "q"
     bundle.mkdir(parents=True)
-    (bundle / "agent.md").write_text("# Q\n")
+    main = bundle / "agent.json"
+    main.write_text('{"type": "agent", "name": "q"}\n')
     info = SchemaRegistry.get("agent")
-    info.stamp_id(FSRef(bundle / "agent.md"), mine)
-    assert resolve_id(info, FSRef(bundle / "agent.md")) == mine
+    assert info.shape.main == main.name
+    info.stamp_id(FSRef(main), mine)
+    assert resolve_id(info, FSRef(main)) == mine
 
     # Same entity → adopted, no raise.
     assert_create_target_available(
-        info, bundle / "agent.md", entity_type="agent", name="Q", entity_id=mine
+        info, main, entity_type="agent", name="Q", entity_id=mine
     )
 
     # Another entity's carrier, and an unidentified caller, both still collide.
     for other in (theirs, None):
         with pytest.raises(AssetPathCollisionError, match="already exists in this scope"):
             assert_create_target_available(
-                info, bundle / "agent.md", entity_type="agent", name="Q", entity_id=other
+                info, main, entity_type="agent", name="Q", entity_id=other
             )
 
 

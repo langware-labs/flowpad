@@ -166,7 +166,7 @@ async function materializeTab(
     return { tab: existingTab, tabs: existing };
   }
 
-  toplog.log('process_load', `materializeTab cache-miss → new_tab round trip dock=${dock.tabHash}`);
+  toplog.log(['process_load', 'agentic_process.load'], `materializeTab cache-miss → new_tab round trip dock=${dock.tabHash}`);
   // Create-or-resolve the dock's tab. `getFromDockPointer` → `new_tab` returns
   // one PROJECT-SCOPED list (exactly that project, or Global), which must NEVER be
   // adopted into the manager's GLOBAL snapshot from the scoped response:

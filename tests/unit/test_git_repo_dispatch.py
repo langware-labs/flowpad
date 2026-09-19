@@ -59,11 +59,10 @@ def fresh_init_responses() -> list:
 
 async def test_dispatch_status_clean_repo():
     """Clean repo returns branch info and empty files list."""
-    # combined status --porcelain=v1 --branch → numstat unstaged → numstat staged
+    # combined status --porcelain=v1 --branch → ls-remote --get-url (no line counts by default)
     responses = [
         make_cmd("## main...origin/main [ahead 1, behind 0]"),  # status --branch header, no files
-        make_cmd(""),  # diff --numstat (unstaged)
-        make_cmd(""),  # diff --numstat --staged
+        make_cmd("", exit_code=1),  # ls-remote --get-url → no remote
     ]
     result = await make_repo(responses).dispatch("status")
     assert result.status == "SUCCESS"
@@ -72,17 +71,45 @@ async def test_dispatch_status_clean_repo():
     assert result.data["files"] == []
 
 
+def test_remote_web_url_forms():
+    assert GitRepo._remote_web_url("git@github.com:org/repo.git") == "https://github.com/org/repo"
+    assert GitRepo._remote_web_url("ssh://git@gitlab.com:22/g/sub/repo.git") == "https://gitlab.com/g/sub/repo"
+    assert GitRepo._remote_web_url("https://github.com/org/repo") == "https://github.com/org/repo"
+    assert GitRepo._remote_web_url("/srv/git/repo.git") is None
+    assert GitRepo._remote_web_url("C:/repos/repo") is None
+
+
 async def test_dispatch_status_staged_flag():
     """Porcelain X column drives GitStatusFile.staged (backend-computed)."""
     responses = [
         make_cmd("## main\nM  staged.txt\n M unstaged.txt\n?? new.txt"),
-        make_cmd(""),  # diff --numstat (unstaged)
-        make_cmd(""),  # diff --numstat --staged
+        make_cmd("", exit_code=1),  # ls-remote --get-url → no remote
     ]
     result = await make_repo(responses).dispatch("status")
     assert result.status == "SUCCESS"
     staged_by_path = {f["path"]: f["staged"] for f in result.data["files"]}
     assert staged_by_path == {"staged.txt": True, "unstaged.txt": False, "new.txt": False}
+
+
+async def test_dispatch_status_line_counts_opt_in():
+    """``lineCounts`` (query string "true"/"1" or JSON true) adds the numstat pass;
+    without it the status is two git spawns and every count is None."""
+    status_out = "## main\n M a.txt"
+    plain = await make_repo([make_cmd(status_out), make_cmd("", exit_code=1)]).dispatch("status")
+    assert [(f["insertions"], f["deletions"]) for f in plain.data["files"]] == [(None, None)]
+
+    for flag in ("true", "1", True):
+        responses = [
+            make_cmd(status_out),
+            make_cmd("/repo/.git"),  # rev-parse --absolute-git-dir
+            make_cmd(""),  # read-tree HEAD
+            make_cmd(""),  # add -A -N
+            make_cmd("3\t1\ta.txt"),  # diff --numstat HEAD
+            make_cmd(""),  # rm temp index
+            make_cmd("", exit_code=1),  # ls-remote --get-url
+        ]
+        result = await make_repo(responses).dispatch("status", {"lineCounts": flag})
+        assert [(f["insertions"], f["deletions"]) for f in result.data["files"]] == [(3, 1)], flag
 
 
 async def test_dispatch_status_not_a_repo():

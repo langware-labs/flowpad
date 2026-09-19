@@ -9,11 +9,11 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.connections import Connection
-from flow_sdk.ingest.sources import SourceType, register_source
 from flow_sdk.ingest.testing import make_data_source
-from flow_sdk.schema.data_spec.data_source_manifest_spec import CURRENT_SCHEMA, AuthSpec, ManifestSpec
+from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec, DataDriverSpec
 from flow_sdk.secrets import (
     GcpSecretManagerStore,
     MissingSecrets,
@@ -223,10 +223,10 @@ class _GcpKeyedSource(Source):
 
 @pytest.fixture
 def keyed_source():
-    register_source(
-        SourceType(
+    DataDriver.register(
+        DataDriver.for_class(
             _GcpKeyedSource,
-            manifest=ManifestSpec(name=_GcpKeyedSource.provider, schema=CURRENT_SCHEMA, auth=AuthSpec(env=["KEYED_API_KEY"])),
+            manifest=DataDriverSpec(name=_GcpKeyedSource.provider, schema=CURRENT_SCHEMA, auth=AuthSpec(env=["KEYED_API_KEY"])),
         )
     )
 
@@ -245,7 +245,7 @@ async def test_a_data_source_loads_its_key_from_gcp_after_a_restart(home, keyed_
     fresh = await DataSource.get("keyed in gcp")  # a new object from the row: nothing held in process
     assert fresh is not source
     assert fresh.secret_store == remote.ref and fresh.secret_store.connection == "google"
-    live = await fresh.open()
+    live = (await fresh.open()).source
 
     assert isinstance(live, _GcpKeyedSource)
     assert live.credentials.values["KEYED_API_KEY"].get_secret_value() == "from-gcp"

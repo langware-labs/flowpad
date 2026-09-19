@@ -28,7 +28,7 @@ never minted. A named subclass registers itself; a Pydantic parametrization
 
 A shape is a CLASS, and a class is not a Pydantic value: a field that holds one
 is typed ``SpecType``, whose validator reads the authoring form and whose
-serializer emits it back — that is what keeps ``agent.md`` human-readable.
+serializer emits it back — that is what keeps ``agent.json`` human-readable.
 """
 
 from __future__ import annotations

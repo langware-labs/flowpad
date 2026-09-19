@@ -27,10 +27,10 @@ def test_filesystem_operations_never_import_application_or_resolve_settings():
         from flow_sdk.assets.git_origin import PortableGitOrigin
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
         assert {'skill', 'markdown', 'task', 'mcp', 'graph_workflow', 'journey'} <= set(SchemaRegistry.get_all_types())
-        from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialManifestSpec
-        from flow_sdk.schema.data_spec.data_source_manifest_spec import ManifestSpec
-        CredentialManifestSpec.model_validate({'schema': 2, 'name': 'api', 'lm_provider': 'openai', 'vars': {'API_KEY': {}}})
-        ManifestSpec.model_validate({'schema': 1, 'name': 'source', 'reflect': ['copy']})
+        from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
+        from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
+        CredentialSpec.model_validate({'schema': 2, 'name': 'api', 'lm_provider': 'openai', 'vars': {'API_KEY': {}}})
+        DataDriverSpec.model_validate({'schema': 1, 'name': 'source', 'reflect': ['copy']})
         import subprocess, socket
         def forbidden_command(*args, **kwargs):
             raise AssertionError('Filesystem operations may not execute commands or network calls')
@@ -99,7 +99,7 @@ def test_the_source_contract_imports_no_application_module():
     run_isolated('''
         import sys, asyncio, tempfile
         blocked = ('flow_sdk.builtin', 'flow_sdk.core', 'flow_sdk.db', 'flow_sdk.server', 'flow_sdk.app',
-                   'flow_sdk.ingest', 'flow_sdk.inbox', 'flow_sdk.blocks', 'flow_sdk.config', 'flow_sdk.instance_settings')
+                   'flow_sdk.ingest', 'flow_sdk.stream_inbox', 'flow_sdk.blocks', 'flow_sdk.config', 'flow_sdk.instance_settings')
         class Boundary:
             def find_spec(self, name, path=None, target=None):
                 if name.startswith(blocked):
@@ -113,7 +113,7 @@ def test_the_source_contract_imports_no_application_module():
             with tempfile.TemporaryDirectory() as root:
                 open(f'{root}/a.txt', 'wb').write(b'abc')
                 async with FolderSource.at(root) as s:
-                    (item,) = [i async for i in s.iterate(ObjectQuery(prefix='a'))]
+                    (item,) = [i async for i in s.iterate(narrow={'prefix': 'a'})]
                     assert item.data.size == 3
         asyncio.run(main())
         assert not any(name.startswith(blocked) for name in sys.modules)

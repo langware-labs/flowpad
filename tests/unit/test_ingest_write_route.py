@@ -29,7 +29,6 @@ def _payload(**over) -> dict:
         "data_source_id": f"src-{uuid.uuid4().hex[:8]}",
         "provider": "agent",
         "kind": "content.message.email",
-        "segment_key": "INBOX",
         "external_id": "msg-1",
         "name": "Invoice #42",
         "body": "the body",
@@ -44,7 +43,7 @@ def test_a_missing_header_field_is_refused_by_name():
     with pytest.raises(ValueError) as caught:
         _to_item({"data_source_id": "s", "provider": "agent"})
     message = str(caught.value)
-    assert "kind" in message and "segment_key" in message and "external_id" in message
+    assert "kind" in message and "external_id" in message
 
 
 def test_an_unknown_field_is_refused_rather_than_dropped():
@@ -125,7 +124,7 @@ async def test_a_large_batch_selects_backfill_so_it_cannot_storm():
     source = f"src-{uuid.uuid4().hex[:8]}"
     many = [
         SourceItemSpec(data_source_id=source, provider="agent", kind="content.message.email",
-                   segment_key="INBOX", external_id=f"m-{n}", name=f"mail {n}")
+                   external_id=f"m-{n}", name=f"mail {n}")
         for n in range(40)
     ]
     assert IngestMode.for_run(item_count=len(many)) is IngestMode.BACKFILL

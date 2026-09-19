@@ -5,7 +5,12 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
   window.electronAPI.onStartupStatus((message) => {
     const el = document.getElementById('status-text');
     if (el) {
-      el.innerHTML = message + '<span class="dots"></span>';
+      // textContent, not innerHTML: the message now carries raw `uv tool
+      // install` progress lines, which must render as text, never as markup.
+      el.textContent = message;
+      const dots = document.createElement('span');
+      dots.className = 'dots';
+      el.appendChild(dots);
     }
   });
 }

@@ -192,6 +192,27 @@ async def kill_pty(shell: Shell) -> None:
 
 
 @pytest.fixture
+def fresh_user_scope(tmp_path, monkeypatch):
+    """The user scope rooted at ``tmp_path/home`` for one test. NON-autouse.
+
+    The session shares one home, and a data source is a folder named after its source there: a
+    test (or a doc snippet) that reuses a readable name collides with the folder an earlier test
+    left. Opt in where names are fixed; the folder goes away with ``tmp_path``.
+    """
+    import flow_sdk.builtin.asset_placement as placement
+    from flow_sdk.assets.placement import Scope
+
+    real = placement.root_for_scope
+    home = tmp_path / "home"
+
+    def root_for_scope(scope, *, project_mount=None):
+        return home if scope == Scope.USER else real(scope, project_mount=project_mount)
+
+    monkeypatch.setattr(placement, "root_for_scope", root_for_scope)
+    return home
+
+
+@pytest.fixture
 def tmp_records_root(tmp_path, monkeypatch):
     """Redirect the records root at every binding site. NON-autouse: files that
     want it opt in with a module-level ``autouse`` wrapper (so it does not apply
@@ -236,6 +257,18 @@ def write_claude_transcript(proj: Path, sid: str = CLAUDE_SID, *, n_lines: int =
     return p
 
 
+async def settle_transcript_flushes() -> None:
+    """Await every pending transcript flush.
+
+    A delivered transcript routes to a freshly loaded process whose debounced
+    flush (``AgenticProcess._flush_transcript_change``) the test holds no
+    handle to; the task name is the only stable way to find it.
+    """
+    import asyncio
+
+    await asyncio.gather(*(t for t in asyncio.all_tasks() if t.get_name().startswith("ap-flush-")))
+
+
 @pytest.fixture
 def claude_projects(tmp_path, monkeypatch) -> Path:
     """A tmp ``claude_projects_dir`` (get_instance_settings patched); returns the project dir.
@@ -249,6 +282,28 @@ def claude_projects(tmp_path, monkeypatch) -> Path:
         lambda: SimpleNamespace(claude_projects_dir=tmp_path),
     )
     return proj
+
+
+@pytest.fixture
+def worker_session_stores(claude_projects, tmp_path, monkeypatch):
+    """Isolated session stores for all four workers: Claude (``claude_repo``, the
+    ``claude_projects`` dir), Codex and Copilot (under ``settings``), OpenCode (``opencode_db``)."""
+    from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
+
+    from .test_opencode_live_transcript_freshness import _make_store
+
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("FLOWPAD_COPILOT_HOME", str(tmp_path / "copilot"))
+    monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(tmp_path / "sandbox"))
+    reset_instance_settings()
+    opencode_db = tmp_path / "opencode.db"
+    _make_store(opencode_db)
+    monkeypatch.setattr(
+        "flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history.opencode_db_path",
+        lambda: opencode_db,
+    )
+    yield SimpleNamespace(claude_repo=claude_projects, settings=get_instance_settings(), opencode_db=opencode_db)
+    reset_instance_settings()
 
 
 @pytest.fixture(autouse=True)

@@ -18,6 +18,8 @@ export interface AgentAutoLaunchResponse {
   process_id: string | null;
   process_typeid: string | null;
   cancelled: { agent_id: string; title: string }[];
+  /** Set when the backend tried and failed; the id fields are null alongside it. */
+  error?: string;
 }
 
 export const AGENT_AUTO_LAUNCH_ENDPOINT = '/api/v1/agents/auto-launch';
@@ -47,6 +49,13 @@ export async function agentAutoLaunchRedirect(request: Request): Promise<Respons
     data = await apiClient.post<AgentAutoLaunchResponse>(AGENT_AUTO_LAUNCH_ENDPOINT, { project_id: projectId });
   } catch (e) {
     console.warn('[agent-auto-launch] backend call failed; no auto-launch', e);
+    return null;
+  }
+  // A refused launch arrives IN the payload, never as a rejection (see the
+  // route). Unreported, it looks exactly like a project with no agent.
+  if (data?.error) {
+    console.warn('[agent-auto-launch] backend refused the launch', data.error);
+    stashAgentAutoLaunchWarning({ winner: '', cancelled: [], error: data.error });
     return null;
   }
   if (data?.cancelled?.length) {

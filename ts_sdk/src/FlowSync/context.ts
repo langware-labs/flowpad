@@ -25,6 +25,7 @@ import { TypeId } from '../models/TypeId';
 import { UserWarning } from '../models/UserWarning';
 import { defineGlobal } from '../utils/globals';
 import { isHubOnly } from '../utils/hub-runtime';
+import { isHiddenProject } from '../constants/system-projects';
 import { RuntimeInfo, RuntimeKind } from '../utils/runtime';
 import { SnifferHook } from '../services/sniffer-hook';
 import { HubConnectionStatus, HubLoginStatus, LocalConnectionStatus, LocalLoginStatus } from '../services/cloud_status';
@@ -126,6 +127,7 @@ class DataContext extends EventEmitter {
   }
 
   private _workspaceRevision = 0;
+  private _projectRevision = 0;
 
   private _contextEntitiesMap = observable.map<ContextEntitiesEnum, TypeId | null | undefined>([
     [ContextEntitiesEnum.CurrentWorkspaceTypeId, null],
@@ -839,7 +841,42 @@ class DataContext extends EventEmitter {
     }
   }
 
+  /**
+   * Is this project one that must never become the current project?
+   *
+   * Reads the entity (cache first, then a fetch — which the context write is
+   * about to do anyway, so nothing extra is loaded in the common case). An
+   * unresolvable project is NOT treated as excluded: a network failure must not
+   * silently swallow a legitimate project switch.
+   */
+  private async isHiddenProjectId(projectTypeId: TypeId): Promise<boolean> {
+    let project = dataManager.getByTypeIdFromCache<Project>(projectTypeId);
+    if (!project) {
+      project = await dataManager.getByTypeId<Project>(projectTypeId).catch(() => null);
+    }
+    return isHiddenProject(project);
+  }
+
   async setContextEntityTypeId(entityKey: ContextEntitiesEnum, newTypeId: TypeId | null): Promise<void> {
+    // App-managed projects (the Flowpad Assistant, a help-desk portal checkout)
+    // are places you VISIT, never places you work: opening one of their screens
+    // must leave the current project — the footer chip, the nav chip, the
+    // workdir, every project-scoped action — pointing where the user actually
+    // was. Rejecting here rather than in each caller is the point: this setter
+    // is the ONE writer of the project context, so the rule holds for the
+    // helpdesk loader, the assistant's own pages, the localStorage restore in
+    // `setupProject`, and whatever opens one of them next.
+    //
+    // Before the revision bump, so a rejected write never cancels a real switch
+    // that is still loading.
+    if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId && newTypeId && await this.isHiddenProjectId(newTypeId)) {
+      return;
+    }
+    // Latest CALL wins for the project, not the latest to finish loading. Bumped
+    // before the equality short-circuit: re-selecting the committed project while
+    // another switch is still loading must still supersede that switch.
+    const projectRevision = entityKey === ContextEntitiesEnum.CurrentProjectTypeId
+      ? ++this._projectRevision : undefined;
     const existingTypeId = this._contextEntitiesMap.get(entityKey);
     if (!existingTypeId && !newTypeId) {
       return;
@@ -863,6 +900,7 @@ class DataContext extends EventEmitter {
     }
 
     if (workspaceRevision !== undefined && workspaceRevision !== this._workspaceRevision) return;
+    if (projectRevision !== undefined && projectRevision !== this._projectRevision) return;
 
     // Update observable AFTER ensuring entity is loaded with proper expansions
     runInAction(() => {
@@ -874,17 +912,23 @@ class DataContext extends EventEmitter {
     if (entityKey === ContextEntitiesEnum.CurrentWorkspaceTypeId && newTypeId) {
       defineGlobal('workspace', this.workspace);
     }
-    // Load compute node when project is set
-    if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId && newTypeId) {
-      void this.refreshProject();
-      // Open-recency stamp: `Project.last_active_at` (server clock, epoch-ms)
-      // via the generic `activate` action — the project pickers' primary sort
-      // key. This is the single choke point every "user is now in this
-      // project" path funnels through (loaders, pickers, quick-create,
-      // startup restore), and the equality guard above means it fires only on
-      // an actual project switch — never on same-project re-navigation.
-      // Fire-and-forget: context writes must stay fast.
-      void Project.activateById(newTypeId.id).catch(() => {});
+    if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId) {
+      // The workdir belongs to the project: a switch re-points it at the new
+      // project's folder. Callers with a narrower cwd (a shell, a process) set
+      // it after the switch, as they already do.
+      this.setWorkdir(this.project?.fs_storage_mount_path ?? null);
+      // Load compute node when project is set
+      if (newTypeId) {
+        void this.refreshProject();
+        // Open-recency stamp: `Project.last_active_at` (server clock, epoch-ms)
+        // via the generic `activate` action — the project pickers' primary sort
+        // key. This is the single choke point every "user is now in this
+        // project" path funnels through (loaders, pickers, quick-create,
+        // startup restore), and the equality guard above means it fires only on
+        // an actual project switch — never on same-project re-navigation.
+        // Fire-and-forget: context writes must stay fast.
+        void Project.activateById(newTypeId.id).catch(() => {});
+      }
     }
 
     // Emit CONTEXT_CHANGED event AFTER observable update so components get the updated values
@@ -1114,9 +1158,15 @@ class DataContext extends EventEmitter {
         throw error;
       }
     };
-    const remembered = persistedProjectTypeId ? await resolveProject(persistedProjectTypeId) : null;
+    // An app-managed project (the assistant, a help-desk portal) is never a
+    // place to RESTORE into — browser memory can still hold one from before
+    // that rule existed, and it would otherwise be reinstated on every load.
+    // Dropped rather than adopted, so the server's choice still gets its turn.
+    const unlessHidden = (project: Project | null): Project | null =>
+      project && !isHiddenProject(project) ? project : null;
+    const remembered = unlessHidden(persistedProjectTypeId ? await resolveProject(persistedProjectTypeId) : null);
     const serverChoiceId = this.bootstrapInfo?.default_project?.id;
-    const targetProject = remembered ?? (serverChoiceId
+    const targetProject = remembered ?? unlessHidden(serverChoiceId
       ? await resolveProject(new TypeId(Project.type, serverChoiceId)) : null);
 
     // Nothing valid to adopt. Leaving the context alone beats picking arbitrarily:

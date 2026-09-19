@@ -1,6 +1,6 @@
 ---
 id: 6da42de9-2e3f-4175-b6b3-9a82a53d86f9
-version: 67
+version: 68
 ---
 # Secret stores
 
@@ -46,8 +46,8 @@ connection's token as one of its secrets.
 | `await store.validate_keys(names)`             | nothing; raises `MissingSecrets` naming what the store lacks             |
 | `await store.forget(names)`                    | `(deleted, kept)` — vault entries go, env file lines stay                |
 | `store.ref`                                    | the store as a value (`{type, config}`) — what a binding saves           |
-| `await CredentialSpec.get(name, project=None)` | the credential with that name                                            |
-| `await spec.secret_store(environment)`         | the store `credential.json` names for that environment                   |
+| `await SecretPack.get(name, project=None)` | the credential with that name                                            |
+| `await spec.secret_store(environment)`         | the store `secret_pack.json` names for that environment                   |
 | `await DataSource.get(name)`                   | the one data source instance with that name                              |
 | `consumer.credentials.names()`                 | the names a data source or credential needs                              |
 | `await source.set_secret_store(store)`         | binds the store the source loads from, and saves it                      |
@@ -57,7 +57,7 @@ connection's token as one of its secrets.
 | `consumer.connections.names()`                 | the providers a data source or store needs                               |
 | `consumer.connections.scopes(provider)`        | the scopes it needs from that provider                                   |
 | `await source.set_connection(connection)`      | binds the account the source acts as, and saves it                       |
-| `await source.open()`                          | the configured source, with what is bound loaded in                      |
+| `await source.open()`                          | the source for reading (`live.pages()`, `live.items()`, `live.source`)   |
 
 One verb for lookups — `get` — on every class, always awaited. A credential is
 resolved by project, then the user scope ([§2](#how-get-resolves-a-name)); a data
@@ -69,10 +69,10 @@ config, or the default.
 
 Three ship out of the box:
 
-| type                 | config                                   | where a value lives                                                                       |
-| -------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `env_file`           | `env_file_path` — the file to read/write | that file, one `NAME=value` line per variable                                             |
-| `vault`              | `prefix`, `entries` — the entry names    | the per-instance encrypted store, `<prefix><NAME>` or `entries`                           |
+| type                 | config                                   | where a value lives                                                                                                                                           |
+| -------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `env_file`           | `env_file_path` — the file to read/write | that file, one `NAME=value` line per variable                                                                                                                 |
+| `vault`              | `prefix`, `entries` — the entry names    | the per-instance encrypted store, `<prefix><NAME>` or `entries`                                                                                               |
 | `gcp_secret_manager` | `gcp_project`, `prefix`                  | the secret `<prefix><NAME>` in that GCP project, latest version — read with a bound `google` connection ([§6](#6-connections--the-same-pattern-for-accounts)) |
 
 `SecretStore.get()` with no arguments is `env_file` on
@@ -96,18 +96,18 @@ a process, is a dict.
 ```python
 from flow_sdk.secrets import MissingSecrets, SecretStore
 
-store = await SecretStore.get()                                # current project's .env.local
+store = await SecretStore.get()  # current project's .env.local
 await store.save({"DATABASE_URL": "postgres://localhost:54322/dev"})
 
-values = await store.load(["DATABASE_URL", "SENTRY_DSN"])      # SENTRY_DSN was never saved: absent
+values = await store.load(["DATABASE_URL", "SENTRY_DSN"])  # SENTRY_DSN was never saved: absent
 values["DATABASE_URL"].get_secret_value()
 
-await store.names()                                            # ["DATABASE_URL"]
+await store.names()  # ["DATABASE_URL"]
 
 try:
     await store.validate_keys(["DATABASE_URL", "SENTRY_DSN"])
 except MissingSecrets as e:
-    e.missing                                                  # ["SENTRY_DSN"] — names only
+    e.missing  # ["SENTRY_DSN"] — names only
 ```
 
 The other store type, and a named environment — only the config differs:
@@ -118,8 +118,8 @@ from flow_sdk.secrets import SecretStore
 
 project = await context.current_project()
 
-vault = await SecretStore.get("vault", {"prefix": "credential.user."})                                   # credential.user.<NAME>
-prod = await SecretStore.get("env_file", {"env_file_path": str(project.env_file_path("production"))})    # <mount>/.env.production.local
+vault = await SecretStore.get("vault", {"prefix": "credential.user."})                                 # credential.user.<NAME>
+prod = await SecretStore.get("env_file", {"env_file_path": str(project.env_file_path("production"))})  # <mount>/.env.production.local
 ```
 
 `save` keeps every rule the stores had before: a value lands in an env file only
@@ -129,43 +129,43 @@ vault enabled; empty values are skipped, never cleared.
 ## 2. A credential uses its store as is
 
 ```python
-from flow_sdk.builtin.credential_spec import CredentialSpec
+from flow_sdk.builtin.secret_pack import SecretPack
 
-spec = await CredentialSpec.get("database")                    # the current project's, else the user scope's
-names = spec.credentials.names()                               # ["DATABASE_URL"]
+spec = await SecretPack.get("database")  # the current project's, else the user scope's
+names = spec.credentials.names()             # ["DATABASE_URL"]
 
-prod = await spec.secret_store("production")                   # the store credential.json names for production
+prod = await spec.secret_store("production")  # the store secret_pack.json names for production
 await prod.save({"DATABASE_URL": "postgres://pooler.hosted.example/prod"})
 await prod.validate_keys(names)
 ```
 
 A credential is the one consumer that already knows its store:
-`spec.secret_store(environment)` builds it from `credential.json`, so there is
+`spec.secret_store(environment)` builds it from `secret_pack.json`, so there is
 nothing to bind.
 
 ### How `get` resolves a name
 
-`CredentialSpec.get(name, project=None)`:
+`SecretPack.get(name, project=None)`:
 
 1. **`project`** **given** — that project's credential named `name`; if it has
    none, the user scope's (step 3).
 2. **`project`** **omitted** — the current project, `await context.current_project()`,
    and the same lookup as step 1.
-3. **User scope** — `~/agentic-assets/credential/`, which every project on this
+3. **User scope** — `~/agentic-assets/secret_pack/`, which every project on this
    machine sees.
 
 A project credential wins over a user one of the same name. Shipped templates
 are never returned. Two failures, both raised rather than guessed:
 
 ```python
-from flow_sdk.builtin.credential_spec import CredentialAmbiguous, CredentialNotFound, CredentialSpec
+from flow_sdk.builtin.secret_pack import CredentialAmbiguous, CredentialNotFound, SecretPack
 
-spec = await CredentialSpec.get("database", project=other_project)   # a specific project instead of the working directory
+spec = await SecretPack.get("database", project=other_project)  # a specific project instead of the working directory
 try:
-    spec = await CredentialSpec.get("stripe")
-except CredentialAmbiguous as e:     # more than one credential named "stripe" in the scope that answered
-    e.candidates                     # their typeids — pick one with CredentialSpec.get_by_id(...)
-except CredentialNotFound:           # neither the project nor the user scope declares it
+    spec = await SecretPack.get("stripe")
+except CredentialAmbiguous as e:  # more than one credential named "stripe" in the scope that answered
+    e.candidates                  # their typeids — pick one with SecretPack.get_by_id(...)
+except CredentialNotFound:        # neither the project nor the user scope declares it
     ...
 ```
 
@@ -196,7 +196,7 @@ it for one environment:
 ```
 
 Files spell the env file store `env`; `env_file` is accepted as the same store,
-so no existing `credential.json` changes.
+so no existing `secret_pack.json` changes.
 
 ## 3. Env vars — what a process receives
 
@@ -208,9 +208,9 @@ from flow_sdk.builtin.credential_resolver import resolve_attached_secrets
 
 project = await context.current_project()
 env = dict(os.environ)
-secrets = await resolve_attached_secrets(project, environment="production")   # each credential → its store → load
+secrets = await resolve_attached_secrets(project, environment="production")  # each credential → its store → load
 for name, value in secrets.items():
-    env.setdefault(name, value.get_secret_value())                             # an explicitly set variable still wins
+    env.setdefault(name, value.get_secret_value())  # an explicitly set variable still wins
 ```
 
 `resolve_attached_secrets` stays the one entry point for a spawn (worker,
@@ -222,20 +222,20 @@ terminal, node command). Inside it is the same pattern per credential:
 
 ```python
 from flow_sdk import context
-from flow_sdk.builtin.credential_spec import CredentialSpec
+from flow_sdk.builtin.secret_pack import SecretPack
 from flow_sdk.secrets import SecretStore
 
 project = await context.current_project()
-spec = await CredentialSpec.get("database")
+spec = await SecretPack.get("database")
 names = spec.credentials.names()
 
-dev_file = await SecretStore.get()                                                    # current project's .env.local
+dev_file = await SecretStore.get()  # current project's .env.local
 dev_vault = await SecretStore.get("vault", {"prefix": f"credential.project.{project.id}."})
 await dev_file.validate_keys(names)
-await dev_vault.save(await dev_file.load(names))                                      # development: env file → vault
+await dev_vault.save(await dev_file.load(names))  # development: env file → vault
 
 prod_file = await SecretStore.get("env_file", {"env_file_path": str(project.env_file_path("production"))})
-await prod_file.save(await remote.load(names))                                        # later: fetch → env file (`remote`: §6)
+await prod_file.save(await remote.load(names))  # later: fetch → env file (`remote`: §6)
 ```
 
 `save` takes what `load` returns — `SecretStr` values are unwrapped, never
@@ -256,14 +256,14 @@ A data source names the variables it needs in its manifest:
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.secrets import SecretStore
 
-source = await DataSource.get("work gmail")      # the one instance with that name
-names = source.credentials.names()               # ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"] — from the manifest's auth
+source = await DataSource.get("work gmail")  # the one instance with that name
+names = source.credentials.names()           # ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"] — from the manifest's auth
 
-store = await SecretStore.get()                  # default: the current project's .env.local
-await store.validate_keys(names)                 # MissingSecrets if the file lacks any
-await source.set_secret_store(store)             # saved on the row: every sync reads this store
+store = await SecretStore.get()       # default: the current project's .env.local
+await store.validate_keys(names)      # MissingSecrets if the file lacks any
+await source.set_secret_store(store)  # saved on the row: every sync reads this store
 
-async with await source.open() as live:          # open() loads `names` from the bound store into the binding
+async with await source.open() as live:  # open() loads `names` from the bound store into the binding
     ...
 ```
 
@@ -286,7 +286,7 @@ credential declares, so one store serves both.
 ### Two instances of one source
 
 A data source row is an **instance**: a source type, its config, and its
-bindings. Two Gmail inboxes — or two Drives with different folders — are two rows,
+bindings. Two Gmail accounts — or two Drives with different folders — are two rows,
 and each keeps its own:
 
 ```python
@@ -294,7 +294,7 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.secrets import SecretStore
 
 work = await DataSource.get("work gmail")
-home = await DataSource.get("home gmail")                                      # same source type, its own config
+home = await DataSource.get("home gmail")  # same source type, its own config
 await work.set_secret_store(await SecretStore.get("vault", {"prefix": "gmail.work."}))
 await home.set_secret_store(await SecretStore.get("vault", {"prefix": "gmail.home."}))
 ```
@@ -313,19 +313,19 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.connections import Connection, MissingScopes, NotConnected
 
 source = await DataSource.get("work drive")
-providers = source.connections.names()             # ["google"] — from the manifest's auth.connector
+providers = source.connections.names()  # ["google"] — from the manifest's auth.connector
 
 try:
-    google = await Connection.get("google")         # the held grant for this user
+    google = await Connection.get("google")  # the held grant for this user
     await google.validate_scopes(source.connections.scopes("google"))
 except NotConnected as e:
-    google = await e.connection.connect()           # the unconnected row rides on the error; browser or device flow
+    google = await e.connection.connect()  # the unconnected row rides on the error; browser or device flow
 except MissingScopes as e:
-    google = await google.connect(reauthorize=True) # e.missing names the scopes; consent runs again
+    google = await google.connect(reauthorize=True)  # e.missing names the scopes; consent runs again
 
 await source.set_connection(google)
 
-async with await source.open() as live:            # open() asks the bound connection for a token
+async with await source.open() as live:  # open() asks the bound connection for a token
     ...
 ```
 
@@ -343,15 +343,15 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.connections import Connection
 from flow_sdk.secrets import SecretStore
 
-agentmail = await DataSource.get("agent inbox")
+agentmail = await DataSource.get("agent mailbox")
 remote = await SecretStore.get("gcp_secret_manager", {"gcp_project": "acme-prod", "prefix": "agentmail-production-"})
 
-google = await Connection.get("google")                                 # remote.connections.names() → ["google"]
+google = await Connection.get("google")  # remote.connections.names() → ["google"]
 await google.validate_scopes(remote.connections.scopes("google"))
-await remote.set_connection(google)                                     # the account comes from the connection, never from config
+await remote.set_connection(google)  # the account comes from the connection, never from config
 
 await remote.validate_keys(agentmail.credentials.names())
-await agentmail.set_secret_store(remote)                                # the agentmail source now loads its key from GCP
+await agentmail.set_secret_store(remote)  # the agentmail source now loads its key from GCP
 ```
 
 ## What each call replaced
@@ -360,8 +360,8 @@ await agentmail.set_secret_store(remote)                                # the ag
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `SecretStore.get("env_file", …)`                      | `env_local_store.read_env_local_values`, `write_env_local`, `list_env_local` (gitignore guard kept)      |
 | `SecretStore.get("vault", …)`                         | `credential_store._load_vault`, `cli.auth.secrets.write_secret`, `get_secrets`                           |
-| `CredentialSpec.get(name, project=None)`              | `credential_resolver.credentials_in_scope(project)` filtered by hand                                     |
-| `spec.secret_store(environment)`                      | `credential_store.location_name` + `CredentialSpec.store_for(env)` spread over read, write and forget    |
+| `SecretPack.get(name, project=None)`              | `credential_resolver.credentials_in_scope(project)` filtered by hand                                     |
+| `spec.secret_store(environment)`                      | `credential_store.location_name` + `SecretPack.store_for(env)` spread over read, write and forget    |
 | `DataSource.get(name)`                                | `DataSource.get_all({"name": ...})`                                                                      |
 | `source.set_secret_store` / `set_connection` + `open` | `resolve_credentials` reading `os.environ`, a named vault entry and `token_for(auth.connector)` directly |
 | `Connection.get(provider)`                            | `flow_sdk.connections.require(provider)` (kept)                                                          |

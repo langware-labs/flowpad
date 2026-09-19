@@ -77,7 +77,7 @@ function ProjectDetailsPopover({
     [t`Workers`, workers || null],
     [t`Last opened`, formatWhen(project.last_active_at)],
     [t`Modified`, project.modified_at ? formatWhen(Date.parse(project.modified_at)) : null],
-    [t`System`, project.system ? t`Yes` : null],
+    [t`System`, project.hidden ? t`Yes` : null],
   ];
   return (
     <Popover>

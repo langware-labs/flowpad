@@ -34,6 +34,8 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from flow_sdk import toplog
+
 logger = logging.getLogger(__name__)
 
 # Processes recovered during THIS backend lifetime. A client that watches one
@@ -241,7 +243,12 @@ async def run_pty_recovery() -> None:
             from flow_sdk.responses.response import ApiFailResponse
 
             result = await proc.start_pty()
-            if isinstance(result, ApiFailResponse):
+            ok = not isinstance(result, ApiFailResponse)
+            toplog.log(
+                "pty", "recovery process=%s shell=%s ok=%s error=%r",
+                proc.id, proc.shell_id, ok, None if ok else result.message,
+            )
+            if not ok:
                 logger.warning("pty-recovery: %s open failed: %s", proc.id, result.message)
             else:
                 logger.info("pty-recovery: recovered %s", proc.id)
@@ -298,6 +305,7 @@ async def _recover_bare_shells(agentic_shell_ids: set[str], watched: set[str]) -
             logger.info("pty-recovery: recovering bare shell %s (PTY dead after restart)", shell.id)
             await shell.start_pty()
             logger.info("pty-recovery: recovered bare shell %s", shell.id)
+            toplog.log("pty", "recovery shell=%s bare=True ok=True", shell.id)
             # Tell watching clients their shell is back so an already-open pane
             # re-attaches its output stream (the agentic pass does the same;
             # without this, a pane whose reconnect-time attach raced ahead of

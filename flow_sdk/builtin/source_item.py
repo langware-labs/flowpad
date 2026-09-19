@@ -32,7 +32,6 @@ from pydantic import ConfigDict, model_validator
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin import ingest_order
 from flow_sdk.core import Entity
-from flow_sdk.core.entity.legacy_fields import adopt_renamed
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.source_item_spec import (  # noqa: F401 — re-exported; the row and its snapshot read as one module
@@ -46,7 +45,7 @@ from flow_sdk.sources.values.origin import CloudOrigin
 
 
 class MessageSpec(DataSpec):
-    """An OUTBOUND message, as a value — what a script hands ``Inbox.send``.
+    """An OUTBOUND message, as a value — what a script hands ``StreamInbox.send``.
 
     The channel-generic base of the outbound hierarchy — outbound only,
     deliberately. Inbound messages keep arriving as ``SourceItemSpec`` until
@@ -140,18 +139,23 @@ class ChannelMessageSpec(MessageSpec):
     ``outbound_spec`` can still say which one a source speaks.
     """
 
+    #: How many trailing components of an item's origin namespace (``<account>/<container>``) name
+    #: the channel it was posted in.
+    container_parts: ClassVar[int] = 1
+
     @classmethod
     def reply_to(cls, m, *, body: str, attachments=()) -> "ChannelMessageSpec":
         """A reply to inbound message ``m`` — a pure constructor, no I/O.
 
-        A channel reply targets the CHANNEL, in the message's thread: ``to``
-        carries the inbound record's ``segment_key`` (a channel ``thread_key``
-        is a bare message id and names no channel), and ``thread_key`` rides
-        through so the post lands as a threaded reply. Each driver decides what
-        its segment key spells — Slack a channel id, Teams ``{team}/{channel}``.
+        A channel reply targets the CHANNEL, in the message's thread: ``to`` is
+        the container the item's origin names (a channel ``thread_key`` is a bare
+        message id and names no channel), and ``thread_key`` rides through so the
+        post lands as a threaded reply. Slack's container is a channel id, Teams'
+        ``{team}/{channel}``.
         """
+        namespace = str(getattr(m, "origin_namespace", "") or "")
         return cls(
-            to=[str(getattr(m, "segment_key", "") or "")],
+            to=["/".join(namespace.split("/")[-cls.container_parts:]) if namespace else ""],
             body=body,
             thread_key=str(getattr(m, "thread_key", "") or ""),
             reply_to_external_id=str(getattr(m, "external_id", "") or ""),
@@ -170,12 +174,25 @@ class TeamsMessageSpec(ChannelMessageSpec):
     reply is still a reply to the root, and ``thread_key`` already names it.
     """
 
+    container_parts: ClassVar[int] = 2
+
 
 class HelpdeskMessageSpec(ChannelMessageSpec):
     """Outbound help-desk reply: ``to`` is the TICKET — the hub conversation id
-    the inbound record's ``segment_key`` spells — and ``thread_key`` rides
+    the inbound record's ``thread_key`` names — and ``thread_key`` rides
     through unchanged. The hub threads by conversation, so there is no
     in-thread reply target beyond the ticket itself."""
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, attachments=()) -> "HelpdeskMessageSpec":
+        ticket = str(getattr(m, "thread_key", "") or "")
+        return cls(
+            to=[ticket],
+            body=body,
+            thread_key=ticket,
+            reply_to_external_id=str(getattr(m, "external_id", "") or ""),
+            attachments=list(attachments),
+        )
 
 
 class WhatsAppMessageSpec(MessageSpec):
@@ -217,10 +234,8 @@ class SourceItem(Entity):
     kind: str = APIField(default="", description="Ontology kind, e.g. content.feed.item")
     provider: str = APIField(default="", description="Driver key: rss | hackernews | …")
     data_source_id: str = APIField(default="")
-    segment_key: str = APIField(default="", description="Feed URL, channel id — the cursor's unit")
-    segment_label: str = APIField(default="")
     external_id: str = APIField(default="", description="Provider-native stable id")
-    thread_key: Optional[str] = APIField(default=None, description="Grouping axis for the inbox projection")
+    thread_key: Optional[str] = APIField(default=None, description="Grouping axis for the stream inbox projection")
     # The provider's id for the record this replies to. Provenance for quoting
     # and for repairing a thread whose parent arrives late — NOT how threading
     # is decided (`thread_key` is). Deliberately absent from DIGESTED_FIELDS:
@@ -272,18 +287,6 @@ class SourceItem(Entity):
 
     @model_validator(mode="before")
     @classmethod
-    def _adopt_legacy_stream_key(cls, data):
-        """Rows written before the segment rename carry ``stream_key``.
-
-        Without this they load with an empty ``segment_key`` — and for
-        ``SourceItem`` that is part of the natural key, so every pre-rename
-        record would fail to resolve and the next poll would mint a duplicate
-        of it. Same shape as ``DataSource._adopt_legacy_enabled``.
-        """
-        return adopt_renamed(data, {"stream_key": "segment_key", "stream_label": "segment_label"})
-
-    @model_validator(mode="before")
-    @classmethod
     def _flatten_origin(cls, data):
         """The flat triple follows ``origin``: a row built from an origin is findable by it."""
         if not isinstance(data, dict) or not data.get("origin"):
@@ -303,7 +306,6 @@ class SourceItem(Entity):
             {f"{INPUT}/item.json": envelope.model_dump(mode="json", exclude_none=True)},
             {
                 "data_source_id": self.data_source_id,
-                "segment_key": self.segment_key,
                 "external_id": self.external_id,
                 "item_id": self.id,
             },
@@ -335,7 +337,7 @@ class SourceItem(Entity):
         Eventually consistent for the four senders that do not record their own copy; the
         caller syncs first and treats "not found" as "do not resend".
         """
-        from flow_sdk.inbox.projection import is_self_address  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import is_self_address  # noqa: PLC0415
 
         def mine(row: "SourceItem") -> bool:
             return is_self_address(source, row.author_external_id or "")

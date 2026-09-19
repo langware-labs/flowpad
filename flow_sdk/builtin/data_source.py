@@ -17,27 +17,30 @@ aspirational, and is exactly the phase-1 (credential-free) path.
 from __future__ import annotations
 
 import logging
-import re
+import shutil
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from math import ceil
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from pydantic import model_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing, persist_policy
 from flow_sdk.builtin.source_item import MessageSpec
 from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
+from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE
 from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.ingest.driver_runtime import SendOutcome
 from flow_sdk.ingest.health import SourceHealth
-from flow_sdk.ingest.sources import SendOutcome
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.secrets.store import SecretStoreRef
@@ -129,22 +132,32 @@ def parse_since(raw: str) -> "tuple[Optional[datetime], Optional[str]]":
     return parsed, None
 
 
+#: What a data source that arrived as a file waits for.
+#: Set by ``save_runtime``: the one suppressed save whose runtime fields are the news.
+_RUNTIME_WRITE: "ContextVar[bool]" = ContextVar("_data_source_runtime_write", default=False)
+RECEIVED_SETUP_DETAIL = "Received — connect your own account, then press Verify."
+
+
 class DataSource(Entity):
     type: str = APIField(default=EntityType.DATA_SOURCE.value)
 
+    # A file asset, so it OWNS its path: ``<scope>/agentic-assets/data_source/<name>/``. Declaring it is
+    # what enrolls the class in ``Entity.asset_owner_classes()``. PRIVATE: the path is this machine's.
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+
     # ── identity / ontology ──
     name: str = APIField(default="")
-    kind: str = APIField(default="", description="Ontology kind, e.g. datasource.feed.rss")
+    kind: str = APIField(default="", description="Ontology kind, e.g. datasource.feed.rss", persist=Persist.FALSE)
     provider: str = APIField(default="", description="Driver registry key: rss | hackernews")
-    account_key: str = APIField(default="", description="The remote account/feed-set identity")
+    account_key: str = APIField(default="", description="The remote account/feed-set identity", persist=Persist.FALSE)
     # The user-facing CHANNEL — gmail | slack | jira. Deliberately NOT
     # `provider`, which is the driver/transport key and is literally "agent"
     # for the harness-backed sources. One channel may have several transports
     # (a harness Gmail source and an API one), and threading + the message
     # badge must key on the channel so both resolve to the same thread.
-    channel: str = APIField(default="", description="User-facing channel: gmail | slack | jira")
+    channel: str = APIField(default="", description="User-facing channel: gmail | slack | jira", persist=Persist.FALSE)
     # The addresses/handles that are ME on this source. A record authored by
-    # one of them is mine, and the inbox projection must attribute it to the
+    # one of them is mine, and the stream inbox projection must attribute it to the
     # local user — otherwise my own Sent mail counts as unread mail from a
     # stranger, because both unread formulas gate on the sender.
     #
@@ -154,7 +167,7 @@ class DataSource(Entity):
     # descriptive only — ids are uuid4 and several sources may serve one
     # account, so nothing dedupes on it and correcting it is a plain edit.
     account_identities: list[str] = APIField(
-        default_factory=list, description="Addresses that identify the local user on this source"
+        default_factory=list, description="Addresses that identify the local user on this source", persist=Persist.FALSE,
     )
 
     # ── gating ──
@@ -173,23 +186,23 @@ class DataSource(Entity):
     # never a provider-specific config key — so the engine holds one fact about
     # where a tree begins, and a `GitOrigin` materializes through the same
     # `FSOriginDriver` bundles and projects use. PRIVATE: a path on this machine.
-    origin: OriginField = APIField(default=None, sharing=Sharing.PRIVATE)
+    origin: OriginField = APIField(default=None, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
 
     # ── ownership ──
     #
     # Whose source this is: the local user's, or an Agent's. A message source
-    # projects into ITS OWNER'S inbox and speaks with its owner's voice, so the
-    # owner is a key the inbox engine reads — which is why it is a field and
+    # projects into ITS OWNER'S stream inbox and speaks with its owner's voice, so the
+    # owner is a key the stream inbox engine reads — which is why it is a field and
     # not `config["agent_id"]`, the provider-opaque bag the engine promises not
     # to open (the same argument that pulled `reflect` out of it, below).
-    # `None` on rows written before the field existed; `inbox.projection.owner_of`
+    # `None` on rows written before the field existed; `stream_inbox.projection.owner_of`
     # is the ONE reader and resolves those (config.agent_id → that agent, else
     # the local user), so nothing depends on a backfill having run. PRIVATE: an
     # owner is a fact about this machine, never a thing that travels.
     owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
 
     # The mailbox allowlist, cached for the gate that runs on every inbound
-    # message (`EmailInbox.allowed`). The HUB owns this policy; this is a copy,
+    # message (`AgentMailbox.allowed`). The HUB owns this policy; this is a copy,
     # refreshed on every reconcile, and it is never read to answer "what is the
     # policy" — only to apply it without a network call.
     #
@@ -197,7 +210,7 @@ class DataSource(Entity):
     # gives: `config` is provider-opaque and shareable, and these are third
     # parties' personal addresses. PRIVATE, like `origin`: a fact about this
     # machine that must not travel to a receiver or back to the hub.
-    inbound_allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    inbound_allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
 
     # ── reflection — HOW the payload becomes locally present ──
     #
@@ -221,36 +234,32 @@ class DataSource(Entity):
     reflect_into: str = APIField(default="")
 
     # ── lifecycle ──
-    status: str = APIField(default=SourceStatus.NEW.value)
+    status: str = APIField(default=SourceStatus.NEW.value, persist=Persist.FALSE)
     #: What SETUP is waiting for, in the user's words. Empty in every other
     #: state. The card renders this verbatim, so it is a sentence, not a code.
-    setup_detail: str = APIField(default="")
+    setup_detail: str = APIField(default="", persist=Persist.FALSE)
     #: When the last verify ran, whatever its verdict.
-    verified_at: Optional[datetime] = APIField(default=None)
+    verified_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 
     # ── sync policy ──
     poll_interval_seconds: int = APIField(default=300, ge=MIN_POLL_INTERVAL_SECONDS)
     window_days: int = APIField(default=7, ge=1, description="The 'since last pull' floor")
-    next_poll_at: Optional[datetime] = APIField(default=None)
-    last_synced_at: Optional[datetime] = APIField(default=None)
+    next_poll_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
+    last_synced_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 
-    #: How many streams this source has, rolled up with health so a list can
-    #: show it without querying the cursor table. Cursors are the highest-churn
-    #: rows on the instance (one write per stream per poll), so a UI that
-    #: watches them live to render a COUNT repaints on every tick for a number
-    #: that only changes when a stream is added or removed.
-    #:
-    #: Set by ``_roll_up``, so it reflects the last run that got far enough to
-    #: enumerate streams. A source that fails before that — unknown provider, a
-    #: missing capability — reads 0 even if it has cursors from an earlier life.
-    #: That is the honest reading: those failures happen before the driver is
-    #: ever asked what its streams are.
-    segment_count: int = APIField(default=0)
+    last_attempted_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 
-    # ── health, rolled up worst-of from this source's cursors ──
-    health: str = APIField(default=SourceHealth.NEVER_SYNCED.value)
-    error_code: Optional[str] = APIField(default=None)
-    error_detail: Optional[str] = APIField(default=None)
+    # ── position: the source's opaque cursor, advanced only after a page is written ──
+    cursor: Optional[str] = APIField(default=None, persist=Persist.FALSE)
+    #: A reflecting source's diff bookkeeping (path → digest), carried verbatim between passes.
+    manifest: dict = APIField(default_factory=dict, persist=Persist.FALSE)
+    high_water: Optional[str] = APIField(default=None, persist=Persist.FALSE, description="ISO-8601: the newest record seen")
+    consecutive_failures: int = APIField(default=0, persist=Persist.FALSE)
+
+    # ── health of the last pass ──
+    health: str = APIField(default=SourceHealth.NEVER_SYNCED.value, persist=Persist.FALSE)
+    error_code: Optional[str] = APIField(default=None, persist=Persist.FALSE)
+    error_detail: Optional[str] = APIField(default=None, persist=Persist.FALSE)
 
     # ── what this instance reads with (`set_secret_store` / `set_connection`) ──
     # Saved on the row, not held by the process: the heartbeat's sync, a webhook and an outbound
@@ -328,7 +337,7 @@ class DataSource(Entity):
     async def get(cls, name: str) -> "DataSource":
         """The data source named ``name``. Raises :class:`DataSourceNotFound`, or
         :class:`DataSourceAmbiguous` when several instances share the name."""
-        from flow_sdk.ingest.source_registry import resolve_source_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
         rows = await cls.get_all({"name": name})
         if not rows:
@@ -336,7 +345,7 @@ class DataSource(Entity):
         if len(rows) > 1:
             raise DataSourceAmbiguous(name, [str(row.typeid) for row in rows])
         # An authored source's folder loads on first use; the accessors below read its manifest.
-        await resolve_source_type(rows[0].provider or "")
+        await DataDriver.get(rows[0].provider or "")
         return rows[0]
 
     def _auth(self):
@@ -373,13 +382,75 @@ class DataSource(Entity):
         await self.save()
 
     async def open(self, *, persona: bool = False):
-        """The configured source with what is bound loaded in — ``async with await source.open() as live``."""
-        from flow_sdk.ingest.source_registry import resolve_source_type  # noqa: PLC0415
+        """This source for reading, with what is bound loaded in — ``async with await source.open() as live``
+        (``live.pages()``, ``live.items(**narrow)``, ``live.source``)."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.ingest.session import SourceSession  # noqa: PLC0415
 
-        stype = await resolve_source_type(self.provider or "")
+        stype = await DataDriver.get(self.provider or "")
         if stype is None:
             raise LookupError(f"no data source type {self.provider!r}")
-        return await stype.open(self, persona=persona)
+        return SourceSession(self, await stype.open(self, persona=persona))
+
+    # ── the asset: where the file lands, and what may touch it ─────────────────
+    async def _resolve_scope_project(self):
+        """The project whose ``agentic-assets/data_source/`` holds this source.
+
+        A project-scoped request; the row's own project; its owning agent's project; and, for code
+        running outside any request (a script, a block), the working directory's project. None lands
+        it in the user scope — a mailbox source the heartbeat creates has no project to belong to.
+        """
+        scoped = await super()._resolve_scope_project()
+        if scoped is not None or self.exist_in_db:
+            return scoped  # placement happens once, at create; a poll's save never asks again
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
+
+        if getattr(self, "project_id", None):
+            return await Project.get_by_id(str(self.project_id))
+        agent = await owning_agent(self)
+        if agent is not None and getattr(agent, "project_id", None):
+            return await Project.get_by_id(str(agent.project_id))
+        if get_current_request_info() is None:
+            from flow_sdk import context  # noqa: PLC0415
+
+            return await context.current_project()
+        return None
+
+    async def save_runtime(self) -> None:
+        """Persist what the engine learned while running — never the file.
+
+        The poller holds a row for a whole poll, and a person may edit ``data_source.json`` meanwhile:
+        a full save of the stale row would put the old config back. So this re-reads the row, copies
+        only ``RUNTIME_FIELDS`` onto it and saves the database row alone.
+        """
+        if not self.exist_in_db:
+            await self.save()
+            return
+        token, runtime = _SUPPRESS_STORE.set(True), _RUNTIME_WRITE.set(True)
+        try:
+            fresh = await type(self).get_by_id(str(self.id))
+            if fresh is None:
+                return
+            for name in RUNTIME_FIELDS:
+                setattr(fresh, name, getattr(self, name))
+            await fresh.save()
+        finally:
+            _RUNTIME_WRITE.reset(runtime)
+            _SUPPRESS_STORE.reset(token)
+
+    async def _refuse_duplicate_account(self) -> None:
+        """One source per (driver, account, owner) on this machine: the same mailbox polled twice
+        ingests every message twice. The owner stays in the key — a user and an agent may each watch
+        the same account."""
+        driver = self._driver()
+        key = getattr(driver, "identity_config_key", "") if driver is not None else ""
+        value = (self.config or {}).get(key) if key else None
+        if not isinstance(value, str) or not value.strip():
+            return
+        existing = await type(self).find_for_account(self.provider, key, value, owner=self.owner)
+        if existing is not None and str(existing.id) != str(self.id):
+            raise ValueError(f"{value} is already watched by the data source {existing.name or existing.id!s}")
 
     @classmethod
     async def find_for_account(
@@ -393,21 +464,21 @@ class DataSource(Entity):
         hand — the id policy's whole point is that identity is a lookup.
         ``key`` is normally the driver's ``identity_config_key``.
 
+        An empty ``key`` is a driver that names its account itself (a bot's getMe):
+        ``value`` then matches the row's ``account_key`` or a discovered identity.
+
         ``owner`` narrows to that owner's source, so the same account can be
         watched by the local user AND by an Agent without either reusing the
         other's row. Omitted, it is the pre-owner lookup. Resolved through
         ``owner_of`` rather than the column, so a legacy row that only carries
         ``config.agent_id`` still answers.
         """
-        from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
 
         value = str(value or "").strip()
         for row in await cls.get_all({"provider": provider}):
-            current = (row.config or {}).get(key)
-            # A `lines` field (Slack's ``channels``) is a list; the source
-            # serves the account when the value is one of its entries.
-            members = current if isinstance(current, list) else [current]
-            if not any(str(m or "").strip() == value for m in members):
+            candidates = [(row.config or {}).get(key)] if key else [row.account_key, *(row.account_identities or [])]
+            if not any(str(c or "").strip() == value for c in candidates):
                 continue
             if owner is not None and await owner_of(row) != owner:
                 continue
@@ -422,7 +493,7 @@ class DataSource(Entity):
         (``owner`` absent), which ``owner_of`` resolves the same way every other
         reader does. The two are disjoint, so no row is counted twice.
         """
-        from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
 
         rows = list(await cls.get_all({"owner": str(owner)}))
         legacy = await cls.get_all(
@@ -457,11 +528,11 @@ class DataSource(Entity):
         """Deliver one outbound message through this source's driver.
 
         Message-shape validation belongs here rather than on each workflow
-        surface: a direct SDK caller and ``blocks.Inbox`` must reject the same
+        surface: a direct SDK caller and ``blocks.StreamInbox`` must reject the same
         unsupported attachment or recipient shape before provider I/O begins.
         """
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
-        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
 
         if spec.attachments:
             raise NotImplementedError(
@@ -471,7 +542,7 @@ class DataSource(Entity):
         if len(spec.to) != 1:
             raise ValueError(f"exactly one recipient for now, got {len(spec.to)}")
 
-        driver = source_type(self.provider)
+        driver = DataDriver.loaded(self.provider)
         if driver is None or not driver.sends:
             raise RuntimeError(f"the {self.provider} driver cannot send")
         return await driver.send(
@@ -491,15 +562,15 @@ class DataSource(Entity):
         Existing rows are checked before the first provider call so an already
         ingested reply returns without needless network I/O.
         """
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
-        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
         from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
 
         expected = _normalize_message_id(sent.external_id)
         if not expected:
             raise ValueError("cannot expect a reply to a send with no external_id")
-        driver = source_type(self.provider)
+        driver = DataDriver.loaded(self.provider)
 
         while True:
             items = await SourceItem.get_all({"data_source_id": self.id})
@@ -569,10 +640,10 @@ class DataSource(Entity):
     # conflating them produces surprises:
     #
     #   poll_now       — go now, keep everything we know
-    #   reset_cursors  — forget our position, keep the records
+    #   reset          — forget our position, keep the records
     #   purge_items    — forget the records
     #
-    # `reset_cursors` ALONE looks broken, and that is not a bug in the action:
+    # `reset` ALONE looks broken, and that is not a bug in the action:
     # re-ingestion resolves each record by its natural key and the digest gate
     # suppresses a row whose content has not moved, so re-reading the same window
     # finds the same rows and the same digests and writes nothing.
@@ -603,7 +674,7 @@ class DataSource(Entity):
         in-process caller never reaches through an HTTP handler to use it.
         """
         await self._make_due()
-        await self.save()
+        await self.save_runtime()
         return {
             "status": "due", "health": self.health, "source_status": self.status,
             "detail": "queued for the next heartbeat tick (≤60s)",
@@ -635,7 +706,7 @@ class DataSource(Entity):
             })
         if self.next_poll_at is not None:
             self.next_poll_at = None
-            await self.save()
+            await self.save_runtime()
         # A driver that tolerates it gets the sub-tick FAST LANE while watched:
         # each request renews a short lease and the poller's attention loop
         # polls at the driver's cadence (telegram: 5s). Drivers that declare
@@ -655,29 +726,24 @@ class DataSource(Entity):
             ),
         })
 
-    @core_action.post(action_name="reset_cursors")
-    async def reset_cursors_action(self) -> ApiResponse:
-        """POST /api/v1/graph/data_source/{id}/reset_cursors — forget position.
+    @core_action.post(action_name="reset")
+    async def reset_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/reset — forget position.
 
-        Clears the normalized high-water mark AND the provider-opaque ``state``
-        (ETags, update pointers), so the next poll re-reads the whole window.
-        Cursor rows are kept rather than deleted: the row carries the stream's
-        health and attempt history, and a reset forgets the POSITION, not that
-        the stream has ever run.
+        Clears the cursor and the reflection manifest, so the next poll re-reads the whole window.
         """
-        streams = await self.reset_cursors()
+        await self.reset()
         return ApiSuccessResponse(data={
-            "status": "reset", "streams": streams,
+            "status": "reset",
             "detail": "position cleared; existing records still gate on content digest — "
                       "pair with purge_items for a visible re-fetch",
         })
 
-    async def reset_cursors(self) -> int:
-        """Forget every segment's position and make the source due. Returns streams reset."""
-        streams = await self._reset_cursors()
+    async def reset(self) -> None:
+        """Forget this source's position and make it due."""
+        self._forget_position()
         self.next_poll_at = None
-        await self.save()
-        return streams
+        await self.save_runtime()
 
     @core_action.post(action_name="purge_items")
     async def purge_items_action(self) -> ApiResponse:
@@ -739,7 +805,7 @@ class DataSource(Entity):
     async def replay(self, *, since: Optional[datetime] = None) -> dict:
         """The replay body — see ``replay_action`` for what it means and why."""
         removed = await self.purge_records_of(self.id, since=since)
-        streams = await self._reset_cursors()
+        self._forget_position()
 
         widened = False
         if since is not None:
@@ -756,7 +822,6 @@ class DataSource(Entity):
         return {
             "status": "replaying",
             "removed": removed,
-            "streams": streams,
             "since": since.isoformat() if since else None,
             "window_days": self.window_days,
             "window_widened": widened,
@@ -765,8 +830,7 @@ class DataSource(Entity):
 
     # ── deletion cascades, on BOTH paths ──────────────────────────────────────
     #
-    # Nothing cascades on its own: cursors are separate rows (``reset_cursors``
-    # deliberately keeps them) and so are the records (only ``purge_items``
+    # Nothing cascades on its own: the records (only ``purge_items``
     # removes those). Deleting just this row leaves both orphaned, keyed to an id
     # that no longer resolves — invisible until someone counts rows.
     #
@@ -806,32 +870,33 @@ class DataSource(Entity):
         for item in doomed:
             await item.destroy()
         if doomed:
-            # The inbox side of the purge. Under the reference model the
+            # The stream inbox side of the purge. Under the reference model the
             # projected FlowMessages hold no body of their own — leaving them
-            # behind would fill the inbox with blank rows, so the cascade is
+            # behind would fill the stream inbox with blank rows, so the cascade is
             # mandatory, not hygiene.
-            from flow_sdk.inbox.projection import remove_projection_for_items  # noqa: PLC0415
+            from flow_sdk.stream_inbox.projection import remove_projection_for_items  # noqa: PLC0415
 
             await remove_projection_for_items([i.id for i in doomed])
         return len(doomed)
 
     @classmethod
     async def delete_children_of(cls, source_id: str) -> None:
-        """Every row keyed to this source — the records AND the cursors."""
+        """Every row keyed to this source — the records and the consumer positions."""
         from flow_sdk.builtin.consumer_position import ConsumerPosition  # noqa: PLC0415
-        from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
         from flow_sdk.builtin.source_change import SourceChange  # noqa: PLC0415
 
         await cls.purge_records_of(source_id)
-        await DataSourceCursor.delete_for(source_id)
         await ConsumerPosition.delete_for(source_id)
         await SourceChange.delete_for(source_id)
 
     @classmethod
     async def delete_by_id(cls, eid: str):
         """The path `DELETE /api/v1/graph/data_source/{id}` takes."""
+        row = await cls.get_by_id(str(eid))
         await cls.delete_children_of(str(eid))
-        return await super().delete_by_id(eid)
+        result = await super().delete_by_id(eid)
+        remove_source_folder(getattr(row, "asset_ref", None))
+        return result
 
     async def save(self, *args, **kwargs):
         """Resolve NEW on the way in, so a source is never stuck un-runnable.
@@ -848,15 +913,31 @@ class DataSource(Entity):
         without knowing it exists.
         """
         if self.owner is None:
-            from flow_sdk.inbox.projection import owner_of  # noqa: PLC0415
+            from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
 
             self.owner = await owner_of(self)
+        if _SUPPRESS_STORE.get():
+            # A row written WITHOUT writing its file: the indexer reading a data_source.json, a share
+            # being received, or ``save_runtime``. A file that arrived (cloned, shared, copied) names
+            # someone's account — it waits for this machine's own connection before it polls. A file
+            # holds no status, so whatever a first read carries (the indexer stamps ``active``) is not a decision.
+            if not self.exist_in_db:
+                self.status = SourceStatus.SETUP.value
+                self.setup_detail = RECEIVED_SETUP_DETAIL
+            elif not _RUNTIME_WRITE.get():
+                # A re-read file carries no runtime facts, only the indexer's defaults: keep the row's.
+                stored = await type(self).get_by_id(str(self.id))
+                for name in RUNTIME_FIELDS if stored is not None else ():
+                    setattr(self, name, getattr(stored, name))
+            return await super().save(*args, **kwargs)
+        if not self.exist_in_db:
+            await self._refuse_duplicate_account()
         if not self.exist_in_db or self.status == SourceStatus.NEW.value:
             # An authored source's folder loads on first use, so the create rules below can ask its
             # class. The poller's per-tick re-save of an existing row never pays for the lookup.
-            from flow_sdk.ingest.source_registry import resolve_source_type  # noqa: PLC0415
+            from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-            await resolve_source_type(self.provider or "")
+            await DataDriver.get(self.provider or "")
         if self.status == SourceStatus.NEW.value:
             stype = self._driver()
             if stype is not None and stype.has_setup:
@@ -869,14 +950,11 @@ class DataSource(Entity):
                 # `sync_source`, which reports `unknown_provider` as a
                 # config_error the card can actually explain.
                 self.status = SourceStatus.ACTIVE.value
-        # ONE spec read per save, shared by the three rules below. Each used
-        # to fetch it independently, so a create paid three round trips for the
-        # same row on a request a person is waiting on. `_needs_spec` keeps the
-        # steady state free: the poller's per-tick re-save reads nothing.
-        spec = await self._spec() if self._needs_spec() else None
-        self._coerce_config(spec)
-        self._validate_config(spec)
-        self._coerce_reflect(spec)
+        driver = self._driver()
+        if driver is not None and driver.config_cls is not None:
+            self._type_config(driver.config_cls)
+        # The reflect rule reads the driver's row; `_needs_spec` keeps the poller's per-tick re-save free of it.
+        self._coerce_reflect(await self._spec() if self._needs_spec() else None)
         if not (self.channel or "").strip():
             # Stamp the channel at CREATE, not first poll: the credential probe keys on it (Verify on
             # a fresh source probed nothing) and the UI badges by it. `sync_source` keeps re-stamping
@@ -896,76 +974,38 @@ class DataSource(Entity):
     def _needs_spec(self) -> bool:
         """True when any save-time rule below still has a question for the spec.
 
-        A saved row whose config is already typed and whose reflect mode is
-        settled has nothing to ask, which is the poller's case on every tick.
+        A saved row whose reflect mode is settled has nothing to ask, which is
+        the poller's case on every tick.
         """
-        untyped = isinstance(self.config, dict) and any(isinstance(v, str) for v in self.config.values())
         driver = self._driver()
         stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.reflects
-        return untyped or stuck or not self.exist_in_db
+        return stuck or not self.exist_in_db
 
     async def _spec(self) -> "Optional[object]":
         """The provider's definition row, or None when it cannot be resolved —
         an unresolvable spec changes nothing about any of the three rules."""
-        from flow_sdk.builtin.data_source_spec import DataSourceSpec
+        from flow_sdk.builtin.data_driver import DataDriver
 
         try:
-            return await DataSourceSpec.get_one({"name": self.provider})
+            return await DataDriver.get_one({"name": self.provider})
         except Exception:  # noqa: BLE001 — an unresolvable spec changes nothing
             return None
 
-    def _coerce_config(self, spec) -> None:
-        """Shape ``config`` by the definition's field types on save — a URL sent
-        as a string where ``lines`` is declared must not produce a source that
-        looks configured and fails on its first sync (the rss driver iterating
-        the characters of a URL). The rule is the spec's
-        (``ConfigFieldSpec.coerce``); this is only where a row applies it, and
-        ``save`` is the one gate the dialog, the API and an agent all pass.
-
-        Only a string can need shaping, so a config whose values are already
-        typed (the poller re-saves one on every tick) costs one pass over a
-        handful of values and never a spec lookup.
-        """
-        if not isinstance(self.config, dict) or not any(isinstance(v, str) for v in self.config.values()):
+    def _type_config(self, config_cls) -> None:
+        """The driver's ``Config`` applied on save. A create is validated whole — a field it lacks or
+        a value off its rule is a ``ValueError`` naming it, which the create route maps to a 400. An
+        existing row only has what it typed shaped (a string where a list is declared); a rule added
+        later must not turn the poller's re-save into an exception nobody reads."""
+        if not isinstance(self.config, dict):
             return
-        if spec is not None:
-            self.config = spec.coerce_config(self.config)
-
-    def _validate_config(self, spec) -> None:
-        """The manifest's ``required`` / ``pattern`` rules, applied where the
-        dialog cannot see: the API and an agent. The form already refuses a
-        blank required field and a value off its regex, so a source created by
-        hand could look configured and park on its first sync with a driver
-        error the author had to decode. Raises ``ValueError`` naming the field,
-        which the create route maps to a 400.
-
-        CREATE only. The poller re-saves a row every tick, and a rule added to
-        the spec after the row was minted must not turn that re-save into an
-        exception nobody is there to read — the sync's own health verdict is
-        where an existing source reports a config it cannot use.
-        """
-        if self.exist_in_db or not isinstance(self.config, dict) or spec is None:
+        if "agent_id" in self.config and "agent_id" not in config_cls.model_fields:
+            # The legacy spelling of the owner, already read into ``owner`` above; not this driver's config.
+            self.config = {k: v for k, v in self.config.items() if k != "agent_id"}
+        if self.exist_in_db:
+            if any(isinstance(v, str) for v in self.config.values()):
+                self.config = {**self.config, **config_cls.draft(self.config)}
             return
-        for name, field in (spec.config or {}).items():
-            value = self.config.get(name)
-            blank = value is None or (isinstance(value, str) and not value.strip()) or value in ([], {})
-            if blank:
-                if field.required and field.default is None:
-                    raise ValueError(f"config.{name} is required")
-                continue
-            if not field.pattern:
-                continue
-            # One regex per value, so a multi-line field names the entries at
-            # fault (the form's rule, `source-form.ts`); `search`, as its
-            # `RegExp.test` is.
-            try:
-                regex = re.compile(field.pattern)
-            except re.error:
-                continue  # the spec's fault, not the caller's; the form still applies it
-            values = value if isinstance(value, list) else [value]
-            bad = [str(v) for v in values if isinstance(v, str) and regex.search(v) is None]
-            if bad:
-                raise ValueError(f"config.{name} is not valid: {', '.join(bad)}")
+        self.config = config_cls.validated(self.config).model_dump(mode="json", exclude_unset=True)
 
     def _coerce_reflect(self, spec) -> None:
         """``reflect`` must be a mode the spec offers, or the source ingests
@@ -1048,25 +1088,24 @@ class DataSource(Entity):
         the person filling the form: type it instead. That is why this catches
         ``SourceError`` centrally rather than asking each driver to.
         """
-        from flow_sdk.builtin.data_source_spec import DataSourceSpec
+        from flow_sdk.builtin.data_driver import DataDriver
         from flow_sdk.ingest.health import SourceError  # noqa: PLC0415
-        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
         from flow_sdk.schema.data_spec.choice_spec import ChoiceSet  # noqa: PLC0415
         from flow_sdk.sources import errors as contract  # noqa: PLC0415
 
-        spec = await DataSourceSpec.get_one({"name": provider})
+        spec = await DataDriver.get_one({"name": provider})
         field_spec = (spec.config or {}).get(field) if spec is not None else None
         if field_spec is None or not field_spec.choices:
             return None
 
-        stype = source_type(provider)
+        stype = DataDriver.loaded(provider)
         if stype is None or not stype.offers_choices:
             # The shipped-manifest test catches this pairing at CI. At runtime — a spec
             # authored outside this repo — it still must not be a dead end.
             logger.warning("[ingest] %s declares choices on %r but its driver offers none", provider, field)
             return ChoiceSet(detail="This provider can't list options here — type the value directly.")
 
-        draft = cls(provider=provider, config=spec.coerce_config(dict(config or {})))
+        draft = cls(provider=provider, config=stype.coerce_config(dict(config or {})))
         try:
             return ChoiceSet(items=await stype.choices(draft, field))
         except contract.SourceError as exc:
@@ -1105,9 +1144,9 @@ class DataSource(Entity):
             return ApiFailResponse(message=str(exc))
 
     async def send_text(self, *, to: str, text: str, thread_key: str = "", subject: str = "", in_reply_to: str = "") -> dict:
-        from flow_sdk.ingest.source_registry import resolve_source_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        driver = await resolve_source_type(self.provider or "")
+        driver = await DataDriver.get(self.provider or "")
         if driver is None or not driver.sends:
             raise RuntimeError(f"{self.provider} cannot send")
         if not (text or "").strip():
@@ -1155,7 +1194,7 @@ class DataSource(Entity):
             order_by=[{"occurred_at": "desc"}, {"created_date": "desc"}],
             limit=max(limit, 0),
         )) or []
-        fields = ("id", "external_id", "kind", "name", "thread_key", "segment_key", "author_external_id", "author_display", "occurred_at")
+        fields = ("id", "external_id", "kind", "name", "thread_key", "author_external_id", "author_display", "occurred_at")
         return [{**{f: getattr(r, f, None) for f in fields}, "body": str(getattr(r, "body", "") or "")[:500]} for r in rows]
 
     @core_action.post(action_name="sync")
@@ -1165,7 +1204,7 @@ class DataSource(Entity):
         ``poll_now`` it un-latches ``config_error`` first: someone asking for a sync after fixing a
         credential means to try again."""
         await self._make_due()
-        await self.save()
+        await self.save_runtime()
         report = await self.sync()
         # The cycle writes health through its own row handle; read what it left.
         refreshed = await type(self).get_one({"id": self.id}) or self
@@ -1179,7 +1218,7 @@ class DataSource(Entity):
         """POST /api/v1/graph/data_source/{id}/set_enabled — ``{"enabled": bool}``. Disabled stops polling."""
         enabled = bool((await self._body()).get("enabled", True))
         self.status = SourceStatus.ACTIVE.value if enabled else SourceStatus.DISABLED.value
-        await self.save()
+        await self.save_runtime()
         return ApiSuccessResponse(data={"status": self.status})
 
     @core_action.post(action_name="verify")
@@ -1220,7 +1259,7 @@ class DataSource(Entity):
             self.status = SourceStatus.SETUP.value
             self.setup_detail = connection
             self.verified_at = datetime.now(timezone.utc)
-            await self.save()
+            await self.save_runtime()
             return {
                 "ready": False, "layer": "connection", "detail": connection,
                 "status": self.status,
@@ -1237,7 +1276,7 @@ class DataSource(Entity):
         else:
             self.status = SourceStatus.SETUP.value
             self.setup_detail = verdict.detail
-        await self.save()
+        await self.save_runtime()
         return {
             "ready": verdict.ready,
             "layer": "setup",
@@ -1246,23 +1285,21 @@ class DataSource(Entity):
             "status": self.status,
         }
 
-    async def sync(self, *, budget: int = 0):
+    async def sync(self):
         """Run one sync cycle now, returning an ``IngestReport``.
 
         Never raises — a failure is recorded as health, not thrown.
 
-        The verb belongs here; ``ingest.sync.sync_source`` stays the function the
-        POLLER calls, because it takes a budget and a clock the caller owns.
         Do not confuse this with ``poll_now``, which only marks the source due.
         """
-        from flow_sdk.ingest.sync import DEFAULT_SEGMENT_BUDGET, sync_source  # noqa: PLC0415
+        from flow_sdk.ingest.sync import sync_source  # noqa: PLC0415
 
-        return await sync_source(self, budget=budget or DEFAULT_SEGMENT_BUDGET)
+        return await sync_source(self)
 
     def _driver(self):
-        from flow_sdk.ingest.sources import source_type  # noqa: PLC0415
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        return source_type(self.provider)
+        return DataDriver.loaded(self.provider)
 
     async def _verify_connection(self) -> Optional[str]:
         """None when the token works; otherwise why it does not.
@@ -1298,43 +1335,107 @@ class DataSource(Entity):
         """The verb in-process callers actually use."""
         await self.delete_children_of(self.id)
         await super().delete()
-
-    async def destroy(self) -> None:
-        """Routes through the fs-record, so it does not pass through `delete`."""
-        await self.delete_children_of(self.id)
-        await super().destroy()
+        remove_source_folder(self.asset_ref)
 
     # ── shared bodies — the actions above are thin wrappers over these ────────
 
     async def _make_due(self) -> None:
-        """Make this source due on the next tick, clearing any error latch.
-
-        THE un-latch, and it has to cover BOTH latches: `is_due` refuses a
-        `config_error` source, and `_round_robin` skips a `config_error`
-        cursor. Clearing only the row would let an operator fix a credential,
-        press Sync now, and watch the segment sit out every tick while the
-        roll-up re-stamps the source from it. One copy, because a second one
-        diverges — the rule `SourceError.for_status` states in
-        `ingest/health.py`.
-        """
-        from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
-
+        """Make this source due on the next tick, clearing the ``config_error`` latch ``is_due`` refuses."""
         self.next_poll_at = None
         if self.health == SourceHealth.CONFIG_ERROR.value:
             self.health = SourceHealth.NEVER_SYNCED.value if self.last_synced_at is None \
                 else SourceHealth.OK.value
+            self.consecutive_failures = 0
         self.error_code = None
         self.error_detail = None
-        for cursor in await DataSourceCursor.get_all({"data_source_id": self.id}):
-            if cursor.health == SourceHealth.CONFIG_ERROR.value:
-                cursor.mark_ok()
-                cursor.error_code = None
-                cursor.error_detail = None
-                cursor.consecutive_failures = 0
-                await cursor.save()
 
-    async def _reset_cursors(self) -> int:
-        """Forget every segment's position; the cursor rows stay (see ``DataSourceCursor.reset_for``)."""
-        from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
+    def _forget_position(self) -> None:
+        self.cursor = None
+        self.manifest = {}
+        self.high_water = None
 
-        return await DataSourceCursor.reset_for(self.id)
+
+#: What the engine writes while a source runs: never in ``data_source.json``, only on the row
+#: (``save_runtime``). Everything else on the row is authored and lives in the file.
+RUNTIME_FIELDS: tuple[str, ...] = tuple(
+    name for name, field in DataSource.model_fields.items()
+    if name in DataSource.__annotations__  # this type's own, not the Entity base's
+    and persist_policy(field) == Persist.FALSE
+)
+
+
+def remove_source_folder(asset_ref: Optional[str]) -> None:
+    """Delete a removed source's folder; left behind, the next index brings the source back. Only a
+    writable folder holding this type's main document — never a shipped one, never anything else."""
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import is_protected_path  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    folder = Path(asset_ref) if asset_ref else None
+    main = SchemaRegistry.get(EntityType.DATA_SOURCE.value).shape.main
+    if folder is None or not (folder / main).is_file() or is_protected_path(folder):
+        return
+    if Entity._scope_from_path(str(folder)) == "system":
+        return
+    shutil.rmtree(folder, ignore_errors=True)
+
+
+async def migrate_list_configs() -> int:
+    """Split every source whose config still lists N containers into one source per entry. One time:
+    a source reads one stream now. The original goes, with what it ingested; each new source re-reads
+    its window. A driver names its retired list key (``Config.retired_list``); a config that cannot
+    split stays, and its missing single field parks it with ``config.<field> is required``.
+    Returns how many sources were split."""
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec  # noqa: PLC0415
+
+    split = 0
+    retiring = [driver for _, driver in DRIVERS.items() if driver.config_cls is not None and driver.config_cls.retired_list]
+    rows = [(driver, row) for driver in retiring for row in await DataSource.get_all({"provider": driver.provider})]
+    for driver, row in rows:
+        parts = driver.config_cls.split(row.config or {})
+        if not parts:
+            continue
+        if len(parts) == 1:  # one entry: the same source, under the single key
+            row.config = parts[0][1]
+            await row.save()
+            split += 1
+            continue
+        authored = {
+            name: getattr(row, name) for name in DataSourceSpec.model_fields
+            if name not in ("name", "provider", "config") and getattr(row, name, None) is not None
+        }
+        try:
+            for label, config in parts:
+                await driver.create_source(
+                    config, name=f"{row.name} {label}".strip(), project_id=row.project_id, scope=row.scope,
+                    account_key=row.account_key, **authored,
+                ).save()
+        except Exception:  # noqa: BLE001 — the fallback is the park, never a failed boot
+            logger.warning("could not split data source %s", row.id, exc_info=True)
+            continue
+        await row.delete()
+        split += 1
+    return split
+
+
+async def prune_fileless_data_sources() -> int:
+    """Remove every configured source that has no ``data_source.json``, with what it ingested.
+
+    A data source is an asset: the file is the truth and the row is its index. Rows written before
+    sources were files have no file to be re-indexed from, so they go — through the cascade, so no
+    record, cursor or projected message is left pointing at a source that is gone. Also takes rows a
+    development build wrote under ``data_driver``, the type string the definition now owns.
+    Idempotent: after the first run every row has a file and this reads a handful of rows.
+    """
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
+
+    no_file = ExpressionNode(op=QueryOp.IS_NULL, operands=["asset_ref"])
+    removed = 0
+    for type_name in (EntityType.DATA_SOURCE.value, "data_driver"):
+        for record in await get_db_driver().get_all(QueryFilter(type=type_name, match=no_file)):
+            if type_name != EntityType.DATA_SOURCE.value:  # a data_source row's cascade is its type's orphan hook
+                await DataSource.delete_children_of(str(record.id))
+            removed += bool(await remove_orphan_row(str(record.id), type_name))
+    return removed

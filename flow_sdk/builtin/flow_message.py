@@ -23,6 +23,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import UserProfile
 from flow_sdk.tags.envelope import parse_target
@@ -406,8 +407,14 @@ class FlowMessage(Entity):
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
     attachment: list[Attachment] = APIField(default_factory=list)
+    # The wire form of the author — what travels to the hub and in bundles. Read `sender`.
     sender_id: Optional[str] = APIField(None)
     sender_name: Optional[str] = APIField(None)
+    # Who wrote this message, typed (`MessageSender`: a user, an Agent, or someone on a
+    # channel) — the field every reader tests, instead of parsing `sender_id`. PRIVATE:
+    # a hub-native author is always a user, and an Agent or channel author is a fact
+    # only this machine's projection knows, which a hub refresh must never reset.
+    sender: Optional[MessageSender] = APIField(None, sharing=Sharing.PRIVATE)
     receiver_address: Optional[str] = APIField(None)
     receiver_address_type: Optional[str] = APIField(None)  # "email"|"id"|"slack"|...
     attachment_filename: Optional[str] = APIField(None)  # original .flowmsg filename stored on hub
@@ -466,7 +473,7 @@ class FlowMessage(Entity):
     )
 
     # The header the cached record arrived with — who, to whom, about what, when.
-    # Written only by the inbox projection, from the item's payload, so a viewer
+    # Written only by the stream inbox projection, from the item's payload, so a viewer
     # renders it and derives nothing. PRIVATE like ``sent_at``: re-derived here,
     # and a hub refresh must never blank it.
     envelope: Optional[MessageEnvelope] = APIField(
@@ -474,6 +481,30 @@ class FlowMessage(Entity):
         sharing=Sharing.PRIVATE,
         description="Sender, recipients, subject and event time of the cached record",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_sender(cls, data):
+        """``sender`` from ``sender_id`` wherever this machine did not type it.
+
+        A row with no ``sender`` — written before the field, received from the hub, or built
+        by any writer that only knows the wire id — takes the sender that id names. A USER
+        sender follows its wire id (a send flushed after login is re-stamped with the cloud
+        id). An AGENT or EXTERNAL sender was typed by the projection and stands: the hub's
+        copy of an agent's reply carries the authenticated person's id, and taking it would
+        turn the agent back into that person.
+        """
+        if not isinstance(data, dict) or "sender_id" not in data:
+            return data
+        current = data.get("sender")
+        if isinstance(current, dict):
+            current = MessageSender.model_validate(current)
+        if current is not None and current.kind is not SenderKind.USER:
+            return data
+        wire = MessageSender.from_wire(data.get("sender_id"))
+        if current is None or (wire is not None and wire.kind is SenderKind.USER):
+            data = {**data, "sender": wire}
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -531,7 +562,7 @@ class FlowMessage(Entity):
     delivered_at: Optional[datetime] = APIField(default=None)
     received_at: Optional[datetime] = APIField(default=None, sharing=Sharing.HUB_WRITE)
     #: EVENT time — when the human sent this, on its original channel. Stamped
-    #: (and convergently re-stamped) ONLY by the inbox projection, from
+    #: (and convergently re-stamped) ONLY by the stream inbox projection, from
     #: ``SourceItem.occurred_at``; every other lane leaves it None and falls
     #: through ``event_time`` to the clocks it already trusts. PRIVATE like
     #: ``source_item_id``: hub sync's LWW refresh rebuilds the row from the
@@ -573,7 +604,7 @@ class FlowMessage(Entity):
         newer hub clock as a real change. But the hub re-stamps a message's
         ``updated_date`` on bare touches too — re-materializing / re-downloading
         the body, re-emitting an otherwise-unchanged row — which would drag the
-        local message clock (and, via projection, the conversation's inbox
+        local message clock (and, via projection, the conversation's stream inbox
         recency) forward for no real change. So when the base says "newer",
         confirm an actual content/state delta before adopting: serialize the
         local row and the merged candidate, ignoring ``updated_date`` and the
@@ -736,7 +767,7 @@ class FlowMessage(Entity):
     @property
     def event_time(self) -> Optional[datetime]:
         """WHEN THIS MESSAGE LAST CHANGED — the conversation's recency clock,
-        i.e. the inbox's "Xm ago". Read this for anything about ACTIVITY;
+        i.e. the stream inbox's "Xm ago". Read this for anything about ACTIVITY;
         for a message's place in the feed read ``occurred_at`` instead.
 
         Here ``updated_date`` is correct and load-bearing: a genuine edit is
@@ -1043,7 +1074,7 @@ class FlowMessage(Entity):
         must wait for the hub to fan out the body_status UPDATE first.
         Reuses the standard unpack_bundle path so all attachment kinds
         (FILE, PROMPT-file, TYPE_ID, file-backed records) restore identically
-        to the receive-on-inbox flow. File-backed assets land in the message's
+        to the receive-into-stream-inbox flow. File-backed assets land in the message's
         STAGING area (record-data dir) as MessageAttachment rows — installing
         into a project or the user scope is a separate, explicit action, so no
         project mapping is required to download.

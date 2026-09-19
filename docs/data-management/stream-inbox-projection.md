@@ -1,0 +1,208 @@
+---
+id: fbe83c6d-65fb-4299-9d53-bd17dd9b7570
+---
+
+# Stream inbox projection — ingested messages become conversations
+
+The one-way projection from ingested cloud records to stream inbox
+conversations, and the module that owns it: `flow_sdk/stream_inbox/projection.py`.
+Nothing else in the system knows both halves.
+
+## The reference model
+
+A projected `FlowMessage` is a REFERENCE row, not a copy. It carries
+membership (thread, conversation), attribution (sender, origin) and the
+person's state (`is_read`); its `text` stays empty on disk and is hydrated at
+read time from the `SourceItem` it references (`source_item_id`). An item edit
+changes nothing here, and there is no snapshot-refresh machinery to keep in
+step.
+
+Identity is looked up, never derived: thread by
+`(channel, thread_key, owner, data_source_id)` (`MessageThread.find_existing`),
+conversation by the thread's
+`conversation_id`, message by `source_item_id`. Ids are ordinary uuid4s minted
+on first sight, so re-projecting the whole corpus converges on the same rows —
+which is exactly what makes reindex a repair tool (below). Both the thread
+fork and the message placement run under one per-loop dedupe lock
+(`stream_inbox/_locks.py`, keyed by the running loop so per-test loops cannot strand
+it): the two lanes (the item-tag handler and the reconcile sweep) race in
+production, and an unlocked lookup-then-create minted the same message twice.
+The lock is taken only on a miss, so the already-placed re-poll never
+serializes on it.
+
+**What is admitted.** Only a `SourceItem` whose `kind` sits under
+`MESSAGE_KIND_ROOT = "content.message"` (`content.message.email`,
+`content.message.chat`) is stream inbox material; `content.feed.item` is an article
+and is refused by `is_message` (a `tag_is_within` hierarchy match, not a
+prefix compare). The reconcile sweep pushes the same gate into its query as
+a `LIKE 'content.message.%'` so a mixed source cannot burn its batch on rows
+it would drop.
+
+**Every conversation has a channel.** `Conversation.channel` is born `flowpad` —
+Flowpad's own chat (`flow_sdk/builtin/conversation_channel.py`), declared beside the
+conversation rather than as a data driver, since native messages arrive live through
+the hub mirror and there is nothing to poll. The projection's `Conversation.adopt_channel`
+replaces that home channel with the source's channel when it places the first message (a
+help desk ticket is born `flowpad` and becomes `helpdesk`); a source channel is never
+overwritten. What a channel IS — chip, transport, attachments, sessions — is
+`Conversation.channel_spec` (`ChannelSpec`, `schema/data_spec/channel_spec.py`); surfaces
+read those traits and never test the channel's name or treat a missing channel as "ours".
+
+**The keys.** `channel` is `DataSource.channel`, falling back to `provider`
+for rows written before the field existed. `thread_key` is the driver's
+native handle (`SourceItem.thread_key` — Gmail `threadId`, Slack `thread_ts`)
+or, only when the driver gave none, `normalize_subject(name)` — a
+multilingual reply/forward-prefix strip applied to a fixed point, with the
+documented failure modes (two unrelated `Re: hello` threads in one mailbox
+collapse; a subject edited mid-thread forks). A chat thread born without a
+subject is titled by the root message's opening line, stamped once at birth.
+
+**A thread belongs to the account that read it.** `data_source_id` — the source
+row, the account as it reads it — is part of the thread key, so two mailboxes of
+one owner on one channel never share a thread: without it a subject-keyed
+`Re: invoice` from work mail and from personal mail were one conversation. The
+row, not `account_key`, because a source's `account_key` is re-stamped when it
+first verifies and a key built on it would fork every thread it had. A thread
+written before the field existed carries none; `resolve_thread` adopts it into
+the first source (and owner) that resolves it (`MessageThread.find_unclaimed`),
+and a second account mints its own. Messages already placed in a legacy thread
+move when their item next re-projects (`_place_message` heals `thread_id`). The
+same mailbox read through two transports — the Gmail driver and the harness
+`agent` transport — stays two threads with each message twice: their message
+ids (RFC `Message-ID` vs the Gmail API id) and thread ids (`address:decimal`
+`X-GM-THRID` vs hex `threadId`) share no identity, so no key merges them
+honestly. Don't watch one mailbox through two transports.
+
+**Attribution.** `_sender_for` maps an author that is one of the source's
+own addresses (`account_identities`, plus `account_key` for legacy rows,
+folded through `normalize_email`) to the local user — or to the Agent when
+the source is an agent's mailbox (`config.agent_id`), so an agent's replies
+are never put in the owner's mouth. Everyone else is an external sender on the
+channel. The answer is a typed `MessageSender` (`FlowMessage.sender`, PRIVATE —
+a hub refresh never turns an agent's reply back into a person); `sender_id`
+carries its wire form.
+This is load-bearing: the unread rule gates on the sender, so a Sent-folder
+item attributed to a stranger would count as unread mail. `reply_to_id` is
+two lookups (the parent item by its origin — same kind and namespace, the
+reply's `reply_to_external_id` as key — then its message by
+`source_item_id`) and is an accepted loss when the parent has not arrived.
+`envelope` — sender, recipients, subject and event time as `UserProfile`s — is
+read from the item's payload and stamped PRIVATE, like `sent_at`; the message
+bubble renders it and derives nothing.
+
+## Two clocks — the timestamp law
+
+A message has an **EVENT time** (when the human sent it: Slack `ts`, Telegram
+`date`, an email's `Date:`) and **PROCESSING times** (when our rows were
+written or edited: `created_date` / `updated_date`). Rendering the second as
+the first is how a year-old Slack backfill once read "11h ago" in the stream inbox.
+The law:
+
+* **Event time is first-class.** Drivers normalize it ONCE at the edge —
+  `SourceItemSpec.occurred_at` is canonical aware-UTC ISO (`+00:00`), every
+  dialect (`Z`, naive, datetime) coerced by a validator. The projection stamps
+  it onto the message as `FlowMessage.sent_at`, the projection being the ONE
+  writer of that field. `sent_at` is PRIVATE: it is re-derivable locally from
+  the item, and a hub LWW refresh must never blank it.
+* **One read rule.** `FlowMessage.event_time = sent_at or updated_date or
+  created_date` (mirrored as `eventTime` in ts_sdk). A channel-projected
+  message is pinned to its `sent_at`; an authored message keeps its own
+  clocks (an edit bumps recency); a hub-synced copy uses its adopted hub
+  `created_date` (`flow_sdk/stream_inbox/hub_clock.py`).
+* **Every derivation reads `event_time`** — the conversation pointer `ts`,
+  message order, and recency (`conv.updated_date = max(event_time)`) are all
+  computed in `project_pointers_to_entity`
+  (`flow_sdk/fs_store/operations/conversation.py`), the single writer of that
+  projection. The UI renders only these derived values (pointer ts for
+  bubbles, `conv.updated_date` for the list); **no surface may render a
+  message's `created_date`/`updated_date` directly.**
+
+## Reindex heals, by design
+
+`project_source_item` is convergent: re-projecting an already-placed item
+re-stamps a missing or drifted `sent_at` (the explicit heal in
+`_place_message`'s resolve path — `materialize_flow_message` deliberately
+no-op-upserts an existing local row, so the payload alone can never reach it)
+and the pointer/recency rebuild then re-derives from the healed rows. The
+reconcile sweep (`reconcile_source`, run after every sync) picks up not only
+un-projected items but also placed items whose message lacks `sent_at`.
+
+Consequence, and the promise this doc exists to keep: **mis-dated stream inbox
+data is repaired by the standard paths** — a sync, a "Pull changes", a replay — with
+no bespoke migration, for today's legacy rows and for any future corruption of
+the same shape.
+
+## The two lanes
+
+The per-item lane (`ingest.*.item.created|updated` tags) is the steady state;
+the reconcile lane (`ingest.*.sync.completed` → `reconcile_source`, at most
+`RECONCILE_BATCH` = 500 items per sweep, oldest first) exists because a
+backfill announces nothing (storm caps in `IngestMode`). Both funnel into
+`project_source_item`. See the module docstring for the storm-cap reasoning
+and [data-sources.md](data-sources.md#the-pipeline) for the ingest side of the
+fence.
+
+Both lanes are armed by `start_stream_inbox_projection`, which `flow_sdk.stream_inbox.start_stream_inbox`
+calls at server startup **before** subscribing the agent runner — the runner
+keys off the projection's own announcement, so the order is a contract.
+The item handler re-reads the `SourceItem` row (the event carries an id, not
+a body) and re-projects idempotently on `.updated`.
+
+**The announcement.** A placed message is announced as
+`stream_inbox.<provider>.message.projected` (target `source_item:<id>`, scope
+`data_source:<id>`; `stream_inbox/stream_inbox_on_tag.py`) — a different fact from
+`ingest.*.item.created`, because a thread's `conversation_id` does not exist
+until the projection has committed, and a consumer on the ingest tag would be
+racing that write. Whether to announce is decided by the **lane**, not by
+whether the row pre-existed: the item lane announces on `.created` and not on
+`.updated`; the sweep announces per item only when the batch of un-placed
+items is at or under `STORM_CAP_PER_MINUTE` (30) and never for the
+`sent_at`-heal leg. `project_source_item` itself does not check whether it
+created or re-found the row, so if the sweep places an item before its
+`.created` handler runs, that handler announces it a second time.
+
+## What a purge does
+
+`DataSource.purge_records_of` (behind `purge_items`, `replay` and every
+source-delete path) calls `remove_projection_for_items`: the reference rows
+for the doomed items are destroyed, their conversation pointers pruned, each
+touched thread recounted or destroyed when empty, and a conversation with no
+messages and no threads left goes with it. Mandatory under the reference
+model, not hygiene: an orphaned reference renders blank. Hub-native messages
+never carry `source_item_id`, so a mixed conversation loses only its channel
+half.
+
+## The rest of `flow_sdk/stream_inbox/`
+
+* `__init__.py` — the unread projection, and the ONLY place unread is decided.
+  `conversation_is_unread` is the one rule (a pending invitation, or a latest
+  message received and not read — drafts, self-sent and `agent:` replies excluded);
+  `recompute_unread` applies it to every conversation, stamps
+  `Conversation.is_unread` where it flipped (a projected field — the row renders it,
+  the frontend never recomputes it), and publishes `StreamInboxManager.unread`: the
+  count over the LOCAL USER's stream inbox only (owner is the user, or unowned) — an
+  Agent's mail stays in the Agent's stream inbox. `touch(reason)` is the
+  fire-and-forget recompute every mutation site (including this projection) calls;
+  `recompute_unread` is the awaited form. Never deltas — every recompute starts
+  from the canonical rows. A hub runtime has no such projection yet
+  (`docs/hub-rest-consolidation.md` §1 in the hub checkout), so hub rows carry no
+  `is_unread` and the facet falls back to the latest message there.
+* **Scope is a query, not a walk.** A stream inbox lists
+  `streamInboxConversationsRequest(owner)` (`ui/src/components/stream-inbox-view/channel-owner.ts`):
+  a live conversation query the backend filters by `owner` — exactly the Agent's
+  rows for an Agent, the user's plus unowned rows for the user. The home strip
+  builds the same request, so the two share one cache key. The BULK verbs (mark
+  all read, archive all, delete archived) are bounded the same way on the backend:
+  the Agent's scope when one is named, else `resolve_local_stream_inbox_scope` —
+  never every row on the machine.
+* `outbound.py` — the inverse direction, and deliberately small: resolves
+  *where* a reply goes and hands it to the driver's `send`; the sent copy
+  re-enters through ingest and projects like any other item.
+* `agent_runner.py` — mail to an agent's own mailbox becomes a turn in one
+  headless process per conversation; subscribed on `stream_inbox.*.message.projected`.
+  The allowlist is also the loop breaker for the agent's own ingested replies.
+* `catchup.py` — the hub-side one-shot `conversation-list` sweep on startup and
+  cloud login, because the hub's WebSocket fan-out is live-only.
+* `hub_clock.py` — adopt the hub's `created_date` on `Conversation`/`FlowMessage`
+  outside the staleness check, so a locally re-created row cannot defend a
+  wrong birth time.

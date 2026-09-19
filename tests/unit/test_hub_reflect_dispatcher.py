@@ -177,7 +177,7 @@ async def test_reflect_to_hub_raises_huberror_when_hub_get_returns_none(monkeypa
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_reflect_uses_request_method_not_action_methods(monkeypatch):
-    """REGRESSION LOCK for the "Cloud request rejected" inbox bug.
+    """REGRESSION LOCK for the "Cloud request rejected" stream inbox bug.
 
     ``members`` registers a GET (list) and a DELETE (remove) handler under one
     registry key; the DELETE ``Action`` overwrites the GET, so ``get_by_name``

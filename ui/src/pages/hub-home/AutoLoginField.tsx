@@ -15,7 +15,7 @@ interface AutoLoginFieldProps {
 /**
  * The "sign me in automatically" tick, and the one consequence of clearing it.
  *
- * Auto-login is NOT just about Inbox and shared conversations. The box spends a
+ * Auto-login is NOT just about Stream Inbox and shared conversations. The box spends a
  * hub LLM budget with the login key it holds, and the hub's `setup_llm_endpoint`
  * only runs after a verified login — so a box launched with this off has no
  * funding at all, and its coding harnesses fall back to their own device logins.

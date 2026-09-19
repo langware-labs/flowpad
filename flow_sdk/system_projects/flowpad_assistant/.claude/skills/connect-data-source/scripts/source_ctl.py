@@ -57,7 +57,7 @@ def _editors_by_spec() -> dict[str, dict]:
     out: dict[str, dict] = {}
     for row in _get("/graph/micro_app") or []:
         parent = str(row.get("parent_type_id") or "")
-        if not parent.startswith("data_source_spec-"):
+        if not parent.startswith("data_driver-"):
             continue
         if not kind_matches(EDITOR_KIND, str(row.get("kind") or "")):
             continue
@@ -65,8 +65,6 @@ def _editors_by_spec() -> dict[str, dict]:
     return out
 
 
-def _cursors(source_id: str) -> list[dict]:
-    return list(_get("/graph/data_source_cursor", data_source_id=source_id) or [])
 
 
 def _items(source_id: str, limit: int = 20) -> list[dict]:
@@ -101,7 +99,7 @@ def cmd_specs(args) -> dict:
                 #: `flow show view "app/<typeid>?source=<source id>"` opens it.
                 "editor": editors.get(s.get("id")),
             }
-            for s in (_get("/graph/data_source_spec") or [])
+            for s in (_get("/graph/data_driver") or [])
         ]
     }
 
@@ -112,7 +110,7 @@ def cmd_list(args) -> dict:
         rows = [r for r in rows if r.get("provider") == args.provider]
     return {
         "sources": [
-            {k: r.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "segment_count", "last_synced_at")}
+            {k: r.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "consecutive_failures", "last_synced_at")}
             for r in rows
         ]
     }
@@ -128,7 +126,10 @@ def cmd_create(args) -> dict:
     payload = json_arg(args.json)
     payload.setdefault("status", "new")
     keys = tuple(k for k in payload if k != "status")
-    source_id, row, dropped = create_and_verify("/graph/data_source", payload, keys)
+    from flow_sdk.cli.commands._common import data_source_create_path, discover_port  # noqa: PLC0415
+
+    path = f"/graph/{data_source_create_path(discover_port())}"
+    source_id, row, dropped = create_and_verify(path, payload, keys, read_path="/graph/data_source")
     return {
         "id": source_id,
         "typeid": f"data_source-{source_id}",
@@ -179,9 +180,8 @@ def cmd_observe(args) -> dict:
     row: dict = source
     while True:
         row = _get(f"/graph/data_source/{sid}") or {}
-        cursors = _cursors(sid)
         count = _item_count(sid)
-        advanced = any(c.get("last_synced_at") for c in cursors)
+        advanced = bool(row.get("last_synced_at"))
         if count > before:
             outcome = "items"
             break
@@ -200,7 +200,7 @@ def cmd_observe(args) -> dict:
         "health": row.get("health"),
         "error_code": row.get("error_code"),
         "error_detail": row.get("error_detail"),
-        "cursors": [{k: c.get(k) for k in ("segment_key", "health", "error_code", "error_detail", "last_synced_at", "consecutive_failures")} for c in cursors],
+        "consecutive_failures": row.get("consecutive_failures"),
         "means": {
             "items": "records landed — the source works",
             "empty_but_healthy": "it synced and found nothing new. Not a failure: the window or the digest gate. Check window_days before believing otherwise",
@@ -210,7 +210,7 @@ def cmd_observe(args) -> dict:
 
 
 def cmd_snapshot(args) -> dict:
-    """Source + cursors + counts, BEFORE anything is poked.
+    """Source (with its position) + counts, BEFORE anything is poked.
 
     `poll_now` clears health, error_code and error_detail together, so polling
     first destroys the only evidence of why a source parked.
@@ -218,8 +218,7 @@ def cmd_snapshot(args) -> dict:
     source = _one(args.source)
     sid = source["id"]
     return {
-        "source": {k: source.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "error_detail", "setup_detail", "segment_count", "poll_interval_seconds", "window_days", "origin", "reflect", "reflect_into", "required_capabilities", "last_synced_at", "verified_at", "next_poll_at")},
-        "cursors": [{k: c.get(k) for k in ("segment_key", "segment_label", "health", "error_code", "error_detail", "last_synced_at", "consecutive_failures")} for c in _cursors(sid)],
+        "source": {k: source.get(k) for k in ("id", "name", "provider", "status", "health", "error_code", "error_detail", "setup_detail", "cursor", "high_water", "consecutive_failures", "last_attempted_at", "poll_interval_seconds", "window_days", "origin", "reflect", "reflect_into", "required_capabilities", "last_synced_at", "verified_at", "next_poll_at")},
         "item_count": _item_count(sid),
     }
 
@@ -230,12 +229,12 @@ def cmd_items(args) -> dict:
     return {
         "id": source["id"],
         "count": len(rows),
-        "items": [{k: r.get(k) for k in ("external_id", "name", "kind", "segment_key", "occurred_at")} for r in rows],
+        "items": [{k: r.get(k) for k in ("external_id", "name", "kind", "origin_namespace", "occurred_at")} for r in rows],
     }
 
 
 def cmd_delete(args) -> dict:
-    """Destructive: cascades cursors AND every record. Requires --yes."""
+    """Destructive: cascades every record. Requires --yes."""
     if not args.yes:
         raise RuntimeError("refusing to delete without --yes (this also deletes every record it ingested)")
     from flow_sdk.cli.commands._common import local_request  # noqa: PLC0415

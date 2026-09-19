@@ -1,6 +1,8 @@
 """SQLite connection and schema definitions for async SQLAlchemy."""
 
+import asyncio
 import sqlite3
+import time
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote as _urlquote
@@ -8,6 +10,8 @@ from urllib.parse import quote as _urlquote
 from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
+
+from flow_sdk import toplog
 
 
 def get_database_path() -> str:
@@ -197,7 +201,61 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
         # run in DBAPI autocommit against a WAL snapshot, never touching the
         # writer lock. Everything else keeps the up-front BEGIN IMMEDIATE.
         if conn.get_execution_options().get(FLOW_WRITER_OPT, True):
+            # Timed only while the tag is on: every write in the app passes here.
+            if not toplog.is_on("agentic_process.load"):
+                conn.exec_driver_sql("BEGIN IMMEDIATE")
+                return
+            t_begin = time.monotonic()
             conn.exec_driver_sql("BEGIN IMMEDIATE")
+            locked_at = conn.info["flow_writer_locked_at"] = time.monotonic()
+            wait_ms = (locked_at - t_begin) * 1000
+            if wait_ms > 200:
+                toplog.log("agentic_process.load", "db writer lock waited ms=%.0f by=%s", wait_ms, _writer_label())
+
+    def _on_release(conn):
+        # A connection invalidated mid-transaction (a task cancelled inside a write)
+        # raises PendingRollbackError on `.info` — from INSIDE its own rollback, which
+        # then never completes and leaves the session unusable. Nothing to time there.
+        if conn.invalidated:
+            return
+        locked_at = conn.info.pop("flow_writer_locked_at", None)
+        if locked_at is None:
+            return
+        held_ms = (time.monotonic() - locked_at) * 1000
+        if held_ms > 500:
+            toplog.log("agentic_process.load", "db writer lock held ms=%.0f by=%s", held_ms, _writer_label())
+
+    event.listen(engine.sync_engine, "commit", _on_release)
+    event.listen(engine.sync_engine, "rollback", _on_release)
+
+
+def _writer_label() -> str:
+    """The asyncio task holding a write (name + coroutine) and the request it came from.
+
+    Both, because a task detached from a request (``create_task`` in a handler)
+    inherits that request's context: the path alone would blame the request for
+    work its background task does long after the response.
+    """
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    if task is None:
+        writer = "no-task"
+    else:
+        # An unnamed task ("Task-123") says nothing; its coroutine names the writer.
+        coro = task.get_coro()
+        writer = f"{task.get_name()}:{getattr(coro, '__qualname__', type(coro).__name__)}"
+    try:
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        request = getattr(request_info, "request", None) if request_info else None
+        if request is not None:
+            return f"{writer} from {request.method} {request.url.path}"
+    except Exception:
+        pass
+    return writer
 
 
 # Sync-side pragmas applied by ``open_sqlite``. Mirror the async engine's

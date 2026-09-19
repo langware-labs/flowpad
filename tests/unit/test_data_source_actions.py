@@ -1,12 +1,12 @@
-"""The operator controls: poll_now, reset_cursors, purge_items, replay, create.
+"""The operator controls: poll_now, reset, purge_items, replay, create.
 
 These exist because the engine has no reset concept at all and ingestion had no
 way to re-fetch. Several of the tests here are really about traps rather than
 plumbing: that ``config_error`` is a permanent latch without ``poll_now``; that
-``reset_cursors`` on its own is a deliberate no-op against existing records
+``reset`` on its own is a deliberate no-op against existing records
 because the natural key still resolves them and the digest gate is doing its
 job; that a bounded ``replay`` must not delete undated rows; and that deleting a
-source has to take its cursors and records with it, since nothing cascades.
+source has to take its records with it, since nothing cascades.
 """
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource, SourceStatus, parse_since
-from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.ingest.legacy_lift import origin_of
@@ -26,7 +25,7 @@ NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 
 async def _source(**kw) -> DataSource:
-    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name="Feed")
+    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"Feed {uuid.uuid4().hex[:8]}", config={"feed_url": "http://127.0.0.1:1/feed"})
     base.update(kw)
     src = DataSource(**base)
     await src.save()
@@ -49,7 +48,7 @@ def test_the_actions_are_reachable_over_http_not_just_callable():
     from flow_sdk.actions.action_registry import action as registry
 
     registered = set(registry.function_registry)
-    for name in ("poll_now", "reset_cursors", "purge_items", "replay", "choices"):
+    for name in ("poll_now", "reset", "purge_items", "replay", "choices"):
         assert f"data_source.{name}" in registered, f"{name} is not routable"
 
     # There is deliberately NO `create` override: the generic handler already
@@ -57,7 +56,7 @@ def test_the_actions_are_reachable_over_http_not_just_callable():
     # one silently drops any field it forgets to copy.
     assert "data_source.create" not in registered
 
-    for name in ("poll_now_action", "reset_cursors_action", "purge_items_action",
+    for name in ("poll_now_action", "reset_action", "purge_items_action",
                  "replay_action", "choices_action"):
         params = set(inspect.signature(getattr(DataSource, name)).parameters) - {"self", "cls"}
         assert not params, (
@@ -92,32 +91,6 @@ async def test_poll_now_is_the_only_unlatch_for_config_error():
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_poll_now_unlatches_the_parked_segments_too():
-    """The latch has two halves: `is_due` refuses a parked SOURCE, and
-    `_round_robin` skips a parked CURSOR. Clearing only the row would let an
-    operator fix a credential and watch the segment sit out every tick while
-    the roll-up re-stamps the source from it."""
-    src = await _source(health=SourceHealth.CONFIG_ERROR.value, error_code="auth_failed")
-    parked = DataSourceCursor(
-        data_source_id=src.id,
-        segment_key="feed-a",
-        health=SourceHealth.CONFIG_ERROR.value,
-        error_code="auth_failed",
-        error_detail="401",
-        consecutive_failures=3,
-    )
-    await parked.save()
-
-    await src.poll_now_action()
-
-    (refreshed,) = await DataSourceCursor.get_all({"data_source_id": src.id})
-    assert refreshed.health == SourceHealth.OK.value, "the segment is still parked"
-    assert refreshed.error_code is None and refreshed.error_detail is None
-    assert refreshed.consecutive_failures == 0
-
-
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_poll_now_does_not_wake_a_disabled_source():
     """Disabled is a user decision; 'poll now' must not override it."""
     src = await _source(status=SourceStatus.DISABLED.value)
@@ -128,31 +101,22 @@ async def test_poll_now_does_not_wake_a_disabled_source():
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_reset_cursors_clears_position_including_opaque_state():
-    """The opaque half matters most: an ETag left behind means the next poll
-    answers 304 and the 'reset' fetches nothing at all."""
-    src = await _source()
-    cursor = await DataSourceCursor.ensure_for(src.id, "https://a.test/feed")
-    cursor.high_water = "2026-07-30T10:00:00+00:00"
-    cursor.state = {"etag": 'W/"v1"', "last_modified": "Wed, 30 Jul 2026 10:00:00 GMT"}
-    cursor.health = SourceHealth.TRANSIENT_ERROR.value
-    cursor.consecutive_failures = 3
-    cursor.error_code = "server_error"
+async def test_reset_clears_the_position_including_the_opaque_cursor():
+    """The opaque half matters most: an ETag left in the cursor means the next poll answers 304 and
+    the 'reset' fetches nothing at all."""
     synced = NOW - timedelta(hours=1)
-    cursor.last_synced_at = synced
-    await cursor.save()
-
-    await src.reset_cursors_action()
-
-    after = await DataSourceCursor.ensure_for(src.id, "https://a.test/feed")
-    assert after.high_water is None
-    assert after.state == {}, "provider-opaque state survived — the re-fetch will 304"
-    assert after.consecutive_failures == 0
-    assert after.error_code is None
-    assert after.last_synced_at is not None, (
-        "last_synced_at was cleared: a reset forgets the POSITION, not that the stream has run"
+    src = await _source(
+        cursor='resume:{"etag": "W/v1"}', manifest={"a.md": ["1", ""]}, high_water="2026-07-30T10:00:00+00:00",
+        last_synced_at=synced, next_poll_at=NOW + timedelta(hours=1),
     )
-    assert (await DataSource.get_one({"id": src.id})).is_due(NOW) is True
+    await src.save_runtime()
+
+    await src.reset_action()
+
+    after = await DataSource.get_one({"id": src.id})
+    assert (after.cursor, after.manifest, after.high_water) == (None, {}, None), "the position survived — the re-fetch will 304"
+    assert after.last_synced_at is not None, "a reset forgets the POSITION, not that the source has run"
+    assert after.is_due(NOW) is True
 
 
 @pytest.mark.asyncio
@@ -163,7 +127,7 @@ async def test_purge_items_removes_only_this_sources_records():
     for src in (mine, theirs):
         item = SourceItem(
             data_source_id=src.id, provider="rss", kind="content.feed.item",
-            segment_key="s", external_id="x1", name="hello", body="body",
+            external_id="x1", name="hello", body="body",
         )
         await item.save()
 
@@ -188,7 +152,7 @@ async def test_purged_records_are_rebuilt_and_local_state_is_the_cost():
     reference, which is exactly why the action's docstring says so.
     """
     src = await _source()
-    header = dict(data_source_id=src.id, provider="rss", kind="content.feed.item", segment_key="s", external_id="x1")
+    header = dict(data_source_id=src.id, provider="rss", kind="content.feed.item", external_id="x1")
     origin = origin_of(src, SimpleNamespace(**header))
     item = SourceItem(**header, origin=origin, name="hello", body="body", read=True)
     await item.save()
@@ -216,7 +180,7 @@ async def test_purged_records_are_rebuilt_and_local_state_is_the_cost():
 async def _item(src, *, external_id: str, occurred_at: str | None) -> SourceItem:
     row = SourceItem(
         data_source_id=src.id, provider="rss", kind="content.feed.item",
-        segment_key="s", external_id=external_id, name=external_id, body="body",
+            external_id=external_id, name=external_id, body="body",
         occurred_at=occurred_at,
     )
     await row.save()
@@ -229,16 +193,14 @@ async def test_replay_without_a_date_drops_everything_and_makes_the_source_due()
     src = await _source(next_poll_at=NOW + timedelta(hours=1))
     await _item(src, external_id="a", occurred_at="2026-07-30T10:00:00+00:00")
     await _item(src, external_id="b", occurred_at=None)
-    await DataSourceCursor.ensure_for(src.id, "s")
+    src.cursor = "c1"
+    await src.save_runtime()
 
     result = await src.replay()
 
     assert result["removed"] == 2, "an unbounded replay drops every record"
-    assert result["streams"] == 1
     assert await SourceItem.get_all({"data_source_id": src.id}) == []
-    cursor = await DataSourceCursor.get_one({"data_source_id": src.id})
-    assert cursor is not None, "cursor rows are kept — deleting them would flip the next run to BACKFILL"
-    assert cursor.high_water is None and cursor.state == {}
+    assert (await DataSource.get_one({"id": src.id})).cursor is None
     assert src.is_due(NOW) is True
 
 
@@ -319,42 +281,35 @@ async def test_delete_by_id_cascades_too_because_http_never_builds_the_instance(
     """THE path a UI delete takes, and the one an instance override misses.
 
     `handle_delete_by_id` calls the CLASSMETHOD `delete_by_id` and never
-    constructs the entity — so hooking only `destroy()` leaves the records and
-    cursors orphaned over the wire while every direct-call test still passes.
+    constructs the entity — so hooking only `destroy()` leaves the records
+    orphaned over the wire while every direct-call test still passes.
     This was caught in the browser, not by a unit test; hence this one.
     """
     src = await _source()
     await _item(src, external_id="a", occurred_at=None)
-    await DataSourceCursor.ensure_for(src.id, "s")
 
     await DataSource.delete_by_id(src.id)
 
     assert await DataSource.get_one({"id": src.id}) is None
     assert await SourceItem.get_all({"data_source_id": src.id}) == []
-    assert await DataSourceCursor.get_all({"data_source_id": src.id}) == []
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_destroy_takes_the_cursors_and_records_with_it():
-    """Nothing cascades on its own — both are separate rows keyed by
+async def test_destroy_takes_the_records_with_it():
+    """Nothing cascades on its own — records are separate rows keyed by
     data_source_id, so deleting only the source leaves orphans pointing at an id
     that no longer resolves."""
     src = await _source()
     other = await _source()
     await _item(src, external_id="a", occurred_at=None)
-    await DataSourceCursor.ensure_for(src.id, "s")
     await _item(other, external_id="a", occurred_at=None)
-    await DataSourceCursor.ensure_for(other.id, "s")
 
     await src.destroy()
 
     assert await DataSource.get_one({"id": src.id}) is None
     assert await SourceItem.get_all({"data_source_id": src.id}) == []
-    assert await DataSourceCursor.get_all({"data_source_id": src.id}) == []
-
     assert len(await SourceItem.get_all({"data_source_id": other.id})) == 1, "delete crossed sources"
-    assert len(await DataSourceCursor.get_all({"data_source_id": other.id})) == 1
 
 
 @pytest.mark.asyncio
@@ -363,15 +318,15 @@ async def test_channel_is_stamped_at_create_not_first_poll():
     """The projection races the first fetch: items recorded by the worker
     mid-fetch project BEFORE sync's post-fetch save lands, and a source whose
     channel is still empty bakes origin.kind="agent" into every message
-    (observed live, inbox-7 2026-09-01). Stamping at create closes the race."""
+    (observed live on a disposable instance, 2026-09-01). Stamping at create closes the race."""
 
-    src = await _source(provider="agent", config={"connector": "slack", "segments": ["C1"]})
+    src = await _source(provider="agent", config={"connector": "slack", "harness": "claude", "mailbox": "C1"})
     assert src.channel == "slack", "channel must be present before any poll"
 
     # A driver whose channel IS its provider name must not be mistaken for the
     # provider fallback — the first stamp implementation made exactly that
     # error and left agentmail sources channel-less at create.
-    src = await _source(provider="agentmail", config={"inbox": "x@agentmail.to", "api_key": "k"})
+    src = await _source(provider="agentmail", config={"inbox": "x@agentmail.to"})
     assert src.channel == "agentmail"
 
 
@@ -395,13 +350,11 @@ async def test_poll_now_is_a_verb_and_the_route_is_thin():
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_reset_cursors_is_a_verb():
-    src = await _source()
-    cursor = await DataSourceCursor.ensure_for(src.id, "https://a.test/feed")
-    cursor.state = {"etag": "x"}
-    await cursor.save()
-    assert await src.reset_cursors() == 1
-    assert (await DataSourceCursor.ensure_for(src.id, "https://a.test/feed")).state == {}
+async def test_reset_is_a_verb():
+    src = await _source(cursor="x")
+    await src.save_runtime()
+    await src.reset()
+    assert (await DataSource.get_one({"id": src.id})).cursor is None
     assert (await DataSource.get_one({"id": src.id})).is_due(NOW) is True
 
 
@@ -410,6 +363,6 @@ async def test_reset_cursors_is_a_verb():
 async def test_purge_items_is_a_verb():
     src = await _source()
     await SourceItem(data_source_id=src.id, provider="rss", kind="content.feed.item",
-                     segment_key="s", external_id="x1", name="h", body="b").save()
+            external_id="x1", name="h", body="b").save()
     assert await src.purge_items() == 1
     assert await SourceItem.get_all({"data_source_id": src.id}) == []

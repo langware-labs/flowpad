@@ -28,7 +28,7 @@ destroys the only record of why it parked. Snapshot, then reason.
 
 3. **`health` + `error_code`** from the snapshot:
    - `unknown_provider` — no driver for this `provider`. Marker: `status` is
-     `active` and `segment_count` is 0. Either the name is a typo, or it is an
+     `active` and `last_attempted_at` is set but `last_synced_at` never is. Either the name is a typo, or it is an
      authored spec whose folder is not indexed. Re-index the project and wait
      one tick.
    - `unauthorized` / `not_found` / `client_error` — config errors. The first
@@ -40,12 +40,12 @@ destroys the only record of why it parked. Snapshot, then reason.
      is the one state where `SC poll` is part of the fix, and only *after* the
      cause is fixed.
 
-4. **Per-segment health** — the source rolls up the WORST cursor, so one dead
-   feed makes a healthy source look broken. Report per segment: "4 of 5 feeds
-   fine, this one 404s" is the actual finding and it is invisible from the row.
+4. **Position** — `cursor` / `high_water` on the snapshot. A source reads one
+   stream, so its health IS that stream's. `consecutive_failures` counts the
+   passes in a row that failed; the cursor never moves on a failed pass.
 
-5. **No cursors at all** — it never enumerated. It failed before listing
-   segments: unknown provider, or a capability gate.
+5. **Never attempted** (`last_attempted_at` empty) — it failed before reading:
+   unknown provider, or a capability gate.
 
 6. **Credential gate** — a non-empty `required_capabilities` whose capability is
    unavailable means it silently never polls. That is a gate, not an error code.
@@ -54,7 +54,7 @@ destroys the only record of why it parked. Snapshot, then reason.
    `last_synced_at`, cursors advanced, no items. In order: (a) `window_days`
    excludes everything the provider has; (b) there is genuinely nothing new;
    (c) the user is looking in the wrong place — only `content.message.*` kinds
-   reach the Inbox, so an RSS item is a record, not mail. Check `SC items`
+   reach the Stream Inbox, so an RSS item is a record, not mail. Check `SC items`
    before believing "nothing arrived".
 
 8. **Files-mode sources** — `reflect` is `copy`/`symlink` but `reflect_into` is
@@ -64,7 +64,7 @@ destroys the only record of why it parked. Snapshot, then reason.
 
 - Never `purge_items` or `replay` to "make it try again" — purge discards the
   user's read/starred state and re-mints ids, dangling every reference.
-- Never `reset_cursors` alone and call it fixed: re-reading the same window
+- Never `reset` alone and call it fixed: re-reading the same window
   finds digest-identical rows and writes nothing. It looks broken by design.
 - Never delete the source — it cascades cursors *and* every record.
 - Never lower `poll_interval_seconds` below 60; the heartbeat ticks once a

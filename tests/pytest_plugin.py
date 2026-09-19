@@ -288,7 +288,6 @@ def _restore_main_thread_event_loop():
     yield
     import asyncio as _asyncio
 
-    _shutdown_leftover_name_observers()
     _drop_leftover_bus_tasks()
     try:
         loop = _asyncio.get_event_loop_policy().get_event_loop()
@@ -299,37 +298,13 @@ def _restore_main_thread_event_loop():
         _asyncio.set_event_loop(_asyncio.new_event_loop())
 
 
-def _shutdown_leftover_name_observers():
-    """Stop worker-name file watchers a test left on a loop that outlives it.
-
-    ``refresh_process_name`` binds a ``watchfiles.awatch`` task per event loop,
-    and ``async_context`` reuses the main thread's loop for every test. A test
-    that starts a process and never stops it leaves that task pending on the
-    shared loop: the next test that drains ``asyncio.all_tasks()``
-    (``test_wizard_chain_end_to_end._settle``) waits on it forever, and the
-    watcher's worker thread then keeps pytest from exiting. That cost CI's unit
-    shard its whole 15-minute cap. One teardown for every loop, rather than a
-    per-package fixture that only ever saw pytest-asyncio's loop.
-    """
-    import sys as _sys
-
-    runtime = _sys.modules.get("flow_sdk.builtin.agentic_process.naming.runtime")
-    if runtime is None:
-        return
-    for loop in list(runtime._runtimes.keys()):
-        if loop.is_closed() or loop.is_running():
-            continue
-        # Runs on `loop`, so the shutdown's own get_running_loop() is that loop.
-        loop.run_until_complete(runtime.shutdown_name_observation())
-
-
 def _drop_leftover_bus_tasks():
     """Stop tag-bus handler tasks a test left running when it ended.
 
     ``TagBus._dispatch`` keeps every async handler task in ``bus._INFLIGHT`` until
     it finishes (so it cannot be garbage-collected mid-flight). A handler still
     running when its test's loop closes never finishes, and never leaves the set.
-    It then poisons every later test that drains the set: the inbox projection
+    It then poisons every later test that drains the set: the stream inbox projection
     (armed process-wide once any test boots the app) answers a git source's
     ``sync.completed`` with an ``_on_sync`` reconcile against that test's own
     ``git_db``, the fixture closes the loop and the driver under it, and
@@ -480,9 +455,14 @@ def isolated_records_root(tmp_path, monkeypatch):
     """
     from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
 
+    from flow_sdk.builtin.agentic_process import transcript_cache  # noqa: PLC0415
+
     monkeypatch.setenv("FS_RECORD_PATH", str(tmp_path / "records"))
     reset_instance_settings()
+    # Transcript locations remembered by one test are paths under ITS tmp dir.
+    transcript_cache.clear()
     yield tmp_path / "records"
+    transcript_cache.clear()
     reset_instance_settings()
 
 
