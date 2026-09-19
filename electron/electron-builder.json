@@ -11,6 +11,7 @@
     "main.js",
     "preload.js",
     "shutdown.js",
+    "backend-wait.js",
     "semver.js",
     "uv-manager.js",
     "flow-rs-keychain.js",
