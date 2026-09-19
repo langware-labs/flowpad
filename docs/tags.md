@@ -64,7 +64,13 @@ unchanged: the bus never consults an entity to route.
   never a client-writable field, and never the bus.
 - **User worlds** take a `--<namespace>--` first segment (`--acme--.orders.created`).
   The marker is legal only as segment 0; global uniqueness is a hub concern, not a local
-  one.
+  one. `grammar.split_namespace` reads it and `grammar.join_namespace` writes it — one
+  owner, with a TS twin each and both directions pinned by the event-contract fixture.
+- **The kind ontology uses the same marker**, and is its first live consumer: an
+  externally authored asset declares an `ns` and every shape its code registers is
+  prefixed with it, so a user-written driver cannot claim a kind a shipped one already
+  names. **Ours is the default and it is silent — `--flow--` is never written.** See
+  [`ontology.md`](ontology.md).
 
 ## Binding things to tags — the carriers ARE the store
 
