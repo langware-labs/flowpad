@@ -2624,6 +2624,11 @@ class AgenticProcess(Entity):
                 description=description,
                 project_id=project.id if project is not None else self.project_id,
                 origin=git_origin or local_origin,
+                # The same provenance edge ``register-artifact`` stamps. Without
+                # it a web app is absent from ``artifacts``, which is a match on
+                # ``generated_by`` — so "everything this run produced" silently
+                # excluded every app the run built.
+                generated_by=str(self.typeid),
             )
         else:
             artifact.name = name
@@ -2632,6 +2637,12 @@ class AgenticProcess(Entity):
             artifact.origin = git_origin or local_origin
             if project is not None:
                 artifact.project_id = project.id
+            # Backfill, never reassign: a re-registration converges on the row
+            # the FIRST run created, and that run stays the producer. Rows
+            # minted before this field was stamped here would otherwise never
+            # gain one.
+            if not artifact.generated_by:
+                artifact.generated_by = str(self.typeid)
 
         if project is not None:
             artifact.parent_type_id = str(project.typeid)
