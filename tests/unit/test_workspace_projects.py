@@ -496,7 +496,7 @@ async def test_agent_mount_root_entity_is_not_returned(project_db, tmp_path, mon
 
     assert "Flowpad workspace" not in by_name, by_name
     assert "real-project" in by_name, by_name
-    assert by_name["real-project"].system is False, "subfolder project must stay non-hidden"
+    assert by_name["real-project"].hidden is False, "subfolder project must stay non-hidden"
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
