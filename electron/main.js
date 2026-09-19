@@ -36,6 +36,13 @@ const os = require('os');
 const FLOW_HOME = path.join(os.homedir(), '.flow');
 const LOGS_BASE = path.join(FLOW_HOME, 'logs');
 const MAIN_DESKTOP_LOG_DIR = path.join(LOGS_BASE, 'main_desktop');
+// The backend's own logs (server/, monitor/) are per instance:
+// <flow_home>/instances/<name>/logs — flow_sdk/instance_settings/base_settings.py
+// (`logs_dir`, instance "prod" unless FLOW_INSTANCE says otherwise). The startup
+// gate reads the server log there; watching the old <flow_home>/logs/server
+// would see a directory the backend never writes to.
+const FLOW_INSTANCE = process.env.FLOW_INSTANCE || 'prod';
+const BACKEND_LOGS = path.join(FLOW_HOME, 'instances', FLOW_INSTANCE, 'logs');
 
 function generateTimestampedFilename() {
   const now = new Date();
@@ -768,7 +775,7 @@ function createWindow() {
 // `reason` is 'healthy' | 'timeout' | 'stalled' | 'hard-cap'.
 async function waitForBackend({ maxChecks = MAX_HEALTH_CHECKS } = {}) {
   const baseSec = Math.round((maxChecks * HEALTH_CHECK_INTERVAL) / 1000);
-  const serverLogDir = path.join(LOGS_BASE, 'server');
+  const serverLogDir = path.join(BACKEND_LOGS, 'server');
   log.info(
     `Waiting for backend at ${BACKEND_URL} (${baseSec}s, longer while ${serverLogDir} keeps growing)...`,
   );
@@ -1031,7 +1038,7 @@ async function startApp() {
     const timeoutSec = backendWait.elapsedSec;
     let detail = `Backend server failed to respond within ${timeoutSec} seconds (${backendWait.reason}).`;
     try {
-      const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
+      const newest = getNewestLogFile(path.join(BACKEND_LOGS, 'monitor'));
       if (newest) {
         const logContent = fs.readFileSync(newest.path, 'utf8');
         const lastLines = logContent.split('\n').slice(-15).join('\n');
@@ -1295,7 +1302,7 @@ ipcMain.handle('get-startup-logs', () => {
 
   // Monitor log (newest in monitor/)
   try {
-    const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
+    const newest = getNewestLogFile(path.join(BACKEND_LOGS, 'monitor'));
     if (newest) {
       const content = fs.readFileSync(newest.path, 'utf8');
       logs.push({ name: 'Monitor', path: newest.path, content });
@@ -1304,7 +1311,7 @@ ipcMain.handle('get-startup-logs', () => {
 
   // Server log (newest in server/)
   try {
-    const newest = getNewestLogFile(path.join(LOGS_BASE, 'server'));
+    const newest = getNewestLogFile(path.join(BACKEND_LOGS, 'server'));
     if (newest) {
       const content = fs.readFileSync(newest.path, 'utf8');
       logs.push({ name: 'Server', path: newest.path, content });
@@ -1325,13 +1332,13 @@ function _getLogFiles() {
 
   // Re-discover newest file in each subdirectory on every tick
   const subdirs = [
-    { name: 'Electron', dir: 'main_desktop' },
-    { name: 'Monitor', dir: 'monitor' },
-    { name: 'Server', dir: 'server' },
+    { name: 'Electron', dir: path.join(LOGS_BASE, 'main_desktop') },
+    { name: 'Monitor', dir: path.join(BACKEND_LOGS, 'monitor') },
+    { name: 'Server', dir: path.join(BACKEND_LOGS, 'server') },
   ];
 
   for (const { name, dir } of subdirs) {
-    const newest = getNewestLogFile(path.join(LOGS_BASE, dir));
+    const newest = getNewestLogFile(dir);
     if (newest) {
       files.push({ name, path: newest.path });
     }
