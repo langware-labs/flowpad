@@ -1751,8 +1751,17 @@ def project_to_dict(project) -> dict:
     the database said Hebrew. It only came right on a refresh, when the full
     entity was fetched. "Correctly, from what it could see" is exactly how a
     missing field fails: silently, and looking like a timing bug.
+
+    ``hidden`` is another: a sandbox adopts `default_project` before any route
+    runs, so a project that must never become CURRENT has to say so here —
+    without it, the compact dict looks like an ordinary project and the app
+    opens in it.
     """
-    return {**entity_to_dict(project), "locale": getattr(project, "locale", None)}
+    return {
+        **entity_to_dict(project),
+        "locale": getattr(project, "locale", None),
+        "hidden": bool(getattr(project, "hidden", False)),
+    }
 
 
 # ---------------------------------------------------------------------------
