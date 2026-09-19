@@ -28,7 +28,18 @@ def resolve_kind(kind: str) -> Any:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # lazy: avoid import cycle
 
     shape = SchemaRegistry.kind_type(kind)
-    return Any if shape is None else shape
+    if shape is not None:
+        return shape
+    # A REGISTERED type that names no shape is an authoring mistake, not an
+    # anonymous kind: the author meant a real thing and it has no document form.
+    # An unregistered name stays anonymous (``Any``) — forward references during
+    # eager compilation depend on it.
+    if SchemaRegistry.get(kind) is not None:
+        raise ValueError(
+            f"{kind!r} is an entity type with no document shape (no asset_spec); "
+            "a kind names a DataSpec"
+        )
+    return Any
 
 
 def register_builtin_kinds() -> None:

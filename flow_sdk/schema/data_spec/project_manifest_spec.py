@@ -120,6 +120,14 @@ class ProjectManifestSpec(DataSpec):
     #: Minimum host, informational (``{"flowpad": ">=0.3"}``): lets a reader say
     #: "written by a newer build" rather than fail on an unknown key.
     requires: dict[str, str] = Field(default_factory=dict)
+    #: The ontology namespace every asset in this project mints into. Blank is
+    #: OURS — the flow namespace is the default and it is silent, so nothing
+    #: shipped declares one and its kinds are written bare.
+    #:
+    #: Declared HERE, once, rather than on each asset: a project is the unit a
+    #: publisher owns. An asset may still carry its own ``ns`` to differ, and the
+    #: nearest declaration wins (``flow_sdk/schema/data_spec/_namespace.py``).
+    ns: str = ""
     entries: list[PublishedAssetSpec] = Field(default_factory=list)
 
     @field_validator("manifest_schema")
@@ -171,7 +179,19 @@ class ProjectManifestSpec(DataSpec):
 
     def to_document(self) -> dict:
         """The on-disk form: ``by_alias`` so the file says ``schema``."""
-        return self.model_dump(by_alias=True)
+        document = self.model_dump(by_alias=True)
+        if not document.get("ns"):
+            # The default is SILENT. A project in our own ontology writes no
+            # ``ns`` at all, so no shipped manifest carries the word and a reader
+            # never has to learn it exists to understand the file.
+            #
+            # Popped per-field rather than via ``exclude_defaults`` — the rule
+            # ``flow_sdk/assets/serialization.py`` uses for asset documents
+            # ("a default is not authored") — because this ledger DOES write its
+            # other defaults: ``schema``, ``requires`` and an empty ``entries``
+            # are part of the file format. ``ns`` is the one exception.
+            document.pop("ns")
+        return document
 
 
 class DependencySpec(PublishedAssetSpec):

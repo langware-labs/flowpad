@@ -137,10 +137,34 @@ def test_spec_kind_as_a_field_trips_the_guard() -> None:
             spec_kind: str = "x"   # annotated ⇒ a field ⇒ refused
 
 
-def test_an_entity_type_name_is_a_kind_in_the_same_namespace() -> None:
-    from flow_sdk.builtin.dataset import Dataset
+def test_an_entity_type_name_names_that_type_s_DOCUMENT_SHAPE() -> None:
+    """One namespace, one meaning: a kind always names a ``DataSpec``.
 
-    assert SchemaRegistry.kind_type("dataset") is Dataset
+    It used to resolve to the Entity class, so ``"output": "dataset"`` handed a
+    ``SpecType`` field a row model — which cannot validate a value, because it
+    demands ids and DB columns the value has never heard of. Meanwhile
+    ``"output": "compute_op"`` gave a document shape, purely because that one
+    spec declared a ``spec_kind``. Same syntax, two meanings.
+    """
+    from flow_sdk.builtin.dataset import Dataset  # noqa: F401 — binds the type
+    from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec
+
+    assert SchemaRegistry.kind_type("dataset") is DatasetManifestSpec
+
+
+def test_a_row_only_type_name_is_an_error_not_a_silent_any() -> None:
+    """A registered type with no asset document names no shape. The author meant
+    a real thing; answering ``Any`` would hand them an untyped field instead."""
+    import flow_sdk.builtin.conversation  # noqa: F401 — binds the type
+
+    with pytest.raises(ValueError, match="no document shape"):
+        DataSpec.parse("conversation")
+
+
+def test_an_unregistered_name_is_still_anonymous() -> None:
+    """The forward-reference path eager compilation depends on: a name nobody
+    has registered is opaque, not an error."""
+    assert DataSpec.parse({"x": "nobody.registered.this"}).model_fields["x"].annotation is Any
 
 
 def test_a_primitive_cannot_be_registered() -> None:

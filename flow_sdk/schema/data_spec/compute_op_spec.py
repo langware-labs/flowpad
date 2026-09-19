@@ -174,7 +174,9 @@ class AttemptSpec(DataSpec):
 class ComputeOpSpec(AssetDocumentSpec):
     """``compute_op.json`` — the whole document."""
 
-    spec_kind: ClassVar[str] = "compute_op"
+    # No ``spec_kind``: an asset spec is registered under its own type name by
+    # ``SchemaRegistry.register``. Declaring it here would be the same string a
+    # third time, beside ``EntityType.COMPUTE_OP`` and the row's ``type`` default.
 
     name: str = ""
     label: str = ""
