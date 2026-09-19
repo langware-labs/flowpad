@@ -18,7 +18,7 @@ SOURCE_ITEM = TypeInfo(
     # Minted by the ingestor from a provider payload, never from a "new entity"
     # button — there is nothing meaningful to create by hand.
     creatable=False,
-    index_fields=["name", "provider", "data_source_id", "segment_key", "occurred_at"],
+    index_fields=["name", "provider", "data_source_id", "occurred_at"],
     # Row-only: the DB IS the record — no metadata.json shadow per ingested item.
     # Searchable all the same: ``body`` is fed to FTS straight from the row.
     db_only=True,

@@ -4,7 +4,7 @@
 omitted ``created_date``/``updated_date``, so the sender never shipped the
 send-time and the receiver (unpack → ``materialize_flow_message``) defaulted it
 to ``now()``. Because a conversation's recency is ``max(message.updated_date)``,
-every re-synced conversation collapsed to the sync instant — so the inbox /
+every re-synced conversation collapsed to the sync instant — so the stream inbox /
 side-panel list lost its order.
 
 These tests drive the REAL pack → unpack → persisted-row path. The two local
@@ -30,7 +30,6 @@ from flow_sdk.fs_store.operations.conversation import (
     project_pointers_to_entity,
 )
 from flow_sdk.fs_store.record_types import RecordType
-
 
 # A clearly-past send-time; 2020 makes any "stamped to now()" regression obvious.
 _PAST = datetime(2020, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
@@ -116,7 +115,7 @@ async def test_unpacked_message_keeps_send_time(tmp_path):
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_unpacked_conversation_keeps_recency(tmp_path):
     """The real symptom: after unpack the Conversation's ``updated_date`` (what
-    the inbox sorts on) must be the true last-message time, not the sync instant."""
+    the stream inbox sorts on) must be the true last-message time, not the sync instant."""
     _, conv_id, zip_path = await _pack(3, tmp_path)
     await unpack_bundle(zip_path, "local-user-id")
 

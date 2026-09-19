@@ -17,8 +17,6 @@ export interface ISourceItem extends IEntity {
   kind?: string;
   provider?: string;
   data_source_id?: string;
-  segment_key?: string;
-  segment_label?: string;
   external_id?: string;
   origin?: ICloudOrigin | null;
   origin_kind?: string;
@@ -49,8 +47,6 @@ export class SourceItem extends APIEntity<SourceItem> implements ISourceItem {
   kind: string = '';
   provider: string = '';
   data_source_id: string = '';
-  segment_key: string = '';
-  segment_label: string = '';
   external_id: string = '';
   origin: ICloudOrigin | null = null;
   origin_kind: string = '';
@@ -72,8 +68,6 @@ export class SourceItem extends APIEntity<SourceItem> implements ISourceItem {
     this.kind = entity.kind ?? this.kind;
     this.provider = entity.provider ?? this.provider;
     this.data_source_id = entity.data_source_id ?? this.data_source_id;
-    this.segment_key = entity.segment_key ?? this.segment_key;
-    this.segment_label = entity.segment_label ?? this.segment_label;
     this.external_id = entity.external_id ?? this.external_id;
     this.origin = entity.origin ?? this.origin;
     this.origin_kind = entity.origin_kind ?? this.origin_kind;

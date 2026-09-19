@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.ingest import reflect
 from flow_sdk.ingest.change_event import change_tag, emit_change, handle_change, subscribe
 from flow_sdk.ingest.reflect import origin_id_for
-from flow_sdk.ingest.sources import source_type
 from flow_sdk.ingest.sync import sync_source
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 from flow_sdk.utils.git import git_remote_url
 from tests.unit._ingest_helpers import position
 
@@ -49,7 +49,7 @@ async def test_the_driver_never_walks_the_filesystem(git_db, asset_repo, make_so
     real_walk = _os.walk
     monkeypatch.setattr(_os, "walk", lambda *a, **k: (walked.append(str(a[0])), real_walk(*a, **k))[1])
 
-    await source_type("git").traverse(source, position(segment_key="main", prior={}))
+    await DataDriver.loaded("git").traverse(source, position())
 
     assert walked == [], f"the driver walked: {walked}"
 

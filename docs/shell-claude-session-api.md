@@ -91,7 +91,7 @@ shell.start_pty(spawn_args=argv, extra_env=env)        # provider spawns argv di
 shell.set_worker_pid_direct(cmd)                       # worker_pid = the PTY pid (no polling)
 ```
 
-`set_worker_pid_direct` (`shell.py:671`) records `worker_pid = pty_pid` directly
+`set_worker_pid_direct` (`shell.py:1001`) records `worker_pid = pty_pid` directly
 because Claude *is* the PTY — no child-process hunting.
 
 ### `shell_mode=True` — legacy zsh intermediary
@@ -101,12 +101,12 @@ for the worker child pid:
 
 ```
 shell.start_pty()                                      # bare $SHELL PTY
-shell.launch(cmd, instruction)                         # shell.py:624
+shell.launch(cmd, instruction)                         # shell.py:954
   → shell.write(cmd.to_shell_string(instruction))      # types the command in
   → _poll_for_worker_pid(shell_pid, "claude", 1.0s)    # find the child pid
 ```
 
-`worker_alive()` (`shell.py:696`) validates `worker_pid` still exists and its
+`worker_alive()` (`shell.py:1026`) validates `worker_pid` still exists and its
 cmdline matches `worker_name` (+ expected `--session-id`), used by both paths to
 avoid double-launching and by recovery.
 

@@ -1,4 +1,4 @@
-"""``FolderChanges.listen()`` — the object-shaped sibling of ``Inbox.listen()``.
+"""``FolderChanges.listen()`` — the object-shaped sibling of ``StreamInbox.listen()``.
 
 Same contract: one yield per page, ``ack()`` commits an offset, a page handed out and never
 acked comes back after a restart flagged, and a folder consumer starts from the beginning
@@ -11,7 +11,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.blocks import Delivered, FolderChange, FolderChanges, workflow
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 
 from ._harness import DOC, write_doc
 

@@ -182,7 +182,7 @@ bootstrap-provided status and do not receive an unsupported request.
 
 `info` owns installed-agent/provider detection, cloud credential validation,
 secret recovery notices, index/harness/capability summaries, sandbox discovery,
-sniffer reconciliation, and inbox repair. It has a separate 30s cache and a
+sniffer reconciliation, and stream inbox repair. It has a separate 30s cache and a
 shared shielded task so concurrent requests do not duplicate work and a
 disconnected caller cannot cancel another caller's computation. Individual
 probe failures remain local to this optional response. Credential-dependent

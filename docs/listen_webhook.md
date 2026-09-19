@@ -24,7 +24,7 @@ HTTP POST /api/v1/webhook/listen
   → Route by type:
       agent_hook         → handle_agent_hook()          # Claude Code hook events
       hook_op            → handle_hook_op()             # Unified CRUD + event + invoke + log
-      instruction_trace  → handle_instruction_trace()   # Legacy execution traces
+      anything else      → "Unknown webhook type: <type>"
 ```
 
 ### Webhook Types
@@ -33,7 +33,6 @@ HTTP POST /api/v1/webhook/listen
 |------|---------|---------|
 | `agent_hook` | `handle_agent_hook()` | Claude Code hook events (tool use, prompt submit, etc.) |
 | `hook_op` | `handle_hook_op()` | v2 envelope: CRUD, events, invokes, logs, relationships |
-| `instruction_trace` | `handle_instruction_trace()` | Legacy instruction execution reports |
 
 ### Payload Models
 
@@ -41,7 +40,7 @@ Defined in `flow_sdk/core/flow/models/webhook_flow_data.py`:
 
 - **`WebhookPayload`**: Outer envelope `{ webhook_type, webhook_payload }`
 - **`AgentHookData`**: Claude Code hook events with `agent_hook_id`, `hook_data`, `hook_entry_id`, `hook_metadata`, `hook_file_path`
-- **`FlowHookData`**: Instruction trace data
+- **`WebhookType`**: `agent_hook` | `hook_op` — the only two types `listen_action` routes
 
 Defined in `flow_sdk/core/flow/models/hook_op.py`:
 
@@ -61,15 +60,20 @@ File: `flow_sdk/builtin/claude_settings_sync.py:generate_hook_command()`
 
 ```python
 def generate_hook_command(hook_id: str, name: str | None = None) -> str:
-    cmd = f"flow hooks report --hook-entry-id={hook_id}"
+    from flow_sdk.builtin.flowpad_runner_wrapper import wrap_command
+
+    args = f"hooks report --hook-entry-id={hook_id}"
     if name:
-        cmd += f" --name={name}"
-    return cmd
+        args += f" --name={name}"
+    return wrap_command(args)
 ```
 
-This produces commands like:
+`wrap_command` (`flow_sdk/builtin/flowpad_runner_wrapper.py`) runs the args through a wrapper
+script (`~/.flow/flowpad_runner.sh`, or `.ps1` under PowerShell on Windows) that exits silently
+when `flow` is not installed, so a stale hook never breaks Claude. On macOS/Linux this produces
+commands like:
 ```bash
-flow hooks report --hook-entry-id=agenthook:abc123 --name=flowpad_sniffer
+"/Users/me/.flow/flowpad_runner.sh" hooks report --hook-entry-id=abc123 --name=flowpad_sniffer
 ```
 
 ### Identification Chain
@@ -107,7 +111,7 @@ flow hooks report --hook-entry-id=agenthook:abc123 --name=flowpad_sniffer
         "hooks": [
           {
             "type": "command",
-            "command": "flow hooks report --hook-entry-id=abc123 --name=flowpad_sniffer"
+            "command": "\"/Users/me/.flow/flowpad_runner.sh\" hooks report --hook-entry-id=abc123 --name=flowpad_sniffer"
           }
         ]
       }
@@ -143,21 +147,40 @@ File: `flow_sdk/app/actions/hooks_sniffer.py`
 
 ### Broadcasting
 
-Every webhook arriving at `/listen` calls `_broadcast_to_sniffer()` in `listen.py`:
+Every webhook arriving at `/listen` calls `_broadcast_to_sniffer()` in `listen.py`. It translates
+the payload through the same converter the per-process trace gutter uses, so the sniffer view gets
+the canonical FlowData shape (abridged excerpt of `flow_sdk/app/actions/listen.py:84`; the
+uname-less fallback lookup and error logging are omitted):
 
 ```python
-async def _broadcast_to_sniffer(payload_data, webhook_type, ...):
+async def _broadcast_to_sniffer(
+    payload_data: dict,
+    webhook_type: str,
+    skip_hook_id: str | None = None,
+    warning: str | None = None,
+    element_type: str | None = None,
+    data_type: str | None = None,
+) -> None:
     sniffer_hook = await AgentHook.get_by_uname("sniffer")
-    if sniffer_hook:
-        await sniffer_hook.emit_flow_data({
-            "flow_value": payload_data,
-            "attributes": {
-                "element-type": "webhook",
-                "data-type": "object",
-                "webhook_type": webhook_type,
-                "t": datetime.now(timezone.utc).isoformat(),
-            },
-        })
+    if sniffer_hook is None:
+        return
+    # Don't double-emit when the webhook already targets this exact hook
+    if skip_hook_id and sniffer_hook.id == skip_hook_id:
+        return
+
+    from flow_sdk.app.actions._webhook_to_flowdata import convert_webhook_event
+
+    fds = convert_webhook_event(payload_data)
+    if not fds:
+        return
+    fd = fds[0]
+    if element_type:
+        fd.attributes["element-type"] = element_type
+    if data_type:
+        fd.attributes["data-type"] = data_type
+    if warning:
+        fd.attributes["warning"] = warning
+    await sniffer_hook.emit_flow_data({"flow_value": fd.flow_value, "attributes": fd.attributes})
 ```
 
 ---
@@ -358,13 +381,13 @@ Per-layer granular selection via `filters.layers: EventLayer[]` takes priority o
 ### Process Streams (Agentic Processes)
 
 ```
-FlowDataStream
-  → useProcessStream() — useSyncExternalStore subscription
-  → FlowDataRenderer — routes by elementType to components
-  → TextMessageComponent, ShellMessageComponent, ReasoningMessageComponent, etc.
+AgenticProcess.flowDataStream
+  → useAgenticProcessStream(process) — useSyncExternalStore subscription
+  → useTurnGroups(items) — groups FlowData into turns
+  → TurnGroupsList → ExecutionMessage — renders each group by elementType
 ```
 
-File: `ui/src/hooks/flow-hooks/useProcessStream.ts` — subscribes to `FlowEvents.DATA`, `RENDER`, `EXECUTION_STATUS`
+File: `ui/src/hooks/use-agentic-process-stream.ts` — subscribes to `flowDataStream` `data` / `clear` events and returns a memoized `FlowData[]` snapshot (consumed by `ui/src/components/entity-execution-panel/EntityExecutionPanel.tsx`)
 
 File: `ui/src/hooks/flow-hooks/useDataStreamText.ts` — tracks individual FlowData streaming progress (CHUNK → READY)
 

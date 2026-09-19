@@ -27,6 +27,7 @@ from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
     EXIT_INVALID_ARG,
+    data_source_create_path,
     discover_port,
     fail,
     get_graph_json,
@@ -89,7 +90,7 @@ def _source_action(source_id: str, action: str, payload: Optional[dict] = None, 
 
 @source_app.command("types", help="The data source assets this instance can run, and what each can do.")
 def types() -> None:
-    specs = _rows(_get("data_source_spec"))
+    specs = _rows(_get("data_driver"))
     ok({"types": [
         {k: s.get(k) for k in ("name", "title", "kind", "sends", "load_error", "auth", "runtime")} for s in specs if isinstance(s, dict)
     ]})
@@ -119,8 +120,8 @@ def create(
         payload["reflect"] = reflect
     if window_days:
         payload["window_days"] = window_days
-    row = _post("data_source", payload) or {}
-    ok({"source": {k: row.get(k) for k in ("id", "name", "provider", "status", "health", "channel", "setup_detail")}})
+    row = _post(data_source_create_path(discover_port()), payload) or {}
+    ok({"source": {k: row.get(k) for k in ("id", "name", "provider", "status", "health", "channel", "setup_detail", "asset_ref")}})
 
 
 @source_app.command("verify", help="Re-run setup verification (connection, then the source's own check).")

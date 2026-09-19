@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import { Agent, FSRef, TypeId, type AssetDocument } from '@sdk';
 import { AgentProfileEditor } from '@src/components/assets/editor/agent-profile/AgentProfileEditor';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentScheduleSection', () => ({ AgentScheduleSection: () => null }));
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({ AgentPlacesColumn: () => null }));
@@ -23,7 +24,7 @@ function fixture() {
   });
   const rawWrite = vi.spyOn(mainRef, 'write');
   const entitySave = vi.spyOn(agent, 'save');
-  render(<MemoryRouter><AgentProfileEditor agent={agent} mainRef={mainRef} /></MemoryRouter>);
+  render(<MemoryRouter><TooltipProvider><AgentProfileEditor agent={agent} mainRef={mainRef} /></TooltipProvider></MemoryRouter>);
   return { update, rawWrite, entitySave, externalEdit: () => { stored = {...stored, revision: 'external', body: 'External'}; } };
 }
 

@@ -15,7 +15,7 @@ entity is what carries a directory's transportable identity.
 **What is NOT on this row: anything that churns.** No per-file state, no per-root hash, no chunk
 inventory. Those live in the store under the instance's records-data directory, because a row
 rewritten on every document edit is a diff a minute in whatever watches entities — the same
-reasoning that split ``DataSourceSpec`` from ``DataSource``. What this row holds is the
+reasoning that split ``DataDriver`` from ``DataSource``. What this row holds is the
 configuration and one verdict.
 
 **Status and health are separate axes**, as on ``DataSource``: status answers "should this be

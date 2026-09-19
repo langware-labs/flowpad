@@ -18,7 +18,7 @@ import logging
 import uuid
 from typing import Any, Optional
 
-from flow_sdk import inbox
+from flow_sdk import stream_inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
 from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.preferences import message_status_sharing_enabled
@@ -295,7 +295,7 @@ class HubWsBridge:
 
         The tombstone is an in-flight guard, not an account-scoped one: it stops a
         queued hub materializer from recreating a parent a delete just removed.
-        Logout's bulk wipe (``clear_inbox``) borrows the same guard, but logout is
+        Logout's bulk wipe (``clear_stream_inbox``) borrows the same guard, but logout is
         not delete — those conversations still exist on the hub and the next login's
         catch-up pulls them back. The tombstones are memory-only and nothing else
         clears them, so a stale one silently drops every future inbound frame for
@@ -636,14 +636,14 @@ class HubWsBridge:
 
                     # Republish the unread projection now that the row + pointer
                     # projection have settled (never on the intermediate CREATE).
-                    inbox.touch("inbound-message")
+                    stream_inbox.touch("inbound-message")
 
                     # OS-level desktop notification for an inbound message from
                     # *another* user. Emitted HERE — after the message is
-                    # persisted — not alongside the persist task: the renderer
-                    # re-derives the unread count via ``listInboxMessages`` on
-                    # receipt, so broadcasting before the row lands would count a
-                    # stale inbox and the badge/pip would never increment.
+                    # persisted — not alongside the persist task: the unread count
+                    # is recomputed from the persisted rows (``stream_inbox.touch``
+                    # above), so broadcasting before the row lands would count a
+                    # stale stream inbox and the badge/pip would never increment.
                     # Broadcast to every desktop window so a backgrounded window
                     # still fires the banner/badge/dock-bounce. Skipped for our
                     # own messages (self-sends the hub echoes back — same guard as
@@ -766,7 +766,7 @@ class HubWsBridge:
             from flow_sdk.builtin.flow_message import delivery_advances  # noqa: PLC0415
 
             # ``is_read`` / ``is_archived`` are declared ``Sharing.HUB_WRITE`` (see
-            # flow_message.py) — per-machine inbox state the hub must NOT
+            # flow_message.py) — per-machine stream inbox state the hub must NOT
             # dictate. A body-READY UPDATE fans the full FlowMessage back to
             # every participant *including the sender*, carrying the hub's
             # is_read=False; copying it here clobbered the local read state

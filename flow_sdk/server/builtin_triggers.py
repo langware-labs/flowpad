@@ -50,7 +50,9 @@ async def _toplog_filter_apply(trigger: Trigger, changes: list[ChangeEvent]) -> 
 
         st = toplog.state()
         await broadcast(
-            ToplogStateMessage(enabled=st["enabled"], filter=st["filter"]).model_dump_json()
+            ToplogStateMessage(
+                enabled=st["enabled"], filter=st["filter"], persist=st["persist"]
+            ).model_dump_json()
         )
     except Exception:
         _log.exception("toplog: failed to broadcast state after file change")
@@ -218,11 +220,12 @@ async def set_service_triggers() -> None:
     for spec in _service_trigger_specs():
         await _upsert_one(spec)
 
-    # Seed the watched toplog.json so awatch attaches cleanly on boot. The master
-    # switch is seeded from the instance setting (on in dev, off in prod); after
-    # this the file is authority. The seed write happens BEFORE fsop_watcher.start(),
-    # so no trigger fires for it — seed_file also re-derives the in-memory state so
-    # the dev/prod default takes effect immediately on first boot.
+    # Seed the watched toplog.json so awatch attaches cleanly on boot. Tracing does
+    # not survive a restart unless the file asks to `persist`: the reset clears the
+    # tags and puts the master switch back to the instance setting (on in dev, off
+    # in prod). The write happens BEFORE fsop_watcher.start(); its startup catch-up
+    # sees the new mtime and fires the broadcaster once, which only re-sends the
+    # state just written. seed_file re-derives the in-memory state itself.
     settings = get_instance_settings()
     try:
         from flow_sdk import toplog

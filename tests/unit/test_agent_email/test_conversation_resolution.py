@@ -16,8 +16,8 @@ import pytest
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.inbox.agent_runner import _conversation_id_for
-from flow_sdk.inbox.projection import channel_of, owner_of, thread_key_for
+from flow_sdk.stream_inbox.agent_runner import _conversation_id_for
+from flow_sdk.stream_inbox.projection import channel_of, owner_of, thread_key_for
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -37,7 +37,6 @@ def _item(source_id: str, thread_key: str) -> SourceItem:
     return SourceItem(
         data_source_id=source_id,
         provider="cloud_email",
-        segment_key="agent-1",
         external_id="<m1@x>",
         name="Subject",
         body="hello",

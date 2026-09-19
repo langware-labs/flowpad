@@ -11,8 +11,11 @@
  *   - listens for live changes broadcast over WS (`on_toplog_state_msg`),
  *   - toggles via the `/toplog/*` routes (the frontend can't write the file).
  *
- * `log()` writes to `console` (the frontend has no Python logging). Semantics
- * match the backend: master `enabled` switch + OR over tags.
+ * `log()` writes to `console` (the frontend has no Python logging) AND queues the
+ * line for `POST /toplog/client-log`, flushed once a second, so the backend
+ * writes it into the instance log under `toplog.client` — front and back land
+ * in one timestamped trail an agent can tail. Semantics match the backend:
+ * master `enabled` switch + OR over tags.
  */
 
 import apiClient from '../client';
@@ -20,6 +23,22 @@ import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 import type { ToplogStateMessage } from '../websocket';
 
 type Tags = string | string[];
+type ToplogState = { enabled: boolean; filter?: Record<string, boolean>; persist?: boolean };
+type ClientLine = { tags: string[]; msg: string; ts: number };
+
+/** One flush is ≤1s of lines; past this the queue drops and reports the count. */
+const MAX_QUEUED_LINES = 500;
+const FLUSH_INTERVAL_MS = 1000;
+
+function formatArg(arg: unknown): string {
+  if (typeof arg === 'string') return arg;
+  if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
+  try {
+    return JSON.stringify(arg);
+  } catch {
+    return String(arg);
+  }
+}
 
 function normalize(tags: Tags): string[] {
   return Array.isArray(tags) ? tags.map(String) : [String(tags)];
@@ -33,8 +52,12 @@ function normalize(tags: Tags): string[] {
  */
 class ToplogManager {
   private _enabled = false;
+  private _persist = false;
   private _active = new Set<string>();
   private _initialized = false;
+  private _queue: ClientLine[] = [];
+  private _dropped = 0;
+  private _flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   get enabled(): boolean {
     return this._enabled;
@@ -46,10 +69,10 @@ class ToplogManager {
   }
 
   /** Current state as the backend serializes it. */
-  state(): { enabled: boolean; filter: Record<string, boolean> } {
+  state(): { enabled: boolean; filter: Record<string, boolean>; persist: boolean } {
     const filter: Record<string, boolean> = {};
     for (const t of this._active) filter[t] = true;
-    return { enabled: this._enabled, filter };
+    return { enabled: this._enabled, filter, persist: this._persist };
   }
 
   /** Seed state from the backend and subscribe to live updates. Idempotent. */
@@ -58,10 +81,21 @@ class ToplogManager {
     this._initialized = true;
 
     const { ConnectionManager } = await import('../websocket');
-    ConnectionManager.getInstance().on('on_toplog_state_msg', (msg: ToplogStateMessage) => {
+    const connection = ConnectionManager.getInstance();
+    connection.on('on_toplog_state_msg', (msg: ToplogStateMessage) => {
       this._apply(msg);
     });
+    // A backend restart resets toplog.json (unless persisted) and broadcasts
+    // before this client is back on the socket — re-seed so the mirror doesn't
+    // keep tracing tags the backend already dropped.
+    connection.on('on_reconnected', () => {
+      void this._seed();
+    });
 
+    await this._seed();
+  }
+
+  private async _seed(): Promise<void> {
     // Wait for the hub-mode signal (this runs at init, possibly before bootstrap
     // seeds it), then decide. Hub mode: the hub backend has no `/toplog/state`
     // route (404) — skip the seed and stay off until a WS push arrives (if ever).
@@ -69,12 +103,10 @@ class ToplogManager {
     if (isHubOnly()) return;
 
     try {
-      const data = await apiClient.get<{ enabled: boolean; filter: Record<string, boolean> }>(
-        '/toplog/state',
-      );
+      const data = await apiClient.get<ToplogState>('/toplog/state');
       if (data) this._apply(data);
     } catch {
-      // Backend unreachable at init — stays off until the first WS push.
+      // Backend unreachable — stays as-is until the next WS push or reconnect.
     }
   }
 
@@ -95,14 +127,50 @@ class ToplogManager {
     if (matched.length === 0) return;
     // eslint-disable-next-line no-console
     console.log(`[toplog:${matched.join(',')}]`, ...args);
+    this._enqueue(matched, args);
+  }
+
+  /** Queue a line for the backend log; the flush timer starts on the first one. */
+  private _enqueue(tags: string[], args: unknown[]): void {
+    if (isHubOnly()) return; // the hub backend has no /toplog routes
+    if (this._queue.length >= MAX_QUEUED_LINES) {
+      this._dropped += 1;
+    } else {
+      this._queue.push({ tags, msg: args.map(formatArg).join(' '), ts: Date.now() });
+    }
+    if (this._flushTimer === null) {
+      this._flushTimer = setTimeout(() => void this.flush(), FLUSH_INTERVAL_MS);
+    }
+  }
+
+  /** Send the queued lines to `/toplog/client-log`. Best-effort: a failed POST
+   * drops the batch rather than growing the queue behind a dead backend. */
+  async flush(): Promise<void> {
+    this._flushTimer = null;
+    // Drops only happen once the queue is full, so an empty queue has none.
+    if (this._queue.length === 0) return;
+    const lines = this._queue;
+    this._queue = [];
+    if (this._dropped > 0) {
+      lines.push({
+        tags: lines[0].tags,
+        msg: `toplog client queue overflow: ${this._dropped} lines dropped`,
+        ts: Date.now(),
+      });
+    }
+    this._dropped = 0;
+    // Lines logged while this POST is in flight queue for the next tick, so a
+    // line the request path itself emits costs one batch per second, not a loop.
+    try {
+      await apiClient.post('/toplog/client-log', { lines });
+    } catch {
+      // Backend unreachable — the console copy is all this batch gets.
+    }
   }
 
   /** POST to a /toplog route and mirror the returned state locally. */
   private async _post(route: string, body: Record<string, unknown> = {}): Promise<void> {
-    const data = await apiClient.post<{ enabled: boolean; filter: Record<string, boolean> }>(
-      route,
-      body,
-    );
+    const data = await apiClient.post<ToplogState>(route, body);
     if (data) this._apply(data);
   }
 
@@ -126,8 +194,14 @@ class ToplogManager {
     await this._post('/toplog/disable');
   }
 
-  private _apply(state: { enabled: boolean; filter?: Record<string, boolean> }): void {
+  /** Keep (true) or stop keeping (false) the state across a backend restart. */
+  async persist(value = true): Promise<void> {
+    await this._post('/toplog/persist', { persist: value });
+  }
+
+  private _apply(state: ToplogState): void {
     this._enabled = !!state.enabled;
+    this._persist = !!state.persist;
     this._active = new Set(
       Object.entries(state.filter || {})
         .filter(([, v]) => !!v)

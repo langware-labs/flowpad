@@ -1,7 +1,7 @@
 """`diagnose` graph action — run the flow-diagnose skill from the UI.
 
 Same functionality as the `flow diagnose` CLI command, exposed as a **null-entity
-graph service action** (like ``inbox-list``) so the footer's Diagnose modal reaches
+graph service action** (like ``stream-inbox-search``) so the footer's Diagnose modal reaches
 it the normal way — ``dataManager.callAction(new ActionInfo('diagnose', null, null,
 'POST'))`` → ``/api/v1/graph/diagnose``. It runs ``_run_diagnose`` (the exact CLI
 runner) headless and streams the worker's narration as SSE, so the modal shows the

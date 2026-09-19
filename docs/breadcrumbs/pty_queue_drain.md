@@ -18,7 +18,7 @@ description: A prompt enqueued in PTY mode never drained at all. The turn-end se
 tag: breadcrumb.test.pty_queue_drain.rules
 sites:
   - rel_path: "tests/unit/test_agentic_process/test_prompt_queue_drain_after_pty_turn.py"
-    line: 131
+    line: 137
     note: "FAILING? the prompt queue did not drain in PTY mode - read this tag's rules before touching the turn-end edge or _last_broadcast_key"
 ```
 

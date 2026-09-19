@@ -57,6 +57,53 @@ def migrate_legacy_name(process, tabs) -> SessionNameState:
     )
 
 
+#: The retired terminal-title (OSC) source. Its titles carried no provenance and
+#: were stored as protected, locking out every later harness title.
+_RETIRED_TERMINAL_SOURCE = "claude.terminal"
+
+
+def _load_state(process, tabs) -> SessionNameState:
+    """The stored name state, upgraded from legacy fields and retired sources."""
+    previous = process.naming_state
+    state = SessionNameState.model_validate(previous) if previous is not None else migrate_legacy_name(process, tabs)
+    if state.phase is NamePhase.PROTECTED_UNKNOWN and state.source == _RETIRED_TERMINAL_SOURCE:
+        state = state.model_copy(update={"phase": NamePhase.HARNESS, "revision": state.revision + 1})
+    return bind_name_state(state, process.session_id)
+
+
+@dataclass(frozen=True)
+class _NamePlan:
+    state: SessionNameState
+    changed: bool
+    stale_tabs: tuple
+    history_changed: bool
+
+
+def _plan(
+    process,
+    tabs,
+    *,
+    user_name: str | None,
+    first_prompt: str | None,
+    observation: NameObservation | None,
+    baseline_observations: Sequence[NameObservation],
+    migration_observations: Sequence[NameObservation],
+) -> _NamePlan:
+    """Pure: the name state these inputs produce, and what it would rewrite."""
+    previous = process.naming_state
+    state = _load_state(process, tabs)
+    if state.protected and (previous is None or previous.session_id != process.session_id):
+        for baseline in migration_observations:
+            state = consume_name_observation(state, baseline)
+    for baseline in baseline_observations:
+        state = consume_name_observation(state, baseline)
+    state = reduce_name(state, user_name=user_name, first_prompt=first_prompt, observation=observation)
+    history_changed = process.name != state.title or (previous.session_id if previous else None) != process.session_id
+    changed = previous != state or process.name != state.title or process.auto_rename != (not state.protected)
+    stale_tabs = tuple(tab for tab in tabs if tab.name != state.title)
+    return _NamePlan(state, changed, stale_tabs, history_changed)
+
+
 async def reconcile_name(
     process_id: str,
     *,
@@ -73,6 +120,10 @@ async def reconcile_name(
     A user rename may include a provider snapshot captured before this call;
     its cursors are consumed atomically with the user choice, so delayed native
     manual-name records from that snapshot cannot overwrite the new name.
+
+    A reconcile that would rewrite nothing takes no write transaction: it is
+    planned on plain reads first, and only a plan with writes is re-planned
+    under the lock.
     """
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.tab import Tab, broadcast_tabs_changed
@@ -80,36 +131,39 @@ async def reconcile_name(
     if baseline_observations and user_name is None:
         raise ValueError("Name baselines require an explicit user rename")
     db = AgenticProcess._db
-    changed = tabs_changed = False
-    async with db.write_transaction():
+
+    async def load_and_plan():
         process = await db.get_by_id(str(process_id), AgenticProcess.get_type())
         if process is None:
-            return NamingResult(None)
+            return None, None
         tabs = await Tab.get_all({"target_type": process.type, "target_id": str(process.id)})
-        previous = process.naming_state
-        state = SessionNameState.model_validate(previous) if previous is not None else migrate_legacy_name(process, tabs)
-        state = bind_name_state(state, process.session_id)
-        if state.protected and (previous is None or previous.session_id != process.session_id):
-            for baseline in migration_observations:
-                state = consume_name_observation(state, baseline)
-        for baseline in baseline_observations:
-            state = consume_name_observation(state, baseline)
-        state = reduce_name(state, user_name=user_name, first_prompt=first_prompt, observation=observation)
-        history_changed = process.name != state.title or (previous.session_id if previous else None) != process.session_id
-        automatic = not state.protected
-        changed = previous != state or process.name != state.title or process.auto_rename != automatic
+        return process, _plan(process, tabs, user_name=user_name, first_prompt=first_prompt,
+                              observation=observation, baseline_observations=baseline_observations,
+                              migration_observations=migration_observations)
+
+    process, plan = await load_and_plan()
+    if process is None:
+        return NamingResult(None)
+    if not (plan.changed or plan.stale_tabs):
+        return NamingResult(process)
+
+    changed = tabs_changed = False
+    async with db.write_transaction():
+        process, plan = await load_and_plan()
+        if process is None:
+            return NamingResult(None)
+        state, changed = plan.state, plan.changed
         if changed:
             process, _ = await db.update_existing_data_fields(str(process.id), process.type, {
                 "name": state.title,
                 "naming_state": state.model_dump(mode="json"),
-                "auto_rename": automatic,
+                "auto_rename": not state.protected,
             })
         if process is None:
             return NamingResult(None)
-        for tab in tabs:
-            if tab.name != state.title:
-                _, patched = await db.update_existing_data_fields(str(tab.id), tab.type, {"name": state.title})
-                tabs_changed |= patched
+        for tab in plan.stale_tabs:
+            _, patched = await db.update_existing_data_fields(str(tab.id), tab.type, {"name": state.title})
+            tabs_changed |= patched
 
         async def publish() -> None:
             # The callback runs after the standalone OR enclosing request commit.
@@ -119,7 +173,7 @@ async def reconcile_name(
                 await durable.notify_updated()
             if tabs_changed:
                 await broadcast_tabs_changed()
-            if history_changed:
+            if plan.history_changed:
                 from flow_sdk.api.messages import BroadcastMessage
                 from flow_sdk.server.routes.websocket import broadcast
 

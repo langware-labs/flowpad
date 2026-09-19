@@ -77,11 +77,11 @@ def test_preconditions_and_verifies_ask_different_questions(spec):
 
 def test_the_installer_agent_it_names_actually_ships(spec):
     for step in spec.steps:
-        agent_md = (
+        agent_json = (
             system_projects_root() / "flowpad_assistant" / "agentic-assets"
-            / "agent" / step.process.agent / "agent.md"
+            / "agent" / step.process.agent / "agent.json"
         )
-        assert agent_md.is_file(), f"{step.id} names a missing agent: {step.process.agent}"
+        assert agent_json.is_file(), f"{step.id} names a missing agent: {step.process.agent}"
 
 
 def test_the_trust_answer_reaches_the_ui_and_is_not_the_system_flag():

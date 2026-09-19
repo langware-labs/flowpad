@@ -168,7 +168,7 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
       time on its bubble — read ``FlowMessage.occurred_at``
       (``sent_at or created_date``). A message's place is fixed when it is
       sent; no later bookkeeping may move it.
-    * RECENCY — the conversation's ``updated_date``, the inbox's "Xm ago" —
+    * RECENCY — the conversation's ``updated_date``, the stream inbox's "Xm ago" —
       reads ``FlowMessage.event_time``, which DOES include ``updated_date``,
       because a genuine edit is new activity and should float the
       conversation. ``FlowMessage.is_stale`` keeps a bare touch from
@@ -245,7 +245,7 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
     if new_updated is None:
         # No messages ⇒ no message activity ⇒ the honest recency is the birth
         # time. NEVER ``now()``: an empty conversation has not just happened, and
-        # since ``updated_date`` is the Inbox sort key, stamping the current time
+        # since ``updated_date`` is the stream inbox sort key, stamping the current time
         # here promoted every message-less conversation above genuinely recent
         # mail on each catch-up that touched it. It also never converged — a
         # fresh ``now()`` differs from the stored value every time, so the row

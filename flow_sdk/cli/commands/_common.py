@@ -206,6 +206,16 @@ def server_error(status_code: int, body: dict) -> NoReturn:
     fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", str(body.get("message") or f"HTTP {status_code}"))
 
 
+def data_source_create_path(port: int) -> str:
+    """Where a new data source is POSTed (under ``/graph/``): the working directory's project, whose
+    ``agentic-assets/data_source/`` the asset lands in; outside any project, the user scope."""
+    from flow_sdk.fs_store.path_utils import is_valid_project_cwd  # noqa: PLC0415
+
+    cwd = os.getcwd()
+    project_id = project_for_path(port, cwd, create=False) if is_valid_project_cwd(cwd, include_temp=True) else None
+    return f"project/{project_id}/data_source" if project_id else "data_source"
+
+
 def project_for_path(port: int, cwd: str, *, create: bool) -> "str | None":
     """The id of the project whose folder is ``cwd``, or ``None``.
 

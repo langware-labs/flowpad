@@ -125,9 +125,6 @@ def open_terminal(
             if command
             else f"{clean_env}{export_prefix}cd {cwd}"
         )
-        # DEBUG: dump exact terminal command for troubleshooting
-        _dbg = Path("/tmp/_open_terminal_debug.txt")
-        _dbg.write_text(inner)
         inner_escaped = inner.replace("\\", "\\\\").replace('"', '\\"')
         script = (
             'tell application "Terminal"\n'

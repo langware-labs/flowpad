@@ -1,7 +1,7 @@
 /** The bar's owner rule mirrors the backend's `owner_of`, so a row the
- *  backfill has not touched still lands in the right inbox. */
+ *  backfill has not touched still lands in the right stream inbox. */
 import { describe, expect, it } from 'vitest';
-import { ownerOf } from '@src/components/inbox-view/channel-owner';
+import { ownerOf } from '@src/components/stream-inbox-view/channel-owner';
 
 const AGENT = '22222222-2222-4222-8222-222222222222';
 

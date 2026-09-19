@@ -9,7 +9,15 @@ describe('GitWorkdir', () => {
   });
 
   it('getStatus calls git-ops/status with correct ActionInfo and returns GitStatus', async () => {
-    const statusData: GitStatus = { error: null, branch: 'main', ahead: 0, behind: 0, files: [] };
+    const statusData: GitStatus = {
+      error: null,
+      branch: 'main',
+      ahead: 0,
+      behind: 0,
+      files: [],
+      remoteUrl: null,
+      remoteWebUrl: null,
+    };
     const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(statusData as any);
 
     const result = await new GitWorkdir(WORKDIR).getStatus();

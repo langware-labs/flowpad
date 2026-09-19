@@ -66,7 +66,7 @@ describe('resolveRail — modes are strictly additive', () => {
     expect(idsFor(ViewMode.Standard)).not.toContain('data-sources');
   });
 
-  it('connections sits directly under the inbox, in every mode', () => {
+  it('connections sits directly under the stream inbox, in every mode', () => {
     // Vibe and ungated on purpose: this screen is where the first connection is
     // made, so it must not be hidden from the mode — or the state — that needs it
     // most. Adjacency is the requested placement, so it is pinned rather than
@@ -74,13 +74,13 @@ describe('resolveRail — modes are strictly additive', () => {
     for (const mode of MODE_CHAIN) {
       const ids = idsFor(mode);
       expect(ids).toContain('credentials');
-      expect(ids[ids.indexOf('credentials') - 1]).toBe('inbox');
+      expect(ids[ids.indexOf('credentials') - 1]).toBe('stream_inbox');
     }
   });
 
-  it('keeps its slot when the inbox gate drops the item above it', () => {
+  it('keeps its slot when the stream inbox gate drops the item above it', () => {
     const ids = idsFor(ViewMode.Vibe, { conversations: false });
-    expect(ids).not.toContain('inbox');
+    expect(ids).not.toContain('stream_inbox');
     expect(ids).toContain('credentials');
   });
 });
@@ -97,7 +97,7 @@ describe('resolveRail — order is the same in every mode', () => {
   it('holds when gates drop items out of the middle', () => {
     const gated = idsFor(ViewMode.Dev, { conversations: false });
     expect(isSubsequence(gated, specOrder)).toBe(true);
-    expect(gated).not.toContain('inbox');
+    expect(gated).not.toContain('stream_inbox');
     expect(gated).toContain('chats');
   });
 
@@ -105,14 +105,14 @@ describe('resolveRail — order is the same in every mode', () => {
     const top = resolveRail(ViewMode.Vibe, ALL_GATES)
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
-    expect(top).toEqual(['chats', 'inbox', 'credentials']);
+    expect(top).toEqual(['chats', 'stream_inbox', 'credentials']);
   });
 });
 
 describe('resolveRail — content gates', () => {
   it('drops gated items when their gate is unsatisfied', () => {
     const none = idsFor(ViewMode.Dev, NO_GATES);
-    expect(none).not.toContain('inbox');
+    expect(none).not.toContain('stream_inbox');
     // Ungated neighbours survive — including data-sources, which must NOT be
     // gated on "a source exists": this screen is where the first one is made.
     expect(none).toEqual(expect.arrayContaining(['chats', 'data-sources']));
@@ -120,10 +120,10 @@ describe('resolveRail — content gates', () => {
 
   it('gates only the item they name', () => {
     const convsOnly = idsFor(ViewMode.Vibe, { conversations: true });
-    expect(convsOnly).toContain('inbox');
+    expect(convsOnly).toContain('stream_inbox');
 
     const neither = idsFor(ViewMode.Vibe, NO_GATES);
-    expect(neither).not.toContain('inbox');
+    expect(neither).not.toContain('stream_inbox');
     expect(neither).toContain('chats');
   });
 

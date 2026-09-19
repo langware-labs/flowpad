@@ -7,7 +7,6 @@ import { ChevronRight, Loader2, UploadCloud } from 'lucide-react';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { errorMessage } from '@src/lib/error-message';
-import { colorForIdentityKey } from '@src/components/conversation/avatar-color';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { AgentAvatarPicker } from '@src/components/ui/agent-avatar-picker';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -19,7 +18,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Button } from '@src/components/ui/button';
 
 import { AgentPlacesColumn } from './AgentPlacesColumn';
-import { AgentChoiceField, AgentListField, AgentSelectField } from './AgentProfileFields';
+import { AgentVisibilitySection } from './AgentVisibilitySection';
+import { AgentChoiceField, AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
 import { AgentMcpField } from './AgentMcpField';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import {
@@ -90,6 +90,35 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     void loadVersion();
   }, [loadVersion, agent.updated_date]);
 
+  // Has this agent already used its once-per-project auto-launch? Local only:
+  // the mark lives on this computer, beside the project.
+  const [autoLaunched, setAutoLaunched] = useState<boolean | null>(null);
+  const [resettingLaunch, setResettingLaunch] = useState(false);
+  useEffect(() => {
+    if (hub) return setAutoLaunched(null);
+    let live = true;
+    agentRef.current
+      .autoLaunchState()
+      .then((state) => live && setAutoLaunched(state.launched))
+      .catch(() => live && setAutoLaunched(null));
+    return () => {
+      live = false;
+    };
+  }, [hub, agent.id]);
+
+  const resetAutoLaunch = useCallback(async () => {
+    setResettingLaunch(true);
+    try {
+      await agentRef.current.resetAutoLaunch();
+      setAutoLaunched(false);
+      notify.success({ title: t`Auto-launch reset`, message: t`It runs again the next time the project opens.` });
+    } catch (e) {
+      notify.error({ title: t`Could not reset auto-launch`, message: errorMessage(e, t`Reset failed.`) });
+    } finally {
+      setResettingLaunch(false);
+    }
+  }, [t]);
+
   const save = useCallback((patch: AgentDocumentPatch): Promise<boolean> => {
     const current = contentRef.current;
     for (const [key, value] of Object.entries(patch)) {
@@ -159,8 +188,6 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     }
   }, [loadVersion, t]);
 
-  const identityKey = profile.name || agent.id;
-  const ringColor = colorForIdentityKey(identityKey);
   const AgentIcon = iconForType(Agent.type);
   const avatarImageUrl =
     profile.avatar === AGENT_AVATAR_REF ? mainRef.parent.child(AGENT_AVATAR_FILE).getDownloadUrl() : null;
@@ -189,14 +216,15 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 'flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full',
                 'text-2xl text-white shadow-sm transition hover:opacity-90',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                ringColor,
               )}
             >
               <AgentAvatar
                 key={`${profile.avatar ?? 'none'}:${avatarRevision}`}
                 agent={agent}
                 imageUrl={avatarImageUrl}
-                className="h-full w-full bg-transparent text-2xl"
+                // null, not undefined: undefined would fall back to the saved row, not the draft.
+                color={profile.color ?? null}
+                className="h-full w-full text-2xl"
                 glyphClassName="h-7 w-7 text-2xl"
                 fallback={<AgentIcon className="h-7 w-7" />}
               />
@@ -209,6 +237,8 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 await save({ avatar: value });
               }}
               onImageSelected={handleAvatarImage}
+              color={profile.color}
+              onColorChange={(color) => void save({ color: color ?? undefined })}
             />
           </PopoverContent>
         </Popover>
@@ -397,6 +427,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     rows={2}
                   />
                 </div>
+                <AgentPhoneField
+                  label={t`Phone number — recorded on the agent's card, not yet used to route messages`}
+                  value={profile.phone}
+                  onCommit={(v) => void save({ phone: v })}
+                />
                 <div className="rounded-md border border-border px-3 py-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm">
@@ -427,6 +462,29 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                       </Trans>
                     </p>
                   )}
+                  {autoLaunched !== null ? (
+                    <div className="mt-2 flex items-center justify-between gap-2" data-testid="agent-auto-launch-status">
+                      <span className="text-xs text-muted-foreground">
+                        {autoLaunched ? (
+                          <Trans>Already launched in this project</Trans>
+                        ) : (
+                          <Trans>Not launched yet in this project</Trans>
+                        )}
+                      </span>
+                      {autoLaunched ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={resettingLaunch}
+                          onClick={() => void resetAutoLaunch()}
+                          data-testid="agent-auto-launch-reset"
+                        >
+                          {resettingLaunch ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                          <Trans>Reset</Trans>
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
                   <span className="text-sm">
@@ -476,6 +534,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
         <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">
           <AgentPlacesColumn agent={agent} autoLaunchPrompt={autoLaunchPrompt} pendingChanges={pending} />
+          <AgentVisibilitySection agent={agent} version={version} />
         </aside>
       </div>
     </div>

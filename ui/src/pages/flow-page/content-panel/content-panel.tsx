@@ -16,7 +16,6 @@ import { MarkdownViewer } from '@src/components/markdown-viewer';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { PreferencesView } from '@src/components/preferences-view/PreferencesView';
 import { DesktopPage } from '@src/pages/desktop/DesktopPage';
-import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 import { TasksRedirect } from '@src/components/tasks-viewer/TasksRedirect';
 import { HomeLanding } from '@src/pages/home-landing';
 import { HubHome } from '@src/pages/hub-home/HubHome';
@@ -34,8 +33,8 @@ import { CollaborationPage, LiveSessionView } from '@src/components/collaboratio
 import { CredentialsView } from '@src/components/credentials-view/CredentialsView';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
-import { InboxView } from '@src/components/inbox-view/InboxView';
-import { AgentInboxView } from '@src/components/inbox-view/AgentInboxView';
+import { StreamInboxView } from '@src/components/stream-inbox-view/StreamInboxView';
+import { AgentStreamInboxView } from '@src/components/stream-inbox-view/AgentStreamInboxView';
 import { TabbedTerminal } from '@src/components/terminal';
 import { AppDisplayViewer } from '../app-display-viewer';
 import { WebappViewer } from '@src/components/webapp-viewer';
@@ -58,7 +57,7 @@ import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 import { OrganizationPage } from '@src/components/organization/organization-page';
 import { useIsVibe } from '@src/components/view-mode';
 import { AlertTriangle } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo } from 'react';
 import { lazyWebglView } from '@src/components/graph-view/webglSupport';
 
 // Lazy-loaded: GraphView pulls in sigma.js + @sigma/node-image, which run
@@ -244,9 +243,6 @@ function ContentPanelBody({
   const showTabStrip = !windowMode && !suppressChrome;
   const hideChrome = !showTabStrip || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
 
-  // File manager filters
-  const [enabledFilters, setEnabledFilters] = useState<FilterName[]>([FilterName.HIDDEN]);
-
   // The single body switch (one place, was duplicated between the overview slot
   // and a per-viewType TabsContent ladder). Renders the surface for `vt`; only
   // the active body is mounted (matches the old radix Tabs, which did not
@@ -398,12 +394,7 @@ function ContentPanelBody({
         return <MachineOverview />;
       case ViewType.EXPLORER:
         return (
-          <ExplorerView
-            filterDefinitions={getAllFilterDefinitions()}
-            enabledFilters={enabledFilters}
-            onEnabledFiltersChange={setEnabledFilters}
-            onFileSelect={handleExplorerFileSelect}
-          />
+          <ExplorerView onFileSelect={handleExplorerFileSelect} />
         );
       // The merged Events screen. TRIGGERS / SIGNALS / CRON are aliases, not
       // redirects — every bookmarked URL keeps resolving to the same screen.
@@ -525,10 +516,10 @@ function ContentPanelBody({
         const { roomId } = DockPointer.parseProjectPointer(currentDock?.pointer);
         return roomId ? <CollaborationPage /> : <AssetsPage />;
       }
-      case ViewType.INBOX:
-        return <InboxView />;
+      case ViewType.STREAM_INBOX:
+        return <StreamInboxView />;
       case ViewType.AGENT:
-        return <AgentInboxView />;
+        return <AgentStreamInboxView />;
       case ViewType.CONVERSATION:
         return <ConversationRoute />;
       case ViewType.SPEC:

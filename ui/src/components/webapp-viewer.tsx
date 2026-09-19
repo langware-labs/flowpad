@@ -8,6 +8,7 @@ import { useAgentContext } from '@src/contexts/agent-context';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer, useDockNavigation } from '@src/navigation';
+import { requestTabClose } from '@src/tabs/tab-close-request';
 import { useProcessWebApp } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks';
 import { ViewType, WebappSubview } from '@sdk';
@@ -75,6 +76,10 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
   const handleOpenInNewTab = useCallback(() => {
     if (src) openExternal(src);
   }, [src]);
+
+  // The warning's "Open in browser" leaves nothing to look at here: close this tab.
+  const tabHash = currentDock?.tabHash;
+  const handleOpenedInBrowser = useCallback(() => void requestTabClose(tabHash), [tabHash]);
 
   const { copied, copy } = useCopied();
   const handleCopyUrl = useCallback(() => {
@@ -202,7 +207,12 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
         {/* Main content area - iframe or placeholder */}
         <div className={`relative w-full ${showPanel ? 'h-[60%]' : 'h-full'}`}>
           {webUrl ? (
-            <WebUrlDisplay ref={iframeRef} url={webUrl} testId="web-url-frame" />
+            <WebUrlDisplay
+              ref={iframeRef}
+              url={webUrl}
+              testId="web-url-frame"
+              onOpenedInBrowser={handleOpenedInBrowser}
+            />
           ) : hasWebApp ? (
             <WebappDisplay
               ref={iframeRef}

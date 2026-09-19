@@ -25,6 +25,7 @@ from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
 
+from flow_sdk import toplog
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.assets.asset import Asset
@@ -53,13 +54,24 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     latch_spawn_failure,
     resolve_worker_language,
 )
+from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
 from flow_sdk.builtin.agentic_process.process_assets import (
     PreparedProcessAssets,
     ProcessAssets,
     SystemInstructionAssets,
 )
-from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
 from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
+from flow_sdk.builtin.agentic_process.display_context import (
+    DISPLAY_CONTEXT_KEY,
+    DisplayContextTooLarge,
+    NothingShown,
+    describe_display_context,
+    same_display_target,
+    take_prompt_context,
+    with_display_context,
+    without_stale_display_context,
+)
+from flow_sdk.builtin.agentic_process import transcript_cache
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
     is_process_startable,
@@ -474,37 +486,11 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
 # back-compat readers (standard-mode viewer). Capped; consecutive identical
 # targets refresh the timestamp instead of duplicating.
 DISPLAY_STACK_CAP = 50
-# Every field that can distinguish one display target from another. A kind that
-# adds its own address fields MUST list them here: the keys a payload does not
-# carry are ``None`` on both sides and compare equal, so an omission silently
-# collapses that whole kind into a single "same target" — the DOCK kind (whose
-# address is view_type/pointer/page/options and none of typeid/type/id/path/port)
-# was doing exactly that, refreshing one stack entry instead of appending each
-# screen the agent showed.
-_DISPLAY_TARGET_KEYS = (
-    "kind",
-    "typeid",
-    "type",
-    "id",
-    "path",
-    "port",
-    "view_type",
-    "pointer",
-    "page",
-    "options",
-)
-
-
-def _same_display_target(a: dict, b: dict) -> bool:
-    """Two display payloads point at the same thing (ignoring ``shown_at``)."""
-    return all(a.get(k) == b.get(k) for k in _DISPLAY_TARGET_KEYS)
-
-
 def _append_display_entry(stack: list[dict], payload: dict, shown_at: str) -> list[dict]:
     """Append ``payload`` (stamped ``shown_at``) to ``stack``; a consecutive
     identical target just refreshes its timestamp. Capped to the newest N."""
     entry = {**payload, "shown_at": shown_at}
-    if stack and isinstance(stack[-1], dict) and _same_display_target(stack[-1], payload):
+    if stack and isinstance(stack[-1], dict) and same_display_target(stack[-1], payload):
         stack = [*stack[:-1], entry]
     else:
         stack = [*stack, entry]
@@ -1168,7 +1154,14 @@ class AgenticProcess(Entity):
         (e.g. two browser tabs) can't both run recovery from stale process
         snapshots and double-spawn Claude.
         """
+        t_lock = time.monotonic()
         async with _OPEN_LOCKS[self.id]:
+            toplog.log(
+                "agentic_process.load",
+                "open lock acquired process=%s wait_ms=%.0f",
+                self.id,
+                (time.monotonic() - t_lock) * 1000,
+            )
             fresh = await AgenticProcess.get_by_id(self.id)
             if fresh is None and not self.exist_in_db:
                 await self.save()
@@ -1254,6 +1247,7 @@ class AgenticProcess(Entity):
         # ``_requeue_failed_launch(launched_head)`` can't NameError (masking
         # the real failure) when the exception fires before the pop section.
         launched_head: dict | None = None
+        t0 = time.monotonic()
         try:
             # If we're stuck in STOPPING with a dead worker (orphan from a
             # crashed close()/exit()), reset to STOPPED before doing anything
@@ -1338,6 +1332,12 @@ class AgenticProcess(Entity):
                         reattach_changed = True
                     if reattach_changed:
                         await self.save()
+                    toplog.log(
+                        "agentic_process.load",
+                        "open reattached live worker process=%s ms=%.0f",
+                        self.id,
+                        (time.monotonic() - t0) * 1000,
+                    )
                     return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
                 # Gate failed (PTY dead, worker dead, or both). Drop the stale
                 # shell so the relaunch path below sees a clean slate — without
@@ -1401,6 +1401,12 @@ class AgenticProcess(Entity):
             )
 
             await apply_api_model_to_options(cmd, self)
+            toplog.log(
+                "agentic_process.load",
+                "open launch options ready (project + process assets + api model) process=%s ms=%.0f",
+                self.id,
+                (time.monotonic() - t0) * 1000,
+            )
             # Inject the WebSocket connection ID so the worker can navigate its own tab explicitly
             if self.connection_id:
                 cmd.add_env("FLOWPAD_CONNECTION_ID", self.connection_id)
@@ -1417,6 +1423,13 @@ class AgenticProcess(Entity):
             # concurrent revalidation observes the in-flight start instead
             # of issuing a second open.
             await self.save()
+            toplog.log(
+                "agentic_process.load",
+                "open shell bound + STARTING saved process=%s shell=%s ms=%.0f",
+                self.id,
+                shell.id,
+                (time.monotonic() - t0) * 1000,
+            )
             on_exit = self._make_pty_exit_callback()
             worker_is_alive = False
             execution_info = None
@@ -1498,6 +1511,13 @@ class AgenticProcess(Entity):
                 if _shell_compute_is_local(shell):
                     await apply_worker_secret_env(spawn_env, self)
                 spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
+                toplog.log(
+                    "agentic_process.load",
+                    "open PTY spawned process=%s spawned=%s ms=%.0f",
+                    self.id,
+                    spawned,
+                    (time.monotonic() - t0) * 1000,
+                )
                 if not spawned:
                     worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
@@ -1553,6 +1573,14 @@ class AgenticProcess(Entity):
                 except Exception:
                     logger.debug("recovered-event emit skipped", exc_info=True)
 
+            toplog.log(
+                "agentic_process.load",
+                "open done process=%s recovery=%s resume=%s ms=%.0f",
+                self.id,
+                is_recovery,
+                is_resume,
+                (time.monotonic() - t0) * 1000,
+            )
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
         except asyncio.CancelledError:
@@ -1565,6 +1593,13 @@ class AgenticProcess(Entity):
             raise
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} start_pty error: {e}")
+            toplog.log(
+                "agentic_process.load",
+                "open failed process=%s ms=%.0f error=%s",
+                self.id,
+                (time.monotonic() - t0) * 1000,
+                e,
+            )
             # A failed terminal open must not strand the entity in its
             # optimistic PTY intent. Best-effort stop any partially created
             # transport, then restore the prior shell/transport so an existing
@@ -2809,17 +2844,20 @@ class AgenticProcess(Entity):
             if latest is not None and latest is not self:
                 latest_ctx = latest.context_data if isinstance(latest.context_data, dict) else {}
                 base = _union_display_stacks(base, latest_ctx.get("display_stack") or [])
+                # This save is authoritative for the page's display context too:
+                # carry the freshest copy rather than the one loaded with self.
+                context = {k: v for k, v in context.items() if k != DISPLAY_CONTEXT_KEY}
+                if DISPLAY_CONTEXT_KEY in latest_ctx:
+                    context[DISPLAY_CONTEXT_KEY] = latest_ctx[DISPLAY_CONTEXT_KEY]
         stack = _append_display_entry(base, payload, shown_at)
-        self.context_data = {**context, "display_stack": stack, "last_shown": payload}
-        # This is the authoritative display write — the save() guard must trust
-        # this in-memory stack, not mirror the (older) DB over it.
-        self._set_display_authoritative(True)
+        # A context speaks only for the page it was written on.
+        self.context_data = without_stale_display_context(
+            {**context, "display_stack": stack, "last_shown": payload}
+        )
         try:
-            await self.save()
+            await self._save_display_authoritative()
         except Exception:
             logger.warning("on_show: display persist failed", exc_info=True)
-        finally:
-            self._set_display_authoritative(False)
         await self.emit_entity_event("on_show", payload)
         # Auto-file the shown target into the Auto/<type>/item favorites tree.
         # Best-effort: a bookmark failure must never break `flow show`.
@@ -4650,8 +4688,11 @@ class AgenticProcess(Entity):
 
     @property
     def transcript_path(self) -> Path | None:
-        descriptor = self.transcript
-        return descriptor.path if descriptor else None
+        try:
+            return transcript_cache.transcript_path(self)
+        except Exception:
+            logger.debug("AgenticProcess %s transcript_path: driver lookup failed", self.id, exc_info=True)
+            return None
 
     def _load_transcript(self, descriptor=None) -> "AgentTranscriptFile | None":
         """Worker-agnostic transcript loader.
@@ -4690,6 +4731,18 @@ class AgenticProcess(Entity):
         except Exception:
             logger.debug("AgenticProcess %s _load_transcript: parse failed", self.id, exc_info=True)
             return None
+
+    async def adopt_discovered_session(self) -> str | None:
+        """Discover this process's native session through its driver and adopt it.
+
+        For a harness that mints its id after launch. Returns the adopted id, or
+        None when the transcript is not discoverable yet.
+        """
+        descriptor = await asyncio.to_thread(lambda: self.transcript)
+        if descriptor is None or not descriptor.session_id:
+            return None
+        await self._persist_transcript_session_id(descriptor)
+        return self.session_id if self.session_id == descriptor.session_id else None
 
     async def _persist_transcript_session_id(self, descriptor) -> None:
         """Adopt a session id discovered in the on-disk transcript (PTY resume
@@ -5107,7 +5160,29 @@ class AgenticProcess(Entity):
             await self.emit_flow_data(flow_data.model_dump(mode="python"))
         except Exception:
             logger.exception("process hook FlowData emission failed for %s", self.id)
-        return await self.hooks.deliver(data)
+        answer = await self.hooks.deliver(data)
+        if answer is None and event is HookEventType.USER_PROMPT_SUBMIT:
+            answer = await self._display_context_for_prompt()
+        return answer
+
+    async def _display_context_for_prompt(self):
+        """Built-in ``UserPromptSubmit`` answer: hand the agent a changed display context.
+
+        Runs after registered callbacks, so an explicit answer wins. Marks the
+        context delivered (an authoritative display save) so the same page state
+        is not re-sent on every turn.
+        """
+        from flow_sdk.builtin.hooks.types import ContextResponse  # noqa: PLC0415
+
+        text, recorded = take_prompt_context(self.context_data)
+        if text is None:
+            return None
+        self.context_data = recorded
+        try:
+            await self._save_display_authoritative()
+        except Exception:
+            logger.warning("display context: delivered-mark persist failed", exc_info=True)
+        return ContextResponse(additional_context=text)
 
     @action.post(action_name="set-hook")
     async def _http_set_hook(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -5435,8 +5510,8 @@ class AgenticProcess(Entity):
                     if self.adopt_worker_session(sid):
                         await self.save()
                     # A preassigned id is unchanged at init, but this is still
-                    # the first evidence of its native session. Bind naming
-                    # before the transcript/title file exists too.
+                    # the first evidence of its native session: reconcile once.
+                    # Later titles arrive as transcript events.
                     await self.reconcile_name()
                 except Exception:
                     logger.warning("%s: session adoption failed", log_prefix, exc_info=True)
@@ -5575,6 +5650,19 @@ class AgenticProcess(Entity):
     def _is_display_authoritative(self) -> bool:
         return bool(object.__getattribute__(self, "__dict__").get("_display_authoritative", False))
 
+    async def _save_display_authoritative(self) -> None:
+        """Save with the in-memory display state trusted over the DB's.
+
+        For the writers that own the display keys: ``on_show`` (stack, pin,
+        context binding), ``set-display-context`` and the prompt hook's
+        delivered mark.
+        """
+        self._set_display_authoritative(True)
+        try:
+            await self.save()
+        finally:
+            self._set_display_authoritative(False)
+
     async def _preserve_latest_display_pin(self) -> None:
         """Keep the display state (``context_data.display_stack`` + ``last_shown``)
         from being lost — or corrupted — by a stale whole-row save.
@@ -5602,8 +5690,9 @@ class AgenticProcess(Entity):
         # Drop any stale in-memory display, then re-attach the DB's authoritative
         # copy — so this save can neither clobber a newer show nor resurrect an
         # entry ``on_show`` already deduped away.
-        rebuilt = {k: v for k, v in current_context.items() if k not in ("display_stack", "last_shown")}
-        for k in ("display_stack", "last_shown"):
+        display_keys = ("display_stack", "last_shown", DISPLAY_CONTEXT_KEY)
+        rebuilt = {k: v for k, v in current_context.items() if k not in display_keys}
+        for k in display_keys:
             if k in latest_context:
                 rebuilt[k] = latest_context[k]
         self.context_data = rebuilt
@@ -5880,6 +5969,7 @@ class AgenticProcess(Entity):
         if delete_chats and not self.hub_route:  # a route row owns no transcript here
             self._delete_session_transcript()
         result = await super().delete()
+        transcript_cache.invalidate(self.id)
         clear_process_hook_callbacks(str(self.id))
         # The dedup key outlives the instance by design (module-level, keyed by
         # process id), so the row has to be dropped explicitly here or it leaks
@@ -6186,12 +6276,25 @@ class AgenticProcess(Entity):
                 return None
         if self.status == ProcessStatus.NEW.value:
             return None
-        if self.status == ProcessStatus.STOPPED.value:
-            discovered = self._discover_status_from_transcript()
-            return discovered if discovered and is_worker_terminal(discovered) else None
         if self.status == ProcessStatus.FAILED.value:
             return WorkerStatus.ERROR
-        return self._discover_status_from_transcript()
+        t0 = time.monotonic()
+        discovered = self._discover_status_from_transcript()
+        took_ms = (time.monotonic() - t0) * 1000
+        # Synchronous file discovery on the event loop, run for EVERY process a
+        # response serializes: a list of N processes stalls the loop N times this.
+        if took_ms >= 25:
+            toplog.log(
+                "agentic_process.load",
+                "worker status discovery slow ms=%.0f process=%s driver=%s status=%s",
+                took_ms,
+                self.id,
+                self.driver.name,
+                self.status,
+            )
+        if self.status == ProcessStatus.STOPPED.value:
+            return discovered if discovered and is_worker_terminal(discovered) else None
+        return discovered
 
     def _worker_status_detail(self, worker_status: "WorkerStatus | None") -> "StatusDetail | None":
         """The CLI's own error entry — its sentence and its entry id — when the
@@ -6206,7 +6309,7 @@ class AgenticProcess(Entity):
         try:
             from flow_sdk.transcript_analyzer.worker_status import tail_status_detail
 
-            path = self.driver.transcript_path(self)
+            path = transcript_cache.transcript_path(self)
             return tail_status_detail(path) if path else None
         except Exception:
             logger.debug("worker_status_detail lookup failed", exc_info=True)
@@ -6239,7 +6342,7 @@ class AgenticProcess(Entity):
         """
         if getattr(self, "_post_tool_idle_complete", False):
             return WorkerStatus.COMPLETE
-        path = self.driver.transcript_path(self)
+        path = transcript_cache.transcript_path(self)
         if path is None:
             # No transcript on disk yet. Report the raw boot state (INITIALIZING)
             # only while the lifecycle is STARTING; a RUNNING worker with no
@@ -6648,6 +6751,35 @@ class AgenticProcess(Entity):
         self.context_data = {**data, "context_summary": summary}
         return summary
 
+    @action.post(action_name="set-display-context")
+    async def set_display_context_action(self, data: dict | None = None) -> "ApiResponse":
+        """The shown page reports its live state (TS ``process.setDisplayContext``).
+
+        Bound to the target on display now; quiet — no turn starts. See
+        ``display_context.py`` for how the agent receives it.
+        """
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not isinstance(data, dict):
+            return ApiFailResponse(message="data must be a JSON object", status_code=400)
+        try:
+            updated = with_display_context(self.context_data, data)
+        except NothingShown as e:
+            return ApiFailResponse(message=str(e), status_code=409)
+        except DisplayContextTooLarge as e:
+            return ApiFailResponse(message=str(e), status_code=413)
+        if updated is not None:  # None: the page reported what is already stored
+            self.context_data = updated
+            await self._save_display_authoritative()
+        return ApiSuccessResponse(data=describe_display_context(self.context_data))
+
+    @action.get(action_name="display-context")
+    async def display_context_action(self) -> "ApiResponse":
+        """``{fresh, target, version, updated_at, data}`` — ``flow context display``."""
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=describe_display_context(self.context_data))
+
     @action.post(action_name="set-graph-context")
     async def set_graph_context_action(self, graph_context_id: str) -> "ApiResponse":
         """HTTP face of :meth:`set_graph_context`. Pre-launch only."""
@@ -6761,20 +6893,6 @@ class AgenticProcess(Entity):
                                        "event_name": event.value, "event_data": data,
                                        "session_id": self.session_id})
 
-    @action.post(action_name="observe-title")
-    async def observe_title_action(self):
-        """Accept raw terminal evidence; the backend adapter decides its meaning."""
-        from .naming.runtime import observe_terminal_title
-
-        body = await _read_json_body()
-        if isinstance(body, ApiFailResponse):
-            return body
-        title = body.get("title")
-        if not isinstance(title, str):
-            return ApiFailResponse(message="title must be a string")
-        current = await observe_terminal_title(self, title, body.get("session_id"))
-        return ApiSuccessResponse(data={"name": current.name if current else None})
-
     async def stamp_default_name(self) -> bool:
         """Compatibility entry point for shared name reconciliation on lifecycle edges."""
         before = self.name
@@ -6790,9 +6908,6 @@ class AgenticProcess(Entity):
 
         Returns True on success, False if already terminated or on error.
         """
-        from .naming.runtime import stop_name_observation
-
-        stop_name_observation(str(self.id))
         logger.info(f"AgenticProcess {self.id}: close")
 
         # End the process's activity here, not only when a terminal worker status happens
@@ -6860,6 +6975,7 @@ class AgenticProcess(Entity):
         """
         if self.hub_route:
             return self._remote_refusal("open")
+        toplog.log("agentic_process.load", "open request received process=%s", self.id)
         request_info = get_current_request_info()
         # Capture the WebSocket connection ID so the worker can target this tab explicitly
         if request_info and request_info.request_connection_id:
@@ -7177,9 +7293,6 @@ class AgenticProcess(Entity):
         carries the headless ``_turn_in_flight`` short-circuit and visible-PTY
         liveness reconciliation that ``driver.tail_status`` alone misses.
         """
-        from .naming.runtime import request_name_refresh
-
-        request_name_refresh(str(self.id))
         pending = getattr(self, "_pending_entries", None)
         if pending is None:
             object.__setattr__(self, "_pending_entries", [])
@@ -7204,6 +7317,14 @@ class AgenticProcess(Entity):
                     name=f"ap-flush-{self.id[:8]}",
                 ),
             )
+
+    async def _apply_transcript_names(self, durable: "AgenticProcess", entries: list) -> None:
+        from .naming.runtime import apply_transcript_names
+
+        try:
+            await apply_transcript_names(durable, entries)
+        except Exception:
+            logger.debug("AgenticProcess %s: transcript naming failed", self.id, exc_info=True)
 
     async def _process_transcript_entries(self, entries: list) -> None:
         """Per-flush entry side effects: live reindex + plan/file events.
@@ -7345,6 +7466,7 @@ class AgenticProcess(Entity):
         directly from the on-disk transcript, watermarked by entry count so each
         turn only reindexes its OWN new file-ops (not every file the session
         ever touched)."""
+        t0 = time.monotonic()
         tf = self._load_transcript()
         if tf is None:
             return []
@@ -7356,7 +7478,14 @@ class AgenticProcess(Entity):
         object.__setattr__(self, "_reindex_entry_watermark", len(entries))
         # entries[wm:] clamps to [] when wm > len (a truncated/rotated transcript)
         # — safer than re-scanning all, which would re-reindex the whole history.
-        return list(_iter_touched_paths(entries[wm:]))
+        touched = list(_iter_touched_paths(entries[wm:]))
+        # Whole-transcript parse on the event loop at every turn end — a known
+        # source of terminal-wide stalls.
+        toplog.log(
+            "pty", "turn_end_transcript_parse process=%s entries=%s watermark=%s touched=%s ms=%.0f",
+            self.id, len(entries), wm, len(touched), (time.monotonic() - t0) * 1000,
+        )
+        return touched
 
     @property
     def _last_broadcast_key(self) -> _BroadcastKey | None:
@@ -7403,10 +7532,15 @@ class AgenticProcess(Entity):
             await asyncio.sleep(self._DEBOUNCE_SECONDS)
 
             durable = await AgenticProcess.get_by_id(str(self.id))
+            entries = list(getattr(self, "_pending_entries", []))
+            # A name belongs to the durable row, so it moves in any lifecycle
+            # state (starting, or after the worker exited); only entry
+            # processing below is gated on RUNNING.
+            if durable is not None:
+                await self._apply_transcript_names(durable, entries)
             if durable is None or durable.status != ProcessStatus.RUNNING.value or durable.pty_mode != self.pty_mode:
                 return
 
-            entries = list(getattr(self, "_pending_entries", []))
             object.__setattr__(self, "_pending_entries", [])
             await self._process_transcript_entries(entries)
 

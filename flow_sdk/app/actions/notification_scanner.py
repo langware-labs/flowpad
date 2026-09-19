@@ -297,13 +297,13 @@ async def _sync_conversation(task: Task, task_dir: Path) -> None:
     try:
         import asyncio as _asyncio
 
-        from flow_sdk.app.actions.flow_message_action import handle_inbox_fetch
+        from flow_sdk.app.actions.flow_message_action import handle_stream_inbox_fetch
         local_user = await User.get_one({"uname": "local"})
         owner_typeid = local_user.typeid if local_user else None
         if owner_typeid is not None:
-            _asyncio.ensure_future(handle_inbox_fetch(str(owner_typeid)))
+            _asyncio.ensure_future(handle_stream_inbox_fetch(str(owner_typeid)))
     except Exception as e:
-        logger.warning(f"notification_scanner: schedule inbox-fetch failed (non-fatal): {e}")
+        logger.warning(f"notification_scanner: schedule stream-inbox-fetch failed (non-fatal): {e}")
 
     try:
         # Sniffer EVENT — never CRUD. As SyncOperation.UPDATE this reached the

@@ -58,8 +58,8 @@ of last-writer-wins: the hub re-stamps `updated_date` on bare touches (a body
 re-materialize, an unchanged re-emit), so a strictly-newer hub clock is
 confirmed against an actual content delta — it serializes local vs. merged
 candidate (excluding `_STALE_IGNORE_FIELDS`) and treats byte-identical payloads
-as **not** stale. This stops a pure touch from dragging the conversation's inbox
-recency forward.
+as **not** stale. This stops a pure touch from dragging the conversation's stream
+inbox recency forward.
 
 ### FlowMessageKind
 
@@ -74,26 +74,25 @@ recency forward.
 
 ## 2. Attachments
 
-An `Attachment` (`flow_sdk/builtin/flow_message.py:202`) is a small BaseModel: an
+An `Attachment` (`flow_sdk/builtin/flow_message.py:353`) is a small BaseModel: an
 `attachment_type` plus a single `data` string whose meaning depends on the type.
-`AttachmentType` (`flow_sdk/builtin/flow_message.py:18`) enumerates five:
+`AttachmentType` (`flow_sdk/builtin/flow_message.py:33`) enumerates four:
 
 ```
 AttachmentType   data is interpreted as                              body?
 --------------   ---------------------------------------------       -----
-TYPE_ID          "type-id" — ref to a LOCAL entity; pack_bundle      yes
+TYPE_ID          "type_id" — ref to a LOCAL entity; pack_bundle      yes
                  serializes it into the bundle's attachment subtree,
                  or records a git transfer declaration in git mode
 FILE             path relative to the .flowmsg VFS root              yes
-                 (stored at data/<filename>, FILE_VFS_PREFIX)        (:124)
-REPO             full repo path; the uuid5 is derived from it        no
+                 (stored at data/<filename>, FILE_VFS_PREFIX)        (:172)
 URL              a URL                                               no
 PROMPT           inline prompt TEXT, or VFS subpath prompt/<file>    inline=no
-                 (PROMPT_FILE_VFS_PREFIX, :125)                      file=yes
+                 (PROMPT_FILE_VFS_PREFIX, :173)                      file=yes
 ```
 
 So `data` is overloaded by type: a local entity reference (`TYPE_ID`), a VFS
-path under `data/` (`FILE`), a repo path that *derives* its uuid5 (`REPO`), a raw
+path under `data/` (`FILE`), a raw
 URL (`URL`), or — for `PROMPT` — either the literal prompt text (inline, no body)
 or a `prompt/<filename>` subpath (file-backed, needs body).
 
@@ -129,7 +128,7 @@ out when counting/copying user-meaningful attachments.
 
 A message "has a body" iff at least one attachment needs packed bytes:
 `has_body()` (`flow_sdk/builtin/flow_message.py:470`) returns True for `FILE`,
-`TYPE_ID`, or a `PROMPT`-with-file; URL / REPO / inline-PROMPT are body-free. The
+`TYPE_ID`, or a `PROMPT`-with-file; URL / inline-PROMPT are body-free. The
 body itself is a single `.flowmsg` zip named `BODY_FILENAME = "body.flowmsg"`
 (`flow_sdk/builtin/flow_message.py:112`), stored on the hub at
 `flow_message/<id>/fs/<BODY_FILENAME>`.
@@ -138,7 +137,7 @@ body itself is a single `.flowmsg` zip named `BODY_FILENAME = "body.flowmsg"`
 **hub-enforced**:
 
 ```
-            (text-only / URL / REPO / inline-PROMPT)
+            (text-only / URL / inline-PROMPT)
         ┌───────────────────────────────────────────────┐
         │                                                │
         ▼                                                │
@@ -229,7 +228,7 @@ mints its proposed bundle id through `TypeInfo` after the path exists.
 `body_status == READY` — receivers must wait for the hub's body_status UPDATE
 first. It then reuses the standard `unpack_bundle` path, so every attachment kind
 (FILE, PROMPT-file, TYPE_ID, file-backed records) restores **identically** to the
-receive-on-inbox flow; file-backed assets land in the conversation's mapped
+receive-in-stream-inbox flow; file-backed assets land in the conversation's mapped
 project. In git mode this same path performs the git lifecycle first and then
 indexes from the checkout; there is no bundle-to-project copy phase for the
 git-backed bytes. It propagates `FlowMessageExistsError` (collision; re-invoke with
@@ -435,4 +434,4 @@ the hub: share → accept → download → auto-installed MA + received row).
 See `./hub-fanout-and-loader.md` for the fan-out mechanics behind the
 `set_body_status` and `mark_received` UPDATEs, `./sharing-and-sync.md` for
 `clone_for_forward` provenance and bundle packaging, and
-`./conversation-model.md` for how `message_ids` projects these rows into an inbox.
+`./conversation-model.md` for how `message_ids` projects these rows into a stream inbox.

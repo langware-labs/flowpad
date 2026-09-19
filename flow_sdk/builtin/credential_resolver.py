@@ -37,24 +37,24 @@ from flow_sdk.schema.data_spec.credential_contract import (
 )
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.credential_spec import CredentialSpec
+    from flow_sdk.builtin.secret_pack import SecretPack
     from flow_sdk.builtin.project import Project
 
 logger = logging.getLogger(__name__)
 
-CredentialPairs = list[tuple["CredentialSpec", CredentialScope]]
+CredentialPairs = list[tuple["SecretPack", CredentialScope]]
 
 
 @dataclass(frozen=True)
 class DeclaredVar:
     env_var: str
-    spec: "CredentialSpec"
+    spec: "SecretPack"
     scope: CredentialScope
 
 
 async def credentials_in_scope(project: Optional["Project"]) -> CredentialPairs:
     """The credentials a process in ``project`` sees: user first, then project."""
-    from flow_sdk.builtin.credential_spec import CredentialSpec  # noqa: PLC0415
+    from flow_sdk.builtin.secret_pack import SecretPack  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
     user = user_scope()
@@ -66,7 +66,7 @@ async def credentials_in_scope(project: Optional["Project"]) -> CredentialPairs:
 
     users: CredentialPairs = []
     projects: CredentialPairs = []
-    for spec in await CredentialSpec.get_all(QueryFilter(match=match)):
+    for spec in await SecretPack.get_all(QueryFilter(match=match)):
         name = spec_scope_name(spec)
         if name == SCOPE_USER:
             users.append((spec, user))

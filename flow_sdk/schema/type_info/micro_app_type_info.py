@@ -6,7 +6,7 @@ new discovery code — including one nested INSIDE another asset's
 walker recurses, and the enclosure rule makes the containing asset its parent.
 
 ``family="webapp"`` rather than the type name, for the reason
-``data_source_spec_type_info`` gives for ``family="data_source"``: the folder a
+``data_driver_type_info`` gives for ``family="data_driver"``: the folder a
 human reads should be named for the thing, not for the internal distinction
 between the delivery row and the app.
 

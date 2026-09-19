@@ -11,7 +11,7 @@ The current implementation is not an `AgenticProcessor` child model. Processes a
 
 ### Two independent axes: transport vs visibility
 
-A process is described by **two orthogonal booleans**, not one mode selector. Older text in this file (and some field docstrings) treated `visible` as *the* mode selector and said "routing stays `headless == !visible`" — that is stale. The **transport** the worker runs over is chosen by `pty_mode`; `visible` only answers "is this shown as a terminal tab." Every execution router in the code keys on `pty_mode`, never on `visible` (`agentic_process.py:1824`, `:2210`, `:1843`, `:3843`; `load-process.ts:199`; `InteractiveTerminal.tsx:166`).
+A process is described by **two orthogonal booleans**, not one mode selector. Older text in this file (and some field docstrings) treated `visible` as *the* mode selector and said "routing stays `headless == !visible`" — that is stale. The **transport** the worker runs over is chosen by `pty_mode`; `visible` only answers "is this shown as a terminal tab." Every execution router in the code keys on `pty_mode`, never on `visible` (`AgenticProcess.prompt()` and the `prompt` action `_http_prompt()` in `flow_sdk/builtin/agentic_process/agentic_process.py`; `get_worker_mode()` in `status_predicates.py`).
 
 | Axis                   | Field      | `true`                                                    | `false`                                                                                         |
 | ---------------------- | ---------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -65,7 +65,7 @@ The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you c
 | -------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `status`                                                       | `ProcessStatus` string | Stored container lifecycle: `new`, `starting`, `running`, `stopping`, `stopped`, `failed`.                                                                                                                                                                                        |
 | `worker_status`                                                | `WorkerStatus` string  | Computed on serialization from the worker transcript; not stored as an entity field.                                                                                                                                                                                              |
-| `ready_for_input`                                              | `bool`                 | Computed on serialization by `is_ready_for_input()`.                                                                                                                                                                                                                              |
+| `ready_for_input`                                              | `bool`                 | Computed on serialization by `is_ready_from_busy()`.                                                                                                                                                                                                                              |
 | `process_type`                                                 | `ProcessKind \| None`  | Usage discriminator: `chat`, `execution`, `analysis`, `conversation`, or `wizard`. It does not choose the transport; `wizard` is a short-lived popup assistant completed by a typed result event.                                                                                 |
 | `session_id`                                                   | `str \| None`          | Persistent worker session/conversation ID. For Claude this is the Claude session UUID and JSONL transcript ID.                                                                                                                                                                    |
 | `pty_mode`                                                     | `bool`                 | **Transport intent** (persisted, default `true`). `true` → interactive PTY; `false` → headless JSON-stream. This — not `visible` — is what every execution router keys on. Seeds `visible` at launch and is kept durable across reload so a chat vs terminal choice survives.     |
@@ -155,7 +155,7 @@ Backend routing:
 POST /api/v1/graph/agentic_process/<id>/execute
   -> AgenticProcess._http_execute()
   -> AgenticProcess.prompt()
-  -> pty_mode is false        # NOT `visible` — see prompt() docstring, agentic_process.py:1806
+  -> pty_mode is false        # NOT `visible` — see prompt() docstring, agentic_process/agentic_process.py:3026
   -> process.driver.headless_prompt(process, instruction)
 ```
 
@@ -164,7 +164,7 @@ There is also a streaming HTTP prompt action:
 ```text
 POST /api/v1/graph/agentic_process/<id>/prompt
   body: { "message": "..." }
-  -> print-mode path routes on pty_mode=false (agentic_process.py:2210)
+  -> print-mode path routes on pty_mode=false (_http_prompt, agentic_process/agentic_process.py:3480)
   -> streams FlowData XML over text/event-stream
 ```
 
@@ -389,22 +389,26 @@ Worker status sets are mirrored between Python and TypeScript:
 `ready_for_input` is computed by `flow_sdk/builtin/agentic_process/status_predicates.py`:
 
 ```text
-process.status == "running"
-AND worker_status in {"idle", "complete", "interrupted"}
+not busy                                              # is_turn_busy(process, worker_status)
+AND (
+      process.status == "running"
+   OR (process.status == "new"     AND pty_mode is false)                 # fresh headless
+   OR (process.status == "stopped" AND pty_mode is false AND session_id)  # headless-idle
+)
 ```
 
-If no worker status can be discovered and `session_id` is empty, the process is treated as ready. If `session_id` exists but no transcript is available yet, it is treated as busy/initializing.
+`busy` (`is_turn_busy`) is true when the per-process prompt lock is held, a print-mode worker is registered, a turn is marked in flight, or — PTY transport only — the raw `worker_status` is a mid-turn activity state. `is_ready_for_input(process)` computes `busy` itself; callers that already hold it (the serializer, `get_status`) call `is_ready_from_busy(status, busy, pty_mode=..., session_id=...)`.
 
 ### WorkerMode
 
-`WorkerMode` is not stored. `get_worker_mode()` derives it from **`visible`** (`status_predicates.py:60`):
+`WorkerMode` is not stored. `get_worker_mode()` derives it from the transport intent **`pty_mode`** (`status_predicates.py:80`; TS `getWorkerMode()` in `agentic-types.ts`):
 
 ```text
-visible=true  -> INTERACTIVE
-visible=false -> CLI
+pty_mode=true  -> INTERACTIVE
+pty_mode=false -> CLI
 ```
 
-> ⚠️ **`WorkerMode`** **is a display projection, not the transport.** It is derived from `visible`, whereas the actual execution transport is `pty_mode`. In the lock-stepped common case they agree, but in the decoupled quadrants they can disagree — e.g. a hidden PTY session (`visible=false`, `pty_mode=true`) reports `WorkerMode.CLI` while its worker is still a live PTY. Never route execution on `WorkerMode`; route on `pty_mode`. This visible-vs-pty\_mode split is a candidate for consolidation (see the arch note in the return report).
+> ⚠️ **`WorkerMode`** **is derived from `pty_mode`, not `visible`.** A hidden PTY session (`visible=false`, `pty_mode=true`) reports `WorkerMode.INTERACTIVE`. `visible` only decides whether a terminal tab is shown. (The TS `isPtyTransport()` falls back to `visible` only when the wire carries no `pty_mode` at all.)
 
 Python: `flow_sdk/builtin/agentic_process/status_predicates.py`
 TypeScript: `ts_sdk/src/process/agentic-types.ts`
@@ -421,15 +425,20 @@ worker_status = process.driver.tail_status(path)
 Serialization injects:
 
 ```python
-d["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
-d["ready_for_input"] = is_ready_for_input(self, computed)
+computed = self.fetch_worker_status()
+data["worker_status"] = str(computed) if computed else None
+busy = is_turn_busy(self, computed)
+data["busy"] = busy
+data["ready_for_input"] = is_ready_from_busy(
+    self.status, busy, pty_mode=self.pty_mode, session_id=self.session_id
+)
 ```
 
 Claude status comes from `flow_sdk/fs_records/agent_status.py` and the Claude JSONL tail. Examples:
 
 | Transcript signal                        | WorkerStatus                                                                                    |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Missing transcript                       | `initializing` when a path is known; otherwise no computed status and API falls back to `idle`. |
+| Missing transcript                       | `initializing` when a path is known; otherwise no computed status and the API sends `worker_status: null`. |
 | `last-prompt` after assistant completion | `complete`                                                                                      |
 | assistant `stop_reason=end_turn`         | `complete`                                                                                      |
 | assistant `stop_reason=stop_sequence`    | `error`                                                                                         |
@@ -456,7 +465,7 @@ interface AgenticContext {
   envVars?: Record<string, string>;
   model?: string;
   maxThinkingTokens?: number;
-  permissionMode?: 'bypassPermissions' | 'askUser';
+  permissionMode?: 'bypassPermissions' | 'askUser' | 'plan' | 'acceptEdits';
   projectId?: string;
   resumeSessionId?: string;
   forkSession?: boolean;
@@ -465,9 +474,13 @@ interface AgenticContext {
   debug?: boolean;
   worktree?: boolean;
   additionalDirs?: string[];
-  targetTypeIdStr?: string;
+  loadFlowpadAssistant?: boolean;
+  sharedContextEntities?: string[];
+  targetVfsPath?: string;
   outputFormat?: string;
+  workerType?: 'claude_code' | 'codex' | 'copilot' | 'opencode';
   processType?: ProcessKind;
+  contextData?: Record<string, unknown>;
 }
 ```
 
@@ -483,9 +496,13 @@ Serialization mapping:
 | `forkSession`       | `fork_session`        |
 | `agentsJson`        | `agents_json`         |
 | `additionalDirs`    | `additional_dirs`     |
-| `targetTypeIdStr`   | `target_typeid_str`   |
+| `loadFlowpadAssistant` | `load_flowpad_assistant` |
+| `sharedContextEntities` | `shared_context_entities` |
+| `targetVfsPath`     | `target_typeid_str`   |
 | `outputFormat`      | `output_format`       |
+| `workerType`        | `worker_type`         |
 | `processType`       | `process_type`        |
+| `contextData`       | spread into the top level of the body |
 
 `ComputeNode.createProcess` receives this serialized context. Backend `scan_actions._scan_create_process()` stores process-level fields such as `workdir`, `project_id`, and `target_typeid_str`; moves CLI-related fields into `ClaudeAgentOptions`/`cli_config`; and leaves remaining context in `context_data`.
 

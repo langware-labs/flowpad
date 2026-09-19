@@ -42,6 +42,7 @@ def register_builtin_kinds() -> None:
     SchemaRegistry.register_kind("fs_ref", FSRef)
     import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
     import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
+    import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``
     import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
     import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
@@ -49,6 +50,8 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
     import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
+    import flow_sdk.schema.data_spec.message_sender_spec  # noqa: F401  — registers ``message.sender``
+    import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
     import flow_sdk.schema.data_spec.project_cleanup_spec  # noqa: F401  — registers ``project.cleanup`` and friends
     import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
     import flow_sdk.schema.data_spec.rag_spec  # noqa: F401  — registers ``rag.chunk`` / ``rag.hit``
@@ -66,6 +69,6 @@ def register_builtin_kinds() -> None:
 
 
 def _load_source_value_kinds() -> None:
-    from flow_sdk.ingest.source_registry import load_source_value_kinds  # noqa: PLC0415
+    from flow_sdk.ingest.driver_registry import load_driver_value_kinds  # noqa: PLC0415
 
-    load_source_value_kinds()
+    load_driver_value_kinds()

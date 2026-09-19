@@ -32,7 +32,7 @@ const RENAME_BOB = hubSource('rename.bob.test.ts');
 const PAIRED_HELPERS = hubSource('_matrix.ts');
 const ROOT_CONFIG = repoSource('ui/vitest.config.ts');
 const PAIRED_RUNNER = repoSource('scripts/run_hub_paired.sh');
-const INBOX_VIEW = repoSource('ui/src/components/inbox-view/InboxView.tsx');
+const STREAM_INBOX_VIEW = repoSource('ui/src/components/stream-inbox-view/StreamInboxView.tsx');
 
 const TWO_INSTANCE_FILES = [
   'asset_share_index_matrix.test.ts',
@@ -264,14 +264,14 @@ describe('hub launched-instance isolation source policy', () => {
     expect(BROWSER_HELPERS).not.toContain('accept-invitation-button');
   });
 
-  it('keeps full-history inbox reconciliation behind the explicit refresh action', () => {
-    expect(INBOX_VIEW).not.toMatch(/useEffect\(\(\) => \{\s*void fetchConversations\(\)/);
-    expect(INBOX_VIEW).toContain('const handleRefresh = useCallback(async () => {');
+  it('keeps full-history stream inbox reconciliation behind the explicit refresh action', () => {
+    expect(STREAM_INBOX_VIEW).not.toMatch(/useEffect\(\(\) => \{\s*void fetchConversations\(\)/);
+    expect(STREAM_INBOX_VIEW).toContain('const handleRefresh = useCallback(async () => {');
     // The call is scoped per agent now (`fetchConversations(agentId)`); what this
     // guards is WHERE it happens — inside the explicit handler, never a mount
     // effect — so match the call, not its argument list.
-    expect(INBOX_VIEW).toContain('await fetchConversations(');
-    expect(INBOX_VIEW).toContain('onClick={() => void handleRefresh()}');
+    expect(STREAM_INBOX_VIEW).toContain('await fetchConversations(');
+    expect(STREAM_INBOX_VIEW).toContain('onClick={() => void handleRefresh()}');
   });
 
   it('opens installed matrix assets through the live URL-first review action', () => {

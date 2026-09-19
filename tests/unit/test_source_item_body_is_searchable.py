@@ -27,13 +27,12 @@ from flow_sdk.sources import CloudOrigin
 def _item(**kw) -> SourceItem:
     """A SourceItem carrying the natural key the ingestor resolves rows by."""
     data_source_id = kw.pop("data_source_id", "ds-test")
-    segment_key = kw.pop("segment_key", "stream-test")
+    namespace = kw.pop("namespace", "stream-test")
     external_id = kw.pop("external_id", uuid.uuid4().hex)
     return SourceItem(
         data_source_id=data_source_id,
-        segment_key=segment_key,
         external_id=external_id,
-        origin=CloudOrigin(kind="rss", namespace=segment_key, key=external_id),
+        origin=CloudOrigin(kind="rss", namespace=namespace, key=external_id),
         kind="content.feed.item",
         provider="rss",
         **kw,

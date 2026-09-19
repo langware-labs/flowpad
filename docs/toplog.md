@@ -56,8 +56,15 @@ if (toplog.isOn('nav')) toplog.log('nav', heavyTrace());
 ```
 
 Frontend `log()` writes to `console` (the frontend has no Python logging), prefixed
-`[toplog:render]`. Because the frontend can't write the filesystem, `on/off/enable/disable`
-round-trip through the backend REST routes; the resulting state is mirrored back.
+`[toplog:render]`, **and** queues the line for the backend: once a second the queued lines are
+posted to `/api/v1/toplog/client-log`, which writes them into the instance log under the
+`toplog.client` logger. Front- and backend lines therefore land in one timestamped file an agent can
+tail (`grep toplog ~/.flow/instances/<name>/logs/*.log`). The backend writes only lines whose tags
+are active *there*; the queue is capped at 500 lines per flush and reports what it dropped.
+
+Because the frontend can't write the filesystem, `on/off/enable/disable/persist` round-trip through
+the backend REST routes; the resulting state is mirrored back. After a WebSocket reconnect (e.g. a
+backend restart) the frontend re-seeds its mirror from `GET /toplog/state`.
 
 > Note (JS): arguments are evaluated before `log()` is called. For expensive payloads, guard with
 > `toplog.isOn(...)` rather than passing the payload directly.
@@ -67,21 +74,32 @@ round-trip through the backend REST routes; the resulting state is mirrored back
 The single source of truth is the per-instance file `~/.flow/instances/<name>/toplog.json`:
 
 ```json
-{ "enabled": true, "filter": { "pty": true, "sync": true } }
+{ "enabled": true, "filter": { "pty": true, "sync": true }, "persist": true }
 ```
 
 - **`enabled`** — the master switch. When `false`, every `log()` is a no-op regardless of tags.
 - **`filter`** — `tag → bool`. A tag is *on* when present and truthy. **Everything is off by
   default** (empty filter).
+- **`persist`** — optional. Absent/false means the state does **not** survive a backend restart.
 
 You can edit this file by hand; the change is picked up live (see the watcher below).
 
-### Initial value (`toplog_enabled` setting)
+### Restart resets tracing (unless `persist`)
 
-The master switch is seeded **once on first boot** from the `toplog_enabled` instance setting
-(`flow_sdk/instance_settings/base_settings.py`), which defaults **ON in dev mode, OFF in prod**.
-After the file exists, the file is authority and the setting is ignored — runtime
-`enable()/disable()` mutate the file.
+Tracing is a per-debug-session state, so on every backend boot `seed_file()` resets the file to
+`{"enabled": <toplog_enabled>, "filter": {}}` — no tags, master switch back to the
+`toplog_enabled` instance setting (`flow_sdk/instance_settings/base_settings.py`: **ON for the `dev`
+instance, OFF everywhere else**). While the backend runs, the file is authority and runtime
+`enable()/disable()/on()/off()` mutate it.
+
+To keep a trace across a restart — recovery and restart bugs — set `persist`:
+
+```python
+toplog.persist()        # the next boot keeps enabled + filter as they are
+toplog.persist(False)   # back to reset-on-boot
+```
+
+`persist` is sticky until cleared, so clear it when the investigation ends.
 
 ## Architecture
 
@@ -143,12 +161,14 @@ turn after an idle gap, and the recovery turn ~30s behind it would clobber a ses
 | REST routes (`/api/v1/toplog/*`) | `flow_sdk/server/routes/toplog.py` |
 | Frontend service | `ts_sdk/src/services/toplog.ts` |
 | Frontend WS plumbing | `ts_sdk/src/websocket.ts` (`toplog_state_msg`) |
+| `pty` tag log points (catalog: which line answers which symptom) | `.claude/skills/toplog/tags.md` → `### pty` |
+| Tag catalog + tracing skill | `.claude/skills/toplog/` (`tags.md`, `modes/run.md`) |
 | Tests | `tests/unit/test_toplog/test_toplog.py`, `ui/tests/unit/toplog.test.ts` |
 
 ## REST API
 
 All routes return the standard `{status, data}` envelope; `data` is the current
-`{enabled, filter}` state.
+`{enabled, filter, persist}` state (except `client-log`, which returns `{written}`).
 
 | Method | Path | Body | Effect |
 | --- | --- | --- | --- |
@@ -157,6 +177,8 @@ All routes return the standard `{status, data}` envelope; `data` is the current
 | `POST` | `/api/v1/toplog/off`     | `{"tags": ["pty"]}` | turn tags off |
 | `POST` | `/api/v1/toplog/enable`  | — | master switch on |
 | `POST` | `/api/v1/toplog/disable` | — | master switch off |
+| `POST` | `/api/v1/toplog/persist` | `{"persist": true}` | keep (or stop keeping) the state across a restart |
+| `POST` | `/api/v1/toplog/client-log` | `{"lines": [{"tags": ["pty"], "msg": "…", "ts": 1726…}]}` | write frontend lines into the instance log (`toplog.client`) |
 
 ## Limitations
 
@@ -165,3 +187,5 @@ All routes return the standard `{status, data}` envelope; `data` is the current
   watcher. A worker derives its state once at module import (spawn time); toggle tags *before*
   spawning a worker if you need them traced.
 - **On/off only — no per-tag log levels.** Everything emits at `INFO` under the `toplog` logger.
+- **Frontend forwarding is best-effort.** A failed `client-log` POST drops that batch (the console
+  copy remains); hub-only frontends don't forward.

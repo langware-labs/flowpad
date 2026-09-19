@@ -21,6 +21,17 @@ flow show file <path.mcp.html>
   -> ui/message sends the submitted data back to the same agent
 ```
 
+A page that must keep the agent aware of live state (not just submit once) can
+use the Flowpad SDK from inside the sandbox — the host provides the globals:
+
+```js
+const sdk = await import(globalThis.__FLOWPAD_API_URL__ + '/sdk/flowpad-sdk.js');
+await sdk.initSdk();
+const proc = await sdk.dataManager.getByTypeId(new sdk.TypeId('agentic_process', globalThis.__FLOWPAD_PROCESS_ID__));
+await proc.setDisplayContext({ step: 2, answer: '...' }); // quiet; the agent sees it on its next turn
+await proc.enqueue('The user asked for help.', 'page');   // wakes the agent when it matters
+```
+
 Do not ask the user to open `ui://...` resource URIs or sandbox URLs. The only
 presentation command is `flow show file <absolute-path-to-file.mcp.html>`. The
 browser URL remains the normal Flowpad process dock URL; it is not the MCP UI

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.ingest.source_registry import SHIPPED_ROOT
+from flow_sdk.ingest.driver_registry import SHIPPED_ROOT
 from tests.api._source_matrix import NAMES, RestDriver, run_case
 
 pytestmark = pytest.mark.asyncio

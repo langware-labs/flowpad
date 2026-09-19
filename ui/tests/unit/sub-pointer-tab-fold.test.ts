@@ -4,7 +4,7 @@
  * Two views carry sub-state in the PATH rather than in options: a conversation's
  * selected message (`conversation/<id>/message/<mid>`) and an app's internal
  * route (`apps/<uname>/<routerPath>`). Both are documented, deep-linkable URLs,
- * so the sub-state cannot move to options the way `forInbox`'s already has —
+ * so the sub-state cannot move to options the way `forStreamInbox`'s already has —
  * instead `foldsSubPointer` folds it out of TAB IDENTITY only.
  *
  * Without the fold, `tabHash` named a key no chip has: the strip lit nothing

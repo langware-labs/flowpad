@@ -23,6 +23,10 @@ export interface GitStatus {
   ahead: number;
   behind: number;
   files: GitStatusFile[];
+  /** Fetch URL of the branch's remote (origin without an upstream); credentials stripped. */
+  remoteUrl: string | null;
+  /** https browser form of `remoteUrl`, null when the remote isn't a web host. */
+  remoteWebUrl: string | null;
 }
 
 export interface GitFileDiff {
@@ -122,9 +126,13 @@ export class GitWorkdir {
   // Read probes
   // ------------------------------------------------------------------
 
-  /** Full git status (branch, ahead/behind, per-file staged/insertions/deletions). */
-  async getStatus(): Promise<GitStatus> {
-    return this._call<GitStatus>('status');
+  /**
+   * Full git status (branch, ahead/behind, per-file staged flag). Per-file
+   * insertions/deletions are filled only with `lineCounts: true` — they cost a
+   * worktree-wide numstat pass, so only a surface that shows them asks.
+   */
+  async getStatus(options: { lineCounts?: boolean } = {}): Promise<GitStatus> {
+    return this._call<GitStatus>('status', options.lineCounts ? { lineCounts: 'true' } : {});
   }
 
   /** Repo-relative paths touched by commits ahead of @{u} (empty when no upstream). */

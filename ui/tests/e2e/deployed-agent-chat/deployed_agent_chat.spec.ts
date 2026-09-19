@@ -52,7 +52,7 @@ test.beforeAll(async () => {
   expect(warm.ok, 'the placement can be used from this backend').toBe(true);
 });
 
-/** The agent PROFILE (asset editor), not `/dock/agent/<id>` — that route is the agent's inbox. */
+/** The agent PROFILE (asset editor), not `/dock/agent/<id>/stream_inbox` — that route is the agent's stream inbox. */
 async function openDeployments(page: import('@playwright/test').Page) {
   await page.goto(`/dock/assets/editor/agent/typeid/agent-${AGENT_ID}`);
   await page.getByRole('tab', { name: 'Deploy' }).or(page.getByText('Deploy', { exact: true })).first().click();

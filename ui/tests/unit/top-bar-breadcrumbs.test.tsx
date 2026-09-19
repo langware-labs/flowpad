@@ -108,6 +108,31 @@ describe('useEntityBreadcrumbs', () => {
     expect(result.current.crumbs.some((c) => c.label === 'STALE')).toBe(false);
   });
 
+  it('addresses a file shown in a session display as project › process › file', async () => {
+    const PROCESS_ID = '66666666-6666-4666-8666-666666666666';
+    vi.spyOn(Tab, 'resolveDockTarget').mockReturnValue(deferred<any>().promise);
+    vi.spyOn(dataManager, 'getByTypeId').mockImplementation(async (typeId: any) =>
+      String(typeId) === `agentic_process-${PROCESS_ID}` ? ({ displayName: 'Neti session' } as never) : (null as never),
+    );
+    const hosted = {
+      pointer: 'vfs/compute_node-@local/course/index.html',
+      tabHash: 'tab-1',
+      targetTypeId: null,
+      viewType: 'editor',
+      options: {},
+      hostProcessId: `agentic_process-${PROCESS_ID}`,
+      resourceVfsPath: { filename: 'index.html', machinePath: '/course/index.html' },
+    } as never;
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(hosted));
+
+    // The process segment is there on the first frame, before its name loads.
+    expect(result.current.crumbs.map((c) => c.kind)).toEqual(['project', 'ancestor', 'current']);
+    await waitFor(() => expect(result.current.crumbs[1].label).toBe('Neti session'));
+    expect(result.current.crumbs[1].pointer?.toUrl()).toContain(`agentic_process-${PROCESS_ID}`);
+    expect(result.current.crumbs[2].label).toBe('index.html');
+  });
+
   it('uses the context entity for an instant label when it is the same thing', () => {
     ctx.activeEntityTypeId = DOC;
     ctx.activeEntity = { displayName: 'Design notes' };

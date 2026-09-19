@@ -13,7 +13,8 @@ import { Agent, DataSource, type SourceStatus } from '@sdk';
 import type { TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { useAllocateAgentInbox } from '@src/hooks/use-allocate-agent-inbox';
+import { useAllocateAgentMailbox } from '@src/hooks/use-allocate-agent-mailbox';
+import { useContext as useDataContext } from '@src/hooks/useContext';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import {
@@ -32,6 +33,8 @@ import {
   accountKeyFor,
   buildConfig,
   emptyDraft,
+  fieldRules,
+  fieldValue,
   pickedFrom,
   pickedIn,
   specFields,
@@ -44,7 +47,7 @@ import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 import { useSourceSpecs } from './use-source-specs';
-import { FieldType, type DataSourceChoice, type DataSourceSpec, type SpecConfigField } from '@sdk';
+import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
 
 /**
  * The switch's boolean → a lifecycle status.
@@ -58,37 +61,12 @@ function statusFor(enabled: boolean, current: SourceStatus): SourceStatus {
   return current === 'disabled' ? 'new' : current;
 }
 
-/** Config value → the string its input shows. Arrays rejoin the way they split. */
-function fieldValue(key: string, field: SpecConfigField, config: Record<string, unknown>): string {
-  const raw = config?.[key];
-  if (raw === undefined || raw === null) return '';
-  // A choosable field's entries may be `{id, name}`. Joining those directly is how a
-  // Slack source configured with named channels rendered as `[object Object]` — and then
-  // SAVED that back over the real ids.
-  //
-  // IDs, not names, even though a name is friendlier: this string is only ever shown in
-  // the TYPED fallback, and whatever sits there is what gets stored the moment someone
-  // edits it. Showing "Marketing" in a box whose next keystroke saves "Marketing" as a
-  // drive id is a silent corruption. The name belongs to the picker, which reads `picked`.
-  if (field.choices) {
-    const picked = pickedFrom(key, field, config);
-    return picked.map((c) => c.id).join(field.type === FieldType.LINES ? '\n' : ', ');
-  }
-  if (Array.isArray(raw)) return raw.join(field.type === FieldType.LINES ? '\n' : ', ');
-  // Only scalars round-trip through an input. A nested object in config means
-  // the driver grew a shape this form does not model — show nothing rather than
-  // "[object Object]", which would be saved back verbatim and corrupt it.
-  if (typeof raw === 'string') return raw;
-  if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);
-  return '';
-}
-
 /** The one config-shaped field that is NOT stored in `config` — it is the
  *  entity's own `inbound_allowed_senders`. Named once here so the seed, the
  *  submit-time extraction and the pre-fill all agree on the reserved key. */
 const ALLOWED_SENDERS_KEY = 'allowed_senders';
 
-function draftFrom(source: DataSource, spec?: DataSourceSpec): SourceDraft {
+function draftFrom(source: DataSource, spec?: DataDriver): SourceDraft {
   const fields: Record<string, string> = {};
   const picked: Record<string, DataSourceChoice[]> = {};
   for (const [key, field] of specFields(spec)) {
@@ -130,24 +108,26 @@ export function DataSourceDialog({
   owner?: TypeId | null;
   /** Narrow the provider tiles — the channels line offers only specs that
    *  `sends`. An empty result renders as a sentence, not a blank picker. */
-  only?: (spec: DataSourceSpec) => boolean;
+  only?: (spec: DataDriver) => boolean;
 }) {
   const { t } = useLingui();
   // Whatever is INSTALLED, not a hardcoded list: a source added as an asset
   // shows up here with no frontend release.
   const { specs: installed, specFor } = useSourceSpecs();
-  const allocateInbox = useAllocateAgentInbox();
+  const allocateMailbox = useAllocateAgentMailbox();
+  // A source is an asset: it is saved into the project open here (an agent's into the agent's project).
+  const { project } = useDataContext();
   const ownerAgentId = owner?.type === Agent.type ? owner.id : null;
   // An unlisted provider is never offered (a vendor the cloud stands in front of), and one
   // the cloud provisions is an agent's own account — offered only when adding for an agent.
   const offered = installed.filter((s) => s.listed && (!s.provisioned || ownerAgentId));
   const specs = only ? offered.filter(only) : offered;
-  const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft(''));
+  const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft());
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Seed the form once per opening, keyed on WHAT is being edited. `specs` /
-  // `specFor` change identity on every live `DataSourceSpec` emission, and
+  // `specFor` change identity on every live `DataDriver` emission, and
   // depending on them re-seeded the draft mid-typing — discarding whatever had
   // been entered. The spec is read through a ref so the seed still sees the
   // current one without subscribing the effect to it.
@@ -156,7 +136,7 @@ export function DataSourceDialog({
   useEffect(() => {
     if (!open) return;
     const { specFor: lookup, specs: available } = seedRef.current;
-    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft(available[0]?.name ?? ''));
+    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft(available[0]));
     setShowAdvanced(false);
   }, [open, editing]);
 
@@ -182,7 +162,7 @@ export function DataSourceDialog({
       if (provisioned) {
         // The one provisioned account today is the agent's mailbox; allocating wires
         // the local source itself.
-        if (await allocateInbox(new Agent({ id: provisioned }))) {
+        if (await allocateMailbox(new Agent({ id: provisioned }))) {
           notify.success({ title: t`${spec?.title} is ready` });
           onOpenChange(false);
         }
@@ -236,7 +216,7 @@ export function DataSourceDialog({
           owner: owner ? owner.toString() : null,
           inbound_allowed_senders: allowedSenders,
         });
-        await source.save();
+        await source.save(project?.typeId && !ownerAgentId ? [project.typeId] : []);
         notify.success({ title: t`Added ${source.name}` });
       }
       onOpenChange(false);
@@ -275,7 +255,7 @@ export function DataSourceDialog({
       <div key={key} className="space-y-1">
         <Label htmlFor={`ds-${key}`}>
           {field.label || key}
-          {field.required && <span className="ms-1 text-destructive">*</span>}
+          {fieldRules(spec, key).required && <span className="ms-1 text-destructive">*</span>}
         </Label>
         {/* A choosable field hands its own input over as the fallback, so the picker and
             the text box are one decision made in one place rather than two branches here
@@ -304,7 +284,7 @@ export function DataSourceDialog({
         <DialogHeader>
           <DialogTitle>{editing ? t`Edit data source` : t`Add a data source`}</DialogTitle>
           <DialogDescription>
-            <Trans>A source is one remote account or feed set. The poller syncs it on the heartbeat.</Trans>
+            <Trans>A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -329,7 +309,7 @@ export function DataSourceDialog({
                         data-testid={`provider-${p.name}`}
                         Icon={Glyph}
                         label={label}
-                        onClick={() => setDraft(emptyDraft(p.name ?? ''))}
+                        onClick={() => setDraft(emptyDraft(p))}
                         className={cn(
                           draft.provider === p.name && 'border-primary bg-accent text-foreground ring-1 ring-primary',
                         )}

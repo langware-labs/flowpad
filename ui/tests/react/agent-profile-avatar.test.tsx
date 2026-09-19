@@ -43,6 +43,10 @@ vi.mock('@src/components/assets/editor/agent-profile/AgentMcpField', () => ({
   AgentMcpField: () => null,
 }));
 
+vi.mock('@src/components/assets/editor/agent-profile/AgentVisibilitySection', () => ({
+  AgentVisibilitySection: () => null,
+}));
+
 const AGENT_ID = 'ebed6648-ad32-4611-a63e-b12bb38b984b';
 const PNG_1X1 = Uint8Array.from(
   Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),

@@ -6,7 +6,7 @@
  * (``typeof [] === 'object'``) and recursively wrapped it in a nested
  * ``$AND``/``$EQ`` tree — so ``$IN ['id', [a,b,c]]`` serialized to a bogus
  * shape and the backend ``ids`` filter silently matched everything. The batch
- * inbox/feed hydration depends on this array reaching the backend intact.
+ * stream inbox/feed hydration depends on this array reaching the backend intact.
  */
 import { describe, expect, it } from 'vitest';
 import { ExpressionNode, QueryFilter, QueryRequest, FlowMessage } from '@sdk';

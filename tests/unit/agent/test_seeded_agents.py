@@ -1,7 +1,7 @@
 """The shipped internal agents must parse, and must be cheap.
 
 Every flowpad-internal launch runs through one of these, so a malformed
-frontmatter or a missing model would show up as a mysterious expensive launch
+agent.json or a missing model would show up as a mysterious expensive launch
 rather than a parse error. Pin both here, where it is a fast unit test.
 """
 from pathlib import Path
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.config import flowpad_assistant_project_root
-from tests.unit.agent._parse import parse_agent_markdown
+from tests.unit.agent._parse import parse_agent_document
 
 AGENT_ROOT = Path(flowpad_assistant_project_root()) / "agentic-assets" / "agent"
 
@@ -21,7 +21,7 @@ EXPECTED = {
 
 
 def _agent_files():
-    return sorted(AGENT_ROOT.glob("*/agent.md"))
+    return sorted(AGENT_ROOT.glob("*/agent.json"))
 
 
 #: Agents that have EARNED a bigger model, with the reason. Adding a row here
@@ -46,7 +46,9 @@ def test_every_internal_launch_has_a_shipped_agent():
 
 @pytest.mark.parametrize("path", _agent_files(), ids=lambda p: p.parent.name)
 def test_shipped_agent_parses_and_is_cheap(path: Path):
-    parsed = parse_agent_markdown(path.read_text(encoding="utf-8"), path.parent.name)
+    prompt = path.parent / "system_prompt.md"
+    body = prompt.read_text(encoding="utf-8") if prompt.is_file() else ""
+    parsed = parse_agent_document(path.read_text(encoding="utf-8"), path.parent.name, body)
     assert parsed["name"] == path.parent.name
     assert parsed.get("description"), "an agent with no description is unreadable in project home"
     assert parsed["system_prompt"], "an agent with no system prompt has no identity"

@@ -39,7 +39,7 @@ function isSelectedSourceView(conversationId?: string, agentId?: string): boolea
       );
     }
     const agent = DockPointer.parseAgentPointer(dock?.pointer);
-    return dock?.viewType === ViewType.AGENT && agent.view === 'inbox' && agent.agentId === agentId;
+    return dock?.viewType === ViewType.AGENT && agent.view === 'stream_inbox' && agent.agentId === agentId;
   } catch {
     return false;
   }

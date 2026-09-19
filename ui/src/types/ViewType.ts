@@ -121,7 +121,7 @@ export interface ViewerMeta {
    * failure is silent (tabs merge, nothing errors), so check this before setting
    * the flag on a new view.
    *
-   * Prefer OPTIONS for new sub-state (`forInbox` puts `conversation`/`message`
+   * Prefer OPTIONS for new sub-state (`forStreamInbox` puts `conversation`/`message`
    * there, and options are excluded from `tabHash` for free). Use this flag when
    * the sub-state is already a documented, deep-linkable PATH that cannot move
    * without breaking existing links.
@@ -498,8 +498,8 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
-  [ViewType.INBOX]: {
-    title: msg`Inbox`,
+  [ViewType.STREAM_INBOX]: {
+    title: msg`Stream Inbox`,
     iconName: 'Mail',
     tabLocation: 'dedicated',
     canAddAsTab: false,

@@ -4,7 +4,7 @@
 only while messages arrive in the order they were sent — which stops being true
 the moment anything backfills. An ingested mailbox hands its history back
 newest-first, so the LAST pointer is the OLDEST mail, and reading ``refs[-1]``
-corrupts the unread count, the inbox preview and the archive auto-revive
+corrupts the unread count, the stream inbox preview and the archive auto-revive
 comparison at once.
 """
 from __future__ import annotations
@@ -85,7 +85,7 @@ class TestArchiveRevive:
 
 class TestUnreadUsesTheSameLatest:
     def test_a_backfill_counts_the_newest_message_not_the_last(self):
-        from flow_sdk.inbox import count_unread
+        from flow_sdk.stream_inbox import count_unread
 
         conv = _conv(("newest", _iso(10)), ("oldest", _iso(0)))
         messages = {
@@ -102,5 +102,7 @@ class TestUnreadUsesTheSameLatest:
 def _fm(mid: str, *, is_read: bool):
     from types import SimpleNamespace
 
-    return SimpleNamespace(id=mid, is_read=is_read, sender_id="gmail:x@y.z",
+    from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+
+    return SimpleNamespace(id=mid, is_read=is_read, sender=MessageSender.external("gmail", "x@y.z"),
                            is_draft=False)

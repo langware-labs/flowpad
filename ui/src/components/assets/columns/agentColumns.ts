@@ -14,7 +14,7 @@ function subAgentLocationCell(r: SearchRow): React.ReactNode {
 
 // Keyed on `subagent`: this cell reads `/.claude/agents/`, the provider-owned
 // path a SubAgent lives at. The launchable `agent` type is a different asset
-// (agentic-assets/agent/<name>/agent.md) and gets its own columns below.
+// (agentic-assets/agent/<name>/agent.json) and gets its own columns below.
 registerColumns('subagent', [
   { key: 'location', header: 'Location', render: (r: SearchRow) => subAgentLocationCell(r) },
 ]);

@@ -27,7 +27,7 @@ async def test_project_must_already_be_published_before_git_mutation(tmp_path, m
         id=mint_uuid(),
         name="Q",
         project_id=project.id,
-        asset_ref=str(tmp_path / "agent" / "q" / "agent.md"),
+        asset_ref=str(tmp_path / "agent" / "q"),
     )
     monkeypatch.setattr("flow_sdk.builtin.asset_publishing.owning_project", AsyncMock(return_value=project))
     resolve = AsyncMock()
@@ -51,8 +51,8 @@ async def test_publish_sends_project_id_only_and_updates_only_asset_cache(tmp_pa
     )
     agent_dir = tmp_path / "agentic-assets" / "agent" / "q"
     agent_dir.mkdir(parents=True)
-    agent_ref = agent_dir / "agent.md"
-    agent_ref.write_text("Q\n", encoding="utf-8")
+    agent_ref = agent_dir / "agent.json"
+    agent_ref.write_text('{"type": "agent", "name": "Q"}\n', encoding="utf-8")
     agent = Agent(
         id=mint_uuid(),
         name="Q",
@@ -81,7 +81,7 @@ async def test_publish_sends_project_id_only_and_updates_only_asset_cache(tmp_pa
         fields={"name": "Q", "title": "QA manager"},
         layout=PortableAssetLayout(
             asset_rel_root="agentic-assets/agent/q",
-            main_ref="agent.md",
+            main_ref="agent.json",
         ),
     )
     folder = SimpleNamespace(root=tmp_path)

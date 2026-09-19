@@ -11,7 +11,8 @@ import pytest
 from flow_sdk.builtin.data_source import DataSource
 from tests.utils.snippets import doc, fences, run_fence
 
-pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+# Doc snippets name their sources for a reader, so each runs in its own user scope.
+pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope")]  # do not increase timeout without approval
 
 
 async def test_the_gmail_snippet_runs_and_keeps_the_password_out_of_the_row(monkeypatch):
