@@ -70,10 +70,46 @@ def test_the_seam_starts_at_registration_not_at_prompt_entry():
     swallowed that call the patch target would vanish and the slot-leak test
     would stop testing anything.
     """
+    # This half stays textual ON PURPOSE. It is a NEGATIVE boundary assertion —
+    # "this call must not migrate here" — and a negative has no behavioural
+    # form: you cannot observe a function that is never called. It is also
+    # edit-tolerant, since it matches a call anywhere in the module rather than
+    # the shape of one method.
     source = inspect.getsource(headless_turn)
     # A CALL, not the docstring mention explaining why it stays in the driver.
     assert "apply_worker_secret_env(" not in source
-    assert "register_prompt_worker(process.id, worker)" in source
+
+
+@pytest.mark.asyncio
+async def test_the_runner_owns_the_slot_for_the_whole_turn():
+    """The positive half of the seam, behaviourally: the runner registers the
+    worker itself, and the slot is held for the turn's duration.
+
+    Replaces an assertion on the literal text
+    ``register_prompt_worker(process.id, worker)``, which pinned a call's
+    spelling rather than its effect.
+    """
+    calls: list[str] = []
+    process = _FakeProcess(calls)
+    seen_during_turn: list[bool] = []
+
+    class _ObservingWorker(_FakeWorker):
+        async def execute(self, *, prompt, context):  # noqa: ARG002
+            seen_during_turn.append(ap_mod.prompt_worker_active(process.id))
+            return
+            yield  # pragma: no cover
+
+    try:
+        await _run(process, _ObservingWorker())
+        for _ in range(20):
+            if "end_headless_turn" in calls:
+                break
+            await asyncio.sleep(0)
+
+        assert seen_during_turn == [True], "the slot must be held while the turn runs"
+        assert ap_mod.prompt_worker_active(process.id) is False, "and released after"
+    finally:
+        _cleanup(process.id)
 
 
 @pytest.mark.parametrize("vendor", _VENDORS)
@@ -286,12 +322,35 @@ async def test_the_slot_is_released_when_scheduling_never_happens():
         _cleanup(process.id)
 
 
-def test_spawn_failure_latches_and_still_ends_the_turn():
-    source = inspect.getsource(headless_turn.run_headless_turn)
-    assert "latch_spawn_failure" in source
-    # It is caught, not propagated — the turn must still reach its finally.
-    assert "except WorkerSpawnError" in source
-    assert WorkerSpawnError is not None
+@pytest.mark.asyncio
+async def test_spawn_failure_latches_and_still_ends_the_turn():
+    """A worker that cannot spawn must FAIL the process and still free the slot.
+
+    Previously asserted via ``inspect.getsource`` (that the text contained
+    ``latch_spawn_failure`` and ``except WorkerSpawnError``), which proves
+    neither that the latch runs nor that the turn reaches its finally — and
+    breaks on any edit to the body. Driving a spawn failure proves both.
+    """
+    calls: list[str] = []
+    process = _FakeProcess(calls)
+    process.start_failure = None
+    worker = _FakeWorker(boom=WorkerSpawnError("fakevendor", "no binary on PATH"))
+    try:
+        await _run(process, worker)
+        await asyncio.sleep(0)
+        for _ in range(20):
+            if "end_headless_turn" in calls:
+                break
+            await asyncio.sleep(0)
+
+        # Latched: the UI surfaces the message and auto-recovery stops.
+        assert process.status == "failed"
+        assert "no binary on PATH" in (process.start_failure or "")
+        # Caught, not propagated — the turn still reached its finally.
+        assert "end_headless_turn" in calls
+        assert ap_mod.prompt_worker_active(process.id) is False
+    finally:
+        _cleanup(process.id)
 
 
 @pytest.mark.asyncio

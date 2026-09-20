@@ -1322,7 +1322,7 @@ class AgenticProcess(Entity):
             # one, but until then every lookup keyed on it misses. ``prompt()``
             # already honours this trait (see ``preassign_interactive_session_id``
             # at the prompt admission); this is the same gate on the open path.
-            if not self.session_id and bool(getattr(self.driver, "preassign_interactive_session_id", False)):
+            if self._should_preassign_session_id():
                 self.session_id = str(uuid4())
             reattach_changed = False
             # True iff this open is respawning a dead worker (after-restart
@@ -1902,6 +1902,25 @@ class AgenticProcess(Entity):
         task.add_done_callback(_DETACHED_TASKS.discard)
 
         return ApiSuccessResponse(data={"scheduled": True, "id": self.id, "status": self.status})
+
+    def _should_preassign_session_id(self) -> bool:
+        """Whether to mint a provisional session id for this vendor.
+
+        Claude and copilot can be handed an id at launch. Codex and opencode
+        mint their own (``rollout-…`` / ``ses_…``) and REJECT a foreign one, so
+        stamping a FlowPad uuid gives them a phantom id no vendor store has ever
+        heard of — it is replaced once the real id is adopted, but until then
+        every lookup keyed on it misses. Those two omit the trait entirely,
+        hence the defensive read.
+
+        The open path and the prompt path both gate on this. It is one method
+        rather than the same expression written twice precisely so the two
+        cannot drift apart again — which they had, and which is what the
+        original source-text test was guarding.
+        """
+        if self.session_id:
+            return False
+        return bool(getattr(self.driver, "preassign_interactive_session_id", False))
 
     def _bind_project_id(self, project_id: str) -> bool:
         """Polite bind: set ``project_id`` (honouring the freeze) and append
@@ -3420,7 +3439,7 @@ class AgenticProcess(Entity):
             # Resume ONLY when the worker actually has a resumable session on
             # disk for this id — NOT merely "session_id is set".
             resumable = self.driver.has_resumable_session(self)
-            if not self.session_id and bool(getattr(self.driver, "preassign_interactive_session_id", False)):
+            if self._should_preassign_session_id():
                 self.session_id = str(uuid4())
                 try:
                     await self.save()
