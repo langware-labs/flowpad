@@ -9,18 +9,14 @@ re-exports it, so the row and its snapshot still read as one module.
 from __future__ import annotations
 
 import re
-from typing import Annotated, ClassVar, Optional
+from typing import ClassVar, Optional
 
-from pydantic import ConfigDict, StringConstraints, field_validator, model_validator
+from pydantic import ConfigDict, field_validator, model_validator
 
+from flow_sdk.schema.data_spec._types import NonBlank
 from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
 from flow_sdk.sources.values.items import Payload
 from flow_sdk.sources.values.origin import CloudOrigin
-
-#: A header component: each one feeds the natural key (``data_source_id`` plus the
-#: origin lifted from ``provider``/``external_id``), and a blank component collapses
-#: items onto one row — so blankness is refused by the type, not by a route.
-NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 #: Slack's ``ts`` shape and nothing else in the fleet: ten epoch digits, a dot,
 #: a fraction. Ten digits pins the range to 2001–2286, and the mandatory

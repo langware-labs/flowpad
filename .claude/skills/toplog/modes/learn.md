@@ -8,7 +8,7 @@ Two forms, one catalog:
 | Arg | When | What it does |
 | --- | --- | --- |
 | `learn` | a root cause is proven, or a coverage gap surfaced | consolidate the lesson into the catalog + code |
-| `learn tandem` | an RCA is STUCK and the path is dark | RCA and toplog feed each other, one seam per pass |
+| `learn tandem` | an RCA is STUCK and the path is dark | RCA and toplog feed each other, pass after pass, until BOTH are done |
 
 ## `learn` — consolidate the lesson
 
@@ -52,6 +52,22 @@ one less hypothesis the RCA carries. If a pass feeds only one direction — a tr
 nobody reasoned over, or a theory nobody instrumented — it does not count as a
 pass; close the loop before starting another.
 
+**Run it to completion. Do NOT stop between passes to ask.** Tandem is one task,
+not a series of check-ins: a pass that ends with "want me to continue?" has spent
+the user's turn on a status report instead of the next seam. Keep looping — cover,
+prove, consolidate or cover again — and come back only on a terminal outcome:
+
+* **DONE** — the switch toggles both directions AND the catalog now covers the
+  path that proved it. Report the cause, the toggle, and the tag you wrote.
+* **BLOCKED** — reproducing needs something only the user can grant or decide
+  (their credentials, their machine, a restart of an instance you don't own, a
+  destructive step). Name the one thing you need.
+* **EXHAUSTED** — a full pass retired no unknown: no new line, no hypothesis
+  killed. Say what you covered, what stayed silent, and what that rules out.
+
+Announce progress as you go if the loop is long, but keep working; the user reads
+a running trail, not a question.
+
 **A. Cover the blind path** *(RCA → toplog)*. Take the seam the RCA just named
 and put a tag on it — enrich an existing tag, or add a new one (rules above).
 Provisional is fine here: the catalog entry can wait for step C, the log points
@@ -76,6 +92,9 @@ Two rules keep the loop honest:
 * **Every pass must retire an unknown** — a new line, or a hypothesis killed. A
   pass that adds tags and learns nothing is tag sprawl; stop and say so instead
   of turning on more.
-* **Leave no provisional points behind.** If the loop is abandoned, either finish
-  the catalog entry or remove the `toplog.log` calls you added. Code with trace
-  points and no entry is exactly what `scan` exists to catch.
+* **Leave no provisional points behind, as part of the terminal outcome.**
+  Whichever outcome you reach — and if the loop is abandoned — leave the machine
+  quiet: tags off (`switch.md`), every probe either promoted into a catalog entry
+  or removed, and say plainly what remains (a stash, a failing test, an instance
+  still traced). Code with trace points and no entry is exactly what `scan`
+  exists to catch.
