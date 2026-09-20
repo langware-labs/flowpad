@@ -2571,6 +2571,7 @@ class AgenticProcess(Entity):
         from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
         from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
         from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
+        from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
         from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
         from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
@@ -2672,7 +2673,7 @@ class AgenticProcess(Entity):
         # and inventing a Deployment for a dev server that does not exist would
         # make `_app_payload` derive `dev` and point the display at nothing.
         deployment = (
-            await self._upsert_webapp_deployment(
+            await webapp_placement.upsert_deployment(
                 artifact,
                 port=port,
                 name=name,
@@ -2685,12 +2686,13 @@ class AgenticProcess(Entity):
             else None
         )
 
-        micro_app = await self._upsert_webapp_micro_app(
+        micro_app = await webapp_placement.upsert_micro_app(
             artifact,
             artifact_path=artifact_path,
             name=name,
             dist=body.get("dist"),
             project=project,
+            fallback_project_id=self.project_id,
         )
 
         shown = None
@@ -2713,130 +2715,6 @@ class AgenticProcess(Entity):
                 "shown": shown,
             }
         )
-
-    # Conventional build-output directory names, in the order a toolchain is
-    # most likely to have produced one. Explicit ``dist`` in the request always
-    # wins; this is only the fallback for an agent that registered without one.
-    _BUILD_OUTPUT_DIRS = ("dist", "build", "out", ".output/public")
-
-    async def _upsert_webapp_deployment(
-        self,
-        artifact,
-        *,
-        port: int,
-        name: str,
-        start_cmd: str,
-        health: str,
-        git_origin,
-        project,
-    ):
-        """Create/update the app's runtime placement — a local dev server.
-
-        Sibling of ``_upsert_webapp_micro_app``: one companion per plane. The row
-        converges through ``Deployment.find_existing`` on (parent, provider) —
-        re-registering the same app updates it rather than forking a second one,
-        without baking the artifact id into an id that could then never change.
-
-        Parented to the PROJECT, not the Artifact: an Artifact records how the
-        app was generated and lives under its own parent, while the placement
-        belongs to the project that owns the running thing. ``artifact_id`` keeps
-        the reference.
-        """
-        from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
-        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
-
-        if project is None:
-            # Nothing to parent to, and a placement with no owner is not a
-            # placement — the caller's project resolution already tried three
-            # ways to find one.
-            return None
-        deployment = await Deployment.upsert(
-            parent_type_id=str(project.typeid),
-            provider="local",
-            kind=KIND_WEB,
-            element=project,
-            payload={
-                "name": f"{name} (local)",
-                "artifact_id": artifact.id,
-                "artifact_link_source": "manual",
-                "target": {
-                    "provider": "local",
-                    "scope": project.id,
-                    "location": f"http://localhost:{port}",
-                },
-                "origin": {
-                    "kind": "local",
-                    "provider": "local",
-                    "external_id": ComputeNode._local_id(),
-                    "url": f"http://localhost:{port}",
-                },
-                "status": {"sync_state": "current", "provider_state": "configured"},
-                "provider_labels": {
-                    "flowpad.runtime.port": str(port),
-                    "flowpad.runtime.start_cmd": start_cmd,
-                    "flowpad.runtime.health": health,
-                },
-                "source_revision": getattr(git_origin, "head_commit", None),
-                "project_id": project.id,
-            },
-        )
-        await project.attach_child(deployment)
-        return deployment
-
-    async def _upsert_webapp_micro_app(
-        self,
-        artifact,
-        *,
-        artifact_path: str,
-        name: str,
-        dist: object,
-        project,
-    ):
-        """Create/update the Artifact's delivery companion when built output exists.
-
-        Returns ``None`` when the app has no build output yet — a dev-server-only
-        app is a complete, valid app, so absence is the normal early state and
-        not an error.
-        """
-        from flow_sdk.builtin.faas.micro_app import MicroApp
-        from flow_sdk.schema.data_spec.app_location_type import AppLocationType
-
-        app_root = Path(artifact_path)
-        dist_rel = str(dist or "").strip()
-        if dist_rel:
-            dist_path = app_root / dist_rel
-        else:
-            dist_path = next((app_root / c for c in self._BUILD_OUTPUT_DIRS if (app_root / c).is_dir()), None)
-            # A static app has no build step — the registered folder IS the
-            # deliverable, and discovery points at whichever directory holds
-            # index.html. Without this, exactly the apps that are ready to serve
-            # with no work at all would be the ones that never get a delivery
-            # companion.
-            if dist_path is None and (app_root / "index.html").is_file():
-                dist_path = app_root
-        if dist_path is None:
-            return None
-
-        # LOOKUP, not an id derived from the artifact's: the row's natural key is
-        # the artifact it delivers. Same idempotency on re-registration, and it
-        # also finds rows minted before the convention existed.
-        micro_app = await MicroApp.get_by_artifact_id(artifact.id)
-        payload = {
-            "name": name,
-            "location_type": AppLocationType.Artifact,
-            "location_root": str(dist_path),
-            "artifact_id": artifact.id,
-            "project_id": project.id if project is not None else self.project_id,
-            "parent_type_id": str(project.typeid) if project is not None else None,
-        }
-        if micro_app is None:
-            micro_app = MicroApp(**payload)
-        else:
-            micro_app.apply_field_updates(payload)
-        await micro_app.save()
-        if project is not None:
-            await project.attach_child(micro_app)
-        return micro_app
 
     async def on_show(self, payload: dict) -> None:
         """Present *payload* to this process's watchers — the ``flow show`` verb.
