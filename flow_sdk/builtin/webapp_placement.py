@@ -18,6 +18,8 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from flow_sdk.schema.data_spec.webapp_spec import WEBAPP_KIND
+
 _log = logging.getLogger(__name__)
 
 #: Where a web build lands, in the order we trust it. Checked only when the
@@ -33,7 +35,7 @@ async def project_artifacts(project) -> list:
 
     source = project.typeid if project is not None else None
     rows = await Artifact.get_all(QueryFilter.by_type(Artifact.get_type()), source_entity=source)
-    webapps = [row for row in rows if kind_matches("application.web", row.kind)]
+    webapps = [row for row in rows if kind_matches(WEBAPP_KIND, row.kind)]
     return sorted(webapps, key=lambda row: str(getattr(row, "created_date", "") or ""), reverse=True)
 
 
@@ -61,9 +63,16 @@ async def artifact_by_port(project, port) -> Optional[Any]:
 
     if not port:
         return None
+    try:
+        wanted = int(str(port))
+    except (TypeError, ValueError):
+        return None
     for deployment in await project_deployments(project):
-        label = str((deployment.provider_labels or {}).get("flowpad.runtime.port") or "")
-        if label and label == str(port) and deployment.artifact_id:
+        # `runtime_port` owns the parse: a junk or out-of-range label reads as
+        # "no port" here exactly as it does everywhere else. Comparing the raw
+        # label as a string made a malformed one match and converge onto the
+        # wrong artifact.
+        if deployment.runtime_port == wanted and deployment.artifact_id:
             return await Artifact.get_by_id(deployment.artifact_id)
     return None
 
@@ -92,22 +101,23 @@ async def upsert_artifact(
     """
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
     from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
-    from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.local_origin import local_origin_for_path  # noqa: PLC0415
 
     git_origin = None
     try:
         git_origin = await asyncio.to_thread(GitOrigin.for_asset_path, artifact_path)
     except Exception:
         _log.debug("webapp: could not derive git origin for %s", artifact_path, exc_info=True)
-    path_obj = Path(artifact_path)
-    origin = git_origin or LocalOrigin(base=str(path_obj.parent), rel_path=path_obj.name or ".")
+    # THE one way to build a local origin from a path — the bundle, the asset
+    # mount and the serializer all agree byte-for-byte with it.
+    origin = git_origin or local_origin_for_path(artifact_path)
 
     artifact = await Artifact.get_by_id(artifact_id) if artifact_id else None
     if artifact is None and project is not None:
         artifact = await Artifact.find_existing(
             project_id=project.id,
             origin_path=artifact_path,
-            kind="application.web",
+            kind=WEBAPP_KIND,
         )
     if artifact is None:
         artifact = await artifact_by_port(project, port)
@@ -115,7 +125,7 @@ async def upsert_artifact(
     if artifact is None:
         artifact = Artifact(
             name=name,
-            kind="application.web",
+            kind=WEBAPP_KIND,
             description=description,
             project_id=project.id if project is not None else fallback_project_id,
             origin=origin,
@@ -125,25 +135,35 @@ async def upsert_artifact(
             # excluded every app the run built.
             generated_by=generated_by,
         )
+        if project is not None:
+            artifact.parent_type_id = str(project.typeid)
+        await artifact.save()
     else:
+        # Snapshot BEFORE mutating so a re-registration that changed nothing
+        # writes nothing. `Artifact.register` guards the same way and for the
+        # same reason: a save costs a SQL UPDATE, a WS broadcast to every
+        # connected client and a metadata write, and an app can be
+        # re-registered on every turn.
+        fields = {"name", "kind", "description", "origin", "project_id", "generated_by", "parent_type_id"}
+        before = artifact.model_dump(mode="json", include=fields)
         artifact.name = name
-        artifact.kind = "application.web"
+        artifact.kind = WEBAPP_KIND
         artifact.description = description
         artifact.origin = origin
         if project is not None:
             artifact.project_id = project.id
+            artifact.parent_type_id = str(project.typeid)
         if not artifact.generated_by:
             artifact.generated_by = generated_by
+        if artifact.model_dump(mode="json", include=fields) != before:
+            await artifact.save()
 
-    if project is not None:
-        artifact.parent_type_id = str(project.typeid)
-    await artifact.save()
     if project is not None:
         await project.attach_child(artifact)
         if artifact.id not in (project.artifacts or []):
             project.artifacts = list(project.artifacts or []) + [artifact.id]
             await project.save()
-    return artifact, git_origin
+    return artifact
 
 
 async def upsert_deployment(
@@ -153,7 +173,6 @@ async def upsert_deployment(
     name: str,
     start_cmd: str,
     health: str,
-    git_origin,
     project,
 ) -> Optional[Any]:
     """Create/update the app's runtime placement — a local dev server.
@@ -202,7 +221,9 @@ async def upsert_deployment(
                 "flowpad.runtime.start_cmd": start_cmd,
                 "flowpad.runtime.health": health,
             },
-            "source_revision": getattr(git_origin, "head_commit", None),
+            # The artifact already carries the origin this registration
+            # resolved; a git one has a head_commit, a local one has none.
+            "source_revision": getattr(artifact.origin, "head_commit", None),
             "project_id": project.id,
         },
     )
