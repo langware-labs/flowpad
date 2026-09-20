@@ -118,20 +118,22 @@ class Artifact(Entity):
           asset of the project, not of the run that happened to build it, so
           any run re-registering it converges on the one row.
 
-        Addresses are tried in declaration order and any one is sufficient.
-        ``origin_path`` is the canonical POSIX path of a LOCAL origin — it lives
-        inside a JSON column, so like ``Deployment.target.provider`` it is
-        matched in Python rather than in the query. The row count per scope is
-        small (one run's or one project's artifacts), so the others ride along
-        rather than forking a second query per address.
+        ``asset_ref`` and ``target_type_id`` are plain indexed columns, so they
+        go INTO the query — one row comes back instead of every artifact in the
+        scope. That matters here in a way it does not for
+        ``Deployment.find_existing``, whose scope is one element: a project's
+        artifact scope is every file, message and row an agent ever registered
+        there, and a run's grows for the life of the run.
+
+        ``origin_path`` cannot: it is the canonical POSIX path of a LOCAL
+        origin, which lives inside a JSON column. That one case still scans the
+        scope in Python, the way ``Deployment.target.provider`` does.
 
         ``kind`` narrows exact-or-DESCENDANT, never by equality — the ontology
         is hierarchical, so a row refined to ``application.web.react`` is still
         the web app at that path. It keeps a deliverable of one kind from
         converging onto an unrelated row that merely shares an address.
         """
-        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
-
         if (generated_by is None) == (project_id is None):
             raise ValueError("find_existing takes exactly one scope: generated_by or project_id")
         if not (asset_ref or target_type_id or origin_path):
@@ -140,15 +142,26 @@ class Artifact(Entity):
             return None
 
         scope = {"generated_by": generated_by} if generated_by is not None else {"project_id": project_id}
-        for row in await cls.get_all({"match": scope}):
+        for column, value in (("asset_ref", asset_ref), ("target_type_id", target_type_id)):
+            if not value:
+                continue
+            row = cls._first_matching_kind(await cls.get_all({"match": {**scope, column: value}}), kind)
+            if row is not None:
+                return row
+        if origin_path:
+            rows = await cls.get_all({"match": scope})
+            return cls._first_matching_kind(rows, kind, origin_path=origin_path)
+        return None
+
+    @classmethod
+    def _first_matching_kind(cls, rows, kind: str | None, *, origin_path: str | None = None):
+        """First row passing the kind gate (and the local-origin path, if given)."""
+        for row in rows:
             if kind is not None and not kind_matches(kind, row.kind):
                 continue
-            if asset_ref and row.asset_ref == asset_ref:
-                return row
-            if target_type_id and row.target_type_id == target_type_id:
-                return row
-            if origin_path and row.local_origin_path() == origin_path:
-                return row
+            if origin_path is not None and row.local_origin_path() != origin_path:
+                continue
+            return row
         return None
 
     @classmethod

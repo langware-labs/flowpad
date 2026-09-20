@@ -367,15 +367,20 @@ _DEBOUNCE_TASKS: dict[str, asyncio.Task] = {}
 _REINDEX_WATERMARKS: dict[str, int] = {}
 
 
-def _drop_transcript_debounce_state(process_id: str) -> None:
-    """Release the per-process debounce state when the process goes away.
+def _release_process_transcript_state(process: "AgenticProcess") -> None:
+    """Free ALL per-process transcript state when the process goes away.
 
-    Module-level state outlives every instance by design, so nothing else frees
-    it: without this it leaks for the life of the server, and a recycled id
-    would inherit a dead process's buffer and watermark. Mirrors the reasoning
-    on ``_LAST_BROADCAST_KEYS``, and is called from the same two places.
+    Every dict here outlives the instances that wrote it by design — the
+    streamer hydrates a fresh AP per event — so nothing else frees them:
+    without this they leak for the life of the server, and a recycled id would
+    inherit a dead process's buffer, watermark and dedup key.
+
+    One function rather than a release per dict, so adding a fifth kind of
+    per-process state cannot half-land: the callers say "release this
+    process", not "release these four things".
     """
-    key = str(process_id)
+    key = str(process.id)
+    process._last_broadcast_key = None  # setter drops the row
     _PENDING_ENTRIES.pop(key, None)
     _REINDEX_WATERMARKS.pop(key, None)
     task = _DEBOUNCE_TASKS.pop(key, None)
@@ -1906,17 +1911,11 @@ class AgenticProcess(Entity):
     def _should_preassign_session_id(self) -> bool:
         """Whether to mint a provisional session id for this vendor.
 
-        Claude and copilot can be handed an id at launch. Codex and opencode
-        mint their own (``rollout-…`` / ``ses_…``) and REJECT a foreign one, so
-        stamping a FlowPad uuid gives them a phantom id no vendor store has ever
-        heard of — it is replaced once the real id is adopted, but until then
-        every lookup keyed on it misses. Those two omit the trait entirely,
-        hence the defensive read.
-
-        The open path and the prompt path both gate on this. It is one method
-        rather than the same expression written twice precisely so the two
-        cannot drift apart again — which they had, and which is what the
-        original source-text test was guarding.
+        Codex and opencode mint their own ids and reject a foreign one, so a
+        FlowPad uuid would be a phantom no vendor store has heard of; they omit
+        the trait, hence the defensive read. One method, not the same
+        expression twice, so the open path and the prompt path cannot drift
+        apart again — which they had.
         """
         if self.session_id:
             return False
@@ -2594,8 +2593,12 @@ class AgenticProcess(Entity):
             # Resolve the project ONCE and pass it down — both queries used to
             # re-resolve it, which also meant re-saving a rebound project_id.
             project = await self._resolve_webapp_project()
-            artifacts = await webapp_placement.project_artifacts(project)
-            deployments = await webapp_placement.project_deployments(project)
+            # Independent scoped queries — run them together rather than
+            # paying both latencies in series.
+            artifacts, deployments = await asyncio.gather(
+                webapp_placement.project_artifacts(project),
+                webapp_placement.project_deployments(project),
+            )
             by_artifact = {deployment.artifact_id: deployment for deployment in deployments if deployment.artifact_id}
             rows = []
             for artifact in artifacts:
@@ -2652,7 +2655,7 @@ class AgenticProcess(Entity):
         project = await self._resolve_webapp_project()
         # Provenance is the URL scope's, never the body's — an artifact records
         # who actually ran, not who the payload claims.
-        artifact, git_origin = await webapp_placement.upsert_artifact(
+        artifact = await webapp_placement.upsert_artifact(
             artifact_path=artifact_path,
             name=name,
             description=description,
@@ -2673,7 +2676,6 @@ class AgenticProcess(Entity):
                 name=name,
                 start_cmd=start_cmd,
                 health=health,
-                git_origin=git_origin,
                 project=project,
             )
             if port is not None
@@ -3500,30 +3502,16 @@ class AgenticProcess(Entity):
             """Drive the worker → handler pipeline. Runs as a background task.
 
             LOOKS like a duplicate of ``cli_drivers.headless_turn.run_headless_turn``
-            and is not worth folding into it — measured, not assumed. The two
-            differ in seven observable ways, and unifying them costs a
-            parameter per difference on the one function whose own docstring
-            calls the slot protocol "four places to get it wrong":
+            and is not one worth folding: measured, the two differ in seven
+            observable ways (lock, sink, end-of-stream sentinel, error path,
+            save log level, where the worker is registered, task name), so
+            unifying them costs a parameter per difference on the one function
+            whose own docstring calls the slot protocol "four places to get it
+            wrong". What is genuinely common is about six lines.
 
-            =====================  ==========================  ====================
-            axis                   run_headless_turn           here
-            =====================  ==========================  ====================
-            lock                   none                        wraps in ``lock``
-            sink                   ``emit_flow_data(dump)``     ``handler.on_flow_data``
-            end-of-stream          --                          ``on_flow_data(None)``
-            worker error           logs                        logs + queues it
-            save failure           DEBUG                       WARNING (see below)
-            worker registration    inside the helper           caller's prologue
-            task name              ``<vendor>-<id>``            unnamed
-            =====================  ==========================  ====================
-
-            What is genuinely common is about six lines — the execute/adopt
-            loop and the ``WorkerSpawnError`` latch. Extracting that would not
-            pay for the indirection.
-
-            The shared piece that IS worth keeping aligned is the finally: both
-            must ``unregister_prompt_worker`` and then ``end_headless_turn``,
-            on every exit. Change one, change the other.
+            The part that MUST stay aligned with it is the finally: both
+            unregister the prompt worker and then ``end_headless_turn``, on
+            every exit. Change one, change the other.
             """
             adopt_session = self.make_turn_session_adopter("prompt")
             try:
@@ -5889,8 +5877,7 @@ class AgenticProcess(Entity):
         # process id), so the row has to be dropped explicitly here or it leaks
         # for the lifetime of the server — and a recycled id would start out
         # deduping against a dead process's last broadcast.
-        self._last_broadcast_key = None
-        _drop_transcript_debounce_state(self.id)
+        _release_process_transcript_state(self)
         return result
 
     def _delete_session_transcript(self) -> None:
@@ -6872,8 +6859,7 @@ class AgenticProcess(Entity):
             # goes down. Clearing on BOTH exits (closed / failed-to-close) also
             # means a later re-open starts with no history and broadcasts its
             # first key instead of silently deduping against the pre-close one.
-            self._last_broadcast_key = None
-            _drop_transcript_debounce_state(self.id)
+            _release_process_transcript_state(self)
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 
