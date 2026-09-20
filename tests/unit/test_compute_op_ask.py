@@ -32,6 +32,21 @@ def _no_browser(monkeypatch):
     monkeypatch.setenv("FLOWPAD_NO_BROWSER", "1")
 
 
+@pytest.fixture(autouse=True)
+def _only_our_questions():
+    """The pending-question registry is process-global.
+
+    These tests assert that nothing is left waiting, which is a statement about
+    THIS op — not about whatever another test in the same process left behind.
+    Clearing it on the way in and out makes that assertion mean what it says.
+    """
+    from flow_sdk.core.compute import ask
+
+    ask._PENDING.clear()
+    yield
+    ask._PENDING.clear()
+
+
 def _spec(tmp: Path, **over) -> ComputeOpSpec:
     body = {
         "name": "get-api-key",
