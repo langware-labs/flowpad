@@ -3,10 +3,15 @@
 A ComputeOp is one unit of work with a goal. It declares what it RETURNS, and
 it knows when it is already done — so running it twice does the work once.
 
-Every fence on this page is pinned: §1-§3 run in
-`tests/long_tests/test_ask_browser_matrix.py` (a real browser answers them) and
-in `tests/unit/test_compute_op_ask.py`; §4's composition is
-`tests/unit/test_compute_op_composition.py`.
+Every fence on this page is pinned. The op documents are validated against the
+real spec by `tests/unit/test_compute_ops_snippets.py`; the behaviour they
+describe runs in `tests/unit/test_compute_op_ask.py`,
+`tests/unit/test_compute_op_composition.py`, and — with a real browser
+answering §1 — `tests/long_tests/test_ask_browser_matrix.py`.
+
+A command is written per platform (`commands: {"darwin": …}`), because that is
+what the spec takes: one op, one goal, and whatever each machine needs to
+reach it.
 
 Two things follow from that, and they are what this page is about:
 
@@ -34,7 +39,7 @@ attempt is the question, and `output` is what the person provides:
 
 ```jsonc
 { "name": "get-api-key",
-  "completion_check": {"command": "flow secret get service-x/token"},
+  "completion_check": {"commands": {"darwin": "flow secret get service-x/token"}},
   "attempts": [{"kind": "ask", "prompt": "Service X API token"}],
   "output": {"token": "string"} }
 ```
@@ -77,7 +82,7 @@ into the dependent op's command, because the dependent op is never attempted.
 
 ```jsonc
 { "name": "start-server", "requires": ["get-api-key"],
-  "attempts": [{"kind": "command", "command": "serve --token $token"}] }
+  "attempts": [{"kind": "command", "commands": {"darwin": "serve --token $token"}}] }
 ```
 
 There is no `input` declaration, deliberately. The shape is already declared on
