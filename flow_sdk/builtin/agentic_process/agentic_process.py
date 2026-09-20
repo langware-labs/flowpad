@@ -112,6 +112,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process._shared import RunResult
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
+    from flow_sdk.builtin.artifact import Artifact
     from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
     from flow_sdk.builtin.shell import Shell
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
@@ -2374,6 +2375,25 @@ class AgenticProcess(Entity):
         webapps = [artifact for artifact in artifacts if kind_matches("application.web", artifact.kind)]
         return sorted(webapps, key=lambda artifact: str(getattr(artifact, "created_date", "") or ""), reverse=True)
 
+    async def _webapp_artifact_by_port(self, port) -> "Artifact | None":
+        """The project's web artifact currently placed on ``port``, or None.
+
+        The last of the three addresses a re-registration may arrive with, and
+        the only one that is not a fact about the Artifact: a port belongs to
+        the runtime placement, so the match runs over Deployments and comes
+        back to the artifact they point at. An app moved to a new folder but
+        served on the same port still converges here.
+        """
+        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+
+        if not port:
+            return None
+        for deployment in await self._get_project_webapp_deployments():
+            label = str((deployment.provider_labels or {}).get("flowpad.runtime.port") or "")
+            if label and label == str(port) and deployment.artifact_id:
+                return await Artifact.get_by_id(deployment.artifact_id)
+        return None
+
     async def _get_project_webapp_deployments(self) -> list:
         from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
         from flow_sdk.core import QueryFilter  # noqa: PLC0415
@@ -2594,27 +2614,23 @@ class AgenticProcess(Entity):
         local_origin = LocalOrigin(base=str(path_obj.parent), rel_path=path_obj.name or ".")
 
         project = await self._resolve_webapp_project()
-        artifacts = await self._get_project_webapp_artifacts()
-        deployments = await self._get_project_webapp_deployments()
         artifact_id = adopt_entity_id(body.get("artifact_id"))
         artifact = None
         if artifact_id:
             artifact = await Artifact.get_by_id(artifact_id)
+        if artifact is None and project is not None:
+            # PROJECT scope: an app belongs to the project, not to whichever run
+            # rebuilt it, so any run re-registering the same folder converges.
+            artifact = await Artifact.find_existing(
+                project_id=project.id,
+                origin_path=artifact_path,
+                kind="application.web",
+            )
         if artifact is None:
-            for candidate in artifacts:
-                origin = candidate.origin
-                same_path = bool(
-                    getattr(origin, "kind", None) == "local"
-                    and canonical_posix_path(str(Path(origin.base) / origin.rel_path)) == artifact_path
-                )
-                candidate_deployment = next((d for d in deployments if d.artifact_id == candidate.id), None)
-                same_port = bool(
-                    candidate_deployment
-                    and str((candidate_deployment.provider_labels or {}).get("flowpad.runtime.port") or "") == str(port)
-                )
-                if same_path or same_port:
-                    artifact = candidate
-                    break
+            # Port is the one address that is NOT a fact about the artifact: it
+            # describes the runtime placement, so it is matched through the
+            # Deployment carrying it rather than on the artifact itself.
+            artifact = await self._webapp_artifact_by_port(port)
 
         if artifact is None:
             artifact = Artifact(
