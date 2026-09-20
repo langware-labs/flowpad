@@ -3,6 +3,7 @@
 from .activity import router as activity_router
 from .agent_records import router as agent_records_router
 from .agents import router as agents_router
+from .ask import router as ask_router
 from .asset_share import router as asset_share_router
 from .assets import router as assets_router
 from .auth import router as auth_router
@@ -68,6 +69,7 @@ __all__ = [
     "project_router",
     "debug_router",
     "ingest_router",
+    "ask_router",
     "runs_router",
     "subgraph_router",
     "tags_router",

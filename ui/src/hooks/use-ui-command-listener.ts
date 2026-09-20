@@ -3,6 +3,7 @@ import {
   ConnectionManager,
   DockPointerData,
   dataManager,
+  Layout,
   PageId,
   TypeId,
   ViewType,
@@ -119,7 +120,11 @@ export function useUiCommandListener(): void {
           msg.view_type as ViewType,
           msg.pointer ?? undefined,
           msg.options ?? undefined,
-          undefined,
+          // The layout the backend asked for. This argument used to be
+          // hardcoded `undefined`, so a pushed command could only ever land in
+          // the dock — there was no way to raise a chrome-less `win/` window
+          // from the backend at all.
+          (msg.layout as Layout | undefined) ?? undefined,
           msg.page as PageId | undefined,
         ),
       );
