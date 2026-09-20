@@ -1081,8 +1081,12 @@ msgid "a key the hub holds (the chain could not be read from here)"
 msgstr "a key the hub holds (the chain could not be read from here)"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "a name — leave empty and the step only reports that the agent stopped"
-msgstr "a name — leave empty and the step only reports that the agent stopped"
+#~ msgid "a name — leave empty and the step only reports that the agent stopped"
+#~ msgstr "a name — leave empty and the step only reports that the agent stopped"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "a name in scope, or a literal"
+msgstr "a name in scope, or a literal"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
@@ -1124,11 +1128,16 @@ msgstr "a server someone else hosts"
 msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
 msgstr "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "a wizard name"
+msgstr "a wizard name"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "about"
 msgstr "about"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "About"
 msgstr "About"
 
@@ -1210,8 +1219,8 @@ msgid "Act as the \"{name}\" agent and work on the current context."
 msgstr "Act as the \"{name}\" agent and work on the current context."
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Action"
-msgstr "Action"
+#~ msgid "Action"
+#~ msgstr "Action"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Action Type"
@@ -1360,6 +1369,10 @@ msgstr "Add annotation"
 msgid "Add another"
 msgstr "Add another"
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Add argument"
+msgstr "Add argument"
+
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-view.tsx
@@ -1463,6 +1476,10 @@ msgstr "Add help desk"
 #: src/components/hooks-view/HooksTable.tsx
 msgid "Add Hook"
 msgstr "Add Hook"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "Add input"
+msgstr "Add input"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add key"
@@ -1651,8 +1668,6 @@ msgstr "Advanced: per-window limits, rate caps and filters (view only)"
 msgid "agent"
 msgstr "agent"
 
-#: src/components/assets/editor/wizard/WizardStepForm.tsx
-#: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/types/ViewType.ts
@@ -2019,6 +2034,10 @@ msgstr "Amount"
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 msgstr "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "An absent optional value does not park the run"
+msgstr "An absent optional value does not park the run"
+
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-list.tsx
 msgid "An error occurred"
@@ -2027,6 +2046,10 @@ msgstr "An error occurred"
 #: src/components/rag/RagView.tsx
 msgid "An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file tree, and a folder removed here loses it."
 msgstr "An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file tree, and a folder removed here loses it."
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "an op name"
+msgstr "an op name"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
@@ -2145,6 +2168,10 @@ msgstr "another hub budget — {label}"
 #: src/components/install/AddAssetDialog.tsx
 msgid "another project"
 msgstr "another project"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Another step already uses this id — their results will overwrite each other."
+msgstr "Another step already uses this id — their results will overwrite each other."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "Answer here instead"
@@ -2349,6 +2376,10 @@ msgstr "Are you sure?"
 msgid "Args"
 msgstr "Args"
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Arguments"
+msgstr "Arguments"
+
 #: src/components/artifacts/artifacts-view.tsx
 msgid "artifact"
 msgstr "artifact"
@@ -2395,8 +2426,8 @@ msgid "Ask for help"
 msgstr "Ask for help"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Ask it to"
-msgstr "Ask it to"
+#~ msgid "Ask it to"
+#~ msgstr "Ask it to"
 
 #: src/pages/flow-page/VibeAssignTaskButton.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
@@ -2420,8 +2451,8 @@ msgid "Ask whoever shared it to start it, or to send a new link."
 msgstr "Ask whoever shared it to start it, or to send a new link."
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Asks for"
-msgstr "Asks for"
+#~ msgid "Asks for"
+#~ msgstr "Asks for"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "asset"
@@ -9686,6 +9717,10 @@ msgstr "IDE Connections (VS Code, Cursor, etc.)"
 msgid "Identity"
 msgstr "Identity"
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "If it fails"
+msgstr "If it fails"
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "ignore patterns"
 msgstr "ignore patterns"
@@ -10357,6 +10392,7 @@ msgid "kind"
 msgstr "kind"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Kind"
@@ -11942,8 +11978,8 @@ msgstr "name@example.com"
 #~ msgstr "Named by the manifest but gone from disk"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
-msgstr "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
+#~ msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
+#~ msgstr "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
@@ -12265,8 +12301,8 @@ msgid "No agent hooks configured"
 msgstr "No agent hooks configured"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "No agent named \"{value}\" on this machine — the step will fail when it runs."
-msgstr "No agent named \"{value}\" on this machine — the step will fail when it runs."
+#~ msgid "No agent named \"{value}\" on this machine — the step will fail when it runs."
+#~ msgstr "No agent named \"{value}\" on this machine — the step will fail when it runs."
 
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No alert logs found"
@@ -13410,6 +13446,10 @@ msgstr "Note: File is missing"
 msgid "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
 msgstr "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "Nothing — this wizard runs with no parameters."
+msgstr "Nothing — this wizard runs with no parameters."
+
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Nothing caps this scope yet. Ask your team admin to set a budget."
 msgstr "Nothing caps this scope yet. Ask your team admin to set a budget."
@@ -13458,6 +13498,11 @@ msgstr "Nothing indexed yet. <0>Refresh Index</0> to populate."
 #: src/components/rag/RagView.tsx
 msgid "Nothing matched."
 msgstr "Nothing matched."
+
+#. placeholder {0}: step.ref ?? ''
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Nothing named \"{0}\" on this machine — the step will fail when it runs."
+msgstr "Nothing named \"{0}\" on this machine — the step will fail when it runs."
 
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Nothing new to push — message sent"
@@ -13655,6 +13700,10 @@ msgstr "once per machine"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Once per project, the first time it is opened. Oldest agent wins if several set this."
 msgstr "Once per project, the first time it is opened. Oldest agent wins if several set this."
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "one of this wizard's inputs"
+msgstr "one of this wizard's inputs"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "One per line. Empty means everything the sources allow."
@@ -14244,13 +14293,17 @@ msgstr "Opening your project…"
 msgid "OpenRouter"
 msgstr "OpenRouter"
 
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "OpenRouter hosts to avoid (one per line)"
+msgstr "OpenRouter hosts to avoid (one per line)"
+
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"
 msgstr "Operation failed"
 
-#: src/components/connections-manager/credential-value-form.tsx
-#~ msgid "optional"
-#~ msgstr "optional"
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "optional"
+msgstr "optional"
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
@@ -14456,6 +14509,10 @@ msgstr "Page"
 #: src/components/ui/pagination.tsx
 msgid "pagination"
 msgstr "pagination"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "parameter"
+msgstr "parameter"
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 msgid "Parent comments"
@@ -15371,8 +15428,8 @@ msgid "protected"
 msgstr "protected"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Proved by"
-msgstr "Proved by"
+#~ msgid "Proved by"
+#~ msgstr "Proved by"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager.tsx
@@ -16102,6 +16159,10 @@ msgstr "Remove row"
 msgid "Remove rule"
 msgstr "Remove rule"
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Remove this argument"
+msgstr "Remove this argument"
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Remove this budget and start again?"
 msgstr "Remove this budget and start again?"
@@ -16113,6 +16174,10 @@ msgstr "Remove this budget?"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "Remove this file from the next commit (git restore --staged)"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "Remove this input"
+msgstr "Remove this input"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Remove this row from the manifest"
@@ -16606,12 +16671,15 @@ msgstr "Retry download"
 msgid "Retry pull"
 msgstr "Retry pull"
 
-#. placeholder {0}: outcome.output
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
-msgid "Returned {0}"
-msgstr "Returned {0}"
+msgid "Returned"
+msgstr "Returned"
 
-#: src/components/assets/editor/wizard/WizardStepForm.tsx
+#: src/components/assets/editor/wizard/WizardStepInspector.tsx
+#~ msgid "Returned {0}"
+#~ msgstr "Returned {0}"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Returns"
 msgstr "Returns"
 
@@ -16922,7 +16990,6 @@ msgid "Running…"
 msgstr "Running…"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
-#: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -18674,8 +18741,8 @@ msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox
 msgstr "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Skip if"
-msgstr "Skip if"
+#~ msgid "Skip if"
+#~ msgstr "Skip if"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Skip initial permission check on startup"
@@ -19208,6 +19275,14 @@ msgstr "Streaming must be allow, require or deny."
 #~ msgid "Streams"
 #~ msgstr "Streams"
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "string, or a JSON shape"
+msgstr "string, or a JSON shape"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "string, or a JSON shape — empty if it returns nothing"
+msgstr "string, or a JSON shape — empty if it returns nothing"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Structure"
 msgstr "Structure"
@@ -19486,6 +19561,10 @@ msgstr "Tag view not found"
 #: src/i18n/type-labels.ts
 msgid "Tags"
 msgstr "Tags"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "Takes"
+msgstr "Takes"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Takes ~4 seconds"
@@ -20537,6 +20616,7 @@ msgid "This starts the machine and sets up whatever it was created with."
 msgstr "This starts the machine and sets up whatever it was created with."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
+#: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "This step has not run."
 msgstr "This step has not run."
 
@@ -20545,8 +20625,8 @@ msgstr "This step has not run."
 #~ msgstr "This step launches an agent. Editing a process step is not supported here yet — change it in the file."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
-msgid "This step ran no commands."
-msgstr "This step ran no commands."
+#~ msgid "This step ran no commands."
+#~ msgstr "This step ran no commands."
 
 #: src/routes/loaders/load-tasks.ts
 msgid "This task no longer exists or is unavailable."
@@ -20608,6 +20688,11 @@ msgstr "This Wiki target has no readable content."
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
+
+#. placeholder {0}: step.ref ?? ''
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "This wizard declares no input named \"{0}\"."
+msgstr "This wizard declares no input named \"{0}\"."
 
 #: src/components/assets/editor/wizard/WizardDebugger.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -21609,8 +21694,8 @@ msgstr "Value for {0}"
 #~ msgstr "Value for {envVar}"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "value name"
-msgstr "value name"
+#~ msgid "value name"
+#~ msgstr "value name"
 
 #: src/components/credentials/CredentialDialog.tsx
 #~ msgid "Value stays in .env.local"
@@ -22027,6 +22112,10 @@ msgstr "What should the agent do each time it runs?"
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
 msgstr "What should the worker do with this message?"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "what the form asks"
+msgstr "what the form asks"
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "What this machine's assistants are funded by right now"
