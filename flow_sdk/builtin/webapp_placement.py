@@ -13,12 +13,137 @@ to build it, which is why none of this is a method on one.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from pathlib import Path
 from typing import Any, Optional
+
+_log = logging.getLogger(__name__)
 
 #: Where a web build lands, in the order we trust it. Checked only when the
 #: registration does not name a ``dist`` itself.
 BUILD_OUTPUT_DIRS = ("dist", "build", "out", ".output/public")
+
+
+async def project_artifacts(project) -> list:
+    """This project's web artifacts, newest first."""
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+    from flow_sdk.core import QueryFilter  # noqa: PLC0415
+    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
+    source = project.typeid if project is not None else None
+    rows = await Artifact.get_all(QueryFilter.by_type(Artifact.get_type()), source_entity=source)
+    webapps = [row for row in rows if kind_matches("application.web", row.kind)]
+    return sorted(webapps, key=lambda row: str(getattr(row, "created_date", "") or ""), reverse=True)
+
+
+async def project_deployments(project) -> list:
+    """This project's web runtime placements."""
+    from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
+    from flow_sdk.core import QueryFilter  # noqa: PLC0415
+    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
+    source = project.typeid if project is not None else None
+    rows = await Deployment.get_all(QueryFilter.by_type(Deployment.get_type()), source_entity=source)
+    return [row for row in rows if kind_matches(KIND_WEB, row.kind)]
+
+
+async def artifact_by_port(project, port) -> Optional[Any]:
+    """The project's web artifact currently placed on ``port``, or None.
+
+    The last of the three addresses a re-registration may arrive with, and the
+    only one that is not a fact about the Artifact: a port belongs to the
+    runtime placement, so the match runs over Deployments and comes back to the
+    artifact they point at. An app moved to a new folder but still served on
+    the same port converges here.
+    """
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+
+    if not port:
+        return None
+    for deployment in await project_deployments(project):
+        label = str((deployment.provider_labels or {}).get("flowpad.runtime.port") or "")
+        if label and label == str(port) and deployment.artifact_id:
+            return await Artifact.get_by_id(deployment.artifact_id)
+    return None
+
+
+async def upsert_artifact(
+    *,
+    artifact_path: str,
+    name: str,
+    description: str,
+    generated_by: str,
+    project,
+    port=None,
+    artifact_id: str | None = None,
+    fallback_project_id: str | None = None,
+):
+    """The source plane: converge on this app's Artifact, or mint it.
+
+    Three addresses, tried in the order a caller can be most certain of: an
+    explicit ``artifact_id``, then the folder the app lives in, then the port
+    it is served on. PROJECT-scoped throughout — an app belongs to the project,
+    not to whichever run rebuilt it, so any run re-registering the same folder
+    converges on the one row.
+
+    ``generated_by`` is BACKFILLED, never reassigned: convergence lands on the
+    row the first run created, and that run stays the producer.
+    """
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
+
+    git_origin = None
+    try:
+        git_origin = await asyncio.to_thread(GitOrigin.for_asset_path, artifact_path)
+    except Exception:
+        _log.debug("webapp: could not derive git origin for %s", artifact_path, exc_info=True)
+    path_obj = Path(artifact_path)
+    origin = git_origin or LocalOrigin(base=str(path_obj.parent), rel_path=path_obj.name or ".")
+
+    artifact = await Artifact.get_by_id(artifact_id) if artifact_id else None
+    if artifact is None and project is not None:
+        artifact = await Artifact.find_existing(
+            project_id=project.id,
+            origin_path=artifact_path,
+            kind="application.web",
+        )
+    if artifact is None:
+        artifact = await artifact_by_port(project, port)
+
+    if artifact is None:
+        artifact = Artifact(
+            name=name,
+            kind="application.web",
+            description=description,
+            project_id=project.id if project is not None else fallback_project_id,
+            origin=origin,
+            # The same provenance edge `register-artifact` stamps. Without it a
+            # web app is absent from `artifacts`, which is a match on
+            # `generated_by` — so "everything this run produced" silently
+            # excluded every app the run built.
+            generated_by=generated_by,
+        )
+    else:
+        artifact.name = name
+        artifact.kind = "application.web"
+        artifact.description = description
+        artifact.origin = origin
+        if project is not None:
+            artifact.project_id = project.id
+        if not artifact.generated_by:
+            artifact.generated_by = generated_by
+
+    if project is not None:
+        artifact.parent_type_id = str(project.typeid)
+    await artifact.save()
+    if project is not None:
+        await project.attach_child(artifact)
+        if artifact.id not in (project.artifacts or []):
+            project.artifacts = list(project.artifacts or []) + [artifact.id]
+            await project.save()
+    return artifact, git_origin
 
 
 async def upsert_deployment(
@@ -141,4 +266,12 @@ async def upsert_micro_app(
     return micro_app
 
 
-__all__ = ["BUILD_OUTPUT_DIRS", "upsert_deployment", "upsert_micro_app"]
+__all__ = [
+    "BUILD_OUTPUT_DIRS",
+    "artifact_by_port",
+    "project_artifacts",
+    "project_deployments",
+    "upsert_artifact",
+    "upsert_deployment",
+    "upsert_micro_app",
+]

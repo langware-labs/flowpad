@@ -112,7 +112,6 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process._shared import RunResult
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
-    from flow_sdk.builtin.artifact import Artifact
     from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
     from flow_sdk.builtin.shell import Shell
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
@@ -2364,45 +2363,6 @@ class AgenticProcess(Entity):
             await self.save()
         return project
 
-    async def _get_project_webapp_artifacts(self) -> list:
-        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-        from flow_sdk.core import QueryFilter  # noqa: PLC0415
-        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
-
-        project = await self._resolve_webapp_project()
-        source = project.typeid if project is not None else None
-        artifacts = await Artifact.get_all(QueryFilter.by_type(Artifact.get_type()), source_entity=source)
-        webapps = [artifact for artifact in artifacts if kind_matches("application.web", artifact.kind)]
-        return sorted(webapps, key=lambda artifact: str(getattr(artifact, "created_date", "") or ""), reverse=True)
-
-    async def _webapp_artifact_by_port(self, port) -> "Artifact | None":
-        """The project's web artifact currently placed on ``port``, or None.
-
-        The last of the three addresses a re-registration may arrive with, and
-        the only one that is not a fact about the Artifact: a port belongs to
-        the runtime placement, so the match runs over Deployments and comes
-        back to the artifact they point at. An app moved to a new folder but
-        served on the same port still converges here.
-        """
-        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-
-        if not port:
-            return None
-        for deployment in await self._get_project_webapp_deployments():
-            label = str((deployment.provider_labels or {}).get("flowpad.runtime.port") or "")
-            if label and label == str(port) and deployment.artifact_id:
-                return await Artifact.get_by_id(deployment.artifact_id)
-        return None
-
-    async def _get_project_webapp_deployments(self) -> list:
-        from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
-        from flow_sdk.core import QueryFilter  # noqa: PLC0415
-        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
-
-        project = await self._resolve_webapp_project()
-        source = project.typeid if project is not None else None
-        deployments = await Deployment.get_all(QueryFilter.by_type(Deployment.get_type()), source_entity=source)
-        return [deployment for deployment in deployments if kind_matches(KIND_WEB, deployment.kind)]
 
     async def _artifact_reference(self, payload: dict) -> tuple[str, str]:
         """What a resolved display target points at: ``(asset_ref, entity_kind)``.
@@ -2548,9 +2508,14 @@ class AgenticProcess(Entity):
     @action.post(action_name="webapp-artifacts")
     async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
         """Return project-scoped web artifacts with their local placement."""
+        from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
+
         try:
-            artifacts = await self._get_project_webapp_artifacts()
-            deployments = await self._get_project_webapp_deployments()
+            # Resolve the project ONCE and pass it down — both queries used to
+            # re-resolve it, which also meant re-saving a rebound project_id.
+            project = await self._resolve_webapp_project()
+            artifacts = await webapp_placement.project_artifacts(project)
+            deployments = await webapp_placement.project_deployments(project)
             by_artifact = {deployment.artifact_id: deployment for deployment in deployments if deployment.artifact_id}
             rows = []
             for artifact in artifacts:
@@ -2569,11 +2534,8 @@ class AgenticProcess(Entity):
         """Create/update a web Artifact and its local Deployment."""
 
         from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
-        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-        from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
         from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
-        from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
-        from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
+        from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
         body = await _read_json_body()
@@ -2606,68 +2568,20 @@ class AgenticProcess(Entity):
         start_cmd = str(body.get("start_cmd") or "").strip()
         health = str(body.get("health") or "/").strip() or "/"
         description = str(body.get("description") or "").strip() or f"Web app at {artifact_path}"
-        git_origin = None
-        try:
-            git_origin = await asyncio.to_thread(GitOrigin.for_asset_path, artifact_path)
-        except Exception:
-            logger.debug("register-webapp-artifact: could not derive git origin for %s", artifact_path, exc_info=True)
-        path_obj = Path(artifact_path)
-        local_origin = LocalOrigin(base=str(path_obj.parent), rel_path=path_obj.name or ".")
 
         project = await self._resolve_webapp_project()
-        artifact_id = adopt_entity_id(body.get("artifact_id"))
-        artifact = None
-        if artifact_id:
-            artifact = await Artifact.get_by_id(artifact_id)
-        if artifact is None and project is not None:
-            # PROJECT scope: an app belongs to the project, not to whichever run
-            # rebuilt it, so any run re-registering the same folder converges.
-            artifact = await Artifact.find_existing(
-                project_id=project.id,
-                origin_path=artifact_path,
-                kind="application.web",
-            )
-        if artifact is None:
-            # Port is the one address that is NOT a fact about the artifact: it
-            # describes the runtime placement, so it is matched through the
-            # Deployment carrying it rather than on the artifact itself.
-            artifact = await self._webapp_artifact_by_port(port)
-
-        if artifact is None:
-            artifact = Artifact(
-                name=name,
-                kind="application.web",
-                description=description,
-                project_id=project.id if project is not None else self.project_id,
-                origin=git_origin or local_origin,
-                # The same provenance edge ``register-artifact`` stamps. Without
-                # it a web app is absent from ``artifacts``, which is a match on
-                # ``generated_by`` — so "everything this run produced" silently
-                # excluded every app the run built.
-                generated_by=str(self.typeid),
-            )
-        else:
-            artifact.name = name
-            artifact.kind = "application.web"
-            artifact.description = description
-            artifact.origin = git_origin or local_origin
-            if project is not None:
-                artifact.project_id = project.id
-            # Backfill, never reassign: a re-registration converges on the row
-            # the FIRST run created, and that run stays the producer. Rows
-            # minted before this field was stamped here would otherwise never
-            # gain one.
-            if not artifact.generated_by:
-                artifact.generated_by = str(self.typeid)
-
-        if project is not None:
-            artifact.parent_type_id = str(project.typeid)
-        await artifact.save()
-        if project is not None:
-            await project.attach_child(artifact)
-            if artifact.id not in (project.artifacts or []):
-                project.artifacts = list(project.artifacts or []) + [artifact.id]
-                await project.save()
+        # Provenance is the URL scope's, never the body's — an artifact records
+        # who actually ran, not who the payload claims.
+        artifact, git_origin = await webapp_placement.upsert_artifact(
+            artifact_path=artifact_path,
+            name=name,
+            description=description,
+            generated_by=str(self.typeid),
+            project=project,
+            port=port,
+            artifact_id=adopt_entity_id(body.get("artifact_id")),
+            fallback_project_id=self.project_id,
+        )
 
         # No port → no runtime plane. A served-only app is complete without one,
         # and inventing a Deployment for a dev server that does not exist would
