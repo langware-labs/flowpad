@@ -1,0 +1,19 @@
+{
+  "type": "compute_op",
+  "name": "unreachable",
+  "label": "an unreachable goal",
+  "description": "A goal whose check never passes \u2014 the negative case.",
+  "completion_check": {
+    "commands": {
+      "linux": "exit 1"
+    }
+  },
+  "attempts": [
+    {
+      "kind": "command",
+      "commands": {
+        "linux": "true"
+      }
+    }
+  ]
+}

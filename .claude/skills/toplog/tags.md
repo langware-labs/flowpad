@@ -56,6 +56,22 @@ The registry is every `### <tag>` heading below. Add entries in this format:
 - **Needs this checkout's code on the instance.** An installed release (e.g. `prod`) has none of these points and no `/toplog/client-log` route (405), so frontend lines stay in the browser console only.
 - **Verified 2026-09-16** on a temp instance (terminal mode, "New Claude chat" clicks): about 45 lines per click, front and back, from click to replay done. Tag off with another create: 0 new lines.
 
+### chat_delivery
+- **Traces:** how one assistant message reaches a chat pane, and what the stream does with each copy. Every turn writes ~5 lines (events only, no payloads), all frontend (`toplog.client: [chat_delivery] …`):
+  - `prompt_stream_open process=` / `observe_turn_open process= after_entry=` — WHICH path is feeding this pane. `prompt` = the pane started the turn; `observe_turn` = it is watching one it did not start (a queue-drained prompt, a message enqueued by a page, a reconnect). `after_entry` is the watermark it claims to hold; `none` means "watermark at open".
+  - `from_prompt_stream` / `from_observe_turn` / `from_websocket` — one line per chat frame, with its `group` and originating `t`, at the seam it entered.
+  - `ingest src= group= t= i= role= len= known_groups=` — what `FlowDataStream.ingest` received. `len=0` is the streaming placeholder (content is appended later), a non-zero `len` is a whole message. Two lines with the same `t` and different `src` = the same answer delivered twice.
+  - `replay_dropped t= src=` — the guard below refusing a copy the pane already holds.
+- **Where:** `ts_sdk/src/flow_processing/flow-data-stream.ts` (`ingest`, the held-twin guard), `ts_sdk/src/process/agentic-process.ts` (`prompt`, `observeTurn` wiring), `ts_sdk/src/FlowSync/store.ts` (`DataManager.onFlowData`).
+- **Use for** (symptom → lines to read):
+  - **"The agent's answer appears twice, a reload fixes it":** find two `ingest` lines sharing `t` with different `src`. Whether they duplicate depends on the group state: a copy arriving while the first group is still open consolidates into it; one arriving after it closed starts a new group and renders twice. `raw_decide`-style state is visible as `known_groups` plus the `from_*` line that preceded it.
+  - **Which side is late:** compare the `client_ts` of `from_websocket` and `from_observe_turn` for the same `t`. Sub-second apart = live turn; tens of seconds apart = a replay of something already held.
+  - **A pane replaying too much:** an `observe_turn_open` whose `after_entry` is older than the last entry the pane holds re-delivers finished messages. `after_entry=none` on a pane with history is the same bug in its strongest form.
+  - **Duplicated lines across a run:** each open tab on the same process writes its own set. Two identical `observe_turn_open` lines milliseconds apart = two panes, not one pane opening twice.
+  - **Not covered:** the backend side of the broadcast (who emitted the frame, and why the transcript holds it twice) has no log point — these are all client-side seams.
+- **Proven with it (2026-09-18):** the duplicate assistant message in the vibe chat. `prompt_stream_open` never fired (0 vs 4 `observe_turn_open`), killing the "the pane that started the turn also gets the broadcast" theory; the decisive state (seen through a throwaway probe, not a shipped line) was `new_group=true open_dup=false closed_twin=true` — the pane already held that message, finished, while `_findDuplicateOpenGroup` only matches a twin whose group is still OPEN. Fix: `_heldTwin` drops a chat whose role and `t` match a `ready` item already in the stream — from BOTH ingest modes, since the replayed copy carries a group-id of its own. Toggled both directions in the live app via a replay with a stale `after_entry_id`: guard on 12→12 chats, guard off 12→13 with the answer repeated.
+- **Verified 2026-09-18** on the `oss` instance with two real Explain turns: 20 lines for two turns across two open panes, zero new lines with the tag off.
+
 ### claude_debug_session_log
 - **Traces:** nothing on its own — this tag is a *behavior switch*, not a trace stream. It selects the granularity of the Claude CLI's own `--debug-file`: OFF (default) writes one file per TURN (`<session>-<utc-stamp>.txt`), ON writes one file per SESSION (`<session>.txt`), the shape the CLI itself uses. Files land in `<instance>/logs/claude-cli-debug/` and are pruned after 7 days.
 - **Where:** `flow_sdk/builtin/agentic_process/cli_drivers/claude/stream_worker.py` (`SESSION_DEBUG_LOG_TAG`, `_turn_debug_file` — read once per turn, so a flip applies to the next turn with no restart). The pre-turn credential renewal in `.../claude/credential.py` shares the same helper, so ON collapses every renewal onto one `credential-renewal.txt`.
@@ -74,9 +90,9 @@ The registry is every `### <tag>` heading below. Add entries in this format:
     - `attach` (`latest_seq`, `repaint_ms`, `backend_pid`) and `attach_not_found`
     - `resize`, `input_dropped` (session_not_found / write_failed)
     - `output_delayed` (reader thread → loop lag > 200ms, ≤1/s per session)
-    - `ws_slow_message` (a WS message > 100ms blocks that connection's lane; ≤1/s, `slow_in_window`)
+    - `ws_slow_message` (a WS message > 100ms blocks that connection's lane; ≤1/s, `slow_in_window`, with `action`/`sub_path`/`shell` so a stalled lane names its terminal — never the body, which carries keystrokes)
     - `stream_read` (GET pty-stream: bytes, events, ms), `stream_truncate` (10MB rewrite holding the lock)
-    - `turn_end_transcript_parse` (whole-transcript parse on the loop at turn end), `recovery` (after restart)
+    - `turn_end_transcript_parse` (whole-transcript parse on the loop at turn end: `bytes`, `entries`, `watermark`, and `parse_ms`/`scan_ms` split out of `ms` — the parse and the file-op scan have opposite fixes) and `turn_end_reindex` (the batch that parse schedules: `paths`, `counts`, `ms`), `recovery` (after restart)
   - **Frontend:**
     - `attach` (ok, force, ms), `reset` (chunks, last_seq)
     - `dedup_drop` (first of a run), `input_dropped` (not_live / session_not_found / shell_not_connected, first of a run)
@@ -88,7 +104,8 @@ The registry is every `### <tag>` heading below. Add entries in this format:
   - Backend: `compute/providers/desktop/provider.py`, `compute/providers/desktop/pty_stream_file.py`, `builtin/faas/pty_actions.py`, `server/routes/websocket.py`, `server/routes/pty_stream.py`, `server/pty_recovery.py`, `builtin/agentic_process/agentic_process.py`.
   - Frontend: `ts_sdk/src/services/shell/ptyConnection.ts`, `ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx` (+ the `process_load` sites).
 - **Use for** (symptom → lines to read):
-  - **Laggy typing / slow output:** `ws_slow_message`, `output_delayed`, `turn_end_transcript_parse` / `stream_read` / `stream_truncate` with big `ms` (event-loop stalls; a mouse-wheel flood shows as a high `slow_in_window`).
+  - **Laggy typing / slow output:** `ws_slow_message`, `output_delayed`, `turn_end_transcript_parse` / `turn_end_reindex` / `stream_read` / `stream_truncate` with big `ms` (event-loop stalls; a mouse-wheel flood shows as a high `slow_in_window`).
+  - **Terminals stalling with no obvious trigger:** `output_delayed` says the loop blocked, never what blocked it — pair each one with the nearest preceding line that owns a `ms`. A spike whose `ms` matches the lag 1:1 is the cause; a rolling ~300ms floor BETWEEN turn ends is `turn_end_reindex` draining its batch (one uninterrupted run of awaits, so it stalls every live terminal while it runs). All live shells delayed at the same instant = one loop block, not one per shell. `watermark=0` on every `turn_end_transcript_parse` is the known transient-watermark defect (`agentic_process.py`): the whole history is rescanned each turn, so the stall grows with the transcript all session.
   - **Blank or frozen pane:** `attach_not_found`, `attach ok=false`, a missing `recovery` after a restart, `input_dropped`, WS request TIMEOUT, `output_delayed`.
   - **Terminal "dead after restart":** `session_start persisted_max_seq` vs `start_seq`, then frontend `dedup_drop` with `seq` far below `last_seq` (lost epoch).
   - **Slow tab switch / reload:** `on_connected` (count `start` lines per `source`; repeated starts = duplicate stream fetches), replay `took Nms serializedKB`, `xterm_mount`/`xterm_dispose` pairs (a "warm" terminal remounted).
@@ -96,6 +113,7 @@ The registry is every `### <tag>` heading below. Add entries in this format:
   - **Split-brain (two backends on one port):** `spawn backend_pid` ≠ `attach backend_pid`.
   - **Not covered:** GPU compositing / render bleed (not observable from logs).
 - **Verified 2026-09-16** on a temp instance: 3 API sessions, a browser terminal, `seq 1 200000`, resize and reload → 51 lines total; tag off → 0 new lines.
+- **Verified 2026-09-20** (`turn_end_transcript_parse` fields + `turn_end_reindex`) on instance `tlog-4`: 3 headless file-writing turns → 11 lines total, two-way toggle (on → lines, off → 0 new while a real turn ran and wrote files, on again → lines). The new line earned itself immediately: `turn_end_reindex paths=3 … ms=1535` on a 3-path batch is ~500ms/path, which is what the unattributed ~300ms prod floor is made of, and the repeat batches per turn end are `watermark=0` re-collecting the same set.
 
 ### process_load
 - **Traces:** the whole Claude-process load pipeline, cold and warm — `initSdk` (cold bootstrap vs memoised warm), every `/dock/shell` loader step (`perfLog`/`perfTime` in the loaders emit under this tag: loadAgentApp → loadShellRoute → waitForConnected → loadProcess phases → dataContext writes), tab materialization (`Tab.listAll` duration + cache-miss `new_tab` round trips), the SDK runtime attach (`AgenticProcess.start` POST `/open` and `attachPty` durations), WS request timeouts (method/action/target + elapsed + pending-queue depth), terminal mount (`TabbedTerminal` active flip, warm vs cold-mount), and attach-time history replay (`pty-stream` fetch, headless replay + serialized size, backlog `processChunk` loop with chunk counts).

@@ -96,6 +96,23 @@ from flow_sdk.builtin.artifact import Artifact
 produced = await Artifact.get_all({"generated_by": str(proc.typeid)})
 ```
 
+To read the ANSWER of a print-mode turn, wait until the turn is no longer busy and take the
+last thing the assistant said — its `chat` element, not its reasoning. The whole script is
+[llm-endpoints §7](llm-endpoints.md), pinned by `tests/long_tests/test_loginless_in_docker.py`:
+
+```python
+from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
+
+fresh = await AgenticProcess.get_by_id(proc.id)
+if not is_turn_busy(fresh, fresh.fetch_worker_status()):
+    said = [
+        item.flow_value
+        for item in fresh.driver.load_history(fresh)
+        if item.attributes.get("role") == "assistant" and item.attributes.get("element-type") == "chat"
+    ]
+```
+
 Always release the worker; a leaked one outlives its caller and holds a slot.
 
 ```python

@@ -3,9 +3,11 @@ from typing import ClassVar, Optional
 
 from pydantic import ConfigDict
 
-from flow_sdk.schema.data_spec import AssetDocumentSpec, Body, SpecType
+from flow_sdk.schema.data_spec import AssetDocumentSpec
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.io.native import Text
+from flow_sdk.schema.data_spec._form import ShapeForm
 
 #: The launch settings a place may override. Anything else is the definition's.
 PLACE_OVERRIDABLE_FIELDS: tuple[str, ...] = ("worker_type", "model", "permission_mode", "effort", "mcp_servers")
@@ -79,6 +81,6 @@ class AgentSpec(AssetDocumentSpec):
     email_place: Optional[str] = None
     #: The agent's own phone number (the one its WhatsApp channel answers on). Declaration only.
     phone: Optional[PhoneNumberSpec] = None
-    input: Optional[SpecType] = None
-    output: Optional[SpecType] = None
-    system_prompt: Body = ""
+    input: Optional[ShapeForm] = None
+    output: Optional[ShapeForm] = None
+    system_prompt: Text = ""

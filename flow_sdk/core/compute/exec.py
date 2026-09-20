@@ -1,8 +1,8 @@
 """Run one wizard command and report how it exited.
 
-Stdlib + asyncio only — no Entity import, no registry import. That is what lets
-the runner's tests exercise the whole state machine in milliseconds with a stub
-in this module's place.
+Stdlib, asyncio and ``DataSpec`` — no Entity import, no registry import. That
+is what lets the runner's tests exercise the whole state machine in
+milliseconds with a stub in this module's place.
 
 The subprocess discipline is ported from ``hook_models._exec_script``, which
 learned it the hard way: killing the child alone leaves its forks holding the
@@ -23,10 +23,10 @@ import logging
 import os
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
 logger = logging.getLogger(__name__)
@@ -58,8 +58,7 @@ def capped(text: str, limit: int = PROBE_OUTPUT_CAP) -> "tuple[str, bool]":
     return text[-limit:], True
 
 
-@dataclass(frozen=True)
-class ShellResult:
+class ShellResult(DataSpec):
     """What one command did. ``returncode is None`` only when it never ran."""
 
     returncode: Optional[int]

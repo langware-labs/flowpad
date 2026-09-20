@@ -18,16 +18,18 @@ prose. The receipt is the one mechanism with a proven verdict rule in this tree
 — the agent data source's harness transport reads one, and treats a MISSING receipt as a
 failed run rather than an empty one, for exactly the reason that applies here.
 
-Pure: stdlib only, no entity imports, no process imports. That is what keeps
-the runner's tests seam-injected and in milliseconds.
+Pure: stdlib, pydantic and ``DataSpec`` — no entity imports, no process
+imports. That is what keeps the runner's tests seam-injected and in
+milliseconds.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: The file a step's agent writes its result to.
 RESULT_FILENAME = "result.json"
@@ -51,9 +53,13 @@ STATUS_CANCEL = "cancel"
 STATUSES = (STATUS_DONE, STATUS_ERROR, STATUS_CANCEL)
 
 
-@dataclass(frozen=True)
-class StepResult:
-    """One agent's account of one step."""
+class StepResult(DataSpec):
+    """One agent's account of one step.
+
+    A ``DataSpec`` because it is read off a FILE the agent wrote — a value
+    arriving from outside, which is exactly the hop that wants a declared shape
+    rather than a dataclass nobody validates.
+    """
 
     ok: bool
     #: The one line a person reads. The agent's own words when it gave any.
@@ -131,20 +137,20 @@ def read_step_result(path: Path, *, output: str) -> StepResult:
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError:
-        return StepResult(False, error=f"the agent finished but wrote no result at {where}", path=where)
+        return StepResult(ok=False, error=f"the agent finished but wrote no result at {where}", path=where)
 
     try:
         data = json.loads(raw)
     except ValueError as exc:
-        return StepResult(False, error=f"the agent's result is not valid JSON: {exc}", path=where)
+        return StepResult(ok=False, error=f"the agent's result is not valid JSON: {exc}", path=where)
     if not isinstance(data, dict):
-        return StepResult(False, error="the agent's result is not a JSON object", path=where)
+        return StepResult(ok=False, error="the agent's result is not a JSON object", path=where)
 
     summary = str(data.get("summary") or "")[:SUMMARY_CAP]
     status = str(data.get("status") or "")
     if status not in STATUSES:
         return StepResult(
-            False, summary=summary,
+            ok=False, summary=summary,
             error=f"the agent's result declares no status (expected one of {', '.join(STATUSES)})",
             path=where,
         )
@@ -154,7 +160,7 @@ def read_step_result(path: Path, *, output: str) -> StepResult:
         reported = str(data.get("error") or summary or "").strip()
         prefix = "the agent cancelled" if status == STATUS_CANCEL else "the agent reported failure"
         return StepResult(
-            False, summary=summary,
+            ok=False, summary=summary,
             error=f"{prefix}: {reported}" if reported else prefix,
             path=where,
         )
@@ -162,7 +168,7 @@ def read_step_result(path: Path, *, output: str) -> StepResult:
     values = data.get("data")
     if not isinstance(values, dict) or output not in values:
         return StepResult(
-            False, summary=summary,
+            ok=False, summary=summary,
             error=f"the agent finished without returning {output!r}",
             path=where,
         )
@@ -170,15 +176,15 @@ def read_step_result(path: Path, *, output: str) -> StepResult:
     try:
         size = len(json.dumps(value))
     except (TypeError, ValueError) as exc:
-        return StepResult(False, summary=summary, error=f"{output!r} is not JSON-serializable: {exc}", path=where)
+        return StepResult(ok=False, summary=summary, error=f"{output!r} is not JSON-serializable: {exc}", path=where)
     if size > RESULT_VALUE_CAP:
         return StepResult(
-            False, summary=summary,
+            ok=False, summary=summary,
             error=(f"{output!r} is {size} bytes, over the {RESULT_VALUE_CAP}-byte value cap — "
                    "return a path, not the payload"),
             path=where,
         )
-    return StepResult(True, summary=summary, value=value, path=where)
+    return StepResult(ok=True, summary=summary, value=value, path=where)
 
 
 def clear_receipt(path: Path) -> None:

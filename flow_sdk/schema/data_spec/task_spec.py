@@ -6,7 +6,8 @@ from pydantic import Field
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.fs_store.origin.field import OriginField
-from flow_sdk.schema.data_spec import Body, FrontMatter
+from flow_sdk.schema.data_spec import FrontMatter
+from flow_sdk.schema.data_spec.io.native import Text
 
 
 class TaskEventType(StrEnum):
@@ -79,4 +80,4 @@ class TaskSpec(FrontMatter):
     task_type_label: Optional[str] = None
     team_space_id: Optional[str] = None
     worker_session_id: Optional[str] = None
-    description: Body = ""
+    description: Text = ""

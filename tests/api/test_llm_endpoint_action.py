@@ -139,6 +139,36 @@ async def test_select_lets_a_user_choose_a_source_without_a_hub(bootstrapped_cli
         assert (cap.auth_mode, cap.api_provider) == expected, payload
 
 
+async def test_select_binds_a_public_endpoint_without_login(bootstrapped_client, hub_logged_out) -> None:
+    """``flow llm user use <id>`` on a box that never signed in. A public endpoint is spendable by
+    whoever holds its id, so the 409 that guards every other hub choice does not apply -- and the
+    hub the box was told about travels with the binding, because it has no other."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    typeid = "llm_endpoint-11111111-2222-4333-8444-555555555555"
+    payload = {"harness": "claude", "kind": "endpoint", "endpoint_typeid": typeid}
+
+    refused = (await bootstrapped_client.post(f"{PATH}/select", json=payload)).json()
+    assert refused["status"] == "FAIL", "without `public` this is an ordinary hub choice, and still needs a login"
+
+    body = (
+        await bootstrapped_client.post(
+            f"{PATH}/select", json={**payload, "public": True, "hub_origin": "https://open.hub"}
+        )
+    ).json()
+    assert body["status"] == "SUCCESS", body
+    data = body["data"]
+    assert (data["endpoint_typeid"], data["public"]) == (typeid, True)
+    assert data["invoke_url"].startswith("https://open.hub/")
+    assert worker_capability_kind("claude") in data["active_for"], "bound and unfunded is not the point"
+
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    assert (cap.auth_mode, cap.api_provider) == ("api", "flowpad")
+    cap.auth_mode, cap.api_provider = "device", None
+    await cap.save(notify=False)
+
+
 async def test_select_rejects_what_it_cannot_honour(bootstrapped_client) -> None:
     path = "/api/v1/graph/compute_node/@local/llm-endpoint/select"
     for payload in (

@@ -17,6 +17,11 @@ Three scopes, one grammar::
 
     flow llm [scope] <action> [N] [all|<harness>]
 
+**No login at all**: ``flow llm user use <endpoint-id> [--hub URL]`` with the id of a PUBLIC hub
+endpoint funds the box from it. A public endpoint is spendable by whoever holds its id, so
+nothing is signed and nothing is stored but the binding itself -- it is how a foreign machine
+runs on someone's budget without an account. The id is the credential: treat it like one.
+
 ``shell`` (the default, no prefix) persists nothing — it prints exports for the current
 terminal. ``user`` is the box: the SAME write the picker's **Use** button makes, plus each
 harness's own config file, because on a box whose only consumer is a person at a prompt the
@@ -195,6 +200,9 @@ class Row(NamedTuple):
     harnesses: list[str]  # worker names that offer this source
     scope: str  # process | project | user | default — where the winner came from
     active_for: list[str]  # worker names whose resolved source IS this row
+    # Set only on the row `user use <endpoint-id>` makes for a PUBLIC endpoint this box was never
+    # offered: the hub it lives on. Non-empty is what tells `select` to bind it without a login.
+    public_hub: str = ""
 
 
 def _worker_of(capability_kind: str) -> str:
@@ -283,7 +291,10 @@ def _all_harnesses(rows: list[Row]) -> list[str]:
 
 def _render(rows: list[Row]) -> None:
     if not rows:
-        typer.echo("No LLM sources. Sign in to a harness, add a key, or log in to the hub.")
+        typer.echo(
+            "No LLM sources. Sign in to a harness, add a key, log in to the hub, "
+            "or use a public endpoint: flow llm user use <endpoint-id>"
+        )
         return
     every = _all_harnesses(rows)
     width = max(len(row.name) for row in rows)
@@ -518,13 +529,62 @@ def _test(
     _ok({"source": row.name, **verdict})
 
 
-@user_app.command("use", help="Make a source this box's default — identical to the picker's Use button.")
+def _public_endpoint_typeid(ref: str) -> str:
+    """*ref* as an ``llm_endpoint`` typeid when it is shaped like one, else ``""``.
+
+    A bare uuid or either typeid spelling. This is what separates "a budget this box has not
+    heard of" -- which may be a public one -- from a mistyped name, which is still a refusal.
+    """
+    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    prefix = EntityType.LLM_ENDPOINT.value
+    ref = ref.strip()
+    bare = ref[len(prefix) + 1 :] if ref.startswith((f"{prefix}-", f"{prefix}:")) else ref
+    return f"{prefix}-{bare}" if is_valid_uuid(bare) else ""
+
+
+def _probe_public_endpoint(typeid: str, hub: str) -> str:
+    """Ask the hub, with NO credential, whether *typeid* is a public endpoint. Returns its origin.
+
+    ``models`` is one of the two things an anonymous caller holds on a public endpoint, and it
+    spends nothing. Asking now is what makes a wrong id fail HERE, with a sentence, instead of
+    at the first worker spawn with a harness's retry loop.
+    """
+    from flow_sdk.builtin.llm_endpoint import PUBLIC_ENDPOINT_TOKEN, hub_invoke_path  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.instance_settings.llm_endpoint import hub_origin  # noqa: PLC0415
+
+    origin = (hub or hub_origin()).strip().rstrip("/")
+    if not origin.startswith(("http://", "https://")):
+        _fail(EXIT_INVALID_ARG, "BAD_HUB", f"{origin!r} is not a hub URL. Pass --hub https://<your hub>.")
+    url = f"{origin}{hub_invoke_path(TypeId(typeid)).removesuffix('/invoke')}/models"
+    try:
+        response = requests.get(url, headers={"Authorization": f"Bearer {PUBLIC_ENDPOINT_TOKEN}"})
+    except requests.RequestException as exc:
+        _fail(EXIT_CONNECTION_ERROR, "HUB_UNREACHABLE", f"Could not reach the hub at {origin}: {exc}")
+    if response.status_code >= 400:
+        _fail(
+            EXIT_REFUSED,
+            "NOT_PUBLIC",
+            f"{origin} will not let this box spend {typeid} without a login (HTTP {response.status_code}). "
+            f"It is not a public endpoint, or the id is wrong.",
+            {"remediation": ["Ask its owner to make it public", "or sign in: flow auth login"]},
+        )
+    return origin
+
+
+@user_app.command("use", help="Make a source this box's default. A PUBLIC hub endpoint's id works with no login.")
 def _use_box(
     ref: Annotated[str, typer.Argument(help="Row number, endpoint id, or name prefix.")],
     harness: Annotated[str, typer.Argument(help="all (default) or one harness.")] = "all",
     no_browser: Annotated[
         bool, typer.Option("--no-browser", help="With `auto`: never open the chooser; exit 4 with its URL.")
     ] = False,
+    hub: Annotated[
+        str,
+        typer.Option("--hub", help="With a public endpoint id: the hub it lives on (default: this box's hub)."),
+    ] = "",
 ) -> None:
     # `flow llm user set auto`: make sure the box HAS a source (opening the chooser if it has
     # none), then apply that source box-wide -- the same write the picker's Use button makes.
@@ -533,13 +593,36 @@ def _use_box(
         ref = _resolve_or_choose(no_browser=no_browser).typeid
     else:
         _refuse_auto_flags(no_browser=no_browser)
-    rows = _rows(_status())
-    row = _pick(rows, ref)
+    status = _status()
+    rows = _rows(status)
+    public_typeid = _public_endpoint_typeid(ref)
+    if public_typeid and not any(row.typeid == public_typeid for row in rows):
+        # An endpoint id this box has never been offered. Not in the inventory is not a
+        # refusal: a box with no hub login is offered nothing, and a PUBLIC endpoint is exactly
+        # the budget meant for it. It becomes a row like any other, offered to every harness,
+        # and goes through the same select below.
+        row = Row(
+            n=0,
+            typeid=public_typeid,
+            name="public endpoint",
+            kind="endpoint",
+            provider="",
+            harnesses=sorted({_worker_of(kind) for kind in status.get("sources") or {}}),
+            scope="",
+            active_for=[],
+            public_hub=_probe_public_endpoint(public_typeid, hub),
+        )
+    elif hub:
+        _fail(EXIT_INVALID_ARG, "HUB_NEEDS_ENDPOINT_ID", "--hub goes with a public endpoint id, not a listed source.")
+    else:
+        row = _pick(rows, ref)
     workers = _targets(row, harness, rows)
     for worker in workers:
         payload = {"harness": worker, "kind": row.kind, "scope": "user", "endpoint_typeid": row.typeid}
         if row.kind == "api_key":
             payload["provider"] = row.provider
+        if row.public_hub:
+            payload.update(name=row.name, public=True, hub_origin=row.public_hub)
         _op("select", payload)
         typer.echo(f"  {worker} -> {row.name}")
     # ...and write it where each harness looks by DEFAULT, so a bare `claude` / `codex` /

@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import Optional
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.schema.data_spec import Body, FrontMatter
+from flow_sdk.schema.data_spec import FrontMatter
+from flow_sdk.schema.data_spec.io.native import Text
 
 
 class SpecType(StrEnum):
@@ -20,4 +21,4 @@ class SpecDocSpec(FrontMatter):
 
     title: Optional[str] = None
     spec_type: Optional[str] = None
-    content: Body = ""
+    content: Text = ""

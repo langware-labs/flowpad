@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import ClassVar, Optional
 
 from flow_sdk._compat import StrEnum
@@ -142,8 +141,16 @@ class ConnectionSpec(DataSpec):
         )
 
 
-@dataclass(frozen=True)
-class ConnectionTestResult:
+class ConnectionTestResult(DataSpec):
+    """Whether a connection answers, and as whom.
+
+    These five were frozen ``@dataclass``es inside ``data_spec``, where the
+    rule is that every value is a ``DataSpec``. They travel — a test result and
+    an authorization both reach the API — so they were the rule's own package
+    breaking it. ``frozen`` they already were; what they gain is
+    ``extra="forbid"`` and a shape they can state.
+    """
+
     ok: Optional[bool]
     identity: Optional[str] = None
     account_key: Optional[str] = None
@@ -151,27 +158,23 @@ class ConnectionTestResult:
     code: Optional[str] = None
 
 
-@dataclass(frozen=True)
-class ConnectionResult:
+class ConnectionResult(DataSpec):
     spec: ConnectionSpec
     test: ConnectionTestResult
 
 
-@dataclass(frozen=True)
-class ConnectionTokenResult:
+class ConnectionTokenResult(DataSpec):
     status: ConnectionTokenStatus
     token: Optional[str] = None
 
 
-@dataclass(frozen=True)
-class BrowserAuthorization:
+class BrowserAuthorization(DataSpec):
     oauth_request_id: str
     provider: str
     url: str
 
 
-@dataclass(frozen=True)
-class DeviceAuthorization:
+class DeviceAuthorization(DataSpec):
     oauth_request_id: str
     provider: str
     verification_uri: str
