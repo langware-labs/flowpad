@@ -26,9 +26,9 @@ from pydantic import computed_field
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity, action
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-from flow_sdk.schema.data_spec import SpecType
 from flow_sdk.schema.data_spec.compute_op_spec import AttemptSpec, CommandSpec
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.data_spec._form import ShapeForm
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.compute_op_spec import CheckOutcome, ComputeOpSpec
@@ -59,7 +59,7 @@ class ComputeOp(Entity):
     completion_check: Optional[CommandSpec] = APIField(default=None, description="When this op is already done; absent means it always runs.")
     not_applicable_codes: list[int] = APIField(default_factory=list, description="Completion-check exit codes that mean \"not this machine\".")
     attempts: list[AttemptSpec] = APIField(default_factory=list, description="Ordered cheapest-first: command, prompt, agent.")
-    output: Optional[SpecType] = APIField(default=None, description="The shape this op returns.")
+    output: Optional[ShapeForm] = APIField(default=None, description="The shape this op returns.")
     setup: str = APIField(default="", description="How a person does this by hand (setup.md).")
 
     _api_visible: ClassVar[bool] = True
@@ -157,11 +157,9 @@ class ComputeOp(Entity):
 
         spec = self.spec()
         if spec is None:
-            return ReturnedValue(
-                exit_code=ExitCode.NOT_FOUND,
-                detail=f"{self.name}: the document is missing or unreadable.",
-                pending=(self.name,),
-            )
+            return ReturnedValue.not_found(
+                    f"{self.name}: the document is missing or unreadable.",
+                )
         trusted = approved or self.is_system()
         if not trusted:
             # Refuse, never block: a headless caller gets a legible answer

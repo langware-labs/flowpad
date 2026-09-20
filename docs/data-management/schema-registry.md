@@ -109,9 +109,14 @@ A carrier id that is not a valid v4/v5 (a hand-written v7, or a retired form suc
 
 A type's `TypeInfo` is assembled from up to two sources that merge into one entry:
 
+Filesystem contracts are resolved before a merged registration becomes visible to
+entity-binding callbacks. Conflicting spec or filesystem declarations are rejected
+before changing the live type. Late spec binding refreshes cached body metadata and
+binds the default entity-document fingerprint to the registry's resolved `TypeInfo`.
+
 ### 1. Declarative metadata (`flow_sdk/schema/type_info/<type>_info.py`)
 
-Each `<type>_info.py` module declares one (or more) `TypeInfo` instance at module scope. The on-disk shape is ONE declaration — `shape=File(ext=...)` or `shape=Folder(main=...)` (`flow_sdk/assets/layout.py`) — and the identity carrier is another: `identity_carrier=Frontmatter()` for a markdown main document, `Sidecar()` for a JSON-main folder, `JsonRoot()` for a report, `Derived()` when the id is a function of the source. Example (`skill_type_info.py`):
+Each `<type>_info.py` module declares one (or more) `TypeInfo` instance at module scope. For spec-backed assets, the on-disk shape is derived from the spec’s `main_file` or standalone-file metadata (`file_ext`, `file_names`, `file_extensions`). Custom-parser types without a spec still declare `shape=File(...)` or `shape=Folder(...)` directly. Explicit `manifest_layout` belongs to the spec as well. The runtime projection remains on `TypeInfo`, and the identity carrier is another: `identity_carrier=Frontmatter()` for a markdown main document, `Sidecar()` for a JSON-main folder, `JsonRoot()` for a report, `Derived()` when the id is a function of the source. Example (`skill_type_info.py`):
 
 ```python
 SKILL = TypeInfo(
@@ -127,7 +132,6 @@ SKILL = TypeInfo(
     index_fields=["description"],
     asset_class="shared",
     family="skills",
-    shape=Folder(main="SKILL.md"),
     walk=(
         Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root", "system_root")),
         Walk(roots=("folder",), anywhere=True),

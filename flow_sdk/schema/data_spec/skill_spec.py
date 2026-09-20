@@ -1,9 +1,10 @@
 """Filesystem contracts independent of application entities."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import ClassVar, Optional
 
-from flow_sdk.schema.data_spec import Body, FrontMatter
+from flow_sdk.schema.data_spec import FrontMatter
+from flow_sdk.schema.data_spec.io.native import Text
 
 
 class SkillSpec(FrontMatter):
@@ -12,6 +13,8 @@ class SkillSpec(FrontMatter):
     (``skill.yaml``/``skill.yml``) and the ``-@`` folder-name rule are
     ``derive_skill``'s — facts of the folder, not of this file."""
 
+    main_file: ClassVar[str | None] = "SKILL.md"
+
     name: Optional[str] = None
     description: Optional[str] = None
-    body: Body = ""
+    body: Text = ""

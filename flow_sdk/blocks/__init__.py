@@ -33,7 +33,7 @@ import contextlib
 import contextvars
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Sequence
 
 from pydantic import ConfigDict
 
@@ -100,15 +100,30 @@ async def workflow(name: str):
 class RunOutput(DataSpec):
     """One agent turn's result, as a value — frozen; a value is a value.
 
-    v1 carries the captured chat text and no files; parsing the turn against
-    the persona's declared ``AgentSpec.output`` shape is the planned upgrade,
-    and lands here without changing any caller.
+    ``text`` is always what the agent said. ``value`` is that reply read as the
+    shape the persona DECLARED (``Agent.output``), and it is ``None`` for a
+    persona that declares nothing — which is every persona in this tree today,
+    so a caller that only ever wanted the prose is unaffected.
+
+    The two are not redundant. A caller binding a later step to ``value``
+    binds to a field; one rendering the answer to a person still wants
+    ``text``. Before this, a node's output WAS the prose, so a downstream
+    binding had nothing to bind to but a sentence.
+
+    A declared shape the reply does not satisfy leaves ``value`` unset and puts
+    the reason in ``detail``: a turn that answered the wrong shape still
+    happened, and hiding the prose would lose the only account of it.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     text: str = ""
     files: list[FileRef] = []
+    #: The reply as the persona's declared shape, or ``None`` when it declares
+    #: none — or when the reply did not satisfy it (see ``detail``).
+    value: Any = None
+    #: Why ``value`` is unset despite a declared shape. Empty otherwise.
+    detail: str = ""
 
 
 #: ``context_data`` key holding a session's turn records: ``{turn key: {status, text}}``.
@@ -227,13 +242,13 @@ class _AgentRunner:
         key = _turn_key(m)
         prior = _turns(ap).get(key)
         if prior and prior.get("status") == _DONE:
-            return RunOutput(text=prior.get("text", ""), files=[])
+            return self._output(prior.get("text", ""))
         if prior and prior.get("status") == _STARTED:
             # We died mid-turn. Did the agent finish? The transcript knows.
             text = await _capture_assistant_reply(ap)
             if text:
                 await self._record_turn(ap, key, text)
-                return RunOutput(text=text, files=[])
+                return self._output(text)
         await self._stamp_turn(ap, key, {"status": _STARTED})
         outcome = await ap.prompt(m.body or m.name or "")
         # prompt() reports failure in its envelope, not by raising — a FAIL
@@ -242,7 +257,34 @@ class _AgentRunner:
             raise RuntimeError(f"prompt failed: {getattr(outcome, 'message', outcome)}")
         text = await _capture_assistant_reply(ap)
         await self._record_turn(ap, key, text or "")
-        return RunOutput(text=text or "", files=[])
+        return self._output(text or "")
+
+    def _output(self, text: str) -> RunOutput:
+        """The turn's reply as a value, held to the persona's declared shape.
+
+        Every return path in ``run`` goes through here — including the two that
+        answer from a record rather than from a fresh turn — so a replayed turn
+        and a live one produce the same shape, not merely the same text.
+        """
+        from flow_sdk.core.compute.declared_value import (  # noqa: PLC0415
+            DeclaredShapeError,
+            to_declared,
+            value_from_reply,
+        )
+
+        shape = getattr(self.agent, "output", None)
+        if shape is None:
+            return RunOutput(text=text, files=[])
+        try:
+            value = to_declared(value_from_reply(text), shape)
+        except DeclaredShapeError as error:
+            name = getattr(self.agent, "name", None) or "agent"
+            return RunOutput(
+                text=text,
+                files=[],
+                detail=f"{name}: the reply does not match this agent's declared output — {error}",
+            )
+        return RunOutput(text=text, files=[], value=value)
 
     async def _record_turn(self, ap, key: str, text: str) -> None:
         await self._stamp_turn(ap, key, {"status": _DONE, "text": text})

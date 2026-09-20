@@ -127,11 +127,11 @@ class DiskSerializer:
                     data[name] = self.load(sub_cls, local_origin_for_path(target))
             elif kind is FieldKind.ROWS and info is not None and info.rows_layout_field:
                 from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum  # noqa: PLC0415
-                from flow_sdk.schema.data_spec.layout import coerce_dataset_enum, layout_for  # noqa: PLC0415
+                from flow_sdk.schema.data_spec.layout import coerce_dataset_enum, dataset_layout_for  # noqa: PLC0415
 
                 # Rows are ARTIFACTS (paths, folders, cells) — never contents.
                 layout = coerce_dataset_enum(header_raw.get(info.rows_layout_field), DataLayoutEnum, DataLayoutEnum.CSV)
-                data[name] = layout_for(layout).read(
+                data[name] = dataset_layout_for(layout).read(
                     root, DEFAULT_DATASET_SPEC.example_type(), dataset_id=entity_id or "",
                     field_spec=header_raw.get("field_spec") or {}, delimiter=header_raw.get("delimiter") or ",",
                 )

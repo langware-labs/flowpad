@@ -39,7 +39,7 @@ def _list_element_ext(sub_cls: type) -> str:
 
 def _manifest_layout(info: Any) -> str:
     """``sections`` = ``{metadata, data}``; ``flat`` = the header's keys merged
-    onto the payload's own document. Declared on ``TypeInfo``; else sections
+    onto the payload's own document. Declared on the asset spec, projected through ``TypeInfo``; else sections
     when the spec has a ``FreeSection``, flat otherwise."""
     declared = getattr(info, "manifest_layout", None)
     if declared:
@@ -275,9 +275,9 @@ def read_asset_data(path: Path, info: Any, *, identity: str | None = None):
     data, header = read_main(info, layout.root, field_data=read_asset_fields(layout.root, info))
     if info.rows_field and info.rows_layout_field:
         from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum
-        from flow_sdk.schema.data_spec.layout import coerce_dataset_enum, layout_for
+        from flow_sdk.schema.data_spec.layout import coerce_dataset_enum, dataset_layout_for
         rows_layout = coerce_dataset_enum(header.get(info.rows_layout_field), DataLayoutEnum, DataLayoutEnum.CSV)
-        data[info.rows_field] = layout_for(rows_layout).read(
+        data[info.rows_field] = dataset_layout_for(rows_layout).read(
             layout.root, DEFAULT_DATASET_SPEC.example_type(), dataset_id=resolved_id,
             field_spec=header.get("field_spec") or {}, delimiter=header.get("delimiter") or ",",
         )
@@ -419,9 +419,35 @@ def _write_main(obj: Any, info: Any, root: Path, main: Optional[Path]) -> None:
     elif main.suffix == ".json":
         text = render_asset(obj, info)
         if text is not None:
-            _atomic_write_text(main, text)
+            _atomic_write_text(main, _with_carried_id(info, main, text))
     else:
         write_document(main, body=f"\n{_body(obj, info)}\n", fields=_frontmatter(obj, info), replace_fields=True)
+
+
+def _with_carried_id(info: Any, main: Path, text: str) -> str:
+    """Carry a ``JsonRoot`` id through the render.
+
+    That carrier keeps the id in the main document's own ``"id"`` key, but the
+    render does not emit it — so a plain write drops the id and the carrier
+    stamps it straight back. The document is written twice per save, its mtime
+    moves on a save that changed nothing (the indexer keys on mtime), and
+    between the two writes the file on disk has no identity at all.
+
+    The entity-document branch already reads the id off what is there; this is
+    the same move for the one other format that stores it in the document.
+    """
+    from flow_sdk.assets.identity_carrier import JsonRoot  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415
+
+    if info is None or not isinstance(getattr(info, "carrier", None), JsonRoot) or not main.is_file():
+        return text
+    existing = load_json_dict(main).get("id")
+    if not existing:
+        return text
+    rendered = json.loads(text)
+    if not isinstance(rendered, dict) or rendered.get("id"):
+        return text
+    return json.dumps({**rendered, "id": existing}, indent=2, ensure_ascii=False) + "\n"
 
 
 def _write_fields(obj: Any, info: Any, root: Path) -> None:
@@ -443,10 +469,10 @@ def _write_fields(obj: Any, info: Any, root: Path) -> None:
             sub_cls, _ = asset_class(fields[name].rebuild_annotation())
             write_asset_tree(value, asset_info(sub_cls), _sub_target(root, name, sub_cls))
         elif kind is FieldKind.ROWS and info is not None and info.rows_layout_field:
-            from flow_sdk.schema.data_spec.layout import layout_for  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
             source = getattr(obj, "asset_ref", None)
-            layout_for(getattr(obj, info.rows_layout_field)).write(
+            dataset_layout_for(getattr(obj, info.rows_layout_field)).write(
                 root, value or [], dataset_id=str(getattr(obj, "id", "") or ""),
                 field_spec=getattr(obj, "field_spec", None) or {}, delimiter=getattr(obj, "delimiter", None) or ",",
                 source=Path(source) if source else None,

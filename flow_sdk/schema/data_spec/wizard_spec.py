@@ -35,17 +35,14 @@ Stdlib + pydantic only, like the rest of ``data_spec``.
 
 from __future__ import annotations
 
-import sys
-from typing import Annotated, Any, ClassVar, Optional, Union
+from typing import Any, ClassVar, Optional, Union
 
-from pydantic import ConfigDict, StringConstraints, model_validator
+from pydantic import ConfigDict, model_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.schema.data_spec.spec import DataSpec, SpecType
-
-#: A step id is a handle used as an activity address segment and an error ref;
-#: a blank one would collapse two steps onto one node.
-NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec._types import NonBlank
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: What a step does when its action fails.
 ON_FAIL_ABORT = "abort"
@@ -95,8 +92,8 @@ class InputSpec(DataSpec):
     spec_kind: ClassVar[str] = "wizard.input"
 
     #: The value's shape, in the authoring form — ``"string"``, an object, or a
-    #: one-element list. The same ``SpecType`` an agent declares its contract with.
-    shape: Optional[SpecType] = None
+    #: one-element list. The same ``ShapeForm`` an agent declares its contract with.
+    shape: Optional[ShapeForm] = None
     #: What the form asks. Falls back to the parameter's name.
     label: str = ""
     description: str = ""
@@ -182,7 +179,7 @@ class WizardSpec(DataSpec):
     #: ``args``; an ``ask`` step obtains one from the person.
     inputs: dict[str, InputSpec] = {}
     #: The shape this wizard RETURNS, in the authoring form.
-    output: Optional[SpecType] = None
+    output: Optional[ShapeForm] = None
     steps: list[WizardStepSpec] = []
 
     @model_validator(mode="after")

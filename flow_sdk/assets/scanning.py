@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from flow_sdk.assets.layout import File, Folder, Layout, LayoutKind
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, mount_matches, scan_mounts
+from flow_sdk.schema.data_spec import DataSpec
 
 if TYPE_CHECKING:
     from flow_sdk.assets.asset import Asset
@@ -24,8 +25,13 @@ class AssetCandidate:
     asset: Asset | None = None
 
 
-@dataclass(frozen=True)
-class AssetScanIssue:
+class AssetScanIssue(DataSpec):
+    """One thing the scan could not read. A value that travels, so a spec.
+
+    Was a bare ``@dataclass``: it rode inside ``AssetCatalog`` (a ``DataSpec``)
+    and so made its container unable to say what it looks like.
+    """
+
     path: Path
     message: str
     type_name: str | None = None
@@ -103,7 +109,7 @@ def scan_declared(info: TypeInfo, root: Path, root_type: str) -> AssetScanResult
                 try:
                     entries = directory_candidates(directory, shape, recursive=walk.recursive)
                 except OSError as error:
-                    result.issues.append(AssetScanIssue(directory, str(error), info.type_name))
+                    result.issues.append(AssetScanIssue(path=directory, message=str(error), type_name=info.type_name))
                     continue
                 for entry in entries:
                     if is_appledouble(entry.name):
@@ -111,7 +117,9 @@ def scan_declared(info: TypeInfo, root: Path, root_type: str) -> AssetScanResult
                     if (not emit(entry, resolve=directory.is_symlink()) and not walk.recursive
                             and isinstance(shape, Folder) and not entry.name.startswith(".") and entry.is_dir()):
                         result.issues.append(AssetScanIssue(
-                            entry, f"directory in {directory.name}/ without {shape.main}", info.type_name,
+                            path=entry,
+                            message=f"directory in {directory.name}/ without {shape.main}",
+                            type_name=info.type_name,
                         ))
     return result
 
@@ -130,7 +138,7 @@ def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | 
         try:
             families = sorted(directory.iterdir())
         except OSError as error:
-            result.issues.append(AssetScanIssue(directory, str(error)))
+            result.issues.append(AssetScanIssue(path=directory, message=str(error)))
             return
         for family in families:
             info = infos.get(family.name)
@@ -139,7 +147,7 @@ def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | 
             try:
                 entries = [family] if info.singleton else sorted(family.iterdir())
             except OSError as error:
-                result.issues.append(AssetScanIssue(family, str(error), info.type_name))
+                result.issues.append(AssetScanIssue(path=family, message=str(error), type_name=info.type_name))
                 continue
             for entry in entries:
                 candidate = classify_candidate(entry, info, parent=parent,
@@ -148,8 +156,9 @@ def scan_repo_tree(root: Path, infos: dict[str, TypeInfo], *, types: set[str] | 
                     retired = next((name for name in info.retired_mains if (entry / name).is_file()), None)
                     if retired is not None and entry.is_dir():
                         result.issues.append(AssetScanIssue(
-                            entry, f"{retired} is a retired {info.type_name} document; run {info.retired_migration}",
-                            info.type_name, retired))
+                            path=entry,
+                            message=f"{retired} is a retired {info.type_name} document; run {info.retired_migration}",
+                            type_name=info.type_name, retired=retired))
                     continue
                 ported = next(((name, how) for name, how in info.retired_files if (candidate.path / name).is_file()), None)
                 if ported is not None:

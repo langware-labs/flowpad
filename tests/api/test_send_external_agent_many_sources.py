@@ -38,7 +38,13 @@ async def test_the_reply_leaves_through_the_conversations_own_source(client, mon
             assert resp.status_code == 200 and body.get("status") == "SUCCESS", body
             assert body["data"]["channel"] == cell.source.channel, "the reply was routed by the agent's first source"
             await asyncio.gather(*list(outbound._INFLIGHT))
-            assert [m["text"] for m in cell.double.sent()] == [f"reply {cell.nonce}"]
+            # Only the ROUTING is deterministic here. The tag bus starts the agent's own
+            # turn on delivery, so its "agent reply <nonce>" may or may not have left this
+            # channel by now (CI sees it, a fast machine does not) — an exact-list assert
+            # on this side is a coin flip. What the route must guarantee: this reply left
+            # through the conversation's OWN source, and nothing at all through the other.
+            texts = [m["text"] for m in cell.double.sent()]
+            assert f"reply {cell.nonce}" in texts, texts
             assert cells[0].double.sent() == [], "the other channel sent nothing"
         finally:
             for c in (first, second):

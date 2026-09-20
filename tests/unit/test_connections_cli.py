@@ -41,7 +41,7 @@ def test_connections_list_json_preserves_core_order(monkeypatch):
 
 def test_connections_connect_writes_one_success_json(monkeypatch):
     async def connect(_provider, _presenter):
-        return ConnectionResult(_spec("slack", True), ConnectionTestResult(ok=True, identity="me"))
+        return ConnectionResult(spec=_spec("slack", True), test=ConnectionTestResult(ok=True, identity="me"))
 
     monkeypatch.setattr(connections_cmd, "connect_provider", connect)
     result = CliRunner().invoke(app, ["connections", "connect", "slack", "--json"])
@@ -102,8 +102,8 @@ def test_connections_connect_maps_authorization_failure(monkeypatch):
 
 def test_connections_connect_falls_back_to_stderr_when_browser_opener_fails(monkeypatch):
     async def connect(_provider, presenter):
-        await presenter.present(BrowserAuthorization("opaque", "slack", "https://auth.example/connect"))
-        return ConnectionResult(_spec("slack", True), ConnectionTestResult(ok=True))
+        await presenter.present(BrowserAuthorization(oauth_request_id="opaque", provider="slack", url="https://auth.example/connect"))
+        return ConnectionResult(spec=_spec("slack", True), test=ConnectionTestResult(ok=True))
 
     monkeypatch.setattr(connections_cmd, "connect_provider", connect)
     monkeypatch.setattr(
@@ -123,8 +123,8 @@ def test_connections_connect_falls_back_when_browser_opener_raises(monkeypatch):
     from flow_sdk.core.connections import presentation
 
     async def connect(_provider, presenter):
-        await presenter.present(BrowserAuthorization("opaque", "slack", "https://auth.example/connect"))
-        return ConnectionResult(_spec("slack", True), ConnectionTestResult(ok=True))
+        await presenter.present(BrowserAuthorization(oauth_request_id="opaque", provider="slack", url="https://auth.example/connect"))
+        return ConnectionResult(spec=_spec("slack", True), test=ConnectionTestResult(ok=True))
 
     monkeypatch.setattr(connections_cmd, "connect_provider", connect)
 

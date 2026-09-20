@@ -52,7 +52,7 @@ async def _run(tmp_path, inputs=None, shell=None, launch=None, path="wizard-inp"
         return ShellResult(returncode=0)
 
     async def _launch(**_kw):
-        return ProcessResult("p", True)
+        return ProcessResult(process_id="p", ok=True)
 
     return await run_wizard(
         SPEC, subject_entity=None, activity_path=path, trusted=True, workdir=Path(tmp_path),
@@ -111,7 +111,7 @@ async def test_an_optional_input_skips_instead_of_parking(tmp_path):
         return ShellResult(returncode=0)
 
     async def _launch(**_kw):
-        return ProcessResult("p", True)
+        return ProcessResult(process_id="p", ok=True)
 
     result = await run_wizard(spec, subject_entity=None, activity_path="wizard-inp-d", trusted=True,
                               workdir=Path(tmp_path), shell=_ok, launch=_launch, platform="linux",
@@ -165,7 +165,7 @@ async def test_resume_is_just_a_re_run_and_redoes_nothing(tmp_path):
     spec = SPEC
 
     async def _launch(**_kw):
-        return ProcessResult("p", True)
+        return ProcessResult(process_id="p", ok=True)
 
     first = await run_wizard(spec, subject_entity=None, activity_path="wizard-inp-f", trusted=True,
                              workdir=Path(tmp_path), shell=shell, launch=_launch, platform="linux",

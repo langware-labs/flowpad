@@ -16,6 +16,7 @@ import pytest
 from flow_sdk.core.compute_op import ComputeOpNotApproved, check_op, run_op
 from flow_sdk.core.compute.exec import ShellResult
 from flow_sdk.core.compute.process_step import ProcessResult
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 from flow_sdk.schema.data_spec.compute_op_spec import CheckOutcome, ComputeOpSpec
 
 pytestmark = pytest.mark.timeout(5)
@@ -48,7 +49,7 @@ def _launch(prompts=None, *, ok=True, message="", process_id="proc-1"):
     async def launch(**kw):
         if prompts is not None:
             prompts.append(kw["prompt"])
-        return ProcessResult(process_id, ok, message)
+        return ProcessResult(process_id=process_id, ok=ok, message=message)
     return launch
 
 
@@ -140,7 +141,7 @@ async def test_a_rung_that_exits_zero_without_reaching_the_goal_escalates(tmp_pa
     async def launch(**kw):
         state["on_path"] = True
         prompts.append(kw["prompt"])
-        return ProcessResult("proc-1", True, "put it on PATH")
+        return ProcessResult(process_id="proc-1", ok=True, message="put it on PATH")
 
     spec = _spec(
         name="uv-on-path", label="uv",
@@ -182,7 +183,7 @@ async def test_exhausted_attempts_report_the_goal_as_pending(tmp_path):
     verdict = await _run_op(_spec(), _shell(lambda _c: 1), tmp_path=tmp_path)
 
     assert verdict.ok is False
-    assert verdict.pending == ("jq-on-path",)
+    assert verdict.exit_code is ExitCode.NOT_YET
     assert "install jq" in verdict.detail, "the detail must name the last thing tried"
 
 
@@ -191,7 +192,7 @@ async def test_a_goal_with_no_attempts_still_checks_and_says_pending(tmp_path):
     # A credential nobody can obtain from a script is still worth CHECKING.
     verdict = await _run_op(_spec(attempts=[]), _shell(lambda _c: 1), tmp_path=tmp_path)
 
-    assert verdict.ok is False and verdict.pending == ("jq-on-path",)
+    assert verdict.ok is False and verdict.exit_code is ExitCode.NOT_YET
     assert "nothing here can reach this goal" in verdict.detail
 
 
@@ -258,7 +259,10 @@ async def test_a_failed_dependency_stops_the_chain_and_keeps_its_own_detail(tmp_
     )
 
     assert verdict.ok is False
-    assert verdict.pending == ("git-on-path",), "the blocker is named, not the thing it blocked"
+    # The BLOCKER is named, not the thing it blocked. It is named by its LABEL,
+    # in the detail — the blocker's own answer is returned verbatim rather than
+    # restated, so what a person reads is what the blocker said about itself.
+    assert "git" in verdict.detail and "repo" not in verdict.detail
 
 
 @pytest.mark.asyncio
@@ -266,7 +270,7 @@ async def test_a_missing_dependency_is_named(tmp_path):
     spec = _spec(requires=["docker-running"], attempts=[])
     verdict = await _run_op(spec, _shell(lambda _c: 0), tmp_path=tmp_path, resolve=_resolver({}))
 
-    assert verdict.ok is False and verdict.pending == ("docker-running",)
+    assert verdict.ok is False and "docker-running" in verdict.detail
     assert "does not exist" in verdict.detail
 
 
@@ -288,3 +292,49 @@ async def test_an_unapproved_op_refuses_before_it_asks_anything(tmp_path):
                      shell=_shell(lambda _c: 0, seen=seen))
     # Refuses, never blocks — and never runs a command to find out.
     assert seen == []
+
+
+# ── a command rung returns a value (cleanup E1) ───────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_command_attempt_can_return_the_declared_value(tmp_path):
+    """A command rung could not return a value AT ALL: the branch never set
+    one, so an op declaring an ``output`` with only command rungs failed every
+    run — against a value it was never given. Invisible, because every op with
+    an ``output`` happened to carry an agent rung too.
+    """
+    from flow_sdk.core.compute.exec import ShellResult
+    from flow_sdk.core.compute_op import run_op
+    from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+
+    op = ComputeOpSpec.model_validate({
+        "name": "pick-port",
+        "output": {"port": "int"},
+        "attempts": [{"kind": "command", "commands": {"linux": "free-port"}}],
+    })
+
+    async def shell(_command, **_kw):
+        return ShellResult(returncode=0, stdout='{"port": 8099}\n')
+
+    answer = await run_op(op, trusted=True, workdir=tmp_path, platform="linux", shell=shell)
+    assert answer.exit_code is ExitCode.OK
+    assert answer.value.port == 8099
+
+
+@pytest.mark.asyncio
+async def test_a_command_that_prints_plain_text_returns_it_as_a_string(tmp_path):
+    """Not everything a shell prints is JSON. The declared shape decides
+    whether what came back is acceptable — the rung just reports stdout."""
+    from flow_sdk.core.compute.exec import ShellResult
+    from flow_sdk.core.compute_op import run_op
+    from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+
+    op = ComputeOpSpec.model_validate({
+        "name": "whoami", "output": "string",
+        "attempts": [{"kind": "command", "commands": {"linux": "whoami"}}],
+    })
+
+    async def shell(_command, **_kw):
+        return ShellResult(returncode=0, stdout="  ada  \n")
+
+    assert (await run_op(op, trusted=True, workdir=tmp_path, platform="linux", shell=shell)).value == "ada"

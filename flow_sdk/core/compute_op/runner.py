@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
+from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared, value_from_stdout
 from flow_sdk.core.compute.exec import PROBE_OUTPUT_CAP, ShellResult, capped, run_shell
 from flow_sdk.core.compute.process_step import ProcessResult, launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
@@ -48,7 +49,8 @@ from flow_sdk.schema.data_spec.compute_op_spec import (
     CheckOutcome,
     ComputeOpSpec,
 )
-from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
+from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: Resolve a name in ``requires`` to its spec. Injected: the runner does not
 #: know what an index is.
@@ -67,9 +69,12 @@ class ComputeOpNotApproved(RuntimeError):
     """
 
 
-@dataclass(frozen=True)
-class AttemptResult:
-    """What one rung did. Read by the next rung's prompt, and by ``on_probe``."""
+class AttemptResult(DataSpec):
+    """What one rung did. Read by the next rung's prompt, and by ``on_probe``.
+
+    A ``DataSpec`` because it TRAVELS: ``StepProbe.of_attempt`` copies it into a
+    wizard run's record, so it is a value that outlives the call that made it.
+    """
 
     kind: str
     command: str = ""
@@ -254,7 +259,7 @@ async def _run(
         f"{spec.display_label}: {tried[-1].describe()}" if tried
         else f"{spec.display_label}: nothing here can reach this goal."
     )
-    return ReturnedValue.not_yet(detail, pending=(spec.name,))
+    return ReturnedValue.not_yet(detail)
 
 
 async def _requires(
@@ -267,20 +272,16 @@ async def _requires(
             # A cycle is a bug in the documents, not a runtime condition to ride out.
             raise ValueError(f"compute_op cycle: {' → '.join([*chain, dependency])}")
         if seams.resolve is None:
-            return ReturnedValue(
-                exit_code=ExitCode.NOT_FOUND,
-                detail=f"{spec.display_label} requires {dependency!r}, and nothing can resolve it here.",
-                pending=(dependency,),
-            )
+            return ReturnedValue.not_found(
+                    f"{spec.display_label} requires {dependency!r}, and nothing can resolve it here.",
+                )
         if dependency not in seams.resolved:
             seams.resolved[dependency] = await seams.resolve(dependency)
         required = seams.resolved[dependency]
         if required is None:
-            return ReturnedValue(
-                exit_code=ExitCode.NOT_FOUND,
-                detail=f"{spec.display_label} requires {dependency!r}, which does not exist.",
-                pending=(dependency,),
-            )
+            return ReturnedValue.not_found(
+                    f"{spec.display_label} requires {dependency!r}, which does not exist.",
+                )
         answer = await _run(required, subject=subject, trusted=trusted, workdir=workdir,
                             platform=platform, seams=seams, seen=chain)
         if not answer.ok:
@@ -300,14 +301,11 @@ def _value_of(spec: ComputeOpSpec, result: AttemptResult, *, detail: str = "") -
     if spec.output is None:
         return ReturnedValue.satisfied(said)
     try:
-        from pydantic import TypeAdapter  # noqa: PLC0415
-
-        value = TypeAdapter(spec.output).validate_python(result.value)
-    except Exception as error:
+        value = to_declared(result.value, spec.output)
+    except DeclaredShapeError as error:
         return ReturnedValue.not_yet(
             f"{spec.display_label}: the {result.kind} attempt returned a value that does not "
             f"match this op's declared output — {error}",
-            pending=(spec.name,),
         )
     return ReturnedValue.satisfied(said, value=value)
 
@@ -343,11 +341,13 @@ async def _attempt(
             output=result.tail(PROBE_OUTPUT_CAP),
             stdout=out, stderr=err, truncated=out_cut or err_cut,
             duration_s=getattr(result, "duration_s", 0.0),
+            value=value_from_stdout(result.stdout) if spec.output is not None else None,
             ok=bool(result.ok),
         )
 
     return await _agent_attempt(attempt, spec, tried=tried, subject=subject,
                                 workdir=workdir, platform=platform, seams=seams)
+
 
 
 async def _agent_attempt(
@@ -361,11 +361,11 @@ async def _agent_attempt(
     clear_receipt(path)
     prompt = _prompt_for(spec, attempt.prompt, tried, platform=platform)
     if spec.output is not None:
-        # The AUTHORING form, not the compiled class: `SpecType` validates the
-        # form into a `type`, which `json.dumps` cannot render — so the contract
-        # silently dropped the shape line and then `_value_of` failed the agent
-        # for not matching a shape nobody showed it.
-        prompt += result_contract(path, VALUE_KEY, _authoring_form(spec.output))
+        # The field HOLDS the authoring form, so it goes into the prompt as-is.
+        # It used to hold a compiled `type`, which `json.dumps` cannot render —
+        # so the contract silently dropped its shape line and `_value_of` then
+        # failed the agent for not matching a shape nobody had shown it.
+        prompt += result_contract(path, VALUE_KEY, spec.output)
     outcome = await seams.launch(
         agent=attempt.agent,
         prompt=prompt,
@@ -386,19 +386,6 @@ async def _agent_attempt(
         value=said.value, ok=bool(outcome.ok and said.ok),
     )
 
-
-def _authoring_form(shape: Any) -> Any:
-    """A declared output as the form an author would write, for the prompt.
-
-    Tolerant on purpose: a shape we cannot render back is a reason to omit the
-    line, never to fail a run that is otherwise fine.
-    """
-    from flow_sdk.schema.data_spec import to_authoring_form  # noqa: PLC0415
-
-    try:
-        return to_authoring_form(shape)
-    except Exception:  # noqa: BLE001 — the contract degrades, the run does not
-        return None
 
 
 def _prompt_for(
