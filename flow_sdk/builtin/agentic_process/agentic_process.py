@@ -362,9 +362,6 @@ _LAST_BROADCAST_KEYS: dict[str, _BroadcastKey] = {}
 # Cleared alongside ``_LAST_BROADCAST_KEYS`` when the process goes away.
 _PENDING_ENTRIES: dict[str, list] = {}
 _DEBOUNCE_TASKS: dict[str, asyncio.Task] = {}
-#: Entry count already scheduled for turn-end reindex, per AP id. Per-instance
-#: it was always 0, so every turn end re-walked the whole session's writes.
-_REINDEX_WATERMARKS: dict[str, int] = {}
 
 
 def _release_process_transcript_state(process: "AgenticProcess") -> None:
@@ -373,16 +370,15 @@ def _release_process_transcript_state(process: "AgenticProcess") -> None:
     Every dict here outlives the instances that wrote it by design — the
     streamer hydrates a fresh AP per event — so nothing else frees them:
     without this they leak for the life of the server, and a recycled id would
-    inherit a dead process's buffer, watermark and dedup key.
+    inherit a dead process's buffer and dedup key.
 
-    One function rather than a release per dict, so adding a fifth kind of
+    One function rather than a release per dict, so adding a fourth kind of
     per-process state cannot half-land: the callers say "release this
-    process", not "release these four things".
+    process", not "release these three things".
     """
     key = str(process.id)
     process._last_broadcast_key = None  # setter drops the row
     _PENDING_ENTRIES.pop(key, None)
-    _REINDEX_WATERMARKS.pop(key, None)
     task = _DEBOUNCE_TASKS.pop(key, None)
     if task is not None and not task.done():
         # The flush re-reads the row and bails when it is gone, but an armed
@@ -7373,11 +7369,8 @@ class AgenticProcess(Entity):
             entries = list(tf.entries)
         except Exception:
             return []
-        # Keyed by process id: held on the instance this was always 0, because
-        # the instance is new for every streamer event — so each turn end
-        # re-walked the whole session's writes instead of only its own.
-        wm = int(_REINDEX_WATERMARKS.get(str(self.id), 0) or 0)
-        _REINDEX_WATERMARKS[str(self.id)] = len(entries)
+        wm = int(getattr(self, "_reindex_entry_watermark", 0) or 0)
+        object.__setattr__(self, "_reindex_entry_watermark", len(entries))
         # entries[wm:] clamps to [] when wm > len (a truncated/rotated transcript)
         # — safer than re-scanning all, which would re-reindex the whole history.
         touched = list(_iter_touched_paths(entries[wm:]))
