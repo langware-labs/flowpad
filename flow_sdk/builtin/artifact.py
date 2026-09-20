@@ -90,6 +90,71 @@ class Artifact(Entity):
             data["origin"] = local_origin_for_path(Path(raw_path).expanduser())
         return data
 
+    @classmethod
+    async def find_existing(
+        cls,
+        *,
+        generated_by: str | None = None,
+        project_id: str | None = None,
+        asset_ref: str | None = None,
+        target_type_id: str | None = None,
+        origin_path: str | None = None,
+    ) -> "Artifact | None":
+        """The artifact already registered for this address in this scope, or None.
+
+        THE idempotency seam for registration. Re-registering converges here
+        rather than on a derived id: an id is a name, not a fact about the
+        thing, and a key baked into one can never change afterwards. Same shape
+        as ``Deployment.find_existing`` / ``SourceItem.find_existing``.
+
+        **Scope is the caller's, and the two differ on purpose:**
+
+        * ``generated_by`` — RUN scope, for a file or a row. One run
+          re-registering the same deliverable converges; a DIFFERENT run
+          producing the same path gets its own artifact, because provenance is
+          per-run and an artifact may itself be an event ("a message it sent").
+        * ``project_id`` — PROJECT scope, for a web app. An app is a durable
+          asset of the project, not of the run that happened to build it, so
+          any run re-registering it converges on the one row.
+
+        Addresses are tried in declaration order and any one is sufficient.
+        ``origin_path`` is the canonical POSIX path of a LOCAL origin — it lives
+        inside a JSON column, so like ``Deployment.target.provider`` it is
+        matched in Python rather than in the query. The row count per scope is
+        small (one run's or one project's artifacts), so the others ride along
+        rather than forking a second query per address.
+        """
+        if (generated_by is None) == (project_id is None):
+            raise ValueError("find_existing takes exactly one scope: generated_by or project_id")
+        if not (asset_ref or target_type_id or origin_path):
+            # No address is not a wildcard — it is a caller bug that would
+            # otherwise converge on an arbitrary row of the scope.
+            return None
+
+        scope = {"generated_by": generated_by} if generated_by is not None else {"project_id": project_id}
+        for row in await cls.get_all({"match": scope}):
+            if asset_ref and row.asset_ref == asset_ref:
+                return row
+            if target_type_id and row.target_type_id == target_type_id:
+                return row
+            if origin_path and row.local_origin_path() == origin_path:
+                return row
+        return None
+
+    def local_origin_path(self) -> str | None:
+        """Canonical POSIX path of this artifact's LOCAL origin, else None.
+
+        A git-backed origin deliberately answers None: two checkouts of one repo
+        are the same origin but different paths, so a path match there would
+        converge rows that are not the same placement.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+        origin = self.origin
+        if getattr(origin, "kind", None) != "local":
+            return None
+        return canonical_posix_path(str(Path(origin.base) / origin.rel_path))
+
     async def setup_on_receive(self, *, project_id=None, workdir=None) -> dict:
         """Only application.web artifacts invoke the artifact setup skill."""
 
