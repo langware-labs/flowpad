@@ -3497,7 +3497,34 @@ class AgenticProcess(Entity):
             raise
 
         async def _run_turn() -> None:
-            """Drive the worker → handler pipeline. Runs as a background task."""
+            """Drive the worker → handler pipeline. Runs as a background task.
+
+            LOOKS like a duplicate of ``cli_drivers.headless_turn.run_headless_turn``
+            and is not worth folding into it — measured, not assumed. The two
+            differ in seven observable ways, and unifying them costs a
+            parameter per difference on the one function whose own docstring
+            calls the slot protocol "four places to get it wrong":
+
+            =====================  ==========================  ====================
+            axis                   run_headless_turn           here
+            =====================  ==========================  ====================
+            lock                   none                        wraps in ``lock``
+            sink                   ``emit_flow_data(dump)``     ``handler.on_flow_data``
+            end-of-stream          --                          ``on_flow_data(None)``
+            worker error           logs                        logs + queues it
+            save failure           DEBUG                       WARNING (see below)
+            worker registration    inside the helper           caller's prologue
+            task name              ``<vendor>-<id>``            unnamed
+            =====================  ==========================  ====================
+
+            What is genuinely common is about six lines — the execute/adopt
+            loop and the ``WorkerSpawnError`` latch. Extracting that would not
+            pay for the indirection.
+
+            The shared piece that IS worth keeping aligned is the finally: both
+            must ``unregister_prompt_worker`` and then ``end_headless_turn``,
+            on every exit. Change one, change the other.
+            """
             adopt_session = self.make_turn_session_adopter("prompt")
             try:
                 async with lock:
