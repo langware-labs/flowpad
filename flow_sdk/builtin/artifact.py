@@ -141,6 +141,63 @@ class Artifact(Entity):
                 return row
         return None
 
+    @classmethod
+    async def register(
+        cls,
+        *,
+        generated_by: str,
+        name: str,
+        kind: str,
+        description: str | None = None,
+        asset_ref: str = "",
+        target_type_id: str | None = None,
+        project_id: str | None = None,
+    ) -> "Artifact":
+        """Record what a run produced — minting the row, or converging on the
+        one this run already registered for the same deliverable.
+
+        RUN-scoped by construction: the lookup passes ``generated_by``, so a
+        retry within one run updates its row while a different run producing
+        the same path still gets its own (see :meth:`find_existing`).
+
+        The no-op case has to be a REAL no-op. An agent may re-register the
+        same deliverable on every turn, and a save costs a SQL UPDATE, a WS
+        broadcast to every connected client and a metadata write. Change
+        detection dumps both sides to JSON and compares once, the way
+        ``Deployment.upsert`` does — a per-field ``!=`` walk looks equivalent
+        and is not, because comparing a pydantic model against a plain dict
+        returns ``NotImplemented`` and so reads as "changed" every time.
+        """
+        from flow_sdk.worldview.ontology import normalize_kind  # noqa: PLC0415
+
+        body: dict[str, Any] = {
+            "name": name,
+            "kind": normalize_kind(kind),
+            "description": description,
+            "asset_ref": asset_ref,
+            "target_type_id": target_type_id,
+            "generated_by": generated_by,
+        }
+        if project_id is not None:
+            body["project_id"] = project_id
+
+        existing = await cls.find_existing(
+            generated_by=generated_by,
+            asset_ref=asset_ref or None,
+            target_type_id=target_type_id,
+        )
+        if existing is None:
+            artifact = cls(**body)
+            await artifact.save()
+            return artifact
+
+        keys = set(body)
+        candidate = cls(id=existing.id, **body)
+        if existing.model_dump(mode="json", include=keys) != candidate.model_dump(mode="json", include=keys):
+            existing.apply_field_updates(body)
+            await existing.save()
+        return existing
+
     def local_origin_path(self) -> str | None:
         """Canonical POSIX path of this artifact's LOCAL origin, else None.
 
