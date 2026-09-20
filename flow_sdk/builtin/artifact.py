@@ -99,6 +99,7 @@ class Artifact(Entity):
         asset_ref: str | None = None,
         target_type_id: str | None = None,
         origin_path: str | None = None,
+        kind: str | None = None,
     ) -> "Artifact | None":
         """The artifact already registered for this address in this scope, or None.
 
@@ -123,7 +124,14 @@ class Artifact(Entity):
         matched in Python rather than in the query. The row count per scope is
         small (one run's or one project's artifacts), so the others ride along
         rather than forking a second query per address.
+
+        ``kind`` narrows exact-or-DESCENDANT, never by equality — the ontology
+        is hierarchical, so a row refined to ``application.web.react`` is still
+        the web app at that path. It keeps a deliverable of one kind from
+        converging onto an unrelated row that merely shares an address.
         """
+        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
         if (generated_by is None) == (project_id is None):
             raise ValueError("find_existing takes exactly one scope: generated_by or project_id")
         if not (asset_ref or target_type_id or origin_path):
@@ -133,6 +141,8 @@ class Artifact(Entity):
 
         scope = {"generated_by": generated_by} if generated_by is not None else {"project_id": project_id}
         for row in await cls.get_all({"match": scope}):
+            if kind is not None and not kind_matches(kind, row.kind):
+                continue
             if asset_ref and row.asset_ref == asset_ref:
                 return row
             if target_type_id and row.target_type_id == target_type_id:
