@@ -351,7 +351,11 @@ _BroadcastKey = NamedTuple(
 
 # Last key broadcast per AP id — module-level because every streamer event hydrates a FRESH AP, killing instance state.
 _LAST_BROADCAST_KEYS: dict[str, _BroadcastKey] = {}
-# TEMP RCA PROBE — process-scoped watermark (revert after proving the switch)
+# How far the turn-end reindex has already scanned, per AP id — module-level for
+# the same reason, and it has to be: the value's whole job is to survive from one
+# streamer event to the next. As an instance attribute it always read back 0, so
+# every turn end rescanned the WHOLE session (prod 2026-09-20: 50,557 entries,
+# 511 paths re-indexed per turn, 9.6s).
 _REINDEX_WATERMARKS: dict[str, int] = {}
 
 
@@ -4702,8 +4706,11 @@ class AgenticProcess(Entity):
 
         Resolves the JSONL via the vendor driver and parses it through the
         analyzer using the descriptor's native format. Returns None if no
-        session is attached or the file is missing. Per-request load — no
-        caching; eager parse is fast enough for current sizes.
+        session is attached or the file is missing.
+
+        Per-request load, and the parse is EAGER and linear in file size — ~1s
+        for an 80MB session, on the caller's thread. Anything on the event loop
+        wants :meth:`_current_transcript`, which reuses the streamer's copy.
         """
         from flow_sdk.transcript_analyzer import AgentTranscriptFile
 
@@ -5979,6 +5986,7 @@ class AgenticProcess(Entity):
         # for the lifetime of the server — and a recycled id would start out
         # deduping against a dead process's last broadcast.
         self._last_broadcast_key = None
+        _REINDEX_WATERMARKS.pop(str(self.id), None)
         return result
 
     def _delete_session_transcript(self) -> None:
@@ -6961,6 +6969,10 @@ class AgenticProcess(Entity):
             # means a later re-open starts with no history and broadcasts its
             # first key instead of silently deduping against the pre-close one.
             self._last_broadcast_key = None
+            # Same lifetime, same reason: the turn-end reindex watermark is
+            # process-scoped, so it leaks unless an exit drops it. A re-opened
+            # process must also rescan from 0 — its transcript is a new file.
+            _REINDEX_WATERMARKS.pop(str(self.id), None)
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 
@@ -7359,7 +7371,7 @@ class AgenticProcess(Entity):
                 # lives on the earlier ``plan_mode`` attachment. Resolve through
                 # the same helper the pull path uses so a live plan and a reloaded
                 # one agree on where the plan is.
-                plan_file_path = entry.plan_file_path or self.plan_path_from_attachments(self._load_transcript())
+                plan_file_path = entry.plan_file_path or self.plan_path_from_attachments(self._current_transcript())
                 if not plan_file_path:
                     continue
                 # Order matters: cross-link save first so the entity-update
@@ -7480,6 +7492,29 @@ class AgenticProcess(Entity):
                 self.id, len(paths), counts, (time.monotonic() - t0) * 1000,
             )
 
+    def _current_transcript(self) -> "AgentTranscriptFile | None":
+        """This session's parsed transcript, reusing the streamer's if it has one.
+
+        ``_load_transcript`` PARSES: constructing an ``AgentTranscriptFile``
+        reads and folds the whole JSONL, and on an 80MB session that is ~1s on
+        the event loop, stalling every live terminal at once. The streamer
+        already owns that object for this file — built once off-loop by the
+        registry and kept current with ``parse_delta`` — and the turn-end seam
+        runs inside the dispatch of that very delta, so it is never staler
+        than a re-read. Keyed by PATH, so what comes back is this process's
+        own file by construction; no streamer (a restored process before its
+        first delta) falls back to the parse.
+        """
+        path = self.transcript_path
+        if path is None:
+            return None
+        from flow_sdk.transcript_streamer.registry import transcript_streamer_registry  # noqa: PLC0415
+
+        streamer = transcript_streamer_registry.get_streamer_by_path(path)
+        if streamer is not None:
+            return streamer.transcript
+        return self._load_transcript()
+
     def _collect_touched_from_transcript_tail(self) -> list[str]:
         """Files this turn wrote/edited, read from the transcript tail.
 
@@ -7491,10 +7526,11 @@ class AgenticProcess(Entity):
         ever touched)."""
         t0 = time.monotonic()
         # Split the clock at each stage. One combined ``ms`` cannot say whether
-        # the cost is the eager JSONL parse (``_load_transcript``) or the
-        # file-op scan over the tail — and those have opposite fixes, so a
-        # reader of one number has to re-measure before they can act.
-        tf = self._load_transcript()
+        # the cost is the JSONL parse (``_current_transcript`` — ~0 when the
+        # streamer's copy is reused) or the file-op scan over the tail, and
+        # those have opposite fixes, so a reader of one number has to
+        # re-measure before they can act.
+        tf = self._current_transcript()
         parse_ms = (time.monotonic() - t0) * 1000
         if tf is None:
             return []
@@ -7502,7 +7538,7 @@ class AgenticProcess(Entity):
             entries = list(tf.entries)
         except Exception:
             return []
-        wm = int(_REINDEX_WATERMARKS.get(str(self.id), 0) or 0)
+        wm = _REINDEX_WATERMARKS.get(str(self.id), 0)
         _REINDEX_WATERMARKS[str(self.id)] = len(entries)
         # entries[wm:] clamps to [] when wm > len (a truncated/rotated transcript)
         # — safer than re-scanning all, which would re-reindex the whole history.
@@ -7664,12 +7700,10 @@ class AgenticProcess(Entity):
                 # whiteboard scenario was re-run against this seam live and stays
                 # 4/4. The load, not the seam, was what broke it.
                 #
-                # Second defect here, independent of the gate: the watermark
-                # `_reindex_entry_watermark` is per-instance transient for the very
-                # same reason `prev_busy` was, so on this seam it always reads 0 and
-                # every firing reindexes the whole session history rather than the
-                # turn's own files. Fixing that is likely the precondition for
-                # trusting a live edge.
+                # The reindex watermark used to be per-instance transient for
+                # the very same reason `prev_busy` was, so on this seam it
+                # always read 0 and every firing reindexed the whole session
+                # history. It is process-scoped now (`_REINDEX_WATERMARKS`).
                 self._schedule_turn_end_reindex("flush")
                 # Drain the prompt queue on this same turn-end edge. A prompt
                 # enqueued mid-turn bails ``not_ready``, and that bail returns
