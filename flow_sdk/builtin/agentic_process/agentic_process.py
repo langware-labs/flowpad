@@ -2486,7 +2486,7 @@ class AgenticProcess(Entity):
             or "Artifact"
         )
 
-        artifact = Artifact(
+        artifact = await Artifact.register(
             name=name,
             kind=kind,
             description=str(body.get("description") or "").strip() or None,
@@ -2501,7 +2501,6 @@ class AgenticProcess(Entity):
             generated_by=str(self.typeid),
             project_id=await self.effective_project_id(),
         )
-        await artifact.save()
 
         shown = None
         if bool(body.get("show", True)):
