@@ -22,9 +22,9 @@ from flow_sdk.fs_store.serializer.disk import DiskSerializer
 from flow_sdk.fs_store.serializer.fields import asset_class as _asset_class
 from flow_sdk.fs_store.serializer.fields import unwrap_annotation as _unwrap
 from flow_sdk.schema.data_spec import DataSpec
-from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec._form import is_shape_form
 from flow_sdk.schema.data_spec.io.native import Binary, FreeForm, Text
+from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 
 
 def sample(name: str, annotation: Any, default: Any) -> Any:
@@ -73,6 +73,13 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         return next((m for m in members if m != default), members[0])
     if ann is Any:
         return {"free": name}
+    if "origin_tag" in str(annotation):
+        # A discriminated Origin union. The sampler cannot invent one, and it
+        # appears both as a spec field (`task.origin`) and inside nested specs
+        # (`project_manifest.entries[].origin`), so it is named here once.
+        from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
+
+        return LocalOrigin(base=f"/{name}-base", rel_path=f"{name}-rel")
     if getattr(ann, "__name__", "") == "TypeId":
         return ann(f"skill-{mint_uuid()}")
     if ann is datetime:
@@ -84,8 +91,11 @@ def populate(cls: type) -> Any:
     """An instance of ``cls`` with every on-disk field non-default."""
     values: dict[str, Any] = {}
     overrides = OVERRIDES.get(cls, {})
+    skip = NOT_ON_DISK.get(cls, set())
     for name, field in cls.model_fields.items():
-        if name in NOT_ON_DISK.get(cls, set()) or name == "type":
+        # A field that is not on disk is still REQUIRED in memory — skipping a
+        # required one builds nothing at all, so only optional fields are left out.
+        if name == "type" or (name in skip and not field.is_required()):
             continue
         if name in overrides:
             values[name] = overrides[name]
@@ -101,7 +111,13 @@ def disk_origin(cls: type, root: Path) -> LocalOrigin:
     """Where a probe of ``cls`` lives under ``root`` — a file or a folder."""
     from flow_sdk.fs_store.serializer.fields import asset_info  # noqa: PLC0415
 
-    return LocalOrigin(base=str(root), rel_path="asset" if isinstance(asset_info(cls).shape, Folder) else "asset.md")
+    shape = asset_info(cls).shape
+    if isinstance(shape, Folder):
+        return LocalOrigin(base=str(root), rel_path="asset")
+    # A File shape may pin FIXED names (``CLAUDE.md``): such a file is claimed
+    # by its name, so a probe called ``asset.md`` is not that type at all.
+    name = shape.names[0] if getattr(shape, "names", ()) else f"asset{shape.ext}"
+    return LocalOrigin(base=str(root), rel_path=name)
 
 
 def assert_roundtrip(cls: type, root: Path) -> Any:
@@ -114,8 +130,9 @@ def assert_roundtrip(cls: type, root: Path) -> Any:
     back = serializer.load(cls, origin)
     target = serializer.root(origin)
     projections = COMPARE.get(cls, {})
+    skip = NOT_ON_DISK.get(cls, set()) | NOT_COMPARED.get(cls, set())
     for name in cls.model_fields:
-        if name in NOT_ON_DISK.get(cls, set()) or name == "type":
+        if name in skip or name == "type":
             continue
         want, got = getattr(original, name), getattr(back, name)
         if name in projections:
@@ -131,6 +148,11 @@ NOT_ON_DISK: dict[type, set[str]] = {}
 #: Per-class values the generic sampler cannot invent (a dataset's rows, a
 #: layout that must match them). A value here is what the class round-trips.
 OVERRIDES: dict[type, dict[str, Any]] = {}
+
+#: Fields that ARE written but do not come back equal — a derived name, a keyed
+#: id, a lossy format. Populated and written like any other; simply not
+#: compared. Distinct from ``NOT_ON_DISK``, which is never even set.
+NOT_COMPARED: dict[type, set[str]] = {}
 
 #: Fields compared by a projection rather than ``==`` — a written example dir
 #: is named ``0001``, which re-mints the row ``id``, so rows compare without it.
