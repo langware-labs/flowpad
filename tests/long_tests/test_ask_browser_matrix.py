@@ -170,6 +170,23 @@ def frontend(backend_port: int) -> str:
         vite.kill()
 
 
+@pytest.fixture(autouse=True)
+def _record_browser_opens(monkeypatch, tmp_path_factory):
+    """No tab is listening when these ops ask, so the window path runs for real.
+
+    Point it at a recorder instead of a browser: the test already drives its
+    own chromium, and a second window opening on the developer's desktop on
+    every run is not a test, it is a nuisance. ``BROWSER`` is honoured by
+    ``webbrowser``, so this exercises the real code rather than skipping it.
+    """
+    log = tmp_path_factory.mktemp("opens") / "urls.txt"
+    recorder = log.parent / "record.sh"
+    recorder.write_text(f'#!/bin/sh\necho "$1" >> {log}\n', encoding="utf-8")
+    recorder.chmod(0o755)
+    monkeypatch.setenv("BROWSER", f"{recorder} %s")
+    return log
+
+
 def _spec():
     from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 
@@ -220,6 +237,31 @@ async def _run():
 
 
 # ── the matrix, with a live instance and a real window ────────────────────────
+
+
+async def test_no_tab_listening_takes_the_window_route(_record_browser_opens):
+    """The other half of the matrix: nothing is watching, so a window is wanted.
+
+    What is pinned: with no tab, the push is declined and the fall-through is
+    reached, at the chrome-less address.
+
+    What is NOT automated, deliberately: the last step of that route calls
+    ``flow_service()``, which borrows or STARTS the selected instance — and on
+    a developer's machine the selected instance is their real one. A test that
+    may start or adopt somebody's running server is not a test worth having.
+    Verified by hand instead; the address it would open is asserted here.
+    """
+    from flow_sdk.core.compute.ask import cancel, open_question
+    from flow_sdk.core.compute.ask_window import _push_to_live_tab, ask_url
+
+    question = open_question("get-api-key", "token", {"token": "string"})
+    try:
+        assert await _push_to_live_tab(question) is False, "no tab was connected, yet one was used"
+        assert ask_url("http://127.0.0.1:9007", question.id).endswith(f"/win/ask/{question.id}")
+    finally:
+        # Leave nothing waiting: the next test's driver answers the FIRST open
+        # question, and a leftover would hand it the wrong one.
+        cancel(question.id)
 
 
 async def test_success_a_person_types_a_value_and_the_op_returns_it(frontend):
