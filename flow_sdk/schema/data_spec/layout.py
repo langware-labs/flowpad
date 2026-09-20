@@ -22,8 +22,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, ClassVar, Optional, Sequence, Union, get_args, get_origin
 
-from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.schema.data_spec.io.names import ORDINAL
 from flow_sdk.schema.data_spec.dataset_spec import (
     DataLayoutEnum,
     ExampleKind,
@@ -32,6 +30,8 @@ from flow_sdk.schema.data_spec.dataset_spec import (
     FolderSpec,
     TextSpec,
 )
+from flow_sdk.schema.data_spec.io.names import ORDINAL
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 CSV_FILE = "data.csv"
 EXAMPLES_DIR = "examples"
@@ -87,8 +87,32 @@ def load_doc(path: Path) -> _Doc:
 
 
 def write_doc(path: Path, metadata: dict[str, Any], data: dict[str, Any]) -> None:
+    _write(path, json.dumps({"metadata": metadata, "data": data}, indent=2, default=str) + "\n")
+
+
+def _write(path: Path, text: str) -> None:
+    """One text write for the whole layout, through the asset writer's seam.
+
+    These files were the only ones in the tree written with a bare
+    ``write_text``: not atomic, and unconditional — so re-saving an unchanged
+    dataset rewrote every row and moved its mtime, which the indexer reads as a
+    change. ``_atomic_write_text`` already skips a write whose bytes match.
+    """
+    from flow_sdk.assets.frontmatter import _atomic_write_text  # noqa: PLC0415
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"metadata": metadata, "data": data}, indent=2, default=str) + "\n", encoding="utf-8")
+    _atomic_write_text(path, text)
+
+
+def _write_bytes(path: Path, payload: bytes) -> None:
+    """The binary half of ``_write`` — same no-churn rule, no text codec."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if path.read_bytes() == payload:
+            return
+    except OSError:
+        pass
+    path.write_bytes(payload)
 
 
 def is_binary(node: Any) -> bool:
@@ -594,7 +618,7 @@ class FolderLayout(DatasetLayout):
         if isinstance(node, TextSpec):
             if slot is None:
                 raise ValueError("a text cell cannot be a folder member — it has no path")
-            (ex_dir / f"{slot}.txt").write_text(node.text, encoding="utf-8")
+            _write(ex_dir / f"{slot}.txt", node.text)
             return
         if isinstance(node, FolderSpec):
             (ex_dir / node.path).mkdir(parents=True, exist_ok=True)
@@ -607,11 +631,11 @@ class FolderLayout(DatasetLayout):
             if node.path in contents:
                 payload = contents[node.path]
                 if isinstance(payload, (bytes, bytearray)):
-                    target.write_bytes(payload)
+                    _write_bytes(target, bytes(payload))
                 elif isinstance(payload, str):
-                    target.write_text(payload, encoding="utf-8")
+                    _write(target, payload)
                 else:
-                    target.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+                    _write(target, json.dumps(payload, indent=2, default=str) + "\n")
             elif source is not None and (source / node.path).is_file():
                 shutil.copyfile(source / node.path, target)
             elif not target.exists():
@@ -624,11 +648,11 @@ class FolderLayout(DatasetLayout):
             # knew three leaf types and raised for everything else, so
             # ``ExampleSpec[Question, Answer, …]`` was declarable and
             # unwritable. One walker now serves both.
-            from flow_sdk.schema.data_spec.io.writer import write as _write  # noqa: PLC0415 — cycle-safe
+            from flow_sdk.schema.data_spec.io.writer import write as write_spec  # noqa: PLC0415 — cycle-safe
 
             # ``_nested``: a slot is part of an example, not an entity of its
             # own, so it mints no identity. The example directory is the thing
             # with a name; its slots are its fields.
-            _write(node, ex_dir / slot, _nested=True)
+            write_spec(node, ex_dir / slot, _nested=True)
             return
         raise ValueError(f"cannot write a {type(node).__name__} slot")

@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 class WebDomain(Entity):
     type: str = BuiltinEntityType.WEB_DOMAIN.value
     domain: str = APIField()
-    verified: bool = False
+    verified: bool = APIField(default=False)
     micro_app_id: str = APIField()
     _api_visible: ClassVar[bool] = True
 

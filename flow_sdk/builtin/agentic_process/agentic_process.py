@@ -351,6 +351,8 @@ _BroadcastKey = NamedTuple(
 
 # Last key broadcast per AP id — module-level because every streamer event hydrates a FRESH AP, killing instance state.
 _LAST_BROADCAST_KEYS: dict[str, _BroadcastKey] = {}
+# TEMP RCA PROBE — process-scoped watermark (revert after proving the switch)
+_REINDEX_WATERMARKS: dict[str, int] = {}
 
 
 #: Where a process remembers the terminal it opened for the user, so
@@ -7500,8 +7502,8 @@ class AgenticProcess(Entity):
             entries = list(tf.entries)
         except Exception:
             return []
-        wm = int(getattr(self, "_reindex_entry_watermark", 0) or 0)
-        object.__setattr__(self, "_reindex_entry_watermark", len(entries))
+        wm = int(_REINDEX_WATERMARKS.get(str(self.id), 0) or 0)
+        _REINDEX_WATERMARKS[str(self.id)] = len(entries)
         # entries[wm:] clamps to [] when wm > len (a truncated/rotated transcript)
         # — safer than re-scanning all, which would re-reindex the whole history.
         t_scan = time.monotonic()
