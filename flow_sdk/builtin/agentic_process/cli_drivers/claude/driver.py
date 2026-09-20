@@ -130,6 +130,12 @@ class ClaudeDriver:
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def pty_turn_complete(entry: "Any", *, active_turn_id: str | None) -> bool:  # noqa: ARG004
+        """Claude records a ``turn_duration`` system row after its
+        assistant/stop hooks — that row IS the end of the PTY turn."""
+        return getattr(entry, "subtype", "") == "turn_duration"
+
     def cli_options(self, process: "AgenticProcess") -> ClaudeAgentOptions:
         """Build a Claude CLI command for ``process``.
 

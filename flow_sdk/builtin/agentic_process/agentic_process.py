@@ -3735,40 +3735,29 @@ class AgenticProcess(Entity):
     ) -> bool:
         """Recognize a provider-owned terminal event for this PTY turn.
 
-        Every candidate entry is newer than this prompt's transcript watermark
-        and is accepted only after its user row landed. Claude records a
-        ``turn_duration`` system row after its assistant/stop hooks; Copilot
-        records ``assistant.turn_end``. Codex records ``task_complete``: when it
-        carries a ``turn_id`` we require exact correlation with the turn we saw
-        start, but a bare ``task_complete`` (no ``turn_id`` — codex often omits
-        it) still completes the active turn. Inactivity remains the fallback if a
-        provider marker is absent or incomplete.
+        The GATES are generic and live here: every candidate entry is newer
+        than this prompt's transcript watermark, is a SYSTEM row, is not a
+        sidechain, and is accepted only after its user row landed.
+
+        WHICH row means "the turn ended" is a vendor fact, so each driver
+        declares it as :meth:`pty_turn_complete` — the same optional-trait
+        shape as ``is_transcript_user_turn``. A driver that omits it never
+        completes on a marker (opencode), and inactivity remains the fallback
+        for every vendor whose marker is absent or incomplete.
         """
-        from flow_sdk.transcript_analyzer.entry import EntryKind
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+            get_driver,
+        )
+        from flow_sdk.transcript_analyzer.entry import EntryKind  # noqa: PLC0415
 
         if not user_turn_landed or entry.kind is not EntryKind.SYSTEM:
             return False
         if getattr(entry, "is_sidechain", False):
             return False
-        subtype = getattr(entry, "subtype", "")
-        if worker_type == "claude":
-            return subtype == "turn_duration"
-        if worker_type == "copilot":
-            return subtype == "assistant.turn_end"
-        if worker_type != "codex":
+        marker = getattr(get_driver(worker_type), "pty_turn_complete", None)
+        if marker is None:
             return False
-        if subtype != "event_msg.task_complete":
-            return False
-        payload = getattr(entry, "payload", None)
-        completed_turn_id = ""
-        if isinstance(payload, dict):
-            completed_turn_id = str(payload.get("turn_id") or "")
-        # No turn_id in the payload → this task_complete refers to the active
-        # turn (don't wait out the inactivity fallback). A present turn_id must
-        # match exactly; a mismatch does NOT complete this turn.
-        if not completed_turn_id:
-            return True
-        return completed_turn_id == active_turn_id
+        return bool(marker(entry, active_turn_id=active_turn_id))
 
     @staticmethod
     def _pty_inactivity_result(user_turn_landed: bool) -> "FlowData":
