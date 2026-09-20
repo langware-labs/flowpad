@@ -352,6 +352,38 @@ _BroadcastKey = NamedTuple(
 # Last key broadcast per AP id — module-level because every streamer event hydrates a FRESH AP, killing instance state.
 _LAST_BROADCAST_KEYS: dict[str, _BroadcastKey] = {}
 
+# The debounce's own state, keyed by AP id, and module-level for exactly the
+# reason above: ``transcript_subscriber._route_to_ap`` resolves the AP per
+# streamer event through ``local_rows`` -> ``get_all``, and there is no
+# identity map, so each event arrives on a DIFFERENT instance. Held on ``self``
+# these read back empty every time, which gave every event its own buffer and
+# its own timer — N writes in a burst became N flushes, each re-parsing the
+# transcript, and the "one broadcast per quiescent window" contract never held.
+# Cleared alongside ``_LAST_BROADCAST_KEYS`` when the process goes away.
+_PENDING_ENTRIES: dict[str, list] = {}
+_DEBOUNCE_TASKS: dict[str, asyncio.Task] = {}
+#: Entry count already scheduled for turn-end reindex, per AP id. Per-instance
+#: it was always 0, so every turn end re-walked the whole session's writes.
+_REINDEX_WATERMARKS: dict[str, int] = {}
+
+
+def _drop_transcript_debounce_state(process_id: str) -> None:
+    """Release the per-process debounce state when the process goes away.
+
+    Module-level state outlives every instance by design, so nothing else frees
+    it: without this it leaks for the life of the server, and a recycled id
+    would inherit a dead process's buffer and watermark. Mirrors the reasoning
+    on ``_LAST_BROADCAST_KEYS``, and is called from the same two places.
+    """
+    key = str(process_id)
+    _PENDING_ENTRIES.pop(key, None)
+    _REINDEX_WATERMARKS.pop(key, None)
+    task = _DEBOUNCE_TASKS.pop(key, None)
+    if task is not None and not task.done():
+        # The flush re-reads the row and bails when it is gone, but an armed
+        # timer on a dead process is pure latency on shutdown.
+        task.cancel()
+
 
 #: Where a process remembers the terminal it opened for the user, so
 #: `flow terminal open` is idempotent (a re-show, not a second terminal) and
@@ -5794,6 +5826,7 @@ class AgenticProcess(Entity):
         # for the lifetime of the server — and a recycled id would start out
         # deduping against a dead process's last broadcast.
         self._last_broadcast_key = None
+        _drop_transcript_debounce_state(self.id)
         return result
 
     def _delete_session_transcript(self) -> None:
@@ -6776,6 +6809,7 @@ class AgenticProcess(Entity):
             # means a later re-open starts with no history and broadcasts its
             # first key instead of silently deduping against the pre-close one.
             self._last_broadcast_key = None
+            _drop_transcript_debounce_state(self.id)
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 
@@ -7111,10 +7145,8 @@ class AgenticProcess(Entity):
         carries the headless ``_turn_in_flight`` short-circuit and visible-PTY
         liveness reconciliation that ``driver.tail_status`` alone misses.
         """
-        pending = getattr(self, "_pending_entries", None)
-        if pending is None:
-            object.__setattr__(self, "_pending_entries", [])
-            pending = self._pending_entries
+        key = str(self.id)
+        pending = _PENDING_ENTRIES.setdefault(key, [])
         pending.extend(entries)
         if len(pending) > self._DEBOUNCE_BUFFER_CAP:
             overflow = len(pending) - self._DEBOUNCE_BUFFER_CAP
@@ -7125,15 +7157,14 @@ class AgenticProcess(Entity):
                 overflow,
             )
 
-        task = getattr(self, "_debounce_task", None)
+        # Keyed by process id, NOT by instance: the next event lands on a
+        # different object, and an instance-held task always read back None —
+        # so every event armed its own timer and coalescing never happened.
+        task = _DEBOUNCE_TASKS.get(key)
         if task is None or task.done():
-            object.__setattr__(
-                self,
-                "_debounce_task",
-                asyncio.create_task(
-                    self._flush_transcript_change(),
-                    name=f"ap-flush-{self.id[:8]}",
-                ),
+            _DEBOUNCE_TASKS[key] = asyncio.create_task(
+                self._flush_transcript_change(),
+                name=f"ap-flush-{key[:8]}",
             )
 
     async def _apply_transcript_names(self, durable: "AgenticProcess", entries: list) -> None:
@@ -7292,8 +7323,11 @@ class AgenticProcess(Entity):
             entries = list(tf.entries)
         except Exception:
             return []
-        wm = int(getattr(self, "_reindex_entry_watermark", 0) or 0)
-        object.__setattr__(self, "_reindex_entry_watermark", len(entries))
+        # Keyed by process id: held on the instance this was always 0, because
+        # the instance is new for every streamer event — so each turn end
+        # re-walked the whole session's writes instead of only its own.
+        wm = int(_REINDEX_WATERMARKS.get(str(self.id), 0) or 0)
+        _REINDEX_WATERMARKS[str(self.id)] = len(entries)
         # entries[wm:] clamps to [] when wm > len (a truncated/rotated transcript)
         # — safer than re-scanning all, which would re-reindex the whole history.
         touched = list(_iter_touched_paths(entries[wm:]))
@@ -7349,17 +7383,27 @@ class AgenticProcess(Entity):
         try:
             await asyncio.sleep(self._DEBOUNCE_SECONDS)
 
-            durable = await AgenticProcess.get_by_id(str(self.id))
-            entries = list(getattr(self, "_pending_entries", []))
+            key = str(self.id)
+            durable = await AgenticProcess.get_by_id(key)
+            entries = list(_PENDING_ENTRIES.get(key, []))
             # A name belongs to the durable row, so it moves in any lifecycle
             # state (starting, or after the worker exited); only entry
             # processing below is gated on RUNNING.
             if durable is not None:
                 await self._apply_transcript_names(durable, entries)
             if durable is None or durable.status != ProcessStatus.RUNNING.value or durable.pty_mode != self.pty_mode:
+                # Deliberately WITHOUT draining: entries buffered before the
+                # process reached RUNNING stay queued for the next flush. They
+                # used to die here with the instance that held them.
                 return
 
-            object.__setattr__(self, "_pending_entries", [])
+            # Consume exactly what was read. Anything that arrived during the
+            # awaits above stays buffered rather than being dropped by a blanket
+            # reset — the buffer now outlives this instance, so a lost update
+            # here would be a real loss.
+            buffered = _PENDING_ENTRIES.get(key)
+            if buffered is not None:
+                del buffered[: len(entries)]
             await self._process_transcript_entries(entries)
 
             # Raw worker status ("what we found") — same helper the serializer
