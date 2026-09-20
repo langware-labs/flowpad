@@ -35,10 +35,12 @@ Four properties follow from that shape and are what the tests pin:
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
+from flow_sdk.core.compute.ask import ASK_TIMEOUT_SECONDS
 from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared, value_from_stdout
 from flow_sdk.core.compute.exec import PROBE_OUTPUT_CAP, ShellResult, capped, run_shell
 from flow_sdk.core.compute.process_step import ProcessResult, launch_step_process
@@ -99,7 +101,10 @@ class AttemptResult(DataSpec):
         """One paragraph a model can read: what was tried, and what came back."""
         head = f"`{self.command}`" if self.command else f"the {self.kind} attempt"
         if self.timed_out:
-            return f"{head} timed out."
+            # A rung that carries its own account of the timeout says it: an
+            # ask knows how long it waited, where a killed command only knows
+            # that it was killed.
+            return f"{head}: {self.message.strip()}." if self.message.strip() else f"{head} timed out."
         code = "" if self.returncode is None else f" (exit {self.returncode})"
         body = self.output.strip() or self.message.strip() or "no output"
         return f"{head} did not reach the goal{code}:\n{body}"
@@ -143,6 +148,9 @@ class _Seams:
     #: Values a caller put in scope. They reach a command as ENVIRONMENT, never
     #: spliced into it — an argument of ``; rm -rf /`` must not be executable.
     env: dict = field(default_factory=dict)
+    #: How long an ``ask`` rung waits for a person. Carried so a caller can give
+    #: a SHORTER span than the product default; nothing here ever lengthens it.
+    ask_timeout: float = ASK_TIMEOUT_SECONDS
     report: _Report = field(default_factory=_Report)
     #: Dependency specs already looked up in THIS run. Resolving is a row query
     #: plus a document read, and a prerequisite several ops name would otherwise
@@ -195,12 +203,16 @@ async def run_op(
     launch: Callable[..., Awaitable[ProcessResult]] = launch_step_process,
     on_status: Optional[Callable[[str], None]] = None,
     on_probe: Optional[Callable[[str, AttemptResult], None]] = None,
+    #: How long an ``ask`` rung waits. A caller may give a person LESS time than
+    #: the product default; there is no way to give them more from here.
+    ask_timeout: float = ASK_TIMEOUT_SECONDS,
     _seen: Optional[tuple[str, ...]] = None,
 ) -> ReturnedValue:
     """Reach the goal or produce the value, or say precisely what is missing."""
     seams = _Seams(
         shell=shell, launch=launch, resolve=resolve,
         env=dict(env or {}),
+        ask_timeout=ask_timeout,
         report=_Report(on_status=on_status, on_probe=on_probe),
     )
     return await _run(spec, subject=subject, trusted=trusted, workdir=workdir,
@@ -345,8 +357,42 @@ async def _attempt(
             ok=bool(result.ok),
         )
 
+    if attempt.kind is AttemptKind.ASK:
+        return await _ask_attempt(attempt, spec, seams=seams)
+
     return await _agent_attempt(attempt, spec, tried=tried, subject=subject,
                                 workdir=workdir, platform=platform, seams=seams)
+
+
+async def _ask_attempt(
+    attempt: AttemptSpec, spec: ComputeOpSpec, *, seams: _Seams,
+) -> AttemptResult:
+    """Put the op's declared ``output`` to a person and wait a bounded time.
+
+    The rung answers like any other: it either produced a value or it did not,
+    and the completion check still decides whether the goal holds. A cancel and
+    a timeout are both "no value" — they differ in what they tell a person, not
+    in what they tell the caller.
+    """
+    from flow_sdk.core.compute.ask import Cancelled, open_question, wait_for  # noqa: PLC0415
+    from flow_sdk.core.compute.ask_window import raise_question  # noqa: PLC0415
+
+    question = open_question(
+        spec.name or "op", attempt.prompt or spec.display_label, spec.output,
+    )
+    seams.report.say(f"{spec.display_label}: waiting for you…")
+    await raise_question(question)
+    kind = str(attempt.kind)
+    try:
+        value = await wait_for(question, timeout=seams.ask_timeout)
+    except Cancelled:
+        return AttemptResult(kind=kind, message="cancelled", ok=False)
+    except (TimeoutError, asyncio.TimeoutError):
+        return AttemptResult(
+            kind=kind, timed_out=True,
+            message=f"no answer within {seams.ask_timeout:g}s", ok=False,
+        )
+    return AttemptResult(kind=kind, message="answered", value=value, ok=True)
 
 
 
