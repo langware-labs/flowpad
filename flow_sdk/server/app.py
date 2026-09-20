@@ -47,6 +47,7 @@ from .routes import (
     activity_router,
     agent_records_router,
     agents_router,
+    ask_router,
     asset_share_router,
     assets_router,
     auth_router,
@@ -711,6 +712,7 @@ server.add_router(tags_router)
 server.add_router(display_router)
 server.add_router(asset_share_router)
 server.add_router(subgraph_router)
+server.add_router(ask_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)
 server.add_router(transcripts_router)
