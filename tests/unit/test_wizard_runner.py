@@ -71,7 +71,7 @@ def _shell(code_for, *, seen=None):
 
 def _launch(**_kw):
     async def launch(**kw):
-        return ProcessResult("proc-1", True, "agent finished")
+        return ProcessResult(process_id="proc-1", ok=True, message="agent finished")
     return launch
 
 
@@ -362,7 +362,7 @@ async def test_a_bound_value_reaches_a_later_step_as_environment(tmp_path):
         path = receipt_path(Path(workdir), "release")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"status": "done", "summary": "v9", "data": {VALUE_KEY: "v9"}}))
-        return ProcessResult("proc-1", True, "v9")
+        return ProcessResult(process_id="proc-1", ok=True, message="v9")
 
     # An op with no completion check is a CALL: it always runs, and its answer
     # is its value — returned through the receipt the agent writes.

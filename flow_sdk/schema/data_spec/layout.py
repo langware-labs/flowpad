@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Optional, Sequence, Union, get_args, get_origin
 
 from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.io.names import ORDINAL
 from flow_sdk.schema.data_spec.dataset_spec import (
     DataLayoutEnum,
     ExampleKind,
@@ -141,7 +142,7 @@ class DatasetLayout:
         raise NotImplementedError
 
 
-def layout_for(name: Union[str, DataLayoutEnum]) -> DatasetLayout:
+def dataset_layout_for(name: Union[str, DataLayoutEnum]) -> DatasetLayout:
     layout = coerce_dataset_enum(name, DataLayoutEnum, DataLayoutEnum.CSV)
     return FolderLayout() if layout == DataLayoutEnum.IO_FOLDER else CsvLayout()
 
@@ -341,6 +342,37 @@ def _typed_slots(spec: type) -> dict[str, type]:
     return out
 
 
+def _declared_artifact(spec: type) -> dict[str, type]:
+    """Slots declared as a specific ARTIFACT leaf.
+
+    The scan classifies bytes: a file under ``input/`` becomes a ``FolderSpec``
+    holding one ``FileRef``, because on disk that is what it is. When the spec
+    says the slot IS a ``FileRef``, that promotion makes ``write`` → ``read``
+    stop being identity — you put a ``FileRef`` in and got a folder back, and a
+    declared ``ExampleSpec[FileRef, ...]`` then failed to validate at all.
+
+    Only the spec knows which was meant, and only here does it get asked.
+    """
+    from flow_sdk.schema.data_spec.io.placement import unwrap  # noqa: PLC0415 — cycle-safe
+
+    out: dict[str, type] = {}
+    for base in SLOT_BASES:
+        field = spec.model_fields.get(base)
+        if field is None:
+            continue
+        core = unwrap(field.annotation)
+        # EXACTLY a FileRef, never the ``Artifact`` union. Python flattens
+        # nested unions, so ``Optional[Union[Artifact, list[Artifact]]]`` has
+        # ``FileRef`` as its first arm too — and an ``Artifact`` slot means
+        # "whichever of the three is there", so the scan's answer is the right
+        # one and must not be second-guessed.
+        arms = [a for a in (get_args(core) or (core,))
+                if a is not type(None) and get_origin(a) is not list]
+        if len(arms) == 1 and isinstance(arms[0], type) and issubclass(arms[0], FileRef):
+            out[base] = arms[0]
+    return out
+
+
 class FolderLayout(DatasetLayout):
     """``examples/<name>/`` — slots are files or folders; sidecars annotate them."""
 
@@ -351,6 +383,9 @@ class FolderLayout(DatasetLayout):
 
         rows = []
         typed = _typed_slots(spec)
+        # Pure functions of the shape — hoisted out of the per-example loop.
+        mains = {base: _main_document(shape) for base, shape in typed.items()}
+        artifact = _declared_artifact(spec)
         for ex_dir in _example_dirs(folder):
             row = self.read_example(ex_dir)
             if row is None:
@@ -365,8 +400,18 @@ class FolderLayout(DatasetLayout):
                 # though its declared shape is a plain ``DataSpec``. Keying the
                 # read on the walker's own main document makes the two agree by
                 # looking, instead of by two rules that can drift.
-                if (ex_dir / base / _main_document(shape)).is_file():
+                if (ex_dir / base / mains[base]).is_file():
                     row[base] = _load(shape, ex_dir / base)
+            # A slot the spec declares as a ``FileRef`` comes back as one, not
+            # as the folder the scan saw it sitting in. The scan classifies
+            # BYTES and is right about them; only the spec knows which was
+            # meant, and without asking it `write` → `read` was not identity.
+            for base in artifact:
+                held = row.get(base)
+                if isinstance(held, FolderSpec) and len(held.files) == 1:
+                    (only,) = held.files.values()
+                    if isinstance(only, FileRef):
+                        row[base] = only
             row["id"] = example_id(dataset_id, ex_dir.name)
             rows.append(spec.model_validate(row))
         return rows
@@ -447,7 +492,7 @@ class FolderLayout(DatasetLayout):
         folder = Path(folder)
         (folder / EXAMPLES_DIR).mkdir(parents=True, exist_ok=True)
         for i, ex in enumerate(examples, 1):
-            name = f"{i:04d}"
+            name = ORDINAL.format(i)
             self.write_example(folder / EXAMPLES_DIR / name, ex,
                                source=(Path(source) / EXAMPLES_DIR / name) if source else None)
 

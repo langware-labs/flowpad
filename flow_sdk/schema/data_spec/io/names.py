@@ -63,7 +63,10 @@ def kind_of(spec: type) -> str:
     origin = (getattr(spec, "__pydantic_generic_metadata__", {}) or {}).get("origin")
     if origin is not None and origin is not spec:
         return kind_of(origin)
-    return getattr(spec, "spec_kind", "") or spec.__name__.lower()
+    # NOT ``spec.spec_kind``: a ClassVar is inherited, so an unregistered
+    # subclass would be named after its parent. An anonymous shape has only its
+    # own class name.
+    return spec.__name__.lower()
 
 
 def bare(kind: str) -> str:

@@ -275,9 +275,9 @@ def read_asset_data(path: Path, info: Any, *, identity: str | None = None):
     data, header = read_main(info, layout.root, field_data=read_asset_fields(layout.root, info))
     if info.rows_field and info.rows_layout_field:
         from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum
-        from flow_sdk.schema.data_spec.layout import coerce_dataset_enum, layout_for
+        from flow_sdk.schema.data_spec.layout import coerce_dataset_enum, dataset_layout_for
         rows_layout = coerce_dataset_enum(header.get(info.rows_layout_field), DataLayoutEnum, DataLayoutEnum.CSV)
-        data[info.rows_field] = layout_for(rows_layout).read(
+        data[info.rows_field] = dataset_layout_for(rows_layout).read(
             layout.root, DEFAULT_DATASET_SPEC.example_type(), dataset_id=resolved_id,
             field_spec=header.get("field_spec") or {}, delimiter=header.get("delimiter") or ",",
         )
@@ -443,10 +443,10 @@ def _write_fields(obj: Any, info: Any, root: Path) -> None:
             sub_cls, _ = asset_class(fields[name].rebuild_annotation())
             write_asset_tree(value, asset_info(sub_cls), _sub_target(root, name, sub_cls))
         elif kind is FieldKind.ROWS and info is not None and info.rows_layout_field:
-            from flow_sdk.schema.data_spec.layout import layout_for  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
             source = getattr(obj, "asset_ref", None)
-            layout_for(getattr(obj, info.rows_layout_field)).write(
+            dataset_layout_for(getattr(obj, info.rows_layout_field)).write(
                 root, value or [], dataset_id=str(getattr(obj, "id", "") or ""),
                 field_spec=getattr(obj, "field_spec", None) or {}, delimiter=getattr(obj, "delimiter", None) or ",",
                 source=Path(source) if source else None,

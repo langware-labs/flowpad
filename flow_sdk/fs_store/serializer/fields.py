@@ -77,8 +77,12 @@ def asset_class(annotation: Any) -> tuple[Optional[type], bool]:
 
     This replaces the ``SubAsset`` marker, which was the only way to say it and
     so had to be remembered per field. The distinction was already in the class
-    hierarchy; it just was not being read. Same predicate as
-    ``data_spec/io/placement.is_document`` — one rule, both layers.
+    hierarchy; it just was not being read.
+
+    NOT the same predicate as ``data_spec/io/placement.is_document``: that one
+    also counts a shape carrying a ``Text`` field, and this one additionally
+    requires the registry to know the class. A shape with a body but no
+    ``AssetDocumentSpec`` base is a file to ``io/`` and a scalar here.
     """
     from flow_sdk.schema.data_spec.frontmatter import AssetDocumentSpec  # noqa: PLC0415 — cycle-safe
 

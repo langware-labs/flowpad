@@ -20,7 +20,7 @@ The split between ``exit_code`` and ``pending``:
   acts at. A caller that can ask (a Wizard) turns a non-empty ``pending`` into a
   question; a caller that cannot (a schedule) reports it and stops.
 
-``value`` is typed by the callee's declared ``output`` (a ``SpecType``), and is
+``value`` is typed by the callee's declared ``output`` (a ``ShapeForm``), and is
 ``None`` when nothing was declared. Nothing else in this repo enforces a declared
 shape today, so this is the first place a declaration means something.
 """

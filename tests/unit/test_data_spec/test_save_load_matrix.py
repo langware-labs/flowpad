@@ -277,3 +277,22 @@ def test_a_minted_capsule_is_written_in_the_shared_envelope(tmp_path):
     written = json.loads((tmp_path / ".flow" / "capsules" / "identity.json").read_text())
     assert set(written) == {"data", "version"} and written["version"] == 1
     assert set(written["data"]) == {"id"}
+
+
+def test_a_declared_file_slot_comes_back_as_a_file_not_a_folder(tmp_path):
+    """``write`` → ``read`` was NOT identity for an artifact slot: a ``FileRef``
+    written under ``input/`` was read back as a ``FolderSpec`` holding it,
+    because the scan classifies bytes and a file in a directory IS that. So a
+    declared ``ExampleSpec[FileRef, ...]`` could not even validate.
+
+    The scan is right about the bytes; only the spec knows which was meant.
+    """
+    from flow_sdk.schema.data_spec.dataset_spec import ExampleSpec, FileRef
+    from flow_sdk.schema.data_spec.layout import FolderLayout
+
+    example_type = ExampleSpec[FileRef, FileRef, DataSpec]
+    example = example_type(input=FileRef(path="input/q.txt"), output=FileRef(path="output/a.txt"))
+    FolderLayout().write(tmp_path, [example], dataset_id="ds")
+
+    back = FolderLayout().read(tmp_path, example_type, dataset_id="ds")[0]
+    assert (back.input, back.output) == (example.input, example.output)

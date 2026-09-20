@@ -4,7 +4,7 @@ What is pinned is the contract: the authoring form has no keywords and
 round-trips through ``parse``/``to_authoring_form``; a dict is ALWAYS an
 object; a parsed shape is a real Pydantic class whose validation, errors and
 JSON Schema are Pydantic's own; a named subclass registers under its kind and
-a parametrization does not; ``SpecType`` carries a class through a field.
+a parametrization does not; ``ShapeForm`` carries a declared shape as data.
 """
 from __future__ import annotations
 
@@ -14,7 +14,8 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.data_spec import DataSpec, SpecType, to_authoring_form
+from flow_sdk.schema.data_spec import DataSpec, to_authoring_form
+from flow_sdk.schema.data_spec._form import ShapeForm, compile_form
 from flow_sdk.schema.data_spec._kinds import PRIMITIVES
 
 pytestmark = pytest.mark.timeout(5)  # do not increase without approval
@@ -141,7 +142,7 @@ def test_an_entity_type_name_names_that_type_s_DOCUMENT_SHAPE() -> None:
     """One namespace, one meaning: a kind always names a ``DataSpec``.
 
     It used to resolve to the Entity class, so ``"output": "dataset"`` handed a
-    ``SpecType`` field a row model — which cannot validate a value, because it
+    ``ShapeForm`` field a row model — which cannot validate a value, because it
     demands ids and DB columns the value has never heard of. Meanwhile
     ``"output": "compute_op"`` gave a document shape, purely because that one
     spec declared a ``spec_kind``. Same syntax, two meanings.
@@ -179,18 +180,24 @@ def test_a_kind_referenced_before_registration_is_anonymous() -> None:
     assert cls.model_validate({"children": [1, "x", None]}).children == [1, "x", None]
 
 
-# ── SpecType: a class through a field ─────────────────────────────────────────
+# ── ShapeForm: a declared shape, held as DATA ────────────────────────────────
 
-def test_spec_type_reads_the_authoring_form_and_dumps_it_back() -> None:
+def test_a_declared_shape_is_held_as_the_form_and_dumps_unchanged() -> None:
+    """``SpecType`` held a live CLASS in a field — the one place a spec carried
+    something that is not data, which is why it needed a custom serializer to
+    survive JSON at all. ``ShapeForm`` keeps the form; a caller that needs a
+    class calls ``compile_form``."""
     class Holder(BaseModel):
-        shape: Optional[SpecType] = None
+        shape: Optional[ShapeForm] = None
 
     for form in FORMS:
         h = Holder(shape=form)
+        assert h.shape == form                     # the FIELD is the form
         assert h.model_dump(mode="json")["shape"] == form
         assert Holder.model_validate(h.model_dump(mode="json")).shape == h.shape
+        assert compile_form(h.shape) == DataSpec.parse(form)   # a parametrized generic is not interned
     assert Holder().model_dump(mode="json")["shape"] is None
-    assert Holder(shape=str).shape is str          # a type passes straight through
+    assert Holder(shape=str).shape == "string"     # a type is rendered to its form
 
 
 def test_a_kind_miss_asks_the_loader_that_owns_its_namespace(monkeypatch) -> None:
