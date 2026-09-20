@@ -215,9 +215,7 @@ class WizardRunResult:
                 self.message, value=self.outputs or None,
                 ran=any(not outcome.skipped for outcome in self.outcomes),
             )
-        return ReturnedValue.not_yet(
-            self.message, pending=tuple(item.name for item in self.awaiting),
-        )
+        return ReturnedValue.not_yet(self.message)
 
     def to_payload(self) -> dict:
         return {
