@@ -35,6 +35,8 @@ REMOTE_TRANSPORTS = ("http", "sse")
 class McpSpec(DataSpec):
     """The launch payload for one MCP server. Frozen: it is a value."""
 
+    main_file: ClassVar[str | None] = "mcp.json"
+
     spec_kind: ClassVar[str] = "mcp.server"
 
     name: NonBlank

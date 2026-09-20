@@ -6,10 +6,11 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec
 from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum, ExampleSpec
-from flow_sdk.schema.data_spec.layout import CSV_FILE, EXAMPLES_DIR, is_binary, dataset_layout_for
+from flow_sdk.schema.data_spec.layout import CSV_FILE, EXAMPLES_DIR, dataset_layout_for, is_binary
 
-MANIFEST = "dataset.json"
+MANIFEST = DatasetManifestSpec.main_file
 
 
 def dataset_counts(kinds: Iterable[str]) -> dict:

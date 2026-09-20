@@ -35,8 +35,6 @@ from flow_sdk.tags.envelope import parse_target
 
 #: The one schema this build reads. Bump only with a migration.
 PROJECT_MANIFEST_SCHEMA = 1
-#: The manifest's main document inside its folder.
-PROJECT_MANIFEST_MAIN = "project_manifest.json"
 #: The dependencies ledger beside it — what this project INSTALLED from others.
 DEPS_MAIN = "deps.json"
 #: The types a row may name in phase 1: every file-backed type whose carrier can
@@ -109,6 +107,8 @@ class ProjectManifestSpec(DataSpec):
     Every helper returns a NEW instance: a spec is a value, and the writer
     replaces the file wholesale.
     """
+
+    main_file: ClassVar[str | None] = "project_manifest.json"
 
     spec_kind: ClassVar[str] = "project.manifest"
 
@@ -238,3 +238,7 @@ class DependenciesSpec(ProjectManifestSpec):
                 raise ValueError(f"duplicate dependency {entry.typeid}")
             seen.add(entry.typeid)
         return entries
+
+
+# Compatibility export for readers of the project manifest.
+PROJECT_MANIFEST_MAIN = ProjectManifestSpec.main_file

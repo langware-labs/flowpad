@@ -11,6 +11,9 @@ class UsageReportSpec(SectionedHeader):
     """``report.json`` — a FLAT document ``{name, data: {…metrics}, markdown}``:
     the headline metrics live under ``data``; the payload IS the file."""
 
+    main_file: ClassVar[str | None] = "report.json"
+    manifest_layout: ClassVar[str | None] = "flat"
+
     _section: ClassVar[str | None] = "data"
     _section_fields: ClassVar[frozenset[str]] = frozenset({
         "period_start", "period_end", "period_kind", "generated_at", "total_cost_usd", "session_count",

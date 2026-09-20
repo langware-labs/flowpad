@@ -4,10 +4,10 @@ from typing import ClassVar, Optional
 from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec import AssetDocumentSpec
+from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.schema.data_spec.io.native import Text
-from flow_sdk.schema.data_spec._form import ShapeForm
 
 #: The launch settings a place may override. Anything else is the definition's.
 PLACE_OVERRIDABLE_FIELDS: tuple[str, ...] = ("worker_type", "model", "permission_mode", "effort", "mcp_servers")
@@ -50,6 +50,9 @@ class AgentSpec(AssetDocumentSpec):
     that bundle is md5'd into ``last_started_hash``, and a new key there would
     flip ``restart_required`` on every running process.
     """
+
+    main_file: ClassVar[str | None] = "agent.json"
+    manifest_layout: ClassVar[str | None] = "entity"
 
     title: Optional[str] = None
     description: Optional[str] = None
