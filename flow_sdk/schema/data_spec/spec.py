@@ -35,7 +35,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Annotated, Any, ClassVar, get_args, get_origin
+import types
+from enum import Enum
+from pathlib import PurePath
+from typing import Annotated, Any, ClassVar, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, create_model, model_validator
 
@@ -110,6 +113,62 @@ class DataSpec(BaseModel):
             return data
         return _compile(_normalize_form(data))
 
+    @classmethod
+    def authoring_form(cls) -> Any:
+        """What this shape looks like, in the authoring form.
+
+        NOT called ``shape``: a spec may legitimately declare a field of that
+        name (``Credentials.shape``, ``InputSpec.shape``), and a method sharing
+        a field's name silently wins — the same collision that once made
+        ``ComputeOp.check()`` call a field and drop it from the document.
+
+        The inverse of ``parse``, and a classmethod for the same reason
+        ``parse`` is one: a round trip whose two halves live at different
+        altitudes — one on the class, one a module function you must import —
+        reads as two unrelated facilities rather than one contract.
+
+        This is the ONE accessor. ``model_json_schema()`` is pydantic's
+        rendering, for tools; this is ours, and it is what a document holds.
+        """
+        return to_authoring_form(cls)
+
+    def save(self, root: "Any", *, carrier: "Any" = None) -> str:
+        """Write this value into *root*; return the folder's id.
+
+        The folder IS the value: what lands there is enough to move it, copy it
+        or hand it to another machine. Where each field goes is read off its
+        TYPE (``io/placement.py``) — a value inlines, a document becomes a file,
+        a list or dict of shapes becomes a directory.
+
+        A two-line delegate on purpose: ``data_spec`` stays stdlib + pydantic,
+        and ``io`` is imported lazily so a process that never saves anything
+        never pays for it — the same guard ``parse`` uses for the registry.
+        """
+        from flow_sdk.schema.data_spec.io import save as _save  # noqa: PLC0415 — cycle-safe: lazy
+
+        return _save(self, root, carrier=carrier)
+
+    @classmethod
+    def load(cls, root: "Any") -> "DataSpec":
+        """Read a value of this shape back out of *root*. Inverse of ``save``."""
+        from flow_sdk.schema.data_spec.io import load as _load  # noqa: PLC0415 — cycle-safe: lazy
+
+        return _load(cls, root)
+
+    def __hash__(self) -> int:
+        """A spec is a VALUE, so it is hashable — and ``frozen=True`` alone did
+        not deliver that: any ``dict`` or ``list`` field made ``hash()`` raise,
+        which is most specs here. Hashing the canonical dump keeps equal values
+        equal (``_canonical`` already sorts keys for ``_COMPILED``)."""
+        cached = self.__dict__.get("__spec_hash__")
+        if cached is None:
+            # ``frozen=True``, so the value provably cannot change. Computing
+            # this per lookup would make a dict of N spec keys cost N recursive
+            # dumps to build, where O(N) was intended.
+            cached = hash(_canonical(self.model_dump(mode="json")))
+            object.__setattr__(self, "__spec_hash__", cached)
+        return cached
+
 
 def _compile(form: Any) -> type:
     """A NORMALIZED form → a type. Children are already normalized, so this
@@ -157,10 +216,63 @@ def _canonical(form: Any) -> str:
     return json.dumps(form, sort_keys=True, separators=(",", ":"))
 
 
+class NoAuthoringForm(ValueError):
+    """A type the authoring grammar cannot express.
+
+    Names the OUTER class as well as the inner type: the walk recurses into
+    fields, and an error that named only the inner type left a reader hunting
+    for which spec contained it.
+    """
+
+    def __init__(self, inner: Any, owner: Any = None) -> None:
+        where = f" (in {getattr(owner, '__name__', owner)})" if owner is not None else ""
+        super().__init__(f"no authoring form for {inner!r}{where}")
+        self.inner, self.owner = inner, owner
+
+
 def to_authoring_form(t: Any) -> Any:
-    """A type → the authoring form that produces it. Inverse of ``parse``."""
+    """A type → the authoring form that produces it. Inverse of ``parse``.
+
+    ``Optional[X]`` renders as ``X``. Whether a value may be ABSENT is
+    behaviour, not shape — the grammar has three forms and no keywords (§2), so
+    there is nowhere to put "optional" and nothing that needs it: a missing
+    value simply is not written. Before this, any spec with an optional field
+    had NO authoring form at all, which quietly excluded 13 of them.
+    """
     from flow_sdk.schema.data_spec._kinds import PRIMITIVE_NAMES  # noqa: PLC0415
 
+    # A form is already a form. Callers increasingly hold one (``ShapeForm``
+    # stores the form, not a class), and an unhashable dict used to reach the
+    # membership test below and raise ``unhashable type`` instead of saying so.
+    if isinstance(t, (dict, list, str)):
+        return _normalize_form(t)
+    if isinstance(t, type) and issubclass(t, dict) and t is not dict:
+        # A storage flavour of a builtin (``FreeForm`` is a ``dict``). The
+        # grammar has no map form, so this has none either — but it must FAIL
+        # AS A MAP, naming ``dict``, or the reason reads as "some unknown
+        # class" and nobody can tell a grammar gap from a missing registration.
+        raise NoAuthoringForm(dict, t)
+    origin = get_origin(t)
+    if origin is Annotated:
+        # ``NonBlank`` is ``Annotated[str, StringConstraints(...)]``: still a
+        # string on disk. The constraint is a validation RULE, and the grammar
+        # carries no rules — same reason ``Optional`` unwraps.
+        return to_authoring_form(get_args(t)[0])
+    if origin in (Union, types.UnionType):
+        arms = [a for a in get_args(t) if a is not type(None)]
+        if len(arms) == 1:          # Optional[X] — the shape is X
+            return to_authoring_form(arms[0])
+        raise NoAuthoringForm(t)    # a genuine either/or has no single shape
+    if get_origin(t) is Literal:
+        # A closed set of literals is a string (or int) on disk; WHICH values
+        # are allowed is a validation rule, and the grammar carries no rules.
+        return "string" if all(isinstance(a, str) for a in get_args(t)) else "int"
+    if isinstance(t, type) and issubclass(t, PurePath):
+        return "string"          # a path is text on disk, nothing more
+    if isinstance(t, type) and issubclass(t, Enum):
+        # A closed set of strings is a string on disk; the values are a
+        # validation rule, which the grammar deliberately cannot carry.
+        return "string" if issubclass(t, str) else "int"
     if t in PRIMITIVE_NAMES:
         return PRIMITIVE_NAMES[t]
     if get_origin(t) is list:
@@ -177,8 +289,14 @@ def to_authoring_form(t: Any) -> Any:
         return kind
     fields = getattr(t, "model_fields", None)
     if fields is not None:   # a hand-written, unregistered subclass: describe it
-        return {name: to_authoring_form(field.annotation) for name, field in fields.items()}
-    raise ValueError(f"no authoring form for {t!r}")
+        out = {}
+        for name, field in fields.items():
+            try:
+                out[name] = to_authoring_form(field.annotation)
+            except NoAuthoringForm as exc:
+                raise NoAuthoringForm(exc.inner, t) from exc
+        return out
+    raise NoAuthoringForm(t)
 
 
 class Tagged:

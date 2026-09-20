@@ -53,7 +53,9 @@ from typing import Annotated, ClassVar, Optional
 from pydantic import StringConstraints, model_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.schema.data_spec import AssetDocumentSpec, Body, DataSpec, SpecType
+from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
+from flow_sdk.schema.data_spec.io.native import Text
+from flow_sdk.schema.data_spec._form import ShapeForm
 
 #: An op name is a handle: an activity address segment, a ``requires`` entry and
 #: an error ref. A blank one would collapse two ops onto one node.
@@ -196,10 +198,10 @@ class ComputeOpSpec(AssetDocumentSpec):
     attempts: list[AttemptSpec] = []
     #: The shape this op RETURNS, in the authoring form. Declared ⇒ the value is
     #: validated against it before it reaches a caller.
-    output: Optional[SpecType] = None
+    output: Optional[ShapeForm] = None
     #: How a person does this by hand — the file ``setup.md`` beside the manifest.
     #: Every rung that involves a model is given it.
-    setup: Body = ""
+    setup: Text = ""
 
     @property
     def display_label(self) -> str:

@@ -1,7 +1,8 @@
 """Filesystem contracts independent of application entities."""
 from typing import ClassVar, Optional
 
-from flow_sdk.schema.data_spec import FreeSection, SectionedHeader
+from flow_sdk.schema.data_spec import SectionedHeader
+from flow_sdk.schema.data_spec.io.native import FreeForm
 
 
 class AgentTraceSpec(SectionedHeader):
@@ -25,4 +26,4 @@ class AgentTraceSpec(SectionedHeader):
     issue_count: Optional[int] = None
     divergence_count: Optional[int] = None
     lane_count: Optional[int] = None
-    trace: Optional[FreeSection] = None
+    trace: Optional[FreeForm] = None

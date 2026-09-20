@@ -123,12 +123,16 @@ def test_the_authoring_form_is_strict() -> None:
 def test_a_dataset_shape_held_by_a_field_dumps_compactly_and_is_strict() -> None:
     """The FIELD is strict: a malformed spec on an API write is an error, not a
     silent None. Leniency is a disk-read policy — see ``test_a_malformed_spec_on_disk``."""
-    from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetSpecType
+    from flow_sdk.schema.data_spec._form import ShapeForm
 
     class Holder(BaseModel):
-        spec: Optional[DatasetSpecType] = None
+        spec: Optional[ShapeForm] = None
     form = {"examples": [{"input": {"subject": "string", "body": "string"}, "output": "text"}]}
     h = Holder(spec=form)
+    # The field HOLDS the form — there is no class to un-render on the way out,
+    # which is why the compact dump is now a property of the field's type
+    # rather than of a custom serializer.
+    assert h.spec == form
     assert h.model_dump(mode="json")["spec"] == form
     assert Holder().model_dump(mode="json")["spec"] is None
     with pytest.raises(ValidationError):

@@ -22,7 +22,9 @@ from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.serializer.disk import DiskSerializer
-from flow_sdk.schema.data_spec import Body, FrontMatter, SpecType, to_authoring_form
+from flow_sdk.schema.data_spec import FrontMatter, SpecType, to_authoring_form
+from flow_sdk.schema.data_spec._form import compile_form
+from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.dataset_spec import (
     DEFAULT_DATASET_SPEC,
     DataLayoutEnum,
@@ -47,7 +49,7 @@ class _LeafSpec(FrontMatter):
     name: str
     tools: list[str] = []
     model: Optional[str] = None
-    prompt: Body = ""
+    prompt: Text = ""
 
 
 class _Leaf(BaseModel):
@@ -75,7 +77,7 @@ class _RootSpec(FrontMatter):
     title: str
     input: Optional[SpecType] = None
     options: dict[str, str] = {}
-    instructions: Body = ""
+    instructions: Text = ""
 
 
 class _Root(BaseModel):
@@ -268,7 +270,10 @@ def test_agent_io_contract_round_trips_as_json_and_stays_out_of_the_launch_hash(
     doc = json.loads((tmp_path / "clf" / "agent.json").read_text())
     assert doc["input"] == {"text": "string"}                     # plain authoring form, no keywords
     b = DiskSerializer().load(Agent, o)
-    assert to_authoring_form(b.output) == {"category": "string", "tags": ["string"]}
-    assert b.output.model_validate({"category": "x", "tags": ["a"]}).category == "x"
+    assert b.output == {"category": "string", "tags": ["string"]}   # the field IS the form
+    # A declaration is DATA. A caller that needs a type compiles it — which is
+    # the whole point of dropping ``SpecType``: the document holds the form,
+    # and only the two call sites that validate a value ever build a class.
+    assert compile_form(b.output).model_validate({"category": "x", "tags": ["a"]}).category == "x"
     # declaration only — the options bundle (md5'd into last_started_hash) is untouched
     assert a.to_agent_options().to_json() == Agent(name="clf", model="haiku").to_agent_options().to_json()

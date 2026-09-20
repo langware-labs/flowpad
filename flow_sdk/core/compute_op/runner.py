@@ -35,6 +35,7 @@ Four properties follow from that shape and are what the tests pin:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
@@ -42,6 +43,7 @@ from typing import Any, Awaitable, Callable, Optional
 from flow_sdk.core.compute.exec import PROBE_OUTPUT_CAP, ShellResult, capped, run_shell
 from flow_sdk.core.compute.process_step import ProcessResult, launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
+from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.compute_op_spec import (
     AttemptKind,
     AttemptSpec,
@@ -67,9 +69,12 @@ class ComputeOpNotApproved(RuntimeError):
     """
 
 
-@dataclass(frozen=True)
-class AttemptResult:
-    """What one rung did. Read by the next rung's prompt, and by ``on_probe``."""
+class AttemptResult(DataSpec):
+    """What one rung did. Read by the next rung's prompt, and by ``on_probe``.
+
+    A ``DataSpec`` because it TRAVELS: ``StepProbe.of_attempt`` copies it into a
+    wizard run's record, so it is a value that outlives the call that made it.
+    """
 
     kind: str
     command: str = ""
@@ -302,7 +307,9 @@ def _value_of(spec: ComputeOpSpec, result: AttemptResult, *, detail: str = "") -
     try:
         from pydantic import TypeAdapter  # noqa: PLC0415
 
-        value = TypeAdapter(spec.output).validate_python(result.value)
+        from flow_sdk.schema.data_spec._form import compile_form  # noqa: PLC0415
+
+        value = TypeAdapter(compile_form(spec.output)).validate_python(result.value)
     except Exception as error:
         return ReturnedValue.not_yet(
             f"{spec.display_label}: the {result.kind} attempt returned a value that does not "
@@ -343,11 +350,34 @@ async def _attempt(
             output=result.tail(PROBE_OUTPUT_CAP),
             stdout=out, stderr=err, truncated=out_cut or err_cut,
             duration_s=getattr(result, "duration_s", 0.0),
+            value=_value_from_stdout(result.stdout) if spec.output is not None else None,
             ok=bool(result.ok),
         )
 
     return await _agent_attempt(attempt, spec, tried=tried, subject=subject,
                                 workdir=workdir, platform=platform, seams=seams)
+
+
+def _value_from_stdout(stdout: "Optional[str]") -> Any:
+    """What a command RETURNED, read off its stdout.
+
+    A command rung could not return a value at all: this branch never set one,
+    so an op that declared an ``output`` and had only command rungs failed
+    every time with "returned a value that does not match this op's declared
+    output" — against a value it had never been given. That was invisible
+    because every op with an ``output`` happens to carry an agent rung too.
+
+    JSON when stdout parses as JSON, otherwise the trimmed text. A shell
+    one-liner's answer is its stdout; there is no other channel, and the
+    declared shape decides whether what came back is acceptable.
+    """
+    text = (stdout or "").strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except ValueError:
+        return text
 
 
 async def _agent_attempt(
@@ -365,7 +395,7 @@ async def _agent_attempt(
         # form into a `type`, which `json.dumps` cannot render — so the contract
         # silently dropped the shape line and then `_value_of` failed the agent
         # for not matching a shape nobody showed it.
-        prompt += result_contract(path, VALUE_KEY, _authoring_form(spec.output))
+        prompt += result_contract(path, VALUE_KEY, spec.output)
     outcome = await seams.launch(
         agent=attempt.agent,
         prompt=prompt,
@@ -386,19 +416,6 @@ async def _agent_attempt(
         value=said.value, ok=bool(outcome.ok and said.ok),
     )
 
-
-def _authoring_form(shape: Any) -> Any:
-    """A declared output as the form an author would write, for the prompt.
-
-    Tolerant on purpose: a shape we cannot render back is a reason to omit the
-    line, never to fail a run that is otherwise fine.
-    """
-    from flow_sdk.schema.data_spec import to_authoring_form  # noqa: PLC0415
-
-    try:
-        return to_authoring_form(shape)
-    except Exception:  # noqa: BLE001 — the contract degrades, the run does not
-        return None
 
 
 def _prompt_for(

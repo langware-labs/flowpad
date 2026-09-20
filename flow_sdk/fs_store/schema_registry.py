@@ -721,6 +721,28 @@ def _derived_meta_model(cls: type, spec: type) -> type:
     )
 
 
+def _storage_flavours() -> "dict[type, type]":
+    from flow_sdk.schema.data_spec.io.native import Binary, FreeForm, Text  # noqa: PLC0415 — cycle-safe
+
+    return {Text: str, Binary: bytes, FreeForm: dict}
+
+
+class _Flavours(dict):
+    """The storage-flavour map, built on first use.
+
+    ``data_spec.io`` cannot be imported at module scope here, and this map is
+    read on every field of every registration.
+    """
+
+    def get(self, key: Any, default: Any = None) -> Any:  # noqa: D102
+        if not self:
+            self.update(_storage_flavours())
+        return dict.get(self, key, default)
+
+
+_STORAGE_FLAVOURS = _Flavours()
+
+
 def _core_compatible(spec: Any, entity: Any) -> bool:
     """Equal cores, or the entity NARROWS the spec's core (``str`` → ``TypeId`` /
     a ``StrEnum``), recursing through ``list[...]``. ``Any`` on the spec accepts all."""
@@ -743,6 +765,12 @@ def _core_compatible(spec: Any, entity: Any) -> bool:
     s_base, e_base = s_origin or spec, e_origin or entity
     if not (isinstance(s_base, type) and isinstance(e_base, type)):
         return False
+    # A spec may declare a STORAGE flavour — ``Text`` (a ``str`` kept in its own
+    # file), ``Binary``, ``FreeForm``. Where a value is written is a filesystem
+    # fact, and the row that holds it is entitled to the plain builtin. Compare
+    # against that builtin, so a document can say "this string lives in a file"
+    # without every mirroring entity field having to say so too.
+    s_base = _STORAGE_FLAVOURS.get(s_base, s_base)
     # A string on disk may be held as a ``str`` subclass (a ``StrEnum``) or a
     # custom type that validates from one (``TypeId`` declares its own pydantic
     # schema) — the row narrows. Not an ``int`` or a ``dict``.

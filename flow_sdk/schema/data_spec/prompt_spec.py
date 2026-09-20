@@ -6,7 +6,8 @@ from typing import Any, Optional
 
 from pydantic import field_validator
 
-from flow_sdk.schema.data_spec import Body, FrontMatter
+from flow_sdk.schema.data_spec import FrontMatter
+from flow_sdk.schema.data_spec.io.native import Text
 
 
 class PromptSpec(FrontMatter):
@@ -25,7 +26,7 @@ class PromptSpec(FrontMatter):
     group_id: Optional[str] = None
     use_count: int = 0
     last_used_at: Optional[str] = None
-    text: Body = ""
+    text: Text = ""
 
     @field_validator("group_id", mode="before")
     @classmethod

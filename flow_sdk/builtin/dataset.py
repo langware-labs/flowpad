@@ -45,7 +45,8 @@ from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.json_body import current_user_id, read_json_body
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
-from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec, DatasetSpecType
+from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec
 from flow_sdk.schema.data_spec.dataset_spec import (  # noqa: F401 — enums re-exported
     DEFAULT_DATASET_SPEC,
     DataLayoutEnum,
@@ -100,7 +101,7 @@ class Dataset(Entity):
 
     # The shape every row has. `None` — the dataset declares no shape — is legal
     # and validates rows against DEFAULT_DATASET_SPEC. See datasets.md.
-    spec: Optional[DatasetSpecType] = APIField(None)
+    spec: Optional[ShapeForm] = APIField(None)
 
     # The rows. EAGER — `from_fs` reads them all — but DB-excluded: the record
     # file and `from_fs_ref` carry them, the SQLite row does not.
@@ -144,13 +145,23 @@ class Dataset(Entity):
 
     # ── the curation seam: SourceItem → example → gold ───────────────────
 
+    def _example_type(self) -> Any:
+        """The declared example shape, compiled.
+
+        ``spec`` holds the authoring FORM (it is a document field, so it is
+        data); a class is built only here, where one is actually needed.
+        ``DatasetSpec.parse`` rather than ``DataSpec.parse`` — a dataset form
+        names ``examples``, not fields.
+        """
+        return DatasetSpec.parse(self.spec) if self.spec else DEFAULT_DATASET_SPEC
+
     @property
     def input_shape(self) -> Any:
-        return (self.spec or DEFAULT_DATASET_SPEC).example_type().input_type()
+        return self._example_type().example_type().input_type()
 
     @property
     def output_shape(self) -> Any:
-        return (self.spec or DEFAULT_DATASET_SPEC).example_type().output_type()
+        return self._example_type().example_type().output_type()
 
     def _folder(self) -> Path:
         if not self.asset_ref:

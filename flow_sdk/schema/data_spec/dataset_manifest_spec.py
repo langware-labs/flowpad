@@ -2,17 +2,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Any, Dict, Optional
+from typing import Any, Dict, Optional
 
-from pydantic import BeforeValidator, PlainSerializer, ValidationError, model_validator
+from pydantic import ValidationError, model_validator
 
-from flow_sdk.schema.data_spec import FreeSection, FrontMatter, to_authoring_form
+from flow_sdk.schema.data_spec import FrontMatter
 from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec
+from flow_sdk.schema.data_spec.io.native import FreeForm
+from flow_sdk.schema.data_spec._form import ShapeForm
 
 logger = logging.getLogger(__name__)
 
 
-DatasetSpecType = Annotated[type, BeforeValidator(DatasetSpec.parse), PlainSerializer(to_authoring_form, return_type=Any)]
 
 
 class DatasetManifestSpec(FrontMatter):
@@ -46,6 +47,6 @@ class DatasetManifestSpec(FrontMatter):
     data_layout: Optional[str] = None
     field_spec: Optional[Dict[str, str]] = None
     delimiter: Optional[str] = None
-    spec: Optional[DatasetSpecType] = None
+    spec: Optional[ShapeForm] = None
     #: The free ``data`` section of ``dataset.json`` — the document's second half.
-    data: Optional[FreeSection] = None
+    data: Optional[FreeForm] = None
