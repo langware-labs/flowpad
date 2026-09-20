@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from flow_sdk.schema.data_spec import Body, FrontMatter
+from flow_sdk.schema.data_spec import FrontMatter
+from flow_sdk.schema.data_spec.io.native import Text
 
 
 class SkillSpec(FrontMatter):
@@ -14,4 +15,4 @@ class SkillSpec(FrontMatter):
 
     name: Optional[str] = None
     description: Optional[str] = None
-    body: Body = ""
+    body: Text = ""

@@ -171,13 +171,12 @@ class AwaitingInput:
     description: str = ""
 
     def to_payload(self) -> dict:
-        from flow_sdk.schema.data_spec.spec import to_authoring_form  # noqa: PLC0415
         from flow_sdk.schema.data_spec.wizard_spec import WizardAwaitingInputSpec  # noqa: PLC0415
 
-        try:
-            shape = to_authoring_form(self.shape) if self.shape is not None else "string"
-        except Exception:  # noqa: BLE001 — an undrawable shape must not break the payload
-            shape = "string"
+        # The declared shape IS the authoring form now, so there is nothing to
+        # render and nothing that can fail to render — which is what the old
+        # ``except`` here was silently covering for.
+        shape = self.shape if self.shape is not None else "string"
         return WizardAwaitingInputSpec(
             name=self.name, shape=shape, label=self.label, description=self.description,
         ).model_dump(mode="json")

@@ -20,8 +20,9 @@ import uuid
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, ClassVar, Optional, Sequence, Union
+from typing import Any, ClassVar, Optional, Sequence, Union, get_args, get_origin
 
+from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.dataset_spec import (
     DataLayoutEnum,
     ExampleKind,
@@ -302,17 +303,70 @@ def _example_dirs(folder) -> list[Path]:
     return sorted((p for p in examples_dir.iterdir() if p.is_dir()), key=lambda p: p.name)
 
 
+def _main_document(shape: type) -> str:
+    from flow_sdk.schema.data_spec.io import names  # noqa: PLC0415 — cycle-safe
+
+    return names.main_document(shape)
+
+
+def _typed_slots(spec: type) -> dict[str, type]:
+    """Slots whose declared shape is an ordinary ``DataSpec``, not an artifact.
+
+    An artifact slot (``FileRef``/``FolderSpec``/``TextSpec``) is bytes on disk
+    and is classified by scanning. Anything else is a VALUE with a shape, and
+    the generic walker owns both ends of it.
+    """
+    from flow_sdk.schema.data_spec.io.placement import unwrap  # noqa: PLC0415 — cycle-safe
+
+    def _single(annotation: Any) -> Any:
+        """The shape of ONE occurrence. ``output`` is declared
+        ``Optional[Union[O, list[O]]]`` — N occurrences on disk arrive as a
+        list — so the bare arm is the one that names the shape."""
+        core = unwrap(annotation)
+        for arm in get_args(core) or ():
+            if arm is type(None) or get_origin(arm) is list:
+                continue
+            return unwrap(arm)
+        return core
+
+    out: dict[str, type] = {}
+    for base in SLOT_BASES:
+        field = spec.model_fields.get(base)
+        if field is None:
+            continue
+        shape = _single(field.annotation)
+        if (isinstance(shape, type) and issubclass(shape, DataSpec)
+                and not issubclass(shape, (FileRef, FolderSpec, TextSpec))):
+            out[base] = shape
+    return out
+
+
 class FolderLayout(DatasetLayout):
     """``examples/<name>/`` — slots are files or folders; sidecars annotate them."""
 
     name = DataLayoutEnum.IO_FOLDER.value
 
     def read(self, folder, spec, *, dataset_id, field_spec=None, delimiter=","):
+        from flow_sdk.schema.data_spec.io import load as _load  # noqa: PLC0415 — cycle-safe
+
         rows = []
+        typed = _typed_slots(spec)
         for ex_dir in _example_dirs(folder):
             row = self.read_example(ex_dir)
             if row is None:
                 continue  # no input DATA in any form → not an example
+            # A slot whose declared shape is an ordinary ``DataSpec`` was
+            # written by the generic walker, so it is read by the same one.
+            # ``read_example`` classifies bytes on disk and cannot know the
+            # declared type; this is the one place that does.
+            for base, shape in typed.items():
+                # A2: read what was WRITTEN. The write side decides per value,
+                # so a slot holding an artifact went down the artifact path even
+                # though its declared shape is a plain ``DataSpec``. Keying the
+                # read on the walker's own main document makes the two agree by
+                # looking, instead of by two rules that can drift.
+                if (ex_dir / base / _main_document(shape)).is_file():
+                    row[base] = _load(shape, ex_dir / base)
             row["id"] = example_id(dataset_id, ex_dir.name)
             rows.append(spec.model_validate(row))
         return rows
@@ -517,5 +571,19 @@ class FolderLayout(DatasetLayout):
                 shutil.copyfile(source / node.path, target)
             elif not target.exists():
                 target.touch()
+            return
+        if isinstance(node, DataSpec) and slot is not None:
+            # ANY other shape is written by the one generic walker
+            # (``data_spec/io``), into a folder named for its slot. Before
+            # this, a typed slot could not be persisted at all — the layout
+            # knew three leaf types and raised for everything else, so
+            # ``ExampleSpec[Question, Answer, …]`` was declarable and
+            # unwritable. One walker now serves both.
+            from flow_sdk.schema.data_spec.io.writer import write as _write  # noqa: PLC0415 — cycle-safe
+
+            # ``_nested``: a slot is part of an example, not an entity of its
+            # own, so it mints no identity. The example directory is the thing
+            # with a name; its slots are its fields.
+            _write(node, ex_dir / slot, _nested=True)
             return
         raise ValueError(f"cannot write a {type(node).__name__} slot")

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import ClassVar, Optional
 
-from flow_sdk.schema.data_spec import FreeSection, SectionedHeader
+from flow_sdk.schema.data_spec import SectionedHeader
+from flow_sdk.schema.data_spec.io.native import FreeForm
 
 
 class UsageReportSpec(SectionedHeader):
@@ -29,4 +30,4 @@ class UsageReportSpec(SectionedHeader):
     skill_invocations: Optional[int] = None
     agent_spawns: Optional[int] = None
     cache_hit_rate: Optional[float] = None
-    report: Optional[FreeSection] = None
+    report: Optional[FreeForm] = None

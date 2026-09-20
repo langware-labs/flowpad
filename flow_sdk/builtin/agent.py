@@ -43,6 +43,7 @@ from flow_sdk.schema.data_spec import SpecType
 from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.data_spec._form import ShapeForm
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Sequence
@@ -107,9 +108,6 @@ class AutoLaunchOutcome:
     def none_payload() -> dict:
         """The same shape when nothing launched — one definition for both routes and tests."""
         return {"agent_id": None, "process_id": None, "process_typeid": None, "prompt_queued": False, "cancelled": []}
-
-
-
 
 
 def _mailbox_failures(verb: str):
@@ -211,12 +209,12 @@ class Agent(Entity):
 
     # ── I/O contract ──────────────────────────────────────────────────────
     # What this agent consumes and produces — `input + template → output`.
-    # Authored as shapes in agent.json (a class, held via SpecType). DECLARATION ONLY: they
+    # Authored as shapes in agent.json (the authoring FORM, held as data). DECLARATION ONLY: they
     # never enter `to_agent_options`, whose to_json() is md5'd into
     # `last_started_hash` — a new key there flips `restart_required` on every
     # running process (the same reason `system_prompt` stays out).
-    input: Optional[SpecType] = APIField(default=None, description="The shape this agent consumes.")
-    output: Optional[SpecType] = APIField(default=None, description="The shape this agent produces.")
+    input: Optional[ShapeForm] = APIField(default=None, description="The shape this agent consumes.")
+    output: Optional[ShapeForm] = APIField(default=None, description="The shape this agent produces.")
 
     # ── email ─────────────────────────────────────────────────────────────
     #

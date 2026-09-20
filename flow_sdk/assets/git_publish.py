@@ -130,7 +130,6 @@ class AssetPublishResult(DataSpec):
     local_cache_warning: str | None = None
 
 
-
 __all__ = [
     "AssetGitReceipt",
     "AssetPublishCode",
