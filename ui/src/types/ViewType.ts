@@ -262,6 +262,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  // A question waiting on a person. Never a tab: it is raised in `win/` where
+  // it IS the window, and it stops existing once answered.
+  [ViewType.ASK]: {
+    title: msg`Ask`,
+    iconName: 'MessageCircleQuestion',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    // The question IS the window: no workspace frame around it.
+    chrome: 'fullbleed',
+  },
   [ViewType.APPS]: {
     title: msg`App`,
     iconName: 'Sparkles',
