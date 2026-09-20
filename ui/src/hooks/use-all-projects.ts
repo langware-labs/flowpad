@@ -30,6 +30,6 @@ export function useAllProjects({
   const { projects, isLoading } = useProjectList({ enabled });
   const filtered: ProjectListItem[] = includeSystem
     ? projects
-    : projects.filter((p) => !(p as ProjectListItem & { system?: boolean }).system);
+    : projects.filter((p) => !p.hidden);
   return { projects: filtered, isLoading };
 }

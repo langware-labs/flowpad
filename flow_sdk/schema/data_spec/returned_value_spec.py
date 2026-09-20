@@ -12,15 +12,21 @@ call and a shell pipeline agree by construction rather than by convention. That 
 what lets a wizard step, a trigger, a check command and a person at a terminal all
 read one answer.
 
-The split between ``exit_code`` and ``pending``:
+What each field is for:
+
+There is one named constructor per exit code, so a call site never spells a
+code by hand — three of the five used to have none, and the other two were
+built with the raw constructor at three sites.
 
 * ``exit_code`` says what happened, for a machine.
 * ``detail`` says it in one sentence, for a person.
-* ``pending`` names the units still waiting on a PERSON — the granularity someone
-  acts at. A caller that can ask (a Wizard) turns a non-empty ``pending`` into a
-  question; a caller that cannot (a schedule) reports it and stops.
 
-``value`` is typed by the callee's declared ``output`` (a ``SpecType``), and is
+There was a fourth field, ``pending``, naming the units still waiting on a
+person. It was written at five sites and read at none: a wizard parks off its
+own ``awaiting`` list and BUILT ``pending`` from it, never the reverse. A field
+nobody reads is not a contract, it is a claim — so it is gone.
+
+``value`` is typed by the callee's declared ``output`` (a ``ShapeForm``), and is
 ``None`` when nothing was declared. Nothing else in this repo enforces a declared
 shape today, so this is the first place a declaration means something.
 """
@@ -66,8 +72,6 @@ class ReturnedValue(DataSpec):
     value: Any = None
     #: One sentence for a person. Never a code, never a stack.
     detail: str = ""
-    #: Units still waiting on a PERSON — a wizard turns these into questions.
-    pending: tuple[str, ...] = ()
     #: Did anything actually happen? ``False`` means the goal already held and
     #: no attempt ran. A caller reports that as *skipped*, not *completed*.
     #: It is a FIELD because the producer knows it and the consumer needs it:
@@ -92,9 +96,20 @@ class ReturnedValue(DataSpec):
         return cls(exit_code=ExitCode.OK, detail=detail, value=value, ran=ran)
 
     @classmethod
-    def not_yet(cls, detail: str = "", *, pending: tuple[str, ...] = ()) -> "ReturnedValue":
-        return cls(exit_code=ExitCode.NOT_YET, detail=detail, pending=pending)
+    def not_yet(cls, detail: str = "") -> "ReturnedValue":
+        return cls(exit_code=ExitCode.NOT_YET, detail=detail)
 
     @classmethod
     def not_applicable(cls, detail: str = "") -> "ReturnedValue":
         return cls(exit_code=ExitCode.NOT_APPLICABLE, detail=detail, ran=False)
+
+    @classmethod
+    def not_found(cls, detail: str = "") -> "ReturnedValue":
+        """Nothing by that name. Nothing ran, so ``ran`` is False."""
+        return cls(exit_code=ExitCode.NOT_FOUND, detail=detail, ran=False)
+
+    @classmethod
+    def refused(cls, detail: str = "") -> "ReturnedValue":
+        """Not approved to run here. Refusing is not failing, and it never
+        waits — a caller that can ask turns this into a question."""
+        return cls(exit_code=ExitCode.REFUSED, detail=detail, ran=False)

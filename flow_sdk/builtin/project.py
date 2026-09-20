@@ -516,6 +516,30 @@ class Project(Entity):
 
     @computed_field
     @property
+    def hidden(self) -> bool:
+        """App-managed project: infrastructure the user visits, never works in.
+
+        The ONE answer to "is this one of ours", published so no client holds a
+        second copy of the rule — the same reason ``context_roots`` is
+        serialized. ``is_hidden_project`` decides it (SDK-shipped path, the
+        agent mount root, a helpdesk portal checkout, or the ``system`` flag),
+        and it has to be COMPUTED rather than stored: the portal is recognised
+        by where it lives, which is why ``helpdesk-ensure`` deliberately does
+        not stamp ``system`` on it (that flag means "SDK-shipped", and would be
+        a lie), and why rows minted by the per-cwd project walk carry no flag
+        at all.
+
+        The frontend needs it for more than list filtering: a hidden project
+        must never become the CURRENT project, or opening the help desk
+        silently switches the footer, the workdir and every project-scoped
+        action out of the project the user was actually in.
+        """
+        from flow_sdk.config import is_hidden_project  # noqa: PLC0415
+
+        return is_hidden_project(self.fs_storage_mount_path or "", self.system)
+
+    @computed_field
+    @property
     def context_dir_infos(self) -> list[dict[str, str]]:
         """Per-context-folder info the UI needs beyond the bare path.
 

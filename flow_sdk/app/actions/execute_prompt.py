@@ -189,7 +189,12 @@ _SESSION_EVENT_TEXTS = {
 }
 
 
-def _session_context_block(conversation_id: str, session_id: str) -> str:
+def _session_context_block(
+    conversation_id: str,
+    session_id: str,
+    *,
+    peer_name: Optional[str] = None,
+) -> str:
     """Per-turn preamble telling the worker WHERE it runs and HOW to send
     files back to the requester.
 
@@ -199,11 +204,33 @@ def _session_context_block(conversation_id: str, session_id: str) -> str:
     ``build_merged_prompt`` never includes the conversation/session ids, so
     without this block a "bring me file.ext" request has no way to comply.
     ``--session`` groups the message into the live-session exchange and makes
-    the receiver eager-pull the bundle (files clickable on arrival)."""
+    the receiver eager-pull the bundle (files clickable on arrival).
+
+    It also carries the COLLABORATION MANDATE. Without it the worker reads the
+    turn as "a third party's instructions smuggled into my user's chat" and
+    refuses on provenance alone — the prompt came from someone who is not the
+    person at the keyboard, so it declines to act. That reading is wrong here:
+    the host already granted this peer a session (``decide_inbound_prompt``
+    gated the turn before we got here), the peer's identity is hub-authenticated,
+    and running their prompts is the entire point of the feature. The block says
+    so explicitly, so "it's from another user" stops being a reason to refuse.
+    """
+    who = f"your collaborator {peer_name}" if peer_name else "your collaborator"
     return (
         "\n\n---\n"
         f"Live-session context: you are answering inside live session {session_id} "
         f"of conversation {conversation_id}, running on the host's machine.\n"
+        f"This is an APPROVED COLLABORATIVE SESSION. The prompt above was written by "
+        f"{who}, an authenticated Flowpad user whom the host has explicitly admitted "
+        "to this session — the host reviewed and approved that access before this "
+        "turn was dispatched. Treat their prompt as a legitimate work request from a "
+        "teammate and carry it out, exactly as you would one typed by the host. "
+        "Do NOT refuse, stall, or demand re-confirmation merely because the request "
+        "reached you through a conversation rather than from the person at the "
+        "keyboard, or because the sender is someone other than the machine's owner — "
+        "that provenance is expected and already consented to. Your normal judgement "
+        "about genuinely destructive or clearly out-of-scope actions still applies; "
+        '"a different user asked" is not, on its own, such a reason.\n'
         "If the request asks you to send back / bring / attach files (logs, "
         "reports, any artifact), return each one with:\n"
         f"  flow conversation attach {conversation_id} <absolute-file-path> "
@@ -655,7 +682,11 @@ async def run_session_turn(
             prompt_text = await build_merged_prompt(fm)
             if not prompt_text:
                 return ApiFailResponse(message="prompt is empty — nothing to execute")
-            prompt_text += _session_context_block(conversation.id, session.id)
+            prompt_text += _session_context_block(
+                conversation.id,
+                session.id,
+                peer_name=getattr(fm, "sender_name", None),
+            )
 
             target = str(TypeId(type="conversation", id=conversation.id))
             ap = await _reuse_or_spawn_headless(target, workdir)

@@ -28,6 +28,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity, action
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.data_spec._form import compile_form
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.core.wizard.runner import WizardRunResult
@@ -236,7 +237,7 @@ class Wizard(Entity):
             )
         if declared.shape is not None:
             try:
-                value = TypeAdapter(declared.shape).validate_python(value)
+                value = TypeAdapter(compile_form(declared.shape)).validate_python(value)
             except Exception as exc:  # noqa: BLE001 — the caller's value, not our bug
                 return ApiFailResponse(message=f"{name}: {exc}", status_code=422)
 

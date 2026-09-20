@@ -3,12 +3,16 @@ from __future__ import annotations
 
 from typing import ClassVar, Optional
 
-from flow_sdk.schema.data_spec import FreeSection, SectionedHeader
+from flow_sdk.schema.data_spec import SectionedHeader
+from flow_sdk.schema.data_spec.io.native import FreeForm
 
 
 class UsageReportSpec(SectionedHeader):
     """``report.json`` — a FLAT document ``{name, data: {…metrics}, markdown}``:
     the headline metrics live under ``data``; the payload IS the file."""
+
+    main_file: ClassVar[str | None] = "report.json"
+    manifest_layout: ClassVar[str | None] = "flat"
 
     _section: ClassVar[str | None] = "data"
     _section_fields: ClassVar[frozenset[str]] = frozenset({
@@ -29,4 +33,4 @@ class UsageReportSpec(SectionedHeader):
     skill_invocations: Optional[int] = None
     agent_spawns: Optional[int] = None
     cache_hit_rate: Optional[float] = None
-    report: Optional[FreeSection] = None
+    report: Optional[FreeForm] = None

@@ -383,6 +383,9 @@ export class FlowDataStream extends EventEmitter {
       console.debug(`${logPrefix} DUPLICATE across channels - matches open group ${duplicate.groupId}, ignoring`);
       return null;
     }
+    // …and the same twin once its group has CLOSED: `observe-turn` replays a
+    // message the pane already holds, under a group-id of its own.
+    if (this._heldTwin(item)) return null;
     this._ownItems.push(item);
     this._openGroups.set(groupId, item);
     this.emit('data', [item], this);
@@ -397,6 +400,35 @@ export class FlowDataStream extends EventEmitter {
    * this only needs to catch the same complete message arriving twice, and a
    * looser match would risk swallowing legitimately repeated short content.
    */
+  /**
+   * A turn we already hold, replayed. `_findDuplicateOpenGroup` catches the
+   * cross-channel twin only while that twin's group is still OPEN — but
+   * `observe-turn` re-delivers messages whose group closed long ago (a pane
+   * that reconnects, or one whose `after_entry_id` watermark is behind the
+   * transcript). The replayed copy then starts its own group — grouped or raw,
+   * both modes mint one — and the answer renders twice, until a reload rebuilds
+   * from history. Match on what both copies carry the moment they arrive: role
+   * and the ORIGINATING `t`. Not content — a replayed copy can arrive empty and
+   * be filled by `appendContent` afterwards, so there is nothing to compare yet.
+   */
+  private _heldTwin(item: FlowData): FlowData | null {
+    if (item.elementType !== FlowElementTypes.CHAT) return null;
+    const originatedAt = item.attributes['t'];
+    if (!originatedAt) return null;
+    const twin = this._ownItems.find(
+      (entry) =>
+        entry !== item &&
+        entry.elementType === FlowElementTypes.CHAT &&
+        entry.ready &&
+        entry.attributes['t'] === originatedAt &&
+        (entry.attributes.role ?? '') === (item.attributes.role ?? ''),
+    );
+    if (twin) {
+      toplog.log('chat_delivery', `replay_dropped t=${originatedAt} src=${(item as { source?: unknown }).source}`);
+    }
+    return twin ?? null;
+  }
+
   private _findDuplicateOpenGroup(item: FlowData): FlowData | null {
     if (!item.content) return null;
     for (const tracked of this._openGroups.values()) {
@@ -443,6 +475,17 @@ export class FlowDataStream extends EventEmitter {
       this.emit('data', [item], this);
       return item;
     }
+
+    // A turn we already hold, replayed. `_findDuplicateOpenGroup` below catches
+    // the cross-channel twin only while that twin's group is still OPEN — but
+    // `observe-turn` re-delivers messages whose group closed long ago (a pane
+    // that reconnects, or one whose `after_entry_id` watermark is behind the
+    // transcript). The replayed copy then starts its own group and the answer
+    // renders twice, until a reload rebuilds from history. Match on what both
+    // copies carry the moment they arrive: role and the ORIGINATING `t`. Not
+    // content — a replayed copy arrives empty and is filled by `appendContent`
+    // afterwards, so there is nothing to compare yet.
+    if (this._heldTwin(item)) return null;
 
     // Check if we should start new group or continue current
     if (this._shouldStartNewGroup(elementType)) {

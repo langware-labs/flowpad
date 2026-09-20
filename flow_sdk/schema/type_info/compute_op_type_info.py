@@ -13,8 +13,7 @@ The distinction from WIZARD, which is also a folder of ordered things:
 ``requires`` composes ops, so a shared prerequisite (docker is running) is one
 document many ops name rather than a clause each of them restates.
 """
-from flow_sdk.assets.layout import Folder
-from flow_sdk.fs_store.schema_registry import ENTITY_LAYOUT, TypeInfo
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
@@ -32,8 +31,6 @@ COMPUTE_OP = TypeInfo(
     index_fields=["name", "description"],
     asset_class="repo",
     family="compute_op",
-    shape=Folder.entity_json(EntityType.COMPUTE_OP.value),
-    manifest_layout=ENTITY_LAYOUT,
     asset_spec=ComputeOpSpec,
     # The entity is the authoring surface: an edit re-renders the document.
     owns_main_ref=True,

@@ -510,9 +510,9 @@ def _build_project_rows(all_projects: list, snapshot: _DiskSnapshot) -> dict[str
         # ``activate`` action on project/asset open). Wins the recency sort
         # below; ``modified_at`` (session-file mtimes) is the fallback.
         row["last_active_at"] = info.last_active_at
-        # Declared by `ProjectListItem.system`; the picker's `includeSystem:false`
+        # Declared by `ProjectListItem.hidden`; the picker's `includeSystem:false`
         # filter compares against it, so an absent key silently disables it.
-        row["system"] = info.system
+        row["hidden"] = info.hidden
 
     projects = list(projects_by_cwd.values())
     projects.sort(key=_recency_ms, reverse=True)

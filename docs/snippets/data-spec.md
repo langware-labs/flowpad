@@ -153,9 +153,6 @@ returns `value=None`, and nothing is checked.
 
 ## 4. Save and load
 
-> Not implemented yet — this section is the target interface. Its tests are
-> `xfail` until `save`/`load` land.
-
 A shape knows how to put itself on disk and how to come back. The folder is the
 value: nothing else is needed to move it, copy it, or hand it to another machine.
 
@@ -261,14 +258,12 @@ So `markdown` needed no new type: `MarkdownSpec` was already the carrier, and
 
 ## 6. Identity
 
-> Target interface, like §4 and §5.
-
 A shape has no `id` field, and never does:
 
 ```python
 class Op(DataSpec):
     name: str
-    setup: Markdown = ""
+    setup: Text = ""
 ```
 
 A spec is **pure content** — what the file says. Identity is a **carrier**

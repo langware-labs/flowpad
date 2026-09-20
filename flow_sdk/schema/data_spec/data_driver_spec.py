@@ -1,7 +1,7 @@
 """Filesystem contracts independent of application entities."""
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
@@ -138,6 +138,8 @@ class AuthSpec(DataSpec):
 
 class DataDriverSpec(DataSpec):
     """``data_driver.json`` — the shape, with every authoring rule as a validator."""
+
+    main_file: ClassVar[str | None] = "data_driver.json"
 
     model_config = ConfigDict(populate_by_name=True)   # extra="forbid" is DataSpec's
 
