@@ -391,10 +391,10 @@ async def _agent_attempt(
     clear_receipt(path)
     prompt = _prompt_for(spec, attempt.prompt, tried, platform=platform)
     if spec.output is not None:
-        # The AUTHORING form, not the compiled class: `SpecType` validates the
-        # form into a `type`, which `json.dumps` cannot render — so the contract
-        # silently dropped the shape line and then `_value_of` failed the agent
-        # for not matching a shape nobody showed it.
+        # The field HOLDS the authoring form, so it goes into the prompt as-is.
+        # It used to hold a compiled `type`, which `json.dumps` cannot render —
+        # so the contract silently dropped its shape line and `_value_of` then
+        # failed the agent for not matching a shape nobody had shown it.
         prompt += result_contract(path, VALUE_KEY, spec.output)
     outcome = await seams.launch(
         agent=attempt.agent,

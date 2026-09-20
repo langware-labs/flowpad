@@ -1,8 +1,12 @@
 """Where one field's value lands. THE one rule, read off the annotation.
 
-This replaces ``fs_store/serializer/fields.py``'s ``FieldKind`` +
-``field_persistence`` + ``SpecLayout``, and the ``Body`` / ``FreeSection`` /
-``SubAsset`` markers with them. The difference is not the table — it is where
+This is the placement table for ``save``/``load``. It replaced the ``Body`` /
+``FreeSection`` / ``SubAsset`` markers, which are gone.
+
+``fs_store/serializer/fields.py``'s ``FieldKind`` is still live and still
+answers the same question for the ENTITY serializer — two tables, by hand. That
+is a known debt, not a design: see the cleanup list. Anything added here must be
+added there too, or disk and DB disagree. The difference is not the table — it is where
 the answer comes from. A marker let a field SAY where it goes; a type IS what
 it is, and the placement follows. So there is nothing to keep in sync, nothing
 to forget on a new field, and no second opinion on ``TypeInfo``.
@@ -79,6 +83,14 @@ def unwrap(annotation: Any) -> Any:
 #: Shapes whose document-ness is being decided right now. See ``is_document``.
 _WALKING: "set[type]" = set()
 
+#: Settled answers, per class. ``is_document`` walks every field of a shape and
+#: every field calls back into it, so without this a nested value shape costs
+#: O(fields^depth) — measured at 1364 calls / 4.2 ms for a 6-deep chain, one
+#: `placements()` miss. Only a result reached with NOTHING mid-walk is cached:
+#: a ``False`` produced by the cycle short-circuit below is an artefact of
+#: where the walk started, not a fact about the shape.
+_IS_DOCUMENT: "dict[type, bool]" = {}
+
 
 def is_document(shape: Any) -> bool:
     """Is this shape a DISK DOCUMENT rather than a value?
@@ -96,20 +108,27 @@ def is_document(shape: Any) -> bool:
         return False
     if issubclass(shape, AssetDocumentSpec):
         return True
+    settled = _IS_DOCUMENT.get(shape)
+    if settled is not None:
+        return settled
     if shape in _WALKING:
         # A shape reachable from itself (``parent: Optional["Node"]``). It is
         # mid-decision, so it cannot yet be the reason another shape is a
         # document — without this the mutual call below never bottoms out and a
         # recursive VALUE shape raises RecursionError from a helper.
         return False
+    top = not _WALKING
     _WALKING.add(shape)
     try:
-        return any(
+        answer = any(
             placement_of(f.rebuild_annotation()) is Placement.BODY
             for f in shape.model_fields.values()
         )
     finally:
         _WALKING.discard(shape)
+    if top:
+        _IS_DOCUMENT[shape] = answer
+    return answer
 
 
 def is_shape(shape: Any) -> bool:

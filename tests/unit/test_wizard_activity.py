@@ -69,7 +69,7 @@ async def test_root_carries_the_wizard_identity_and_a_real_total(tmp_path):
         return ShellResult(returncode=0)
 
     async def launch(**_kw):
-        return ProcessResult("p", True)
+        return ProcessResult(process_id="p", ok=True)
 
     root = await _run(shell, launch, path="wzact/ident", subject_entity="wizard-a", tmp_path=tmp_path)
     assert root.label == "Developer toolchain"
@@ -100,7 +100,7 @@ async def test_a_failed_step_marks_the_child_and_counts_an_error(tmp_path):
         return ShellResult(returncode=1)
 
     async def launch(**_kw):
-        return ProcessResult("p", False, "install failed")
+        return ProcessResult(process_id="p", ok=False, message="install failed")
 
     root = await _run(shell, launch, path="wzact/fail", subject_entity="wizard-c", tmp_path=tmp_path)
     assert root.errors_count == 2
@@ -120,7 +120,7 @@ async def test_a_never_reached_step_has_no_child_rather_than_a_failed_one(tmp_pa
         return ShellResult(returncode=1)
 
     async def launch(**_kw):
-        return ProcessResult(None, False, "boom")
+        return ProcessResult(process_id=None, ok=False, message="boom")
 
     await run_wizard(WizardSpec.model_validate(body), subject_entity="wizard-d",
                      activity_path="wzact/abort", trusted=True, workdir=Path(tmp_path),
@@ -136,7 +136,7 @@ async def test_the_tree_stays_within_the_wire_depth_budget(tmp_path):
         return ShellResult(returncode=0)
 
     async def launch(**_kw):
-        return ProcessResult("p", True)
+        return ProcessResult(process_id="p", ok=True)
 
     root = await _run(shell, launch, path="wzact/depth", subject_entity="wizard-e", tmp_path=tmp_path)
     depths = {len(node.path.split("/")) - len(root.path.split("/")) for node in root.walk()}
@@ -152,7 +152,7 @@ async def test_a_second_concurrent_run_of_the_same_wizard_is_refused(tmp_path):
         return ShellResult(returncode=0)
 
     async def launch(**_kw):
-        return ProcessResult("p", True)
+        return ProcessResult(process_id="p", ok=True)
 
     with pytest.raises(RuntimeError):
         await run_wizard(SPEC, subject_entity="wizard-f", activity_path="wzact/busy", trusted=True,

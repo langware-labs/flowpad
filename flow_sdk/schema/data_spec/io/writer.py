@@ -24,7 +24,7 @@ from flow_sdk.schema.data_spec.io.placement import Placement, body_field, placem
 
 
 def _json(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # No mkdir: every caller has already made the directory it writes into.
     path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
 
 
@@ -102,7 +102,6 @@ def write(value: Any, root: Path, *, carrier: Optional[Carrier] = None, _nested:
             continue
         elif place is Placement.DOCUMENT:
             path = root / names.field_file(name, names.ext_for(type(held)))
-            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(_document_text(held), encoding="utf-8")
         elif place is Placement.FILE_BYTES:
             ext = getattr(type(held), "ext", ".bin")

@@ -48,7 +48,7 @@ def _launch(prompts=None, *, ok=True, message="", process_id="proc-1"):
     async def launch(**kw):
         if prompts is not None:
             prompts.append(kw["prompt"])
-        return ProcessResult(process_id, ok, message)
+        return ProcessResult(process_id=process_id, ok=ok, message=message)
     return launch
 
 
@@ -140,7 +140,7 @@ async def test_a_rung_that_exits_zero_without_reaching_the_goal_escalates(tmp_pa
     async def launch(**kw):
         state["on_path"] = True
         prompts.append(kw["prompt"])
-        return ProcessResult("proc-1", True, "put it on PATH")
+        return ProcessResult(process_id="proc-1", ok=True, message="put it on PATH")
 
     spec = _spec(
         name="uv-on-path", label="uv",
@@ -288,3 +288,50 @@ async def test_an_unapproved_op_refuses_before_it_asks_anything(tmp_path):
                      shell=_shell(lambda _c: 0, seen=seen))
     # Refuses, never blocks — and never runs a command to find out.
     assert seen == []
+
+
+# ── a command rung returns a value (cleanup E1) ───────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_command_attempt_can_return_the_declared_value(tmp_path):
+    """A command rung could not return a value AT ALL: the branch never set
+    one, so an op declaring an ``output`` with only command rungs failed every
+    run — against a value it was never given. Invisible, because every op with
+    an ``output`` happened to carry an agent rung too.
+    """
+    from flow_sdk.core.compute.exec import ShellResult
+    from flow_sdk.core.compute_op import run_op
+    from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
+    op = ComputeOpSpec.model_validate({
+        "name": "pick-port",
+        "output": {"port": "int"},
+        "attempts": [{"kind": "command", "commands": {"linux": "free-port"}}],
+    })
+
+    async def shell(_command, **_kw):
+        return ShellResult(returncode=0, stdout='{"port": 8099}\n')
+
+    answer = await run_op(op, trusted=True, workdir=tmp_path, platform="linux", shell=shell)
+    assert answer.exit_code is ExitCode.OK
+    assert answer.value.port == 8099
+
+
+@pytest.mark.asyncio
+async def test_a_command_that_prints_plain_text_returns_it_as_a_string(tmp_path):
+    """Not everything a shell prints is JSON. The declared shape decides
+    whether what came back is acceptable — the rung just reports stdout."""
+    from flow_sdk.core.compute.exec import ShellResult
+    from flow_sdk.core.compute_op import run_op
+    from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+
+    op = ComputeOpSpec.model_validate({
+        "name": "whoami", "output": "string",
+        "attempts": [{"kind": "command", "commands": {"linux": "whoami"}}],
+    })
+
+    async def shell(_command, **_kw):
+        return ShellResult(returncode=0, stdout="  ada  \n")
+
+    assert (await run_op(op, trusted=True, workdir=tmp_path, platform="linux", shell=shell)).value == "ada"

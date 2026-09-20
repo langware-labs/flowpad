@@ -50,7 +50,7 @@ def _writer(payload: "dict | None", *, seen: "list | None" = None):
             path = receipt_path(workdir, OP_NAME)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload), encoding="utf-8")
-        return ProcessResult("proc-1", True, "agent finished")
+        return ProcessResult(process_id="proc-1", ok=True, message="agent finished")
 
     return launch
 
@@ -176,8 +176,8 @@ def test_the_rung_ticks_while_the_agent_works(tmp_path):
 
     async def launch(*, on_status=None, **_kw) -> ProcessResult:
         assert on_status is not None, "the runner must offer a status channel"
-        on_status(ProcessProgress("working · src/foo.py", counters={"messages": 3}))
-        return ProcessResult("proc-1", True, "agent finished")
+        on_status(ProcessProgress(text="working · src/foo.py", counters={"messages": 3}))
+        return ProcessResult(process_id="proc-1", ok=True, message="agent finished")
 
     asyncio.run(run_op(
         _op(output=None), trusted=True, workdir=Path(tmp_path), platform="linux",

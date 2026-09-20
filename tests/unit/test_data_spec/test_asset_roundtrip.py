@@ -2,7 +2,7 @@
 
 The probe classes here exercise every arm of the walker once: a file with a
 spec and a ``Body``, a folder with a main file, a ``list[<file type>]``
-directory, a nested folder type, and a ``SpecType`` field. A probe is a plain
+directory, a nested folder type, and a ``ShapeForm`` field. A probe is a plain
 ``BaseModel`` whose shape is its registered ``TypeInfo.asset_spec``. Real types join the
 parametrize list as they migrate.
 """
@@ -22,7 +22,8 @@ from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.serializer.disk import DiskSerializer
-from flow_sdk.schema.data_spec import FrontMatter, SpecType, to_authoring_form
+from flow_sdk.schema.data_spec import FrontMatter, to_authoring_form
+from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec._form import compile_form
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.dataset_spec import (
@@ -75,7 +76,7 @@ class _Inner(BaseModel):
 
 class _RootSpec(FrontMatter):
     title: str
-    input: Optional[SpecType] = None
+    input: Optional[ShapeForm] = None
     options: dict[str, str] = {}
     instructions: Text = ""
 
@@ -86,7 +87,7 @@ class _Root(BaseModel):
     id: Optional[str] = None
     title: str = ""
     instructions: str = ""
-    input: Optional[SpecType] = None
+    input: Optional[ShapeForm] = None
     options: dict[str, str] = {}
     leaves: list[_Leaf] = []
     inner: Optional[_Inner] = None

@@ -171,11 +171,11 @@ class Dataset(Entity):
     def _index(self) -> List[Dict[str, Any]]:
         """Per-example scalars from the folder — the cheap read (one
         ``example.json`` per dir), never the typed payloads."""
-        from flow_sdk.schema.data_spec.layout import layout_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
         if self.data_layout != DataLayoutEnum.IO_FOLDER or not self.asset_ref:
             return []
-        return layout_for(self.data_layout).index(self._folder(), dataset_id=self.id)
+        return dataset_layout_for(self.data_layout).index(self._folder(), dataset_id=self.id)
 
     async def _counts_from_disk(self) -> "Dataset":
         """Re-derive the denormalized counts after a per-example write, and
@@ -207,12 +207,12 @@ class Dataset(Entity):
         ``ValueError`` when the dataset cannot take source items."""
         from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.schema.data_spec.dataset_spec import FileRef, FolderSpec  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.layout import INPUT, layout_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import INPUT, dataset_layout_for  # noqa: PLC0415
         from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
         if self.input_shape is not SourceItemSpec:
             raise ValueError('this dataset does not take source items — its spec input must be "ingest.source_item"')
-        layout = layout_for(self.data_layout)   # a CSV layout refuses `append` itself
+        layout = dataset_layout_for(self.data_layout)   # a CSV layout refuses `append` itself
         wanted = [str(i) for i in item_ids]
         rows = {item.id: item for item in await SourceItem.get_all(
             QueryFilter(type=SourceItem.get_type(), match=ExpressionNode(op=QueryOp.IN, operands=["id", wanted]))
@@ -240,11 +240,11 @@ class Dataset(Entity):
         (``ValidationError``) and written as ``ground_truth/label.json``."""
         from pydantic import TypeAdapter  # noqa: PLC0415
 
-        from flow_sdk.schema.data_spec.layout import layout_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
         gold = TypeAdapter(self.output_shape).validate_python(ground_truth)
         payload = gold.model_dump(mode="json") if hasattr(gold, "model_dump") else gold
-        layout_for(self.data_layout).annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by)
+        dataset_layout_for(self.data_layout).annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by)
 
     @action.post(action_name="promote")
     async def promote_action(self):

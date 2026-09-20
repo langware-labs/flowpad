@@ -26,9 +26,10 @@ kind to its class; anything else is **anonymous** — legal, opaque (``Any``),
 never minted. A named subclass registers itself; a Pydantic parametrization
 (``ExampleSpec[A, B]``) inherits its origin's kind and deliberately does NOT.
 
-A shape is a CLASS, and a class is not a Pydantic value: a field that holds one
-is typed ``SpecType``, whose validator reads the authoring form and whose
-serializer emits it back — that is what keeps ``agent.json`` human-readable.
+A shape is a CLASS, and a class is not a Pydantic value. A field that DECLARES
+one holds the authoring form instead (``_form.ShapeForm``) and compiles it
+where a class is actually needed — which is what keeps ``agent.json`` both
+human-readable and free of a live class in a data field.
 """
 
 from __future__ import annotations
@@ -158,16 +159,17 @@ class DataSpec(BaseModel):
     def __hash__(self) -> int:
         """A spec is a VALUE, so it is hashable — and ``frozen=True`` alone did
         not deliver that: any ``dict`` or ``list`` field made ``hash()`` raise,
-        which is most specs here. Hashing the canonical dump keeps equal values
-        equal (``_canonical`` already sorts keys for ``_COMPILED``)."""
-        cached = self.__dict__.get("__spec_hash__")
-        if cached is None:
-            # ``frozen=True``, so the value provably cannot change. Computing
-            # this per lookup would make a dict of N spec keys cost N recursive
-            # dumps to build, where O(N) was intended.
-            cached = hash(_canonical(self.model_dump(mode="json")))
-            object.__setattr__(self, "__spec_hash__", cached)
-        return cached
+        which is most specs here.
+
+        Hashes the FIELD VALUES, because that is what ``__eq__`` compares. An
+        earlier version hashed the JSON dump and memoized it into
+        ``__dict__`` — and ``model_copy(update=...)`` copies ``__dict__``
+        verbatim, so a copy carried its ORIGINAL hash: ``c == y`` while
+        ``hash(c) != hash(y)``, and a dict lookup on an equal value raised
+        ``KeyError``. Equality is the contract; the hash follows it or it is
+        wrong.
+        """
+        return hash((type(self), _freeze(self.__dict__)))
 
 
 def _compile(form: Any) -> type:
@@ -210,6 +212,21 @@ def _normalize_form(form: Any) -> Any:
     raise ValueError(
         f"a shape is a kind string, an object or a one-element list; got {type(form).__name__}"
     )
+
+
+def _freeze(value: Any) -> Any:
+    """A value as something hashable, preserving equality.
+
+    Only the three containers pydantic actually puts in a field need it; a
+    nested ``DataSpec`` hashes through ``__hash__`` above, recursively.
+    """
+    if isinstance(value, dict):
+        return tuple(sorted((k, _freeze(v)) for k, v in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(v) for v in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze(v) for v in value)
+    return value
 
 
 def _canonical(form: Any) -> str:
@@ -275,6 +292,12 @@ def to_authoring_form(t: Any) -> Any:
         return "string" if issubclass(t, str) else "int"
     if t in PRIMITIVE_NAMES:
         return PRIMITIVE_NAMES[t]
+    if isinstance(t, type) and issubclass(t, str):
+        # A ``str`` subclass that is NOT a registered primitive is still a
+        # string on disk — ``Text`` differs only in where ``save`` puts it,
+        # which is a placement fact, not a shape one. Asked AFTER the primitive
+        # table so a subclass that does claim a kind keeps its own name.
+        return "string"
     if get_origin(t) is list:
         (inner,) = get_args(t)
         return [to_authoring_form(inner)]
@@ -331,8 +354,3 @@ def _with_kind(value: DataSpec, info: Any) -> dict:
     return {"spec_kind": value.spec_kind, **dumped} if value.spec_kind else dumped
 
 
-#: A field that HOLDS a shape (a class). The validator reads the authoring
-#: form; the serializer emits it back, so JSON/YAML dumps stay compact. Declare
-#: it ``Optional[SpecType]`` — Pydantic short-circuits ``None`` OUTSIDE the
-#: ``Annotated``, so neither hook ever sees it.
-SpecType = Annotated[type, BeforeValidator(DataSpec.parse), PlainSerializer(to_authoring_form, return_type=Any)]

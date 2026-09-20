@@ -9,7 +9,6 @@ self-consistent.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -22,14 +21,6 @@ from flow_sdk.schema.data_spec.io.placement import (
     unwrap,
     value_of,
 )
-
-
-def _load_json(path: Path) -> dict:
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return raw if isinstance(raw, dict) else {}
 
 
 def _document(spec: type, path: Path) -> Any:
@@ -52,7 +43,9 @@ def _document(spec: type, path: Path) -> Any:
 def read(spec: type, root: Path) -> Any:
     """Rebuild *spec* from *root*. The inverse of ``writer.write``."""
     root = Path(root)
-    document = _load_json(root / names.main_document(spec))
+    from flow_sdk.schema.data_spec.layout import load_json_dict  # noqa: PLC0415 — cycle-safe: lazy
+
+    document = load_json_dict(root / names.main_document(spec))
     fields: dict[str, Any] = {}
 
     for name, place in placements(spec).items():
