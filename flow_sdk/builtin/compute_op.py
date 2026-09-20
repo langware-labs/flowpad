@@ -157,11 +157,9 @@ class ComputeOp(Entity):
 
         spec = self.spec()
         if spec is None:
-            return ReturnedValue(
-                exit_code=ExitCode.NOT_FOUND,
-                detail=f"{self.name}: the document is missing or unreadable.",
-                pending=(self.name,),
-            )
+            return ReturnedValue.not_found(
+                    f"{self.name}: the document is missing or unreadable.",
+                )
         trusted = approved or self.is_system()
         if not trusted:
             # Refuse, never block: a headless caller gets a legible answer

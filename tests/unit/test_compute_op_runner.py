@@ -16,6 +16,7 @@ import pytest
 from flow_sdk.core.compute_op import ComputeOpNotApproved, check_op, run_op
 from flow_sdk.core.compute.exec import ShellResult
 from flow_sdk.core.compute.process_step import ProcessResult
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 from flow_sdk.schema.data_spec.compute_op_spec import CheckOutcome, ComputeOpSpec
 
 pytestmark = pytest.mark.timeout(5)
@@ -182,7 +183,7 @@ async def test_exhausted_attempts_report_the_goal_as_pending(tmp_path):
     verdict = await _run_op(_spec(), _shell(lambda _c: 1), tmp_path=tmp_path)
 
     assert verdict.ok is False
-    assert verdict.pending == ("jq-on-path",)
+    assert verdict.exit_code is ExitCode.NOT_YET
     assert "install jq" in verdict.detail, "the detail must name the last thing tried"
 
 
@@ -191,7 +192,7 @@ async def test_a_goal_with_no_attempts_still_checks_and_says_pending(tmp_path):
     # A credential nobody can obtain from a script is still worth CHECKING.
     verdict = await _run_op(_spec(attempts=[]), _shell(lambda _c: 1), tmp_path=tmp_path)
 
-    assert verdict.ok is False and verdict.pending == ("jq-on-path",)
+    assert verdict.ok is False and verdict.exit_code is ExitCode.NOT_YET
     assert "nothing here can reach this goal" in verdict.detail
 
 
@@ -258,7 +259,10 @@ async def test_a_failed_dependency_stops_the_chain_and_keeps_its_own_detail(tmp_
     )
 
     assert verdict.ok is False
-    assert verdict.pending == ("git-on-path",), "the blocker is named, not the thing it blocked"
+    # The BLOCKER is named, not the thing it blocked. It is named by its LABEL,
+    # in the detail — the blocker's own answer is returned verbatim rather than
+    # restated, so what a person reads is what the blocker said about itself.
+    assert "git" in verdict.detail and "repo" not in verdict.detail
 
 
 @pytest.mark.asyncio
@@ -266,7 +270,7 @@ async def test_a_missing_dependency_is_named(tmp_path):
     spec = _spec(requires=["docker-running"], attempts=[])
     verdict = await _run_op(spec, _shell(lambda _c: 0), tmp_path=tmp_path, resolve=_resolver({}))
 
-    assert verdict.ok is False and verdict.pending == ("docker-running",)
+    assert verdict.ok is False and "docker-running" in verdict.detail
     assert "does not exist" in verdict.detail
 
 
@@ -302,7 +306,6 @@ async def test_a_command_attempt_can_return_the_declared_value(tmp_path):
     from flow_sdk.core.compute.exec import ShellResult
     from flow_sdk.core.compute_op import run_op
     from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
-    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
     op = ComputeOpSpec.model_validate({
         "name": "pick-port",

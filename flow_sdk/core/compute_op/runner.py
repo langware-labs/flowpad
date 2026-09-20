@@ -259,7 +259,7 @@ async def _run(
         f"{spec.display_label}: {tried[-1].describe()}" if tried
         else f"{spec.display_label}: nothing here can reach this goal."
     )
-    return ReturnedValue.not_yet(detail, pending=(spec.name,))
+    return ReturnedValue.not_yet(detail)
 
 
 async def _requires(
@@ -272,20 +272,16 @@ async def _requires(
             # A cycle is a bug in the documents, not a runtime condition to ride out.
             raise ValueError(f"compute_op cycle: {' → '.join([*chain, dependency])}")
         if seams.resolve is None:
-            return ReturnedValue(
-                exit_code=ExitCode.NOT_FOUND,
-                detail=f"{spec.display_label} requires {dependency!r}, and nothing can resolve it here.",
-                pending=(dependency,),
-            )
+            return ReturnedValue.not_found(
+                    f"{spec.display_label} requires {dependency!r}, and nothing can resolve it here.",
+                )
         if dependency not in seams.resolved:
             seams.resolved[dependency] = await seams.resolve(dependency)
         required = seams.resolved[dependency]
         if required is None:
-            return ReturnedValue(
-                exit_code=ExitCode.NOT_FOUND,
-                detail=f"{spec.display_label} requires {dependency!r}, which does not exist.",
-                pending=(dependency,),
-            )
+            return ReturnedValue.not_found(
+                    f"{spec.display_label} requires {dependency!r}, which does not exist.",
+                )
         answer = await _run(required, subject=subject, trusted=trusted, workdir=workdir,
                             platform=platform, seams=seams, seen=chain)
         if not answer.ok:
@@ -314,7 +310,6 @@ def _value_of(spec: ComputeOpSpec, result: AttemptResult, *, detail: str = "") -
         return ReturnedValue.not_yet(
             f"{spec.display_label}: the {result.kind} attempt returned a value that does not "
             f"match this op's declared output — {error}",
-            pending=(spec.name,),
         )
     return ReturnedValue.satisfied(said, value=value)
 
