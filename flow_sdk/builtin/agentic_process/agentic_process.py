@@ -1276,7 +1276,7 @@ class AgenticProcess(Entity):
         launch_shell = None
         # Set when a fresh spawn consumes a queued prompt as its launch arg
         # (see the pop below). Defined OUTSIDE the try so the except handlers'
-        # ``_requeue_failed_launch(launched_head)`` can't NameError (masking
+        # ``_requeue_undelivered(launched_head)`` can't NameError (masking
         # the real failure) when the exception fires before the pop section.
         launched_head: dict | None = None
         t0 = time.monotonic()
@@ -1621,7 +1621,7 @@ class AgenticProcess(Entity):
             )
             self.status = ProcessStatus.FAILED.value
             await self.save()
-            self._requeue_failed_launch(launched_head)
+            self._requeue_undelivered(launched_head)
             raise
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} start_pty error: {e}")
@@ -1664,7 +1664,7 @@ class AgenticProcess(Entity):
             else:
                 self.start_failure = str(e)
             await self.save()
-            self._requeue_failed_launch(launched_head)
+            self._requeue_undelivered(launched_head)
             return ApiFailResponse(message=str(e))
 
     @action.post(action_name="exit")
@@ -2217,15 +2217,32 @@ class AgenticProcess(Entity):
             except Exception:
                 pass
 
-    def _requeue_failed_launch(self, head: dict | None) -> None:
-        """Put a launch-consumed prompt back if its boot failed, so it isn't
-        lost. Best-effort — a re-queue failure must not mask the original
-        start error."""
+    def _requeue_undelivered(
+        self,
+        head: dict | None,
+        *,
+        reason: str = "boot failed; re-queued",
+        source: str = "launch-requeue",
+    ) -> None:
+        """Put a consumed prompt back when it never reached the worker.
+
+        Both paths that consume the queue head — the launch pop and the drain —
+        persist the removal BEFORE attempting delivery, so from that moment the
+        prompt exists only in the caller's local. If delivery does not happen,
+        this is the only thing standing between a refusal and a silently
+        destroyed user prompt.
+
+        Re-queues at the TAIL, which can reorder against prompts added while
+        the failed delivery was in flight. Losing FIFO position is strictly
+        better than losing the prompt.
+
+        Best-effort — a re-queue failure must not mask the original error.
+        """
         if not head:
             return
         try:
-            self.queue.log("error", "launch", entry_id=head.get("id"), error="boot failed; re-queued")
-            self.queue.enqueue(str(head.get("prompt", "")), source="launch-requeue")
+            self.queue.log("error", source, entry_id=head.get("id"), error=reason)
+            self.queue.enqueue(str(head.get("prompt", "")), source=source)
         except Exception:
             pass
 
@@ -2267,10 +2284,22 @@ class AgenticProcess(Entity):
         # Release the lock BEFORE prompt() — it may run start_pty (long) and is
         # itself serialized by _PROMPT_LOCKS / _OPEN_LOCKS.
         try:
-            await self.prompt(head["prompt"])
-            q.log("injected", source, entry_id=head.get("id"))
-        except Exception as e:  # noqa: BLE001 — already popped; record the loss
-            q.log("error", source, entry_id=head.get("id"), error=str(e))
+            result = await self.prompt(head["prompt"])
+            # ``prompt()`` REFUSES BY RETURN, not by raising — a turn already in
+            # flight comes back as a 409 ``ApiFailResponse``, and so does a
+            # relaunch that could not start. The head is already popped, so an
+            # unchecked refusal destroyed the user's prompt AND logged it as
+            # delivered. Put it back and say what happened.
+            if isinstance(result, ApiFailResponse):
+                self._requeue_undelivered(
+                    head,
+                    reason=f"refused: {result.message}",
+                    source="drain-requeue",
+                )
+            else:
+                q.log("injected", source, entry_id=head.get("id"))
+        except Exception as e:  # noqa: BLE001 — already popped; put it back
+            self._requeue_undelivered(head, reason=f"error: {e}", source="drain-requeue")
         finally:
             # Chain the drain: this turn just completed and freed the worker, so
             # run the next queued item NOW. Without this, a prompt enqueued WHILE
