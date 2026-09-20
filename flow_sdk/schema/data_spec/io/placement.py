@@ -3,13 +3,24 @@
 This is the placement table for ``save``/``load``. It replaced the ``Body`` /
 ``FreeSection`` / ``SubAsset`` markers, which are gone.
 
-``fs_store/serializer/fields.py``'s ``FieldKind`` is still live and still
-answers the same question for the ENTITY serializer — two tables, by hand. That
-is a known debt, not a design: see the cleanup list. Anything added here must be
-added there too, or disk and DB disagree. The difference is not the table — it is where
-the answer comes from. A marker let a field SAY where it goes; a type IS what
-it is, and the placement follows. So there is nothing to keep in sync, nothing
-to forget on a new field, and no second opinion on ``TypeInfo``.
+``fs_store/serializer/fields.py``'s ``FieldKind`` is also live, and an earlier
+version of this docstring said it "answers the same question". **It does not.**
+Measured over every registered spec, every entity and every nested ``DataSpec``
+(``test_the_two_classification_tables.py``): neither enum determines the other.
+``SCALAR`` maps to three placements and ``DIR_LIST`` to two kinds, because the
+two ask different things — ``FieldKind`` asks *can a serializer hold this as
+JSON?* (a list of value shapes can, so it is ``SCALAR``), this table asks
+*where does it land?* (a list of shapes is a DIRECTORY).
+
+The 33 fields they place differently are therefore not drift to be reconciled;
+they are the substance of why this module is NOT the asset writer — it would
+explode an inline list or dict into a directory tree. The relationship between
+the two is pinned by that test, so a new pair fails the build rather than
+passing unnoticed.
+
+What this table does replace is the ``Body`` / ``FreeSection`` / ``SubAsset``
+markers. The difference is where the answer comes from: a marker let a field SAY
+where it goes; a type IS what it is, and the placement follows.
 
 Two distinctions carry the whole table:
 
@@ -29,7 +40,8 @@ from __future__ import annotations
 import types
 import typing
 from functools import lru_cache
-from typing import Any, Optional, Union, get_args, get_origin
+from types import MappingProxyType
+from typing import Any, Mapping, Optional, Union, get_args, get_origin
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec.frontmatter import AssetDocumentSpec
@@ -50,8 +62,9 @@ class Placement(StrEnum):
     #: A directory named by the field, one folder per KEY.
     DIR_DICT = "dir_dict"
     #: The untyped ``data`` half of a two-section document. Stored inline like
-    #: any other value here; it is a placement of its own so this table and
-    #: ``fields.FieldKind`` name the same field the same way.
+    #: any other value here; it is a placement of its own because the format
+    #: distinguishes it — one of the three cases where this table and
+    #: ``fields.FieldKind`` do coincide.
     FREE_SECTION = "free_section"
     #: THIS document's own content, under its frontmatter. The terminal of the
     #: document recursion — a ``Text`` field is what a document IS, not a field
@@ -80,18 +93,6 @@ def unwrap(annotation: Any) -> Any:
             return annotation
 
 
-#: Shapes whose document-ness is being decided right now. See ``is_document``.
-_WALKING: "set[type]" = set()
-
-#: Settled answers, per class. ``is_document`` walks every field of a shape and
-#: every field calls back into it, so without this a nested value shape costs
-#: O(fields^depth) — measured at 1364 calls / 4.2 ms for a 6-deep chain, one
-#: `placements()` miss. Only a result reached with NOTHING mid-walk is cached:
-#: a ``False`` produced by the cycle short-circuit below is an artefact of
-#: where the walk started, not a fact about the shape.
-_IS_DOCUMENT: "dict[type, bool]" = {}
-
-
 def is_document(shape: Any) -> bool:
     """Is this shape a DISK DOCUMENT rather than a value?
 
@@ -103,32 +104,27 @@ def is_document(shape: Any) -> bool:
 
     The whole file/inline decision, in one predicate — a question about the
     type, never about the field that holds it.
+
+    This used to ask ``placement_of`` for each field and look for
+    ``Placement.BODY``, which made it mutually recursive with ``placement_of``
+    and needed a cycle guard plus a memo with a subtle "only cache a result
+    reached from the top" rule. **The recursion could never change the answer:**
+    ``placement_of`` returns ``BODY`` only for a ``Text`` core, and it decides
+    that before it ever calls back here — so every recursive answer was computed
+    and discarded. Asking the question directly is equivalent (verified over all
+    159 ``DataSpec`` subclasses), and a shape reachable from itself is no longer
+    a special case because nothing recurses.
     """
     if not is_shape(shape):
         return False
     if issubclass(shape, AssetDocumentSpec):
         return True
-    settled = _IS_DOCUMENT.get(shape)
-    if settled is not None:
-        return settled
-    if shape in _WALKING:
-        # A shape reachable from itself (``parent: Optional["Node"]``). It is
-        # mid-decision, so it cannot yet be the reason another shape is a
-        # document — without this the mutual call below never bottoms out and a
-        # recursive VALUE shape raises RecursionError from a helper.
-        return False
-    top = not _WALKING
-    _WALKING.add(shape)
-    try:
-        answer = any(
-            placement_of(f.rebuild_annotation()) is Placement.BODY
-            for f in shape.model_fields.values()
-        )
-    finally:
-        _WALKING.discard(shape)
-    if top:
-        _IS_DOCUMENT[shape] = answer
-    return answer
+    from flow_sdk.schema.data_spec.io.native import Text  # noqa: PLC0415 — cycle-safe
+
+    return any(
+        isinstance(core, type) and issubclass(core, Text)
+        for core in (unwrap(f.rebuild_annotation()) for f in shape.model_fields.values())
+    )
 
 
 def is_shape(shape: Any) -> bool:
@@ -184,16 +180,21 @@ def placement_of(annotation: Any) -> Placement:
 
 
 @lru_cache(maxsize=None)
-def placements(spec: type) -> "dict[str, Placement]":
+def placements(spec: type) -> "Mapping[str, Placement]":
     """Every field of *spec*, by placement. The reader and the writer share it,
     which is what makes a round trip symmetric by construction rather than by
-    two functions agreeing."""
+    two functions agreeing.
+
+    Read-only: the result is CACHED, so handing back a plain dict would let one
+    caller's edit reach every later caller. No caller mutates it today, which is
+    exactly why the day one does would be hard to find.
+    """
     out: dict[str, Placement] = {}
     for name, field in spec.model_fields.items():
         # ``rebuild_annotation`` re-wraps what pydantic moved into
         # ``FieldInfo.metadata``; ``.annotation`` alone silently drops it.
         out[name] = placement_of(field.rebuild_annotation())
-    return out
+    return MappingProxyType(out)
 
 
 __all__ = [

@@ -1149,9 +1149,17 @@ class SchemaRegistry:
 
             final.from_disk_fn = spec_extractor(info.type_name)   # the spec IS the parser
         if info.asset_spec is not None:
-            from flow_sdk.fs_store.serializer.fields import field_kinds  # noqa: PLC0415
+            from flow_sdk.fs_store.serializer.fields import field_kinds, spec_layout  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.io.placement import placements  # noqa: PLC0415
 
-            field_kinds.cache_clear()   # a new asset type can turn a field into a sub-asset
+            # A new asset type can turn a field into a sub-asset, so every
+            # cached classification of a field is now a possibly-stale answer.
+            # All three read the registry; clearing only one left the other two
+            # holding the pre-registration verdict — harmless so far only
+            # because registration happens at import, before anything asks.
+            field_kinds.cache_clear()
+            spec_layout.cache_clear()
+            placements.cache_clear()
 
     @classmethod
     def check_asset_specs(cls) -> None:
