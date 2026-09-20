@@ -3,7 +3,8 @@ from typing import Any, List, Optional
 
 from pydantic import field_validator
 
-from flow_sdk.schema.data_spec import Body, FrontMatter
+from flow_sdk.schema.data_spec import FrontMatter
+from flow_sdk.schema.data_spec.io.native import Text
 
 
 class MarkdownSpec(FrontMatter):
@@ -16,7 +17,7 @@ class MarkdownSpec(FrontMatter):
     tags: Optional[List[str]] = None
     links: Optional[List[str]] = None
     scope: Optional[str] = None
-    body: Body = ""
+    body: Text = ""
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -31,4 +32,4 @@ class ClaudeMdSpec(FrontMatter):
 
     asset_type: Optional[str] = None
     scope: Optional[str] = None
-    body: Body = ""
+    body: Text = ""

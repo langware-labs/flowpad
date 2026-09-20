@@ -31,11 +31,32 @@ class WikiSource(Source):
 def _folder(root: Path, name: str = "wiki", source: str | None = SOURCE, helper: str = 'GREETING = "hi"\n') -> Path:
     folder = root / name
     folder.mkdir(parents=True)
-    (folder / "data_driver.json").write_text(json.dumps({"schema": 1, "name": name, "title": "Wiki", "kind": "datasource.wiki"}))
+    # `ns`: this folder is not under SHIPPED_ROOT, so it is an EXTERNAL driver and
+    # must name the ontology its kinds belong to. See the refusal test below.
+    (folder / "data_driver.json").write_text(json.dumps(
+        {"schema": 1, "name": name, "title": "Wiki", "kind": "datasource.wiki", "ns": "acme"}
+    ))
     if source is not None:
         (folder / "source.py").write_text(source.format(name=name))
     (folder / "helper.py").write_text(helper)
     return folder
+
+
+def test_an_external_driver_must_name_its_ontology(tmp_path):
+    """A driver outside the shipped tree mints kinds into SOMEONE's namespace.
+
+    Left unnamed they land in ours, so an authored `whatsapp` declaring
+    `ingest.message.whatsapp` collides with the shipped one and whichever
+    imported second used to win in silence. Refused before `source.py` is
+    imported, because the import is what registers the kinds.
+    """
+    folder = _folder(tmp_path)
+    body = json.loads((folder / "data_driver.json").read_text())
+    body.pop("ns")
+    (folder / "data_driver.json").write_text(json.dumps(body))
+
+    with pytest.raises(DriverLoadError, match="declares no `ns`"):
+        load_driver(folder)
 
 
 def test_a_folder_becomes_a_source_type_with_its_helper_imported_relatively(tmp_path):

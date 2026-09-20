@@ -15,9 +15,11 @@ import pytest
 
 from flow_sdk.activity import Activity, ActivityState
 from flow_sdk.core.wizard import run_wizard
-from flow_sdk.core.wizard.exec import ShellResult
-from flow_sdk.core.wizard.process_step import ProcessResult
+from flow_sdk.core.compute.exec import ShellResult
+from flow_sdk.core.compute.process_step import ProcessResult
 from flow_sdk.schema.data_spec.activity_spec import MAX_DEPTH
+from flow_sdk.core.wizard.runner import Resolved
+from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 pytestmark = pytest.mark.timeout(5)
@@ -26,21 +28,34 @@ SPEC = WizardSpec.model_validate({
     "name": "Developer toolchain",
     "icon": "Wand2",
     "steps": [
-        {"id": "python3", "label": "Python 3", "on_fail": "continue",
-         "precondition": {"commands": {"linux": "have python3"}},
-         "process": {"prompt": "install python"},
-         "verify": {"commands": {"linux": "python3 --version"}}},
-        {"id": "git", "label": "Git", "on_fail": "continue",
-         "precondition": {"commands": {"linux": "have git"}},
-         "process": {"prompt": "install git"},
-         "verify": {"commands": {"linux": "git --version"}}},
+        {"id": "python3", "label": "Python 3", "kind": "compute",
+         "ref": "python3-on-path", "on_fail": "continue"},
+        {"id": "git", "label": "Git", "kind": "compute",
+         "ref": "git-on-path", "on_fail": "continue"},
     ],
 })
+
+#: The ops the steps call. The Activity tree is what is under test, so each is
+#: the smallest legal op: one question, one rung.
+OPS = {
+    name: ComputeOpSpec.model_validate({
+        "name": name,
+        "completion_check": {"commands": {"linux": f"have {name}"}},
+        "attempts": [{"kind": "agent", "agent": "provisioner", "prompt": f"install {name}"}],
+    })
+    for name in ("python3-on-path", "git-on-path")
+}
+
+
+async def _resolve_op(name):
+    spec = OPS.get(name)
+    return Resolved(spec, True) if spec is not None else None
 
 
 async def _run(shell, launch, *, path, subject_entity, tmp_path):
     await run_wizard(SPEC, subject_entity=subject_entity, activity_path=path, trusted=True,
-                     workdir=Path(tmp_path), shell=shell, launch=launch, platform="linux")
+                     workdir=Path(tmp_path), shell=shell, launch=launch, platform="linux",
+                     resolve_op=_resolve_op)
     return Activity.get(path, subject_entity=subject_entity).spec()
 
 
@@ -54,7 +69,7 @@ async def test_root_carries_the_wizard_identity_and_a_real_total(tmp_path):
         return ShellResult(returncode=0)
 
     async def launch(**_kw):
-        return ProcessResult("p", True)
+        return ProcessResult(process_id="p", ok=True)
 
     root = await _run(shell, launch, path="wzact/ident", subject_entity="wizard-a", tmp_path=tmp_path)
     assert root.label == "Developer toolchain"
@@ -85,7 +100,7 @@ async def test_a_failed_step_marks_the_child_and_counts_an_error(tmp_path):
         return ShellResult(returncode=1)
 
     async def launch(**_kw):
-        return ProcessResult("p", False, "install failed")
+        return ProcessResult(process_id="p", ok=False, message="install failed")
 
     root = await _run(shell, launch, path="wzact/fail", subject_entity="wizard-c", tmp_path=tmp_path)
     assert root.errors_count == 2
@@ -105,7 +120,7 @@ async def test_a_never_reached_step_has_no_child_rather_than_a_failed_one(tmp_pa
         return ShellResult(returncode=1)
 
     async def launch(**_kw):
-        return ProcessResult(None, False, "boom")
+        return ProcessResult(process_id=None, ok=False, message="boom")
 
     await run_wizard(WizardSpec.model_validate(body), subject_entity="wizard-d",
                      activity_path="wzact/abort", trusted=True, workdir=Path(tmp_path),
@@ -121,7 +136,7 @@ async def test_the_tree_stays_within_the_wire_depth_budget(tmp_path):
         return ShellResult(returncode=0)
 
     async def launch(**_kw):
-        return ProcessResult("p", True)
+        return ProcessResult(process_id="p", ok=True)
 
     root = await _run(shell, launch, path="wzact/depth", subject_entity="wizard-e", tmp_path=tmp_path)
     depths = {len(node.path.split("/")) - len(root.path.split("/")) for node in root.walk()}
@@ -137,7 +152,7 @@ async def test_a_second_concurrent_run_of_the_same_wizard_is_refused(tmp_path):
         return ShellResult(returncode=0)
 
     async def launch(**_kw):
-        return ProcessResult("p", True)
+        return ProcessResult(process_id="p", ok=True)
 
     with pytest.raises(RuntimeError):
         await run_wizard(SPEC, subject_entity="wizard-f", activity_path="wzact/busy", trusted=True,

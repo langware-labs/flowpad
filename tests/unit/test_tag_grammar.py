@@ -14,6 +14,7 @@ from flow_sdk.tags.grammar import (
     is_valid_tag,
     is_valid_tag_pattern,
     normalize_tag,
+    join_namespace,
     split_namespace,
     tag_ancestors,
     tag_is_within,
@@ -105,3 +106,26 @@ def test_capability_matcher_behavior_preserved():
     assert not capability_kind_matches("harness.claude", "harness.codex.cli")
     # Never raises on untrusted strings (historical contract).
     assert not capability_kind_matches("x", "Not A Valid Kind At All")
+
+
+def test_join_namespace_is_the_inverse_of_split() -> None:
+    """The marker format has exactly one owner. It used to be written by hand
+    wherever a namespaced kind was minted, so only the READ side was covered by
+    the Python/TS parity contract."""
+    for namespace, rest in (("acme", "orders.created"), ("acme", "ingest.message.slack")):
+        joined = join_namespace(namespace, rest)
+        assert joined == f"--{namespace}--.{rest}"
+        assert split_namespace(joined) == (namespace, rest)
+        assert normalize_tag(joined) == joined      # a namespaced kind is a legal tag
+
+
+def test_the_system_namespace_is_never_written() -> None:
+    """Ours is the default and it is silent: no marker, at all."""
+    assert join_namespace("", "orders.created") == "orders.created"
+    assert join_namespace(None, "orders.created") == "orders.created"
+
+
+def test_a_namespace_the_marker_cannot_hold_fails_where_it_is_built() -> None:
+    """Rather than producing a tag `normalize_tag` rejects somewhere later."""
+    with pytest.raises(ValueError, match="not a usable namespace"):
+        join_namespace("Acme Corp", "orders.created")

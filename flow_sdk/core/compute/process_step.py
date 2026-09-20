@@ -21,15 +21,17 @@ a legible failed step, not a traceback that takes the whole run with it.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+from pydantic import Field
+
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class ProcessProgress:
+class ProcessProgress(DataSpec):
     """One tick of a step's agent, in the wizard's vocabulary.
 
     Its own type rather than a raw ``WorkerStatus`` so the runner stays free of
@@ -37,7 +39,7 @@ class ProcessProgress:
     """
 
     text: str
-    counters: dict = field(default_factory=dict)
+    counters: dict = Field(default_factory=dict)
     blocked: bool = False
 
 
@@ -71,14 +73,14 @@ def _progress_for(process_id: str, worker_status: Any) -> ProcessProgress:
         if node is not None:
             if getattr(node, "current_item", None):
                 text = f"{text} · {node.current_item}"
-            counters = dict(getattr(node, "counters", {}) or {})
+            # pydantic copies it on construction; copying here too was twice.
+            counters = getattr(node, "counters", {}) or {}
     except Exception:  # noqa: BLE001 — a status line is never worth a failure
         logger.debug("could not read agent status for %s", process_id, exc_info=True)
-    return ProcessProgress(text, counters, blocked)
+    return ProcessProgress(text=text, counters=counters, blocked=blocked)
 
 
-@dataclass(frozen=True)
-class ProcessResult:
+class ProcessResult(DataSpec):
     """What the agent step did. ``process_id`` is set even when ``ok`` is False,
     so a caller can always link to the run that failed."""
 
@@ -112,12 +114,12 @@ async def launch_step_process(
         worker_type = await resolve_default_worker_type()
     except Exception as exc:  # noqa: BLE001
         # The bare box a wizard is meant to fix often has no harness yet. Say so.
-        return ProcessResult(None, False, f"No coding-agent harness is available to run this step: {exc}")
+        return ProcessResult(process_id=None, ok=False, message=f"No coding-agent harness is available to run this step: {exc}")
 
     try:
         deployment = await get_agent_local_deployment(agent)
     except LookupError as exc:
-        return ProcessResult(None, False, str(exc))
+        return ProcessResult(process_id=None, ok=False, message=str(exc))
 
     try:
         process = await deployment.create_process(
@@ -130,19 +132,19 @@ async def launch_step_process(
         )
         await process.save(notify=True)
     except Exception as exc:  # noqa: BLE001
-        return ProcessResult(None, False, f"Could not start the step's agent: {exc}")
+        return ProcessResult(process_id=None, ok=False, message=f"Could not start the step's agent: {exc}")
 
     process_id = str(process.id)
     if on_status is not None:
         # Immediately: the row should move when the process exists, not two
         # seconds later when the first poll lands.
-        on_status(ProcessProgress("starting the agent"))
+        on_status(ProcessProgress(text="starting the agent"))
     try:
         start = await process.prompt(prompt)
     except Exception as exc:  # noqa: BLE001
-        return ProcessResult(process_id, False, f"Agent failed to start: {exc}")
+        return ProcessResult(process_id=process_id, ok=False, message=f"Agent failed to start: {exc}")
     if isinstance(start, ApiFailResponse):
-        return ProcessResult(process_id, False, getattr(start, "message", "Agent failed to start"))
+        return ProcessResult(process_id=process_id, ok=False, message=getattr(start, "message", "Agent failed to start"))
 
     try:
         await process.wait(
@@ -153,10 +155,10 @@ async def launch_step_process(
             ),
         )
     except TimeoutError:
-        return ProcessResult(process_id, False, f"Agent did not finish within {timeout_seconds:.0f}s")
+        return ProcessResult(process_id=process_id, ok=False, message=f"Agent did not finish within {timeout_seconds:.0f}s")
     except Exception as exc:  # noqa: BLE001
-        return ProcessResult(process_id, False, f"Agent run failed: {exc}")
+        return ProcessResult(process_id=process_id, ok=False, message=f"Agent run failed: {exc}")
 
     # Reaching a terminal state is NOT proof the work landed — that is what the
     # step's `verify` is for. All this reports is that the agent stopped.
-    return ProcessResult(process_id, True, "agent finished")
+    return ProcessResult(process_id=process_id, ok=True, message="agent finished")

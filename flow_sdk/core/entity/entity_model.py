@@ -1381,7 +1381,7 @@ class Entity(DBEntity):
 
         Values are dumped THROUGH Pydantic (``model_dump(mode="json")`` on the
         persisted subset), so a field's own serializer runs — a shape CLASS
-        held by a ``SpecType`` field lands as its authoring form, a model as
+        held by a ``ShapeForm`` field lands as its authoring form, a model as
         its JSON. The record writer never has to know what a field holds.
         """
         from flow_sdk.api.api_types.api_field import Persist, persist_policy

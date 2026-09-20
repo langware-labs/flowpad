@@ -143,6 +143,10 @@ class DataDriverSpec(DataSpec):
 
     #: The registry key AND the folder name. One noun: `rss` resolves the folder's own source class.
     name: str
+    #: Whose ontology this driver's kinds belong to; blank is ours. Declared here
+    #: rather than inherited because ``DataDriverSpec`` is a plain ``DataSpec``,
+    #: not an ``AssetDocumentSpec`` — see the re-basing follow-up.
+    ns: str = ""
     title: str = ""
     description: str = ""
     #: The record kind a source row carries (``datasource.api.slack``); ``datasource.<name>`` when omitted.

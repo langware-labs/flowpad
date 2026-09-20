@@ -39,7 +39,11 @@ Subclassing **registers** the class under its kind in the one `SchemaRegistry`
 both enforced: `spec_kind` must stay a `ClassVar` (annotating it makes it a
 field, and the guard — an `assert` in the hook — trips at class creation); and a
 Pydantic **parametrization** (`ExampleSpec[A, B]`) inherits its origin's kind and
-deliberately does not register — only a *named* subclass does.
+deliberately does not register — only a *named* subclass does. So does a plain
+subclass that declares no kind of its own: `spec_kind` must be in the class's own
+`__dict__`, because an inherited one is not a new kind. Without that rule
+`FileDataPage` rebound `source.page` to itself and a plain `DataPage` no longer
+resolved from its own name.
 
 Registration is import-time, and forgetting it fails silently: a kind whose
 module nobody imported resolves to `Any`. `register_builtin_kinds()`
@@ -73,10 +77,21 @@ what was written — that is what keeps `agent.json` and `dataset.json` readable
 An ordinary dot-path tag (`flow_sdk/tags/grammar.py`), resolved through the
 **one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool`)
 → its Python type; a registered kind → its class (`register_kind` /
-`kind_type` / `kind_for`; entity type names live in the same table, so
-`"dataset"` is a kind); anything else → **anonymous**: `Any`. Legal, opaque,
-never minted. A kind referenced before it is registered resolves to `Any` —
-compilation is eager, so there is no cycle to detect.
+`kind_type` / `kind_for`); an unregistered name → **anonymous**: `Any`. Legal,
+opaque, never minted. A kind referenced before it is registered resolves to
+`Any` — compilation is eager, so there is no cycle to detect.
+
+**A kind names a SHAPE, never an Entity row.** Entity type names live in the same table,
+so `"dataset"` is a kind — and it resolves to that type's `asset_spec`, its
+document shape, registered automatically from the type name. It never resolves
+to the Entity class: a row model is not a `DataSpec`, and a `SpecType` field
+holding one could not validate a value against it. A registered type with **no**
+asset document therefore names no shape and raises, rather than answering `Any`:
+the author meant a real thing. See [`ontology.md`](../ontology.md).
+
+A spec that declares its own `spec_kind` keeps it, and it stays the name that is
+WRITTEN — so `SourceItemSpec` dumps as `ingest.source_item` while both that and
+`source_item` resolve.
 
 ### A shape held by a field — `SpecType`
 

@@ -22,29 +22,38 @@ import pytest
 
 from flow_sdk.builtin.wizard import Wizard
 from flow_sdk.core.wizard import run_wizard
-from flow_sdk.core.wizard.exec import PROBE_OUTPUT_CAP, ShellResult
+from flow_sdk.core.compute.exec import PROBE_OUTPUT_CAP, ShellResult
 from flow_sdk.core.wizard.runner import COMPLETED, FAILED
 from flow_sdk.core.wizard.state import reset_run
+from flow_sdk.core.wizard.runner import Resolved
+from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
 SPEC = WizardSpec.model_validate({
     "name": "probed",
-    "steps": [{
-        "id": "one", "label": "One",
-        "precondition": {"commands": {"darwin": "test -f marker", "linux": "test -f marker"}},
-        "command": {"commands": {"darwin": "make-it", "linux": "make-it"}},
-        "verify": {"commands": {"darwin": "test -f made", "linux": "test -f made"}},
-    }],
+    "steps": [{"id": "one", "label": "One", "kind": "compute", "ref": "make-it"}],
 })
+
+#: The work the step calls. One question, one cheap rung — which is the shape a
+#: probe describes now: the ATTEMPT that ran, not a phase of a step.
+OP = ComputeOpSpec.model_validate({
+    "name": "make-it",
+    "completion_check": {"commands": {"darwin": "test -f made", "linux": "test -f made"}},
+    "attempts": [{"kind": "command", "commands": {"darwin": "make-it", "linux": "make-it"}}],
+})
+
+
+async def _resolve_op(name):
+    return Resolved(OP, True) if name == "make-it" else None
 
 
 def _shell(*, fail: str = "", stdout: str = "", record: "list | None" = None):
     """A shell double: every command succeeds unless it starts with `fail`.
 
-    The four probe tests differ only in which command fails and what it prints,
-    so that is what this takes — leaving each test body to be its assertion.
+    The probe tests differ only in which command fails and what it prints, so
+    that is what this takes — leaving each test body to be its assertion.
     """
     async def run(command, **_kw):
         if record is not None:
@@ -58,38 +67,42 @@ def _shell(*, fail: str = "", stdout: str = "", record: "list | None" = None):
 async def _run(tmp_path, shell):
     return await run_wizard(
         SPEC, subject_entity=None, activity_path="wizard-probe", trusted=True,
-        workdir=Path(tmp_path), shell=shell,
+        workdir=Path(tmp_path), shell=shell, platform="linux", resolve_op=_resolve_op,
     )
 
 
-def test_probes_record_all_three_phases_with_resolved_commands(tmp_path):
-    """Precondition, action and verify each leave a probe, in order."""
+def test_a_probe_records_the_attempt_that_ran_with_its_resolved_command(tmp_path):
+    """One probe per ATTEMPT, named by its rung.
+
+    It used to be three per step — precondition, action, verify — because a step
+    ran three commands. A step now makes one CALL, and what varies inside it is
+    which rung acted, which is the same question asked of the new shape.
+    """
     seen: list[str] = []
-    # The precondition fails, so the step acts; action and verify succeed.
-    result = asyncio.run(_run(tmp_path, _shell(fail="test -f marker", record=seen)))
+    # The check fails, so the op acts; the rung and the re-check then succeed.
+    result = asyncio.run(_run(tmp_path, _shell(fail="test -f made", record=seen)))
     outcome = result.outcomes[0]
-    assert outcome.status == COMPLETED
-    phases = [probe.phase for probe in outcome.probes]
-    assert phases == ["precondition", "action", "verify"]
+
+    assert outcome.status == FAILED, "the check never passes, so the goal is not reached"
+    assert [probe.phase for probe in outcome.probes] == ["command"]
     # The RESOLVED command, not the per-OS map: what actually ran on this box.
-    assert outcome.probes[1].command == "make-it"
-    assert outcome.probes[1].stdout == "out:make-it"
-    assert outcome.probes[0].returncode == 1
+    assert outcome.probes[0].command == "make-it"
+    assert outcome.probes[0].returncode == 0
+    assert seen[0] == "test -f made", "the question is asked before anything acts"
 
 
 def test_every_terminal_outcome_carries_a_real_duration(tmp_path):
     """`completed` and `failed` both reported 0.0 — the fields were positional."""
-    completed = asyncio.run(_run(tmp_path, _shell()))
-    assert completed.outcomes[0].duration_s > 0
+    satisfied = asyncio.run(_run(tmp_path, _shell()))
+    assert satisfied.outcomes[0].duration_s > 0
 
-    # Everything but the action succeeds, so the step reaches a FAILED verify.
     failed = asyncio.run(_run(tmp_path, _shell(fail="test -f")))
     assert failed.outcomes[0].status == FAILED
     assert failed.outcomes[0].duration_s > 0
 
 
-def test_a_verify_failure_keeps_the_actions_output(tmp_path):
-    """The sentence says verify failed; the action's probe still has the why."""
+def test_a_failed_goal_keeps_the_rungs_output(tmp_path):
+    """The sentence says the goal was not reached; the probe still has the why."""
     async def shell(command, **_kw):
         if command.startswith("make-it"):
             return ShellResult(returncode=0, stdout="wrote nothing, actually")
@@ -97,20 +110,18 @@ def test_a_verify_failure_keeps_the_actions_output(tmp_path):
 
     outcome = asyncio.run(_run(tmp_path, shell)).outcomes[0]
     assert outcome.status == FAILED
-    action = next(p for p in outcome.probes if p.phase == "action")
-    assert action.stdout == "wrote nothing, actually"
+    assert outcome.probes[0].stdout == "wrote nothing, actually"
 
 
 def test_streams_are_tail_capped_and_say_so(tmp_path):
     """The END is where the error is, so the tail is what survives."""
     long_output = "x" * (PROBE_OUTPUT_CAP + 500) + "TAIL"
     outcome = asyncio.run(
-        _run(tmp_path, _shell(fail="test -f marker", stdout=long_output))
+        _run(tmp_path, _shell(fail="test -f made", stdout=long_output))
     ).outcomes[0]
-    action = next(p for p in outcome.probes if p.phase == "action")
-    assert action.truncated is True
-    assert len(action.stdout) == PROBE_OUTPUT_CAP
-    assert action.stdout.endswith("TAIL")
+    assert outcome.probes[0].truncated is True
+    assert len(outcome.probes[0].stdout) == PROBE_OUTPUT_CAP
+    assert outcome.probes[0].stdout.endswith("TAIL")
 
 
 def test_a_probeless_run_json_still_validates():
@@ -218,8 +229,8 @@ def test_duplicate_step_ids_warn_rather_than_reject(tmp_path, monkeypatch):
     """An error here would make documents that load today vanish, in repos we
     do not control."""
     wizard = _wizard(tmp_path, monkeypatch, doc={"name": "d", "steps": [
-        {"id": "a", "command": {"commands": {"linux": "true"}}},
-        {"id": "a", "command": {"commands": {"linux": "true"}}},
+        {"id": "a", "kind": "compute", "ref": "make-it"},
+        {"id": "a", "kind": "compute", "ref": "make-it"},
     ]})
     data = asyncio.run(wizard.validate_action()).data
     assert data["ok"] is True
@@ -245,7 +256,7 @@ def test_an_agents_returned_value_never_rides_run_state(tmp_path, monkeypatch):
 
     wizard = _wizard(tmp_path, monkeypatch)
     record_result(str(wizard.id), status="completed", awaiting=[], message="", outcomes=[{
-        "step_id": "a", "status": "completed", "output": "release",
+        "step_id": "a", "status": "completed",
         "result": {"version": "3.12.4", "path": "/usr/local/bin/python3"},
     }])
     record_outputs(str(wizard.id), {"release": {"version": "3.12.4"}})
@@ -253,9 +264,8 @@ def test_an_agents_returned_value_never_rides_run_state(tmp_path, monkeypatch):
     listed = wizard.run_state
     assert "result" not in listed["outcomes"][0]
     assert "outputs" not in listed
-    # The rest of the outcome — including WHICH name it returned — survives, so
-    # a list can still say the step produced something.
-    assert listed["outcomes"][0]["output"] == "release"
+    # The rest of the outcome survives, so a list can still say what the step did.
+    assert listed["outcomes"][0]["status"] == "completed"
 
     detail = asyncio.run(wizard.run_detail_action()).data
     assert detail["outcomes"][0]["result"]["version"] == "3.12.4"

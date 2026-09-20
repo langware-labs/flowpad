@@ -18,10 +18,13 @@ Per-type metadata is **authored declaratively** in `flow_sdk/schema/type_info/<t
 > The layer below this one is [`DataSpec`](data-spec.md) — runtime shapes
 > compiled to Pydantic, and `TypeInfo.asset_spec`, the spec whose types ARE a type's layout. Kinds bind
 > here too: `SchemaRegistry.register_kind(kind, cls)` / `kind_type(kind)` / `kind_for(cls)` share
-> the type-name namespace, so an entity type name is a kind. A `DataSpec`
-> subclass with a `spec_kind` registers itself on definition.
-> `TypeInfo` is the resolver for entity-backed kinds; it is not a competing type
-> system.
+> the type-name namespace, so an entity type name is a kind — resolving to that
+> type's `asset_spec`, bound automatically by `register()`. A `DataSpec`
+> subclass with a `spec_kind` of its OWN registers itself on definition, and a
+> kind names exactly one shape: rebinding raises rather than overwriting.
+> A kind always names a `DataSpec`, never an Entity class; a type with no asset
+> document names no shape. `TypeInfo` supplies the shape for entity-backed
+> kinds; it is not a competing type system.
 
 
 ## TypeInfo
@@ -191,7 +194,7 @@ The actual scan/index **walk** is owned by the indexer package — `FSIndexer` (
 | `get_all_entity_types` / `get_all_entity_classes` / `get_public_entity_types` | Bulk entity-type/class listings. |
 | `is_api_visible` / `get_icon` / `get_display_name` / `browseable_by` / `is_browseable_in(type, mode)` / `is_creatable` / `is_indexed_by_default` | Presentation read-through getters (`is_browseable` is gone — visibility is a view-mode question). |
 | `get_all_types()` / `get_repo_types()` / `repo_family_to_info()` / `repo_family_to_type()` / `harness_scoped_families()` / `get_shared_child_types()` | Registry-wide listings driven by the placement axis and sharing flags — `get_repo_types()` is what `build_default_indexer()` feeds `repo_assets_fn`. |
-| `register_kind(kind, shape)` / `kind_for(shape)` / `kind_type(kind)` | The `DataSpec` kind namespace; `kind_type` falls through to `entity_cls` so an entity type name is a kind. |
+| `register_kind(kind, shape)` / `kind_for(shape)` / `kind_type(kind)` | The `DataSpec` kind namespace. `register()` binds each type's `asset_spec` under the type name, so an entity type name is a kind naming that type's DOCUMENT SHAPE; a type with no asset document names nothing and `resolve_kind` raises. `register_kind` refuses to rebind a kind to a second shape. |
 | `check_asset_specs()` | Post-registration pass: raises when a type's `asset_spec` disagrees with its entity row. |
 | `get_default_index_types()` | Return `indexed_by_default=True` types. Falls back to `_BUILTIN_DEFAULT_TYPES` if the registry list is empty. |
 

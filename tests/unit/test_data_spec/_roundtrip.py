@@ -23,6 +23,8 @@ from flow_sdk.fs_store.serializer.fields import asset_class as _asset_class
 from flow_sdk.fs_store.serializer.fields import unwrap_annotation as _unwrap
 from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
+from flow_sdk.schema.data_spec._form import is_shape_form
+from flow_sdk.schema.data_spec.io.native import Binary, FreeForm, Text
 
 
 def sample(name: str, annotation: Any, default: Any) -> Any:
@@ -32,12 +34,21 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
     if asset_cls is not None:
         built = populate(asset_cls)
         return [built] if is_list else built
-    if ann is DataSpec or ann is type:          # a field that HOLDS a shape (SpecType)
+    if ann is DataSpec or ann is type:          # a field that HOLDS a shape
         return DataSpec.parse({f"{name}_k": "string", f"{name}_n": ["int"]})
+    if is_shape_form(annotation):
+        # A ``ShapeForm`` field holds the authoring FORM, not a class.
+        return {f"{name}_k": "string", f"{name}_n": ["int"]}
     if ann is PhoneNumberSpec:                  # validated digits: a "<name>-v" placeholder is not a number
         return PhoneNumberSpec(country_code="972", number="557709288")
     if isinstance(ann, type) and issubclass(ann, DataSpec):   # a field whose VALUE is a shape
         return ann(**{n: sample(n, f.annotation, f.default) for n, f in ann.model_fields.items()})
+    if isinstance(ann, type) and issubclass(ann, FreeForm):  # the untyped data half
+        return ann({f"{name}_key": f"{name}-v"})
+    if isinstance(ann, type) and issubclass(ann, Text):     # a document body
+        return ann(f"{name}-v")
+    if isinstance(ann, type) and issubclass(ann, Binary):   # a file of bytes
+        return ann(f"{name}-v".encode())
     if ann is str:
         return f"{name}-v"
     if ann is bool:

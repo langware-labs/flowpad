@@ -9,7 +9,7 @@ import pytest
 
 from flow_sdk.builtin.dataset import ARTIFACT_ROW
 from flow_sdk.schema.data_spec.dataset_spec import DataLayoutEnum, ExampleKind, FileRef, FolderSpec
-from flow_sdk.schema.data_spec.layout import CsvLayout, FolderLayout, example_id, layout_for
+from flow_sdk.schema.data_spec.layout import CsvLayout, FolderLayout, example_id, dataset_layout_for
 
 pytestmark = pytest.mark.timeout(5)
 
@@ -47,7 +47,7 @@ def test_annotate_writes_gold_and_provenance_and_the_reader_counts_it(tmp_path):
 
 
 def test_csv_refuses_per_example_writes(tmp_path):
-    lay = layout_for(DataLayoutEnum.CSV)
+    lay = dataset_layout_for(DataLayoutEnum.CSV)
     assert isinstance(lay, CsvLayout)
     with pytest.raises(NotImplementedError):
         lay.append(tmp_path, _row(), dataset_id=DS)

@@ -22,15 +22,10 @@ importable from ``flow_sdk/builtin/*`` with no cycle.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, ClassVar
+from typing import Any, ClassVar
 
-from pydantic import StringConstraints
-
+from flow_sdk.schema.data_spec._types import NonBlank
 from flow_sdk.schema.data_spec.spec import DataSpec
-
-#: A server's name is its key in every vendor's config dict — a blank one would
-#: collapse two servers onto one entry, so blankness is refused by the type.
-NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 #: ``stdio`` launches ``command``+``args``; ``http``/``sse`` dial ``url``.
 STDIO = "stdio"
