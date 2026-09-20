@@ -668,9 +668,10 @@ class AgenticProcess(Entity):
     exit_code: int | None = APIField(
         default=None,
         description=(
-            "Terminal exit code of a driverless EXECUTION process (a flow "
-            "function subprocess) — stamped by the GraphWorkflowManager when the "
-            "subprocess finishes. None for worker-driven processes."
+            "Terminal exit code. A driverless EXECUTION process (a flow "
+            "function subprocess) is stamped by the GraphWorkflowManager; a "
+            "worker-driven one is stamped by `_on_pty_exit`. `None` means it "
+            "has not exited — not that it exited cleanly."
         ),
     )
     last_started_hash: str | None = APIField(
@@ -7443,19 +7444,39 @@ class AgenticProcess(Entity):
     async def _reindex_touched(self, paths: list[str]) -> None:
         """Force-reindex the turn's touched files (fire-and-forget, off the turn
         path). Each resolves to its owning entity, re-parses from disk, and
-        broadcasts a ``data_op_msg`` so watching clients refresh."""
+        broadcasts a ``data_op_msg`` so watching clients refresh.
+
+        "Off the turn path" is not off the LOOP: ``reindex_paths`` walks its
+        whole batch in one uninterrupted run of awaits, so a large batch shows
+        up as a rolling stall in every live terminal while it drains. That was
+        invisible until the line below — the trail had ``output_delayed`` on one
+        side and nothing on the other, so the stalls could only be guessed at.
+        """
+        t0 = time.monotonic()
+        # Bound before the try: `except Exception` does not catch CancelledError,
+        # and the `finally` below formats `counts` on every exit.
+        counts: object = "cancelled"
         try:
             from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
 
             result = await reindex_paths(paths)
+            counts = result.as_dict()["counts"]
             logger.debug(
                 "AP %s write reindex: %s (in=%d)",
                 self.id,
-                result.as_dict()["counts"],
+                counts,
                 len(paths),
             )
-        except Exception:
+        except Exception as exc:
+            counts = f"failed:{type(exc).__name__}"
             logger.debug("AgenticProcess %s: reindex_touched failed", self.id, exc_info=True)
+        finally:
+            # One line for both outcomes — a second copy in the except arm drifts
+            # the moment a field is added, and says nothing about the failure.
+            toplog.log(
+                "pty", "turn_end_reindex process=%s paths=%s counts=%s ms=%.0f",
+                self.id, len(paths), counts, (time.monotonic() - t0) * 1000,
+            )
 
     def _collect_touched_from_transcript_tail(self) -> list[str]:
         """Files this turn wrote/edited, read from the transcript tail.
@@ -7467,7 +7488,12 @@ class AgenticProcess(Entity):
         turn only reindexes its OWN new file-ops (not every file the session
         ever touched)."""
         t0 = time.monotonic()
+        # Split the clock at each stage. One combined ``ms`` cannot say whether
+        # the cost is the eager JSONL parse (``_load_transcript``) or the
+        # file-op scan over the tail — and those have opposite fixes, so a
+        # reader of one number has to re-measure before they can act.
         tf = self._load_transcript()
+        parse_ms = (time.monotonic() - t0) * 1000
         if tf is None:
             return []
         try:
@@ -7478,13 +7504,29 @@ class AgenticProcess(Entity):
         object.__setattr__(self, "_reindex_entry_watermark", len(entries))
         # entries[wm:] clamps to [] when wm > len (a truncated/rotated transcript)
         # — safer than re-scanning all, which would re-reindex the whole history.
+        t_scan = time.monotonic()
         touched = list(_iter_touched_paths(entries[wm:]))
+        scan_ms = (time.monotonic() - t_scan) * 1000
         # Whole-transcript parse on the event loop at every turn end — a known
-        # source of terminal-wide stalls.
-        toplog.log(
-            "pty", "turn_end_transcript_parse process=%s entries=%s watermark=%s touched=%s ms=%.0f",
-            self.id, len(entries), wm, len(touched), (time.monotonic() - t0) * 1000,
-        )
+        # source of terminal-wide stalls. ``bytes`` is what the parse is linear
+        # in, so a growing transcript is readable from the line itself.
+        # `tf.path`, not `self.transcript` — that property re-resolves the
+        # descriptor through the driver on every read (a filesystem search for
+        # some drivers), which is the very cost `transcript_cache` exists to
+        # avoid, and this line sits inside the stall it is measuring.
+        total_ms = (time.monotonic() - t0) * 1000  # before the stat(): the line must not time itself
+        if toplog.is_on("pty"):
+            try:
+                size = tf.path.stat().st_size
+            except OSError:
+                size = None
+            toplog.log(
+                "pty",
+                "turn_end_transcript_parse process=%s entries=%s bytes=%s watermark=%s touched=%s "
+                "parse_ms=%.0f scan_ms=%.0f ms=%.0f",
+                self.id, len(entries), size, wm, len(touched),
+                parse_ms, scan_ms, total_ms,
+            )
         return touched
 
     @property
@@ -8065,6 +8107,13 @@ class AgenticProcess(Entity):
                         ProcessStatus.FAILED.value,
                     }:
                         proc.status = ProcessStatus.STOPPED.value
+                    # Record WHAT the worker exited with, not just that it did.
+                    # This was `None` for every worker-driven process, so the
+                    # only terminal signal was `status` — inferred from a
+                    # busy→idle edge — and `runs.py:_badge` read
+                    # `exit_code in (0, None)` as "done", making a worker that
+                    # exited non-zero indistinguishable from a clean one.
+                    proc.exit_code = exit_code
                     await proc.save()
 
                     if session_id:

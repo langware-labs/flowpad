@@ -35,18 +35,14 @@ Stdlib + pydantic only, like the rest of ``data_spec``.
 
 from __future__ import annotations
 
-import sys
-from typing import Annotated, Any, ClassVar, Optional, Union
+from typing import Any, ClassVar, Optional, Union
 
-from pydantic import ConfigDict, StringConstraints, model_validator
+from pydantic import ConfigDict, model_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec._form import ShapeForm
-
-#: A step id is a handle used as an activity address segment and an error ref;
-#: a blank one would collapse two steps onto one node.
-NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+from flow_sdk.schema.data_spec._types import NonBlank
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: What a step does when its action fails.
 ON_FAIL_ABORT = "abort"

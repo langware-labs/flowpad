@@ -35,7 +35,7 @@ This file routes — load the row that matches the task at hand.
 | `run <issue>` (default when an issue is given) | `modes/run.md`   | Activate tags to trace an issue; feed RCA |
 | `list` / `on <tags>` / `off [tags]` / `status` | `modes/switch.md` | List catalog tags with on/off; start, stop or show tag logging |
 | `scan`               | `modes/scan.md`   | Reconcile code tags with the catalog                 |
-| `learn` (after RCA) / `learn tandem` (with a stuck one) | `modes/learn.md` | Consolidate findings into the catalog + code; or run RCA and toplog forward together, one seam per pass |
+| `learn` (after RCA) / `learn tandem` (with a stuck one) | `modes/learn.md` | Consolidate findings into the catalog + code; or run RCA and toplog forward together — looping without check-ins until both are done |
 
 ## Reference
 

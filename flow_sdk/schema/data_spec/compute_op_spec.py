@@ -48,18 +48,14 @@ Stdlib + pydantic only, like the rest of ``data_spec``.
 from __future__ import annotations
 
 import sys
-from typing import Annotated, ClassVar, Optional
+from typing import ClassVar, Optional
 
-from pydantic import StringConstraints, model_validator
+from pydantic import model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
-from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec._form import ShapeForm
-
-#: An op name is a handle: an activity address segment, a ``requires`` entry and
-#: an error ref. A blank one would collapse two ops onto one node.
-NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+from flow_sdk.schema.data_spec.io.native import Text
 
 #: What each rung gets when it does not say. A shell one-liner that needs ten
 #: minutes is unusual; an agent that needs half an hour is not.
