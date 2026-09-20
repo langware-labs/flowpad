@@ -10,7 +10,6 @@ Identity is a WRITABLE folder capsule: a v4 minted once at creation and kept in
 install indexes the same catalogue row instead of one per install path.
 """
 from flow_sdk.assets.identity import folder_json_identity
-from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
 from flow_sdk.schema.types import EntityType
@@ -29,7 +28,6 @@ SECRET_PACK = TypeInfo(
     browseable_by=ViewMode.ADVANCED,
     asset_class="repo",
     family="secret_pack",
-    shape=Folder(main="secret_pack.json"),
     asset_spec=CredentialSpec,
     fts_content=("name", "description"),
     identity_carrier=folder_json_identity(),

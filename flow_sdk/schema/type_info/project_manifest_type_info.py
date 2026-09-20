@@ -15,9 +15,8 @@ Never browseable and never creatable from the UI — it is written only by an
 asset's ``set-published`` action.
 """
 from flow_sdk.assets.identity import folder_json_identity
-from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.schema_registry import TypeInfo
-from flow_sdk.schema.data_spec.project_manifest_spec import PROJECT_MANIFEST_MAIN, ProjectManifestSpec
+from flow_sdk.schema.data_spec.project_manifest_spec import ProjectManifestSpec
 from flow_sdk.schema.types import EntityType
 
 PROJECT_MANIFEST = TypeInfo(
@@ -33,7 +32,6 @@ PROJECT_MANIFEST = TypeInfo(
     asset_class="repo",
     family="project_manifest",
     singleton=True,
-    shape=Folder(main=PROJECT_MANIFEST_MAIN),
     name_from_path=True,
     asset_spec=ProjectManifestSpec,
     identity_carrier=folder_json_identity(),

@@ -39,7 +39,7 @@ def _list_element_ext(sub_cls: type) -> str:
 
 def _manifest_layout(info: Any) -> str:
     """``sections`` = ``{metadata, data}``; ``flat`` = the header's keys merged
-    onto the payload's own document. Declared on ``TypeInfo``; else sections
+    onto the payload's own document. Declared on the asset spec, projected through ``TypeInfo``; else sections
     when the spec has a ``FreeSection``, flat otherwise."""
     declared = getattr(info, "manifest_layout", None)
     if declared:

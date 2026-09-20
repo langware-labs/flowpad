@@ -10,6 +10,9 @@ class AgentTraceSpec(SectionedHeader):
     summary fields the row needs live under its ``summary`` key. ``name`` comes
     from the folder when the file carries none."""
 
+    main_file: ClassVar[str | None] = "trace.json"
+    manifest_layout: ClassVar[str | None] = "flat"
+
     _section: ClassVar[str | None] = "summary"
     _section_fields: ClassVar[frozenset[str]] = frozenset(
         {"verdict", "verdict_reason", "duration_ms", "cost_usd", "issue_count", "divergence_count", "lane_count"}

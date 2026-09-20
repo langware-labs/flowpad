@@ -15,7 +15,7 @@ shares through git. A secret is a credential the driver declares, resolved throu
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -26,6 +26,9 @@ from flow_sdk.secrets.store import SecretStoreRef
 
 class DataSourceSpec(AssetDocumentSpec):
     """``data_source.json``: which driver, with which config, owned by whom, polled how often."""
+
+    main_file: ClassVar[str | None] = "data_source.json"
+    manifest_layout: ClassVar[str | None] = "entity"
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 

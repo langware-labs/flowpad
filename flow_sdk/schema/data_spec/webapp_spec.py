@@ -1,4 +1,6 @@
 """Filesystem contracts independent of application entities."""
+from typing import ClassVar
+
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 WEBAPP_KIND = "application.web"
@@ -11,6 +13,8 @@ class WebappManifestSpec(DataSpec):
     ``_manifest_layout`` resolves to ``flat`` and the file reads as the plain
     object an author would write by hand.
     """
+
+    main_file: ClassVar[str | None] = "webapp.json"
 
     #: The app's name AND its folder name. One noun.
     name: str = ""

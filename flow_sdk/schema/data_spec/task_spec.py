@@ -1,6 +1,6 @@
 """Filesystem contracts independent of application entities."""
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, ClassVar, List, Optional
 
 from pydantic import Field
 
@@ -39,6 +39,8 @@ class TaskSpec(FrontMatter):
     are absent from this class, so a received task is runnable and maps its
     own local project. ``description`` is the markdown ``Body``; ``title``
     falls back to the folder (``derive_task``)."""
+
+    main_file: ClassVar[str | None] = "task.md"
 
     title: Optional[str] = None
     status: Optional[str] = None
