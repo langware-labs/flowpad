@@ -35,22 +35,22 @@ Four properties follow from that shape and are what the tests pin:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
+from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared, value_from_stdout
 from flow_sdk.core.compute.exec import PROBE_OUTPUT_CAP, ShellResult, capped, run_shell
 from flow_sdk.core.compute.process_step import ProcessResult, launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
-from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.compute_op_spec import (
     AttemptKind,
     AttemptSpec,
     CheckOutcome,
     ComputeOpSpec,
 )
-from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
+from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: Resolve a name in ``requires`` to its spec. Injected: the runner does not
 #: know what an index is.
@@ -301,12 +301,8 @@ def _value_of(spec: ComputeOpSpec, result: AttemptResult, *, detail: str = "") -
     if spec.output is None:
         return ReturnedValue.satisfied(said)
     try:
-        from pydantic import TypeAdapter  # noqa: PLC0415
-
-        from flow_sdk.schema.data_spec._form import compile_form  # noqa: PLC0415
-
-        value = TypeAdapter(compile_form(spec.output)).validate_python(result.value)
-    except Exception as error:
+        value = to_declared(result.value, spec.output)
+    except DeclaredShapeError as error:
         return ReturnedValue.not_yet(
             f"{spec.display_label}: the {result.kind} attempt returned a value that does not "
             f"match this op's declared output — {error}",
@@ -345,34 +341,13 @@ async def _attempt(
             output=result.tail(PROBE_OUTPUT_CAP),
             stdout=out, stderr=err, truncated=out_cut or err_cut,
             duration_s=getattr(result, "duration_s", 0.0),
-            value=_value_from_stdout(result.stdout) if spec.output is not None else None,
+            value=value_from_stdout(result.stdout) if spec.output is not None else None,
             ok=bool(result.ok),
         )
 
     return await _agent_attempt(attempt, spec, tried=tried, subject=subject,
                                 workdir=workdir, platform=platform, seams=seams)
 
-
-def _value_from_stdout(stdout: "Optional[str]") -> Any:
-    """What a command RETURNED, read off its stdout.
-
-    A command rung could not return a value at all: this branch never set one,
-    so an op that declared an ``output`` and had only command rungs failed
-    every time with "returned a value that does not match this op's declared
-    output" — against a value it had never been given. That was invisible
-    because every op with an ``output`` happens to carry an agent rung too.
-
-    JSON when stdout parses as JSON, otherwise the trimmed text. A shell
-    one-liner's answer is its stdout; there is no other channel, and the
-    declared shape decides whether what came back is acceptable.
-    """
-    text = (stdout or "").strip()
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except ValueError:
-        return text
 
 
 async def _agent_attempt(
