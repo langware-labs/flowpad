@@ -5,7 +5,7 @@
 #   2. flow_sdk python deps              (changes on dep bump)
 #   3. flow_sdk source + harness scripts (changes often)
 
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \

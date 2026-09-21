@@ -32,7 +32,7 @@ ENV PATH="/home/flow/venv/bin:/home/flow/.local/bin:${PATH}"
 # "flow_sdk installed": one pip install of the wheel built from this tree, into the venv whose
 # `python` and `flow` are the two commands' interpreters.
 COPY --chown=flow:flow dist/flowpad-*.whl /home/flow/wheels/
-RUN uv venv --python 3.10 /home/flow/venv \
+RUN uv venv --python 3.11 /home/flow/venv \
  && uv pip install --python /home/flow/venv/bin/python /home/flow/wheels/flowpad-*.whl \
  && flow --help > /dev/null
 
