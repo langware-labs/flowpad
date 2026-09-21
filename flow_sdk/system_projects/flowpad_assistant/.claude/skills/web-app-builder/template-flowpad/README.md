@@ -53,8 +53,9 @@ that lives inside Flowpad should look like it belongs there.
 (`~/agentic-assets/…`), and the user's project task list will never show it —
 the app looks like it works while its data is invisible where it matters.
 
-The app resolves its own project from its own URL: it is served at
-`/api/v1/graph/micro_app/<id>/view`, and that WebApp row carries `project_id`
+The app resolves its own project from its own URL: it is served by its
+`ServiceEndpoint` at `/api/v1/graph/service_endpoint/<id>/service/`, whose
+`webapp_id` names this app's WebApp row, and that row carries `project_id`
 (see `resolveProjectTypeId()` in `app.js`). Do not assume
 `dataContext.projectTypeId` — that is the backend's *default* project, not
 necessarily the one this app belongs to.
@@ -68,9 +69,9 @@ await new sdk.Task({ title }).save(projectTypeId);
 The same folder can live INSIDE another asset, at
 `<asset folder>/agentic-assets/webapp/<name>/` (a data-source definition, a
 skill, a task — any folder asset). Nothing to register: a nested asset is a
-child of the asset it sits in, so re-indexing makes it that asset's app, served
-at `/api/v1/graph/micro_app/<id>/view/` and opened at `/dock/app/micro_app-<id>`
-like any other webapp — with `Project / <parent> / <name>` in the address bar.
+child of the asset it sits in, so re-indexing makes it that asset's app — served
+by the `static` endpoint indexing gives it (`service_endpoint/<id>/service/`)
+and opened at `/dock/app/micro_app-<id>` like any other webapp — with `Project / <parent> / <name>` in the address bar.
 
 Mark what it is to its parent with `kind` in `webapp.json`:
 `application.web.editor` is what makes the parent offer it as its editor. The

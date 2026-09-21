@@ -145,25 +145,22 @@ not overwritten.
   restored from `context_data.last_shown`; stream focus is only the secondary
   signal for code/diff/write noise. The web preview is the fallback when neither
   exists.
-- **Focus → display wiring:** `useVibeFocus` reads the most-recent `FlowData.focus`
-  off the `AgenticProcess` stream (`focus` + `data.path` + `data.metadata.port` —
-  the same fields the shared `useActiveViewer.focusFromStream` reads) and writes
-  the port into `useViewerStore.setCurrentContext({ viewerOptions: { port } })`
-  when no shown webapp target overrides it. `WebappViewer` reads that port (its
-  existing `currentContext` priority), builds the `get-host` iframe URL, and
-  renders the running app. **No URL change.**
+- **A running app is an address:** `flow show webapp --port <p>` registers the
+  server as a `proxy` `ServiceEndpoint` of the project's placement and the display
+  NAVIGATES to its APP dock (`/dock/app/service_endpoint-<id>`), like every other
+  shown target. Stream focus never carries a port into the display any more.
 
-### The live preview plumbing (all pre-existing, reused)
+### The live preview plumbing
 
-`WebappViewer → PersistentIframe → get-host?port=<n> → localhost:<port>`:
+`flow show webapp --port <p> → service_endpoint-<id> → APP dock → AppDisplayViewer →
+PersistentIframe → direct-url (localhost:<p>, or the box's public host in a sandbox)`:
 
-- The web-app-builder skill reports its running service as a `<flow-result
-  type="webapp" port=… focus="web-app"/>`, which becomes a **project-scoped WEBAPP
-  artifact** (`useCurrentArtifacts`) carrying `metadata.port`.
-- `useProcessWebApp` builds the iframe URL via the backend **`get-host`** action.
-  That action was ported to the `AgenticProcess` entity
-  (`flow_sdk/builtin/agentic_process/agentic_process.py`) because the legacy `Flow`
-  entity was removed — `useProcessWebApp` targets `AgenticProcess.type`.
+- `useAppDisplay` resolves an app address (an endpoint, an artifact, a webapp
+  asset) to the endpoints serving it here: a `proxy` endpoint is the `dev`
+  runtime, loaded at its `direct-url`; a `static` one is `served`, loaded through
+  `service_endpoint/<id>/service/`.
+- `WebappDisplay` diagnoses a failing app through the endpoint's `probe` (it dials
+  the port from the machine the app runs on) and hands the fixer the endpoint.
 - When a WEBAPP artifact is received through a git-backed share, the artifact row
   is a declaration plus `GitOrigin`, not a copied sender path. Opening it first
   resolves the checkout via `resolve-git-location`; if the repo is missing, the
@@ -215,9 +212,9 @@ Lovable:
 
 `EntityExecutionPanel` (chat + image paste + session history), `WebappViewer` /
 `CodeEditor` / `DiffViewer` (display), `useViewerStore` / `useCurrentArtifacts` /
-`useProcessWebApp` (viewer wiring), `SessionInput` (home prompt), `VibeSwap` (the
-Vibe-tier analog of `ViewSwap`/`AdvancedOnly`), the `get-host` action, and the
-`ViewToggle`. Image paste is wired at the `EntityExecutionPanel` layer, so it
+`useAppDisplay` (viewer wiring), `SessionInput` (home prompt), `VibeSwap` (the
+Vibe-tier analog of `ViewSwap`/`AdvancedOnly`), the `ServiceEndpoint` actions, and
+the `ViewToggle`. Image paste is wired at the `EntityExecutionPanel` layer, so it
 works in the Vibe chat and every other `EntityExecutionPanel` consumer.
 
 ## Process semantics are unchanged (verified)
@@ -231,10 +228,7 @@ ordinary headless chat process:
   general `createProcess` option used elsewhere in the app — none is Vibe-specific,
   and none is read off the view mode. It then sends the message verbatim and
   navigates via the shared `navigation.openShellProcess(id)`.
-- The backend has **no** concept of Vibe. A repo-wide search finds exactly one
-  backend mention of "Vibe": a comment on the `get-host` action in
-  `flow_sdk/builtin/agentic_process/agentic_process.py:3933` explaining that the
-  in-app preview / Vibe display consumes it. No spawn path, default, or lifecycle
+- The backend has **no** concept of Vibe. No spawn path, default, or lifecycle
   branch keys off view mode; the backend `ViewMode` enum doesn't even contain
   `vibe`.
 - Headless↔PTY toggling, resume, session history, and process lifecycle are the
@@ -274,8 +268,8 @@ Projectless asset entry also requires a project before a Chat can be created.
 | Curated chrome-less surfaces | `ui/src/pages/flow-page/content-panel/content-panel.tsx` (`VIBE_CREATOR_SURFACES`) |
 | Chat (leadingSlot, image paste) | `ui/src/components/entity-execution-panel/EntityExecutionPanel.tsx` |
 | Display / web preview | `ui/src/components/webapp-viewer.tsx` |
-| Port → host resolution | `ui/src/hooks/flow-hooks/useProcessWebApp.ts` |
-| `get-host` backend action | `flow_sdk/builtin/agentic_process/agentic_process.py` |
+| App address → endpoint → iframe src | `ui/src/hooks/flow-hooks/useAppDisplay.ts` |
+| Port → endpoint registration | `flow_sdk/builtin/webapp_placement.py` `register_dev_endpoint` |
 | web-app-builder skill | `flow_sdk/system_projects/flowpad_assistant/.claude/skills/web-app-builder/` |
 
 ## Gotchas

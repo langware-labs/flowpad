@@ -30,12 +30,16 @@ The wizard prompt carries JSON with:
   `console_errors`, `failed_requests`)
 - `detail` — the raw evidence: HTTP status, navigation error, uncaught
   exceptions, failed request URLs
-- `port` — the port the display expects the app on
+- `endpoint_id` — the `ServiceEndpoint` the display is showing (the app's
+  identity; `flow show typeid service_endpoint-<id>` shows it again)
+- `port` — the port its dev server listens on (absent for an app we serve
+  from a folder — then fix the files under the endpoint's root instead)
 - `url` — the address the display is loading
 - `workdir` — the app's directory, when known
 
-Trust `detail` over your assumptions. It came from a probe that talked to the
-port directly.
+Trust `detail` over your assumptions. It came from the endpoint's own probe
+(`service_endpoint/<id>/probe`), which talks to the port from the machine the
+app runs on.
 
 ## How to work
 

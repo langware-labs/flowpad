@@ -138,9 +138,11 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 
 ## 4. Webapps & artifacts
 
-- `flow show webapp --port N` → `{kind: webapp, port}` → `PersistentIframe`
-  (src via `get-host` action redirect; global iframe registry keyed by src;
-  liveness = client-side fetch probe only).
+- `flow show webapp --port N` → registers a `proxy` `ServiceEndpoint` on the
+  local placement → `{kind: app, typeid: service_endpoint-<id>, runtime: dev}` →
+  the APP dock → `PersistentIframe` (src = the endpoint's `direct-url`; global
+  iframe registry keyed by src; liveness = client-side fetch probe, diagnosis =
+  the endpoint's `probe`).
 - `flow app open` → discovers/starts a dev server → `register-webapp-artifact`
   action (creates/updates a project-scoped WEBAPP `Artifact`, `show:true` by
   default) — artifacts drive `WebappViewer`'s selector/restart chrome.
@@ -156,7 +158,7 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 |---|---|---|---|
 | 1 (was: most locked) | `HtmlPreview` — shown `.html` | backend-origin `fs/serve/<path>` url, `allow-same-origin` — see below | same as tier 3 in practice; its own relative pages/assets resolve because the url mirrors the path |
 | 2 | MCP sandbox — `McpAppPreview` (vibe), `ShowView` (`/dock/show`, skill `ui/<component>.html`), `AppHost` (`/dock/apps/<uname>`) | backend-origin `sandbox_proxy.html`, per-request CSP (`_sandbox_csp`, default `connect-src 'none'`) | JSON-RPC bridge; only the vibe `.mcp.html` path routes `ui/message` back to the agent; guest tool calls stubbed everywhere |
-| 3 | `PersistentIframe` — webapp by port | real origin, `allow-same-origin allow-scripts allow-forms allow-popups …` + broad `allow=` list | full browser powers on its own origin |
+| 3 | `PersistentIframe` — an app's endpoint (a dev server's `direct-url`, or a `static` endpoint's `service` path) | real origin, `allow-same-origin allow-scripts allow-forms allow-popups …` + broad `allow=` list | full browser powers on its own origin |
 | 4 (full) | Bespoke asset editors / native views | app origin, no iframe | full app access |
 
 No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
@@ -183,7 +185,8 @@ from — see [§8](#8-open-questions) Q1.
   (`ui.py:49-74`, `app.py:601`).
 - `/assets/*` hashed bundle; explicit public root files (favicon/logo/ws-test).
 - `/mcp-sandbox/sandbox_proxy.html` — the only CSP-bearing surface.
-- **`WebApp.view`** (`faas/micro_app.py:145`) and **`fs/serve`**
+- **a `static` ServiceEndpoint's `service` route**
+  (`server/routes/service_endpoint.py`) and **`fs/serve`**
   (`actions/fs/fs_actions.py`) — the two raw-bytes/MIME paths, and both are
   thin callers of the one implementation, `serve_app_bytes` (ETag/304,
   streaming, utf-8 html read, API-origin injection, traversal-guarded). They
@@ -191,9 +194,9 @@ from — see [§8](#8-open-questions) Q1.
   thing: `<base>` injection (an app is served under a path that is not its
   own; `fs/serve`'s url IS the file's path), the `index.html` fallback (an
   app's router owns unknown paths, a file has no router), and caching (an
-  hour for a release, `no-store` for a file being edited).
-  `view_external_domain` + `WebDomain` host routing are a cloud seam with
-  **no OSS caller**.
+  hour for a release, `no-cache` for a webapp asset under edit, `no-store` for
+  a file being edited). Own-origin hosts (`<endpoint-id>.<app_domain>`, a
+  `WebDomain`) are the hub's; the desktop serves none.
 - `/sdk` mount (`app.py:582`) — **dead**: `server/static/sdk/` is empty; no
   build step populates it (intended `/sdk/flowpad-sdk.js`).
 - Everything else (fs-records, assets.py, transcripts, docs-graph) serves
@@ -233,7 +236,7 @@ from — see [§8](#8-open-questions) Q1.
    retained for persisted-pointer back-compat.
 9. **MCP host duplication**: ShowView and AppHost share near-identical
    AppRenderer scaffolding; both stub `onCallTool`.
-10. **`/sdk` mount dead**; `view_external_domain` vestigial in OSS.
+10. **`/sdk` mount dead**.
 11. ~~**Agents can only address entities and files — never a screen.**~~
     **RESOLVED** — screens are addressable. `flow_sdk/core/dock_address.py`
     mirrors the frontend's `ViewType` vocabulary, pinned by

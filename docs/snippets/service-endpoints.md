@@ -10,7 +10,12 @@ placement ANSWERS on — one row per exposed service:
     Deployment (runtime.web, provider local | e2b | …)
       ├── ServiceEndpoint  "shop"       web.app          static  → <app>/dist
       ├── ServiceEndpoint  "shop-dev"   web.app          proxy   → 127.0.0.1:5173
-      └── ServiceEndpoint  "workspace"  flowpad.workspace proxy  → the box's own app (cloud only)
+      ├── ServiceEndpoint  "port-8080"  web.app          proxy   → 127.0.0.1:8080  (`flow show webapp --port`)
+      └── ServiceEndpoint  "workspace"  flowpad.workspace proxy  → the box's own app (cloud only;
+                                                                     with "shell-mcp" / "fs-mcp")
+
+Everything a machine serves is one of these — there is no other serving path: no
+per-process port lookup, no `micro_app` view route, no hub services table.
 
 Pinned by `tests/unit/test_service_endpoint_model.py` (the model and its wire form),
 `tests/api/test_service_endpoint_proxy.py` (one round trip per protocol) and
@@ -60,8 +65,22 @@ const url = await endpoint.directUrl();       // only when supports_direct_acces
 ## 3. A web app's endpoints
 
 `flow app open` / `flow app serve` register an app; its project's local placement gets a
-`proxy` endpoint for the dev server and a `static` one for built output. What a webapp
-asset exposes when it is placed elsewhere is declared in its `webapp.json`:
+`proxy` endpoint for the dev server and a `static` one for built output. `flow show webapp
+--port N` registers the bare server as a `proxy` endpoint (`port-N`) and shows it. A
+project-less run's endpoints go to this MACHINE's placement (parented to the local
+compute node). A webapp asset gets its `static` endpoint when it is indexed.
+
+A display addresses the endpoint, never a port:
+
+```
+flow show webapp --port 5173   →  {kind: app, typeid: service_endpoint-<id>, endpoint_id, runtime: dev}
+POST /api/v1/graph/service_endpoint/<id>/probe   # what is wrong with it, asked where it runs
+```
+
+A dev server (`proxy`) loads at its `direct-url` (its own origin — HMR, absolute
+`/src/...`); built output (`static`) loads through `service`.
+
+What a webapp asset exposes when it is placed elsewhere is declared in its `webapp.json`:
 
 ```json
 {
@@ -80,7 +99,23 @@ No `endpoints` means one: the `build` folder as a `web.app`.
 ## 4. On a cloud box
 
 `POST /project/<id>/deploy` on the hub places the project in a box, then asks the box to
-`expose-endpoints`: every webapp comes up there, keyed by the hub's placement, and the hub
-adopts each row at the box's id. The deploy answers with the app's URL — a `web.*`
-endpoint on an origin of its own, `https://<endpoint-id>.<app_domain>/` — and every
-endpoint with its URL. The box's own FlowPad app is its `workspace` endpoint.
+`expose-endpoints`: the box re-keys its project placement to the HUB's id, every webapp
+comes up there, and the box reports every endpoint of that placement; the hub adopts
+each row at the box's id. The deploy answers with the app's URL — a `web.*` endpoint on
+an origin of its own, `https://<endpoint-id>.<app_domain>/` — and every endpoint with its
+URL. The box's own FlowPad app is its `workspace` endpoint.
+
+Afterwards the box registers endpoints like any machine (a dev server shown by port, an
+app it built) — on the hub's placement, because its local one now IS that placement —
+and asks the hub to `POST deployment/<id>/refresh-endpoints`. The hub PULLS (asks the box
+to expose again) and adopts; a row the box no longer serves goes. A desktop watching the
+box's process then shows the hub row, which the desktop's `service` route forwards to
+the hub, and the hub to the box.
+
+## 5. What the hub serves itself
+
+A machine nothing deployed (a sandbox opened by hand) is its own `compute.node`
+placement: `workspace`, `shell-mcp`, `fs-mcp`. `compute_node/<id>/open-service/<name>`
+resolves names through those endpoints only. The hub's builtin apps (the chatbot, …)
+are endpoints of `hub`-provider placements, read off the hub's disk; a custom domain
+(`WebDomain`) names an endpoint (`service_endpoint_id`).

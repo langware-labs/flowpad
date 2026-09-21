@@ -421,7 +421,6 @@ params:
   restart-info: "GET -> loaded-versus-current launch diff"
   cmd-line: "GET -> {cmd_line}"
   status: "GET | POST -> {status, busy, worker_status, ready_for_input}"
-  get-host: "GET | POST {port, redirect?} -> host payload"
   set-graph-context: "POST {graph_context_id} -> bound GraphContext"
   add-dir: "POST {path} -> additional_dirs"
   remove-dir: "POST {path} -> additional_dirs"
@@ -619,7 +618,6 @@ source:
 name: AgenticProcess.state_and_navigation
 description: URL-first navigation targets, reflected state, runtime handles, and computed projections.
 params:
-  getWebAppHostUrl: "(port) -> string"
   openTerminalDock: "(extraOptions?) -> void"
   isHeadless: "getter -> boolean"
   terminalDockPointer: "getter -> DockPointerData"

@@ -37,7 +37,7 @@ from flow_sdk.builtin.faas.serve_static import serve_app_bytes
 root = Path(sys.argv[1])
 scope = {
     "type": "http", "http_version": "1.1", "method": "GET", "scheme": "http",
-    "path": "/api/v1/graph/micro_app/app-1/view", "raw_path": b"/", "query_string": b"",
+    "path": "/api/v1/graph/service_endpoint/app-1/service/", "raw_path": b"/", "query_string": b"",
     "root_path": "", "headers": [(b"host", b"localhost:8000")],
     "server": ("localhost", 8000), "client": ("127.0.0.1", 1234),
 }
