@@ -35,6 +35,7 @@ from flow_sdk.assets.layout import (  # noqa: F401 — Layout/LayoutKind re-expo
     LayoutKind,
     Walk,
     shape_from_dict,
+    shape_from_spec,
 )
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
@@ -86,6 +87,21 @@ ENTITY_LAYOUT = "entity"
 _DEFAULT_SHAPE = File(ext=".md")
 
 
+def _filesystem_contract(type_name: str, spec: type | None, authored_shape: Any, authored_layout: str | None) -> tuple:
+    """Validate declarations and return their runtime projection without mutating a type."""
+    shape = shape_from_spec(spec) if spec is not None else None
+    layout = getattr(spec, "manifest_layout", None)
+    if shape is not None and authored_shape is not None:
+        raise ValueError(f"{type_name}: shape is declared by asset_spec; remove TypeInfo.shape")
+    if shape is not None and authored_layout is not None:
+        raise ValueError(f"{type_name}: manifest_layout is declared by asset_spec")
+    if layout not in (None, "flat", "sections", ENTITY_LAYOUT):
+        raise ValueError(f"{type_name}: invalid spec manifest_layout {layout!r}")
+    if layout is not None and shape is None:
+        raise ValueError(f"{type_name}: spec manifest_layout needs a filesystem contract")
+    return shape or authored_shape or _DEFAULT_SHAPE, layout or authored_layout
+
+
 @dataclass
 class TypeInfo:
     """Metadata for a single record/entity type."""
@@ -126,13 +142,28 @@ class TypeInfo:
     def __post_init__(self) -> None:
         self.type_name = str(self.type_name)   # an EntityType member is accepted, a str is stored
         self.walk = (self.walk,) if isinstance(self.walk, Walk) else tuple(self.walk or ())
+        self._authored_shape = self.shape
+        self._authored_manifest_layout = self.manifest_layout
+        self._resolve_filesystem_contract()
+
+    def _resolve_filesystem_contract(self) -> None:
+        """Specs own filesystem facts; legacy declarations and wire mirrors keep working."""
+        self.shape, self.manifest_layout = _filesystem_contract(
+            self.type_name, self.asset_spec, self._authored_shape, self._authored_manifest_layout,
+        )
+        # Entity registration can precede the spec declaration; an early read
+        # must not cache the absence of a body forever.
+        self.__dict__.pop("body_file", None)
         if self.manifest_layout == ENTITY_LAYOUT:
             # An entity document carries its id in its own root and is fresh by its own files.
             from flow_sdk.assets.identity import entity_document_fingerprint, native_json_identity  # noqa: PLC0415
 
             if self.identity_carrier is None:
                 self.identity_carrier = native_json_identity()
-            if self.asset_hash_fn is None:
+            if self.asset_hash_fn is None or (
+                isinstance(self.asset_hash_fn, partial)
+                and self.asset_hash_fn.func is entity_document_fingerprint
+            ):
                 self.asset_hash_fn = partial(entity_document_fingerprint, self)
 
     @property
@@ -232,6 +263,7 @@ class TypeInfo:
     # name for a folder type (an Agent at ``agent/q/`` is ``q``), the file stem
     # for a file type (``prompts/greet.md`` is ``greet``). A LAYOUT fact.
     name_from_path: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
+    # Resolved from asset_spec (authored here only for legacy types).
     # JSON main docs: ``"sections"`` = ``{metadata, data}`` (a dataset);
     # ``"flat"`` = the header's keys merged into the payload's own document (a
     # trace/report whose file predates us); ``"entity"`` = the ENTITY DOCUMENT —
@@ -294,8 +326,10 @@ class TypeInfo:
     # <type>/<main>`` with no ``<name>`` segment, one per scope. The walker,
     # ``compute_asset_ref`` and ``main_file_owners`` each carry the one branch.
     singleton: bool = field(default=False, metadata=_MERGE)
-    # --- THE shape declaration: ``File(ext)`` | ``Folder(main)``. Not hashed. ---
-    shape: Any = field(default=_DEFAULT_SHAPE, metadata=_MERGE)  # flow_sdk.assets.layout.Shape
+    # Runtime projection of asset_spec; authored only for legacy types/wire mirrors.
+    shape: Any = field(default=None, metadata=_MERGE)  # flow_sdk.assets.layout.Shape
+    _authored_shape: Any = field(default=None, init=False, repr=False, compare=False)
+    _authored_manifest_layout: str | None = field(default=None, init=False, repr=False, compare=False)
     # The asset editor that opens this type (``"markdown"``, ``"skill"``, …);
     # shipped in the bootstrap so the frontend derives its editor tables from
     # the registry instead of a hand-maintained per-type map. None ⇒ no editor.
@@ -653,7 +687,7 @@ class TypeInfo:
             "asset_class": str(self.asset_class) if self.asset_class else None,
             "harness": str(self.harness) if self.harness else None,
             "family": self.family,
-            # THE shape declaration; the client reads this one and derives
+            # The resolved shape; the client reads this projection and derives
             # (``kind``, ``main``), never a hand-written per-type table.
             "shape": self.shape.to_dict(),
             "editor": self.editor,
@@ -1077,6 +1111,18 @@ class SchemaRegistry:
         if declared:
             info.declared = True
         existing = cls._types.get(info.type_name)
+        if existing is not None:
+            if existing.asset_spec is not None and info.asset_spec is not None and existing.asset_spec is not info.asset_spec:
+                raise ValueError(f"Conflicting asset spec registration for type {info.type_name!r}")
+            # Check the composed contract before mutating the live registration.
+            # A declaration and an entity binding can arrive in either order.
+            _filesystem_contract(
+                info.type_name,
+                info.asset_spec if info.asset_spec is not None else existing.asset_spec,
+                info._authored_shape if info._authored_shape is not None else existing._authored_shape,
+                info._authored_manifest_layout if info._authored_manifest_layout is not None
+                else existing._authored_manifest_layout,
+            )
         cls._registry_generation += 1
         # An entity class binding to a type AFTER the per-type schema payloads
         # were memoized (``core.schema``) leaves that type's bootstrap ``schema``
@@ -1121,6 +1167,13 @@ class SchemaRegistry:
             if info.defaults:
                 existing.defaults = {**existing.defaults, **info.defaults}
             for slot in _MERGE_SLOTS:
+                if slot.name in ("shape", "manifest_layout"):
+                    # Resolved projections must never become authored overrides.
+                    attr = f"_authored_{slot.name}"
+                    value = getattr(info, attr)
+                    if value is not None:
+                        setattr(existing, attr, value)
+                    continue
                 value = getattr(info, slot.name)
                 if value != _slot_default(slot):
                     setattr(existing, slot.name, value)
@@ -1135,10 +1188,11 @@ class SchemaRegistry:
 
         if info.indexed_by_default and info.type_name not in cls._default_index_types:
             cls._default_index_types.append(info.type_name)
+        final = cls._types[info.type_name]
+        final._resolve_filesystem_contract()
         if newly_bound:
             for hook in cls._entity_bound_hooks:
                 hook()
-        final = cls._types[info.type_name]
         if final.asset_spec is not None:
             # An asset spec is nameable by its own type name, so a document can
             # write ``"output": "task"`` and get ``TaskSpec``. Derived, never
@@ -1149,9 +1203,17 @@ class SchemaRegistry:
 
             final.from_disk_fn = spec_extractor(info.type_name)   # the spec IS the parser
         if info.asset_spec is not None:
-            from flow_sdk.fs_store.serializer.fields import field_kinds  # noqa: PLC0415
+            from flow_sdk.fs_store.serializer.fields import field_kinds, spec_layout  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.io.placement import placements  # noqa: PLC0415
 
-            field_kinds.cache_clear()   # a new asset type can turn a field into a sub-asset
+            # A new asset type can turn a field into a sub-asset, so every
+            # cached classification of a field is now a possibly-stale answer.
+            # All three read the registry; clearing only one left the other two
+            # holding the pre-registration verdict — harmless so far only
+            # because registration happens at import, before anything asks.
+            field_kinds.cache_clear()
+            spec_layout.cache_clear()
+            placements.cache_clear()
 
     @classmethod
     def check_asset_specs(cls) -> None:

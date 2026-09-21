@@ -469,6 +469,13 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     assert deployment["kind"] == "runtime.web"
     assert deployment["artifact_id"] == artifact["id"]
     assert deployment["provider_labels"]["flowpad.runtime.port"] == "3300"
+    # A web app is something the run PRODUCED, so it carries the same provenance
+    # edge `register-artifact` stamps. Without it the app is invisible to
+    # `artifacts` (a match on `generated_by`), and "everything this run
+    # produced" silently omitted every app the run built.
+    assert artifact["generated_by"] == f"agentic_process-{pid}"
+    produced = await bootstrapped_client.get(f"{base}/artifacts")
+    assert [row["id"] for row in produced.json()["data"]["artifacts"]] == [artifact["id"]]
     # The pin is the APP, not the port: a port is one of two ways to reach it
     # and changes between runs, while the artifact id stays true. Runtime is
     # derived from the companions — dev here, since there is no build output.
@@ -519,6 +526,9 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     assert updated["id"] == artifact["id"]
     assert updated_data["deployment"]["id"] == deployment["id"]
     assert updated_data["deployment"]["provider_labels"]["flowpad.runtime.port"] == "3301"
+    # Backfill, never reassign — converging on an existing row leaves the run
+    # that actually built the app as its producer.
+    assert updated["generated_by"] == artifact["generated_by"]
 
 
 @pytest.mark.asyncio

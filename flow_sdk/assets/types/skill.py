@@ -2,7 +2,7 @@
 
 A skill is a folder containing ``SKILL.md`` (markdown + YAML frontmatter) and/or
 ``skill.yaml`` / ``skill.yml``. Discovery is the type's declared ``walk``
-(``skill_type_info.py``, shape ``Folder(main="SKILL.md")``): a yaml-only folder
+(``skill_type_info.py``, main file declared by ``SkillSpec``): a yaml-only folder
 in a skills mount is collected as a scan issue rather than indexed. Replaces
 the deleted ``SkillRecord`` subclass.
 
@@ -30,10 +30,11 @@ from flow_sdk.assets.frontmatter import (
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.schema.data_spec.skill_spec import SkillSpec
 
 # The files whose presence makes a folder a skill; SKILL.md is the main doc.
 # Both cases of the doc are accepted (SKILL.md is canonical; skill.md tolerated).
-SKILL_INNER_FILES = ("SKILL.md", "skill.md", "skill.yaml", "skill.yml")
+SKILL_INNER_FILES = (SkillSpec.main_file, "skill.md", "skill.yaml", "skill.yml")
 
 
 def folder_is_skill(folder: Path) -> bool:
@@ -75,7 +76,7 @@ def parse_skill_yaml_from_dir(skill_dir: Path) -> dict[str, Any]:
     for source in (skill_dir / "skill.yaml", skill_dir / "skill.yml"):
         if source.exists():
             return _yaml_load(source.read_text(encoding="utf-8")) or {}
-    skill_md = skill_dir / "SKILL.md"
+    skill_md = skill_dir / SkillSpec.main_file
     if not skill_md.exists():
         return {}
     fm = _extract_frontmatter(skill_md.read_text(encoding="utf-8"))

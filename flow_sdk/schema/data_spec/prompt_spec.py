@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 from pydantic import field_validator
 
@@ -19,6 +19,8 @@ class PromptSpec(FrontMatter):
     still index. ``last_used_at`` normalizes the timestamp YAML parses as a
     ``datetime`` back to the ISO-Z string the entity holds.
     """
+
+    file_ext: ClassVar[str | None] = ".md"
 
     name: Optional[str] = None
     icon: Optional[str] = None

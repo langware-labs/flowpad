@@ -114,6 +114,7 @@ const RagView = lazy(() => import('@src/components/rag/RagView').then((m) => ({ 
 const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => ({ default: m.RunsView })));
 const SurveyView = lazy(() => import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })));
 const ShowView = lazy(() => import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })));
+const AskView = lazy(() => import('@src/components/ask/AskView'));
 const AppHost = lazy(() => import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })));
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
@@ -413,6 +414,12 @@ function ContentPanelBody({
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
             <ShowView />
+          </Suspense>
+        );
+      case ViewType.ASK:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <AskView />
           </Suspense>
         );
       case ViewType.APPS:

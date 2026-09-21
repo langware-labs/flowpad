@@ -8,7 +8,7 @@ vault. See ``credential_contract``.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
@@ -89,6 +89,8 @@ class CredentialEnvironmentSpec(DataSpec):
 
 class CredentialSpec(DataSpec):
     """``secret_pack.json`` — the shape, with every authoring rule as a validator."""
+
+    main_file: ClassVar[str | None] = "secret_pack.json"
 
     model_config = ConfigDict(populate_by_name=True)  # extra="forbid" is DataSpec's
 

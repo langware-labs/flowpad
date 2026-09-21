@@ -100,13 +100,19 @@ class AttemptKind(StrEnum):
     """Who does the work. The order is the cost order.
 
     ``command`` is a subprocess; ``agent`` is a spawned harness carrying an
-    Agent's identity, with tools and a receipt. A model WITHOUT tools is
-    deliberately absent: it cannot touch the machine, so it can never move a
-    completion check, and nothing has yet needed one to produce a value.
+    Agent's identity, with tools and a receipt; ``ask`` is a person. A model
+    WITHOUT tools is deliberately absent: it cannot touch the machine, so it can
+    never move a completion check, and nothing has yet needed one to produce a
+    value.
+
+    ``ask`` is last because a person is the most expensive thing to spend. It is
+    a rung like any other: it runs when the cheaper ones have not made the
+    completion check pass, and what the person types is the op's value.
     """
 
     COMMAND = "command"
     AGENT = "agent"
+    ASK = "ask"
 
 
 class AttemptSpec(DataSpec):
@@ -127,6 +133,7 @@ class AttemptSpec(DataSpec):
     agent: str = ""
     #: ``agent``: appended to the op's description, setup document and the
     #: failures of the rungs below it.
+    #: ``ask``: the question put to the person. Falls back to the op's label.
     prompt: str = ""
     #: ``agent``: display name for the spawned process. Falls back to the op's label.
     name: str = ""
@@ -137,6 +144,10 @@ class AttemptSpec(DataSpec):
     FIELDS: ClassVar[dict[str, tuple[str, ...]]] = {
         AttemptKind.COMMAND: ("commands",),
         AttemptKind.AGENT: ("agent", "prompt", "name"),
+        # An ask declares no shape of its own: the op's ``output`` is what the
+        # person is being asked for, so a second declaration could only disagree
+        # with the first.
+        AttemptKind.ASK: ("prompt",),
     }
 
     @model_validator(mode="after")
@@ -172,6 +183,9 @@ class AttemptSpec(DataSpec):
 class ComputeOpSpec(AssetDocumentSpec):
     """``compute_op.json`` — the whole document."""
 
+    main_file: ClassVar[str | None] = "compute_op.json"
+    manifest_layout: ClassVar[str | None] = "entity"
+
     # No ``spec_kind``: an asset spec is registered under its own type name by
     # ``SchemaRegistry.register``. Declaring it here would be the same string a
     # third time, beside ``EntityType.COMPUTE_OP`` and the row's ``type`` default.
@@ -198,6 +212,22 @@ class ComputeOpSpec(AssetDocumentSpec):
     #: How a person does this by hand — the file ``setup.md`` beside the manifest.
     #: Every rung that involves a model is given it.
     setup: Text = ""
+
+    @model_validator(mode="after")
+    def _an_ask_has_something_to_ask_for(self) -> "ComputeOpSpec":
+        """An ``ask`` rung puts the op's declared ``output`` to a person.
+
+        Without one there is no shape to draw a field from and nothing to
+        validate the answer against — the rung would collect a string and call
+        it whatever the caller hoped for. Caught when the document is read,
+        because the alternative is discovering it with a person already waiting.
+        """
+        if self.output is None and any(a.kind is AttemptKind.ASK for a in self.attempts):
+            raise ValueError(
+                f"{self.name or 'this op'} has an `ask` attempt but declares no `output` — "
+                "there is nothing to ask the person FOR"
+            )
+        return self
 
     @property
     def display_label(self) -> str:

@@ -6,7 +6,6 @@ producer. Each family supplies only what differs."""
 from typing import Callable, Optional
 
 from flow_sdk.assets.identity import NATIVE_JSON_IDENTITY, resolved_path_key
-from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
@@ -19,7 +18,6 @@ def report_type_info(
     asset_spec: type,
     index_fields: list[str],
     fts_content: tuple[str, ...] = ("name",),
-    main_file: str = "report.json",
     derive_fields_fn: Optional[Callable[..., dict]] = None,
 ) -> TypeInfo:
     return TypeInfo(
@@ -35,11 +33,9 @@ def report_type_info(
         index_fields=index_fields,
         asset_class="repo",
         family=str(type),
-        shape=Folder(main=main_file),
         # Every report family has a viewer keyed by its own type name.
         editor=str(type),
         asset_spec=asset_spec,
-        manifest_layout="flat",
         name_from_path=True,
         derive_fields_fn=derive_fields_fn,
         # The producer is the file's sole author: a save WITH a payload re-renders;
