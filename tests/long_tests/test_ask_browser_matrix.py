@@ -69,6 +69,13 @@ ASK_BUDGET = 45.0
 
 
 def _free_port() -> int:
+    """A free port, not the repo's ``allocate_ports`` fixture.
+
+    That one is built on pytest-asyncio's function-scoped
+    ``unused_tcp_port_factory``, and the backend and Vite here are MODULE
+    scoped — starting a Vite per test would cost five boots instead of one.
+    A module-scoped fixture cannot depend on a function-scoped one.
+    """
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return int(s.getsockname()[1])
