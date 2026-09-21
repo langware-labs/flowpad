@@ -4146,10 +4146,6 @@ msgstr "Code expired. Close and click Connect again to get a fresh code."
 msgid "Code expires"
 msgstr "Code expires"
 
-#: src/i18n/type-labels.ts
-msgid "Code Ref"
-msgstr "Code Ref"
-
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Codex"

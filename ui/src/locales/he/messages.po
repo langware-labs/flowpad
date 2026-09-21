@@ -4146,10 +4146,6 @@ msgstr "הקוד פג תוקף. סגור והקלק על Connect שוב כדי �
 msgid "Code expires"
 msgstr ""
 
-#: src/i18n/type-labels.ts
-msgid "Code Ref"
-msgstr "הפניית קוד"
-
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Codex"
