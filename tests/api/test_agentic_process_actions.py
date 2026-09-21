@@ -14,7 +14,7 @@ Covered here:
   * ``input`` / ``submit`` — headless staged-queue vs nothing-staged error.
   * ``fork`` — child gets a fresh id, ``fork_session_id`` baked, workdir inherited.
   * ``self-restart`` — ``{scheduled:true}`` + a ``worker.restarted`` entity event.
-  * dark reads — ``get-host`` / ``input-dir`` / ``os-status`` /
+  * dark reads — ``input-dir`` / ``os-status`` /
     ``list-embedded-assets`` / ``transcript`` (plan|prompts|full) / ``get-plan`` /
     ``get-history`` / ``restart-info`` / ``cmd-line`` / ``add-dir`` / ``remove-dir``.
 """
@@ -121,7 +121,7 @@ async def test_show_app_addresses_the_artifact_and_derives_the_runtime(bootstrap
     `_app_payload` derives the runtime to avoid: the port belongs to whichever dev
     server happens to be up, the ARTIFACT is the app.
 
-    With no Deployment and no WebApp the app is `unbuilt` — a real answer, and the
+    With no endpoint serving it the app is `unbuilt` — a real answer, and the
     one that proves the runtime is derived rather than supplied.
     """
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
@@ -206,7 +206,7 @@ async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, 
     resp = await bootstrapped_client.post(f"{base}/show", json={"port": 3000})
     assert resp.status_code == 200, resp.text
     shown = ApiResponse(**resp.json()).data
-    assert shown["kind"] == "webapp"
+    assert shown["kind"] == "app"
 
     row = await get_agentic_process(bootstrapped_client, pid)
     assert row["context_data"]["last_shown"] == shown
@@ -491,10 +491,10 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         "typeid": f"artifact-{artifact['id']}",
         "name": "Frontend",
         "runtime": "dev",
-        "port": 3300,
+        "endpoint_id": dev["id"],
     }
-    # No dist/ in this app yet, so nothing to serve statically — and no legacy row.
-    assert data["micro_app"] is None
+    assert dev["supports_direct_access"] is True, "a dev server is loaded at its own origin"
+    # No dist/ in this app yet, so nothing to serve statically.
 
     row = await get_agentic_process(bootstrapped_client, pid)
     assert row["context_data"]["last_shown"] == data["shown"]
@@ -546,9 +546,7 @@ async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint
 
     Artifact (source) → Deployment (placement) → ServiceEndpoints (what it answers
     on) — one app, and re-registering updates the same rows rather than forking.
-    No WebApp delivery row is minted any more: that type is the webapp ASSET.
     """
-    from flow_sdk.builtin.faas.micro_app import WebApp
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
     project = Project(name="served-proj", fs_storage_mount_path=str(tmp_path))
@@ -578,8 +576,6 @@ async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint
     assert by_type["static"]["backend"]["root"] == str(app_dir / "dist")
     assert by_type["proxy"]["backend"]["port"] == 3400
     assert {e["artifact_id"] for e in data["endpoints"]} == {artifact["id"]}
-    assert data["micro_app"] is None
-    assert await WebApp.get_by_artifact_id(artifact["id"]) is None
 
     # Both runtimes exist; a live port wins for display, and served is still offered.
     assert data["shown"]["runtime"] == "dev"
@@ -643,7 +639,6 @@ async def test_registering_without_a_port_yields_a_served_app(bootstrapped_clien
     assert data["artifact"]["kind"] == "application.web"
     [served] = data["endpoints"]
     assert served["backend"] == {"type": "static", "root": str(app_dir)}
-    assert data["micro_app"] is None
 
     # The display resolves to the served runtime, with no port to point at.
     assert data["shown"]["kind"] == "app"
@@ -1070,28 +1065,41 @@ async def test_wizard_close_entity_event_action_returns_typed_result(bootstrappe
 
 
 @pytest.mark.asyncio
-async def test_get_host_resolves_local_port(bootstrapped_client, user):
+async def test_showing_a_port_registers_its_dev_endpoint_once(bootstrapped_client, user):
+    """`flow show webapp --port N` — the port becomes an endpoint the display can hold."""
     pid = await create_agentic_process(bootstrapped_client)
-    # POST with a real JSON bool for ``redirect`` (a "false" query string coerces
-    # truthy and would yield a RedirectResponse instead of the JSON envelope).
-    resp = await bootstrapped_client.post(
-        f"/api/v1/graph/agentic_process/{pid}/get-host",
-        json={"port": 5173, "redirect": False},
-    )
-    assert resp.status_code == 200, resp.text
-    data = ApiResponse(**resp.json()).data
-    assert data["port"] == 5173
-    assert isinstance(data["url"], str) and data["url"]
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    first = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 5173})).json()).data
+    again = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 5173})).json()).data
+
+    assert first["kind"] == "app" and first["runtime"] == "dev"
+    assert first["typeid"] == f"service_endpoint-{first['endpoint_id']}"
+    assert again["endpoint_id"] == first["endpoint_id"], "the same server is the same endpoint"
+    direct = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{first['endpoint_id']}/direct-url")
+    assert ApiResponse(**direct.json()).data["url"] == "http://localhost:5173"
 
 
 @pytest.mark.asyncio
-async def test_get_host_rejects_out_of_range_port(bootstrapped_client, user):
+async def test_a_dev_endpoint_is_probed_where_it_runs(bootstrapped_client, user):
+    """Nothing listens on the port: the probe says so, where the browser only sees `onload`."""
     pid = await create_agentic_process(bootstrapped_client)
-    resp = await bootstrapped_client.get(
-        f"/api/v1/graph/agentic_process/{pid}/get-host?port=80&redirect=false"
-    )
-    res = ApiResponse(**resp.json())
-    assert res.status == ApiResponseStatus.FAIL.value
+    shown = ApiResponse(
+        **(await bootstrapped_client.post(f"/api/v1/graph/agentic_process/{pid}/show", json={"port": 1})).json()
+    ).data
+
+    resp = await bootstrapped_client.post(f"/api/v1/graph/service_endpoint/{shown['endpoint_id']}/probe")
+
+    assert resp.status_code == 200, resp.text
+    probe = ApiResponse(**resp.json()).data
+    assert probe["port"] == 1 and probe["reachable"] is False
+
+
+@pytest.mark.asyncio
+async def test_showing_a_bad_port_is_rejected(bootstrapped_client, user):
+    pid = await create_agentic_process(bootstrapped_client)
+    resp = await bootstrapped_client.post(f"/api/v1/graph/agentic_process/{pid}/show", json={"port": 70000})
+    assert resp.status_code == 400, resp.text
 
 
 @pytest.mark.asyncio

@@ -996,11 +996,6 @@ export class NavigationActions {
     this.openDock(pointer);
   }
 
-  openWebApp(port: string): void {
-    const pointer = DockPointer.forTab(ViewType.WEB_APP, { port });
-    this.openDock(pointer);
-  }
-
   /**
    * Open System Profile view with optional tab and item
    * URL structure: /dock/system_profile/<tab>?item=<item>&scope=<scope>&project=<project>

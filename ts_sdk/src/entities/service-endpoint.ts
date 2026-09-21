@@ -56,6 +56,8 @@ export interface IServiceEndpoint extends Omit<IEntity, 'status'> {
   project_id?: string | null;
   /** The app this serves, when it serves one — a reference, like `Deployment.artifact_id`. */
   artifact_id?: string | null;
+  /** The webapp definition (`micro_app`) it serves, when it serves one. */
+  webapp_id?: string | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -81,6 +83,7 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
   status: DeploymentStatus;
   project_id: string | null;
   artifact_id: string | null;
+  webapp_id: string | null;
 
   constructor(entity: Partial<IServiceEndpoint> | IEntity = {}) {
     super(entity);
@@ -100,6 +103,7 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
     };
     this.project_id = endpoint.project_id ?? null;
     this.artifact_id = endpoint.artifact_id ?? null;
+    this.webapp_id = endpoint.webapp_id ?? null;
     if (!isNonEmptyString(this.name)) throw new Error('Invalid ServiceEndpoint structure: name is required');
   }
 
@@ -116,6 +120,11 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
     const base = new ActionInfo('service', ServiceEndpoint.type, this.id).fullActionUrl.replace(/\/+$/, '');
     const sub = path.replace(/^\/+/, '');
     return `${base}/${sub}`;
+  }
+
+  /** What is wrong with the service, asked of the machine it runs on. */
+  async probe<T = Record<string, unknown>>(): Promise<T> {
+    return (await this.post('probe')) as T;
   }
 
   /** The service's own address, resolved now (and waking its machine). Never stored. */

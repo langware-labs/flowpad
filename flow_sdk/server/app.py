@@ -6,7 +6,6 @@ This module initializes the FastAPI app using the FlowServer builder
 and includes all app-specific route modules.
 """
 
-import asyncio
 import os
 import sys
 import threading
@@ -249,10 +248,7 @@ async def _on_server_startup():
     await _prune_fileless_data_sources()
     await _migrate_list_configs()
     await _prune_retired_type_rows()
-    # Off the startup path: a boot must not wait on a pass over every web row.
-    task = asyncio.get_running_loop().create_task(_converge_legacy_web_rows())
-    _BACKGROUND_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    await _prune_web_delivery_rows()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
     await _start_system_content_index()
@@ -401,23 +397,16 @@ async def _prune_retired_type_rows() -> None:
         logging.getLogger(__name__).exception("Retired entity types: prune failed")
 
 
-#: Startup work run in the background; held so a task is not collected mid-flight.
-_BACKGROUND_TASKS: set = set()
-
-
-async def _converge_legacy_web_rows() -> None:
-    """Web placements written before ServiceEndpoint existed get the endpoints they imply (idempotent)."""
+async def _prune_web_delivery_rows() -> None:
+    """A ``micro_app`` row is a webapp definition now; the old DB-only delivery rows go."""
     try:
-        # Done by the time the backend answers its first request? Not guaranteed —
-        # it runs beside startup. A display resolved before it finishes sees the
-        # legacy delivery row, which still serves.
-        from flow_sdk.builtin.webapp_placement import converge_legacy_web_rows
+        from flow_sdk.builtin.webapp_placement import prune_delivery_rows
 
-        counts = await converge_legacy_web_rows()
-        if any(counts.values()):
-            print(f"  Web endpoints: converged {counts['dev']} dev server(s), {counts['served']} served build(s)")
+        pruned = await prune_delivery_rows()
+        if pruned:
+            print(f"  Web apps: dropped {pruned} delivery row(s) — builds are served by their endpoints")
     except Exception:
-        logging.getLogger(__name__).exception("Web endpoints: legacy convergence failed")
+        logging.getLogger(__name__).exception("Web apps: pruning delivery rows failed")
 
 
 async def _prune_fileless_data_sources() -> None:

@@ -14,10 +14,10 @@ import { useWebappHealth, type WebappHealth } from './use-webapp-health';
 export type AppRuntimeOption = 'dev' | 'served';
 
 interface WebappDisplayToolbarProps {
-  /** The get-host URL the display iframe points at (health is pinged here). */
+  /** The URL the display iframe points at (health is pinged here). */
   host: string;
-  /** The dev-server port, shown as text. */
-  port: string;
+  /** The dev server's own address (`host:port`), shown as text; '' for a served build. */
+  address: string;
   /** Re-mount / reload the iframe. */
   onRefresh: () => void;
   /** Active runtime, when this app has one. Absent → the legacy port-only view. */
@@ -39,14 +39,13 @@ const LED: Record<WebappHealth, { color: string; label: React.ReactNode }> = {
 };
 
 /**
- * PER-TYPE toolbar for a shown web app — the artifact-independent status the
- * hub's web viewer surfaces: the port and a running/health LED, plus refresh.
- * Health comes from pinging the get-host URL (see useWebappHealth), so it works
- * for the `flow show webapp --port` path where there's no WEBAPP artifact.
+ * PER-TYPE toolbar for a shown web app: a running/health LED, the dev server's
+ * address, the runtime switch and refresh. Health comes from pinging the URL the
+ * frame loads (see useWebappHealth), so it works for any endpoint.
  */
 export function WebappDisplayToolbar({
   host,
-  port,
+  address,
   onRefresh,
   runtime = null,
   runtimes = [],
@@ -100,10 +99,7 @@ export function WebappDisplayToolbar({
         </div>
       )}
 
-      {/* A served app has no port — its address is this backend's own origin. */}
-      {runtime !== 'served' && port ? (
-        <span className="font-mono text-xs text-muted-foreground">localhost:{port}</span>
-      ) : null}
+      {address ? <span className="font-mono text-xs text-muted-foreground">{address}</span> : null}
 
       <TooltipProvider delayDuration={300}>
         <Tooltip>

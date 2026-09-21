@@ -1676,11 +1676,12 @@ class Project(Entity):
     async def expose_endpoints_action(self) -> "ApiResponse":
         """`POST /project/<id>/expose-endpoints {deployment_typeid}` — bring this project's apps up.
 
-        Asked by the hub right after it placed this project on a machine: every
-        webapp asset exposes what its ``webapp.json`` declares (or its build
-        folder), started here on loopback ports, recorded as ``ServiceEndpoint``
-        rows keyed by the HUB's placement — so the ids the hub adopts are these,
-        and its ``service`` hop lands on these rows.
+        Asked by the hub right after it placed this project on a machine, and again
+        whenever the box says it registered something (``refresh-endpoints``): the
+        project's placement here takes the HUB's id, every webapp asset exposes
+        what its ``webapp.json`` declares (or its build folder), started here on
+        loopback ports, and the answer is every endpoint of that placement — so
+        the ids the hub adopts are these, and its ``service`` hop lands on these rows.
         """
         from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
         from flow_sdk.builtin.webapp_placement import expose_project_endpoints  # noqa: PLC0415
@@ -1694,6 +1695,8 @@ class Project(Entity):
             return ApiFailResponse(message="deployment_typeid must be deployment-<uuid>", status_code=400)
         try:
             endpoints = await expose_project_endpoints(self, deployment_typeid)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=409)
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=f"expose-endpoints failed: {exc}")
         return ApiSuccessResponse(data={"endpoints": [endpoint.model_dump(mode="json") for endpoint in endpoints]})

@@ -1,10 +1,10 @@
-"""Serving coverage for WebApp — the delivery plane of the app continuum.
+"""Serving coverage for a ``static`` ServiceEndpoint — the one way a folder is served.
 
-An app is one Artifact with up to two companions: a Deployment (dev server on a
-port) and a WebApp (built output the backend serves at its own origin). This
-suite covers the second: that we serve the right bytes, revalidate them, refuse
-to escape the app folder, tell an unbuilt app apart from a missing file, and
-hand every served document the API origin its SDK needs.
+A built app, a webapp asset and a static site are all a placement's ``static``
+endpoint, served at ``service_endpoint/<id>/service/…``. This suite covers that
+we serve the right bytes, revalidate them, refuse to escape the folder, tell an
+unbuilt app apart from a missing file, and hand every served document the API
+origin its SDK needs.
 
 The API-origin injection is the load-bearing one: it is what makes a served app
 talk to the backend that served it — the same document works on a laptop and in
@@ -14,19 +14,32 @@ a cloud sandbox with nothing to configure.
 from __future__ import annotations
 
 import re
+import uuid
 
 import pytest
 
-from flow_sdk.builtin.faas.micro_app import WebApp
 from flow_sdk.builtin.faas.serve_static import API_ORIGIN_SNIPPET
-from flow_sdk.schema.data_spec.app_location_type import AppLocationType
+from flow_sdk.builtin.service_endpoint import ServiceEndpoint
+from flow_sdk.schema.data_spec.service_endpoint_spec import PROTOCOL_WEB_APP
 
 
-def _view_url(app: WebApp, sub_path: str = "") -> str:
-    return f"/api/v1/graph/micro_app/{app.id}/view/{sub_path}".rstrip("/")
+def _view_url(app: ServiceEndpoint, sub_path: str = "") -> str:
+    return f"/api/v1/graph/service_endpoint/{app.id}/service/{sub_path}"
 
 
-async def _make_app(tmp_path, *, build: bool = True) -> WebApp:
+async def _static(root, **over) -> ServiceEndpoint:
+    endpoint = ServiceEndpoint(
+        name="Todo",
+        parent_type_id=f"deployment-{uuid.uuid4()}",
+        protocol={"spec_kind": PROTOCOL_WEB_APP},
+        backend={"type": "static", "root": str(root)},
+        **over,
+    )
+    await endpoint.save()
+    return endpoint
+
+
+async def _make_app(tmp_path, *, build: bool = True) -> ServiceEndpoint:
     dist = tmp_path / "todo-app" / "dist"
     if build:
         dist.mkdir(parents=True)
@@ -34,13 +47,7 @@ async def _make_app(tmp_path, *, build: bool = True) -> WebApp:
         (dist / "app.js").write_text("console.log('todo')")
         (dist / "secret-sibling.txt").write_text("in-app file")
         (tmp_path / "todo-app" / "outside.txt").write_text("OUTSIDE THE SERVING ROOT")
-    app = WebApp(
-        name="Todo",
-        location_type=AppLocationType.Artifact,
-        location_root=str(dist),
-    )
-    await app.save()
-    return app
+    return await _static(dist)
 
 
 @pytest.mark.asyncio
@@ -85,8 +92,7 @@ async def test_non_ascii_index_is_served_intact(bootstrapped_client, user, tmp_p
         "<body><h1>אין משימות</h1></body></html>",
         encoding="utf-8",
     )
-    app = WebApp(name="Tasks", location_type=AppLocationType.Artifact, location_root=str(dist))
-    await app.save()
+    app = await _static(dist)
 
     resp = await bootstrapped_client.get(_view_url(app))
 
@@ -133,7 +139,9 @@ async def test_traversal_out_of_the_app_is_refused(bootstrapped_client, user, tm
 
     resp = await bootstrapped_client.get(_view_url(app, "%2E%2E%2Foutside.txt"))
 
-    assert resp.status_code == 403, resp.text
+    # The endpoint route refuses a dot segment before any file is resolved (400);
+    # `resolve_within` is the second wall behind it (403).
+    assert resp.status_code in (400, 403), resp.text
     assert "OUTSIDE THE SERVING ROOT" not in resp.text
 
 
@@ -153,15 +161,17 @@ async def test_unbuilt_app_is_a_distinct_404(bootstrapped_client, user, tmp_path
 
 
 @pytest.mark.asyncio
-async def test_artifact_id_must_be_a_valid_entity_id(bootstrapped_client, user, tmp_path):
-    """Same gate as Deployment: an id from outside the minter is not adopted."""
-    with pytest.raises(ValueError):
-        WebApp(
-            name="Bad",
-            location_type=AppLocationType.Artifact,
-            location_root=str(tmp_path),
-            artifact_id="0192f5c8-7e2a-7000-8000-0242ac120002",  # v7
-        )
+async def test_a_webapp_asset_is_revalidated_a_release_is_cached(bootstrapped_client, user, tmp_path):
+    """A webapp asset is a folder under edit: `app.js` keeps its name across edits,
+    so a cached copy is the previous version. A built release keeps the hour."""
+    release = await _make_app(tmp_path)
+    asset = await _static(tmp_path / "todo-app" / "dist", webapp_id=str(uuid.uuid4()))
+
+    cached = await bootstrapped_client.get(_view_url(release, "app.js"))
+    edited = await bootstrapped_client.get(_view_url(asset, "app.js"))
+
+    assert cached.headers["cache-control"] == "public, max-age=3600"
+    assert edited.headers["cache-control"] == "no-cache"
 
 
 def _base_href(html: str) -> str | None:
@@ -193,7 +203,7 @@ async def test_base_href_is_https_when_served_through_a_sandbox_host(bootstrappe
 
     assert resp.status_code == 200, resp.text
     assert _base_href(resp.text) == (
-        f"https://9007-izaqamfcs55jm22e3evdn.e2b.dev/api/v1/graph/micro_app/{app.id}/view/"
+        f"https://9007-izaqamfcs55jm22e3evdn.e2b.dev/api/v1/graph/service_endpoint/{app.id}/service/"
     )
 
 
@@ -208,7 +218,7 @@ async def test_base_href_follows_x_forwarded_proto(bootstrapped_client, user, tm
     )
 
     assert resp.status_code == 200, resp.text
-    assert _base_href(resp.text) == (f"https://apps.example.com/api/v1/graph/micro_app/{app.id}/view/")
+    assert _base_href(resp.text) == (f"https://apps.example.com/api/v1/graph/service_endpoint/{app.id}/service/")
 
 
 @pytest.mark.asyncio
@@ -223,4 +233,4 @@ async def test_base_href_stays_http_on_a_local_dev_host(bootstrapped_client, use
     resp = await bootstrapped_client.get(f"http://localhost:9007{_view_url(app)}")
 
     assert resp.status_code == 200, resp.text
-    assert _base_href(resp.text) == (f"http://localhost:9007/api/v1/graph/micro_app/{app.id}/view/")
+    assert _base_href(resp.text) == (f"http://localhost:9007/api/v1/graph/service_endpoint/{app.id}/service/")

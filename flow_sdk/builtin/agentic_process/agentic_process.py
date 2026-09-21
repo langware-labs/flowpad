@@ -20,7 +20,6 @@ from enum import Enum
 from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, NamedTuple
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
@@ -89,7 +88,6 @@ from flow_sdk.builtin.process_lifecycle import (
     backend_restart_requested,
     is_recoverable_worker_interruption,
 )
-from flow_sdk.compute.providers.compute_provider import LOOPBACK_HOSTNAMES
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
@@ -98,7 +96,6 @@ from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.instance_settings.runtime import own_sandbox_id
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
@@ -2446,6 +2443,31 @@ class AgenticProcess(Entity):
             await self.save()
         return project
 
+    async def _dev_server_typeid(self, port: object, name: object = None) -> str:
+        """The typeid of the endpoint for a dev server on *port* — registered on first show.
+
+        A port is how a server is reached, not what it is: showing one gives it a
+        ``proxy`` endpoint on the local placement of this run's project (or of the
+        machine, with no project), and the display holds that. Raises
+        ``InvalidDisplayTarget`` for a bad port.
+        """
+        from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
+        from flow_sdk.core.display_target import InvalidDisplayTarget  # noqa: PLC0415
+
+        try:
+            wanted = int(str(port))
+        except (TypeError, ValueError):
+            wanted = 0
+        if not 0 < wanted <= 65535:
+            raise InvalidDisplayTarget(f"Invalid port: {port!r}")
+        try:
+            endpoint = await webapp_placement.register_dev_endpoint(
+                await self._resolve_webapp_project(), port=wanted, name=str(name or "").strip() or None
+            )
+        except ValueError as e:
+            raise InvalidDisplayTarget(str(e)) from e
+        return str(endpoint.typeid)
+
 
     async def _artifact_reference(self, payload: dict) -> tuple[str, str]:
         """What a resolved display target points at: ``(asset_ref, entity_kind)``.
@@ -2518,16 +2540,18 @@ class AgenticProcess(Entity):
             )
 
         try:
+            if port:
+                typeid = await self._dev_server_typeid(port, body.get("name"))
             # `discover=True` — a display verb: showing a just-written file has
             # to recover it so the bespoke editor renders, not a raw file view.
-            payload = await resolve_display_target(typeid=typeid, path=path, port=port, discover=True)
+            payload = await resolve_display_target(typeid=typeid, path=path, discover=True)
         except InvalidDisplayTarget as e:
             return ApiFailResponse(message=str(e), status_code=400)
         except DisplayTargetNotFound as e:
             return ApiFailResponse(message=str(e), status_code=404)
 
         asset_ref, entity_kind = await self._artifact_reference(payload)
-        if payload.get("kind") in (DisplayTargetKind.WEBAPP, DisplayTargetKind.APP):
+        if payload.get("kind") == DisplayTargetKind.APP:
             kind = "application.web"
         else:
             # An entity that declares its own ontology kind is the authority:
@@ -2559,7 +2583,9 @@ class AgenticProcess(Entity):
             # the exact identity, where `asset_ref` is a path that has to be
             # resolved back through `get_by_asset_ref`.
             target_type_id=(
-                str(payload.get("typeid") or "") or None if payload.get("kind") == DisplayTargetKind.ENTITY else None
+                str(payload.get("typeid") or "") or None
+                if payload.get("kind") in (DisplayTargetKind.ENTITY, DisplayTargetKind.APP)
+                else None
             ),
             generated_by=str(self.typeid),
             project_id=await self.effective_project_id(),
@@ -2677,7 +2703,7 @@ class AgenticProcess(Entity):
         # output FlowPad serves itself. Either, both or neither may exist — a
         # served-only app has no port, and inventing a dev endpoint for a server
         # that does not exist would point the display at nothing.
-        deployment = await webapp_placement.local_web_deployment(project, artifact=artifact, name=name)
+        deployment = await webapp_placement.local_web_deployment(project, artifact=artifact)
         served = webapp_placement.served_dir(artifact_path, body.get("dist"))
         backends: list[tuple[str, dict]] = []
         if port is not None:
@@ -2687,20 +2713,9 @@ class AgenticProcess(Entity):
         if served is not None:
             backends.append((name, {"type": "static", "root": str(served)}))
         endpoints: list = []
-        micro_app = None
         if deployment is not None:
             endpoints = await webapp_placement.upsert_artifact_endpoints(
-                deployment, artifact, backends, project_id=project.id
-            )
-        else:
-            # No project to place it in: the legacy delivery row is all there is.
-            micro_app = await webapp_placement.upsert_micro_app(
-                artifact,
-                artifact_path=artifact_path,
-                name=name,
-                dist=body.get("dist"),
-                project=project,
-                fallback_project_id=self.project_id,
+                deployment, artifact, backends, project_id=project.id if project is not None else None
             )
 
         shown = None
@@ -2720,7 +2735,6 @@ class AgenticProcess(Entity):
                 "artifact": artifact.model_dump(mode="json"),
                 "deployment": deployment.model_dump(mode="json") if deployment is not None else None,
                 "endpoints": [endpoint.model_dump(mode="json") for endpoint in endpoints],
-                "micro_app": micro_app.model_dump(mode="json") if micro_app is not None else None,
                 "shown": shown,
             }
         )
@@ -2804,9 +2818,9 @@ class AgenticProcess(Entity):
 
         Resolution is the shared ``resolve_display_target`` policy (same as
         ``flow navigate file``): indexed asset → its entity; unknown path →
-        raw vfs pointer; port → webapp preview; artifact_id → an app with its
-        runtime derived from its Deployment/WebApp companions; view → a dock
-        address (a SCREEN, the one form that reaches a view with no entity
+        raw vfs pointer; port → the dev server's endpoint (registered on first
+        show); artifact_id → an app shown through its live endpoint; view → a
+        dock address (a SCREEN, the one form that reaches a view with no entity
         behind it).
 
         ``artifact_id`` closes a real gap rather than adding a synonym for
@@ -2827,10 +2841,12 @@ class AgenticProcess(Entity):
             return body
 
         try:
+            typeid = str(body.get("typeid") or "").strip() or None
+            if body.get("port") is not None:
+                typeid = await self._dev_server_typeid(body.get("port"), body.get("name"))
             payload = await resolve_display_target(
-                typeid=str(body.get("typeid") or "").strip() or None,
+                typeid=typeid,
                 path=str(body.get("path") or "").strip() or None,
-                port=body.get("port"),
                 artifact_id=str(body.get("artifact_id") or "").strip() or None,
                 dock=str(body.get("view") or "").strip() or None,
                 discover=True,  # a display verb — see `flow show file`
@@ -6333,85 +6349,6 @@ class AgenticProcess(Entity):
         """Return the linked shell's compute node, or None when no shell exists."""
         shell = await self.shell()
         return shell.compute_node if shell else None
-
-    async def _resolve_dev_host(self, port: int) -> str:
-        """Resolve the compute-node host URL for a dev-server ``port`` (shared by
-        get-host). Raises ``ValueError`` with a client-safe message on a bad
-        port or missing compute node."""
-        int_port = int(port)
-        if not 1024 <= int_port <= 65535:
-            raise ValueError("Invalid port")
-        compute_node = await self.get_compute_node()
-        if compute_node is None:
-            compute_node = await self._get_local_compute_node()
-        if not compute_node:
-            raise ValueError("No compute node found")
-        return compute_node.get_host(int_port)
-
-    async def _resolve_browser_dev_host(self, port: int) -> str:
-        """The url a BROWSER should load for a dev-server ``port``.
-
-        Differs from :meth:`_resolve_dev_host` in exactly one case: when THIS
-        app is itself running inside a sandbox. The provider answers for the
-        machine the app runs on, and a local node answers ``localhost`` -- right
-        on a desktop, where the viewer sits at that machine, and wrong in a cloud
-        box, where ``localhost`` is the viewer's own laptop and nothing is
-        listening on it.
-
-        Only a loopback answer is rewritten. A genuinely remote compute node
-        already returns a routable host and a box has no business second-guessing
-        it.
-
-        Deliberately NOT pushed into ``LocalComputeProvider.get_host``:
-        ``probe-webapp`` and the MCP client reach the same port from INSIDE the
-        box, where loopback is correct and free. This is the browser's question;
-        theirs is a different one with a different answer.
-        """
-        from flow_sdk.builtin.service_endpoint import local_direct_url  # noqa: PLC0415
-
-        host = await self._resolve_dev_host(port)
-        if (urlparse(host).hostname or "").lower() not in LOOPBACK_HOSTNAMES:
-            return host
-        # The one rule for "where a browser reaches a port on this machine".
-        return local_direct_url(int(port)) if own_sandbox_id() else host
-
-    @action.all(action_name="get-host")
-    async def get_host(self, port: int, redirect: bool = True):
-        """Resolve the public host for a dev-server ``port`` running on this
-        process's compute node (e.g. the web-app-builder dev server). Mirrors the
-        legacy Flow ``get-host`` so the in-app web preview / Vibe display can load
-        the running app via the backend (works for @local and remote compute).
-        """
-        from fastapi.responses import RedirectResponse
-
-        try:
-            host = await self._resolve_browser_dev_host(port)
-        except ValueError as e:
-            return ApiFailResponse(message=f"get-host: {e}")
-
-        if not redirect:
-            return ApiSuccessResponse(data={"url": host, "port": int(port)})
-        return RedirectResponse(url=host)
-
-    @action.post(action_name="probe-webapp")
-    async def probe_webapp_action(self, port: int):
-        """Diagnose the dev server behind ``port`` and report what is wrong.
-
-        The counterpart to get-host: get-host redirects the display's iframe at
-        the app without ever checking it is there, so a dead port renders as a
-        blank pane. This answers the question the browser cannot -- the guest is
-        cross-origin, so the frontend can observe only "the fetch threw" and
-        never *why*. Always returns a result; a probe that failed says so in
-        ``probe_error`` rather than failing the request.
-        """
-        from flow_sdk.builtin.agentic_process.webapp_probe import probe_webapp
-
-        try:
-            host = await self._resolve_dev_host(port)
-        except ValueError as e:
-            return ApiFailResponse(message=f"probe-webapp: {e}")
-
-        return ApiSuccessResponse(data=await probe_webapp(host, int(port)))
 
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start_pty()."""

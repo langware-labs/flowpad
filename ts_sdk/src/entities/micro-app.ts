@@ -1,20 +1,15 @@
-import { ActionInfo } from '../models/ActionInfo';
 import { APIEntity, registerEntity } from '../APIEntity';
 import type { IEntity, EntityMerge } from '../IEntity';
 
-export type AppLocationType = 'Folder' | 'Builtin' | 'GCPBucket' | 'Artifact';
-
 export interface IWebApp extends IEntity {
   name: string;
-  location_type: AppLocationType;
-  location_root?: string | null;
-  domains?: string[] | null;
-  /** The Artifact this delivers. Null for standalone folder/builtin apps. */
-  artifact_id?: string | null;
+  description?: string | null;
   project_id?: string | null;
   /** Dot-path ontology kind (backend default `application.web`); an index field
    *  on the type — see `flow_sdk/builtin/faas/micro_app.py`. */
   kind?: string | null;
+  /** Served subdir inside the app folder. */
+  build?: string | null;
 }
 
 // `implements IWebApp` only checks the class; it contributes no members, so every
@@ -24,51 +19,29 @@ export interface IWebApp extends IEntity {
 export interface WebApp extends EntityMerge<IWebApp> {}
 
 /**
- * WebApp is the *delivery* plane of an app: its built output, served by the
- * backend at the backend's own origin.
+ * WebApp is the DEFINITION of a web app — a `webapp.json` folder asset.
  *
- * An app is one Artifact (source) with up to two companions — a Deployment
- * (a dev server on a port) and a WebApp (built output we serve). Which one is
- * live changes without the app changing, which is why neither is the app's
- * identity.
+ * It says what the app is; it serves nothing. Where it runs is a Deployment and
+ * what that answers on is a `ServiceEndpoint` whose `webapp_id` names this row —
+ * that endpoint is what a display loads.
  */
 @registerEntity
 export class WebApp extends APIEntity<WebApp> implements IWebApp {
   static type: string = 'micro_app';
 
   name: string;
-  location_type: AppLocationType;
-  location_root: string | null;
-  domains: string[] | null;
-  artifact_id: string | null;
+  description: string | null;
   project_id: string | null;
   kind: string | null;
+  build: string | null;
 
   constructor(entity: Partial<IWebApp> | IEntity = {}) {
     super(entity);
     const app = entity as Partial<IWebApp>;
     this.name = app.name ?? '';
-    this.location_type = app.location_type ?? 'Artifact';
-    this.location_root = app.location_root ?? null;
-    this.domains = app.domains ?? null;
-    this.artifact_id = app.artifact_id ?? null;
+    this.description = app.description ?? null;
     this.project_id = app.project_id ?? null;
     this.kind = app.kind ?? null;
-  }
-
-  /**
-   * URL serving this app's `index.html`, on the backend's own origin.
-   *
-   * Same origin as the API is the whole point: cookies ride along, there is no
-   * CORS to configure, and the injected `__FLOWPAD_API_URL__` makes the page's
-   * SDK target the backend that served it — locally and in cloud alike. Built
-   * through `ActionInfo` so the base URL stays owned by the SDK config, exactly
-   * like `AgenticProcess.getWebAppHostUrl`.
-   */
-  get viewUrl(): string {
-    return new ActionInfo('view', WebApp.type, this.id).fullActionUrl;
+    this.build = app.build ?? null;
   }
 }
-
-/** @deprecated The class is `WebApp` now (the type value is still `micro_app`). */
-export { WebApp as MicroApp };

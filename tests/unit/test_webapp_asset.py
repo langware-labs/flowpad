@@ -3,8 +3,9 @@
 The mechanism under test is deliberately NOT new: ``repo_assets_fn`` already
 recurses through ``agentic-assets/`` and the enclosure rule already makes the
 containing asset the parent. What these tests pin is that ``micro_app`` is
-enrolled correctly enough to ride that machinery, and that an asset-backed app
-serves out of ``<app folder>/<build>``.
+enrolled correctly enough to ride that machinery, and that a folder with no
+build yet is "not built" rather than broken. (Serving ``<app folder>/<build>``
+is the ``static`` endpoint indexing gives it: ``tests/api/test_webapp_endpoints.py``.)
 
 Fast, real filesystem, no mocks.
 """
@@ -20,7 +21,6 @@ from flow_sdk.builtin.faas.micro_app import WebApp
 from flow_sdk.builtin.faas.serve_static import AppNotBuilt, serve_app_bytes
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.data_spec.app_location_type import AppLocationType
 from tests.fixtures.identity import resolve_id
 
 AA = AGENTIC_ASSETS_DIR
@@ -30,15 +30,15 @@ def _ref(path):
     return FSRef(path)
 
 
-def _request_for(row):
-    """A minimal ASGI request on the app's own view path."""
+def _request():
+    """A minimal ASGI request on an endpoint's service path."""
     from starlette.requests import Request
 
     return Request({
         "type": "http",
         "method": "GET",
         "headers": [(b"host", b"localhost")],
-        "path": f"/api/v1/graph/micro_app/{row.id}/view",
+        "path": "/api/v1/graph/service_endpoint/0f0f0f0f-0000-4000-8000-00000000abcd/service/",
         "query_string": b"",
     })
 
@@ -100,7 +100,6 @@ def test_loading_derives_the_location_from_where_it_was_found(tmp_path):
     records = info.from_disk_fn(_ref(folder), "0f0f0f0f-0000-4000-8000-00000000abcd")
 
     (rec,) = records
-    assert rec.location_type == AppLocationType.Asset
     assert rec.asset_ref._path == folder
     assert rec.kind == "application.web.editor"
     # A machine path never appears in webapp.json — it is derived, every time.
@@ -120,76 +119,31 @@ def test_identity_is_derived_from_the_path_so_it_is_the_same_everywhere(tmp_path
 
 
 
-# ── serving: we start the app folder, we serve the build ───────────────────
-def test_serving_root_is_the_build_inside_the_app_folder(tmp_path):
-    app = tmp_path / "app"
-    (app / "dist").mkdir(parents=True)
-
-    row = WebApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(app), build="dist")
-    assert row.serving_root() == (app / "dist").resolve()
-
-
-def test_a_static_app_serves_out_of_its_own_folder(tmp_path):
-    app = _webapp(tmp_path / "editor")
-    row = WebApp(name="editor", location_type=AppLocationType.Asset, asset_ref=str(app), build=".")
-    assert row.serving_root() == app.resolve()
-
-
+# ── serving: the build folder, once there is one ────────────────────────────
 @pytest.mark.asyncio
 async def test_an_unbuilt_app_is_not_built_rather_than_misconfigured(tmp_path):
     app = tmp_path / "app"
     app.mkdir()
-    row = WebApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(app), build="dist")
 
     # AppNotBuilt is what the display turns into a build CTA; a ValueError would
-    # read as "this row is broken" and offer nothing to do about it. The answer
-    # comes from the serving layer, which is where the directory is read — the
-    # same place the Artifact branch gets it from.
+    # read as "this row is broken" and offer nothing to do about it.
     with pytest.raises(AppNotBuilt):
-        await serve_app_bytes(row.serving_root(), None, _request_for(row))
+        await serve_app_bytes(app / "dist", None, _request())
 
 
-@pytest.mark.asyncio
-async def test_a_served_folder_does_not_mint_an_asset_of_its_own(tmp_path, monkeypatch):
-    """`flow app serve` registers a row for a folder in the user's checkout.
+def test_a_row_with_no_folder_is_not_a_folder_asset(tmp_path):
+    """A ``micro_app`` row with no folder is a delivery row from before endpoints.
 
-    That row is DB-only: it delivers an Artifact's build output and has no asset
-    of its own. Enrolling `micro_app` as a repo type made it eligible to compute
-    an `asset_ref` under `agentic-assets/webapp/` and materialize an empty folder
-    there — for an app whose files live somewhere else entirely.
+    It must answer DB-only, so dropping it (``prune_delivery_rows``) never computes
+    an ``asset_ref`` under ``agentic-assets/webapp/`` and touches a folder there.
     """
-    row = WebApp(
-        name="Legacy Static",
-        location_type=AppLocationType.Artifact,
-        location_root=str(tmp_path / "dist"),
-    )
-    assert not row.is_file_backed(), "not a folder asset — nothing to place"
-    assert row.asset_ref == ""
-
-
-@pytest.mark.asyncio
-async def test_a_served_row_is_unplaceable_even_under_a_repo_parent(tmp_path):
-    """The guard has to sit in front of BOTH ways a scope root is resolved.
-
-    ``_prepare_for_storage`` asks ``_resolve_repo_parent_container`` FIRST and
-    only then falls back to ``_resolve_scope_root``, so guarding the fallback
-    alone leaves the parent-container path open: a served row parented to a repo
-    folder asset would still be placed under it. Today's one caller happens to
-    parent these to a project, which is not a repo asset — a coincidence of that
-    call site, not a property of the row.
-    """
-    row = WebApp(
-        name="Legacy Static",
-        location_type=AppLocationType.Artifact,
-        location_root=str(tmp_path / "dist"),
-        parent_type_id="dataset-11111111-2222-4333-8444-555555555555",
-    )
-    # The row itself answers, before anything looks at where its parent lives.
+    row = WebApp(name="Legacy Static", parent_type_id="dataset-11111111-2222-4333-8444-555555555555")
     assert not row.is_file_backed()
+    assert WebApp(name="editor", asset_ref=str(tmp_path)).is_file_backed()
 
 
 def test_kind_goes_through_the_shared_ontology(tmp_path):
-    row = WebApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(tmp_path), kind="Application.Web.Editor")
+    row = WebApp(name="a", asset_ref=str(tmp_path), kind="Application.Web.Editor")
     assert row.kind == "application.web.editor"
     with pytest.raises(ValueError):
-        WebApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(tmp_path), kind="not a kind!")
+        WebApp(name="a", asset_ref=str(tmp_path), kind="not a kind!")

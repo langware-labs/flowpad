@@ -7,10 +7,10 @@ server on a port, a ``static`` one for built output FlowPad serves itself. Every
 endpoint references the artifact it serves, so re-registering updates rather
 than forks.
 
-A project has ONE local web placement; each of its apps is endpoints of it.
-(``WebApp`` used to be the delivery plane for built output. It is now the
-DEFINITION of a webapp asset — ``webapp.json`` — and new registrations create no
-delivery row; :func:`converge_legacy_web_rows` gives the old ones endpoints.)
+A project has ONE local web placement; everything it serves is an endpoint of
+it: a registered app's dev server and build, a bare dev server shown by port
+(:func:`register_dev_endpoint`), and every webapp asset of the project
+(:func:`place_webapp_locally`, run when the asset is indexed).
 
 This module owns only the payload shapes. Convergence itself belongs to the
 entities — ``Deployment.upsert`` and endpoint lookups by natural key — and the
@@ -189,46 +189,57 @@ async def upsert_artifact(
     return artifact
 
 
-async def local_web_deployment(project, *, artifact, name: str) -> Optional[Any]:
-    """The project's local web placement — created when missing, converged when present.
+async def local_web_deployment(project, *, artifact=None) -> Optional[Any]:
+    """The local web placement of *project* — or of this machine, for what has no project.
 
     Parented to the PROJECT, not the Artifact: an Artifact records how an app was
     generated and lives under its own parent, while the placement belongs to the
-    project that owns the running thing. It carries no port: ports belong to the
-    endpoints it exposes. ``artifact_id`` names the app registered most recently.
+    project that owns the running thing. Something served here that belongs to no
+    project (a user-scope webapp, a dev server a project-less run started) is the
+    MACHINE's: its placement hangs off the local compute node. A placement carries
+    no port — ports belong to the endpoints it exposes. ``artifact_id`` names the
+    app registered most recently; placing anything else leaves it alone.
     """
     from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
     from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
 
-    if project is None:
-        # Nothing to parent to, and a placement with no owner is not a
-        # placement — the caller's project resolution already tried three ways
-        # to find one.
+    local_id = ComputeNode._local_id()
+    owner = project if project is not None else await ComputeNode.get_by_id(local_id)
+    if owner is None:
         return None
-    deployment = await Deployment.upsert(
-        parent_type_id=str(project.typeid),
-        provider="local",
-        kind=KIND_WEB,
-        element=project,
-        payload={
-            "name": f"{name} (local)",
+    payload: dict = {
+        "name": f"{project.name or 'project'} (local)" if project is not None else "This machine",
+        "target": {"provider": "local", "scope": project.id if project is not None else local_id},
+        "origin": {"kind": "local", "provider": "local", "external_id": local_id},
+        "status": {"sync_state": "current", "provider_state": "configured"},
+        "provider_labels": {},
+        "project_id": project.id if project is not None else None,
+    }
+    if artifact is not None:
+        # The artifact already carries the origin this registration resolved; a
+        # git one has a head_commit, a local one has none.
+        payload |= {
             "artifact_id": artifact.id,
             "artifact_link_source": "manual",
-            "target": {"provider": "local", "scope": project.id},
-            "origin": {"kind": "local", "provider": "local", "external_id": ComputeNode._local_id()},
-            "status": {"sync_state": "current", "provider_state": "configured"},
-            "provider_labels": {},
-            # The artifact already carries the origin this registration
-            # resolved; a git one has a head_commit, a local one has none.
             "source_revision": getattr(artifact.origin, "head_commit", None),
-            "project_id": project.id,
-        },
+        }
+    deployment = await Deployment.upsert(
+        parent_type_id=str(owner.typeid), provider="local", kind=KIND_WEB, element=owner, payload=payload
     )
-    await project.attach_child(deployment)
+    await owner.attach_child(deployment)
     return deployment
 
 
-_ENDPOINT_FIELDS = {"parent_type_id", "name", "protocol", "backend", "supports_direct_access", "artifact_id", "project_id"}
+_ENDPOINT_FIELDS = {
+    "parent_type_id",
+    "name",
+    "protocol",
+    "backend",
+    "supports_direct_access",
+    "artifact_id",
+    "webapp_id",
+    "project_id",
+}
 
 
 async def upsert_endpoint(
@@ -238,6 +249,7 @@ async def upsert_endpoint(
     backend: dict,
     protocol: Optional[dict] = None,
     artifact_id: Optional[str] = None,
+    webapp_id: Optional[str] = None,
     project_id: Optional[str] = None,
     supports_direct_access: bool = False,
     existing: Optional[Any] = None,
@@ -258,6 +270,7 @@ async def upsert_endpoint(
         backend=backend,
         supports_direct_access=supports_direct_access,
         artifact_id=artifact_id,
+        webapp_id=webapp_id,
         project_id=project_id,
     )
     if existing is not None and existing.model_dump(mode="json", include=_ENDPOINT_FIELDS) == fresh.model_dump(
@@ -272,13 +285,13 @@ async def upsert_artifact_endpoints(deployment, artifact, backends: list[tuple[s
     """The artifact's endpoints on *deployment* — at most one per backend type, keyed by that pair.
 
     ``backends`` is ``[(name, backend), ...]``. The artifact's existing rows are
-    read once for all of them. A ``static`` root is also written to a legacy
-    delivery row of the same artifact, so ``/micro_app/<id>/view`` keeps serving
-    what the endpoint serves without a lookup per file.
+    read once for all of them. A dev server is its own origin (HMR sockets,
+    absolute ``/src/...`` paths), so a ``proxy`` endpoint supports direct access.
     """
     placement = str(deployment.typeid)
     existing = {e.backend.type: e for e in await artifact_endpoints(artifact.id) if e.parent_type_id == placement}
     rows = []
+    changed = False
     for name, backend in backends:
         row, saved = await upsert_endpoint(
             placement,
@@ -286,23 +299,152 @@ async def upsert_artifact_endpoints(deployment, artifact, backends: list[tuple[s
             backend=backend,
             artifact_id=artifact.id,
             project_id=project_id,
+            supports_direct_access=backend["type"] == "proxy",
             existing=existing.get(backend["type"]),
         )
         if saved:
             await deployment.attach_child(row)
-            if backend["type"] == "static":
-                await _repoint_legacy_delivery(artifact.id, backend["root"])
+            changed = True
         rows.append(row)
+    if changed:
+        await tell_hub(deployment)
     return rows
 
 
-async def _repoint_legacy_delivery(artifact_id: str, root: str) -> None:
-    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+async def register_dev_endpoint(project, *, port: int, name: Optional[str] = None):
+    """The ``proxy`` endpoint for a dev server on *port* of this machine — found, or registered.
 
-    legacy = await WebApp.get_by_artifact_id(artifact_id)
-    if legacy is not None and legacy.location_root != root:
-        legacy.location_root = root
-        await legacy.save()
+    ``flow show webapp --port N`` shows a server nothing else describes; the
+    endpoint is what gives it an identity the display can hold (the port is how
+    it is reached today, not what it is). A server an app registration already
+    placed is that app's endpoint, so showing its port shows the app's row.
+    """
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+    deployment = await local_web_deployment(project)
+    if deployment is None:
+        raise ValueError("this machine has no compute node to place a dev server on")
+    local = [e for e in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if not e.remote]
+    existing = next((e for e in local if e.backend.type == "proxy" and e.backend.port == port), None)
+    if existing is not None and (not name or existing.name == name):
+        return existing
+    backend = {"type": "proxy", "port": port, "health": "/"}
+    if existing is not None:
+        backend = existing.backend.model_dump(mode="json")
+    row, saved = await upsert_endpoint(
+        str(deployment.typeid),
+        name=name or f"port-{port}",
+        backend=backend,
+        artifact_id=existing.artifact_id if existing is not None else None,
+        project_id=project.id if project is not None else None,
+        supports_direct_access=True,
+        existing=existing,
+    )
+    if saved:
+        await deployment.attach_child(row)
+        await tell_hub(deployment)
+    return row
+
+
+# ── webapp assets: indexed here, served here ────────────────────────────────
+
+
+async def tell_hub(deployment) -> None:
+    """On a box: ask the hub to re-read what this placement exposes. Best-effort.
+
+    The hub is authoritative for a placement it made, and pulls rather than being
+    pushed rows: it asks the box for the placement's endpoints and adopts them at
+    the box's ids (``deployment/<id>/refresh-endpoints``). Only a box has a hub
+    placement to refresh; a desktop's placements are its own.
+    """
+    from flow_sdk.instance_settings.runtime import own_sandbox_id  # noqa: PLC0415
+
+    if not await asyncio.to_thread(own_sandbox_id):
+        return
+    from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+    try:
+        await hub_http.hub_post(deployment.get_type(), {}, deployment.id, "refresh-endpoints")
+    except Exception:  # noqa: BLE001 — the endpoint serves here either way; the hub catches up on the next one
+        _log.info("hub did not refresh the endpoints of %s", deployment.typeid, exc_info=True)
+
+
+async def webapp_endpoints(webapp_id: str) -> list:
+    """This machine's endpoints serving the webapp definition *webapp_id*."""
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+    rows = await ServiceEndpoint.get_all({"match": {"webapp_id": str(webapp_id)}})
+    return [row for row in rows if not row.remote]
+
+
+def _app_specs(app) -> list[tuple[str, Any]]:
+    """``(endpoint name, spec)`` for everything *app* exposes — its declared endpoints, or its build folder.
+
+    One naming rule for both ways an app is placed (indexed here, exposed on a
+    box), so the two converge on the same rows instead of serving one folder twice.
+    """
+    declared = list(app.endpoints or [])
+    return [
+        (f"{app.name}-{spec.name}" if declared else app.name, spec) for spec in effective_endpoints(app.name, declared)
+    ]
+
+
+def _static_backend(app, spec) -> dict:
+    return {"type": "static", "root": str(Path(app.asset_ref) / (spec.serving.root or app.build or "."))}
+
+
+async def place_webapp_locally(app) -> Optional[Any]:
+    """The webapp asset's ``static`` endpoint on its project's local placement. Idempotent.
+
+    Run when the asset is indexed, so every webapp on disk is displayable by its
+    endpoint — one in no project is served by this machine's placement. Only the
+    static one: its declared ``proxy`` endpoints are started where it is PLACED
+    (:func:`expose_project_endpoints`), never on an index pass. An app that
+    declares no static endpoint is still served from its build folder here.
+    """
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.webapp_spec import WebappEndpointSpec  # noqa: PLC0415
+
+    if not app.asset_ref:
+        return None
+    name, spec = next(
+        ((name, spec) for name, spec in _app_specs(app) if spec.serving.type == "static"),
+        (app.name, WebappEndpointSpec(name=app.name)),
+    )
+    backend = _static_backend(app, spec)
+    protocol = spec.model_dump(mode="json")["protocol"]
+    existing = next((e for e in await webapp_endpoints(app.id) if e.backend.type == "static"), None)
+    if (
+        existing is not None
+        and existing.name == name
+        and existing.backend.model_dump(mode="json") == backend
+        and existing.protocol.model_dump(mode="json") == protocol
+    ):
+        return existing  # the steady state: an index pass that changed nothing writes nothing
+    project = await Project.get_by_id(app.project_id) if app.project_id else None
+    deployment = await local_web_deployment(project)
+    if deployment is None:
+        return None
+    row, saved = await upsert_endpoint(
+        str(deployment.typeid),
+        name=name,
+        backend=backend,
+        protocol=protocol,
+        webapp_id=app.id,
+        project_id=project.id if project is not None else None,
+        supports_direct_access=spec.supports_direct_access,
+        existing=existing,
+    )
+    if saved:
+        await deployment.attach_child(row)
+        await tell_hub(deployment)
+    return row
+
+
+async def unplace_webapp(webapp_id: str) -> None:
+    """A removed webapp asset takes the endpoints that served it along."""
+    for endpoint in await webapp_endpoints(webapp_id):
+        await endpoint.delete()
 
 
 def served_dir(artifact_path: str, dist: object) -> Optional[Path]:
@@ -323,89 +465,86 @@ def served_dir(artifact_path: str, dist: object) -> Optional[Path]:
     return found
 
 
-async def upsert_micro_app(
-    artifact,
-    *,
-    artifact_path: str,
-    name: str,
-    dist: object,
-    project,
-    fallback_project_id: str | None = None,
-) -> Optional[Any]:
-    """LEGACY: a delivery row for an app that has no project to place it in.
-
-    Everything with a project is served by its placement's static endpoint; an
-    app registered with no project at all has no placement to hang one on, so it
-    keeps the old delivery row. Returns ``None`` when there is no build output.
-    """
-    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.app_location_type import AppLocationType  # noqa: PLC0415
-
-    dist_path = served_dir(artifact_path, dist)
-    if dist_path is None:
-        return None
-    micro_app = await WebApp.get_by_artifact_id(artifact.id)
-    payload = {
-        "name": name,
-        "location_type": AppLocationType.Artifact,
-        "location_root": str(dist_path),
-        "artifact_id": artifact.id,
-        "project_id": project.id if project is not None else fallback_project_id,
-        "parent_type_id": str(project.typeid) if project is not None else None,
-    }
-    if micro_app is None:
-        micro_app = WebApp(**payload)
-    else:
-        micro_app.apply_field_updates(payload)
-    await micro_app.save()
-    if project is not None:
-        await project.attach_child(micro_app)
-    return micro_app
-
-
 # ── a placement elsewhere: what a box exposes ───────────────────────────────
 
 
-async def expose_project_endpoints(project, deployment_typeid: str) -> list:
-    """Bring up every webapp asset of *project* as endpoints of *deployment_typeid*.
+async def adopt_project_placement(project, deployment_typeid: str):
+    """On a box: this project's local web placement takes the HUB's id for it.
 
-    Run on the machine a placement landed on (a cloud box, asked by the hub). Each
-    app's ``webapp.json`` says what it exposes (``endpoints``); an app that says
-    nothing exposes its ``build`` folder as a ``web.app``. A ``proxy`` entry is
-    started on a loopback port here — the port it already has when re-exposed,
-    so a second call does not start a second server. The rows are minted HERE
-    and keyed by the hub's placement (which this machine does not hold), so the
-    ids the hub adopts are these ids.
+    The hub placed the project here and names its placement; the box already has
+    (or now mints) its own local one. One placement, one id everywhere — so the
+    row is re-keyed rather than translated at every read, the way
+    ``agent_places.adopt_placement`` re-keys an agent's. Everything the box
+    registers afterwards (a dev server shown by port, an app registration, an
+    indexed webapp) lands on the hub's placement by the ordinary
+    :func:`local_web_deployment` lookup.
+    """
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+    deployment_id = deployment_typeid.partition("-")[2]
+    existing = await Deployment.get_by_id(deployment_id)
+    if existing is not None:
+        if existing.parent_type_id != str(project.typeid) or not existing.is_local:
+            raise ValueError(f"{deployment_typeid} is not this project's placement on this machine")
+        return existing
+    current = await local_web_deployment(project)
+    data = current.model_dump(mode="json", exclude={"id", "created_date", "updated_date", "remote"})
+    adopted = Deployment(**{**data, "id": deployment_id})
+    await adopted.save()
+    await project.attach_child(adopted)
+    for endpoint in await ServiceEndpoint.of_deployment(str(current.typeid)):
+        endpoint.parent_type_id = str(adopted.typeid)
+        await endpoint.save()
+        await adopted.attach_child(endpoint)
+        # Cut the old edge first: a delete cascades to children, and these are the adopted placement's now.
+        await current.detach_child(endpoint.typeid, notify=False)
+    await current.delete()
+    _log.info("project %s: local web placement %s re-keyed to %s", project.id, current.id, deployment_id)
+    return adopted
+
+
+async def expose_project_endpoints(project, deployment_typeid: str) -> list:
+    """Bring up every webapp asset of *project* on the hub's placement, and report ALL it serves.
+
+    Run on the machine a placement landed on (a cloud box, asked by the hub).
+    The project's local placement is first re-keyed to the hub's id
+    (:func:`adopt_project_placement`). Each app's ``webapp.json`` then says what
+    it exposes (``endpoints``); an app that says nothing exposes its ``build``
+    folder as a ``web.app``. A ``proxy`` entry is started on a loopback port
+    here — the port it already has when re-exposed, so a second call does not
+    start a second server. The answer is every endpoint of the placement — the
+    apps' and whatever was registered on the box (a dev server shown by port) —
+    and the ids are the box's, which the hub adopts.
     """
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.app_location_type import AppLocationType  # noqa: PLC0415
 
+    deployment = await adopt_project_placement(project, deployment_typeid)
     apps, current = await asyncio.gather(
         WebApp.get_all({"match": {"project_id": project.id}}),
         ServiceEndpoint.of_deployment(deployment_typeid),
     )
     by_name = {endpoint.name: endpoint for endpoint in current}
-    exposed: list = []
     for app in apps:
-        if app.location_type != AppLocationType.Asset or not app.asset_ref:
+        if not app.asset_ref:
             continue
-        declared = list(app.endpoints or [])
-        for spec in effective_endpoints(app.name, declared):
-            name = f"{app.name}-{spec.name}" if declared else app.name
+        for name, spec in _app_specs(app):
             existing = by_name.get(name)
             backend = await _placed_backend(app, spec, existing)
-            row, _saved = await upsert_endpoint(
+            row, saved = await upsert_endpoint(
                 deployment_typeid,
                 name=name,
                 backend=backend,
                 protocol=spec.model_dump(mode="json")["protocol"],
+                webapp_id=app.id,
                 project_id=project.id,
                 supports_direct_access=spec.supports_direct_access,
                 existing=existing,
             )
-            exposed.append(row)
-    return exposed
+            if saved:
+                await deployment.attach_child(row)
+    return await ServiceEndpoint.of_deployment(deployment_typeid)
 
 
 async def _placed_backend(app, spec, existing) -> dict:
@@ -415,7 +554,7 @@ async def _placed_backend(app, spec, existing) -> dict:
     folder = Path(app.asset_ref)
     serving = spec.serving
     if serving.type == "static":
-        return {"type": "static", "root": str(folder / (serving.root or app.build or "."))}
+        return _static_backend(app, spec)
     placed = existing.backend.port if existing is not None and existing.backend.type == "proxy" else None
     port = serving.port or placed or await asyncio.to_thread(dev_server.find_free_port)
     command = serving.start_cmd.replace("{port}", str(port))
@@ -426,88 +565,43 @@ async def _placed_backend(app, spec, existing) -> dict:
 
 # ── rows written before endpoints existed ───────────────────────────────────
 
-_LEGACY_LABELS = ("flowpad.runtime.port", "flowpad.runtime.start_cmd", "flowpad.runtime.health")
 
+async def prune_delivery_rows() -> int:
+    """Drop the ``micro_app`` rows that were an app's DELIVERY, not its definition.
 
-async def converge_legacy_web_rows() -> dict:
-    """Give rows written before endpoints existed the endpoints they imply. Idempotent.
-
-    * a local web Deployment still carrying ``flowpad.runtime.port`` gets its
-      ``proxy`` endpoint, and the labels go;
-    * a WebApp delivering an Artifact's build output gets that output as a
-      ``static`` endpoint of the project's placement. The row itself stays —
-      ``/dock/app/micro_app-<id>`` links point at it, and history is forever.
-
-    A converged row does no work on the next boot: the labels are gone, and an
-    artifact that already has a ``static`` endpoint is skipped before any read.
+    Before endpoints, serving an app's build meant a DB-only ``micro_app`` row
+    naming the folder. What serves a build now is its placement's ``static``
+    endpoint, written when the app is registered, so such a row is served by
+    nothing and names nothing a definition carries. It has no folder, so the
+    delete is the row alone.
     """
-    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-    from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
     from flow_sdk.core import QueryFilter  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.app_location_type import AppLocationType  # noqa: PLC0415
-    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
 
-    counts = {"dev": 0, "served": 0}
-    # By type, then kind_matches: a row refined to `runtime.web.vite` is still the web runtime.
-    deployments, legacy_apps, endpoints = await asyncio.gather(
-        Deployment.get_all(QueryFilter.by_type(Deployment.get_type())),
-        WebApp.get_all({"match": {"location_type": AppLocationType.Artifact.value}}),
-        ServiceEndpoint.get_all(QueryFilter.by_type(ServiceEndpoint.get_type())),
-    )
-    for deployment in deployments:
-        labels = dict(deployment.provider_labels or {})
-        if not kind_matches(KIND_WEB, deployment.kind) or "flowpad.runtime.port" not in labels:
-            continue
-        try:
-            port = int(labels["flowpad.runtime.port"])
-        except (TypeError, ValueError):
-            port = 0
-        artifact = await Artifact.get_by_id(deployment.artifact_id) if deployment.artifact_id else None
-        if artifact is not None and 0 < port <= 65535:
-            backend = {
-                "type": "proxy",
-                "port": port,
-                "start_cmd": labels.get("flowpad.runtime.start_cmd") or None,
-                "health": labels.get("flowpad.runtime.health") or "/",
-            }
-            name = f"{artifact.name or 'app'}-dev"
-            await upsert_artifact_endpoints(deployment, artifact, [(name, backend)], project_id=deployment.project_id)
-            counts["dev"] += 1
-        deployment.provider_labels = {k: v for k, v in labels.items() if k not in _LEGACY_LABELS}
-        await deployment.save()
-
-    served = {e.artifact_id for e in endpoints if e.artifact_id and e.backend.type == "static"}
-    for app in legacy_apps:
-        if not (app.artifact_id and app.project_id and app.location_root) or app.artifact_id in served:
-            continue
-        project, artifact = await asyncio.gather(Project.get_by_id(app.project_id), Artifact.get_by_id(app.artifact_id))
-        if project is None or artifact is None:
-            continue
-        name = artifact.name or app.name
-        deployment = await local_web_deployment(project, artifact=artifact, name=name)
-        backend = {"type": "static", "root": app.location_root}
-        await upsert_artifact_endpoints(deployment, artifact, [(name, backend)], project_id=project.id)
-        served.add(app.artifact_id)
-        counts["served"] += 1
-    return counts
+    stale = [app for app in await WebApp.get_all(QueryFilter.by_type(WebApp.get_type())) if not app.asset_ref]
+    for app in stale:
+        await app.delete()
+    return len(stale)
 
 
 __all__ = [
     "BUILD_OUTPUT_DIRS",
+    "adopt_project_placement",
     "artifact_by_port",
     "artifact_endpoints",
-    "converge_legacy_web_rows",
     "expose_project_endpoints",
     "local_web_deployment",
+    "place_webapp_locally",
     "project_artifacts",
     "project_deployments",
     "project_endpoints",
+    "prune_delivery_rows",
+    "register_dev_endpoint",
     "served_dir",
+    "tell_hub",
     "upsert_artifact",
     "upsert_artifact_endpoints",
     "upsert_endpoint",
-    "upsert_micro_app",
+    "unplace_webapp",
+    "webapp_endpoints",
 ]
