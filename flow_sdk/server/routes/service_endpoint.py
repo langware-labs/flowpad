@@ -120,7 +120,11 @@ async def _serve_static(request: Request, endpoint: ServiceEndpoint, sub_path: s
     or the hub's path), which only the hub's gate-authenticated hop may state;
     otherwise it is this tier's endpoint root. Never the request's own path.
     """
-    from flow_sdk.builtin.faas.serve_static import _browser_scheme, serve_app_bytes  # noqa: PLC0415
+    from flow_sdk.builtin.faas.serve_static import (  # noqa: PLC0415
+        ASSET_CACHE_CONTROL,
+        _browser_scheme,
+        serve_app_bytes,
+    )
     from flow_sdk.config import default_service_config  # noqa: PLC0415
     from flow_sdk.instance_settings.cookie_gate import get_cookie_gate  # noqa: PLC0415
 
@@ -133,7 +137,14 @@ async def _serve_static(request: Request, endpoint: ServiceEndpoint, sub_path: s
         endpoint_id=endpoint.id,
     )
     return await serve_app_bytes(
-        Path(endpoint.backend.root), sub_path, request, api_url_scheme=scheme_config, base_url=base
+        Path(endpoint.backend.root),
+        sub_path,
+        request,
+        api_url_scheme=scheme_config,
+        base_url=base,
+        # A webapp asset is a folder under edit, not a release with hashed names:
+        # its `app.js` keeps one name across edits, so a cached copy is stale.
+        cache_control="no-cache" if endpoint.webapp_id else ASSET_CACHE_CONTROL,
     )
 
 
@@ -144,7 +155,9 @@ async def _proxy_http(request: Request, endpoint: ServiceEndpoint, path: str) ->
         "transfer-encoding", ""
     )
     client = _http()
-    outgoing = client.build_request(request.method, url, headers=headers, content=request.stream() if has_body else None)
+    outgoing = client.build_request(
+        request.method, url, headers=headers, content=request.stream() if has_body else None
+    )
     try:
         upstream = await client.send(outgoing, stream=True)
     except httpx.RequestError:
@@ -153,7 +166,8 @@ async def _proxy_http(request: Request, endpoint: ServiceEndpoint, path: str) ->
         upstream.aiter_raw(), status_code=upstream.status_code, background=BackgroundTask(upstream.aclose)
     )
     response.raw_headers = [
-        (name.encode("latin-1"), value.encode("latin-1")) for name, value in inbound_headers(upstream.headers.multi_items())
+        (name.encode("latin-1"), value.encode("latin-1"))
+        for name, value in inbound_headers(upstream.headers.multi_items())
     ]
     return response
 

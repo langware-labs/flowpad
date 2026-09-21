@@ -44,6 +44,9 @@ class ServiceEndpoint(Entity):
     #: The app this serves, when it serves one — a REFERENCE, like ``Deployment.artifact_id``.
     #: One local placement can serve several of a project's apps; this says which.
     artifact_id: Optional[str] = APIField(default=None, description="Referenced Artifact this serves")
+    #: The webapp DEFINITION it serves (a ``micro_app`` asset), when it serves one —
+    #: how a page served here finds its definition and the asset it is nested in.
+    webapp_id: Optional[str] = APIField(default=None, description="Referenced WebApp definition this serves")
 
     def __init__(self, **data: Any) -> None:
         data["id"] = self.allocate_id(data)
@@ -105,6 +108,26 @@ class ServiceEndpoint(Entity):
             return RedirectResponse(url, status_code=302, headers={"Cache-Control": "no-store"})
         return ApiSuccessResponse(data={"url": url})
 
+    @action.post(action_name="probe")
+    async def probe_action(self):
+        """``POST service_endpoint/<id>/probe`` — what is wrong with the service, from where it runs.
+
+        The browser can only see "the frame loaded" (a refused port still fires
+        ``onload``); this answers why, from the machine the service is on: a
+        loopback request to its port and health path. Always a result — a probe
+        that failed says so in ``probe_error``.
+        """
+        from flow_sdk.core.webapp_probe import probe_webapp  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if self.backend.type != "proxy":
+            return ApiFailResponse(message="a static endpoint has no process to probe", status_code=409)
+        if self.remote:
+            return ApiFailResponse(message="this endpoint runs on another machine", status_code=409)
+        port = self.backend.port
+        health = "/" + str(self.backend.health or "/").lstrip("/")
+        return ApiSuccessResponse(data=await probe_webapp(f"http://127.0.0.1:{port}{health}", port))
+
     async def _direct_url_from_hub(self) -> Optional[str]:
         from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
@@ -117,8 +140,8 @@ def local_direct_url(port: int) -> str:
 
     ``localhost`` on a desktop, where the viewer sits at the machine. Inside a
     cloud box the viewer does not, so the box's public per-port host is the
-    answer — the same rewrite ``AgenticProcess.get-host`` makes, for the same
-    reason.
+    answer. The probe asks the other question — where the port is from HERE —
+    and loopback is right for it on both.
     """
     from flow_sdk.compute.providers.compute_provider import sandbox_public_url  # noqa: PLC0415
     from flow_sdk.instance_settings.runtime import own_sandbox_id  # noqa: PLC0415

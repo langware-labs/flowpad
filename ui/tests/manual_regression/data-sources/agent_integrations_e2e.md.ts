@@ -124,8 +124,8 @@ test('3. streaming: items land on the heartbeat', async () => {
 function editorFrame(page: Page) {
   // PersistentIframe parks the real <iframe> in a body-level portal (the host
   // div only positions it), so locate the frame by its served URL. The editor is
-  // served like any other webapp — `/graph/micro_app/<id>/view/`.
-  return page.frameLocator('iframe[src*="/micro_app/"]');
+  // served like any other webapp asset — by its endpoint, `/graph/service_endpoint/<id>/service/`.
+  return page.frameLocator('iframe[src*="/service_endpoint/"]');
 }
 
 test('4. the editor: config form + live items in the asset dock', async ({ page }) => {

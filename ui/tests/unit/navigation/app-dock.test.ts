@@ -1,15 +1,13 @@
 /**
  * The app dock's pointer grammar:
- * `/dock/app/<artifact|micro_app>-<uuid>[?runtime=…][&host=…]`.
+ * `/dock/app/<artifact|micro_app|service_endpoint>-<uuid>[?runtime=…]`.
  *
- * An app built from source is addressed by its ARTIFACT, because the runtime is
- * DERIVED from its Deployment / WebApp companions at render time. These pin that
- * the URL carries identity plus a preference, and never a port — a port in the
- * pointer is how a dev server that has since died becomes the app's identity.
- *
- * A webapp ASSET on disk has no Artifact and no dev server, so it is addressed by
- * its own delivery row. That is also what gives it a breadcrumb: a `micro_app` has
- * a parent asset, an artifact names a plane.
+ * Every form resolves to the ServiceEndpoints that serve the app. An app built
+ * from source is addressed by its ARTIFACT, because which endpoint shows is
+ * DERIVED at render time; a webapp ASSET by its definition; a bare dev server by
+ * its endpoint. These pin that the URL carries identity plus a preference, and
+ * never a port — a port in the pointer is how a dev server that has since died
+ * becomes the app's identity.
  */
 import { describe, expect, it } from 'vitest';
 import { appDockAddress } from '@src/navigation/app-dock';
@@ -17,19 +15,21 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 
 const ARTIFACT = '6ba7b810-9dad-41d1-80b4-00c04fd430c8';
-const HOST = 'agentic_process-abc1e873-1ae2-4c55-9242-6b4ddea51420';
 const MICRO_APP = 'c6f0e1a2-1111-4222-8333-444455556666';
 const appDock = (options?: Record<string, string>) =>
   new DockPointer(ViewType.APP, `artifact-${ARTIFACT}`, options);
 const assetDock = (options?: Record<string, string>) =>
   new DockPointer(ViewType.APP, `micro_app-${MICRO_APP}`, options);
+const ENDPOINT = '9a1c2b3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d';
+const endpointDock = (options?: Record<string, string>) =>
+  new DockPointer(ViewType.APP, `service_endpoint-${ENDPOINT}`, options);
 
 describe('appDockAddress', () => {
   it('reads the artifact as the address', () => {
     expect(appDockAddress(appDock())).toEqual({
       artifactId: ARTIFACT,
       microAppId: null,
-      host: null,
+      endpointId: null,
       runtime: null,
       options: {},
     });
@@ -55,10 +55,16 @@ describe('appDockAddress', () => {
     expect(addr?.runtime).toBe('served');
   });
 
-  it('carries the host, which only the dev runtime needs', () => {
-    // A dev server's URL resolves through the owning process's compute node, so an
-    // app shown outside a workspace can still serve built output but has no dev port.
-    expect(appDockAddress(appDock().withHost(HOST))?.host).toBe(HOST);
+  it('reads a bare dev server by its endpoint', () => {
+    // `flow show webapp --port N` registered an endpoint; the endpoint IS the address.
+    expect(appDockAddress(endpointDock({ runtime: 'dev' }))).toEqual({
+      artifactId: null,
+      microAppId: null,
+      endpointId: ENDPOINT,
+      runtime: 'dev',
+      options: {},
+    });
+    expect(endpointDock({ runtime: 'dev' }).tabHash).toBe(`app|service_endpoint-${ENDPOINT}`);
   });
 
   it('keeps the runtime out of tab identity', () => {
@@ -67,12 +73,12 @@ describe('appDockAddress', () => {
     expect(appDock().tabHash).toBe(`app|artifact-${ARTIFACT}`);
   });
 
-  it('reads a webapp asset by its own delivery row', () => {
-    // No artifact at all: the app IS the asset on disk, so the row is the address.
+  it('reads a webapp asset by its definition', () => {
+    // No artifact at all: the app IS the asset on disk, so its definition is the address.
     expect(appDockAddress(assetDock())).toEqual({
       artifactId: null,
       microAppId: MICRO_APP,
-      host: null,
+      endpointId: null,
       runtime: null,
       options: {},
     });

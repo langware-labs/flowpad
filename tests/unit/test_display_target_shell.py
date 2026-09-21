@@ -53,9 +53,6 @@ async def test_missing_shell_is_still_not_found() -> None:
 @pytest.mark.asyncio
 async def test_other_kinds_are_unchanged() -> None:
     # The new branch keys on entity type; everything else must be untouched.
-    webapp = await resolve_display_target(port=3000)
-    assert webapp == {"kind": DisplayTargetKind.WEBAPP, "port": 3000}
-
     vfs = await resolve_display_target(path="/tmp/definitely-not-an-indexed-asset.xyz")
     assert vfs["kind"] == DisplayTargetKind.VFS
 

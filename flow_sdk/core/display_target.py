@@ -11,8 +11,10 @@ Resolution policy (the ``flow navigate file`` behaviour):
   * path   → the indexed asset's entity when one owns it via ``asset_ref``
              (stable editor view), else a raw vfs pointer — this is what makes
              "agent writes hello.md, then shows it" work without indexing;
-  * artifact_id → an app, with its live runtime derived from its companions;
-  * port   → a webapp preview (an entity-less dev server);
+  * artifact_id → an app, with its live runtime derived from its endpoints;
+  * a ``service_endpoint`` / ``micro_app`` typeid → an app, shown through the
+             endpoint that serves it (a dev server on a port is registered as
+             an endpoint by the caller first — ``register_dev_endpoint``);
   * dock   → a SCREEN, addressed as ``<viewType>[/<pointer>][?<opts>]`` — the
              one address form that reaches a view with no entity behind it
              (Events, Preferences, Assets, …). Validated against the
@@ -27,9 +29,9 @@ import os
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.fs_store.type_id import TypeId
 
 
 class DisplayTargetKind(StrEnum):
@@ -37,7 +39,6 @@ class DisplayTargetKind(StrEnum):
 
     ENTITY = "entity"
     VFS = "vfs"
-    WEBAPP = "webapp"
     APP = "app"
     SHELL = "shell"
     DOCK = "dock"
@@ -45,7 +46,7 @@ class DisplayTargetKind(StrEnum):
 
 
 class InvalidDisplayTarget(ValueError):
-    """The address itself is malformed (bad typeid / port / nothing given)."""
+    """The address itself is malformed (bad typeid / nothing given)."""
 
 
 class DisplayTargetNotFound(LookupError):
@@ -55,7 +56,6 @@ class DisplayTargetNotFound(LookupError):
 async def resolve_display_target(
     typeid: str | None = None,
     path: str | None = None,
-    port: object = None,
     artifact_id: str | None = None,
     dock: str | None = None,
     discover: bool = False,
@@ -65,7 +65,7 @@ async def resolve_display_target(
 ) -> dict:
     """Resolve one display address to its payload dict.
 
-    Exactly one of ``typeid`` / ``path`` / ``artifact_id`` / ``port`` / ``dock``
+    Exactly one of ``typeid`` / ``path`` / ``artifact_id`` / ``dock``
     should be given (checked in that priority order). Returns ``{"kind":
     DisplayTargetKind, ...}``; raises ``InvalidDisplayTarget`` /
     ``DisplayTargetNotFound`` for the caller to map onto its own response shape
@@ -106,7 +106,9 @@ async def resolve_display_target(
             # An app is not an editable document either: it is RUN. Routed to the
             # app dock so `flow show typeid micro_app-<id>` and a click on the
             # asset land in the same place — the running app, not a manifest view.
-            return _asset_app_payload(entity)
+            return await _asset_app_payload(entity)
+        if entity.get_type() == "service_endpoint":
+            return endpoint_target(entity)
         return _entity_payload(entity)
 
     if path:
@@ -137,80 +139,82 @@ async def resolve_display_target(
     if artifact_id:
         return await _app_payload(str(artifact_id))
 
-    if port is not None:
-        try:
-            return {"kind": DisplayTargetKind.WEBAPP, "port": int(port)}  # type: ignore[arg-type]
-        except (TypeError, ValueError) as e:
-            raise InvalidDisplayTarget(f"Invalid port: {port!r}") from e
-
     if dock:
         return await dock_target(dock)
 
-    raise InvalidDisplayTarget("Must include one of: typeid, path, port, artifact_id, dock")
+    raise InvalidDisplayTarget("Must include one of: typeid, path, artifact_id, dock")
+
+
+def endpoint_target(endpoint, *, name: str | None = None) -> dict:
+    """An APP payload for the endpoint that serves it — the one address a display loads.
+
+    ``runtime`` says how: ``dev`` is a server on a port (loaded at its own
+    origin, ``direct-url``), ``served`` is a folder we serve (``service``).
+    """
+    return {
+        "kind": DisplayTargetKind.APP,
+        "typeid": f"service_endpoint-{endpoint.id}",
+        "endpoint_id": endpoint.id,
+        "name": name or endpoint.name,
+        "runtime": "dev" if endpoint.backend.type == "proxy" else "served",
+    }
 
 
 async def _app_payload(artifact_id: str) -> dict:
     """Resolve an app by its Artifact — the source plane — plus what serves it.
 
     An app is reachable two ways: a dev server on a port (a ``proxy`` endpoint)
-    or its built output served by us (a ``static`` endpoint — or, for a row
-    written before endpoints, a ``WebApp``). Both, either, or neither may exist
-    at any moment, and which one is live changes without the app changing. So
-    the address is the artifact id, and the runtime is *derived* here rather
-    than baked into the pin — that is what stops a stale port from becoming the
-    identity of an app.
+    or its built output served by us (a ``static`` endpoint). Both, either, or
+    neither may exist at any moment, and which one is live changes without the
+    app changing. So the address is the artifact id, and the endpoint shown is
+    *derived* here — the dev server when there is one — rather than baked into
+    the pin: that is what stops a stale port from becoming the identity of an app.
     """
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
     from flow_sdk.builtin.webapp_placement import artifact_endpoints  # noqa: PLC0415
 
     if not is_valid_entity_id(artifact_id):
         raise InvalidDisplayTarget(f"Invalid artifact_id: {artifact_id!r}")
 
-    # All three reads key off the same artifact id, so nothing here waits on
-    # anything else — this resolve sits in front of every app display.
-    artifact, endpoints, micro_app = await asyncio.gather(
-        Artifact.get_by_id(artifact_id),
-        artifact_endpoints(artifact_id),
-        WebApp.get_by_artifact_id(artifact_id),
-    )
+    artifact, endpoints = await asyncio.gather(Artifact.get_by_id(artifact_id), artifact_endpoints(artifact_id))
     if artifact is None:
         raise DisplayTargetNotFound(f"Artifact not found: {artifact_id}")
 
-    # This machine's rows only: a cloud placement of the same app is not a port here.
+    # This machine's rows only: a cloud placement of the same app is not served here.
     local = [endpoint for endpoint in endpoints if not endpoint.remote]
-    dev = next((e for e in local if e.backend.type == "proxy"), None)
-    served = next((e for e in local if e.backend.type == "static"), None)
-    port = dev.backend.port if dev is not None else None
-
-    payload: dict = {
-        "kind": DisplayTargetKind.APP,
+    shown = next((e for e in local if e.backend.type == "proxy"), None) or next(
+        (e for e in local if e.backend.type == "static"), None
+    )
+    payload: dict = {"kind": DisplayTargetKind.APP, "runtime": "unbuilt"}
+    if shown is not None:
+        payload = endpoint_target(shown)
+    return {
+        **payload,
         "artifact_id": artifact_id,
         "typeid": f"{Artifact.get_type()}-{artifact_id}",
         "name": artifact.name,
-        "runtime": "dev" if port else ("served" if (served or micro_app) is not None else "unbuilt"),
     }
-    if port:
-        payload["port"] = port
-    if micro_app is not None:
-        payload["micro_app_id"] = micro_app.id
-    return payload
 
 
-def _asset_app_payload(micro_app) -> dict:
-    """An app addressed by its OWN row — a webapp asset on disk.
+async def _asset_app_payload(micro_app) -> dict:
+    """An app addressed by its DEFINITION — a webapp asset on disk.
 
-    No artifact to derive a runtime from and no dev server to offer: the folder
-    is the app, so the runtime is always ``served``. The frontend reads the
-    ``typeid`` as the address, which is also what gives the app a breadcrumb —
-    its row has a parent, an artifact names a plane.
+    Shown through the ``static`` endpoint indexing gave it; one that is missing
+    (an asset indexed before its project existed) is placed now. The frontend
+    reads the ``typeid`` as the address, which is also what gives the app a
+    breadcrumb — its row has a parent, an endpoint names a placement.
     """
+    from flow_sdk.builtin.webapp_placement import place_webapp_locally  # noqa: PLC0415
+
+    endpoint = await place_webapp_locally(micro_app)
+    name = micro_app.title or micro_app.name
+    payload = endpoint_target(endpoint, name=name) if endpoint is not None else {"kind": DisplayTargetKind.APP}
     return {
-        "kind": DisplayTargetKind.APP,
+        **payload,
         "typeid": str(micro_app.typeid),
         "micro_app_id": micro_app.id,
-        "name": micro_app.title or micro_app.name,
-        "runtime": "served",
+        "name": name,
+        "runtime": "served" if endpoint is not None else "unbuilt",
     }
 
 
@@ -291,9 +295,7 @@ async def dock_target(address: str) -> dict:
             # Name candidates, not just the catalogue. An agent that guessed a
             # screen name once will guess again from the same word unless the
             # error hands it a real address to retry on.
-            hint = ", ".join(
-                f"{view.value} ({da.VIEW_META[view].label})" for view in da.suggest_views(head)
-            )
+            hint = ", ".join(f"{view.value} ({da.VIEW_META[view].label})" for view in da.suggest_views(head))
             raise InvalidDisplayTarget(
                 f"Unknown view '{head}'. Did you mean: {hint}?"
                 if hint
@@ -303,15 +305,11 @@ async def dock_target(address: str) -> dict:
 
     retired = da.RETIRED_DOCK_VIEWS.get(parsed.view_type)
     if retired is not None and not retired.accepts_direct_address:
-        raise InvalidDisplayTarget(
-            f"View '{parsed.view_type.value}' is not addressable (it decodes for history only)"
-        )
+        raise InvalidDisplayTarget(f"View '{parsed.view_type.value}' is not addressable (it decodes for history only)")
     view, pointer = da.normalize_retired(parsed.view_type, parsed.pointer)
     meta = da.VIEW_META[view]
     if not meta.addressable:
-        raise InvalidDisplayTarget(
-            f"View '{view.value}' is not addressable (it decodes for history only)"
-        )
+        raise InvalidDisplayTarget(f"View '{view.value}' is not addressable (it decodes for history only)")
     if meta.pointer is da.PointerRequirement.REQUIRED and not pointer:
         raise InvalidDisplayTarget(f"View '{view.value}' requires a pointer")
     # A hub-only view asked for on the desk page is the same failure this module's
@@ -321,8 +319,7 @@ async def dock_target(address: str) -> dict:
     if parsed.page.value not in meta.pages:
         fix = da.dock_address(view, da.PageId(meta.pages[0]))
         raise InvalidDisplayTarget(
-            f"View '{view.value}' does not render on page '{parsed.page.value}'. "
-            f"Address it as '{fix}'."
+            f"View '{view.value}' does not render on page '{parsed.page.value}'. Address it as '{fix}'."
         )
 
     await _assert_pointer_entity_exists(view, pointer)
@@ -429,8 +426,8 @@ def dock_url(target: dict, *, port: int, host: str = "localhost") -> str | None:
     pinned by tests/fixtures/asset_editor_contract.json).
 
     ``None`` — not an exception — for every address this grammar does not
-    cover: an entity whose type has no asset editor, and the SHELL / WEBAPP /
-    APP / VFS kinds, which have their own pointer forms owned elsewhere.
+    cover: an entity whose type has no asset editor, and the SHELL / APP /
+    VFS kinds, which have their own pointer forms owned elsewhere.
     Inventing a segment for those would put a second, wrong owner of each
     grammar on the backend.
 

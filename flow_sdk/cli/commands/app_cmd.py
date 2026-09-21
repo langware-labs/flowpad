@@ -137,13 +137,11 @@ def serve_app(
             "show": not no_show,
         },
     )
-    # What serves the build output: the placement's `static` endpoint, or — for an
-    # app registered with no project to place it in — the legacy delivery row.
+    # What serves the build output: the placement's `static` endpoint.
     endpoint = next(
         (e for e in data.get("endpoints") or [] if (e.get("backend") or {}).get("type") == "static"), None
     )
-    micro_app = data.get("micro_app")
-    if endpoint is None and micro_app is None:
+    if endpoint is None:
         _fail(
             EXIT_NOT_FOUND,
             "NO_BUILD_OUTPUT",
@@ -154,9 +152,8 @@ def serve_app(
             "source": "serve",
             "artifact": data.get("artifact"),
             "endpoint": endpoint,
-            "micro_app": micro_app,
             "shown": data.get("shown"),
-            "serving": (endpoint or {}).get("backend", {}).get("root") or (micro_app or {}).get("location_root"),
+            "serving": endpoint["backend"]["root"],
         }
     )
 

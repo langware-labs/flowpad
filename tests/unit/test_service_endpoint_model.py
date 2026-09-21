@@ -46,6 +46,7 @@ CONTRACT_FIELDS = {
     "status",
     "supports_direct_access",
     "type",
+    "webapp_id",
 }
 
 

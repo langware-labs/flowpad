@@ -1,14 +1,9 @@
 """Static byte-serving for app folders — the one implementation.
 
-Before this module the backend had two near-identical copies of "serve a file
-out of an app folder" (``WebApp.view`` and ``WebApp.view_external_domain``)
-and a third, unrelated one for the console shell
-(``server/routes/ui.py:serve_index_html``). They disagreed on exactly the thing
-that matters for an app talking back to us: only the console got the runtime
-API-origin injection.
-
-``serve_app_bytes`` is now the single path, so a served app inherits the backend
-that served it for free — the same mechanism, local or cloud.
+Used by a ``static`` ServiceEndpoint (``server/routes/service_endpoint.py``) and
+the single-file preview (``fs/serve``). It is also what gives every served page
+the runtime API-origin injection, so a served app talks back to the backend that
+served it — the same mechanism, local or cloud.
 """
 
 from __future__ import annotations
@@ -109,10 +104,7 @@ def resolve_within(root: Path, sub_path: str) -> Path:
     """Resolve *sub_path* under *root*, refusing anything that escapes it.
 
     The URL layer decodes ``..%2F..`` into literal ``..`` segments before it
-    reaches us, so this resolve-then-compare is the only defense. Mirrors
-    ``AppCodebase.public_file_path``, but takes the root explicitly — an
-    artifact-backed app serves straight out of its build output, with no
-    ``public/`` convention imposed on it.
+    reaches us, so this resolve-then-compare is the only defense.
     """
     root = root.resolve()
     candidate = (root / Path(sub_path or "")).resolve()
@@ -200,10 +192,8 @@ async def serve_app_bytes(
 ) -> Response:
     """Serve one file out of *root*, falling back to its ``index.html``.
 
-    ``inject_base`` is the one behavioural difference between the callers: a
-    micro-app served under a console API path needs ``<base>`` so its relative
-    asset URLs resolve, while one served on its own domain must not have its
-    document rewritten. The API-origin injection is unconditional — it is what
+    ``inject_base``: an app served under a path needs ``<base>`` so its relative
+    asset URLs resolve. The API-origin injection is unconditional — it is what
     makes the page's SDK reach the right backend.
 
     ``fallback_index`` and ``cache_control`` exist for the same reason: they are

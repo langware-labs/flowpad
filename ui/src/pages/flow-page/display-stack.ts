@@ -11,7 +11,6 @@ function sameDisplayTarget(a: ShowTarget, b: ShowTarget): boolean {
     a.kind === b.kind &&
     (a.typeid ?? null) === (b.typeid ?? null) &&
     (a.path ?? null) === (b.path ?? null) &&
-    (a.port ?? null) === (b.port ?? null) &&
     (a.artifact_id ?? null) === (b.artifact_id ?? null)
   );
 }
