@@ -5144,6 +5144,10 @@ msgstr "Could not reach the backend. Try again in a moment."
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr "Could not reach this cloud machine. It may be paused."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not read the snippet"
+msgstr "Could not read the snippet"
+
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Could not read this budget's history."
 msgstr "Could not read this budget's history."
@@ -5248,6 +5252,10 @@ msgstr "Could not run schedule"
 msgid "Could not run the connection test."
 msgstr "Could not run the connection test."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not run the snippet"
+msgstr "Could not run the snippet"
+
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "Could not run the test"
 msgstr "Could not run the test"
@@ -5295,6 +5303,10 @@ msgstr "Could not save the key"
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Could not save the override"
 msgstr "Could not save the override"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not save the snippet"
+msgstr "Could not save the snippet"
 
 #: src/components/diagnose/use-diagnosis-report.ts
 msgid "Could not send report to the Flowpad team"
@@ -6664,6 +6676,10 @@ msgstr "Diagnosis was not recorded — try again."
 msgid "Diagnostic complete — no issue found."
 msgstr "Diagnostic complete — no issue found."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "did not run"
+msgstr "did not run"
+
 #: src/components/code-editor/CodeEditor.tsx
 #: src/pages/flow-page/display-annotation.ts
 msgid "Diff"
@@ -7803,6 +7819,12 @@ msgstr "Existing repo"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "exit {0}"
 msgstr "exit {0}"
+
+#. placeholder {0}: result.returncode
+#. placeholder {1}: result.duration_s.toFixed(2)
+#: src/components/code-editor/SnippetView.tsx
+msgid "exit {0} · {1}s"
+msgstr "exit {0} · {1}s"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Exit local"
@@ -9424,6 +9446,14 @@ msgstr "Hide from Recent — still visible in Stream Inbox; reappears when a new
 msgid "Hide from Recent conversations"
 msgstr "Hide from Recent conversations"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Hide imports"
+msgstr "Hide imports"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "Hide init"
+msgstr "Hide init"
+
 #: src/components/navigator-panel/NavigatorPanel.tsx
 #: src/components/webapp-viewer.tsx
 msgid "Hide panel"
@@ -9777,6 +9807,10 @@ msgstr "Important:"
 msgid "Imported"
 msgstr "Imported"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "imports"
+msgstr "imports"
+
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
@@ -9948,6 +9982,10 @@ msgstr "Inherit"
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "inherits the budget above"
 msgstr "inherits the budget above"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "init"
+msgstr "init"
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Initial message"
@@ -16861,6 +16899,7 @@ msgstr "Rules"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
@@ -17000,6 +17039,7 @@ msgstr "Running in the background."
 msgid "Running on the host's machine · status: {0}"
 msgstr "Running on the host's machine · status: {0}"
 
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Running…"
 msgstr "Running…"
@@ -18365,9 +18405,17 @@ msgstr "Show hidden files"
 msgid "Show hidden path segments"
 msgstr "Show hidden path segments"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Show imports"
+msgstr "Show imports"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "Show in folder (selects file for drag-and-drop)"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "Show init"
+msgstr "Show init"
 
 #: src/journey/JourneyViewer.tsx
 msgid "Show journey"
@@ -19905,6 +19953,10 @@ msgstr "the existing desk"
 msgid "The fetch failed. Retry once the backend is up."
 msgstr "The fetch failed. Retry once the backend is up."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "The file changed outside the editor — reloaded it."
+msgstr "The file changed outside the editor — reloaded it."
+
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "The file is newer than its published row"
 #~ msgstr "The file is newer than its published row"
@@ -20817,6 +20869,10 @@ msgstr "Time spent"
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "timed out"
 msgstr "timed out"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "timed out after {timeoutSeconds}s — killed"
+msgstr "timed out after {timeoutSeconds}s — killed"
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "Timeline"

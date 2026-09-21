@@ -1,15 +1,12 @@
 import { DiffEditor, Monaco } from '@monaco-editor/react';
-import { shikiToMonaco } from '@shikijs/monaco';
 import gitDiffParser, { Change, File as DiffFile, Hunk } from 'gitdiff-parser';
 import { GitBranch, HardDrive } from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { createHighlighter, Highlighter } from 'shiki';
+import { ensureShikiMonaco, monacoTheme } from './shikiMonaco';
 import { Trans } from '@lingui/react/macro';
 
-let shikiHighlighter: Highlighter | null = null;
-let themeLoadingPromise: Promise<void> | null = null;
 
 interface DiffContentProps {
   diffString: string;
@@ -39,18 +36,6 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
     };
   }, []);
 
-  useEffect(() => {
-    if (!themeLoadingPromise) {
-      themeLoadingPromise = createHighlighter({ themes: ['dark-plus', 'light-plus'], langs: ['text'] })
-        .then((h) => {
-          shikiHighlighter = h;
-        })
-        .catch(() => {
-          themeLoadingPromise = null;
-        });
-    }
-  }, []);
-
   const handleEditorDidMount = useCallback(
     (diffEditor: editor.IStandaloneDiffEditor, monaco: Monaco, editorKey: string) => {
       editorInstancesRef.current.set(editorKey, diffEditor);
@@ -76,14 +61,7 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
       diffEditor.getOriginalEditor().onDidContentSizeChange(fit);
       fit();
 
-      async function setup() {
-        if (themeLoadingPromise) await themeLoadingPromise;
-        if (!shikiHighlighter) return;
-        monaco.languages.register({ id: 'text' });
-        shikiToMonaco(shikiHighlighter, monaco);
-        monaco.editor.setTheme(resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus');
-      }
-      void setup();
+      void ensureShikiMonaco(monaco, 'text').then(() => monaco.editor.setTheme(monacoTheme(resolvedTheme)));
     },
     [resolvedTheme],
   );
@@ -124,7 +102,7 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide
             onMount={(ed, monaco) => {
               void handleEditorDidMount(ed, monaco, editorKey);
             }}
-            theme={resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus'}
+            theme={monacoTheme(resolvedTheme)}
             options={{
               renderSideBySide: sideBySide,
               readOnly: true,

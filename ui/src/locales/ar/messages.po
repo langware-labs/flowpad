@@ -5144,6 +5144,10 @@ msgstr "تعذّر الوصول إلى الخادم. يُرجى المحاولة
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr ""
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not read the snippet"
+msgstr ""
+
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Could not read this budget's history."
 msgstr ""
@@ -5248,6 +5252,10 @@ msgstr ""
 msgid "Could not run the connection test."
 msgstr "تعذر إجراء اختبار الاتصال."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not run the snippet"
+msgstr ""
+
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "Could not run the test"
 msgstr "تعذّر تشغيل الاختبار"
@@ -5294,6 +5302,10 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Could not save the override"
+msgstr ""
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not save the snippet"
 msgstr ""
 
 #: src/components/diagnose/use-diagnosis-report.ts
@@ -6664,6 +6676,10 @@ msgstr "لم يتم تسجيل التشخيص — يُرجى المحاولة م
 msgid "Diagnostic complete — no issue found."
 msgstr "اكتمل التشخيص — لم يُعثر على أي مشكلة."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "did not run"
+msgstr ""
+
 #: src/components/code-editor/CodeEditor.tsx
 #: src/pages/flow-page/display-annotation.ts
 msgid "Diff"
@@ -7803,6 +7819,12 @@ msgstr "مستودع موجود"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "exit {0}"
 msgstr "خروج {0}"
+
+#. placeholder {0}: result.returncode
+#. placeholder {1}: result.duration_s.toFixed(2)
+#: src/components/code-editor/SnippetView.tsx
+msgid "exit {0} · {1}s"
+msgstr ""
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Exit local"
@@ -9424,6 +9446,14 @@ msgstr "إخفاء من الأخيرة — لا يزال مرئيًا في صن�
 msgid "Hide from Recent conversations"
 msgstr "إخفاء من المحادثات الأخيرة"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Hide imports"
+msgstr ""
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "Hide init"
+msgstr ""
+
 #: src/components/navigator-panel/NavigatorPanel.tsx
 #: src/components/webapp-viewer.tsx
 msgid "Hide panel"
@@ -9777,6 +9807,10 @@ msgstr "مهم:"
 msgid "Imported"
 msgstr "تم الاستيراد"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "imports"
+msgstr ""
+
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
@@ -9947,6 +9981,10 @@ msgstr ""
 
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "inherits the budget above"
+msgstr ""
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "init"
 msgstr ""
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
@@ -16861,6 +16899,7 @@ msgstr "القواعد"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
@@ -17000,6 +17039,7 @@ msgstr "قيد التشغيل في الخلفية."
 msgid "Running on the host's machine · status: {0}"
 msgstr "يعمل على جهاز المضيف · الحالة: {0}"
 
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Running…"
 msgstr "جارٍ التنفيذ…"
@@ -18365,9 +18405,17 @@ msgstr "إظهار الملفات المخفية"
 msgid "Show hidden path segments"
 msgstr "إظهار أجزاء المسار المخفية"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Show imports"
+msgstr ""
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "عرض في المجلد (تحديد الملف للسحب والإفلات)"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "Show init"
+msgstr ""
 
 #: src/journey/JourneyViewer.tsx
 msgid "Show journey"
@@ -19905,6 +19953,10 @@ msgstr ""
 msgid "The fetch failed. Retry once the backend is up."
 msgstr "فشل الجلب. أعد المحاولة بعد تشغيل الخادم."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "The file changed outside the editor — reloaded it."
+msgstr ""
+
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "The file is newer than its published row"
 #~ msgstr ""
@@ -20816,6 +20868,10 @@ msgstr "الوقت المستغرق"
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "timed out"
+msgstr ""
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "timed out after {timeoutSeconds}s — killed"
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
