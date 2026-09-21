@@ -196,6 +196,7 @@ async def serve_app_bytes(
     fallback_index: bool = True,
     cache_control: str = ASSET_CACHE_CONTROL,
     process_id: str | None = None,
+    base_url: str | None = None,
 ) -> Response:
     """Serve one file out of *root*, falling back to its ``index.html``.
 
@@ -238,7 +239,9 @@ async def serve_app_bytes(
         async with await anyio.open_file(str(requested_file), "r", encoding="utf-8") as f:
             html = await f.read()
         if inject_base:
-            html = inject_base_tag(html, _base_url_for(request, api_url_scheme))
+            # A caller that knows the app's ROOT says so: the request URL is the
+            # page's own path, and a deep link (`…/about`) is a route, not a folder.
+            html = inject_base_tag(html, base_url or _base_url_for(request, api_url_scheme))
         # The document carries the same policy as its assets; without a header a
         # browser caches it heuristically and a cross-origin iframe never refetches.
         html = inject_process_id(inject_api_origin(html), process_id)

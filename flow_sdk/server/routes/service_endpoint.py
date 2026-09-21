@@ -35,6 +35,7 @@ from flow_sdk.server.service_proxy import (
     CALLER_HEADER,
     inbound_headers,
     outbound_headers,
+    public_base,
     upstream_path,
     verify_caller,
 )
@@ -113,14 +114,26 @@ async def service_http(request: Request, endpoint_id: str, sub_path: str = "") -
 
 
 async def _serve_static(request: Request, endpoint: ServiceEndpoint, sub_path: str) -> Response:
-    from flow_sdk.builtin.faas.serve_static import serve_app_bytes  # noqa: PLC0415
-    from flow_sdk.config import default_service_config  # noqa: PLC0415
+    """Serve the endpoint's folder, its documents based at where the BROWSER is.
 
+    Behind the hub that is the hub's address for this endpoint (its own origin,
+    or the hub's path), which only the hub's gate-authenticated hop may state;
+    otherwise it is this tier's endpoint root. Never the request's own path.
+    """
+    from flow_sdk.builtin.faas.serve_static import _browser_scheme, serve_app_bytes  # noqa: PLC0415
+    from flow_sdk.config import default_service_config  # noqa: PLC0415
+    from flow_sdk.instance_settings.cookie_gate import get_cookie_gate  # noqa: PLC0415
+
+    scheme_config = default_service_config.service_urls_config.api_url_scheme
+    base = public_base(
+        request.headers,
+        gate_secret=get_cookie_gate(),
+        scheme=_browser_scheme(request, scheme_config),
+        host=request.headers.get("host") or request.url.netloc,
+        endpoint_id=endpoint.id,
+    )
     return await serve_app_bytes(
-        Path(endpoint.backend.root),
-        sub_path,
-        request,
-        api_url_scheme=default_service_config.service_urls_config.api_url_scheme,
+        Path(endpoint.backend.root), sub_path, request, api_url_scheme=scheme_config, base_url=base
     )
 
 

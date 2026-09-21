@@ -106,6 +106,35 @@ def upstream_path(sub_path: str, query: str) -> str:
     return f"{path}?{query}" if query else path
 
 
+# ── the public base (where the BROWSER is) ──────────────────────────────────
+
+_HOST_RE = re.compile(r"^[A-Za-z0-9.-]+(?::\d{1,5})?$")
+
+
+def public_base(headers, *, gate_secret: Optional[str], scheme: str, host: str, endpoint_id: str) -> str:
+    """The URL a static endpoint's page is served under, as the browser sees it — its ``<base>``.
+
+    Without a hop in front, that is this tier's own endpoint root. Behind the hub
+    it is wherever the HUB serves it — an origin of its own, or the hub's path —
+    which only the hub knows and says with ``X-Forwarded-Host``/``-Proto``/``-Prefix``.
+    Those are believed ONLY on the hub's gate-authenticated hop: from anyone else
+    they would let a client move a page's assets to a host of its choosing. A
+    malformed address falls back rather than being half-trusted.
+    """
+    own = f"{scheme}://{host}/api/v1/graph/service_endpoint/{endpoint_id}/service/"
+    presented = headers.get(GATE_HEADER) or ""
+    if not gate_secret or not hmac.compare_digest(presented, gate_secret):
+        return own
+    public_host = (headers.get("x-forwarded-host") or "").strip()
+    prefix = (headers.get("x-forwarded-prefix") or "/").strip()
+    proto = (headers.get("x-forwarded-proto") or "https").strip().lower()
+    if not _HOST_RE.fullmatch(public_host) or proto not in ("http", "https"):
+        return own
+    if not prefix.startswith("/") or any(segment in (".", "..") for segment in prefix.split("/")):
+        return own
+    return f"{proto}://{public_host}{prefix if prefix.endswith('/') else prefix + '/'}"
+
+
 # ── the caller signature (the contract with the hub) ────────────────────────
 
 #: Same values as the hub's — a header minted there is checked here.
@@ -155,6 +184,7 @@ __all__ = [
     "USER_HEADER",
     "inbound_headers",
     "outbound_headers",
+    "public_base",
     "sign_caller",
     "upstream_path",
     "verify_caller",

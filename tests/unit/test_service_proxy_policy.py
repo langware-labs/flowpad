@@ -124,3 +124,64 @@ def test_only_the_service_route_is_raw():
     assert not is_raw_body_path("/api/v1/graph/service_endpoint/abc/direct-url")
     assert not is_raw_body_path("/api/v1/graph/service_endpoint/abc/services")
     assert not is_raw_body_path("/api/v1/graph/project/abc/service")
+
+
+# ── the public base: where the BROWSER is, for a static app's <base href> ───
+
+from flow_sdk.server.service_proxy import public_base  # noqa: E402
+
+EID = "2c3d7e0a-5a1b-4f7e-9d2c-8b6a1e4f0c11"
+ROOT = f"/api/v1/graph/service_endpoint/{EID}/service/"
+
+
+def test_without_a_hop_the_base_is_this_tiers_endpoint_root():
+    """A deep link must not become the base: `…/service/about` is a route, not a folder."""
+    assert public_base({}, gate_secret=None, scheme="http", host="localhost:9007", endpoint_id=EID) == (
+        f"http://localhost:9007{ROOT}"
+    )
+
+
+def test_a_gated_hop_names_the_public_address():
+    headers = {
+        "x-cookie-gate": SECRET,
+        "x-forwarded-host": f"{EID}.flowpad.app",
+        "x-forwarded-proto": "https",
+        "x-forwarded-prefix": "/",
+    }
+    assert public_base(headers, gate_secret=SECRET, scheme="http", host="box:9007", endpoint_id=EID) == (
+        f"https://{EID}.flowpad.app/"
+    )
+
+
+def test_the_path_form_hop_carries_its_prefix():
+    headers = {
+        "x-cookie-gate": SECRET,
+        "x-forwarded-host": "hub.flowpad.ai",
+        "x-forwarded-proto": "https",
+        "x-forwarded-prefix": ROOT,
+    }
+    assert public_base(headers, gate_secret=SECRET, scheme="http", host="box", endpoint_id=EID) == (
+        f"https://hub.flowpad.ai{ROOT}"
+    )
+
+
+@pytest.mark.parametrize("gate", [None, "wrong-secret"])
+def test_forwarded_headers_without_the_gate_are_ignored(gate):
+    """A client cannot move a page's assets to a host of its choosing."""
+    headers = {"x-forwarded-host": "evil.example", "x-forwarded-prefix": "/x/"}
+    if gate:
+        headers["x-cookie-gate"] = gate
+    assert public_base(headers, gate_secret=SECRET, scheme="https", host="box", endpoint_id=EID) == (
+        f"https://box{ROOT}"
+    )
+
+
+@pytest.mark.parametrize(
+    "host, prefix",
+    [("evil.example/x", "/"), ("a b", "/"), ("ok.example", "no-slash"), ("ok.example", "/a/../b/"), ("", "/")],
+)
+def test_a_malformed_forwarded_address_falls_back(host, prefix):
+    headers = {"x-cookie-gate": SECRET, "x-forwarded-host": host, "x-forwarded-prefix": prefix}
+    assert public_base(headers, gate_secret=SECRET, scheme="https", host="box", endpoint_id=EID) == (
+        f"https://box{ROOT}"
+    )
