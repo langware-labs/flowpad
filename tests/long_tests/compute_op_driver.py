@@ -1,4 +1,4 @@
-"""Drive the ten compute ops INSIDE the container and print one JSON line per case.
+"""Drive the eleven compute ops INSIDE the container and print one JSON line per case.
 
 Runs in the container because that is the only place these goals mean anything:
 a real empty package index, a real PATH that does not include ``~/.local/bin``, a
@@ -77,14 +77,21 @@ async def main(names: list[str]) -> None:
         if name == "ripgrep-on-path":
             cold_apt_index()
         started = time.monotonic()
+        # Every rung that ran, in order — a retry shows up as its own row, and
+        # its process id says whether it really was the SAME process.
+        turns: list[dict] = []
         try:
             verdict = await run_op(
                 load(name), trusted=True, platform="linux",
                 workdir=Path("/work"),
+                on_probe=lambda phase, result: turns.append({
+                    "phase": phase, "process_id": result.process_id, "ok": result.ok,
+                    "timed_out": result.timed_out, "seconds": round(time.monotonic() - started, 1),
+                }),
             )
             row = {"case": name, "ok": verdict.ok, "exit_code": int(verdict.exit_code),
-                   "detail": verdict.detail, "pending": list(verdict.pending),
-                   "value": verdict.value}
+                   "detail": verdict.detail, "ran": verdict.ran,
+                   "value": verdict.value, "turns": turns}
         except Exception as error:  # a raise is a result too — the host asserts on it
             row = {"case": name, "ok": False, "error": f"{type(error).__name__}: {error}"}
         row["seconds"] = round(time.monotonic() - started, 1)

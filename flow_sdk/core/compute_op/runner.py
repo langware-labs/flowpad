@@ -176,7 +176,7 @@ async def _ask_the_question(
     platform: str,
     env: Optional[dict],
     shell: Callable[..., Awaitable[ShellResult]],
-) -> "tuple[CheckOutcome, Optional[str]]":
+) -> "tuple[CheckOutcome, Optional[ShellResult]]":
     """The check's verdict AND what it printed.
 
     A check that proves a goal usually also knows the answer — `flow secret get`
@@ -196,7 +196,7 @@ async def _ask_the_question(
         extra_env=env or {},
         platform=platform,
     )
-    return spec.outcome_for(result.returncode, timed_out=result.timed_out), result.stdout
+    return spec.outcome_for(result.returncode, timed_out=result.timed_out), result
 
 
 async def run_op(
@@ -242,11 +242,11 @@ async def _run(
     workdir = Path(workdir) if workdir else Path.cwd()
 
     seams.report.say(f"checking {spec.display_label}")
-    outcome, said = await _ask_the_question(
+    outcome, asked = await _ask_the_question(
         spec, workdir=workdir, platform=platform, env=seams.env, shell=seams.shell,
     )
     if outcome is CheckOutcome.SATISFIED:
-        return _already(spec, said)
+        return _already(spec, asked.stdout)
     if outcome is CheckOutcome.NOT_APPLICABLE:
         return ReturnedValue.not_applicable(f"{spec.display_label}: not applicable here.")
 
@@ -262,18 +262,41 @@ async def _run(
 
         # The attempt's own success is not the answer. The re-check is — unless
         # there is no check, in which case the rung's own report is all there is.
-        if spec.completion_check is None:
-            if result.ok:
-                return _value_of(spec, result)
-            continue
-        if await check_op(spec, workdir=workdir, platform=platform, env=seams.env, shell=seams.shell) is CheckOutcome.SATISFIED:
-            return _value_of(spec, result, detail=f"{spec.display_label}: the {result.kind} attempt did it.")
+        # An agent rung then gets its retries: the SAME process, told why.
+        for turn in range(attempt.retries + 1):
+            if turn:
+                seams.report.say(f"{spec.display_label}: agent retry {turn} of {attempt.retries}")
+                result = await _agent_attempt(attempt, spec, tried=tried, subject=subject, workdir=workdir,
+                                              platform=platform, seams=seams, retry_of=result.process_id, why=why)
+                tried.append(result)
+                seams.report.probe(f"{attempt.kind} retry {turn}", result)
+            done, why = await _verdict(spec, result, workdir=workdir, platform=platform, seams=seams)
+            if done:
+                if spec.completion_check is None:
+                    return _value_of(spec, result)
+                again = f" on retry {turn}" if turn else ""
+                return _value_of(spec, result, detail=f"{spec.display_label}: the {result.kind} attempt did it{again}.")
+            if not result.process_id or result.timed_out:
+                break  # nothing settled to prompt again: no process, or one still busy
 
     detail = (
         f"{spec.display_label}: {tried[-1].describe()}" if tried
         else f"{spec.display_label}: nothing here can reach this goal."
     )
     return ReturnedValue.not_yet(detail)
+
+
+async def _verdict(
+    spec: ComputeOpSpec, result: AttemptResult, *, workdir: Path, platform: str, seams: _Seams,
+) -> "tuple[bool, str]":
+    """Did the rung reach the goal — and if not, what a retry should be told."""
+    if spec.completion_check is None:
+        return result.ok, result.describe()
+    outcome, asked = await _ask_the_question(
+        spec, workdir=workdir, platform=platform, env=seams.env, shell=seams.shell,
+    )
+    check = _shell_attempt("check", spec.completion_check.command_for(platform), asked)
+    return outcome is CheckOutcome.SATISFIED, check.describe()
 
 
 def _already(spec: ComputeOpSpec, said: Optional[str]) -> ReturnedValue:
@@ -336,17 +359,9 @@ async def _attempt(
             extra_env=seams.env,
             platform=platform,
         )
-        out, out_cut = capped(result.stdout or "")
-        err, err_cut = capped(result.stderr or "")
-        return AttemptResult(
-            kind=str(attempt.kind), command=command, returncode=result.returncode,
-            timed_out=result.timed_out,
-            # ``tail`` already caps and prefers stderr — the useful half of a failure.
-            output=result.tail(PROBE_OUTPUT_CAP),
-            stdout=out, stderr=err, truncated=out_cut or err_cut,
-            duration_s=getattr(result, "duration_s", 0.0),
+        return _shell_attempt(
+            str(attempt.kind), command, result,
             value=value_from_stdout(result.stdout) if spec.output is not None else None,
-            ok=bool(result.ok),
         )
 
     if attempt.kind is AttemptKind.ASK:
@@ -354,6 +369,21 @@ async def _attempt(
 
     return await _agent_attempt(attempt, spec, tried=tried, subject=subject,
                                 workdir=workdir, platform=platform, seams=seams)
+
+
+def _shell_attempt(kind: str, command: str, result: ShellResult, *, value: Any = None) -> AttemptResult:
+    """One subprocess's result, as a rung reports it — a command rung, or the check."""
+    out, out_cut = capped(result.stdout or "")
+    err, err_cut = capped(result.stderr or "")
+    return AttemptResult(
+        kind=kind, command=command, returncode=result.returncode,
+        timed_out=result.timed_out,
+        # ``tail`` already caps and prefers stderr — the useful half of a failure.
+        output=result.tail(PROBE_OUTPUT_CAP),
+        stdout=out, stderr=err, truncated=out_cut or err_cut,
+        duration_s=getattr(result, "duration_s", 0.0),
+        value=value, ok=bool(result.ok),
+    )
 
 
 async def _ask_attempt(
@@ -391,13 +421,23 @@ async def _ask_attempt(
 async def _agent_attempt(
     attempt: AttemptSpec, spec: ComputeOpSpec, *, tried: list[AttemptResult],
     subject: str, workdir: Path, platform: str, seams: _Seams,
+    retry_of: Optional[str] = None, why: str = "",
 ) -> AttemptResult:
-    """A spawned harness with tools. It reports through a receipt it writes."""
+    """A spawned harness with tools. It reports through a receipt it writes.
+
+    ``retry_of`` names a process to prompt again: the SAME process gets a further
+    turn, told ``why`` it is not done — never re-told the whole task, which is
+    already in its session.
+    """
     path = receipt_path(workdir, spec.name or "op")
     # BEFORE the launch, always: a previous run's receipt read as this run's
-    # result reports the last run's success for a rung that did nothing.
+    # result reports the last run's success for a rung that did nothing. A
+    # retry clears it too: the first turn's receipt is not the second's.
     clear_receipt(path)
-    prompt = _prompt_for(spec, attempt.prompt, tried, platform=platform)
+    prompt = (
+        _retry_prompt(spec, why, platform=platform) if retry_of
+        else _prompt_for(spec, attempt.prompt, tried, platform=platform)
+    )
     if spec.output is not None:
         # The field HOLDS the authoring form, so it goes into the prompt as-is.
         # It used to hold a compiled `type`, which `json.dumps` cannot render —
@@ -413,17 +453,45 @@ async def _agent_attempt(
         target_typeid_str=subject,
         timeout_seconds=attempt.timeout,
         on_status=lambda progress: seams.report.say(getattr(progress, "text", "") or ""),
+        process_id=retry_of,
     )
     if spec.output is None:
         return AttemptResult(kind=str(attempt.kind), process_id=outcome.process_id or "",
-                             message=outcome.message, ok=bool(outcome.ok))
+                             message=outcome.message, ok=bool(outcome.ok), timed_out=outcome.timed_out)
     said = read_step_result(path, output=VALUE_KEY)
     return AttemptResult(
         kind=str(attempt.kind), process_id=outcome.process_id or "",
         message=said.summary or outcome.message, output=said.error,
-        value=said.value, ok=bool(outcome.ok and said.ok),
+        value=said.value, ok=bool(outcome.ok and said.ok), timed_out=outcome.timed_out,
     )
 
+
+
+def _done_when(spec: ComputeOpSpec, platform: str) -> str:
+    """The bar, as every prompt states it.
+
+    The RUN's platform, not this process's: the prompt must name the command
+    that will actually be re-asked, or the rung is told how to prove a
+    different machine's goal.
+    """
+    check = spec.completion_check.command_for(platform) if spec.completion_check is not None else None
+    return f"You are done only when this exits 0:\n\n    {check}" if check else ""
+
+
+def _retry_prompt(spec: ComputeOpSpec, why: str, *, platform: str) -> str:
+    """A further turn in the same session: why it is not done, and the bar again.
+
+    The task itself is already in the session. Restating it would read as a
+    new task; what the agent lacks is only the verdict it could not see.
+    """
+    parts = [
+        f"Your last turn ended, but the goal ({spec.display_label}) does not hold yet."
+        if spec.display_label else "Your last turn ended, but the goal does not hold yet.",
+        why,
+        "Find out why, fix it, and verify it yourself before you stop.",
+        _done_when(spec, platform),
+    ]
+    return "\n\n".join(part for part in parts if part)
 
 
 def _prompt_for(
@@ -440,10 +508,5 @@ def _prompt_for(
     if tried:
         already = "\n\n".join(f"- {result.describe()}" for result in tried)
         parts.append(f"Already tried, and the goal still does not hold:\n\n{already}")
-    # The RUN's platform, not this process's: the prompt must name the command
-    # that will actually be re-asked, or the rung is told how to prove a
-    # different machine's goal.
-    check = spec.completion_check.command_for(platform) if spec.completion_check is not None else None
-    if check:
-        parts.append(f"You are done only when this exits 0:\n\n    {check}")
+    parts.append(_done_when(spec, platform))
     return "\n\n".join(part.strip() for part in parts if part and part.strip())

@@ -87,6 +87,9 @@ class ProcessResult(DataSpec):
     process_id: Optional[str]
     ok: bool
     message: str = ""
+    #: The turn was still running when the budget ran out. Such a process is
+    #: busy, not finished — prompting it again would queue behind the turn.
+    timed_out: bool = False
 
 
 async def launch_step_process(
@@ -99,16 +102,28 @@ async def launch_step_process(
     target_typeid_str: str = "",
     timeout_seconds: float = 1800.0,
     on_status: Optional[Callable[[ProcessProgress], None]] = None,
+    process_id: Optional[str] = None,
 ) -> ProcessResult:
     """Spawn a headless agent process for one step and wait for it to settle.
+
+    With ``process_id``, prompt THAT process instead — a further turn in the
+    same session, which is what an op's retry is. Nothing is spawned, so the
+    agent, name and context of the first turn stand.
 
     ``on_status`` is called with a `ProcessProgress` as the agent works, so the
     step's row says what is happening rather than sitting still for the whole
     timeout. It rides `wait()`'s existing 2s poll — no new budget.
     """
+    if process_id:
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        process = await AgenticProcess.get_by_id(process_id)
+        if process is None:
+            return ProcessResult(process_id=process_id, ok=False, message=f"The agent process {process_id} no longer exists")
+        return await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status)
+
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
     from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
-    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
     try:
         worker_type = await resolve_default_worker_type()
@@ -134,11 +149,24 @@ async def launch_step_process(
     except Exception as exc:  # noqa: BLE001
         return ProcessResult(process_id=None, ok=False, message=f"Could not start the step's agent: {exc}")
 
-    process_id = str(process.id)
     if on_status is not None:
         # Immediately: the row should move when the process exists, not two
         # seconds later when the first poll lands.
         on_status(ProcessProgress(text="starting the agent"))
+    return await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status)
+
+
+async def _prompt_and_wait(
+    process: Any,
+    prompt: str,
+    *,
+    timeout_seconds: float,
+    on_status: Optional[Callable[[ProcessProgress], None]],
+) -> ProcessResult:
+    """One turn: prompt, then wait for the process to settle."""
+    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+
+    process_id = str(process.id)
     try:
         start = await process.prompt(prompt)
     except Exception as exc:  # noqa: BLE001
@@ -155,7 +183,8 @@ async def launch_step_process(
             ),
         )
     except TimeoutError:
-        return ProcessResult(process_id=process_id, ok=False, message=f"Agent did not finish within {timeout_seconds:.0f}s")
+        return ProcessResult(process_id=process_id, ok=False, timed_out=True,
+                             message=f"Agent did not finish within {timeout_seconds:.0f}s")
     except Exception as exc:  # noqa: BLE001
         return ProcessResult(process_id=process_id, ok=False, message=f"Agent run failed: {exc}")
 

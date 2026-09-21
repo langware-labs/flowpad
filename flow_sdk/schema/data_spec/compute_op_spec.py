@@ -49,7 +49,7 @@ from __future__ import annotations
 import sys
 from typing import ClassVar, Optional
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
@@ -136,13 +136,18 @@ class AttemptSpec(DataSpec):
     prompt: str = ""
     #: ``agent``: display name for the spawned process. Falls back to the op's label.
     name: str = ""
-    #: Absent ⇒ this kind's default.
+    #: ``agent``: how many more times the SAME process is prompted when its turn
+    #: ends and the completion check still fails. A retry is a new turn in the
+    #: same session, told what the check said — the agent keeps what it already
+    #: learned, which a fresh process would pay to rediscover. 0 ⇒ one turn.
+    retries: int = Field(default=0, ge=0)
+    #: Absent ⇒ this kind's default. Per turn: a retry gets the same budget.
     timeout_seconds: Optional[float] = None
 
     #: Which fields belong to which kind — the validator's whole table.
     FIELDS: ClassVar[dict[str, tuple[str, ...]]] = {
         AttemptKind.COMMAND: ("commands",),
-        AttemptKind.AGENT: ("agent", "prompt", "name"),
+        AttemptKind.AGENT: ("agent", "prompt", "name", "retries"),
         # An ask declares no shape of its own: the op's ``output`` is what the
         # person is being asked for, so a second declaration could only disagree
         # with the first.
