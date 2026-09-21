@@ -365,3 +365,56 @@ async def test_direct_url_inside_a_sandbox_is_the_boxs_public_host(client, monke
     endpoint = await _endpoint(supports_direct_access=True, backend={"type": "proxy", "port": 8765})
     resp = await client.get(_direct(endpoint))
     assert resp.json()["data"]["url"] == "https://8765-sbx123.e2b.dev"
+
+
+# =============================================================================
+# A static app's <base>: where the BROWSER is, never the request's own path
+# =============================================================================
+
+
+async def _static_site(tmp_path):
+    (tmp_path / "index.html").write_text("<!doctype html><html><head></head><body><script src=app.js></script></body></html>")
+    (tmp_path / "app.js").write_text("console.log('served')")
+    return await _endpoint(name="site", protocol={"spec_kind": PROTOCOL_WEB_APP}, backend={"type": "static", "root": str(tmp_path)})
+
+
+def _base_of(html: str) -> str:
+    import re
+
+    return re.search(r'<base href="([^"]+)"', html).group(1)
+
+
+async def test_a_deep_link_is_based_at_the_endpoint_root_and_its_asset_resolves(client, tmp_path):
+    endpoint = await _static_site(tmp_path)
+    page = await client.get(_url(endpoint, "about/team"))
+    base = _base_of(page.text)
+    assert base == f"http://testserver/api/v1/graph/service_endpoint/{endpoint.id}/service/"
+    from urllib.parse import urljoin, urlsplit
+
+    asset = await client.get(urlsplit(urljoin(base, "app.js")).path)
+    assert asset.status_code == 200 and asset.text == "console.log('served')"
+
+
+async def test_behind_the_hub_the_page_is_based_where_the_hub_serves_it(client, tmp_path, monkeypatch):
+    import flow_sdk.instance_settings.cookie_gate as gate
+
+    monkeypatch.setattr(gate, "get_cookie_gate", lambda: GATE)
+    endpoint = await _static_site(tmp_path)
+    own_origin = {
+        GATE_HEADER: GATE,
+        "x-forwarded-host": f"{endpoint.id}.flowpad.app",
+        "x-forwarded-proto": "https",
+        "x-forwarded-prefix": "/",
+    }
+    page = await client.get(_url(endpoint), headers=own_origin)
+    assert _base_of(page.text) == f"https://{endpoint.id}.flowpad.app/"
+
+
+async def test_a_client_cannot_move_the_pages_assets(client, tmp_path, monkeypatch):
+    import flow_sdk.instance_settings.cookie_gate as gate
+
+    monkeypatch.setattr(gate, "get_cookie_gate", lambda: GATE)
+    endpoint = await _static_site(tmp_path)
+    forged = {GATE_HEADER: "not-the-gate", "x-forwarded-host": "evil.example", "x-forwarded-prefix": "/"}
+    page = await client.get(_url(endpoint), headers=forged)
+    assert "evil.example" not in _base_of(page.text)
