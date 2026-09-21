@@ -60,6 +60,7 @@ from .routes import (
     detection_router,
     directory_router,
     display_router,
+    snippet_router,
     docs_graph_router,
     favorites_router,
     git_router,
@@ -710,6 +711,7 @@ server.add_router(ingest_router)
 server.add_router(runs_router)
 server.add_router(tags_router)
 server.add_router(display_router)
+server.add_router(snippet_router)
 server.add_router(asset_share_router)
 server.add_router(subgraph_router)
 server.add_router(ask_router)

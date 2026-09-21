@@ -51,6 +51,10 @@ export enum PrefKey {
   VIEW_MODE = 'preferences.ui.view_mode',
   VIBE_MODEL_TIER = 'preferences.ui.vibe_model_tier',
   CHAT_SHOW_TOOLS = 'preferences.chat.show_tools',
+  // Snippet view (flow show snippet): folded regions and the Run budget.
+  SNIPPET_SHOW_INIT = 'preferences.editor.snippet_show_init',
+  SNIPPET_SHOW_IMPORTS = 'preferences.editor.snippet_show_imports',
+  SNIPPET_RUN_TIMEOUT = 'preferences.editor.snippet_run_timeout',
   ONBOARDING_DISMISSED = 'preferences.ui.onboarding_dismissed',
   SHOW_SYSTEM_PROJECTS = 'preferences.ui.show_system_projects',
   // Per-folder indexing consent (macOS-TCC / cross-OS special folders):
@@ -439,6 +443,30 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description: 'Show tool calls, reasoning, and status chips in the chat transcript.',
     dataType: PrefDataType.BOOL,
     defaultValue: false,
+  },
+  [PrefKey.SNIPPET_SHOW_INIT]: {
+    key: PrefKey.SNIPPET_SHOW_INIT,
+    category: 'editor',
+    label: 'Show snippet init',
+    description: "Show a code snippet's init region (hidden by default).",
+    dataType: PrefDataType.BOOL,
+    defaultValue: false,
+  },
+  [PrefKey.SNIPPET_SHOW_IMPORTS]: {
+    key: PrefKey.SNIPPET_SHOW_IMPORTS,
+    category: 'editor',
+    label: 'Show snippet imports',
+    description: "Show a code snippet's hidden (imports) region.",
+    dataType: PrefDataType.BOOL,
+    defaultValue: false,
+  },
+  [PrefKey.SNIPPET_RUN_TIMEOUT]: {
+    key: PrefKey.SNIPPET_RUN_TIMEOUT,
+    category: 'editor',
+    label: 'Snippet run timeout (seconds)',
+    description: 'A snippet still running after this long is killed, with its output so far.',
+    dataType: PrefDataType.NUMBER,
+    defaultValue: 30,
   },
   [PrefKey.ONBOARDING_DISMISSED]: {
     key: PrefKey.ONBOARDING_DISMISSED,

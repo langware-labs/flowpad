@@ -109,7 +109,10 @@ async def run_shell(
     forever waiting for an answer nobody is there to give.
     """
     platform = platform or sys.platform
-    env = {**os.environ, **(extra_env or {})}
+    # Unbuffered Python: stdout is a pipe here, so Python block-buffers it, and
+    # the kill on a timeout drops the buffer — a step that printed and then hung
+    # would report nothing at all. The caller's env still wins.
+    env = {**os.environ, "PYTHONUNBUFFERED": "1", **(extra_env or {})}
     t0 = time.monotonic()
     try:
         proc = await _spawn(command, cwd=str(workdir), env=env, platform=platform)
@@ -119,13 +122,18 @@ async def run_shell(
         return ShellResult(returncode=None, stderr=str(exc), duration_s=time.monotonic() - t0)
 
     timed_out = False
+    # Not `wait_for(communicate())`: cancelling communicate on timeout throws
+    # away what it had already read, so a command that printed and then hung
+    # came back with no output at all — exactly the output that says where it
+    # hung. Reading to EOF under a shield keeps it; the kill closes the pipes.
+    finished = asyncio.ensure_future(asyncio.gather(proc.stdout.read(), proc.stderr.read(), proc.wait()))
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+        stdout, stderr, _ = await asyncio.wait_for(asyncio.shield(finished), timeout=timeout_seconds)
     except asyncio.TimeoutError:
         kill_process_tree(proc)
         timed_out = True
         try:
-            stdout, stderr = await proc.communicate()
+            stdout, stderr, _ = await finished
         except Exception:  # noqa: BLE001 — the kill already decided the outcome
             stdout, stderr = b"", b""
     return ShellResult(
