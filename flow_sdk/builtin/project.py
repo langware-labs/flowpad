@@ -1076,11 +1076,18 @@ class Project(Entity):
             self.hub_published_at = _now_iso()
             if not recipients:
                 return self
+            # A grant is idempotent in intent, but inviting someone who already
+            # holds a role is a 400 on the hub ("User has already accepted; use
+            # change_role…"). Left alone, re-sharing a project — or sending the
+            # note after the grant already landed — fails the whole share with
+            # hub_publish_failed. Read the roster once and invite only who is
+            # missing: an existing member already HAS what this call grants.
+            already = await self._hub_member_emails(client)
             for email in recipients:
                 if not email or not isinstance(email, str):
                     continue
                 email = normalize_email(email)
-                if not email:
+                if not email or email in already:
                     continue
                 await client.post(
                     f"/graph/project/{self.id}/members",
@@ -1092,6 +1099,30 @@ class Project(Entity):
                     },
                 )
         return self
+
+    async def _hub_member_emails(self, client) -> set[str]:
+        """Emails already on this project's hub roster (any status).
+
+        An unreadable roster returns an empty set, which falls through to
+        inviting everyone — the behaviour before this read existed — so a roster
+        outage can only cost a redundant invite, never a missing one.
+        """
+        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+
+        try:
+            rows = await client.get(f"/graph/project/{self.id}/members")
+        except Exception:  # noqa: BLE001 — degrade to the old invite-everyone path
+            logging.warning("[project.share] roster read failed for %s; inviting all", self.id)
+            return set()
+        emails: set[str] = set()
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            for key in ("user_email", "email", "recipient_email"):
+                email = normalize_email(row.get(key) or "")
+                if email:
+                    emails.add(email)
+        return emails
 
     async def setup_from_git_origin(self) -> "Project":
         """Materialize this shared project into a local Git worktree.
