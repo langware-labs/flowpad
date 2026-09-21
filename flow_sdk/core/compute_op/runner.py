@@ -8,14 +8,13 @@ progress through ``on_status`` / ``on_probe`` rather than by handing down a node
 
 The loop, in full:
 
-    requires (in order, each a full run)
-      → check   SATISFIED       ⇒ return, nothing ran
-                NOT_APPLICABLE  ⇒ return, nothing ran
-                absent          ⇒ EXECUTE: this op is a call, not a goal
-      → for each attempt, cheapest first:
-            act  →  check again
-            satisfied (or no check) ⇒ return, naming the rung that did it
-      → attempts exhausted ⇒ NOT_YET, pending names the op
+    check   SATISFIED       ⇒ return, nothing ran
+            NOT_APPLICABLE  ⇒ return, nothing ran
+            absent          ⇒ EXECUTE: this op is a call, not a goal
+    → for each attempt, cheapest first:
+          act  →  check again
+          satisfied (or no check) ⇒ return, naming the rung that did it
+    → attempts exhausted ⇒ NOT_YET
 
 Four properties follow from that shape and are what the tests pin:
 
@@ -36,7 +35,6 @@ Four properties follow from that shape and are what the tests pin:
 from __future__ import annotations
 
 import asyncio
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
@@ -54,10 +52,6 @@ from flow_sdk.schema.data_spec.compute_op_spec import (
 )
 from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
 from flow_sdk.schema.data_spec.spec import DataSpec
-
-#: Resolve a name in ``requires`` to its spec. Injected: the runner does not
-#: know what an index is.
-SpecResolver = Callable[[str], Awaitable[Optional[ComputeOpSpec]]]
 
 #: The name an op's returned value is written under, in a receipt and in scope.
 VALUE_KEY = "value"
@@ -145,7 +139,6 @@ class _Seams:
 
     shell: Callable[..., Awaitable[ShellResult]] = run_shell
     launch: Callable[..., Awaitable[ProcessResult]] = launch_step_process
-    resolve: Optional[SpecResolver] = None
     #: Values a caller put in scope. They reach a command as ENVIRONMENT, never
     #: spliced into it — an argument of ``; rm -rf /`` must not be executable.
     env: dict = field(default_factory=dict)
@@ -153,10 +146,6 @@ class _Seams:
     #: a SHORTER span than the product default; nothing here ever lengthens it.
     ask_timeout: float = ASK_TIMEOUT_SECONDS
     report: _Report = field(default_factory=_Report)
-    #: Dependency specs already looked up in THIS run. Resolving is a row query
-    #: plus a document read, and a prerequisite several ops name would otherwise
-    #: pay for it once per namer. Per-run, so nothing can go stale between runs.
-    resolved: dict[str, Optional[ComputeOpSpec]] = field(default_factory=dict)
 
 
 async def check_op(
@@ -217,7 +206,6 @@ async def run_op(
     trusted: bool = False,
     workdir: Optional[Path] = None,
     platform: str = "",
-    resolve: Optional[SpecResolver] = None,
     env: Optional[dict] = None,
     shell: Callable[..., Awaitable[ShellResult]] = run_shell,
     launch: Callable[..., Awaitable[ProcessResult]] = launch_step_process,
@@ -226,17 +214,16 @@ async def run_op(
     #: How long an ``ask`` rung waits. A caller may give a person LESS time than
     #: the product default; there is no way to give them more from here.
     ask_timeout: float = ASK_TIMEOUT_SECONDS,
-    _seen: Optional[tuple[str, ...]] = None,
 ) -> ReturnedValue:
     """Reach the goal or produce the value, or say precisely what is missing."""
     seams = _Seams(
-        shell=shell, launch=launch, resolve=resolve,
+        shell=shell, launch=launch,
         env=dict(env or {}),
         ask_timeout=ask_timeout,
         report=_Report(on_status=on_status, on_probe=on_probe),
     )
     return await _run(spec, subject=subject, trusted=trusted, workdir=workdir,
-                      platform=platform, seams=seams, seen=_seen)
+                      platform=platform, seams=seams)
 
 
 async def _run(
@@ -247,19 +234,12 @@ async def _run(
     workdir: Optional[Path],
     platform: str,
     seams: _Seams,
-    seen: Optional[tuple[str, ...]],
 ) -> ReturnedValue:
     if not trusted:
         raise ComputeOpNotApproved(
             f"{spec.display_label or 'This op'} runs on this machine and has not been approved."
         )
     workdir = Path(workdir) if workdir else Path.cwd()
-    chain = (seen or ()) + (spec.name,)
-
-    blocked = await _requires(spec, chain=chain, subject=subject, trusted=trusted,
-                              workdir=workdir, platform=platform, seams=seams)
-    if blocked is not None:
-        return blocked
 
     seams.report.say(f"checking {spec.display_label}")
     outcome, said = await _ask_the_question(
@@ -296,50 +276,6 @@ async def _run(
     return ReturnedValue.not_yet(detail)
 
 
-async def _requires(
-    spec: ComputeOpSpec, *, chain: tuple[str, ...], subject: str, trusted: bool,
-    workdir: Path, platform: str, seams: _Seams,
-) -> Optional[ReturnedValue]:
-    """Run what must hold first. Returns the blocker's answer, or None to proceed.
-
-    Each dependency's value lands in scope by its field names, as environment —
-    never spliced into a command, the same rule every other value obeys.
-    """
-    given: dict[str, str] = {}   # field -> which dependency supplied it
-    for dependency in spec.requires:
-        if dependency in chain:
-            # A cycle is a bug in the documents, not a runtime condition to ride out.
-            raise ValueError(f"compute_op cycle: {' → '.join([*chain, dependency])}")
-        if seams.resolve is None:
-            return ReturnedValue.not_found(
-                    f"{spec.display_label} requires {dependency!r}, and nothing can resolve it here.",
-                )
-        if dependency not in seams.resolved:
-            seams.resolved[dependency] = await seams.resolve(dependency)
-        required = seams.resolved[dependency]
-        if required is None:
-            return ReturnedValue.not_found(
-                    f"{spec.display_label} requires {dependency!r}, which does not exist.",
-                )
-        answer = await _run(required, subject=subject, trusted=trusted, workdir=workdir,
-                            platform=platform, seams=seams, seen=chain)
-        if not answer.ok:
-            # Its detail already says what is wrong; do not restate it as ours.
-            return answer
-        # What it produced is what this op was waiting for. It used to be
-        # dropped here — `requires` ordered two ops but could not pass a value
-        # between them, which left a wizard as the only thing that could.
-        for name, text in _into_scope(dependency, answer.value).items():
-            if name in given:
-                raise ValueError(
-                    f"{spec.display_label}: {given[name]!r} and {dependency!r} both return "
-                    f"`{name}` — ambiguous which one this op means"
-                )
-            given[name] = dependency
-            seams.env[name] = text
-    return None
-
-
 def _already(spec: ComputeOpSpec, said: Optional[str]) -> ReturnedValue:
     """A satisfied op's answer — including its VALUE, read off what the check printed."""
     done = f"{spec.display_label}: already satisfied."
@@ -356,22 +292,6 @@ def _already(spec: ComputeOpSpec, said: Optional[str]) -> ReturnedValue:
             f"not match this op's declared output — {error}",
         )
     return ReturnedValue.satisfied(done, value, ran=False)
-
-
-def _into_scope(dependency: str, value: Any) -> "dict[str, str]":
-    """A dependency's value as environment entries, one per declared field.
-
-    A shaped value contributes its fields (`{token: …}` becomes `$token`); a bare
-    one is named after the op that produced it. Everything is text, because the
-    environment is — a structured field is JSON.
-    """
-    if value is None:
-        return {}
-    if hasattr(value, "model_dump"):
-        value = value.model_dump(mode="json")
-    if not isinstance(value, dict):
-        value = {"".join(c if c.isalnum() else "_" for c in dependency): value}
-    return {str(k): v if isinstance(v, str) else json.dumps(v) for k, v in value.items()}
 
 
 def _value_of(spec: ComputeOpSpec, result: AttemptResult, *, detail: str = "") -> ReturnedValue:

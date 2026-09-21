@@ -31,7 +31,7 @@ def test_the_rig_has_its_ten_cases():
 @pytest.mark.parametrize("name", NAMES)
 def test_every_op_parses_and_is_addressable_by_its_folder(name):
     spec = _spec(name)
-    # The folder name IS the handle `requires` and `flow op run` use; a document
+    # The folder name IS the handle `flow op run` uses; a document
     # whose `name` drifts from its folder is unreachable by the name people type.
     assert spec.name == name
     assert spec.display_label
@@ -43,12 +43,6 @@ def test_every_op_says_how_a_person_would_do_it(name):
     # `setup` is what the agent rung is handed. An op without it asks a model to
     # invent a procedure for someone's machine.
     assert _spec(name).setup.strip(), f"{name} ships no setup.md"
-
-
-@pytest.mark.parametrize("name", NAMES)
-def test_requires_name_ops_that_exist(name):
-    for dependency in _spec(name).requires:
-        assert dependency in NAMES, f"{name} requires {dependency!r}, which is not in the rig"
 
 
 def test_the_cases_cover_the_mechanisms_they_were_chosen_for():
@@ -63,8 +57,5 @@ def test_the_cases_cover_the_mechanisms_they_were_chosen_for():
 
     # A skip that is not a failure.
     assert specs["apk-cache-warm"].not_applicable_codes == [3]
-    # A chain three deep.
-    assert specs["deps-installed"].requires == ["repo-cloned"]
-    assert specs["repo-cloned"].requires == ["git-on-path"]
     # The negative.
     assert specs["unreachable"].attempts, "the negative case must still TRY something"

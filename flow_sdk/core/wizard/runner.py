@@ -39,7 +39,6 @@ from flow_sdk.core.compute.exec import PROBE_OUTPUT_CAP, ShellResult, run_shell
 from flow_sdk.core.compute.process_step import ProcessResult, launch_step_process
 from flow_sdk.core.compute_op.runner import AttemptResult, ComputeOpNotApproved, run_op
 from flow_sdk.core.wizard.state import input_env
-from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
 from flow_sdk.schema.data_spec.wizard_spec import (
     ON_FAIL_ABORT,
@@ -414,7 +413,7 @@ async def _call_op(run: _Run, step: WizardStepSpec, child: Any) -> StepOutcome:
     answer = await run_op(
         found.spec, subject=run.subject_entity or "", trusted=True,
         workdir=run.workdir, platform=run.platform,
-        resolve=_op_specs(run), shell=run.shell, launch=run.launch,
+        shell=run.shell, launch=run.launch,
         env=input_env(_scope(run, step)),
         on_status=lambda text: child.current(text),
         on_probe=lambda phase, result: probes.append(StepProbe.of_attempt(phase, result)),
@@ -458,23 +457,6 @@ def _scope(run: _Run, step: WizardStepSpec) -> dict:
     for parameter, source in step.args.items():
         values[parameter] = run.values.get(source, source)
     return values
-
-
-def _op_specs(run: _Run):
-    """``requires`` resolution for the op runner: the spec only, trust already decided."""
-    async def resolve(name: str) -> Optional[ComputeOpSpec]:
-        if run.resolve_op is None:
-            return None
-        found = await run.resolve_op(name)
-        if found is None:
-            return None
-        if not found.trusted and not run.approved:
-            raise ComputeOpNotApproved(
-                f"{name!r} is required here but this instance does not ship it."
-            )
-        return found.spec
-
-    return resolve
 
 
 def _outcome_of(step: WizardStepSpec, answer: ReturnedValue, probes: tuple[StepProbe, ...]) -> StepOutcome:

@@ -240,19 +240,6 @@ def test_a_service_goal_is_reached_and_then_left_alone(funded):
     assert second["ok"] and "already satisfied" in second["detail"]
 
 
-# ── composition ──────────────────────────────────────────────────────────────
-
-def test_a_chain_three_deep_proves_each_link_before_the_next(funded):
-    rows = _drive(funded, "deps-installed")
-    assert rows["deps-installed"]["ok"], rows
-    # Only the goal reports; its dependencies ran inside it. That they ran is
-    # visible in the machine: git exists, the clone is there, the import works.
-    checks = _exec(funded["name"],
-                   "command -v git >/dev/null && test -d /work/demo-repo/.git && "
-                   "python3 -c 'import tabulate' && echo CHAIN-OK")
-    assert "CHAIN-OK" in checks.stdout, checks.stderr[-800:]
-
-
 # ── the asset and CLI layer ──────────────────────────────────────────────────
 
 def test_the_asset_layer_round_trips_and_answers_flow_op_check(funded):

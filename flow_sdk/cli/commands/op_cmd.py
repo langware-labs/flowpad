@@ -102,7 +102,7 @@ def _find(name: str) -> dict:
 def list_ops() -> None:
     rows = _rows(get_graph_json(_url("compute_op"), on_error=_on_error()))
     ok({"ops": [
-        {k: row.get(k) for k in ("name", "description", "requires", "shipped", "enabled")}
+        {k: row.get(k) for k in ("name", "description", "shipped", "enabled")}
         for row in rows
     ]})
 

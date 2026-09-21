@@ -21,13 +21,12 @@ Three things here are load-bearing:
   to act at all; after each attempt it is the proof. Two fields would let an
   author make them disagree, and the fast-then-slow idiom then writes the same
   condition twice. A gate that genuinely differs from its proof is a SECOND op,
-  named in ``requires``.
+  and whoever needs both runs both.
 * **It is OPTIONAL.** With one, the op is convergent: re-running is free and a
   satisfied goal does nothing. Without one there is no "already done" state, so
   the op always runs — which is what a value-producing call is. Absent means
   *always execute*, never ``not_applicable``.
-* **``attempts`` is an ordered OR.** ``requires`` is an AND — every one must
-  hold. ``attempts`` are tried in turn until the completion check passes, which
+* **``attempts`` is an ordered OR.** They are tried in turn until the completion check passes, which
   is why a cheap shell one-liner can sit in front of an agent instead of every
   install costing a model.
 
@@ -193,10 +192,6 @@ class ComputeOpSpec(AssetDocumentSpec):
     name: str = ""
     label: str = ""
     description: str = ""
-    #: Goals that must hold BEFORE this one is attempted — an AND. Composition
-    #: lives here rather than in a private precondition, so a shared prerequisite
-    #: (docker is running) is one op that many ops name, not one clause each.
-    requires: list[str] = []
     #: When this op is already done. Absent ⇒ it always runs: a call, not a goal.
     completion_check: Optional[CommandSpec] = None
     #: Exit codes from the completion check that mean "not this machine's

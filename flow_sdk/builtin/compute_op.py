@@ -3,15 +3,15 @@
 Folder layout::
 
     <scope>/agentic-assets/compute_op/<name>/
-        compute_op.json     # the check, the attempts, what it requires, what it returns
+        compute_op.json     # the check, the attempts, what it returns
         setup.md            # how a person does it by hand
 
 Disk is the truth for what an op DOES; the row carries what a list needs and
 ``spec()`` re-reads the document, so editing the json changes behaviour with no
 re-save — the same contract the Wizard keeps.
 
-This module owns the three things the pure runner deliberately does not: lookup
-(``requires`` resolution), the Activity node, and the trust decision. The state
+This module owns the two things the pure runner deliberately does not: the
+Activity node, and the trust decision. The state
 machine itself is ``flow_sdk/core/compute_op/runner.py`` and has no I/O, which is
 what lets the whole block be driven in a REPL and inside a container with nothing
 indexed.
@@ -55,7 +55,6 @@ class ComputeOp(Entity):
     label: str = APIField(default="", description="What a person calls this goal.")
     description: str = APIField(default="")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
-    requires: list[str] = APIField(default_factory=list, description="Goals that must hold first.")
     completion_check: Optional[CommandSpec] = APIField(default=None, description="When this op is already done; absent means it always runs.")
     not_applicable_codes: list[int] = APIField(default_factory=list, description="Completion-check exit codes that mean \"not this machine\".")
     attempts: list[AttemptSpec] = APIField(default_factory=list, description="Ordered cheapest-first: command, prompt, agent.")
@@ -66,7 +65,7 @@ class ComputeOp(Entity):
 
     @classmethod
     async def by_name(cls, name: str) -> Optional["ComputeOp"]:
-        """The op named ``name``, or None. Names are the handle ``requires`` uses."""
+        """The op named ``name``, or None."""
         return await cls.get_one({"name": name})
 
     def spec(self) -> Optional["ComputeOpSpec"]:
@@ -108,15 +107,6 @@ class ComputeOp(Entity):
     def shipped(self) -> bool:
         """The trust answer on the wire — ``is_system()`` is a method and never reaches the UI."""
         return self.is_system()
-
-    async def _resolver(self):
-        """Resolve a ``requires`` name to its spec. This is the lookup the pure
-        runner refuses to know how to do."""
-        async def resolve(name: str):
-            row = await ComputeOp.by_name(name)
-            return row.spec() if row is not None else None
-
-        return resolve
 
     async def check(self, *, platform: str = "") -> "CheckOutcome":
         """Ask this op's question. Cheap, side-effect free, safe on a schedule —
@@ -172,7 +162,7 @@ class ComputeOp(Entity):
             node.label(spec.display_label)
             answer = await run_op(
                 spec, subject=subject or str(self.typeid), trusted=True,
-                workdir=workdir, resolve=await self._resolver(),
+                workdir=workdir,
                 on_status=lambda text: node.current(text),
             )
             node.current(answer.detail)
@@ -206,6 +196,6 @@ class ComputeOp(Entity):
             answer = await self.run(approved=approved)
         except ComputeOpNotApproved as refusal:
             return ApiFailResponse(message=str(refusal), status_code=403)
-        except ValueError as bad_document:  # a requires cycle
+        except ValueError as bad_document:  # a document the runner cannot use
             return ApiFailResponse(message=str(bad_document), status_code=400)
         return ApiSuccessResponse(data=answer.model_dump(mode="json"))
