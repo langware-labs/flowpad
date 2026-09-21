@@ -165,7 +165,7 @@ class ViewType(StrEnum):
     CREDENTIALS = "credentials"  # Env vars + OAuth connections + API keys
     # An Artifact-backed web app - /dock/app/artifact-<uuid>[?runtime=dev|served].
     # The ADDRESS is the artifact (the source plane); the runtime it is served from
-    # is DERIVED at resolve time from its Deployment/MicroApp companions, so a dev
+    # is DERIVED at resolve time from its Deployment/WebApp companions, so a dev
     # server that dies or a build that lands never changes the app's identity.
     # Named `app`, not `artifact`: `artifact` is a real EntityType, and a ViewType
     # whose string shadows one mints entity targets from a bare-id pointer

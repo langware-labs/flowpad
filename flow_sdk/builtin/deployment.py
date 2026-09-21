@@ -3,7 +3,7 @@
 Every placement is this entity, whatever is placed and wherever it lands:
 
     Agent      → a sandbox of its own            (kind ``runtime.agent``)
-    MicroApp   → a dev server, or a sandbox      (kind ``runtime.web``)
+    WebApp   → a dev server, or a sandbox      (kind ``runtime.web``)
     ComputeNode→ a desktop                       (kind ``compute.node``)
     GCP/AWS/…  → an inventoried cloud resource   (kind ``gcp.*``)
 
@@ -340,7 +340,7 @@ class Deployment(Entity):
         return await ServiceEndpoint.of_deployment(str(self.typeid))
 
     async def element(self) -> Optional[Entity]:
-        """The entity this places — the parent. Agent, MicroApp, ComputeNode…
+        """The entity this places — the parent. Agent, WebApp, ComputeNode…
 
         Resolved through the registry rather than a per-kind ``if`` ladder, so a
         new deployable element needs no change here. ``TypeId`` has no

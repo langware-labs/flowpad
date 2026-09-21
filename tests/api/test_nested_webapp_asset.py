@@ -3,7 +3,7 @@
 This is the replacement for the editor action that used to live beside it. The
 point of the change is that there is no longer a second implementation to test:
 an editor is a `micro_app` like any other, so it is discovered by the ordinary
-repo walker, served by ``MicroApp.view``, and addressed by its own row. What is
+repo walker, served by ``WebApp.view``, and addressed by its own row. What is
 worth pinning is that the whole chain actually holds together — discovery gives
 the app a PARENT, and serving reaches the app's own folder and nothing above it.
 """
@@ -56,14 +56,14 @@ async def _index(root: Path) -> dict:
     )
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.DATA_DRIVER, RecordType.MICRO_APP]))
     from flow_sdk.builtin.data_driver import DataDriver
-    from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
     # Scoped to THIS tree, not to the name: "demo"/"editor" are ordinary words and
     # the DB is shared across the suite, so a name lookup can answer with another
     # test's row and pass or fail for the wrong reason.
     under = str(root.resolve())
     specs = [s for s in await DataDriver.get_all({"name": "demo"}) if str(s.asset_ref).startswith(under)]
-    apps = [a for a in await MicroApp.get_all({"name": "editor"}) if str(a.asset_ref).startswith(under)]
+    apps = [a for a in await WebApp.get_all({"name": "editor"}) if str(a.asset_ref).startswith(under)]
     return {"spec": specs[0] if specs else None, "app": apps[0] if apps else None}
 
 

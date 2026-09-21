@@ -5,8 +5,8 @@ from .codebase import AppCodebase as Codebase
 # from .compute_node import ComputeNode
 from .job import Job
 from .job_execution import JobExecution
-from .micro_app import MicroApp
+from .micro_app import WebApp
 from .system_job import SystemJob
 
-__all__ = ["Codebase", "Job", "JobExecution", "MicroApp", "SystemJob"]
+__all__ = ["Codebase", "Job", "JobExecution", "WebApp", "SystemJob"]
 # "ComputeNode" is available but requires explicit import due to external dependencies

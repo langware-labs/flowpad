@@ -1,13 +1,13 @@
-"""MicroApp — the *delivery* plane of an app.
+"""WebApp — the *delivery* plane of an app.
 
 Three planes describe one app, each an entity that can exist without the others:
 
     Artifact (kind: application.web)   source   — what it is, where the code lives
       ├── Deployment  (artifact_id)    runtime  — a dev server on a port
-      └── MicroApp    (artifact_id)    delivery — built output served over HTTP
+      └── WebApp    (artifact_id)    delivery — built output served over HTTP
 
-``Deployment.artifact_id`` established this companion shape; MicroApp is the same
-pattern for the half Deployment deliberately does not cover. A MicroApp with an
+``Deployment.artifact_id`` established this companion shape; WebApp is the same
+pattern for the half Deployment deliberately does not cover. A WebApp with an
 ``artifact_id`` is an app's built output; one without is a standalone folder or
 builtin bundle (how the console itself is served in cloud), which is why the FK
 is optional rather than required.
@@ -47,7 +47,7 @@ def get_micro_app_folder(app_name: str) -> str:
     return str(get_micro_apps_root() / app_name)
 
 
-class MicroApp(Entity):
+class WebApp(Entity):
     type: str = APIField(default=BuiltinEntityType.MICRO_APP.value)
     code_base: Optional[AppCodebase] = NoDbBField(None)
     # Declared as APIFields so the delivery row is legible over the API. They
@@ -181,11 +181,11 @@ class MicroApp(Entity):
         return self.location_type == AppLocationType.Asset
 
     @classmethod
-    async def get_by_name(cls, name: str) -> Optional["MicroApp"]:
+    async def get_by_name(cls, name: str) -> Optional["WebApp"]:
         return await cls.get_one({"name": name})
 
     @classmethod
-    async def get_by_artifact_id(cls, artifact_id: str) -> Optional["MicroApp"]:
+    async def get_by_artifact_id(cls, artifact_id: str) -> Optional["WebApp"]:
         return await cls.get_one({"artifact_id": artifact_id})
 
     @action.get()
@@ -227,3 +227,9 @@ class MicroApp(Entity):
             api_url_scheme=default_service_config.service_urls_config.api_url_scheme,
             cache_control=self.cache_control,
         )
+
+
+#: The name this class had while it was also the delivery row of an app. Kept
+#: importable for code outside this repo; the type value stays ``micro_app``
+#: because it is in every saved ``/dock/app/micro_app-<id>`` link.
+MicroApp = WebApp

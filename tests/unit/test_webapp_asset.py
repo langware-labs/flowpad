@@ -16,7 +16,7 @@ import pytest
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — enrolls MICRO_APP
 from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, AssetClass
-from flow_sdk.builtin.faas.micro_app import MicroApp
+from flow_sdk.builtin.faas.micro_app import WebApp
 from flow_sdk.builtin.faas.serve_static import AppNotBuilt, serve_app_bytes
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -125,13 +125,13 @@ def test_serving_root_is_the_build_inside_the_app_folder(tmp_path):
     app = tmp_path / "app"
     (app / "dist").mkdir(parents=True)
 
-    row = MicroApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(app), build="dist")
+    row = WebApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(app), build="dist")
     assert row.serving_root() == (app / "dist").resolve()
 
 
 def test_a_static_app_serves_out_of_its_own_folder(tmp_path):
     app = _webapp(tmp_path / "editor")
-    row = MicroApp(name="editor", location_type=AppLocationType.Asset, asset_ref=str(app), build=".")
+    row = WebApp(name="editor", location_type=AppLocationType.Asset, asset_ref=str(app), build=".")
     assert row.serving_root() == app.resolve()
 
 
@@ -139,7 +139,7 @@ def test_a_static_app_serves_out_of_its_own_folder(tmp_path):
 async def test_an_unbuilt_app_is_not_built_rather_than_misconfigured(tmp_path):
     app = tmp_path / "app"
     app.mkdir()
-    row = MicroApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(app), build="dist")
+    row = WebApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(app), build="dist")
 
     # AppNotBuilt is what the display turns into a build CTA; a ValueError would
     # read as "this row is broken" and offer nothing to do about it. The answer
@@ -158,7 +158,7 @@ async def test_a_served_folder_does_not_mint_an_asset_of_its_own(tmp_path, monke
     an `asset_ref` under `agentic-assets/webapp/` and materialize an empty folder
     there — for an app whose files live somewhere else entirely.
     """
-    row = MicroApp(
+    row = WebApp(
         name="Legacy Static",
         location_type=AppLocationType.Artifact,
         location_root=str(tmp_path / "dist"),
@@ -178,7 +178,7 @@ async def test_a_served_row_is_unplaceable_even_under_a_repo_parent(tmp_path):
     parent these to a project, which is not a repo asset — a coincidence of that
     call site, not a property of the row.
     """
-    row = MicroApp(
+    row = WebApp(
         name="Legacy Static",
         location_type=AppLocationType.Artifact,
         location_root=str(tmp_path / "dist"),
@@ -189,7 +189,7 @@ async def test_a_served_row_is_unplaceable_even_under_a_repo_parent(tmp_path):
 
 
 def test_kind_goes_through_the_shared_ontology(tmp_path):
-    row = MicroApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(tmp_path), kind="Application.Web.Editor")
+    row = WebApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(tmp_path), kind="Application.Web.Editor")
     assert row.kind == "application.web.editor"
     with pytest.raises(ValueError):
-        MicroApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(tmp_path), kind="not a kind!")
+        WebApp(name="a", location_type=AppLocationType.Asset, asset_ref=str(tmp_path), kind="not a kind!")

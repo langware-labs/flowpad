@@ -1,7 +1,7 @@
-"""Serving coverage for MicroApp — the delivery plane of the app continuum.
+"""Serving coverage for WebApp — the delivery plane of the app continuum.
 
 An app is one Artifact with up to two companions: a Deployment (dev server on a
-port) and a MicroApp (built output the backend serves at its own origin). This
+port) and a WebApp (built output the backend serves at its own origin). This
 suite covers the second: that we serve the right bytes, revalidate them, refuse
 to escape the app folder, tell an unbuilt app apart from a missing file, and
 hand every served document the API origin its SDK needs.
@@ -17,16 +17,16 @@ import re
 
 import pytest
 
-from flow_sdk.builtin.faas.micro_app import MicroApp
+from flow_sdk.builtin.faas.micro_app import WebApp
 from flow_sdk.builtin.faas.serve_static import API_ORIGIN_SNIPPET
 from flow_sdk.schema.data_spec.app_location_type import AppLocationType
 
 
-def _view_url(app: MicroApp, sub_path: str = "") -> str:
+def _view_url(app: WebApp, sub_path: str = "") -> str:
     return f"/api/v1/graph/micro_app/{app.id}/view/{sub_path}".rstrip("/")
 
 
-async def _make_app(tmp_path, *, build: bool = True) -> MicroApp:
+async def _make_app(tmp_path, *, build: bool = True) -> WebApp:
     dist = tmp_path / "todo-app" / "dist"
     if build:
         dist.mkdir(parents=True)
@@ -34,7 +34,7 @@ async def _make_app(tmp_path, *, build: bool = True) -> MicroApp:
         (dist / "app.js").write_text("console.log('todo')")
         (dist / "secret-sibling.txt").write_text("in-app file")
         (tmp_path / "todo-app" / "outside.txt").write_text("OUTSIDE THE SERVING ROOT")
-    app = MicroApp(
+    app = WebApp(
         name="Todo",
         location_type=AppLocationType.Artifact,
         location_root=str(dist),
@@ -85,7 +85,7 @@ async def test_non_ascii_index_is_served_intact(bootstrapped_client, user, tmp_p
         "<body><h1>אין משימות</h1></body></html>",
         encoding="utf-8",
     )
-    app = MicroApp(name="Tasks", location_type=AppLocationType.Artifact, location_root=str(dist))
+    app = WebApp(name="Tasks", location_type=AppLocationType.Artifact, location_root=str(dist))
     await app.save()
 
     resp = await bootstrapped_client.get(_view_url(app))
@@ -156,7 +156,7 @@ async def test_unbuilt_app_is_a_distinct_404(bootstrapped_client, user, tmp_path
 async def test_artifact_id_must_be_a_valid_entity_id(bootstrapped_client, user, tmp_path):
     """Same gate as Deployment: an id from outside the minter is not adopted."""
     with pytest.raises(ValueError):
-        MicroApp(
+        WebApp(
             name="Bad",
             location_type=AppLocationType.Artifact,
             location_root=str(tmp_path),

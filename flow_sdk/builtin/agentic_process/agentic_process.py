@@ -2805,7 +2805,7 @@ class AgenticProcess(Entity):
         Resolution is the shared ``resolve_display_target`` policy (same as
         ``flow navigate file``): indexed asset → its entity; unknown path →
         raw vfs pointer; port → webapp preview; artifact_id → an app with its
-        runtime derived from its Deployment/MicroApp companions; view → a dock
+        runtime derived from its Deployment/WebApp companions; view → a dock
         address (a SCREEN, the one form that reaches a view with no entity
         behind it).
 

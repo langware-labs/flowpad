@@ -183,7 +183,7 @@ from — see [§8](#8-open-questions) Q1.
   (`ui.py:49-74`, `app.py:601`).
 - `/assets/*` hashed bundle; explicit public root files (favicon/logo/ws-test).
 - `/mcp-sandbox/sandbox_proxy.html` — the only CSP-bearing surface.
-- **`MicroApp.view`** (`faas/micro_app.py:145`) and **`fs/serve`**
+- **`WebApp.view`** (`faas/micro_app.py:145`) and **`fs/serve`**
   (`actions/fs/fs_actions.py`) — the two raw-bytes/MIME paths, and both are
   thin callers of the one implementation, `serve_app_bytes` (ETag/304,
   streaming, utf-8 html read, API-origin injection, traversal-guarded). They
@@ -281,7 +281,7 @@ from — see [§8](#8-open-questions) Q1.
    address was needed**. Every shown `.html` is now served from `fs/serve`, so
    the file has a real url and its relative pages, assets and anchors resolve —
    the whole class of "the preview has no address" bugs. No flag, no
-   `served-html` kind, no ephemeral MicroApp: the frontend already knows a path
+   `served-html` kind, no ephemeral WebApp: the frontend already knows a path
    is HTML from its extension, so nothing had to change in `resolve_display_target`.
 
    `allow-same-origin` IS granted, after shipping once without it. Withholding

@@ -34,7 +34,7 @@ export interface AppDockAddress {
  *
  * TWO addresses, because an app has two ways to exist. An app built from source
  * is addressed by its ARTIFACT: the runtime is DERIVED from its Deployment /
- * MicroApp companions at render time, and a port in the pointer would let a dev
+ * WebApp companions at render time, and a port in the pointer would let a dev
  * server that has since died become the app's identity. A webapp ASSET on disk
  * has no Artifact and no dev server — its delivery row IS the thing, so it is
  * addressed directly. Addressing it by its own entity is also what gives it a

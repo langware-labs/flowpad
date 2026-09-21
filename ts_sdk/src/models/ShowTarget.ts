@@ -33,11 +33,11 @@ export interface ShowTarget {
   /** app: the Artifact IS the address — the runtime below is derived from its
    *  companions, never pinned into the target (`_app_payload`). */
   artifact_id?: string;
-  /** app: the delivery row. Sent whenever a MicroApp exists, and the only id a
+  /** app: the delivery row. Sent whenever a WebApp exists, and the only id a
    *  webapp ASSET has — it has no Artifact (`_asset_app_payload`). */
   micro_app_id?: string;
   /** app: which plane is live right now. `dev` = a Deployment's port is up,
-   *  `served` = we serve the built MicroApp, `unbuilt` = neither. */
+   *  `served` = we serve the built WebApp, `unbuilt` = neither. */
   runtime?: 'dev' | 'served' | 'unbuilt';
   /** Display label the backend resolved for the target (artifact/app/entity
    *  name, falling back to its title). */

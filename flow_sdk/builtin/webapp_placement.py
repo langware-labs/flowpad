@@ -8,7 +8,7 @@ endpoint references the artifact it serves, so re-registering updates rather
 than forks.
 
 A project has ONE local web placement; each of its apps is endpoints of it.
-(``MicroApp`` used to be the delivery plane for built output. It is now the
+(``WebApp`` used to be the delivery plane for built output. It is now the
 DEFINITION of a webapp asset — ``webapp.json`` — and new registrations create no
 delivery row; :func:`converge_legacy_web_rows` gives the old ones endpoints.)
 
@@ -297,9 +297,9 @@ async def upsert_artifact_endpoints(deployment, artifact, backends: list[tuple[s
 
 
 async def _repoint_legacy_delivery(artifact_id: str, root: str) -> None:
-    from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
-    legacy = await MicroApp.get_by_artifact_id(artifact_id)
+    legacy = await WebApp.get_by_artifact_id(artifact_id)
     if legacy is not None and legacy.location_root != root:
         legacy.location_root = root
         await legacy.save()
@@ -338,13 +338,13 @@ async def upsert_micro_app(
     app registered with no project at all has no placement to hang one on, so it
     keeps the old delivery row. Returns ``None`` when there is no build output.
     """
-    from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
     from flow_sdk.schema.data_spec.app_location_type import AppLocationType  # noqa: PLC0415
 
     dist_path = served_dir(artifact_path, dist)
     if dist_path is None:
         return None
-    micro_app = await MicroApp.get_by_artifact_id(artifact.id)
+    micro_app = await WebApp.get_by_artifact_id(artifact.id)
     payload = {
         "name": name,
         "location_type": AppLocationType.Artifact,
@@ -354,7 +354,7 @@ async def upsert_micro_app(
         "parent_type_id": str(project.typeid) if project is not None else None,
     }
     if micro_app is None:
-        micro_app = MicroApp(**payload)
+        micro_app = WebApp(**payload)
     else:
         micro_app.apply_field_updates(payload)
     await micro_app.save()
@@ -377,12 +377,12 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
     and keyed by the hub's placement (which this machine does not hold), so the
     ids the hub adopts are these ids.
     """
-    from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
     from flow_sdk.schema.data_spec.app_location_type import AppLocationType  # noqa: PLC0415
 
     apps, current = await asyncio.gather(
-        MicroApp.get_all({"match": {"project_id": project.id}}),
+        WebApp.get_all({"match": {"project_id": project.id}}),
         ServiceEndpoint.of_deployment(deployment_typeid),
     )
     by_name = {endpoint.name: endpoint for endpoint in current}
@@ -434,7 +434,7 @@ async def converge_legacy_web_rows() -> dict:
 
     * a local web Deployment still carrying ``flowpad.runtime.port`` gets its
       ``proxy`` endpoint, and the labels go;
-    * a MicroApp delivering an Artifact's build output gets that output as a
+    * a WebApp delivering an Artifact's build output gets that output as a
       ``static`` endpoint of the project's placement. The row itself stays —
       ``/dock/app/micro_app-<id>`` links point at it, and history is forever.
 
@@ -443,7 +443,7 @@ async def converge_legacy_web_rows() -> dict:
     """
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
     from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
-    from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
     from flow_sdk.core import QueryFilter  # noqa: PLC0415
@@ -454,7 +454,7 @@ async def converge_legacy_web_rows() -> dict:
     # By type, then kind_matches: a row refined to `runtime.web.vite` is still the web runtime.
     deployments, legacy_apps, endpoints = await asyncio.gather(
         Deployment.get_all(QueryFilter.by_type(Deployment.get_type())),
-        MicroApp.get_all({"match": {"location_type": AppLocationType.Artifact.value}}),
+        WebApp.get_all({"match": {"location_type": AppLocationType.Artifact.value}}),
         ServiceEndpoint.get_all(QueryFilter.by_type(ServiceEndpoint.get_type())),
     )
     for deployment in deployments:

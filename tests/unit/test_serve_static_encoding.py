@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TITLE = "ניהול משימות"
 BODY = "אין משימות"  # leading alef is UTF-8 D7 90 — the byte cp1252 leaves undefined
 
-# Enters exactly where MicroApp.view enters it (micro_app.py:164) — same args,
+# Enters exactly where WebApp.view enters it (micro_app.py:164) — same args,
 # same Request, one frame down from the route.
 DRIVER = r"""
 import asyncio, locale, re, sys

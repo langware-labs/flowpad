@@ -33,7 +33,7 @@ let projectTypeIdPromise = null;
  * Load-bearing: `save()` with no scope places the entity outside any project
  * (`~/agentic-assets/…`), where the user's project task list will never show
  * it. The app is served at `/api/v1/graph/micro_app/<id>/view`, and that
- * MicroApp row carries `project_id` — so the app can read its own identity out
+ * WebApp row carries `project_id` — so the app can read its own identity out
  * of its own URL rather than being told, and rather than assuming the SDK's
  * default project (which is the backend's default, not this app's).
  */
