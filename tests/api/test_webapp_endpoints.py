@@ -3,7 +3,7 @@
 * ``project/<id>/expose-endpoints`` — what the hub asks of a box it just placed a
   project on: every webapp asset comes up as endpoints of the HUB's placement.
 * ``converge_legacy_web_rows`` — the boot-time pass that gives a port label or an
-  Artifact-delivery MicroApp the endpoint it implies, once.
+  Artifact-delivery WebApp the endpoint it implies, once.
 * a legacy delivery row is kept pointed at what its endpoint serves.
 """
 
@@ -19,7 +19,7 @@ import pytest
 
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.deployment import Deployment
-from flow_sdk.builtin.faas.micro_app import MicroApp
+from flow_sdk.builtin.faas.micro_app import WebApp
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 from flow_sdk.builtin.webapp_placement import converge_legacy_web_rows, upsert_artifact_endpoints
@@ -36,9 +36,9 @@ async def _project(tmp_path, name="shop") -> Project:
     return project
 
 
-async def _webapp(project, folder, *, name="shop", build=".", endpoints=None) -> MicroApp:
+async def _webapp(project, folder, *, name="shop", build=".", endpoints=None) -> WebApp:
     folder.mkdir(parents=True, exist_ok=True)
-    app = MicroApp(
+    app = WebApp(
         name=name,
         location_type=AppLocationType.Asset,
         asset_ref=str(folder),
@@ -197,7 +197,7 @@ async def test_an_artifact_delivery_row_gets_a_static_endpoint_and_is_kept(tmp_p
     artifact = Artifact(name="Built", kind="application.web", project_id=project.id)
     await artifact.save()
     (tmp_path / "dist").mkdir()
-    legacy = MicroApp(
+    legacy = WebApp(
         name="Built",
         location_type=AppLocationType.Artifact,
         location_root=str(tmp_path / "dist"),
@@ -211,7 +211,7 @@ async def test_an_artifact_delivery_row_gets_a_static_endpoint_and_is_kept(tmp_p
 
     served = [e for e in await ServiceEndpoint.get_all({"match": {"artifact_id": artifact.id}})]
     assert [e.backend.model_dump() for e in served] == [{"type": "static", "root": str(tmp_path / "dist")}]
-    assert await MicroApp.get_by_id(legacy.id) is not None, "links to micro_app-<id> keep working"
+    assert await WebApp.get_by_id(legacy.id) is not None, "links to micro_app-<id> keep working"
 
 
 async def test_a_legacy_delivery_row_is_repointed_when_its_endpoint_moves(client, tmp_path):
@@ -222,7 +222,7 @@ async def test_a_legacy_delivery_row_is_repointed_when_its_endpoint_moves(client
     (tmp_path / "old" / "index.html").write_text("old build")
     (tmp_path / "new").mkdir()
     (tmp_path / "new" / "index.html").write_text("new build")
-    legacy = MicroApp(
+    legacy = WebApp(
         name="Moved",
         location_type=AppLocationType.Artifact,
         location_root=str(tmp_path / "old"),

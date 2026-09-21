@@ -14,7 +14,7 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.deployment import Deployment
-from flow_sdk.builtin.faas.micro_app import MicroApp
+from flow_sdk.builtin.faas.micro_app import WebApp
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 from flow_sdk.core.display_target import (
     DisplayTargetKind,
@@ -59,10 +59,10 @@ async def _dev(artifact: Artifact, port: int) -> ServiceEndpoint:
     return await _endpoint(artifact, await _deployment(artifact), {"type": "proxy", "port": port})
 
 
-async def _micro_app(artifact: Artifact, tmp_path) -> MicroApp:
+async def _micro_app(artifact: Artifact, tmp_path) -> WebApp:
     # No id is supplied: a delivery row is found by the artifact it delivers
     # (`get_by_artifact_id`), never by an id derived from that artifact.
-    app = MicroApp(
+    app = WebApp(
         name=artifact.name,
         location_type=AppLocationType.Artifact,
         location_root=str(tmp_path / "dist"),

@@ -154,14 +154,14 @@ async def _app_payload(artifact_id: str) -> dict:
 
     An app is reachable two ways: a dev server on a port (a ``proxy`` endpoint)
     or its built output served by us (a ``static`` endpoint — or, for a row
-    written before endpoints, a ``MicroApp``). Both, either, or neither may exist
+    written before endpoints, a ``WebApp``). Both, either, or neither may exist
     at any moment, and which one is live changes without the app changing. So
     the address is the artifact id, and the runtime is *derived* here rather
     than baked into the pin — that is what stops a stale port from becoming the
     identity of an app.
     """
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-    from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
     from flow_sdk.builtin.webapp_placement import artifact_endpoints  # noqa: PLC0415
 
     if not is_valid_entity_id(artifact_id):
@@ -172,7 +172,7 @@ async def _app_payload(artifact_id: str) -> dict:
     artifact, endpoints, micro_app = await asyncio.gather(
         Artifact.get_by_id(artifact_id),
         artifact_endpoints(artifact_id),
-        MicroApp.get_by_artifact_id(artifact_id),
+        WebApp.get_by_artifact_id(artifact_id),
     )
     if artifact is None:
         raise DisplayTargetNotFound(f"Artifact not found: {artifact_id}")

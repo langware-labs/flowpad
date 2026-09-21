@@ -4,7 +4,7 @@ import type { IEntity, EntityMerge } from '../IEntity';
 
 export type AppLocationType = 'Folder' | 'Builtin' | 'GCPBucket' | 'Artifact';
 
-export interface IMicroApp extends IEntity {
+export interface IWebApp extends IEntity {
   name: string;
   location_type: AppLocationType;
   location_root?: string | null;
@@ -17,23 +17,23 @@ export interface IMicroApp extends IEntity {
   kind?: string | null;
 }
 
-// `implements IMicroApp` only checks the class; it contributes no members, so every
-// field declared solely on IMicroApp read as "does not exist". deepAssign populates
+// `implements IWebApp` only checks the class; it contributes no members, so every
+// field declared solely on IWebApp read as "does not exist". deepAssign populates
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface MicroApp extends EntityMerge<IMicroApp> {}
+export interface WebApp extends EntityMerge<IWebApp> {}
 
 /**
- * MicroApp is the *delivery* plane of an app: its built output, served by the
+ * WebApp is the *delivery* plane of an app: its built output, served by the
  * backend at the backend's own origin.
  *
  * An app is one Artifact (source) with up to two companions — a Deployment
- * (a dev server on a port) and a MicroApp (built output we serve). Which one is
+ * (a dev server on a port) and a WebApp (built output we serve). Which one is
  * live changes without the app changing, which is why neither is the app's
  * identity.
  */
 @registerEntity
-export class MicroApp extends APIEntity<MicroApp> implements IMicroApp {
+export class WebApp extends APIEntity<WebApp> implements IWebApp {
   static type: string = 'micro_app';
 
   name: string;
@@ -44,9 +44,9 @@ export class MicroApp extends APIEntity<MicroApp> implements IMicroApp {
   project_id: string | null;
   kind: string | null;
 
-  constructor(entity: Partial<IMicroApp> | IEntity = {}) {
+  constructor(entity: Partial<IWebApp> | IEntity = {}) {
     super(entity);
-    const app = entity as Partial<IMicroApp>;
+    const app = entity as Partial<IWebApp>;
     this.name = app.name ?? '';
     this.location_type = app.location_type ?? 'Artifact';
     this.location_root = app.location_root ?? null;
@@ -66,6 +66,9 @@ export class MicroApp extends APIEntity<MicroApp> implements IMicroApp {
    * like `AgenticProcess.getWebAppHostUrl`.
    */
   get viewUrl(): string {
-    return new ActionInfo('view', MicroApp.type, this.id).fullActionUrl;
+    return new ActionInfo('view', WebApp.type, this.id).fullActionUrl;
   }
 }
+
+/** @deprecated The class is `WebApp` now (the type value is still `micro_app`). */
+export { WebApp as MicroApp };

@@ -230,7 +230,7 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 
 | `data-integrations` | ours | The `kind: vibe` persona that guides connect → sample → define; mechanics in `connect-data-source` |
 | `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes an example row; a gold label is written against the dataset's output shape |
-| asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by `MicroApp.view`, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. |
+| asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by `WebApp.view`, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. |
 | `micro_app` (family `webapp`) | ours | The DEFINITION of a webapp: a REPO folder asset whose `webapp.json` declares `kind` / `build` / `endpoints`; `asset_ref` is the app folder and `serving_root()` is `<asset_ref>/<build>`. Where an app is served is its placement's `ServiceEndpoint`s, not this row. Rows registered by `flow app serve` before endpoints existed stay DB-only (`location_type: Artifact`) so their `/dock/app/micro_app-<id>` links keep working, pointed at their endpoint's folder. |
 
 ## Help desk (2026-09-02)

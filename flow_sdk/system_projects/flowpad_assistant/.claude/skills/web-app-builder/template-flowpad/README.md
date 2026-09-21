@@ -17,7 +17,7 @@ cd "<project root>/assets/apps/<app name>"
 flow app serve "<App Name>"
 ```
 
-`flow app serve` registers the app (Artifact + MicroApp) and shows it in the
+`flow app serve` registers the app (Artifact + WebApp) and shows it in the
 display. Re-run it after renaming; plain edits need only a refresh.
 
 ## The three rules
@@ -54,7 +54,7 @@ that lives inside Flowpad should look like it belongs there.
 the app looks like it works while its data is invisible where it matters.
 
 The app resolves its own project from its own URL: it is served at
-`/api/v1/graph/micro_app/<id>/view`, and that MicroApp row carries `project_id`
+`/api/v1/graph/micro_app/<id>/view`, and that WebApp row carries `project_id`
 (see `resolveProjectTypeId()` in `app.js`). Do not assume
 `dataContext.projectTypeId` — that is the backend's *default* project, not
 necessarily the one this app belongs to.

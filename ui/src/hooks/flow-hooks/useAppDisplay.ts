@@ -1,4 +1,4 @@
-import { AgenticProcess, MicroApp, QueryRequest, ServiceEndpoint, TypeId } from '@sdk';
+import { AgenticProcess, WebApp, QueryRequest, ServiceEndpoint, TypeId } from '@sdk';
 import { useTheme } from 'next-themes';
 import { useViewMode } from '@src/contexts/view-mode-context';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -40,7 +40,7 @@ export interface AppDisplay {
   /** iframe src for the active runtime; '' when the app has neither. */
   src: string;
   port: string | null;
-  microApp: MicroApp | null;
+  microApp: WebApp | null;
   /** The host's CURRENT appearance — colour scheme and view mode. The frame is
    *  addressed with the skin it had at mount, so a later change is pushed to the
    *  guest rather than re-addressed; see the `initialSkin` note below. */
@@ -54,7 +54,7 @@ export interface AppDisplay {
  * Resolve an app's viewable runtime from its address.
  *
  * An app built from source is addressed by its Artifact; the dev server (its
- * `Deployment`'s port) and the built output (its `MicroApp`) are two ways to
+ * `Deployment`'s port) and the built output (its `WebApp`) are two ways to
  * reach that one app, and BOTH are resolved here from the artifact alone. That
  * is what lets the URL name only the artifact: a port belongs to whichever dev
  * server happens to be up, so one baked into the address goes stale the moment
@@ -112,24 +112,24 @@ export function useAppDisplay(
   // The asset address: one row, fetched by identity. No artifact query can find
   // it — a webapp asset has no Artifact — so this is not a fallback, it is the
   // other half of the grammar.
-  const appTypeId = useMemo(() => (microAppId ? new TypeId(MicroApp.type, microAppId) : null), [microAppId]);
-  const { data: addressedApp } = useEntity<MicroApp>(appTypeId);
+  const appTypeId = useMemo(() => (microAppId ? new TypeId(WebApp.type, microAppId) : null), [microAppId]);
+  const { data: addressedApp } = useEntity<WebApp>(appTypeId);
 
   const queryRequest = useMemo(
     () =>
       new QueryRequest({
-        type: MicroApp.type,
+        type: WebApp.type,
         query: { match: { artifact_id: artifactId ?? '' } },
         name: 'useAppDisplay',
       }),
     [artifactId],
   );
-  const { data: microApps = [] } = useEntitiesQuery<MicroApp>(queryRequest, { enabled: !!artifactId });
-  const microApp = (microAppId ? (addressedApp ?? null) : (microApps[0] ?? null)) as MicroApp | null;
+  const { data: microApps = [] } = useEntitiesQuery<WebApp>(queryRequest, { enabled: !!artifactId });
+  const microApp = (microAppId ? (addressedApp ?? null) : (microApps[0] ?? null)) as WebApp | null;
 
   // What serves this artifact here: its placement's endpoints. A `proxy` endpoint is
   // the dev server; a `static` one is built output FlowPad serves itself. Kept beside
-  // the MicroApp query rather than in the caller so "which port serves this artifact"
+  // the WebApp query rather than in the caller so "which port serves this artifact"
   // has one owner — two callers deriving it differently is how a stale port survives.
   const endpointQuery = useMemo(
     () =>

@@ -2,7 +2,7 @@
 
 A ``Deployment`` records WHAT runs WHERE; it never said what that placement
 answers on. That fact was spread over a port label on the Deployment, a
-``MicroApp`` row, and the hub's per-node service table. This row is the one
+``WebApp`` row, and the hub's per-node service table. This row is the one
 place it is declared: a child of the Deployment, one per exposed service.
 
 * ``protocol`` — what it SPEAKS (``web.app``, ``api.chat.openai``, …), in the

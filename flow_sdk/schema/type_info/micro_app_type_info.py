@@ -10,7 +10,7 @@ walker recurses, and the enclosure rule makes the containing asset its parent.
 human reads should be named for the thing, not for the internal distinction
 between the delivery row and the app.
 
-Not every MicroApp is an asset. ``flow app serve`` registers a row for a folder
+Not every WebApp is an asset. ``flow app serve`` registers a row for a folder
 somewhere in the user's checkout, which has no ``webapp.json`` and no
 ``asset_ref``; such a row is DB-only and the orphan sweep never considers it.
 """
@@ -20,7 +20,7 @@ from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.webapp_spec import WebappManifestSpec
 from flow_sdk.schema.types import EntityType
 
-# MicroApp is an Entity but had no TypeInfo, so the registry could not see
+# WebApp is an Entity but had no TypeInfo, so the registry could not see
 # it: no icon, no display name, absent from the bootstrap schema the frontend
 # queries through. Registering it is what lets an app's delivery row be read
 # from the UI at all — the same treatment its sibling companion Deployment and

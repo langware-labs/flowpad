@@ -180,7 +180,7 @@ chrome-less web-app dock with no chat beside it.
 An artifact-backed app IS addressed — `ViewType.APP`, `/dock/app/artifact-<uuid>`:
 
 * the **artifact** is the pointer, because `_app_payload` derives the runtime from
-  its Deployment/MicroApp companions. A dev server that dies or a build that lands
+  its Deployment/WebApp companions. A dev server that dies or a build that lands
   changes what you see without changing where you are; a port in the address would
   make a dead server the app's identity.
 * **`?runtime=dev|served`** is the user's PREFERENCE, not a fact —

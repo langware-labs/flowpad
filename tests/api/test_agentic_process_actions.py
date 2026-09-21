@@ -121,7 +121,7 @@ async def test_show_app_addresses_the_artifact_and_derives_the_runtime(bootstrap
     `_app_payload` derives the runtime to avoid: the port belongs to whichever dev
     server happens to be up, the ARTIFACT is the app.
 
-    With no Deployment and no MicroApp the app is `unbuilt` — a real answer, and the
+    With no Deployment and no WebApp the app is `unbuilt` — a real answer, and the
     one that proves the runtime is derived rather than supplied.
     """
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
@@ -546,9 +546,9 @@ async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint
 
     Artifact (source) → Deployment (placement) → ServiceEndpoints (what it answers
     on) — one app, and re-registering updates the same rows rather than forking.
-    No MicroApp delivery row is minted any more: that type is the webapp ASSET.
+    No WebApp delivery row is minted any more: that type is the webapp ASSET.
     """
-    from flow_sdk.builtin.faas.micro_app import MicroApp
+    from flow_sdk.builtin.faas.micro_app import WebApp
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
     project = Project(name="served-proj", fs_storage_mount_path=str(tmp_path))
@@ -579,7 +579,7 @@ async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint
     assert by_type["proxy"]["backend"]["port"] == 3400
     assert {e["artifact_id"] for e in data["endpoints"]} == {artifact["id"]}
     assert data["micro_app"] is None
-    assert await MicroApp.get_by_artifact_id(artifact["id"]) is None
+    assert await WebApp.get_by_artifact_id(artifact["id"]) is None
 
     # Both runtimes exist; a live port wins for display, and served is still offered.
     assert data["shown"]["runtime"] == "dev"

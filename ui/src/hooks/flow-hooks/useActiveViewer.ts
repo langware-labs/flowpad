@@ -38,7 +38,7 @@ export function useActiveViewer() {
           break;
         case ViewType.APP: {
           // Through the one owner of the app grammar, not a second parse of the
-          // pointer here. The viewer derives the RUNTIME itself (MicroApp for
+          // pointer here. The viewer derives the RUNTIME itself (WebApp for
           // `served`, the host process's dev port for `dev`); only identity and the
           // user's preference travel.
           const app = appDockAddress(currentDock);

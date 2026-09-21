@@ -3,7 +3,7 @@
  * `/dock/app/<artifact|micro_app>-<uuid>[?runtime=…][&host=…]`.
  *
  * An app built from source is addressed by its ARTIFACT, because the runtime is
- * DERIVED from its Deployment / MicroApp companions at render time. These pin that
+ * DERIVED from its Deployment / WebApp companions at render time. These pin that
  * the URL carries identity plus a preference, and never a port — a port in the
  * pointer is how a dev server that has since died becomes the app's identity.
  *

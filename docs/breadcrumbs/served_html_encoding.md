@@ -53,7 +53,7 @@ UTF-8 — the file's encoding is not consulted, and neither is its `<meta charse
   branch, reads `"rb"`. Bytes are never decoded, so assets were never affected.
   This asymmetry is why "images work, the page is broken" is the expected
   presentation of the bug, not a clue pointing elsewhere.
-* `flow_sdk/builtin/faas/micro_app.py:164` — `MicroApp.view`, the only caller on
+* `flow_sdk/builtin/faas/micro_app.py:164` — `WebApp.view`, the only caller on
   the console API path; `view_external_domain` (`:171`) is the custom-domain
   twin. Both reach the same read.
 * `flow_sdk/utils/concurrency.py:89` — the correct shape to copy: `encoding` is a

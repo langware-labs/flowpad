@@ -1,7 +1,7 @@
 """Static byte-serving for app folders — the one implementation.
 
 Before this module the backend had two near-identical copies of "serve a file
-out of an app folder" (``MicroApp.view`` and ``MicroApp.view_external_domain``)
+out of an app folder" (``WebApp.view`` and ``WebApp.view_external_domain``)
 and a third, unrelated one for the console shell
 (``server/routes/ui.py:serve_index_html``). They disagreed on exactly the thing
 that matters for an app talking back to us: only the console got the runtime
