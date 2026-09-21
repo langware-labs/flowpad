@@ -36,6 +36,7 @@ Four properties follow from that shape and are what the tests pin:
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
@@ -175,11 +176,30 @@ async def check_op(
     * **A check with no command for this platform** ⇒ ``NOT_APPLICABLE``. It
       could be asked elsewhere, just not here. Silence is not failure.
     """
+    outcome, _said = await _ask_the_question(spec, workdir=workdir, platform=platform, env=env, shell=shell)
+    return outcome
+
+
+async def _ask_the_question(
+    spec: ComputeOpSpec,
+    *,
+    workdir: Optional[Path],
+    platform: str,
+    env: Optional[dict],
+    shell: Callable[..., Awaitable[ShellResult]],
+) -> "tuple[CheckOutcome, Optional[str]]":
+    """The check's verdict AND what it printed.
+
+    A check that proves a goal usually also knows the answer — `flow secret get`
+    exits 0 and prints the secret. Keeping only the exit code made a satisfied
+    op answer "yes, it holds" with no value, so a caller arriving after the fact
+    got success and nothing in it.
+    """
     if spec.completion_check is None:
-        return CheckOutcome.EXECUTE
+        return CheckOutcome.EXECUTE, None
     command = spec.completion_check.command_for(platform)
     if not command:
-        return CheckOutcome.NOT_APPLICABLE
+        return CheckOutcome.NOT_APPLICABLE, None
     result = await shell(
         command,
         timeout_seconds=spec.completion_check.timeout_seconds,
@@ -187,7 +207,7 @@ async def check_op(
         extra_env=env or {},
         platform=platform,
     )
-    return spec.outcome_for(result.returncode, timed_out=result.timed_out)
+    return spec.outcome_for(result.returncode, timed_out=result.timed_out), result.stdout
 
 
 async def run_op(
@@ -242,9 +262,11 @@ async def _run(
         return blocked
 
     seams.report.say(f"checking {spec.display_label}")
-    outcome = await check_op(spec, workdir=workdir, platform=platform, env=seams.env, shell=seams.shell)
+    outcome, said = await _ask_the_question(
+        spec, workdir=workdir, platform=platform, env=seams.env, shell=seams.shell,
+    )
     if outcome is CheckOutcome.SATISFIED:
-        return ReturnedValue.satisfied(f"{spec.display_label}: already satisfied.", ran=False)
+        return _already(spec, said)
     if outcome is CheckOutcome.NOT_APPLICABLE:
         return ReturnedValue.not_applicable(f"{spec.display_label}: not applicable here.")
 
@@ -278,7 +300,12 @@ async def _requires(
     spec: ComputeOpSpec, *, chain: tuple[str, ...], subject: str, trusted: bool,
     workdir: Path, platform: str, seams: _Seams,
 ) -> Optional[ReturnedValue]:
-    """Run what must hold first. Returns the blocker's answer, or None to proceed."""
+    """Run what must hold first. Returns the blocker's answer, or None to proceed.
+
+    Each dependency's value lands in scope by its field names, as environment —
+    never spliced into a command, the same rule every other value obeys.
+    """
+    given: dict[str, str] = {}   # field -> which dependency supplied it
     for dependency in spec.requires:
         if dependency in chain:
             # A cycle is a bug in the documents, not a runtime condition to ride out.
@@ -299,7 +326,52 @@ async def _requires(
         if not answer.ok:
             # Its detail already says what is wrong; do not restate it as ours.
             return answer
+        # What it produced is what this op was waiting for. It used to be
+        # dropped here — `requires` ordered two ops but could not pass a value
+        # between them, which left a wizard as the only thing that could.
+        for name, text in _into_scope(dependency, answer.value).items():
+            if name in given:
+                raise ValueError(
+                    f"{spec.display_label}: {given[name]!r} and {dependency!r} both return "
+                    f"`{name}` — ambiguous which one this op means"
+                )
+            given[name] = dependency
+            seams.env[name] = text
     return None
+
+
+def _already(spec: ComputeOpSpec, said: Optional[str]) -> ReturnedValue:
+    """A satisfied op's answer — including its VALUE, read off what the check printed."""
+    done = f"{spec.display_label}: already satisfied."
+    if spec.output is None:
+        return ReturnedValue.satisfied(done, ran=False)
+    try:
+        value = to_declared(value_from_stdout(said), spec.output)
+    except DeclaredShapeError as error:
+        # The goal holds but the check did not print what the op promises to
+        # return. That is the document disagreeing with itself — say so, rather
+        # than answer OK with a value that is not the declared shape.
+        return ReturnedValue.not_yet(
+            f"{spec.display_label}: the completion check holds, but what it printed does "
+            f"not match this op's declared output — {error}",
+        )
+    return ReturnedValue.satisfied(done, value, ran=False)
+
+
+def _into_scope(dependency: str, value: Any) -> "dict[str, str]":
+    """A dependency's value as environment entries, one per declared field.
+
+    A shaped value contributes its fields (`{token: …}` becomes `$token`); a bare
+    one is named after the op that produced it. Everything is text, because the
+    environment is — a structured field is JSON.
+    """
+    if value is None:
+        return {}
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="json")
+    if not isinstance(value, dict):
+        value = {"".join(c if c.isalnum() else "_" for c in dependency): value}
+    return {str(k): v if isinstance(v, str) else json.dumps(v) for k, v in value.items()}
 
 
 def _value_of(spec: ComputeOpSpec, result: AttemptResult, *, detail: str = "") -> ReturnedValue:

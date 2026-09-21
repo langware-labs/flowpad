@@ -108,18 +108,13 @@ async def test_a_satisfied_op_is_not_asked_again(tmp_path):
     assert again.ran is False, "a satisfied op reports skipped, not completed"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "TARGET: the value exists at every step and is dropped at every seam — "
-    "check_op discards the check's stdout, the satisfied path returns no value, "
-    "and _requires discards a successful dependency's value. "
-    "See docs/snippets/compute-ops.md."
-))
 async def test_the_value_reaches_the_op_that_required_it(tmp_path):
     """Composition without a wizard: A's answer becomes B's input.
 
-    Until this passes, a wizard is the only thing in the system that can move a
-    value between two units of work — so "run A, then run B with A's answer"
-    has to be wrapped in one, with no person and no form involved.
+    This was an xfail recording three drops — `check_op` kept only the exit
+    code, a satisfied op returned no value, and `_requires` discarded a
+    successful dependency's answer. Until all three closed, a wizard was the
+    only thing that could move a value between two units of work.
     """
     specs = _specs(tmp_path)
     _answer(tmp_path)

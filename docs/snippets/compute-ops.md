@@ -66,7 +66,7 @@ not a window.
 answer = await key.run(approved=True)   # the completion check now passes
 answer.ok                  # True
 answer.ran                 # False — nobody was asked a second time
-answer.value               # None — see "Open decision" below
+answer.value.token         # 'sk-live-…' — read off what the check printed
 ```
 
 `ran=False` is the whole point of a convergent op: it reports *skipped*, not
@@ -99,9 +99,21 @@ graph carries and could drift from it — and the value is validated against
 `output` when the producer returns, so re-validating on arrival checks the same
 thing twice.
 
-A dependency's output fields enter scope by their declared names. Two ops in one
-`requires` list declaring the same field is an authoring error, caught when the
-documents are read rather than resolved by whichever ran last.
+A dependency's output fields enter scope by their declared names, as
+environment — never spliced into the command. Two ops in one `requires` list
+returning the same field is refused when the op runs, naming both, rather than
+resolved by whichever ran last.
+
+## 5. Three together
+
+```python
+server = await ComputeOp.by_name("start-server")   # requires: get-api-key, pick-port
+answer = await server.run(approved=True)           # a person types the token
+answer.ok                                          # True — got $token AND $port
+```
+
+One value came from a person, one from a command, and the op that needed both
+received them — with no wizard anywhere.
 
 ---
 
@@ -127,12 +139,12 @@ Real, and proven in a browser (`tests/long_tests/test_ask_browser_matrix.py`):
 the `ask` rung, the question raised into `win/`, a typed answer coming back as
 the op's value, cancel, the deadline, and the 422-then-correct path.
 
-**TARGET — a satisfied dependency's value is discarded.** `_requires` runs the
-dependency, checks it for failure, and returns `None` to proceed; the value goes
-nowhere. §1-§3 work; §4's `$token` does not arrive.
-(`tests/unit/test_compute_op_composition.py`, xfail.)
+**Closed:** a satisfied dependency's value used to be dropped at three seams —
+the check's stdout was discarded, a converged op returned no value, and
+`requires` threw the answer away. All three now carry it, so §2 returns the
+value and §4-§5 receive it. Pinned by `tests/unit/test_three_ops_together.py`.
 
-**Open decision.** §2 shows a *satisfied* op still returning its value, which
-means the completion check has to yield the value and not merely exit 0. The
-alternative is that convergence answers `OK` with nothing, and only the first
-run ever carries the answer — which breaks any caller that arrives late.
+**One thing an ask op does not do yet:** store the answer. It returns it, but
+nothing persists it where a completion check can find it, so an ask op WITH a
+check keeps asking until something else writes the value down. §5's
+`get-api-key` therefore declares no check and asks on every run.
