@@ -78,27 +78,34 @@ def open_questions() -> "list[Question]":
     return list(_PENDING.values())
 
 
+def _settle(question_id: str, resolve) -> bool:
+    """Hand one question its ending. False when nothing is waiting under that id.
+
+    Both endings are the same three steps — take it out of the registry, refuse
+    a second ending, resolve the future — and differ only in what they resolve
+    it WITH. Keeping that in one place is why a settled question can never be
+    settled twice by one path and not the other.
+    """
+    question = _PENDING.pop(question_id, None)
+    if question is None or question._future.done():
+        return False
+    resolve(question._future)
+    return True
+
+
 def answer(question_id: str, value: Any) -> bool:
-    """Deliver an answer. False when nothing is waiting under that id.
+    """Deliver an answer.
 
     The value is NOT validated here: validation belongs to the action, so a
     person who typed the wrong thing gets a correctable error instead of an op
     that failed on their behalf.
     """
-    question = _PENDING.pop(question_id, None)
-    if question is None or question._future.done():
-        return False
-    question._future.set_result(value)
-    return True
+    return _settle(question_id, lambda future: future.set_result(value))
 
 
 def cancel(question_id: str) -> bool:
-    """Decline to answer. False when nothing is waiting under that id."""
-    question = _PENDING.pop(question_id, None)
-    if question is None or question._future.done():
-        return False
-    question._future.set_exception(Cancelled())
-    return True
+    """Decline to answer. The op hears "no value", not "something broke"."""
+    return _settle(question_id, lambda future: future.set_exception(Cancelled()))
 
 
 async def wait_for(question: Question, *, timeout: float = ASK_TIMEOUT_SECONDS) -> Any:
