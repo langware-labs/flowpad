@@ -4,8 +4,10 @@ A ComputeOp is one unit of work with a goal. It declares what it RETURNS, and
 it knows when it is already done — so running it twice does the work once.
 
 Every fence on this page is pinned. The op documents are validated against the
-real spec by `tests/unit/test_compute_ops_snippets.py`; the behaviour they
-describe runs in `tests/unit/test_compute_op_ask.py`,
+real spec by `tests/unit/test_compute_ops_snippets.py`; the Python is run
+literally — `by_name` then `run()`, through the entity — by
+`tests/api/test_ask_op_entity.py`; the behaviour underneath runs in
+`tests/unit/test_compute_op_ask.py`,
 `tests/unit/test_compute_op_composition.py`, and — with a real browser
 answering §1 — `tests/long_tests/test_ask_browser_matrix.py`.
 
@@ -29,7 +31,7 @@ Two things follow from that, and they are what this page is about:
 
 ```python
 key = await ComputeOp.by_name("get-api-key")
-answer = await key.run()
+answer = await key.run(approved=True)
 answer.exit_code         # ExitCode.NOT_YET — it asked; nobody has answered yet
 answer.ran               # True — an attempt did happen
 ```
@@ -53,13 +55,18 @@ already existed; the push simply could not name a layout until now.
 `ASK_TIMEOUT_SECONDS` is 60. A caller may pass a shorter deadline, never a
 longer one.
 
+`approved=True` is not optional. An op that is not a system op REFUSES to run
+unapproved — it raises `ComputeOpNotApproved` rather than putting a question to
+anyone, because a caller with no one to approve it should get a legible answer,
+not a window.
+
 ## 2. Asked once, never again
 
 ```python
-answer = await key.run()   # the completion check now finds the value
+answer = await key.run(approved=True)   # the completion check now passes
 answer.ok                  # True
 answer.ran                 # False — nobody was asked a second time
-answer.value.token         # 'sk-live-…'
+answer.value               # None — see "Open decision" below
 ```
 
 `ran=False` is the whole point of a convergent op: it reports *skipped*, not
@@ -69,7 +76,7 @@ answer.value.token         # 'sk-live-…'
 
 ```python
 server = await ComputeOp.by_name("start-server")   # requires: ["get-api-key"]
-answer = await server.run()
+answer = await server.run(approved=True)
 answer.ok                  # False — start-server never ran
 answer.exit_code           # ExitCode.NOT_YET, the blocker's own answer
 ```
