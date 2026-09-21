@@ -468,7 +468,13 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     }
     assert deployment["kind"] == "runtime.web"
     assert deployment["artifact_id"] == artifact["id"]
-    assert deployment["provider_labels"]["flowpad.runtime.port"] == "3300"
+    # The port is a fact about what the placement EXPOSES, not a label on it.
+    assert deployment["provider_labels"] == {}
+    [dev] = data["endpoints"]
+    assert dev["backend"] == {"type": "proxy", "port": 3300, "start_cmd": "npm run dev", "health": "/"}
+    assert dev["artifact_id"] == artifact["id"]
+    assert dev["parent_type_id"] == f"deployment-{deployment['id']}"
+    assert dev["protocol"]["spec_kind"] == "web.app"
     # A web app is something the run PRODUCED, so it carries the same provenance
     # edge `register-artifact` stamps. Without it the app is invisible to
     # `artifacts` (a match on `generated_by`), and "everything this run
@@ -487,7 +493,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         "runtime": "dev",
         "port": 3300,
     }
-    # No dist/ in this app yet, so it has no delivery companion.
+    # No dist/ in this app yet, so nothing to serve statically — and no legacy row.
     assert data["micro_app"] is None
 
     row = await get_agentic_process(bootstrapped_client, pid)
@@ -496,7 +502,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     listed = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})
     listed_data = ApiResponse(**listed.json()).data
     assert [item["id"] for item in listed_data["artifacts"]] == [artifact["id"]]
-    assert listed_data["artifacts"][0]["deployment"]["id"] == deployment["id"]
+    assert [e["id"] for e in listed_data["artifacts"][0]["endpoints"]] == [dev["id"]]
 
     # Kind filters honor exact-or-descendant ontology semantics.
     artifact_entity = await Artifact.get_by_id(artifact["id"])
@@ -509,7 +515,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     descendant_list = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})
     descendant_data = ApiResponse(**descendant_list.json()).data
     assert [item["id"] for item in descendant_data["artifacts"]] == [artifact["id"]]
-    assert descendant_data["artifacts"][0]["deployment"]["id"] == deployment["id"]
+    assert [e["id"] for e in descendant_data["artifacts"][0]["endpoints"]] == [dev["id"]]
 
     update = await bootstrapped_client.post(
         f"{base}/register-webapp-artifact",
@@ -525,22 +531,25 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     updated = updated_data["artifact"]
     assert updated["id"] == artifact["id"]
     assert updated_data["deployment"]["id"] == deployment["id"]
-    assert updated_data["deployment"]["provider_labels"]["flowpad.runtime.port"] == "3301"
+    # The same endpoint row moves to the new port — updated, never forked.
+    [moved] = updated_data["endpoints"]
+    assert moved["id"] == dev["id"]
+    assert moved["backend"]["port"] == 3301
     # Backfill, never reassign — converging on an existing row leaves the run
     # that actually built the app as its producer.
     assert updated["generated_by"] == artifact["generated_by"]
 
 
 @pytest.mark.asyncio
-async def test_register_webapp_artifact_mints_delivery_micro_app(bootstrapped_client, user, tmp_path):
-    """Built output gets a MicroApp — the delivery companion of the same Artifact.
+async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint(bootstrapped_client, user, tmp_path):
+    """Built output is a `static` endpoint of the project's placement, beside the dev server.
 
-    Artifact (source) → Deployment (runtime) → MicroApp (delivery) is one app in
-    three planes, so the delivery row must hang off the SAME artifact id and be
-    updated, never forked, when the app is re-registered.
+    Artifact (source) → Deployment (placement) → ServiceEndpoints (what it answers
+    on) — one app, and re-registering updates the same rows rather than forking.
+    No MicroApp delivery row is minted any more: that type is the webapp ASSET.
     """
     from flow_sdk.builtin.faas.micro_app import MicroApp
-    from flow_sdk.schema.data_spec.app_location_type import AppLocationType
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
     project = Project(name="served-proj", fs_storage_mount_path=str(tmp_path))
     await project.save()
@@ -562,32 +571,33 @@ async def test_register_webapp_artifact_mints_delivery_micro_app(bootstrapped_cl
     )
     assert resp.status_code == 200, resp.text
     data = ApiResponse(**resp.json()).data
-    artifact, micro_app = data["artifact"], data["micro_app"]
+    artifact = data["artifact"]
+    by_type = {e["backend"]["type"]: e for e in data["endpoints"]}
 
     # dist/ was discovered without being named in the request.
-    assert micro_app is not None
-    assert micro_app["artifact_id"] == artifact["id"]
-    assert micro_app["location_type"] == AppLocationType.Artifact.value
-    assert micro_app["location_root"] == str(app_dir / "dist")
-    assert micro_app["project_id"] == project.id
+    assert by_type["static"]["backend"]["root"] == str(app_dir / "dist")
+    assert by_type["proxy"]["backend"]["port"] == 3400
+    assert {e["artifact_id"] for e in data["endpoints"]} == {artifact["id"]}
+    assert data["micro_app"] is None
+    assert await MicroApp.get_by_artifact_id(artifact["id"]) is None
 
-    # Both runtimes exist; a live port wins for display purposes.
+    # Both runtimes exist; a live port wins for display, and served is still offered.
     assert data["shown"]["runtime"] == "dev"
-    assert data["shown"]["micro_app_id"] == micro_app["id"]
 
-    # Re-registering updates the same delivery row rather than forking one.
+    # The static endpoint actually serves the build.
+    page = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{by_type['static']['id']}/service/")
+    assert page.status_code == 200 and "todo" in page.text
+
+    # Re-registering updates the same rows rather than forking them.
     again = await bootstrapped_client.post(
         f"{base}/register-webapp-artifact",
         json={"name": "Todo", "path": str(app_dir), "port": "3401", "dist": "dist", "show": False},
     )
-    again_app = ApiResponse(**again.json()).data["micro_app"]
-    assert again_app["id"] == micro_app["id"]
+    again_ids = {e["backend"]["type"]: e["id"] for e in ApiResponse(**again.json()).data["endpoints"]}
+    assert again_ids == {t: e["id"] for t, e in by_type.items()}
+    assert len(await ServiceEndpoint.get_all({"match": {"artifact_id": artifact["id"]}})) == 2
 
-    rows = await MicroApp.get_all({"artifact_id": artifact["id"]})
-    assert len(rows) == 1
-
-    # An app named the same as another must still save: name is a label, not an
-    # identity, and per-type global uniqueness would 409 the second one.
+    # An app named the same as another must still save: name is a label, not an identity.
     other_dir = tmp_path / "todo-two"
     (other_dir / "dist").mkdir(parents=True)
     (other_dir / "dist" / "index.html").write_text("<html><body>two</body></html>")
@@ -596,20 +606,19 @@ async def test_register_webapp_artifact_mints_delivery_micro_app(bootstrapped_cl
         json={"name": "Todo", "path": str(other_dir), "port": "3402", "show": False},
     )
     assert twin.status_code == 200, twin.text
-    twin_app = ApiResponse(**twin.json()).data["micro_app"]
-    assert twin_app is not None and twin_app["id"] != micro_app["id"]
+    twin_ids = {e["id"] for e in ApiResponse(**twin.json()).data["endpoints"]}
+    assert twin_ids and not (twin_ids & set(again_ids.values()))
 
 
 @pytest.mark.asyncio
 async def test_registering_without_a_port_yields_a_served_app(bootstrapped_client, user, tmp_path):
-    """An app Flowpad serves itself has no dev server, so it has no Deployment.
+    """An app Flowpad serves itself has no dev server, so it has no `proxy` endpoint.
 
     This is the shape that lets a generated app use the SDK: served from our own
-    origin, it is handed the API origin and the session cookies. Minting a
-    Deployment for a port nobody is listening on would make the display derive
+    origin, it is handed the API origin and the session cookies. Minting a dev
+    endpoint for a port nobody is listening on would make the display derive
     `dev` and point at nothing.
     """
-    from flow_sdk.builtin.faas.micro_app import MicroApp
 
     project = Project(name="served-only-proj", fs_storage_mount_path=str(tmp_path))
     await project.save()
@@ -632,17 +641,14 @@ async def test_registering_without_a_port_yields_a_served_app(bootstrapped_clien
     data = ApiResponse(**resp.json()).data
 
     assert data["artifact"]["kind"] == "application.web"
-    assert data["deployment"] is None
-    assert data["micro_app"]["artifact_id"] == data["artifact"]["id"]
-    assert await Deployment.get_one({"artifact_id": data["artifact"]["id"]}) is None
+    [served] = data["endpoints"]
+    assert served["backend"] == {"type": "static", "root": str(app_dir)}
+    assert data["micro_app"] is None
 
     # The display resolves to the served runtime, with no port to point at.
     assert data["shown"]["kind"] == "app"
     assert data["shown"]["runtime"] == "served"
     assert "port" not in data["shown"]
-
-    rows = await MicroApp.get_all({"artifact_id": data["artifact"]["id"]})
-    assert len(rows) == 1
 
 
 @pytest.mark.asyncio
@@ -691,9 +697,8 @@ async def test_static_app_folder_is_its_own_build_output(bootstrapped_client, us
         json={"name": "Static Todo", "path": str(app_dir), "port": "8123", "show": False},
     )
     assert resp.status_code == 200, resp.text
-    micro_app = ApiResponse(**resp.json()).data["micro_app"]
-    assert micro_app is not None
-    assert micro_app["location_root"] == str(app_dir)
+    served = [e for e in ApiResponse(**resp.json()).data["endpoints"] if e["backend"]["type"] == "static"]
+    assert [e["backend"]["root"] for e in served] == [str(app_dir)]
 
 
 @pytest.mark.asyncio

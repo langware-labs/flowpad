@@ -2,8 +2,9 @@
  * What a served app is FOR — resolved from the page's own URL, never from a
  * value written into the app.
  *
- * A webapp asset is served at `/api/v1/graph/micro_app/<id>/view/…`, so the
- * page's path already names its own delivery row. That row is an ordinary
+ * A webapp asset is served at `/api/v1/graph/micro_app/<id>/view/…`, and a placed
+ * app at `/api/v1/graph/service_endpoint/<id>/service/…`, so the page's path
+ * already names the row it is served as — both carry the owning `project_id`. That row is an ordinary
  * asset, which means it has a parent: the asset it is nested inside. An editor
  * therefore learns what it edits by asking who contains it — the same
  * containment the address bar renders as `Project / rss / editor`.
@@ -14,9 +15,9 @@
 import { APIEntity, dataManager, type AnyEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 
-/** The `micro_app` this page is being served as, from `location.pathname`. */
+/** The row this page is being served as — a `micro_app` or a `service_endpoint` — from `location.pathname`. */
 export function appTypeId(pathname: string = location.pathname): TypeId | null {
-  const m = pathname.match(/graph\/(micro_app)\/([^/]+)\/view/i);
+  const m = pathname.match(/graph\/(micro_app)\/([^/]+)\/view/i) ?? pathname.match(/graph\/(service_endpoint)\/([^/]+)\/service/i);
   return m ? new TypeId(m[1], m[2]) : null;
 }
 

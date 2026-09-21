@@ -89,10 +89,7 @@ from flow_sdk.builtin.process_lifecycle import (
     backend_restart_requested,
     is_recoverable_worker_interruption,
 )
-from flow_sdk.compute.providers.compute_provider import (
-    LOOPBACK_HOSTNAMES,
-    sandbox_public_url,
-)
+from flow_sdk.compute.providers.compute_provider import LOOPBACK_HOSTNAMES
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
@@ -2602,17 +2599,20 @@ class AgenticProcess(Entity):
             project = await self._resolve_webapp_project()
             # Independent scoped queries — run them together rather than
             # paying both latencies in series.
-            artifacts, deployments = await asyncio.gather(
+            artifacts, endpoints = await asyncio.gather(
                 webapp_placement.project_artifacts(project),
-                webapp_placement.project_deployments(project),
+                webapp_placement.project_endpoints(project),
             )
-            by_artifact = {deployment.artifact_id: deployment for deployment in deployments if deployment.artifact_id}
+            by_artifact: dict[str, list] = {}
+            for endpoint in endpoints:
+                if endpoint.artifact_id:
+                    by_artifact.setdefault(endpoint.artifact_id, []).append(endpoint.model_dump(mode="json"))
             rows = []
             for artifact in artifacts:
                 payload = artifact.model_dump(mode="json")
-                deployment = by_artifact.get(artifact.id)
-                if deployment is not None:
-                    payload["deployment"] = deployment.model_dump(mode="json")
+                # Where the app is served here: its dev server (`proxy`) and/or its
+                # built output (`static`). `flow app open` restarts from these.
+                payload["endpoints"] = by_artifact.get(artifact.id, [])
                 rows.append(payload)
             return ApiSuccessResponse(data={"artifacts": rows})
         except Exception as e:
@@ -2621,7 +2621,7 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="register-webapp-artifact")
     async def _http_register_webapp_artifact(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Create/update a web Artifact and its local Deployment."""
+        """Create/update a web Artifact, its project's local placement, and that placement's endpoints for it."""
 
         from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
         from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
@@ -2633,9 +2633,8 @@ class AgenticProcess(Entity):
             return body
 
         # Port is OPTIONAL: an app that we serve has no dev server to point at.
-        # Absent → no Deployment at all, and the display derives `served`. The
-        # continuum has always said both companions are independent; requiring a
-        # port here was the one thing making a served-only app unregistrable.
+        # Absent → no `proxy` endpoint, and the display derives `served`. Requiring
+        # a port here was once the one thing making a served-only app unregistrable.
         raw_port = str(body.get("port") or "").strip()
         port: int | None = None
         if raw_port:
@@ -2673,30 +2672,36 @@ class AgenticProcess(Entity):
             fallback_project_id=self.project_id,
         )
 
-        # No port → no runtime plane. A served-only app is complete without one,
-        # and inventing a Deployment for a dev server that does not exist would
-        # make `_app_payload` derive `dev` and point the display at nothing.
-        deployment = (
-            await webapp_placement.upsert_deployment(
-                artifact,
-                port=port,
-                name=name,
-                start_cmd=start_cmd,
-                health=health,
-                project=project,
+        # The project's local placement, and what it exposes for THIS app: a
+        # `proxy` endpoint for a dev server on a port, a `static` one for built
+        # output FlowPad serves itself. Either, both or neither may exist — a
+        # served-only app has no port, and inventing a dev endpoint for a server
+        # that does not exist would point the display at nothing.
+        deployment = await webapp_placement.local_web_deployment(project, artifact=artifact, name=name)
+        served = webapp_placement.served_dir(artifact_path, body.get("dist"))
+        backends: list[tuple[str, dict]] = []
+        if port is not None:
+            backends.append(
+                (f"{name}-dev", {"type": "proxy", "port": port, "start_cmd": start_cmd or None, "health": health})
             )
-            if port is not None
-            else None
-        )
-
-        micro_app = await webapp_placement.upsert_micro_app(
-            artifact,
-            artifact_path=artifact_path,
-            name=name,
-            dist=body.get("dist"),
-            project=project,
-            fallback_project_id=self.project_id,
-        )
+        if served is not None:
+            backends.append((name, {"type": "static", "root": str(served)}))
+        endpoints: list = []
+        micro_app = None
+        if deployment is not None:
+            endpoints = await webapp_placement.upsert_artifact_endpoints(
+                deployment, artifact, backends, project_id=project.id
+            )
+        else:
+            # No project to place it in: the legacy delivery row is all there is.
+            micro_app = await webapp_placement.upsert_micro_app(
+                artifact,
+                artifact_path=artifact_path,
+                name=name,
+                dist=body.get("dist"),
+                project=project,
+                fallback_project_id=self.project_id,
+            )
 
         shown = None
         if bool(body.get("show", True)):
@@ -2714,6 +2719,7 @@ class AgenticProcess(Entity):
             data={
                 "artifact": artifact.model_dump(mode="json"),
                 "deployment": deployment.model_dump(mode="json") if deployment is not None else None,
+                "endpoints": [endpoint.model_dump(mode="json") for endpoint in endpoints],
                 "micro_app": micro_app.model_dump(mode="json") if micro_app is not None else None,
                 "shown": shown,
             }
@@ -6361,13 +6367,13 @@ class AgenticProcess(Entity):
         box, where loopback is correct and free. This is the browser's question;
         theirs is a different one with a different answer.
         """
+        from flow_sdk.builtin.service_endpoint import local_direct_url  # noqa: PLC0415
+
         host = await self._resolve_dev_host(port)
-        sandbox_id = own_sandbox_id()
-        if not sandbox_id:
-            return host
         if (urlparse(host).hostname or "").lower() not in LOOPBACK_HOSTNAMES:
             return host
-        return sandbox_public_url(int(port), sandbox_id)
+        # The one rule for "where a browser reaches a port on this machine".
+        return local_direct_url(int(port)) if own_sandbox_id() else host
 
     @action.all(action_name="get-host")
     async def get_host(self, port: int, redirect: bool = True):

@@ -71,6 +71,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
     import flow_sdk.schema.data_spec.rag_spec  # noqa: F401  — registers ``rag.chunk`` / ``rag.hit``
     import flow_sdk.schema.data_spec.runtime_info_spec  # noqa: F401 — registers ``runtime.info``
+    import flow_sdk.schema.data_spec.service_endpoint_spec  # noqa: F401  — registers ``web.app`` / ``api.rest`` / ``api.chat.openai`` / ``api.mcp`` / ``flowpad.workspace``
     import flow_sdk.schema.data_spec.returned_value_spec  # noqa: F401  — registers ``compute.returned``
     import flow_sdk.schema.data_spec.session_spec  # noqa: F401  — registers ``session.start``
     import flow_sdk.schema.data_spec.source_item_spec  # noqa: F401  — registers ``ingest.source_item``

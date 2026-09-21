@@ -150,40 +150,45 @@ async def resolve_display_target(
 
 
 async def _app_payload(artifact_id: str) -> dict:
-    """Resolve an app by its Artifact — the source plane — plus its companions.
+    """Resolve an app by its Artifact — the source plane — plus what serves it.
 
-    An app is reachable two ways: a dev server on a port (``Deployment``) or its
-    built output served by us (``MicroApp``). Both, either, or neither may exist
+    An app is reachable two ways: a dev server on a port (a ``proxy`` endpoint)
+    or its built output served by us (a ``static`` endpoint — or, for a row
+    written before endpoints, a ``MicroApp``). Both, either, or neither may exist
     at any moment, and which one is live changes without the app changing. So
     the address is the artifact id, and the runtime is *derived* here rather
     than baked into the pin — that is what stops a stale port from becoming the
     identity of an app.
     """
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
     from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import artifact_endpoints  # noqa: PLC0415
 
     if not is_valid_entity_id(artifact_id):
         raise InvalidDisplayTarget(f"Invalid artifact_id: {artifact_id!r}")
 
     # All three reads key off the same artifact id, so nothing here waits on
     # anything else — this resolve sits in front of every app display.
-    artifact, deployment, micro_app = await asyncio.gather(
+    artifact, endpoints, micro_app = await asyncio.gather(
         Artifact.get_by_id(artifact_id),
-        Deployment.get_one({"artifact_id": artifact_id}),
+        artifact_endpoints(artifact_id),
         MicroApp.get_by_artifact_id(artifact_id),
     )
     if artifact is None:
         raise DisplayTargetNotFound(f"Artifact not found: {artifact_id}")
 
-    port = deployment.runtime_port if deployment is not None else None
+    # This machine's rows only: a cloud placement of the same app is not a port here.
+    local = [endpoint for endpoint in endpoints if not endpoint.remote]
+    dev = next((e for e in local if e.backend.type == "proxy"), None)
+    served = next((e for e in local if e.backend.type == "static"), None)
+    port = dev.backend.port if dev is not None else None
 
     payload: dict = {
         "kind": DisplayTargetKind.APP,
         "artifact_id": artifact_id,
         "typeid": f"{Artifact.get_type()}-{artifact_id}",
         "name": artifact.name,
-        "runtime": "dev" if port else ("served" if micro_app is not None else "unbuilt"),
+        "runtime": "dev" if port else ("served" if (served or micro_app) is not None else "unbuilt"),
     }
     if port:
         payload["port"] = port

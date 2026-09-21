@@ -24,6 +24,7 @@ EXPECTED = {
     "AGENTIC_PROCESS": "agentic_process",
     "ARTIFACT": "artifact",
     "DEPLOYMENT": "deployment",
+    "SERVICE_ENDPOINT": "service_endpoint",
     "BOOKMARK": "bookmark",
     "ANNOTATION": "annotation",
     "COMMENT": "comment",

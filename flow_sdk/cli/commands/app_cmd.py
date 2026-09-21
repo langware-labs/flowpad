@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-import socket
 import subprocess
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -29,6 +27,10 @@ from flow_sdk.cli.commands._common import (
 from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
+from flow_sdk.core.dev_server import find_free_port as _find_free_port
+from flow_sdk.core.dev_server import port_open as _port_open
+from flow_sdk.core.dev_server import start_detached as _start_detached
+from flow_sdk.core.dev_server import wait_for_port as _wait_for_port
 
 app_app = typer.Typer(
     name="app",
@@ -135,8 +137,13 @@ def serve_app(
             "show": not no_show,
         },
     )
+    # What serves the build output: the placement's `static` endpoint, or — for an
+    # app registered with no project to place it in — the legacy delivery row.
+    endpoint = next(
+        (e for e in data.get("endpoints") or [] if (e.get("backend") or {}).get("type") == "static"), None
+    )
     micro_app = data.get("micro_app")
-    if micro_app is None:
+    if endpoint is None and micro_app is None:
         _fail(
             EXIT_NOT_FOUND,
             "NO_BUILD_OUTPUT",
@@ -146,9 +153,10 @@ def serve_app(
         {
             "source": "serve",
             "artifact": data.get("artifact"),
+            "endpoint": endpoint,
             "micro_app": micro_app,
             "shown": data.get("shown"),
-            "serving": micro_app.get("location_root"),
+            "serving": (endpoint or {}).get("backend", {}).get("root") or (micro_app or {}).get("location_root"),
         }
     )
 
@@ -242,7 +250,7 @@ def _open_artifact(
             "path": _artifact_path(artifact, root) or str(cwd),
             "port": str(port),
             "start_cmd": command,
-            "health": _deployment_labels(artifact).get("flowpad.runtime.health") or "/",
+            "health": _artifact_health(artifact),
             "description": artifact.get("description") or "Web application",
             "show": True,
         },
@@ -375,18 +383,29 @@ def _query_terms(query: str) -> set[str]:
     return {word for word in words if word not in generic}
 
 
+def _dev_endpoint(artifact: dict) -> dict:
+    """The artifact's dev-server endpoint (a ``proxy`` backend) as ``webapp-artifacts`` reports it, or ``{}``."""
+    for endpoint in artifact.get("endpoints") or []:
+        backend = endpoint.get("backend") or {}
+        if backend.get("type") == "proxy":
+            return backend
+    return {}
+
+
 def _artifact_port(artifact: dict) -> int | None:
-    value = _deployment_labels(artifact).get("flowpad.runtime.port")
     try:
-        port = int(str(value))
+        port = int(str(_dev_endpoint(artifact).get("port")))
     except (TypeError, ValueError):
         return None
     return port if 0 < port <= 65535 else None
 
 
 def _artifact_start_cmd(artifact: dict) -> str:
-    value = _deployment_labels(artifact).get("flowpad.runtime.start_cmd")
-    return str(value or "").strip()
+    return str(_dev_endpoint(artifact).get("start_cmd") or "").strip()
+
+
+def _artifact_health(artifact: dict) -> str:
+    return str(_dev_endpoint(artifact).get("health") or "/")
 
 
 def _artifact_cwd(artifact: dict, root: Path) -> Path:
@@ -414,12 +433,6 @@ def _artifact_path(artifact: dict, root: Path) -> str:
     return ""
 
 
-def _deployment_labels(artifact: dict) -> dict:
-    deployment = artifact.get("deployment")
-    labels = deployment.get("provider_labels") if isinstance(deployment, dict) else None
-    return labels if isinstance(labels, dict) else {}
-
-
 _STATIC_PORT_RANGE = range(8000, 8100)
 
 
@@ -428,48 +441,6 @@ def _choose_static_port() -> int:
         if not _port_open(port):
             return port
     return _find_free_port()
-
-
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-def _port_open(port: int) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.5):
-            return True
-    except OSError:
-        return False
-
-
-def _wait_for_port(port: int, timeout: float) -> bool:
-    deadline = time.monotonic() + max(timeout, 0)
-    while time.monotonic() <= deadline:
-        if _port_open(port):
-            return True
-        time.sleep(0.25)
-    return _port_open(port)
-
-
-def _start_detached(command: str, *, cwd: Path, port: int, name: str) -> tuple[int | None, str]:
-    log_dir = Path.home() / ".flow" / "app-open-logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", name).strip("-") or "webapp"
-    log_file = log_dir / f"{slug}-{port}.log"
-    log = log_file.open("ab")
-    proc = subprocess.Popen(
-        command,
-        cwd=str(cwd),
-        shell=True,
-        stdin=subprocess.DEVNULL,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
-    log.close()
-    return proc.pid, str(log_file)
 
 
 def _install_dependencies_if_needed(app_dir: Path, start_cmd: str) -> None:
