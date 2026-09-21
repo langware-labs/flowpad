@@ -3,9 +3,6 @@
   "name": "repo-cloned",
   "label": "the demo repo",
   "description": "The demo repository is checked out at /work/demo-repo.",
-  "requires": [
-    "git-on-path"
-  ],
   "completion_check": {
     "commands": {
       "linux": "test -d /work/demo-repo/.git"

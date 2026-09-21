@@ -36,10 +36,6 @@ def load(name: str) -> ComputeOpSpec:
     return ComputeOpSpec.model_validate({**body, "setup": (folder / "setup.md").read_text()})
 
 
-async def resolve(name: str):
-    return load(name) if (OPS / name).is_dir() else None
-
-
 def cold_apt_index() -> None:
     """Empty the package index, the way a freshly pulled image ships.
 
@@ -84,7 +80,7 @@ async def main(names: list[str]) -> None:
         try:
             verdict = await run_op(
                 load(name), trusted=True, platform="linux",
-                workdir=Path("/work"), resolve=resolve,
+                workdir=Path("/work"),
             )
             row = {"case": name, "ok": verdict.ok, "exit_code": int(verdict.exit_code),
                    "detail": verdict.detail, "pending": list(verdict.pending),
