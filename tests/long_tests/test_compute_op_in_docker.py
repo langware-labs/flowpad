@@ -1,4 +1,4 @@
-"""The ten compute ops, in a clean container, with a real model behind the agent rung.
+"""The eleven compute ops, in a clean container, with a real model behind the agent rung.
 
 A goal only means something on a machine that can actually fail: a package index
 that really is empty, a PATH that really does not include ``~/.local/bin``, a
@@ -98,7 +98,12 @@ def container():
         # the test that uses it, and a leaked credential in a log is forever.
         yield {"name": name, "base": base, "port": port}
     finally:
-        _sh("docker", "rm", "-f", name, check=False)
+        if os.environ.get("FLOWPAD_OP_KEEP"):
+            # A failed agent run is evidence: its transcript and the machine it
+            # left behind are what the diagnosis reads. Remove it by hand.
+            print(f"\nFLOWPAD_OP_KEEP: container {name} kept (docker rm -f {name})")
+        else:
+            _sh("docker", "rm", "-f", name, check=False)
 
 
 @pytest.fixture(scope="module")
@@ -195,7 +200,7 @@ def test_the_plain_case_installs_once_then_does_nothing(funded):
 def test_an_unreachable_goal_reports_pending_and_does_not_raise(funded):
     row = _drive(funded, "unreachable")["unreachable"]
     assert row["ok"] is False
-    assert row["pending"] == ["unreachable"]
+    assert row["exit_code"] == 1, row  # NOT_YET: the goal does not hold, and may be tried again
     assert "error" not in row, "attempts exhausted is a verdict, not an exception"
 
 
@@ -302,3 +307,29 @@ def test_a_wizard_sequences_ops_into_one_activity_tree(funded):
     # ONE tree: a child per step under a single root, not three roots.
     assert run["children"] == ["git-on-path", "jq-on-path", "cowsay-on-path"], run
     assert run["total"] == 3
+
+
+def test_kafka_is_reached_by_one_agent_process_with_one_retry(funded):
+    """The hardest install here, from nothing, by ONE agent rung allowed ONE retry.
+
+    A retry is a further turn in the SAME process, told what the completion check
+    said — so every agent turn must share one process id. The op's own check is
+    a round trip with a token minted per ask; after the op returns, the same
+    check is asked AGAIN from a fresh shell, because a broker that lived only as
+    long as the agent's turn is exactly the failure this goal exists to catch.
+    """
+    row = _drive(funded, "kafka-running")["kafka-running"]
+    turns = row.get("turns", [])
+    # The WHOLE row: when the op raises, the driver's only record of it is `error`.
+    print("kafka-running:", json.dumps(row, indent=1))
+    assert "error" not in row, f"the op raised instead of answering: {row['error']}"
+
+    agent_turns = [t for t in turns if t["phase"].startswith("agent")]
+    assert 1 <= len(agent_turns) <= 2, f"one turn plus at most one retry: {turns}"
+    assert len({t["process_id"] for t in agent_turns}) == 1, f"a retry must prompt the SAME process: {turns}"
+    assert row["ok"], f"kafka was not reached: {row.get('detail')}"
+
+    time.sleep(10)
+    spec = json.loads((REPO / "tests/long_tests/compute_ops/kafka-running/compute_op.json").read_text())
+    again = _exec(funded["name"], spec["completion_check"]["commands"]["linux"])
+    assert again.returncode == 0, f"the broker did not outlive the op:\n{again.stdout[-800:]}\n{again.stderr[-800:]}"

@@ -24,8 +24,8 @@ def _spec(name: str) -> ComputeOpSpec:
     return ComputeOpSpec.model_validate({**body, "setup": (folder / "setup.md").read_text()})
 
 
-def test_the_rig_has_its_ten_cases():
-    assert len(NAMES) == 10, NAMES
+def test_the_rig_has_its_eleven_cases():
+    assert len(NAMES) == 11, NAMES
 
 
 @pytest.mark.parametrize("name", NAMES)

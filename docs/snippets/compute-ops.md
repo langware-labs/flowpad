@@ -1,3 +1,6 @@
+---
+id: 48fe7963-b589-4540-ae1d-6bf0b53fcb1c
+---
 # Compute ops — work that converges, composes, and can ask
 
 A ComputeOp is one unit of work with a goal. It declares what it RETURNS, and
@@ -64,6 +67,30 @@ answer.value.token         # 'sk-live-…' — read off what the check printed
 
 `ran=False` is the whole point of a convergent op: it reports *skipped*, not
 *completed*, so a caller can tell "it was already true" from "I just did it".
+
+## 3. An agent rung that gets a second turn
+
+```json
+{ "name": "kafka-running",
+  "completion_check": {"commands": {"linux": "<produce a fresh token, consume it back>"}},
+  "attempts": [{"kind": "agent", "agent": "provisioner", "retries": 1, "timeout_seconds": 600}] }
+```
+
+`retries` is how many MORE turns the agent gets when its turn ends and the
+completion check still fails. A retry is not a new process: the SAME process is
+prompted again, in the same session, with what the check said — the command,
+its exit code and the tail of its output — and the bar it must clear. The task
+is not restated; it is already in the session, along with everything the agent
+learned the first time. Default `0`: one turn.
+
+A turn that ran out of time is not retried — that process is busy, not done,
+and a second prompt would only queue behind it. An op with no completion check
+retries on the rung's own failure instead, the only verification it has. Each
+retry reports as its own probe (`agent retry 1`, …), and `timeout_seconds` is
+per turn. Pinned by `tests/unit/test_compute_op_retries.py`; run for real in
+Docker by `test_kafka_is_reached_by_one_agent_process_with_one_retry`.
+
+---
 
 ## What a cancel and a silence answer
 
