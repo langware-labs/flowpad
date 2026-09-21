@@ -7,7 +7,7 @@ name = "flowpad"
 dynamic = ["version"]
 description = "A local-first AI development environment powered by Claude Code"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     {name = "Langware Labs", email = "eran@langware.ai"},
 ]

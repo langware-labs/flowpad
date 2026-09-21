@@ -4,14 +4,14 @@
 # Flowpad is Python, so "no python" needs explaining: the backend runs on uv's
 # own managed CPython under ~/.local/share/uv, exactly as the desktop app
 # installs it (electron/uv-manager.js:675 `uv tool install flowpad --python
-# 3.10`, which auto-downloads an interpreter when none is present). Inside
+# 3.11`, which auto-downloads an interpreter when none is present). Inside
 # Python every subprocess re-entry uses `sys.executable`, never the literal
 # "python3" (flow_sdk/server/launch.py:210), so an absent system interpreter is
 # genuinely fine.
 #
 # The two other container paths in this repo cannot be used here and that is
 # not an oversight: install_flow_on_docker.sh hard-exits without python3, and
-# docker/Dockerfile.flow-backend is FROM python:3.10-slim and apt-installs git.
+# docker/Dockerfile.flow-backend is FROM python:3.11-slim and apt-installs git.
 #
 # node:22-bookworm-slim carries node (for the Claude CLI, which needs no Python)
 # and neither of the two binaries under test — verified: python3, python, git and
@@ -60,12 +60,12 @@ RUN npm install -g @anthropic-ai/claude-code@2.1.197 && claude --version
 # OUR working tree, not the PyPI release — the host driver builds the wheel and
 # a COPY keeps the image self-describing (a bind mount would not).
 COPY dist/flowpad-*.whl /wheels/
-RUN uv tool install --python 3.10 --force /wheels/flowpad-*.whl \
+RUN uv tool install --python 3.11 --force /wheels/flowpad-*.whl \
  && flow --help > /dev/null
 # `flow --help`, not `flow --version` — the CLI has no --version option and
 # exits non-zero on one, which would fail the build for the wrong reason.
 # Verified in the container: uv puts flowpad on its own managed CPython at
-# ~/.local/share/uv/python/cpython-3.10.*, reachable only through the tool
+# ~/.local/share/uv/python/cpython-3.11.*, reachable only through the tool
 # venv, never as `python3`.
 
 # ── Assertion 3: installing flowpad did not put python on PATH ───────────────

@@ -1,6 +1,6 @@
 # Docker image for the end-to-end migration test.
 #
-# Stays lean: python:3.10-slim + curl + jq. The wheel is built on the host
+# Stays lean: python:3.11-slim + curl + jq. The wheel is built on the host
 # (build_ui.py needs node/npm) and mounted at /wheels.
 #
 # Container runs as the **dev** instance on **port 9711** — chosen to be
@@ -15,7 +15,7 @@
 #   - Both versions honor ``LOCAL_SERVER_PORT=9711`` for the bind port.
 # The container exposes 9711; host maps to 9711 (1:1, no remap).
 
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl jq procps \
