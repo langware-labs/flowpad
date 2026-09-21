@@ -4146,10 +4146,6 @@ msgstr "انتهت صلاحية الرمز. يُرجى إغلاق النافذة
 msgid "Code expires"
 msgstr ""
 
-#: src/i18n/type-labels.ts
-msgid "Code Ref"
-msgstr "مرجع الكود"
-
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Codex"

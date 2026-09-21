@@ -47,7 +47,6 @@ const TYPE_LABELS: Record<string, MessageDescriptor> = {
   claude_memory: msg`Claude Memory`,
   claude_rules: msg`Claude Rules`,
   claude_session: msg`Claude Session`,
-  code_ref: msg`Code Ref`,
   codex_session: msg`Codex Session`,
   collaboration_room: msg`Collaboration Room`,
   command: msg`Command`,

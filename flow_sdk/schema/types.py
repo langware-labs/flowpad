@@ -193,7 +193,6 @@ class EntityType(StrEnum):
     # holds it as a read-only projection of hub state (builtin/llm_endpoint.py);
     # the member exists so the type can carry TypeInfo (icon, browse tier).
     LLM_ENDPOINT = "llm_endpoint"
-    CODE_REF = "code_ref"
     AGENT_HOOK = "agent_hook"
     TRIGGER = "trigger"
     PROCESS_RESULT = "process_result"

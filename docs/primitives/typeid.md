@@ -287,7 +287,7 @@ A selection of registered types:
 ```
 user, visitor, team, group, organization, workspace, agent, invitation,
 connection, plugin, micro_app, compute_node, job, system_job, job_execution,
-project, artifact, api_key, code_ref, comment, trigger, agentic_process,
+project, artifact, api_key, comment, trigger, agentic_process,
 process_result, shell, notification, data_source, source_item, llm_endpoint
 ```
 
