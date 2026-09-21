@@ -1,7 +1,7 @@
 """Filesystem contracts independent of application entities."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import ClassVar, Optional
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import FrontMatter
@@ -18,6 +18,8 @@ class SpecDocSpec(FrontMatter):
     """``specs/<name>/spec.md`` — the shape of the document: two frontmatter
     keys and the markdown ``Body``. ``name`` is not here: it is the title, or
     the folder (``derive_spec``)."""
+
+    main_file: ClassVar[str | None] = "spec.md"
 
     title: Optional[str] = None
     spec_type: Optional[str] = None

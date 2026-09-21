@@ -156,6 +156,7 @@ These take a pointer; without one they are an error, not a landing. Get the id f
 | Process | `agentic_process/<id>` | — |
 | Records  *(hub)* | `records/<id>` | hub records |
 | Show | `show/<id>` | — |
+| Ask | `ask/<id>` | — |
 | Skill apps | `apps/<id>` | — |
 | Spec | `spec/<id>` | — |
 | Subgraph | `subgraph/<id>` | — |

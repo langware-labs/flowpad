@@ -43,7 +43,8 @@ from typing import Annotated, Any, ClassVar, Literal, Union, get_args, get_origi
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer, create_model, model_validator
 
-from flow_sdk.schema.data_spec._namespace import current as current_ns, qualified
+from flow_sdk.schema.data_spec._namespace import current as current_ns
+from flow_sdk.schema.data_spec._namespace import qualified
 from flow_sdk.tags.grammar import normalize_tag
 
 # Compiled anonymous subclasses, keyed by canonical authoring form so two
@@ -56,6 +57,13 @@ class DataSpec(BaseModel):
 
     #: The shape's name in the tag ontology. ``""`` ⇒ anonymous (unregistered).
     spec_kind: ClassVar[str] = ""
+    # Optional asset filesystem contract. Values and row-only specs declare none.
+    # Class metadata, never document fields or wire payload keys.
+    main_file: ClassVar[str | None] = None
+    file_ext: ClassVar[str | None] = None
+    file_names: ClassVar[tuple[str, ...]] = ()
+    file_extensions: ClassVar[tuple[str, ...]] = ()
+    manifest_layout: ClassVar[str | None] = None
     #: The authoring form an anonymous subclass was compiled from — what it
     #: dumps back to. ``None`` on hand-written subclasses.
     __authoring__: ClassVar[Any] = None
@@ -352,5 +360,4 @@ def _by_kind(value: Any) -> Any:
 def _with_kind(value: DataSpec, info: Any) -> dict:
     dumped = value.model_dump(mode=info.mode)
     return {"spec_kind": value.spec_kind, **dumped} if value.spec_kind else dumped
-
 

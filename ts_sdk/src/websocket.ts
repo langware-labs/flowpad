@@ -157,6 +157,11 @@ export interface UiCommandMessage extends BaseMessage {
   pointer?: string | null;
   options?: Record<string, string> | null;
   page?: string;
+  /** For `navigate_dock`: which layout to land in. Absent means `dock` — the
+   *  app as usual. `win` is the chrome-less focus window, which is how a
+   *  backend can raise ONE component with no app around it. Without this field
+   *  a pushed command could only ever land in the dock. */
+  layout?: string;
   /** For `desktop_notify`: the notification kind (e.g. "message"). */
   notify_type?: string;
   /** For `desktop_notify`: the kind-specific payload (conversation_id, message_id, sender_name, preview, …). */

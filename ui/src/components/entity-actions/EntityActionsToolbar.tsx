@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { TypeId } from '@sdk';
+import { Project, TypeId } from '@sdk';
 import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
-import { agenticProcessShareSource, genericEntityShareSource } from '@src/hooks/share-sources';
+import { agenticProcessShareSource, genericEntityShareSource, projectShareSource } from '@src/hooks/share-sources';
 import { useEntityShare } from '@src/hooks/use-entity-share';
 import { cn } from '@src/lib/utils';
 import { CloudAssetPublishButton } from './CloudAssetPublishButton';
@@ -57,14 +57,17 @@ export function EntityActionsToolbar({
   const { canShare, isAgenticProcess } = useEntityShare(typeId);
 
   // The conversation share's prep: AgenticProcess shares its ClaudeTranscript
-  // (claude_session) entity; any other entity rides as a TYPE_ID attachment.
-  // Keyed on ``shareOpen`` so each open gets a fresh source (its resolve-once
-  // cache resets).
+  // (claude_session) entity; a Project also grants membership (the message
+  // alone leaves the recipient with nothing to install); any other entity rides
+  // as a TYPE_ID attachment. Keyed on ``shareOpen`` so each open gets a fresh
+  // source (its resolve-once cache resets).
   const shareSource = useMemo(
     () =>
       isAgenticProcess
         ? agenticProcessShareSource(typeId, { label: favoriteTitle, defaultTitle: favoriteTitle })
-        : genericEntityShareSource(typeId, { label: favoriteTitle }),
+        : typeId.type === Project.type
+          ? projectShareSource(typeId, { label: favoriteTitle })
+          : genericEntityShareSource(typeId, { label: favoriteTitle }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [typeId, isAgenticProcess, favoriteTitle, shareOpen],
   );

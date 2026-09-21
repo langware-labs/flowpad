@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, ClassVar, Dict, Optional
 
 from pydantic import ValidationError, model_validator
 
 from flow_sdk.schema.data_spec import FrontMatter
+from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec
 from flow_sdk.schema.data_spec.io.native import FreeForm
-from flow_sdk.schema.data_spec._form import ShapeForm
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,8 @@ class DatasetManifestSpec(FrontMatter):
     then reap rows that parsed fine. That is a disk-read policy — the entity
     field itself is strict — so it lives here, at the header read.
     """
+
+    main_file: ClassVar[str | None] = "dataset.json"
 
     @model_validator(mode="before")
     @classmethod

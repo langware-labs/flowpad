@@ -1523,6 +1523,10 @@ msgstr "Add secret"
 msgid "Add someone to share with."
 msgstr "Add someone to share with."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Add someone with an email address to share this project with."
+msgstr "Add someone with an email address to share this project with."
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Add source"
 msgstr "Add source"
@@ -2406,6 +2410,7 @@ msgid "Artifacts created during flow execution will appear here"
 msgstr "Artifacts created during flow execution will appear here"
 
 #: src/components/settings-view/settings-utils.ts
+#: src/types/ViewType.ts
 msgid "Ask"
 msgstr "Ask"
 
@@ -3207,6 +3212,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/ask/AskView.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
@@ -3287,6 +3293,10 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr "Cancel"
+
+#: src/components/ask/AskView.tsx
+msgid "Cancelled."
+msgstr "Cancelled."
 
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/useAssetsModel.tsx
@@ -4403,6 +4413,7 @@ msgstr "Connect a data source to make it available here"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -4424,6 +4435,10 @@ msgstr "Connect GitHub to link this project to the cloud."
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect GitHub to pick from your repos, including private ones."
 msgstr "Connect GitHub to pick from your repos, including private ones."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Connect GitHub to share a project whose files live in a GitHub repository."
+msgstr "Connect GitHub to share a project whose files live in a GitHub repository."
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Connect to a URL"
@@ -4466,6 +4481,7 @@ msgstr "Connecting"
 #: src/components/account/user-info.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Connecting…"
 msgstr "Connecting…"
 
@@ -9024,6 +9040,8 @@ msgstr "Git URL"
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "GitHub authorization did not complete."
 msgstr "GitHub authorization did not complete."
 
@@ -11145,6 +11163,7 @@ msgstr "Loading..."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
+#: src/components/ask/AskView.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
@@ -17717,6 +17736,7 @@ msgstr "Selection toolbar"
 msgid "Self-Summary"
 msgstr "Self-Summary"
 
+#: src/components/ask/AskView.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -19186,6 +19206,10 @@ msgstr "sticky for you"
 msgid "Still can't link this project"
 msgstr "Still can't link this project"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Still loading this project — try again in a moment."
+msgstr "Still loading this project — try again in a moment."
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Still signed in"
 msgstr "Still signed in"
@@ -19725,6 +19749,10 @@ msgstr "Test passed — this source can fund a run"
 msgid "Test trigger"
 msgstr "Test trigger"
 
+#: src/components/ask/AskView.tsx
+msgid "Thank you — sent."
+msgstr "Thank you — sent."
+
 #: src/navigation/agentic-process-open.ts
 #: src/navigation/agentic-process-open.ts
 msgid "That agent is no longer in your workspace."
@@ -20018,6 +20046,11 @@ msgstr "The query failed"
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "The recipient will see a PROMPT to approve."
 msgstr "The recipient will see a PROMPT to approve."
+
+#. placeholder {0}: anonAccess.repo ?? 'this project uses'
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
+msgstr "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "The repository {repoLabel} is private. Everyone here will still see the project and its language, but only people who connect GitHub and already have access to that repository can open its files and its skills — Flowpad can't grant that access."
@@ -20457,6 +20490,10 @@ msgstr "this project"
 msgid "This project"
 msgstr "This project"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This project could not be shared."
+msgstr "This project could not be shared."
+
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "This project declares the same variables, and its values win"
 msgstr "This project declares the same variables, and its values win"
@@ -20520,6 +20557,10 @@ msgstr "This project's agent could not start"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "this project's own desk"
 msgstr "this project's own desk"
+
+#: src/components/ask/AskView.tsx
+msgid "This question is no longer waiting."
+msgstr "This question is no longer waiting."
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "This removes the downloaded help desk folder and its indexed entries from this machine. Nothing on the server changes, and everything is downloaded again the next time you open the help desk."
