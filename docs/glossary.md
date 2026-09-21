@@ -191,6 +191,14 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   whole defence. NOT "public" in the `visitor_role` / public-listing sense — it is stamped as
   `Entity.public_role`, which no listing matches, so a public endpoint is usable but never
   enumerable. See [llm-endpoints §7](snippets/llm-endpoints.md).
+* **`ServiceEndpoint`** — ours. One service a `Deployment` EXPOSES, a child of it: `protocol` (a
+  tagged kind — `web.app`, `api.rest`, `api.chat.openai`, `api.mcp`, `flowpad.workspace`, or a
+  `--ns--` one), `backend` (`static` files or a `proxy` to a loopback port) and
+  `supports_direct_access` (a hint to clients, never a grant). Reached through its `service`
+  action — a pure proxy, any method, WebSockets too — and `direct-url`, resolved when asked and
+  never stored. INBOUND traffic to a placement; not an `LLMEndpoint`, which is OUTBOUND spend to a
+  model provider and meters it. A `web.*` endpoint gets an origin of its own on the hub. See
+  [service-endpoints](snippets/service-endpoints.md).
 * **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, agent-mailbox, serializer, ingest-provider and reflect-mode registries.
 * **`SecretPack`** — ours. A named set of environment variables (a "secret pack") and the ONLY way a secret is declared: a folder asset at `agentic-assets/secret_pack/<name>/` in **user** or **project** scope; the shipped ones are **templates** (`system` scope). Not an OAuth connection, and not an `ApiKey` (an inbound Flowpad token). The file is `secret_pack.json`, its shape `CredentialSpec` (value-free); the row is `SecretPack` (type `secret_pack`, formerly `credential_spec`). The UI still says **Credentials**. See [secret_share](secret_share.md).
 * **`SecretStore`** — ours (was *value store*). A place secret values live, keyed by environment variable name: a type plus its config (`flow_sdk/secrets`). Three ship: `env_file` (a dotenv file; a credential's `value_store` spells it `env`, the scope root's `.env.local` by default), `vault` (the per-instance encrypted store, `sodot` on disk) and `gcp_secret_manager` (a Google Cloud Secret Manager project, read through a bound `google` connection). A credential names its store per environment; a `DataSource` instance binds one (`set_secret_store`). Not a `Connection`, which is an account that hands out a token. See [secret-stores](snippets/secret-stores.md).
@@ -223,7 +231,7 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 | `data-integrations` | ours | The `kind: vibe` persona that guides connect → sample → define; mechanics in `connect-data-source` |
 | `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes an example row; a gold label is written against the dataset's output shape |
 | asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by `MicroApp.view`, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. |
-| `micro_app` (family `webapp`) | ours | The delivery plane of an app, and a REPO folder asset when the app IS a folder on disk: `webapp.json` declares `kind` / `build`, `asset_ref` is the app folder, and `serving_root()` is `<asset_ref>/<build>` — we start the app folder, we serve the build. A row registered by `flow app serve` stays DB-only (`location_type: Artifact`, no `asset_ref`). |
+| `micro_app` (family `webapp`) | ours | The DEFINITION of a webapp: a REPO folder asset whose `webapp.json` declares `kind` / `build` / `endpoints`; `asset_ref` is the app folder and `serving_root()` is `<asset_ref>/<build>`. Where an app is served is its placement's `ServiceEndpoint`s, not this row. Rows registered by `flow app serve` before endpoints existed stay DB-only (`location_type: Artifact`) so their `/dock/app/micro_app-<id>` links keep working, pointed at their endpoint's folder. |
 
 ## Help desk (2026-09-02)
 

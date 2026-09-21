@@ -33,6 +33,7 @@ from flow_sdk.core import Entity, action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.schema.data_spec.app_location_type import AppLocationType
+from flow_sdk.schema.data_spec.webapp_spec import WebappEndpointSpec
 from flow_sdk.utils import ROOT_FOLDER
 from flow_sdk.worldview.ontology import KindStr
 
@@ -56,7 +57,6 @@ class MicroApp(Entity):
     location_type: AppLocationType = APIField(description="How this app's files are located")
     location_root: Optional[str] = APIField(default=None, description="Absolute directory the files are served from")
     domains: Optional[List[str]] = APIField(default=None, description="Custom domains routed to this app")
-    default_agent_id: Optional[str] = APIField(default=None, description="Default agent ID for this micro app")
     artifact_id: Optional[str] = APIField(
         default=None,
         description="Artifact this delivers (the source plane); None for standalone folder/builtin apps",
@@ -69,6 +69,9 @@ class MicroApp(Entity):
     description: Optional[str] = APIField(default=None, description="What the app is, for the asset browser")
     kind: KindStr = APIField(default="application.web", description="Dot-path ontology kind")
     build: str = APIField(default=".", description="Served subdir inside the app folder")
+    #: What the app exposes when placed — the templates a placement turns into
+    #: ``ServiceEndpoint`` rows (``webapp_placement.expose_project_endpoints``).
+    endpoints: List[WebappEndpointSpec] = APIField(default_factory=list, description="Services the app exposes when placed")
 
     name: str = EntityField(sharing=Sharing.SHARED)
     # NOT unique. It was, from when a micro-app name WAS its hostname and the
@@ -187,7 +190,12 @@ class MicroApp(Entity):
 
     @action.get()
     async def view(self, request: Request) -> Response:
-        """Serve this app's files under the console API path."""
+        """Serve this app's files under the console API path.
+
+        A legacy row delivering an Artifact's build output is kept pointed at the
+        folder its placement's ``static`` endpoint serves — at write time, by
+        ``webapp_placement.upsert_artifact_endpoints`` — so this stays one join.
+        """
         url = str(request.url)
         service_log.info(f"view app {self.name}({self.typeid}): {url}")
         api_request: APIRequest = APIRequest.from_api_path(url)

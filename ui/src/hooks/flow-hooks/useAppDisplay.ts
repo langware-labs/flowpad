@@ -1,4 +1,4 @@
-import { AgenticProcess, Deployment, MicroApp, QueryRequest, TypeId } from '@sdk';
+import { AgenticProcess, MicroApp, QueryRequest, ServiceEndpoint, TypeId } from '@sdk';
 import { useTheme } from 'next-themes';
 import { useViewMode } from '@src/contexts/view-mode-context';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -127,27 +127,33 @@ export function useAppDisplay(
   const { data: microApps = [] } = useEntitiesQuery<MicroApp>(queryRequest, { enabled: !!artifactId });
   const microApp = (microAppId ? (addressedApp ?? null) : (microApps[0] ?? null)) as MicroApp | null;
 
-  // The dev half of the same question, asked the same way. Kept beside the MicroApp
-  // query rather than in the caller so "which port serves this artifact" has one
-  // owner — two callers deriving it differently is how a stale port survives.
-  const deploymentQuery = useMemo(
+  // What serves this artifact here: its placement's endpoints. A `proxy` endpoint is
+  // the dev server; a `static` one is built output FlowPad serves itself. Kept beside
+  // the MicroApp query rather than in the caller so "which port serves this artifact"
+  // has one owner — two callers deriving it differently is how a stale port survives.
+  const endpointQuery = useMemo(
     () =>
       new QueryRequest({
-        type: Deployment.type,
+        type: ServiceEndpoint.type,
         query: { match: { artifact_id: artifactId ?? '' } },
         name: 'useAppDisplay',
       }),
     [artifactId],
   );
-  const { data: deployments = [] } = useEntitiesQuery<Deployment>(deploymentQuery, { enabled: !!artifactId });
-  const devPort = deployments[0]?.runtimePort ?? null;
+  const { data: endpoints = [] } = useEntitiesQuery<ServiceEndpoint>(endpointQuery, { enabled: !!artifactId });
+  // This machine's rows: a cloud placement of the same app is not a port here.
+  const local = endpoints.filter((endpoint) => !endpoint.remote);
+  const devBackend = local.map((endpoint) => endpoint.backend).find((backend) => backend.type === 'proxy');
+  const devPort = devBackend?.type === 'proxy' ? devBackend.port : null;
+  const servedEndpoint = local.find((endpoint) => endpoint.backend.type === 'static') ?? null;
+  const servedUrl = servedEndpoint ? servedEndpoint.serviceUrl() : (microApp?.viewUrl ?? '');
 
   const devConfig = useProcessWebApp(process, devPort === null ? null : String(devPort));
 
   return useMemo(() => {
     const available: AppRuntime[] = [];
     if (devConfig.host) available.push('dev');
-    if (microApp) available.push('served');
+    if (servedUrl) available.push('served');
 
     // A request only wins if the app actually has that runtime right now — a
     // dev server can stop, and a stale preference must not blank the display.
@@ -157,12 +163,12 @@ export function useAppDisplay(
     return {
       runtime,
       available,
-      src: withQuery(runtime === 'served' ? (microApp?.viewUrl ?? '') : runtime === 'dev' ? devConfig.host : '', appQuery),
+      src: withQuery(runtime === 'served' ? servedUrl : runtime === 'dev' ? devConfig.host : '', appQuery),
       port: devPort === null ? null : String(devPort),
       microApp,
       theme,
       view,
       setRuntime: setOverride,
     };
-  }, [appQuery, devConfig.host, devPort, microApp, override, preferred, theme, view]);
+  }, [appQuery, devConfig.host, devPort, microApp, override, preferred, servedUrl, theme, view]);
 }

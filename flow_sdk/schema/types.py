@@ -36,6 +36,9 @@ class EntityType(StrEnum):
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"
     DEPLOYMENT = "deployment"
+    # One service a Deployment exposes (builtin/service_endpoint.py). Same value
+    # on the hub, where the row is mirrored at the same id.
+    SERVICE_ENDPOINT = "service_endpoint"
     BOOKMARK = "bookmark"
     ANNOTATION = "annotation"
     COMMENT = "comment"

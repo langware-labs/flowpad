@@ -97,6 +97,7 @@ const TYPE_LABELS: Record<string, MessageDescriptor> = {
   prompt: msg`Prompt`,
   prompt_completion: msg`Prompt Completion`,
   remote_worker_session: msg`Remote Worker Session`,
+  service_endpoint: msg`Service endpoints`,
   shell: msg`Shell`,
   skill: msg`Skills`,
   source_item: msg`Source Item`,

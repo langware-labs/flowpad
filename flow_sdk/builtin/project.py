@@ -1672,6 +1672,32 @@ class Project(Entity):
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"project_id": self.id, **data})
 
+    @action.post(action_name="expose-endpoints")
+    async def expose_endpoints_action(self) -> "ApiResponse":
+        """`POST /project/<id>/expose-endpoints {deployment_typeid}` — bring this project's apps up.
+
+        Asked by the hub right after it placed this project on a machine: every
+        webapp asset exposes what its ``webapp.json`` declares (or its build
+        folder), started here on loopback ports, recorded as ``ServiceEndpoint``
+        rows keyed by the HUB's placement — so the ids the hub adopts are these,
+        and its ``service`` hop lands on these rows.
+        """
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+        from flow_sdk.builtin.webapp_placement import expose_project_endpoints  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data()) if request_info else {}
+        deployment_typeid = str((body or {}).get("deployment_typeid") or "").strip()
+        prefix, _, deployment_id = deployment_typeid.partition("-")
+        if prefix != "deployment" or not is_valid_entity_id(deployment_id):
+            return ApiFailResponse(message="deployment_typeid must be deployment-<uuid>", status_code=400)
+        try:
+            endpoints = await expose_project_endpoints(self, deployment_typeid)
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=f"expose-endpoints failed: {exc}")
+        return ApiSuccessResponse(data={"endpoints": [endpoint.model_dump(mode="json") for endpoint in endpoints]})
+
     @action.post(action_name="activate")
     async def activate(self) -> "ApiResponse":
         """Project activation — the one "the user is now in this project" signal.

@@ -329,26 +329,15 @@ class Deployment(Entity):
         node_id = self.compute_node_id
         return node_id is not None and node_id == ComputeNode._local_id()
 
-    @property
-    def runtime_port(self) -> int | None:
-        """The local dev-server port this placement runs on, if any.
+    async def endpoints(self) -> list:
+        """What this placement exposes — one ``ServiceEndpoint`` per service it answers on.
 
-        Owned here because callers kept re-deriving it from the raw label —
-        parse, swallow ValueError, sometimes range-check, sometimes not. A junk
-        label now reads as "no port" everywhere instead of only where someone
-        remembered to guard.
+        Replaces the port label and the ``host_url`` guess: where a placement is
+        reached is a fact about each thing it serves, not one string on the row.
         """
-        raw = (self.provider_labels or {}).get("flowpad.runtime.port")
-        try:
-            port = int(str(raw))
-        except (TypeError, ValueError):
-            return None
-        return port if 0 < port <= 65535 else None
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
-    @property
-    def host_url(self) -> str | None:
-        """Where a human reaches this placement, if it is reachable at all."""
-        return (self.origin.url if self.origin else None) or self.target.location
+        return await ServiceEndpoint.of_deployment(str(self.typeid))
 
     async def element(self) -> Optional[Entity]:
         """The entity this places — the parent. Agent, MicroApp, ComputeNode…
