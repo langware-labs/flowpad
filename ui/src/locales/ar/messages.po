@@ -1266,7 +1266,6 @@ msgstr "نشط"
 
 #: src/pages/flow-page/display-annotation.ts
 #: src/pages/flow-page/display-annotation.ts
-#: src/pages/flow-page/display-annotation.ts
 msgid "Active display"
 msgstr "العرض النشط"
 
@@ -1478,8 +1477,8 @@ msgid "Add Hook"
 msgstr "إضافة Hook"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
-msgid "Add input"
-msgstr ""
+#~ msgid "Add input"
+#~ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add key"
@@ -2039,8 +2038,8 @@ msgid "An <0>orphan</0> is a row in the search index whose source file is gone f
 msgstr "<0>يتيم</0> هو صف في فهرس البحث ملفه المصدر غير موجود على القرص. يكتشفه الفهرس في كل تشغيل ويضع عليه علامة <1>orphan_since</1>. الملف محذوف بالفعل؛ التنظيف فقط يزيل الصف القديم من نتائج البحث لإبقائها نظيفة."
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
-msgid "An absent optional value does not park the run"
-msgstr ""
+#~ msgid "An absent optional value does not park the run"
+#~ msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-list.tsx
@@ -2190,8 +2189,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-msgid "Answered with"
-msgstr ""
+#~ msgid "Answered with"
+#~ msgstr ""
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Anthropic"
@@ -3163,6 +3162,10 @@ msgstr "كتابة الذاكرة المؤقتة"
 msgid "Cache write: {0}"
 msgstr "كتابة الذاكرة المؤقتة: {0}"
 
+#: src/components/assets/editor/wizard/WizardStepInspector.tsx
+msgid "call"
+msgstr ""
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "Call {0} with the stored token"
@@ -3432,7 +3435,6 @@ msgstr ""
 msgid "Chat"
 msgstr "المحادثة"
 
-#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
 msgstr "سجل الدردشة"
@@ -3461,6 +3463,10 @@ msgstr ""
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
 msgstr "المحادثات"
+
+#: src/components/assets/editor/wizard/WizardStepInspector.tsx
+msgid "check"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -4574,8 +4580,6 @@ msgstr "معالجة السياق"
 msgid "context tokens"
 msgstr "رموز السياق"
 
-#: src/components/assets/editor/wizard/WizardViewer.tsx
-#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/survey/SurveyView.tsx
 msgid "Continue"
@@ -7151,8 +7155,8 @@ msgid "Each selected project's folder is added as a context folder."
 msgstr "يُضاف مجلد كل مشروع محدد كمجلد سياق."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
-msgid "earlier output dropped — this is the tail"
-msgstr ""
+#~ msgid "earlier output dropped — this is the tail"
+#~ msgstr ""
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "edges"
@@ -12896,7 +12900,6 @@ msgstr "لا توجد صفحة بهذا الاسم حتى الآن."
 msgid "No past builds"
 msgstr "لا توجد إصدارات سابقة"
 
-#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "No past chats"
 msgstr "لا توجد محادثات سابقة"
@@ -13098,8 +13101,8 @@ msgid "No runs yet."
 msgstr "لا توجد عمليات تشغيل حتى الآن."
 
 #: src/components/webapp-viewer.tsx
-msgid "No runtime port in this view"
-msgstr "لا يوجد منفذ وقت التشغيل في هذا العرض"
+#~ msgid "No runtime port in this view"
+#~ msgstr "لا يوجد منفذ وقت التشغيل في هذا العرض"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "No saved contexts yet."
@@ -13312,6 +13315,10 @@ msgstr "لم يتم اكتشاف قيمة"
 msgid "No web app available"
 msgstr "لا يوجد تطبيق ويب متاح"
 
+#: src/components/webapp-viewer.tsx
+msgid "No web page in this view"
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr ""
@@ -13500,8 +13507,8 @@ msgid "Nothing — this wizard is run by hand. Add a trigger asset under its age
 msgstr ""
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
-msgid "Nothing — this wizard runs with no parameters."
-msgstr ""
+#~ msgid "Nothing — this wizard runs with no parameters."
+#~ msgstr ""
 
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Nothing caps this scope yet. Ask your team admin to set a budget."
@@ -13755,8 +13762,8 @@ msgid "Once per project, the first time it is opened. Oldest agent wins if sever
 msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "one of this wizard's inputs"
-msgstr ""
+#~ msgid "one of this wizard's inputs"
+#~ msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "One per line. Empty means everything the sources allow."
@@ -13857,6 +13864,10 @@ msgstr "يمكن فتح مشروع لتحديد الأسرار التي تستط
 #: src/pages/discover-page/discover-page.tsx
 msgid "Open a project to see its assets."
 msgstr "يمكن فتح مشروع لعرض موارده."
+
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Open a session on this machine"
+msgstr ""
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Open address book"
@@ -14355,8 +14366,8 @@ msgid "Operation failed"
 msgstr "فشلت العملية"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
-msgid "optional"
-msgstr ""
+#~ msgid "optional"
+#~ msgstr ""
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
@@ -14604,7 +14615,6 @@ msgstr "التحليلات السابقة"
 msgid "Past builds"
 msgstr "الإصدارات السابقة"
 
-#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Past chats"
 msgstr "المحادثات السابقة"
@@ -16229,8 +16239,8 @@ msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "إزالة هذا الملف من الـ commit القادم (git restore --staged)"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
-msgid "Remove this input"
-msgstr ""
+#~ msgid "Remove this input"
+#~ msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Remove this row from the manifest"
@@ -17773,6 +17783,7 @@ msgid "Self-Summary"
 msgstr "الملخص الذاتي"
 
 #: src/components/ask/AskView.tsx
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -17859,6 +17870,10 @@ msgstr "لم يستجب الخادم. يُرجى إعادة تشغيل Flowpad �
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "server.py in this asset — runs immediately"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Service endpoints"
 msgstr ""
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -19344,8 +19359,8 @@ msgstr ""
 #~ msgstr "التدفقات"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
-msgid "string, or a JSON shape"
-msgstr ""
+#~ msgid "string, or a JSON shape"
+#~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "string, or a JSON shape — empty if it returns nothing"
@@ -19631,8 +19646,8 @@ msgid "Tags"
 msgstr "وسوم"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
-msgid "Takes"
-msgstr ""
+#~ msgid "Takes"
+#~ msgstr ""
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Takes ~4 seconds"
@@ -20512,6 +20527,10 @@ msgstr "سيتم حذف الملف نهائياً من القرص. لا يمكن
 msgid "This permanently removes the saved context snapshot. This cannot be undone."
 msgstr "سيؤدي هذا إلى إزالة لقطة السياق المحفوظة بشكل دائم. لا يمكن التراجع عن هذا الإجراء."
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "This placement has no chat endpoint yet."
+msgstr ""
+
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "This plan no longer exists."
 msgstr "هذه الخطة لم تعد موجودة."
@@ -20778,10 +20797,9 @@ msgstr "هذا الهدف لا يحتوي على محتوى قابل للقرا�
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "سيؤدي هذا إلى حذف جميع سجلات التصحيح من <0>~/.claude/debug/</0> وجميع سجلات الأخطاء المحللة."
 
-#. placeholder {0}: step.ref ?? ''
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "This wizard declares no input named \"{0}\"."
-msgstr ""
+#~ msgid "This wizard declares no input named \"{0}\"."
+#~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardDebugger.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -20793,8 +20811,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-msgid "This wizard needs something from you"
-msgstr ""
+#~ msgid "This wizard needs something from you"
+#~ msgstr ""
 
 #. placeholder {0}: wizard.agent
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -22207,8 +22225,8 @@ msgid "What should the worker do with this message?"
 msgstr "ماذا يجب أن يفعل العامل بهذه الرسالة؟"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
-msgid "what the form asks"
-msgstr ""
+#~ msgid "what the form asks"
+#~ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "What this machine's assistants are funded by right now"
