@@ -10,6 +10,7 @@ import {
 } from '@src/tabs/tab-content-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { replace } from 'react-router';
 
 function dock(id = '5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'): DockPointer {
   return new DockPointer(ViewType.SHELL, `shell-${id}`);
@@ -72,6 +73,47 @@ describe('tab lifecycle registry', () => {
     expect(result.tab?.id).toBe(tab.id);
     expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.OpenFailed);
     expect(tabManager.lifecycle.get(d.tabHash)?.error).toBe('attach failed');
+  });
+
+  // A dead address — a deleted process or shell — mints no tab: the backend
+  // will not ensure a tab for a target that is gone. Its content loader owns the
+  // recovery (notice + redirect to the next session), so it must still run;
+  // otherwise the page is stranded on "Tab could not be materialized".
+  it('lets the content loader redirect a dead address that mints no tab', async () => {
+    const d = dock();
+    mockNoExistingTabs();
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [], created: false });
+    registerTabContentAdapter(ViewType.SHELL, {
+      setupTab() {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw replace('/dock/shell/shell-fallback');
+      },
+      cleanupTab: () => Promise.resolve(),
+    });
+
+    const thrown = await setupTab(d).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(thrown).toBeInstanceOf(Response);
+    expect((thrown as Response).headers.get('Location')).toBe('/dock/shell/shell-fallback');
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).not.toBe(TabLifecycleState.OpenFailed);
+  });
+
+  it('still records open_failed when no tab mints for a target the loader can load', async () => {
+    const d = dock();
+    mockNoExistingTabs();
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [], created: false });
+    const setupContent = vi.fn(() => Promise.resolve());
+    registerTabContentAdapter(ViewType.SHELL, { setupTab: setupContent, cleanupTab: () => Promise.resolve() });
+
+    const result = await setupTab(d);
+
+    expect(setupContent).toHaveBeenCalledTimes(1);
+    expect(result.tab).toBeNull();
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.OpenFailed);
+    expect(tabManager.lifecycle.get(d.tabHash)?.error).toBe('Tab could not be materialized for this URL.');
   });
 
   it('emits materialized tabs before content setup resolves', async () => {
