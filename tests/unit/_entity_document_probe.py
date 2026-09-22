@@ -13,7 +13,8 @@ from pydantic import ConfigDict
 
 from flow_sdk.assets.layout import Folder
 from flow_sdk.fs_store.schema_registry import ENTITY_LAYOUT, TypeInfo
-from flow_sdk.schema.data_spec import Body, DataSpec
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.io.native import Text
 
 TYPE = "note_probe"
 
@@ -23,7 +24,7 @@ class NoteSpec(DataSpec):
 
     title: Optional[str] = None
     tags: list[str] = []
-    text: Body = ""
+    text: Text = ""
 
 
 def info(**overrides) -> TypeInfo:

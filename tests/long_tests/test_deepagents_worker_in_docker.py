@@ -1,6 +1,6 @@
 """The builtin worker on the box it exists for: FlowPad, an LLM endpoint, and NOTHING else.
 
-A clean container of ``docker/Dockerfile.bare-py312`` — no Node, no npm, none of the four harness
+A clean container of ``docker/Dockerfile.bare`` — no Node, no npm, none of the four harness
 CLIs (the image asserts that at build time), no volumes, no keychain, no vendor login. The only
 funding is an OpenRouter key stored through the product's own two routes (``lm_keys`` →
 ``llm-endpoint/select``), pinned to ``z-ai/glm-5.3``. So a turn that completes can only have been
@@ -34,7 +34,7 @@ import pytest
 from tests.long_tests.conftest import _openrouter_key
 
 REPO = Path(__file__).resolve().parents[2]
-IMAGE = os.environ.get("FLOWPAD_BARE_DOCKER_IMAGE", "flowpad-backend:bare-py312-test")
+IMAGE = os.environ.get("FLOWPAD_BARE_DOCKER_IMAGE", "flowpad-backend:bare-test")
 MODEL = "z-ai/glm-5.3"
 pytestmark = [pytest.mark.timeout(900)]  # a cold image build + a fresh container's first turn; do not increase without approval
 
@@ -64,7 +64,7 @@ def container():
     if not key:
         pytest.skip("OPENROUTER_API_KEY is not set (env or .env.local)")
     if os.environ.get("FLOWPAD_BARE_DOCKER_REBUILD") or _sh("docker", "image", "inspect", IMAGE, check=False).returncode != 0:
-        build = _sh("docker", "build", "-f", "docker/Dockerfile.bare-py312", "-t", IMAGE, ".", cwd=REPO, check=False)
+        build = _sh("docker", "build", "-f", "docker/Dockerfile.bare", "-t", IMAGE, ".", cwd=REPO, check=False)
         assert build.returncode == 0, f"image build failed:\n{build.stdout[-1500:]}\n{build.stderr[-3000:]}"
     name, port = f"flowpad-bare-{uuid.uuid4().hex[:6]}", _free_port()
     _sh("docker", "run", "-d", "--name", name, "-p", f"{port}:{port}", "-e", f"LOCAL_SERVER_PORT={port}",

@@ -1,4 +1,4 @@
-"""The broadcast dedup key is released when the process goes down.
+"""The process-scoped values are released when the process goes down.
 
 ``_last_broadcast_key`` is backed by the module-level ``_LAST_BROADCAST_KEYS``
 dict (keyed by process id) precisely so it survives the fresh AP instance the
@@ -8,6 +8,10 @@ no longer drops the row. ``close()`` and ``delete()`` are the two lifecycle
 exits, so each must drop it explicitly, or the dict grows for the lifetime of
 the server and a re-opened process starts out deduping against the key it last
 broadcast before it went down.
+
+The turn-end reindex watermark (``_REINDEX_WATERMARKS``) is the same shape for
+the same reason, so it is pinned on the same exits here rather than in a
+parallel file.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.agentic_process.agentic_process import _LAST_BROADCAST_KEYS
+from flow_sdk.builtin.agentic_process.agentic_process import _LAST_BROADCAST_KEYS, _REINDEX_WATERMARKS
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums import WorkerType
 
@@ -34,7 +38,9 @@ async def _make_ap() -> AgenticProcess:
     ap.status = ProcessStatus.RUNNING.value
     await ap.save(notify=False)
     ap._last_broadcast_key = ("running", True, "thinking")
+    _REINDEX_WATERMARKS[str(ap.id)] = 42
     assert str(ap.id) in _LAST_BROADCAST_KEYS
+    assert str(ap.id) in _REINDEX_WATERMARKS
     return ap
 
 
@@ -46,6 +52,7 @@ async def test_close_releases_broadcast_key(initialize_test_db) -> None:
 
     assert str(ap.id) not in _LAST_BROADCAST_KEYS
     assert ap._last_broadcast_key is None
+    assert str(ap.id) not in _REINDEX_WATERMARKS
 
 
 @pytest.mark.asyncio
@@ -70,6 +77,7 @@ async def test_close_releases_broadcast_key_even_when_teardown_fails(initialize_
     assert await ap.close() is False
 
     assert str(ap.id) not in _LAST_BROADCAST_KEYS
+    assert str(ap.id) not in _REINDEX_WATERMARKS
 
 
 @pytest.mark.asyncio
@@ -80,3 +88,4 @@ async def test_delete_releases_broadcast_key(initialize_test_db) -> None:
 
     assert str(ap.id) not in _LAST_BROADCAST_KEYS
     assert ap._last_broadcast_key is None
+    assert str(ap.id) not in _REINDEX_WATERMARKS

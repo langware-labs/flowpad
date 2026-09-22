@@ -1,3 +1,6 @@
+---
+id: 94e1bd96-adda-45d6-ac5e-0356fa4ca5b3
+---
 # Mode: author — write a NEW source type
 
 > **Ground rules (inline by design):**

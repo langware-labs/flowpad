@@ -10,7 +10,8 @@ from types import SimpleNamespace
 import pytest
 
 import flow_sdk.stream_inbox.agent_runner as runner
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.responses.response import ApiSuccessResponse
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]  # do not increase timeout without approval
 
@@ -22,11 +23,11 @@ class _Worker:
         self.in_flight = False
         self.last = ""
 
-    async def prompt(self, body: str):
+    async def send_turn(self, body: str) -> PromptResult:
         if self.in_flight:
-            return ApiFailResponse(message="another prompt turn is already in flight for this process")
+            return PromptResult.not_yet("another prompt turn is already in flight for this process", ran=False)
         self.in_flight, self.last = True, body
-        return ApiSuccessResponse(data={"status": "started"})
+        return PromptResult.satisfied("The turn was accepted.")
 
     async def finish(self) -> str:
         await asyncio.sleep(0.05)  # the turn runs long enough for the next message to arrive

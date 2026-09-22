@@ -1,4 +1,3 @@
-import logging
 from __future__ import annotations
 
 from typing import ClassVar, List, Optional, Union
@@ -6,10 +5,10 @@ from typing import ClassVar, List, Optional, Union
 from fastapi import HTTPException
 
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.user import User
 from flow_sdk.core import Entity, QueryFilter
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.type_id import TypeId
 
 
 class Mention(Entity):

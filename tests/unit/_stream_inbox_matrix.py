@@ -96,21 +96,62 @@ async def make_cell(owner_kind: str, provider: str, double, monkeypatch) -> Cell
     # One empty pass: stamps kind/channel and takes the double's first position, so the delivery
     # below is "new since" and not a backfill.
     await sync_source(source)
-    return Cell(owner_kind, provider, double, user, agent, source, uuid.uuid4().hex[:8])
+    cell = Cell(owner_kind, provider, double, user, agent, source, uuid.uuid4().hex[:8])
+    _stub_the_turn(cell, monkeypatch)
+    return cell
+
+
+def _stub_the_turn(cell: Cell, monkeypatch) -> None:
+    """Put the worker stubs in place BEFORE any delivery can start a turn.
+
+    The runner is reached two ways for one message: the explicit call a test
+    makes, and `_on_item` on the tag bus, which `deliver()` sets off through the
+    projection. Both take `conversation_turn_lock`, so whoever arrives first runs
+    the turn and the other waits.
+
+    Stubbing inside the reply helper was too late: the bus had already started a
+    turn on the REAL spawn path, held the lock while it tried to launch a worker,
+    and the test's own call sat behind it until pytest-timeout fired — then
+    dispatched its reply during the NEXT test, where the driver double is no
+    longer patched and the source resolves live credentials. Patching here means
+    whichever call wins the lock runs the same stub and finishes immediately.
+    """
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+    from flow_sdk.stream_inbox import agent_runner  # noqa: PLC0415
+
+    class _Process:
+        id = "p-matrix"
+
+        async def send_turn(self, _body):
+            return PromptResult.satisfied("The turn was accepted.", executor=f"agentic_process-{self.id}")
+
+    async def spawn(*_a, **_k):
+        return _Process()
+
+    async def capture(_ap):
+        return f"agent reply {cell.nonce}"
+
+    monkeypatch.setattr(agent_runner, "_reuse_or_spawn_agent_process", spawn)
+    monkeypatch.setattr("flow_sdk.app.actions.execute_prompt._capture_assistant_reply", capture)
 
 
 async def deliver(cell: Cell) -> SourceItem:
     """An inbound on the channel, ingested the way the backend does it: a webhook push through the
     driver's chokepoint, or a poll."""
-    delivered = cell.double.deliver(f"hello {cell.nonce}", sender=cell.double.sender)
+    inbound = f"hello {cell.nonce}"
+    delivered = cell.double.deliver(inbound, sender=cell.double.sender)
     if delivered.get("path"):
         raw = delivered["body"]
         await DataDriver.loaded(cell.provider).ingest_pushed(cell.source, json.loads(raw), headers=delivered["headers"], raw=raw)
     else:
         await sync_source(cell.source)
     await reconcile_source(str(cell.source.id))
-    rows = [r for r in await SourceItem.get_all({"data_source_id": str(cell.source.id)}) if cell.nonce in (r.body or "")]
-    assert len(rows) == 1, f"{cell.provider}: the delivery was not ingested ({len(rows)} rows carry the nonce)"
+    # Match the delivered TEXT, not the bare nonce: the agent's answer carries the
+    # nonce too ("agent reply <nonce>"), and on a channel that echoes a sent message
+    # back into the same mailbox it is ingested as its own row. Counting that as a
+    # second delivery is how this read "not ingested" when it had been ingested once.
+    rows = [r for r in await SourceItem.get_all({"data_source_id": str(cell.source.id)}) if inbound in (r.body or "")]
+    assert len(rows) == 1, f"{cell.provider}: the delivery was not ingested ({len(rows)} rows carry it)"
     return rows[0]
 
 
@@ -147,26 +188,14 @@ async def reply_as_human(cell: Cell, conversation: Conversation) -> dict:
     return sent[-1]
 
 
-async def reply_as_agent(cell: Cell, item: SourceItem, monkeypatch) -> dict:
+async def reply_as_agent(cell: Cell, item: SourceItem) -> dict:
     """The runner's path: the projected message becomes a turn; the worker is a stub that answers
-    with the nonce; the answer leaves through the channel as the agent."""
-    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    with the nonce; the answer leaves through the channel as the agent.
+
+    The stubs are already installed (`_stub_the_turn`, from `make_cell`) because the
+    bus can start this turn before we are called."""
     from flow_sdk.stream_inbox import agent_runner  # noqa: PLC0415
 
-    class _Process:
-        id = "p-matrix"
-
-        async def prompt(self, _body):
-            return ApiSuccessResponse(data={"status": "started"})
-
-    async def spawn(*_a, **_k):
-        return _Process()
-
-    async def capture(_ap):
-        return f"agent reply {cell.nonce}"
-
-    monkeypatch.setattr(agent_runner, "_reuse_or_spawn_agent_process", spawn)
-    monkeypatch.setattr("flow_sdk.app.actions.execute_prompt._capture_assistant_reply", capture)
     before = len(cell.double.sent())
     assert await agent_runner.handle_inbound(item) is True, f"{cell.provider}: the runner refused the turn"
     await asyncio.gather(*list(outbound._INFLIGHT))

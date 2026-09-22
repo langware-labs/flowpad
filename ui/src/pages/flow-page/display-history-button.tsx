@@ -8,10 +8,10 @@ import { FileText, Globe, History } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-/** Human label for a display target — a file's basename, a webapp's port, or the
+/** Human label for a display target — an app's name, a file's basename, or the
  *  entity's type/id. */
 function entryLabel(entry: DisplayEntry): string {
-  if (entry.kind === 'webapp' && entry.port != null) return `localhost:${entry.port}`;
+  if (entry.kind === 'app' && entry.name) return entry.name;
   if (entry.path) return entry.path.split('/').pop() || entry.path;
   if (entry.type && entry.id) return `${entry.type} · ${entry.id.slice(0, 8)}`;
   return entry.typeid || entry.type || 'display';
@@ -20,7 +20,7 @@ function entryLabel(entry: DisplayEntry): string {
 /** Per-entry glyph: the backend TypeInfo icon for a shown entity, else a
  *  kind-based fallback (file / globe). */
 function EntryIcon({ entry }: { entry: DisplayEntry }) {
-  if (entry.kind === 'webapp') return <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
+  if (entry.kind === 'app') return <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
   if (entry.type) {
     const Icon = iconForType(entry.type);
     return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;

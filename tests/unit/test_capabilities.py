@@ -162,7 +162,6 @@ async def test_capability_install_process_uses_default_harness_worker(monkeypatc
     import flow_sdk.builtin.agentic_process as agentic_process_pkg
     import flow_sdk.core.capabilities.registry as registry_mod
     import flow_sdk.instance_settings as instance_settings_pkg
-    from flow_sdk.responses.response import ApiSuccessResponse
 
     created: list[dict] = []
     scheduled: list[tuple[str, str]] = []
@@ -177,9 +176,11 @@ async def test_capability_install_process_uses_default_harness_worker(monkeypatc
         async def save(self, notify=True):
             return self
 
-        async def prompt(self, prompt):
+        async def send_turn(self, prompt):
+            from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+
             created.append({"prompt": prompt})
-            return ApiSuccessResponse(data={"status": "started", "worker": "codex"})
+            return PromptResult.satisfied("The turn was accepted.", executor="agentic_process-install-process-id")
 
     async def fake_resolve_default_harness_kind():
         return CapabilityKind.CODEX_CLI.value

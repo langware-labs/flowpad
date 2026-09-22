@@ -7,21 +7,6 @@ import { shellIdFromShowTarget } from './shell-show-target';
 import type { NavigationActions } from './NavigationActions';
 
 /**
- * A BARE port — a dev server with no artifact behind it.
- *
- * The one display target with no address: `/dock/web-app?port=` folds every port
- * into a single tab, so it cannot carry a workspace's display identity. An `app`
- * IS addressable (the artifact is its identity, `ViewType.APP` renders it), so it
- * is excluded here even though it also carries a port.
- *
- * Every path that turns a show into an address must refuse the same set, which is
- * why this is exported rather than re-spelled per caller.
- */
-export function isPortDisplayTarget(target: ShowTarget | null | undefined): boolean {
-  return target?.kind === 'webapp' || (target?.kind === 'app' && !target.artifact_id && !target.typeid);
-}
-
-/**
  * The address a `flow show` target takes inside a workspace, or null when it has
  * none — the single definition of "what the active display can address".
  *
@@ -32,16 +17,15 @@ export function isPortDisplayTarget(target: ShowTarget | null | undefined): bool
  * a reload and a live show land in different places.
  *
  * Null for a SHELL target (an address, not content — it is hosted as its own child
- * tab, the same way a journey's `open_terminal` act reaches the workspace), for a
- * bare port (see {@link isPortDisplayTarget}), and for a target that addresses
- * nothing openable (an entity type with no editor and no path — a real answer; the
+ * tab, the same way a journey's `open_terminal` act reaches the workspace), and for
+ * a target that addresses nothing openable (an entity type with no editor and no path — a real answer; the
  * target still lives in the display history).
  */
 export function activeDisplayDock(
   target: ShowTarget | null | undefined,
   { host, projectId }: { host: string | null; projectId: string | null },
 ): DockPointer | null {
-  if (!target || shellIdFromShowTarget(target) || isPortDisplayTarget(target)) return null;
+  if (!target || shellIdFromShowTarget(target)) return null;
   const dock = dockForDisplayTarget(target);
   if (!dock) return null;
 
@@ -82,8 +66,8 @@ export interface OpenActiveDisplayArgs {
  * Back, share and popout come for free because they were never display features —
  * they are URL features the display was opting out of.
  *
- * Returns whether it handled the target, so the caller can fall back for the kinds
- * the pane still owns (see {@link activeDisplayDock} for what has no address).
+ * Returns whether it handled the target (see {@link activeDisplayDock} for what
+ * has no address).
  */
 export function openActiveDisplay({
   target,

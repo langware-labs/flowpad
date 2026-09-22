@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TITLE = "ניהול משימות"
 BODY = "אין משימות"  # leading alef is UTF-8 D7 90 — the byte cp1252 leaves undefined
 
-# Enters exactly where MicroApp.view enters it (micro_app.py:164) — same args,
+# Enters exactly where WebApp.view enters it (micro_app.py:164) — same args,
 # same Request, one frame down from the route.
 DRIVER = r"""
 import asyncio, locale, re, sys
@@ -37,13 +37,13 @@ from flow_sdk.builtin.faas.serve_static import serve_app_bytes
 root = Path(sys.argv[1])
 scope = {
     "type": "http", "http_version": "1.1", "method": "GET", "scheme": "http",
-    "path": "/api/v1/graph/micro_app/app-1/view", "raw_path": b"/", "query_string": b"",
+    "path": "/api/v1/graph/service_endpoint/app-1/service/", "raw_path": b"/", "query_string": b"",
     "root_path": "", "headers": [(b"host", b"localhost:8000")],
     "server": ("localhost", 8000), "client": ("127.0.0.1", 1234),
 }
 
 async def main():
-    resp = await serve_app_bytes(root, None, Request(scope), api_url_scheme="http")
+    resp = await serve_app_bytes(root, None, Request(scope))
     body = resp.body.decode("utf-8")
     # Expectations are derived HERE, from the file, with an explicit encoding.
     # Nothing non-ASCII may cross into this process any other way: argv is

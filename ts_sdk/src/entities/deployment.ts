@@ -6,9 +6,7 @@ import { isTypeId, TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
 import { DEFAULT_CREDENTIAL_ENVIRONMENT } from '../services/credentials-service';
-
-/** Provider label carrying a local dev server's port. Pairs with `runtimePort`. */
-const RUNTIME_PORT_LABEL = 'flowpad.runtime.port';
+import { ServiceEndpoint, type IServiceEndpoint } from './service-endpoint';
 
 export type ArtifactLinkSource = 'manual' | 'gcp_label';
 export type DeploymentSyncState = 'current' | 'stale' | 'partial' | 'error';
@@ -159,21 +157,6 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   }
 
   /** The Agent this places, or null when the deployed element is something else. */
-  /**
-   * The local dev-server port this placement runs on, if any.
-   *
-   * Mirrors `Deployment.runtime_port` (flow_sdk/builtin/deployment.py), and exists
-   * for the same reason: the port is a provider LABEL, and callers kept re-deriving
-   * it — parse, swallow the failure, sometimes range-check, sometimes not. Owned in
-   * one place per side, a junk label reads as "no port" everywhere rather than only
-   * where someone remembered to guard.
-   */
-  get runtimePort(): number | null {
-    const raw = this.provider_labels?.[RUNTIME_PORT_LABEL];
-    const port = Number.parseInt(String(raw), 10);
-    return Number.isFinite(port) && port > 0 && port <= 65535 ? port : null;
-  }
-
   get agentTypeId(): TypeId | null {
     const parent = this.parent_type_id;
     if (!parent || !isTypeId(parent)) return null;
@@ -207,6 +190,12 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   /** Bring a cloud machine to the published definition (the hub re-clones and re-indexes it). */
   async update(): Promise<Record<string, unknown>> {
     return ((await this.post('update')) ?? {}) as Record<string, unknown>;
+  }
+
+  /** What this placement serves — for a cloud placement, as the hub has it now (held here at the hub's ids). */
+  async endpoints(): Promise<ServiceEndpoint[]> {
+    const data = await this.get<{ endpoints?: IServiceEndpoint[] } | null>('endpoints');
+    return (data?.endpoints ?? []).map((row) => new ServiceEndpoint(row));
   }
 
   /** The latest runs on a cloud machine, read through the hub. This computer's runs are the local run list. */

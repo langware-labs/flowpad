@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { WorkerModelTier } from '@sdk';
+import { WorkerModelTier, type ServiceEndpoint } from '@sdk';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWizardRun } from '@src/hooks/use-wizard-run';
 import type { WebappVerdict } from './classify';
@@ -18,7 +18,8 @@ export interface WebappFix {
 
 interface Options {
   verdict: WebappVerdict;
-  port: string | null;
+  /** The endpoint serving the broken app — what the agent restarts or repairs. */
+  endpoint: ServiceEndpoint | null;
   url: string;
   workdir?: string | null;
   /** Subject the run attaches to, so it survives a refresh and is reconnectable. */
@@ -39,7 +40,7 @@ interface Options {
  * guard the loop is vicious: the agent restarts the dev server, the port drops
  * for a moment, that reads as a new fatal, and another paid run starts.
  */
-export function useWebappFix({ verdict, port, url, workdir, targetTypeId, onFinished }: Options): WebappFix {
+export function useWebappFix({ verdict, endpoint, url, workdir, targetTypeId, onFinished }: Options): WebappFix {
   const [autoAttempted, setAutoAttempted] = useState(false);
   // Identity of the failure being repaired, so a *different* fault later still
   // earns its own automatic attempt.
@@ -57,7 +58,9 @@ export function useWebappFix({ verdict, port, url, workdir, targetTypeId, onFini
       payload: {
         code: verdict.code,
         detail: verdict.detail,
-        port,
+        endpoint_id: endpoint?.id ?? null,
+        // A dev server's port, for the agent to check and restart; a served folder has none.
+        port: endpoint?.backend.type === 'proxy' ? endpoint.backend.port : null,
         url,
         workdir: workdir ?? null,
       },

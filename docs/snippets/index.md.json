@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "snippets",
+  "folder_name": "snippets",
+  "inputs_hash": "79482712bcafa8d195eed38416bf876302bc1af090e1c7bf5cdcf89dc0862ce9",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes and workflows \u2014 copyable code rather than prose.",
+  "files": [
+    {
+      "name": "README.md",
+      "rel_path": "README.md",
+      "title": "Snippets \u2014 the dev onboarding shelf",
+      "summary": "Index of the runnable SDK snippet shelf, one page per category, naming the test that pins each so the examples cannot drift.",
+      "content_hash": "0169c758968f4129439d9e77776a85f1956df23d3718ec1ef5b66ea0a24fa7c4",
+      "size_bytes": 5468
+    },
+    {
+      "name": "activity.md",
+      "rel_path": "activity.md",
+      "title": "Activity \u2014 progress on anything, from anywhere",
+      "summary": "Activity progress API by example: path-addressed nodes, cheap ticks versus published transitions, and why a finished root is dropped from the live tree.",
+      "content_hash": "09ff5dd4c2d757be068d03e7891e0555799817cad58c72fef2aa88bdcd97cfb8",
+      "size_bytes": 10611
+    },
+    {
+      "name": "agent-deployment.md",
+      "rel_path": "agent-deployment.md",
+      "title": "Agent deployment \u2014 snippets",
+      "summary": "Runnable snippets for placing an Agent as a Deployment and launching it into an AgenticProcess, with the local placement and dispatch contracts.",
+      "content_hash": "de932d5c0db71463b32d4d2231341d48fab5dcba04897748edc1f4f792b9ba6e",
+      "size_bytes": 5561
+    },
+    {
+      "name": "agent-email.md",
+      "rel_path": "agent-email.md",
+      "title": "Agent email",
+      "summary": "Runnable snippet giving an Agent its own mailbox and answering incoming mail in a threaded reply through StreamInbox.listen.",
+      "content_hash": "0e97d28cb3d9afaddf69d0141e4689ef1f301f3af7db47308be6c49fa15d9fe5",
+      "size_bytes": 4243
+    },
+    {
+      "name": "agent-helpdesk.md",
+      "rel_path": "agent-helpdesk.md",
+      "title": "Agent help desk",
+      "summary": "Giving an Agent a hub help desk: bind_channel adopts the desk as an agent-owned source, and the stream inbox runtime answers every ticket.",
+      "content_hash": "4033b001a40f33d5ba5d050eaeb94616b51b661a6169f2b4f457c4ba8c9d2694",
+      "size_bytes": 1946
+    },
+    {
+      "name": "agents-on-channels.md",
+      "rel_path": "agents-on-channels.md",
+      "title": "An agent on a channel \u2014 snippets",
+      "summary": "Putting an agent on a messaging channel, WhatsApp as the example: the credential, the app-answers variant, and running your own loop over the same SDK.",
+      "content_hash": "b1c2015b9db2b284dc3e9340fcb0e9a7c891c319e27c5021da2bf37545d50f12",
+      "size_bytes": 4433
+    },
+    {
+      "name": "connections.md",
+      "rel_path": "connections.md",
+      "title": "Connections \u2014 Python SDK and CLI",
+      "summary": "Runnable Python and CLI snippets for OAuth connections: listing the provider catalogue, connecting, testing, and how the local service is borrowed or started.",
+      "content_hash": "ee8faf7cd4f8a8cfe2c2b22a4f2ef552921c5c09807fc66aff605c6aa4d25870",
+      "size_bytes": 3066
+    },
+    {
+      "name": "data-sources.md",
+      "rel_path": "data-sources.md",
+      "title": "Data sources \u2014 snippets",
+      "summary": "Runnable data-source snippets: connect a feed on a driver, sync it once, read the SourceItems, and the per-provider config and secret keys.",
+      "content_hash": "a82ffba997f4b81c883022350f53ab8f98511a4ba82bd4c0b4a6b01d57b4c3a9",
+      "size_bytes": 16439
+    },
+    {
+      "name": "data-spec.md",
+      "rel_path": "data-spec.md",
+      "title": "DataSpec",
+      "summary": "Runnable DataSpec examples: declaring a shape, frozen and extra-forbid semantics, parsing an authoring form from a document, and the three authoring forms.",
+      "content_hash": "bd9d91dfd6338679204904c3faead1420ebc9295c93e23dceb396cfc6ff0b2aa",
+      "size_bytes": 10043
+    },
+    {
+      "name": "gmail-source.md",
+      "rel_path": "gmail-source.md",
+      "title": "Gmail source",
+      "summary": "Creating a Gmail data source from the shipped driver, with the app password read from the environment and never stored on the DataSource row.",
+      "content_hash": "13821d3379cef2fe0de4a88e8bcdd5ea3c19ee24a76e6e0289d0f15343f0da2c",
+      "size_bytes": 758
+    },
+    {
+      "name": "llm-endpoints.md",
+      "rel_path": "llm-endpoints.md",
+      "title": "LLM endpoints \u2014 snippets",
+      "summary": "Runnable snippets for LLMEndpoint, the answer to who pays for tokens: api_key, hub and device kinds, completions, embeddings, model listing and probes.",
+      "content_hash": "c2c2ae5175447f36a00ae979d69a0f8be3a18e3db86721aa62aaed5685f8af8e",
+      "size_bytes": 12312
+    },
+    {
+      "name": "message-block.md",
+      "rel_path": "message-block.md",
+      "title": "Simple message block",
+      "summary": "Runnable snippet for the process-local MessageBlock: prompt in, reply out, with no address, provider, mailbox or persisted rows.",
+      "content_hash": "39038b106b395fa70e9379ccf6b3f8a646155cf2880c14ddd8a2dc62d1fb1472",
+      "size_bytes": 1021
+    },
+    {
+      "name": "pipes.md",
+      "rel_path": "pipes.md",
+      "title": "Pipes \u2014 wiring a source to whatever consumes it",
+      "summary": "Runnable examples wiring a source to its consumer: one sync cycle, folder-to-folder mirroring with reflect, and following changes with ack and redelivery.",
+      "content_hash": "27a0f09687b3f85660047293ef0cf62754a4cab28557f7a0ee82c56f7b30e272",
+      "size_bytes": 7883
+    },
+    {
+      "name": "processes.md",
+      "rel_path": "processes.md",
+      "title": "Processes and agents \u2014 snippets",
+      "summary": "Runnable snippets for processes and agents: attaching MCP servers to a process or an agent, how each harness renders them, and when MCP resolves.",
+      "content_hash": "01fd7843f85e88e8866380d56b3842c6b723528a22a0bac80e4881aecd54e7e5",
+      "size_bytes": 5494
+    },
+    {
+      "name": "rag.md",
+      "rel_path": "rag.md",
+      "title": "RAG \u2014 snippets",
+      "summary": "Runnable snippets for RagIndex: marking folders searchable, chunking and embedding markdown, why re-indexing is cheap, and querying the vectors.",
+      "content_hash": "8db8ecbebb7d5de8dd5276d31fd2f20ed80c4c6d616daa985830fc043ae6c987",
+      "size_bytes": 5343
+    },
+    {
+      "name": "secret-stores.md",
+      "rel_path": "secret-stores.md",
+      "title": "Secret stores",
+      "summary": "SecretStore and Connection: how a consumer declares the names and scopes it needs, gets a provider, and binds it onto the row.",
+      "content_hash": "a26acf0b15c8f640485ee33cb8bbae39a87bbd8ec0fcff81cdb4fb012a4ae0cc",
+      "size_bytes": 21679
+    },
+    {
+      "name": "workflows.md",
+      "rel_path": "workflows.md",
+      "title": "Workflows \u2014 snippets",
+      "summary": "Runnable flow_sdk.blocks workflow examples: the mail concierge loop over a StreamInbox, named consumer positions, agent turns and typed replies that ack.",
+      "content_hash": "0f5de165b42e6688329b3793e6ea314694f89a6afd0fb47c8de894544f93325c",
+      "size_bytes": 10485
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-09-19T23:43:15.734237+00:00",
+  "latest_process_ref": ""
+}

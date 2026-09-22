@@ -212,13 +212,15 @@ _RECEPTION_SETUP_TASKS: set = set()
 
 
 def _schedule_setup_prompt(ap, seed: str) -> None:
-    """Run ``ap.prompt(seed)`` in the background so the install request returns the
+    """Run ``ap.send_turn(seed)`` in the background so the install request returns the
     Vibe target immediately — the setup agent populates the display asynchronously."""
     import asyncio  # noqa: PLC0415
 
     async def _run() -> None:
         try:
-            await ap.prompt(seed)
+            taken = await ap.send_turn(seed)
+            if not taken.ok:
+                service_log.warn(f"[reception] setup prompt for {ap.id} was not taken: {taken.detail}")
         except Exception:
             service_log.warn(f"[reception] setup prompt failed for {ap.id}", exc_info=True)
 
@@ -1381,7 +1383,7 @@ class Entity(DBEntity):
 
         Values are dumped THROUGH Pydantic (``model_dump(mode="json")`` on the
         persisted subset), so a field's own serializer runs — a shape CLASS
-        held by a ``SpecType`` field lands as its authoring form, a model as
+        held by a ``ShapeForm`` field lands as its authoring form, a model as
         its JSON. The record writer never has to know what a field holds.
         """
         from flow_sdk.api.api_types.api_field import Persist, persist_policy

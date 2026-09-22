@@ -78,6 +78,29 @@ def manifest_path(root: Path) -> Path:
     return manifest_dir(root) / PROJECT_MANIFEST_MAIN
 
 
+def namespace_for(start: Path) -> str:
+    """The ontology namespace the project containing ``start`` declares.
+
+    A project names its namespace once and every asset under it inherits it, so
+    an asset that declares none asks its project. ``""`` means ours — the flow
+    namespace is the default and it is silent.
+
+    Walking up lives HERE rather than in ``data_spec`` because this module
+    already owns where a manifest sits (``manifest_path``) and how it is read
+    (``_read`` → ``ProjectManifestSpec``); resolving it next to the kind registry
+    meant re-spelling the assets directory, the project root and the manifest's
+    own field access, and doing filesystem work in a layer that states it does
+    none.
+    """
+    here = Path(start).resolve()
+    for candidate in [here, *here.parents]:
+        if not ((candidate / AGENTIC_ASSETS_DIR).is_dir() or (candidate / ".git").exists()):
+            continue
+        spec = _read(manifest_path(candidate), ProjectManifestSpec)
+        return spec.ns if spec is not None else ""
+    return ""
+
+
 def deps_path(root: Path) -> Path:
     return manifest_dir(root) / DEPS_MAIN
 

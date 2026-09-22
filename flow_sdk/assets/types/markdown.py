@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from flow_sdk.schema.data_spec.skill_spec import SkillSpec
+
 _WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 
 
@@ -32,7 +34,7 @@ def _derive(data: dict, root: Path, header_raw: dict, *, titled: bool) -> None:
     name, the wiki-links scraped from the body, and the folder containment the
     wiki tree renders from."""
     if not data.get("asset_type"):
-        data["asset_type"] = "skill" if root.name == "SKILL.md" else _DIR_TO_ASSET_TYPE.get(root.parent.name, "doc")
+        data["asset_type"] = "skill" if root.name == SkillSpec.main_file else _DIR_TO_ASSET_TYPE.get(root.parent.name, "doc")
     if titled:
         data["title"] = data.get("title") or root.stem
         body = data.get("body") or ""

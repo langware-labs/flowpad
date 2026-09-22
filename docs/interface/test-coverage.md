@@ -52,7 +52,6 @@ side-effect · ❌ none.
 | `restart-info` | ✅ test_agentic_process_restart_info | ✅ test_agentic_process_actions (no baseline) | ❌ | ◐ CommandStatusViewer |
 | `cmd-line` | ✅ test_serialize_no_transcript_parse | ✅ test_agentic_process_actions (returns key) | ❌ | ❌ |
 | `status` | ✅ test_agentic_process_status | ✅ test_agentic_process_status_api | ◐ | ✅ WorkerStatusChip, process-status-line |
-| `get-host` | ❌ | ✅ test_agentic_process_actions (resolves local port; rejects out-of-range) | ❌ | ❌ |
 | `set-graph-context` | ❌ | ✅L test_context_process | ❌ | ❌ |
 | `set-display-context` / `display-context` | ✅ test_display_context, test_display_context_hook_install | ✅ test_display_context | ✅ mcp-app-preview-page-sdk, html-preview-served-url | ✅ e2e page-sdk-bridge |
 | `add-dir` / `remove-dir` | ✅ via get_assets + restart_snapshot | ✅ test_agentic_process_actions (add then remove) | ❌ | ❌ |
@@ -124,10 +123,9 @@ fast api coverage via `test_agentic_process_actions.py` /
 | **Desktop** (9 actions) | ❌ | ✅ test_compute_node_actions (machine-status, system-profile, json-file round-trip, pick-folder, open-terminal, open-external, generate-amd-plan) | ❌ | ❌ |
 | FsRecords | ◐ | ✅ fs_records suites | ✅ | ◐ revisions UI |
 | **Analytics** (cost-overview, claude-context) | ❌ | ✅ test_compute_node_actions (cost-overview shape, claude-context envelope) | ❌ | ❌ |
-| core (tabs, get-cwd, git-ops, worker-history, get-host…) | ✅ tabs/order/worker_history | ✅ get_cwd, git_ops, create_project_from_git; test_compute_node_actions (get-host redirect + range guard, worker-history limit/project-scoped) | ✅ tab_* suites | ✅ tab tests, useClaudeHistory |
+| core (tabs, get-cwd, git-ops, worker-history…) | ✅ tabs/order/worker_history | ✅ get_cwd, git_ops, create_project_from_git; test_compute_node_actions (worker-history limit/project-scoped) | ✅ tab_* suites | ✅ tab tests, useClaudeHistory |
 
-Formerly called out and now covered: **`get-host`** (both AgenticProcess and
-ComputeNode variants), **worker-history HTTP action**, **findSession null-on-404**,
+Formerly called out and now covered: **worker-history HTTP action**, **findSession null-on-404**,
 and the **`test_compute_streaming.py` / `test_compute_node_env.py` placeholders**
 (both now carry real streaming / env-propagation assertions, not `*_placeholder`
 stubs). `test_compute_node_env.py` covers env visible-to-child, non-persistence,
@@ -205,8 +203,8 @@ Most of the formerly high-risk holes are closed as of 2026-07-02. Remaining/upda
 - **`has_resumable_session`** — `test_cli_driver_contract` on all three drivers.
 - **Provider input/resize retry → bare-shell respawn** — `test_provider_dead_pty_no_bare_respawn`
   (the de-agenting hazard: raises, never bare-respawns; spawn_args recovery intact).
-- **`get-host`** (AgenticProcess + ComputeNode) — `test_agentic_process_actions` /
-  `test_compute_node_actions`.
+- **Dev servers as endpoints** (`show` by port registers one; `probe`, `direct-url`) —
+  `test_agentic_process_actions` / `test_app_display_target` / `test_service_endpoint_proxy`.
 - **Mid-turn 409 guards** — `test_agentic_process_mid_turn_guard` (switch-mode +
   restart while a prompt is in flight) and `cancel-prompt` (`test_agentic_process_execute`).
 - **`set-visible`** — `test_agentic_process_actions` + `agentic_process_fe_contract`

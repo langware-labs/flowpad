@@ -1,6 +1,6 @@
 """Type metadata for MARKDOWN."""
 from flow_sdk.assets.identity import frontmatter_identity
-from flow_sdk.assets.layout import File, Walk
+from flow_sdk.assets.layout import Walk
 from flow_sdk.assets.types.markdown import derive_markdown
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.markdown_spec import MarkdownSpec
@@ -10,7 +10,6 @@ from flow_sdk.schema.view_mode import ViewMode
 MARKDOWN = TypeInfo(
     hub_main_file="document.md",
     type_name=EntityType.MARKDOWN,
-    shape=File(ext=".md"),
     editor="markdown",
     icon="FileText",
     display_name="Documents",

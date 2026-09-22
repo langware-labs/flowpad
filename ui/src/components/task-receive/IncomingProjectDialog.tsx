@@ -245,7 +245,17 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
             </DialogHeader>
             <DialogFooter>
               <Button variant="ghost" onClick={handleClose}><Trans>Close</Trans></Button>
-              <Button onClick={() => void runClone()}><Trans>Retry</Trans></Button>
+              <Button
+                onClick={() => {
+                  // Retry must take the SAME branch the confirm took. Calling
+                  // runClone() here minted a brand-new project from the template
+                  // path and discarded the shared id both ends agree on.
+                  startedRef.current = false;
+                  void (projectId ? runInstallShared(projectId) : runClone());
+                }}
+              >
+                <Trans>Retry</Trans>
+              </Button>
             </DialogFooter>
           </>
         )}

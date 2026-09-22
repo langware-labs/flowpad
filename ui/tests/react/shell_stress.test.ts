@@ -398,7 +398,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
   // ── 6. Shell.run() round-trip ──────────────────────────────────────────────
 
-  it('Shell.run() executes a command and returns stdout + exitCode=0', async () => {
+  it('Shell.run() executes a command and returns stdout + returncode=0', async () => {
     const computeNode = await get_local_compute_node(`stress-run-${Date.now()}`);
     await computeNode.setup();
 
@@ -409,7 +409,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     const shell = Object.assign(new Shell(), { id: shellId, compute_node_id: computeNode.id });
     const result = await shell.run('echo stress-test-ok');
 
-    expect(result.exitCode).toBe(0);
+    expect(result.returncode).toBe(0);
     expect(result.stdout).toContain('stress-test-ok');
 
     await closePtyRaw(computeNode.id, shellId);

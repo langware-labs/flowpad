@@ -112,11 +112,10 @@ Verb legend: `@action.all` registers the handler for every method (GET/POST/PUT/
 | `upsertSessionProcess` | POST | `_scan_upsert_session_process` | Resume/attach factory — see subsection. |
 | `findSession` | GET | `_scan_find_session` | Read-only session-id → descriptor lookup (no process creation). |
 
-### Desktop mixin (`desktop_actions.py`) — 9
+### Desktop mixin (`desktop_actions.py`) — 8
 
 | Action | Verb | Delegates to | Description |
 | --- | --- | --- | --- |
-| `get-host` | ALL | `_desktop_get_host(port, redirect=True)` | Resolve host URL for a port. |
 | `get-machine-status` | ALL | `_desktop_get_machine_status` | Processes + network snapshot. |
 | `get-system-profile` | ALL | `_desktop_get_system_profile` | Claude Code environment / config profile. |
 | `open-external` | POST | `_desktop_open_external` | Open a URL/path in the OS. |

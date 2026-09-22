@@ -12,7 +12,16 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ActivityProgressSpec } from '@sdk/activity';
 
 import { __resetActivityStoreForTest, handleActivitySnapshot } from '@src/store/activity-store';
-import { useWizardRun } from '@src/components/assets/editor/wizard/useWizardRun';
+import { stepStatus, useWizardRun } from '@src/components/assets/editor/wizard/useWizardRun';
+
+/** Exit codes, spelled as the wire carries them. */
+const OK = 0;
+const NOT_YET = 1;
+
+/** A `run_state` whose last run answered with these steps, in RUN order. */
+function ran(steps: Record<string, Record<string, unknown>>) {
+  return { result: { exit_code: OK, steps } };
+}
 
 const SUBJECT = 'wizard-11111111-1111-4111-8111-111111111111';
 
@@ -31,17 +40,15 @@ function wizardDouble(runState: Record<string, unknown>, runDetail?: Record<stri
     activity_path: 'wizard-demo',
     typeId: { toString: () => SUBJECT },
     run_state: runState,
-    runDetail: async () => runDetail ?? { outcomes: [] },
+    runDetail: async () => runDetail ?? { result: null },
   } as never;
 }
 
 afterEach(() => __resetActivityStoreForTest());
 
 describe('useWizardRun.join', () => {
-  it('returns steps in DOCUMENT order, not in outcome order', () => {
-    const wizard = wizardDouble({
-      outcomes: [{ step_id: 'c', status: 'completed' }, { step_id: 'a', status: 'completed' }],
-    });
+  it('returns steps in DOCUMENT order, not in run order', () => {
+    const wizard = wizardDouble(ran({ c: { exit_code: OK }, a: { exit_code: OK } }));
     const { result } = renderHook(() => useWizardRun(wizard));
     const { steps } = result.current.join(['a', 'b', 'c']);
     expect(steps.map((s) => s.step_id)).toEqual(['a', 'b', 'c']);
@@ -50,7 +57,7 @@ describe('useWizardRun.join', () => {
   });
 
   it('matches a live child by name, through the real snapshot pipeline', () => {
-    const wizard = wizardDouble({ outcomes: [] });
+    const wizard = wizardDouble({ result: null });
     const { result } = renderHook(() => useWizardRun(wizard));
 
     act(() => {
@@ -68,18 +75,26 @@ describe('useWizardRun.join', () => {
   it('reports no live rows for a run this viewer never saw', () => {
     // A trigger-fired run is instance-scoped so it reaches the footer chip;
     // the durable record is the only evidence it happened.
-    const wizard = wizardDouble({ status: 'completed', outcomes: [{ step_id: 'a', status: 'completed' }] });
+    const wizard = wizardDouble(ran({ a: { exit_code: OK, ran: true } }));
     const { result } = renderHook(() => useWizardRun(wizard));
     const { steps } = result.current.join(['a']);
     expect(result.current.live).toBe(false);
     expect(steps[0].live).toBeNull();
-    expect(steps[0].outcome?.status).toBe('completed');
+    expect(stepStatus(steps[0].outcome)).toBe('completed');
   });
 
-  it('keeps outcomes whose step the document no longer declares', () => {
-    const wizard = wizardDouble({
-      outcomes: [{ step_id: 'a', status: 'completed' }, { step_id: 'gone', status: 'failed' }],
-    });
+  it('derives what a step answer means from exit_code and ran alone', () => {
+    expect(stepStatus({ exit_code: OK, ran: false })).toBe('satisfied');
+    expect(stepStatus({ exit_code: OK, ran: true })).toBe('completed');
+    expect(stepStatus({ exit_code: 3 })).toBe('not_applicable');
+    expect(stepStatus({ exit_code: NOT_YET })).toBe('failed');
+    expect(stepStatus({ exit_code: 4 })).toBe('not_found');
+    expect(stepStatus({ exit_code: 7 })).toBe('refused');
+    expect(stepStatus(null)).toBe('');
+  });
+
+  it('keeps answers whose step the document no longer declares', () => {
+    const wizard = wizardDouble(ran({ a: { exit_code: OK }, gone: { exit_code: NOT_YET } }));
     const { result } = renderHook(() => useWizardRun(wizard));
     const { steps, orphaned } = result.current.join(['a']);
     expect(steps).toHaveLength(1);
@@ -88,15 +103,15 @@ describe('useWizardRun.join', () => {
     expect(orphaned.map((o) => o.step_id)).toEqual(['gone']);
   });
 
-  it('fetches probes on the terminal edge, and not before', async () => {
+  it('fetches step output on the terminal edge, and not before', async () => {
     let calls = 0;
     const wizard = {
       activity_path: 'wizard-demo',
       typeId: { toString: () => SUBJECT },
-      run_state: { outcomes: [{ step_id: 'a', status: 'completed' }] },
+      run_state: ran({ a: { exit_code: OK, command: 'true' } }),
       runDetail: async () => {
         calls += 1;
-        return { outcomes: [{ step_id: 'a', status: 'completed', probes: [{ phase: 'action', command: 'true' }] }] };
+        return ran({ a: { exit_code: OK, command: 'true', stdout: 'printed' } });
       },
     } as never;
 
@@ -106,17 +121,17 @@ describe('useWizardRun.join', () => {
     await act(async () => {
       handleActivitySnapshot(node({ state: 'running', seq: 1 }));
     });
-    expect(calls).toBe(0); // still running — the probes are not written yet
+    expect(calls).toBe(0); // still running — the output is not written yet
 
     await act(async () => {
       handleActivitySnapshot(node({ state: 'completed', seq: 2 }));
     });
     expect(calls).toBe(1);
     const { steps } = result.current.join(['a']);
-    expect(steps[0].outcome?.probes?.[0].command).toBe('true');
+    expect(steps[0].outcome?.stdout).toBe('printed');
   });
 
-  it('lets the entity win over a stale run-detail, and still takes its probes', async () => {
+  it('lets the entity win over a stale run-detail', async () => {
     // `run-detail` is fetched on a gesture, so it can be OLDER than the entity.
     // Here it is the empty record left by a reset, while the entity already
     // carries the run that followed. Letting detail win wholesale hid a
@@ -124,58 +139,46 @@ describe('useWizardRun.join', () => {
     const wizard = {
       activity_path: 'wizard-demo',
       typeId: { toString: () => SUBJECT },
-      run_state: { outcomes: [{ step_id: 'a', status: 'completed', message: 'did it' }] },
-      runDetail: async () => ({ outcomes: [] }),
+      run_state: ran({ a: { exit_code: OK, detail: 'did it' } }),
+      runDetail: async () => ({ result: null }),
     } as never;
 
     const { result } = renderHook(() => useWizardRun(wizard));
     await act(async () => { await result.current.loadDetail(); });
 
     const { steps } = result.current.join(['a']);
-    expect(steps[0].outcome?.message).toBe('did it');
+    expect(steps[0].outcome?.detail).toBe('did it');
   });
 
-  it('enriches the entity outcome with probes from run-detail', async () => {
+  it('takes back every stripped field from run-detail, and keeps the entity\'s own', async () => {
+    // `strip_heavy` removes a step's OUTPUT on the way to the entity — stdout,
+    // stderr, the reply text and the returned value. A merge that restored only
+    // some of them drew an empty box for the one fact the step exists to report.
     const wizard = {
       activity_path: 'wizard-demo',
       typeId: { toString: () => SUBJECT },
-      run_state: { outcomes: [{ step_id: 'a', status: 'completed', message: 'did it' }] },
-      runDetail: async () => ({
-        outcomes: [{ step_id: 'a', status: 'completed', probes: [{ phase: 'action', command: 'true' }] }],
-      }),
+      run_state: ran({ a: { exit_code: OK, detail: 'did it', command: 'python3 --version' } }),
+      runDetail: async () =>
+        ran({
+          a: {
+            exit_code: OK, detail: 'stale', command: 'python3 --version',
+            stdout: 'Python 3.11.9', stderr: 'warn', text: 'reply', value: 'Python 3.11.9',
+            check: { exit_code: OK, command: 'python3 --version', returncode: 0, stdout: 'Python 3.11.9' },
+          },
+        }),
     } as never;
 
     const { result } = renderHook(() => useWizardRun(wizard));
     await act(async () => { await result.current.loadDetail(); });
 
     const { steps } = result.current.join(['a']);
-    // The entity's message survives, and the probes arrive alongside it.
-    expect(steps[0].outcome?.message).toBe('did it');
-    expect(steps[0].outcome?.probes?.[0].command).toBe('true');
-  });
-
-  it('takes BOTH stripped fields back from run-detail, not just probes', async () => {
-    // `strip_heavy` removes two things on the way to the entity — the probes
-    // and an agent's returned value. A merge that restored only the probes left
-    // the returned value undefined, and the run panel drew an empty box for the
-    // one fact the whole agentic step exists to report.
-    const wizard = {
-      activity_path: 'wizard-demo',
-      typeId: { toString: () => SUBJECT },
-      run_state: { outcomes: [{ step_id: 'a', status: 'completed', output: 'version' }] },
-      runDetail: async () => ({
-        outcomes: [{
-          step_id: 'a', status: 'completed', output: 'version', result: 'Python 3.10.17',
-          probes: [{ phase: 'action', command: 'true' }],
-        }],
-      }),
-    } as never;
-
-    const { result } = renderHook(() => useWizardRun(wizard));
-    await act(async () => { await result.current.loadDetail(); });
-
-    const { steps } = result.current.join(['a']);
-    expect(steps[0].outcome?.result).toBe('Python 3.10.17');
-    expect(steps[0].outcome?.probes?.[0].command).toBe('true');
+    const outcome = steps[0].outcome!;
+    // The entity's own fields survive; the output arrives alongside them.
+    expect(outcome.detail).toBe('did it');
+    expect(outcome.stdout).toBe('Python 3.11.9');
+    expect(outcome.stderr).toBe('warn');
+    expect(outcome.text).toBe('reply');
+    expect(outcome.value).toBe('Python 3.11.9');
+    expect(outcome.check?.returncode).toBe(0);
   });
 });

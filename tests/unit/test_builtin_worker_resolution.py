@@ -13,7 +13,7 @@ import inspect
 import pytest
 
 from flow_sdk.core.capabilities import registry as registry_mod
-from flow_sdk.core.wizard import process_step
+from flow_sdk.core.compute import process_step
 from flow_sdk.flowpad_types.vendors import VENDORS
 
 BOOTSTRAP = next(v for v in VENDORS if v.bootstrap)

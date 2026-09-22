@@ -380,7 +380,11 @@ class DBEntity(DBBaseRecord):
         return entity
 
     @classmethod
-    async def get_by_typeid(cls: type[DBEntityType], typeid: TypeId) -> Optional[DBEntityType]:
+    async def get_by_typeid(cls: type[DBEntityType], typeid: "TypeId | str") -> Optional[DBEntityType]:
+        # A typed-id STRING is accepted too — it is what travels (a result's
+        # ``executor``, a URL segment). Anything else is used as given.
+        if isinstance(typeid, str):
+            typeid = TypeId(typeid)
         model: Type[DBEntityType] = SchemaRegistry.get_entity_cls(typeid.type)
         if not model:
             raise ValueError(f"get by typeid error: Model not found for db_entity type {typeid.type}")

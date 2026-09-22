@@ -5,21 +5,21 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "modes",
   "folder_name": "modes",
-  "inputs_hash": "ffe5a2fea923f0c0604c9dad2f01f13175e041b9bd4b5286da8df61decda1e15",
+  "inputs_hash": "a2b235602af4dd15c5fcc90e17c410cd624554fefd47826709d43a7b88d03093",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "Per-mode guides for the View-mode skin system: what each mode changes about the same underlying app, and which primitives it reuses rather than forks. Currently covers Vibe, the creator-first workspace.",
+  "self_summary": "The workspace modes. Vibe is the creator-first one: a side chat beside a live display, with the rules that keep the display authoritative.",
   "files": [
     {
       "name": "vibe_mode.md",
       "rel_path": "vibe_mode.md",
       "title": "Vibe Mode \u2014 the creator-first workspace mode",
-      "summary": "Vibe creator-mode workspace: entry paths, build flow, side chat beside a live display preview, MCP UI plumbing, hub theme, and reused primitives.",
-      "content_hash": "7f4779eaad3a25ce698bc7177e94f6e5c5a9d84f23fd1d112e80a48685596f9f",
-      "size_bytes": 16223
+      "summary": "Vibe mode, the creator-first workspace: side chat beside a live display, and the non-negotiable rules keeping it a skin over standard URLs and loaders.",
+      "content_hash": "3932cfc2e69abd55a280cada57f987f666f66e41138662ecd6908eea5f5cb135",
+      "size_bytes": 16784
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-08-23T22:11:28.823621+00:00",
+  "generated_at": "2026-09-19T23:43:15.302740+00:00",
   "latest_process_ref": ""
 }

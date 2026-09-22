@@ -53,8 +53,8 @@ async def test_connect_returns_new_verified_row_and_manual_url(monkeypatch, caps
     monkeypatch.setattr(connections, "open_authorization_in_system_browser", lambda _authorization: False)
 
     async def connect(_provider, presenter, *, reauthorize=False):
-        await presenter.present(BrowserAuthorization("opaque-state", "slack", "https://auth.example/connect"))
-        return ConnectionResult(verified_spec, ConnectionTestResult(ok=True, identity="me"))
+        await presenter.present(BrowserAuthorization(oauth_request_id="opaque-state", provider="slack", url="https://auth.example/connect"))
+        return ConnectionResult(spec=verified_spec, test=ConnectionTestResult(ok=True, identity="me"))
 
     monkeypatch.setattr(connections, "_connect", connect)
     old = (await get_connections())[0]
@@ -75,7 +75,7 @@ async def test_test_and_token_delegate_to_core(monkeypatch):
     monkeypatch.setattr(
         connections,
         "token_for_spec",
-        lambda _spec: _async_value(ConnectionTokenResult(ConnectionTokenStatus.AVAILABLE, "xoxb-secret")),
+        lambda _spec: _async_value(ConnectionTokenResult(status=ConnectionTokenStatus.AVAILABLE, token="xoxb-secret")),
     )
     row = await get_connection("slack")
 
@@ -89,7 +89,7 @@ async def test_nonexportable_held_token_is_not_not_connected(monkeypatch):
     monkeypatch.setattr(
         connections,
         "token_for_spec",
-        lambda _spec: _async_value(ConnectionTokenResult(ConnectionTokenStatus.UNAVAILABLE)),
+        lambda _spec: _async_value(ConnectionTokenResult(status=ConnectionTokenStatus.UNAVAILABLE)),
     )
     row = await get_connection("opaque")
 
@@ -103,7 +103,7 @@ async def test_token_uses_fresh_core_state_not_the_row_snapshot(monkeypatch):
     monkeypatch.setattr(
         connections,
         "token_for_spec",
-        lambda _spec: _async_value(ConnectionTokenResult(ConnectionTokenStatus.NOT_CONNECTED)),
+        lambda _spec: _async_value(ConnectionTokenResult(status=ConnectionTokenStatus.NOT_CONNECTED)),
     )
     row = await get_connection("slack")
 

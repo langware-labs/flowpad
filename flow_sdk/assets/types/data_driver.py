@@ -5,14 +5,13 @@ import json
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.schema.data_spec.data_driver_spec import AGENT_FILE, SCRIPT_FILE, DataDriverSpec
 
 
 def derive_data_driver(data: dict, root: Path, header_raw: dict) -> None:
     """The runtime the folder implies — a fact the manifest alone cannot state. Only the retired
     runtimes' marker names are stat'ed: listing the folder cost one syscall per entry for a source
     that vendors helper modules."""
-    from flow_sdk.schema.data_spec.data_driver_spec import AGENT_FILE, SCRIPT_FILE, DataDriverSpec
-
     markers = {name for name in (SCRIPT_FILE, AGENT_FILE) if (root / name).is_file()}
     data["runtime"] = DataDriverSpec.model_validate(header_raw).runtime_for_folder(markers).value
 
@@ -38,7 +37,7 @@ def data_driver_identity_key(ref: "FSRef | Path") -> str:
     path = Path(getattr(ref, "_path", ref))
     root = path.parent if path.is_file() else path
     try:
-        manifest = json.loads((root / "data_driver.json").read_text(encoding="utf-8"))
+        manifest = json.loads((root / DataDriverSpec.main_file).read_text(encoding="utf-8"))
         name = str(manifest.get("name") or "").strip()
     except (OSError, TypeError, json.JSONDecodeError):
         name = ""
