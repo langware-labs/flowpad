@@ -19,6 +19,7 @@ import { usePreference } from '@src/hooks/use-preference';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
+import { applyShikiTheme, monacoTheme } from '@src/components/code-editor/shikiMonaco';
 import {
   ChevronDown,
   ChevronRight,
@@ -900,8 +901,11 @@ function MonacoMarkdownEditor({
         onChange(v ?? '');
         if (!event.isFlush) onUserEdit?.();
       }}
-      onMount={handleMount}
-      theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'}
+      onMount={(editor, monaco) => {
+        handleMount(editor, monaco);
+        applyShikiTheme(monaco, 'markdown', resolvedTheme);
+      }}
+      theme={monacoTheme(resolvedTheme)}
       options={{
         minimap: { enabled: false },
         wordWrap: 'on',

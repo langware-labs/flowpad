@@ -8,6 +8,7 @@ import { ActionInfo, dataManager, Trigger as TriggerEntity } from '@sdk';
 import apiClient from '@sdk/client';
 import { useEntity } from '@sdk/react/hooks';
 import Editor from '@monaco-editor/react';
+import { applyShikiTheme, monacoTheme } from '@src/components/code-editor/shikiMonaco';
 import { ChevronRight, Copy } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -296,7 +297,8 @@ function CallbackSourceCollapsible({ triggerId }: { triggerId: string }) {
               height="100%"
               language="python"
               value={content}
-              theme={resolvedTheme === 'dark' ? 'vs-dark' : 'light'}
+              onMount={(_editor, monaco) => applyShikiTheme(monaco, 'python', resolvedTheme)}
+              theme={monacoTheme(resolvedTheme)}
               options={{
                 readOnly: true,
                 fontSize: 12,

@@ -25,3 +25,9 @@ export async function ensureShikiMonaco(monaco: Monaco, language: string): Promi
 }
 
 export const monacoTheme = (resolvedTheme: string | undefined) => (resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus');
+
+/** For an editor's `onMount`: load the shared themes, then apply the current one.
+ *  Until then Monaco falls back to its default look instead of throwing. */
+export function applyShikiTheme(monaco: Monaco, language: string, resolvedTheme: string | undefined): void {
+  void ensureShikiMonaco(monaco, language).then(() => monaco.editor.setTheme(monacoTheme(resolvedTheme)));
+}

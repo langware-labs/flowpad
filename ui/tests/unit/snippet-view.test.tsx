@@ -177,6 +177,13 @@ describe('SnippetView', () => {
     expect(calls).toBeDefined();
   });
 
+  it('a first read that fails hands the file to the raw editor instead of spinning', async () => {
+    mocks.post.mockImplementation(() => Promise.reject(new Error('Network Error')));
+    const onNotSnippet = vi.fn();
+    view({ onNotSnippet });
+    await waitFor(() => expect(onNotSnippet).toHaveBeenCalled());
+  });
+
   it('hands back to the raw editor when the file is not a snippet', async () => {
     backend({ '/api/v1/snippet/read': { error_code: 'NOT_A_SNIPPET' } });
     const onNotSnippet = vi.fn();
