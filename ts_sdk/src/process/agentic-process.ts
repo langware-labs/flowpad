@@ -2142,6 +2142,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         this._historyLoaded = true;
       } catch (error) {
         console.error(`[AgenticProcess] Failed to load history for process ${this.id}:`, error);
+        // `tab_switch` error sink (no `sw=`: the SDK can't see the UI's switch;
+        // the timeline places it by time). The pane renders as an empty session.
+        toplog.log(
+          'tab_switch',
+          `error sink=process_history proc=${this.id.slice(0, 8)} err=${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`,
+        );
         // Don't throw - history loading failure shouldn't break the app.
         //
         // But it must not stay SILENT either. Every row is ingested in the one

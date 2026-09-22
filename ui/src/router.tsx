@@ -36,6 +36,8 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from 'react-router';
 import { bindHistoryPosition } from '@src/navigation/history-position-store';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
+import { toplog } from '@sdk';
 
 /**
  * Root-level `/dev/<anything-not-main-or-hooks>` URLs forward to `/dock/<same>`.
@@ -224,3 +226,20 @@ export const router = createBrowserRouter(
  * buttons, the macOS swipe, the Electron mouse buttons) for free.
  */
 bindHistoryPosition(router);
+
+/**
+ * `tab_switch` commit point: the router went loading → idle, i.e. every loader
+ * of the navigation settled and the new URL is what renders. One line per
+ * settled navigation; `painted` / `ready` follow from the views.
+ */
+let lastNavigationState = 'idle';
+router.subscribe((state) => {
+  const now = state.navigation.state;
+  if (now === 'idle' && lastNavigationState !== 'idle') {
+    toplog.log(
+      'tab_switch',
+      `committed ${sinceTabSwitch()} action=${state.historyAction} path=${state.location.pathname} error=${state.errors ? 'yes' : 'no'}`,
+    );
+  }
+  lastNavigationState = now;
+});

@@ -7,6 +7,7 @@ import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTerminalTabs } from '@src/tabs/use-tab-manager';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { notify } from '@src/notifications';
 import { AlertTriangle, LoaderCircle, PlayCircle, RefreshCw } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
@@ -252,12 +253,17 @@ const TerminalPanel: React.FC<{
     void startProcessRuntime(activeProcess, cols, rows)
       .then(() => {
         if (stale) return;
+        toplog.log('tab_switch', `terminal_runtime_ready ${sinceTabSwitch()} proc=${activeProcess.id.slice(0, 8)}`);
         setRuntimeStatus('ready');
         dataContext.setTerminalRuntimeError(null);
       })
       .catch((cause) => {
         if (stale) return;
         const error = classifyRuntimeFailure(activeProcess.id, activeProcess, cause);
+        toplog.log(
+          'tab_switch',
+          `error ${sinceTabSwitch()} sink=terminal_runtime kind=${error.kind} proc=${activeProcess.id.slice(0, 8)} err=${cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause)}`,
+        );
         setRuntimeStatus('failed');
         dataContext.setTerminalRuntimeError({
           kind: error.kind as Exclude<ProcessLoadErrorKind, 'entity_not_found'>,
@@ -381,15 +387,27 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   // Lazy-mount: mount the active panel on first visit; keep mounted ones warm
   // (the Set never shrinks) so re-activation is instant.
   const [mounted, setMounted] = useState<Set<string>>(() => new Set(activeKey ? [activeKey] : []));
+  // `tab_switch`: which panels this TabbedTerminal has already SHOWN. Not
+  // `mounted` — that Set is seeded with the first active key, so it would call
+  // every first mount warm — and deduped on the key so StrictMode's double
+  // effect run writes one line.
+  const shownRef = useRef<{ keys: Set<string>; last: string | null }>({ keys: new Set(), last: null });
   useEffect(() => {
     if (!activeKey) return;
-    setMounted((prev) => {
-      // Warm switch = the panel is already in the Set (visibility flip only);
+    const shown = shownRef.current;
+    if (shown.last !== activeKey) {
+      // Warm switch = the panel was already shown (visibility flip only);
       // cold = first visit mounts InteractiveTerminal (attach + replay).
+      const warm = shown.keys.has(activeKey);
+      toplog.log('tab_switch', `terminal_flip ${sinceTabSwitch()} mode=${warm ? 'warm' : 'cold'} key=${activeKey}`);
       toplog.log(
         ['process_load', 'pty', 'agentic_process.load'],
-        `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`,
+        `TabbedTerminal active flip → ${activeKey} (${warm ? 'warm' : 'cold mount'})`,
       );
+      shown.keys.add(activeKey);
+      shown.last = activeKey;
+    }
+    setMounted((prev) => {
       if (prev.has(activeKey)) return prev;
       const next = new Set(prev);
       next.add(activeKey);
