@@ -501,6 +501,28 @@ async def adopt_project_placement(project, deployment_typeid: str):
     return adopted
 
 
+async def _agent_placement(deployment_typeid: str):
+    """The agent placement *deployment_typeid* names on this machine (with its ``chat``), or None.
+
+    An agent deploy places the agent (re-keyed at ``adopt_placement``), not the
+    project's web runtime — so its apps and its chat are endpoints of the AGENT's
+    placement, and the project's web placement is left alone.
+    """
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+    from flow_sdk.builtin.agent_serve import ensure_chat_endpoint  # noqa: PLC0415
+    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment  # noqa: PLC0415
+    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
+    deployment = await Deployment.get_by_id(deployment_typeid.partition("-")[2])
+    if deployment is None or not kind_matches(KIND_AGENT, deployment.kind):
+        return None
+    agent = await Agent.get_by_id(str(deployment.parent_type_id or "").partition("-")[2])
+    if agent is None or not deployment.is_local:
+        raise ValueError(f"{deployment_typeid} is not an agent placement on this machine")
+    await ensure_chat_endpoint(agent, deployment)
+    return deployment
+
+
 async def expose_project_endpoints(project, deployment_typeid: str) -> list:
     """Bring up every webapp asset of *project* on the hub's placement, and report ALL it serves.
 
@@ -517,7 +539,7 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
-    deployment = await adopt_project_placement(project, deployment_typeid)
+    deployment = await _agent_placement(deployment_typeid) or await adopt_project_placement(project, deployment_typeid)
     apps, current = await asyncio.gather(
         WebApp.get_all({"match": {"project_id": project.id}}),
         ServiceEndpoint.of_deployment(deployment_typeid),

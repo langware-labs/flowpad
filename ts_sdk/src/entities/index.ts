@@ -6,6 +6,7 @@ export * from './api_key';
 export * from './artifact';
 export * from './deployment';
 export * from './service-endpoint';
+export * from './agent-chat';
 export * from './agent-hook';
 export * from './agent-hook-enums';
 export * from './comment';

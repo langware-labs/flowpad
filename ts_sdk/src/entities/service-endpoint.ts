@@ -45,7 +45,13 @@ export interface ProxyBackend {
   health?: string;
 }
 
-export type ServiceBackend = StaticBackend | ProxyBackend;
+/** An agent, answered by the FlowPad app holding the placement — a deployed agent's `chat` endpoint. */
+export interface AgentBackend {
+  type: 'agent';
+  agent_id: string;
+}
+
+export type ServiceBackend = StaticBackend | ProxyBackend | AgentBackend;
 
 export interface IServiceEndpoint extends Omit<IEntity, 'status'> {
   name: string;
@@ -140,6 +146,10 @@ function normalizeBackend(backend: ServiceBackend | undefined): ServiceBackend {
   if (backend.type === 'static') {
     if (!isNonEmptyString(backend.root)) throw new Error('Invalid ServiceEndpoint structure: backend.root is required');
     return { type: 'static', root: backend.root };
+  }
+  if (backend.type === 'agent') {
+    if (!isNonEmptyString(backend.agent_id)) throw new Error('Invalid ServiceEndpoint structure: backend.agent_id is required');
+    return { type: 'agent', agent_id: backend.agent_id };
   }
   if (backend.type === 'proxy') {
     const port = Number(backend.port);

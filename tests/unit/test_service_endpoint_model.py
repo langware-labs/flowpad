@@ -174,6 +174,14 @@ def test_an_unshipped_kind_must_be_namespaced():
 def test_backend_resolves_by_its_type_discriminator():
     assert isinstance(_endpoint(backend={"type": "proxy", "port": 3000}).backend, ProxyBackend)
     assert isinstance(_endpoint(backend={"type": "static", "root": "/srv/dist"}).backend, StaticBackend)
+    assert _endpoint(backend={"type": "agent", "agent_id": "a1"}).backend.agent_id == "a1"
+
+
+def test_an_agent_backend_wire_form_matches_the_other_tier():
+    assert _endpoint(backend={"type": "agent", "agent_id": "a1"}).model_dump(mode="json")["backend"] == {
+        "type": "agent",
+        "agent_id": "a1",
+    }
 
 
 @pytest.mark.parametrize("port", [0, -1, 65536])
