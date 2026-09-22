@@ -15,7 +15,7 @@ import { VibeWorkerSelect } from './vibe-worker-select';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 import { AgenticProcess, ProcessKind, toplog } from '@sdk';
-import { sinceTabSwitch, tabSwitch } from '@src/navigation/tab-switch-state';
+import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -68,35 +68,23 @@ export function VibeChatPane({
   // in the stream (EntityExecutionPanel hydrates the same idempotent load) and
   // the next frame paints it. Once per process this pane is bound to — a switch
   // between the workspace's child tabs keeps the pane and only repaints the
-  // Display, which FlowPage's `painted` line covers.
+  // Display, which the `painted` line covers.
   useEffect(() => {
     if (!process || !toplog.isOn('tab_switch')) return;
     const started = performance.now();
-    let cancelled = false;
-    void process
-      .loadHistory()
-      .then(() => {
-        if (cancelled || tabSwitch.readyLogged) return;
-        requestAnimationFrame(() => {
-          if (cancelled || tabSwitch.readyLogged) return;
-          tabSwitch.readyLogged = true;
-          toplog.log(
-            'tab_switch',
-            `ready ${sinceTabSwitch()} kind=vibe mode=cold proc=${process.id.slice(0, 8)} history_ms=${Math.round(performance.now() - started)}`,
-          );
-        });
-      })
-      .catch((err) => {
+    void process.loadHistory().then(() => {
+      if (!process.historyLoaded) return; // useHistoryLoadAlert logs the failure
+      requestAnimationFrame(() => {
+        if (!claimTabSwitchReady()) return;
         toplog.log(
           'tab_switch',
-          `error ${sinceTabSwitch()} sink=vibe_history proc=${process.id.slice(0, 8)} err=${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`,
+          `ready ${sinceTabSwitch()} kind=vibe mode=cold proc=${process.id.slice(0, 8)} history_ms=${Math.round(performance.now() - started)}`,
         );
       });
-    return () => {
-      cancelled = true;
-    };
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per bound process, not per entity instance
   }, [process?.id]);
+
   const [localNewSessionPending, setLocalNewSessionPending] = useState(false);
   const startingNewSession = newSessionPending ?? localNewSessionPending;
   const markNewSessionPending = useCallback(

@@ -65,22 +65,25 @@ def rows(path: str, wanted: set[str]) -> list[tuple[dt.datetime, str, set[str], 
     return sorted(out, key=lambda r: r[0])
 
 
+def print_window(all_rows, start: int, anchors: list[int], label) -> None:
+    """Every row from `start` up to the next anchor, as `+ms` from `start`."""
+    later = [i for i in anchors if i > start]
+    t0 = all_rows[start][0]
+    # Backend lines can land a few ms before the anchor line's client clock.
+    lo = t0 - dt.timedelta(milliseconds=50)
+    hi = all_rows[later[0]][0] if later else None
+    for at, side, tags, msg in all_rows:
+        if lo <= at and (hi is None or at < hi):
+            print(f"{(at - t0).total_seconds() * 1000:+7.0f} {side} {label(tags)}{msg[:150]}")  # noqa: T201 — CLI output
+
+
 def click_mode(path: str, nth: int) -> None:
     tag = "agentic_process.load"
     all_rows = rows(path, {tag})
     clicks = [i for i, r in enumerate(all_rows) if "openNewChat click" in r[3]]
     if not clicks:
         sys.exit(f"no '{tag}' click line in {path} — is the tag on, and the page reloaded?")
-    start = clicks[nth]
-    later = [i for i in clicks if i > start]
-    t0 = all_rows[start][0]
-    # Backend lines can land a few ms before the click line's client clock.
-    lo = t0 - dt.timedelta(milliseconds=50)
-    hi = all_rows[later[0]][0] if later else None
-    for at, side, _tags, msg in all_rows:
-        if at < lo or (hi is not None and at >= hi):
-            continue
-        print(f"{(at - t0).total_seconds() * 1000:+7.0f} {side} {msg[:160]}")  # noqa: T201 — CLI output
+    print_window(all_rows, clicks[nth], clicks, lambda _tags: "")
 
 
 def switch_starts(all_rows) -> list[int]:
@@ -88,53 +91,54 @@ def switch_starts(all_rows) -> list[int]:
 
 
 def switch_summary(path: str) -> None:
-    all_rows = rows(path, {SWITCH_TAG})
-    # A page (re)load restarts the ids at 0 — each load is its own run, keyed
-    # `<run>.<sw>` so three loads' `sw=0` lines don't merge into one row.
-    by_sw: dict[tuple[int, int], list[str]] = {}
-    # Within one id `+ms` only grows, so it going backwards is a reload too
-    # (two loads in a row are both `sw=0`).
-    run, last, last_ms = 0, -1, -1
-    for _at, _side, _tags, msg in all_rows:
-        m = SW.search(msg)
-        if m and not msg.startswith("noop "):
-            sw = int(m.group(1))
-            p = PLUS_MS.search(msg)
-            ms = 0 if msg.startswith("start ") else (int(p.group(1)) if p else last_ms)
-            if sw < last or (sw == last and ms < last_ms):
-                run += 1
-            last, last_ms = sw, ms
-            by_sw.setdefault((run, sw), []).append(msg)
-    noops = sum(1 for r in all_rows if r[3].startswith("noop "))
-    unattributed = [r[3] for r in all_rows if not SW.search(r[3])]
+    # (event, fields, plus_ms, msg, origin) per line, parsed once. `origin` is
+    # the page-clock moment the line's switch started (its time minus `+ms`):
+    # constant for every line of one switch, and a jump of seconds when the page
+    # reloaded — a reload restarts the ids at 0, so it is the only way to tell
+    # two loads' `sw=0` apart.
+    events = []
+    for at, _side, _tags, msg in rows(path, {SWITCH_TAG}):
+        p = PLUS_MS.search(msg)
+        origin = at - dt.timedelta(milliseconds=int(p.group(1)) if p else 0)
+        events.append((msg.split(" ", 1)[0], dict(FIELD.findall(msg)), p.group(1) if p else None, msg, origin))
+    by_sw: dict[tuple[int, int], list] = {}
+    run, last, last_origin = 0, -1, None
+    for ev in events:
+        event, fields, _plus, _msg, origin = ev
+        if "sw" not in fields or event == "noop":
+            continue
+        sw = int(fields["sw"])
+        reloaded = sw < last or (sw == last and abs((origin - last_origin).total_seconds()) > 0.5)
+        if reloaded:
+            run += 1
+        if reloaded or sw != last or event == "start":
+            last_origin = origin
+        last = sw
+        by_sw.setdefault((run, sw), []).append(ev)
     if not by_sw:
         sys.exit(f"no '{SWITCH_TAG}' lines in {path} — is the tag on, and the page reloaded?")
-    header = f"{'sw':>5} {'via':<9} {'to':<44} {'loader':>7} {'commit':>7} {'paint':>7} {'ready':>7} {'ready kind/mode':<20} errors"
-    print(header)  # noqa: T201
-    for (run, sw_n), msgs in sorted(by_sw.items()):
-        sw = f"{run}.{sw_n}" if run else str(sw_n)
-        start = next((m for m in msgs if m.startswith("start ")), "")
-        if start:
-            f = dict(FIELD.findall(start))
+    print(f"{'sw':>5} {'via':<9} {'to':<44} {'loader':>7} {'commit':>7} {'paint':>7} {'ready':>7} {'ready kind/mode':<20} errors")  # noqa: T201
+    for (run, sw_n), evs in sorted(by_sw.items()):
+        first = {}
+        for event, fields, plus, _msg, _o in evs:
+            first.setdefault(event, (fields, plus))
+        if "start" in first:
+            via, to = first["start"][0].get("via", "?"), first["start"][0].get("to", "?")
         else:  # a page load has no `start`; name it by the first path/dock it logged
-            fields = [dict(FIELD.findall(m)) for m in msgs]
-            f = {"via": "pageload", "to": next((x.get("path") or x.get("dock") for x in fields if x.get("path") or x.get("dock")), "?")}
-
-        def at(event: str) -> str:
-            line = next((m for m in msgs if m.startswith(event + " ")), None)
-            p = PLUS_MS.search(line) if line else None
-            return f"{p.group(1)}" if p else "-"
-
-        ready = next((m for m in msgs if m.startswith("ready ")), "")
-        rf = dict(FIELD.findall(ready))
-        errors = [dict(FIELD.findall(m)).get("sink", "?") for m in msgs if m.startswith(("error ", "uncaught ", "loader_error "))]
-        loader = next((m for m in msgs if m.startswith("loader ")), "")
+            via = "pageload"
+            to = next((f.get("path") or f.get("dock") for _e, f, _p, _m, _o in evs if f.get("path") or f.get("dock")), "?")
+        ready = first.get("ready", ({}, None))[0]
+        errors = [f.get("sink", e) for e, f, _p, _m, _o in evs if e in ("error", "uncaught", "loader_error")]
         print(  # noqa: T201
-            f"{sw:>5} {f.get('via', '?'):<9} {f.get('to', '?')[:44]:<44} "
-            f"{dict(FIELD.findall(loader)).get('ms', '-'):>7} {at('committed'):>7} {at('painted'):>7} {at('ready'):>7} "
-            f"{(rf.get('kind', '-') + '/' + rf.get('mode', '-')) if ready else '-':<20} {','.join(errors) or '-'}"
+            f"{f'{run}.{sw_n}' if run else sw_n:>5} {via:<9} {to[:44]:<44} "
+            f"{first.get('loader', ({}, None))[0].get('ms', '-'):>7} "
+            f"{first.get('committed', ({}, '-'))[1] or '-':>7} {first.get('painted', ({}, '-'))[1] or '-':>7} "
+            f"{first.get('ready', ({}, '-'))[1] or '-':>7} "
+            f"{(ready.get('kind', '-') + '/' + ready.get('mode', '-')) if ready else '-':<20} {','.join(errors) or '-'}"
         )
-    print(f"\n{len(by_sw)} switches, {noops} noop clicks, {len(unattributed)} lines without sw= (SDK-side errors)")  # noqa: T201
+    noops = sum(1 for e in events if e[0] == "noop")
+    unattributed = [e[3] for e in events if "sw" not in e[1]]
+    print(f"\n{len(by_sw)} switches, {noops} noop clicks, {len(unattributed)} lines without sw=")  # noqa: T201
     for msg in unattributed:
         print(f"  {msg[:160]}")  # noqa: T201
 
@@ -147,19 +151,11 @@ def switch_detail(path: str, which: str) -> None:
     if which == "last":
         start = starts[-1]
     else:
-        match = [i for i in starts if SW.search(all_rows[i][3]) and SW.search(all_rows[i][3]).group(1) == which]
+        match = [i for i in starts if (m := SW.search(all_rows[i][3])) and m.group(1) == which]
         if not match:
             sys.exit(f"no 'start sw={which}' line in {path}")
         start = match[0]
-    later = [i for i in starts if i > start]
-    t0 = all_rows[start][0]
-    lo = t0 - dt.timedelta(milliseconds=50)
-    hi = all_rows[later[0]][0] if later else None
-    for at, side, tags, msg in all_rows:
-        if at < lo or (hi is not None and at >= hi):
-            continue
-        label = SWITCH_TAG if SWITCH_TAG in tags else sorted(tags)[0]
-        print(f"{(at - t0).total_seconds() * 1000:+7.0f} {side} {label:<20} {msg[:150]}")  # noqa: T201
+    print_window(all_rows, start, starts, lambda tags: f"{SWITCH_TAG if SWITCH_TAG in tags else sorted(tags)[0]:<20} ")
 
 
 def main() -> None:

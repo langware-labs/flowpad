@@ -5,7 +5,8 @@ import { ChevronDown, ChevronUp, Home } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useRouteError } from 'react-router';
 import { isBackendUnreachable, toplog } from '@sdk';
-import { sinceTabSwitch, tabSwitch } from '@src/navigation/tab-switch-state';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
+import { errorStatus } from '@src/lib/error-message';
 import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -34,9 +35,9 @@ const ErrorScreen = () => {
   useEffect(() => {
     toplog.log(
       'tab_switch',
-      `error ${sinceTabSwitch()} sink=error_screen to=${tabSwitch.to || '-'} path=${window.location.pathname} status=${errorAny?.status ?? errorAny?.response?.status ?? '-'} err=${error instanceof Error ? `${error.name}: ${error.message}` : (errorAny?.message ?? String(error))}`,
+      `error ${sinceTabSwitch()} sink=error_screen path=${window.location.pathname} status=${errorStatus(error) || '-'} err:`,
+      error,
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `errorAny` is `error`, re-typed
   }, [error]);
 
   // ERROR HIERARCHY (check in this exact order):

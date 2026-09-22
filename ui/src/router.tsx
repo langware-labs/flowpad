@@ -38,6 +38,7 @@ import {
 import { bindHistoryPosition } from '@src/navigation/history-position-store';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { toplog } from '@sdk';
+import { useEffect } from 'react';
 
 /**
  * Root-level `/dev/<anything-not-main-or-hooks>` URLs forward to `/dock/<same>`.
@@ -87,6 +88,22 @@ function DevToDockRedirect() {
  * `<App>`) own the open/close state across route changes.
  */
 function RootLayout() {
+  // `tab_switch` paint point for EVERY tab kind — home, the dock, the `/win`
+  // focus window: this is the one parent of every body, and a parent's effect
+  // runs after its children committed, so the rAF lands on the first frame that
+  // shows the new URL. Kinds with async content (terminal replay, chat
+  // history…) add their own `ready` line.
+  const { pathname, search } = useLocation();
+  useEffect(() => {
+    if (!toplog.isOn('tab_switch')) return;
+    const [, layout, viewType] = pathname.split('/');
+    const frame = requestAnimationFrame(() => {
+      toplog.log('tab_switch', `painted ${sinceTabSwitch()} kind=${viewType || layout || 'home'} path=${pathname}`);
+    });
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one line per URL
+  }, [pathname, search]);
+
   return (
     <App>
       <Outlet />
@@ -235,7 +252,7 @@ bindHistoryPosition(router);
 let lastNavigationState = 'idle';
 router.subscribe((state) => {
   const now = state.navigation.state;
-  if (now === 'idle' && lastNavigationState !== 'idle') {
+  if (now === 'idle' && lastNavigationState !== 'idle' && toplog.isOn('tab_switch')) {
     toplog.log(
       'tab_switch',
       `committed ${sinceTabSwitch()} action=${state.historyAction} path=${state.location.pathname} error=${state.errors ? 'yes' : 'no'}`,

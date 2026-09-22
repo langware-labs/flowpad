@@ -18,7 +18,7 @@ import {
   ChannelTransport,
   toplog,
 } from '@sdk';
-import { sinceTabSwitch, tabSwitch } from '@src/navigation/tab-switch-state';
+import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
@@ -225,17 +225,17 @@ export function ConversationView({
       readyTracedRef.current = conversationId;
       toplog.log(
         'tab_switch',
-        `error ${sinceTabSwitch()} sink=conversation_messages conversation=${conversationId.slice(0, 8)} err=${messagesError.message}`,
+        `error ${sinceTabSwitch()} sink=conversation_messages conversation=${conversationId.slice(0, 8)} err:`,
+        messagesError,
       );
       return;
     }
     if (!messagesLoaded) return;
     readyTracedRef.current = conversationId;
-    if (tabSwitch.readyLogged || !toplog.isOn('tab_switch')) return;
+    if (!toplog.isOn('tab_switch')) return;
     const count = conversationMessages.length;
     requestAnimationFrame(() => {
-      if (tabSwitch.readyLogged) return;
-      tabSwitch.readyLogged = true;
+      if (!claimTabSwitchReady()) return;
       toplog.log(
         'tab_switch',
         `ready ${sinceTabSwitch()} kind=conversation mode=cold conversation=${conversationId.slice(0, 8)} messages=${count}`,
