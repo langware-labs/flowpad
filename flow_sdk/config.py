@@ -798,6 +798,11 @@ class ServiceConfig(BaseSettings):
     deep_testing: bool = False
     manual_testing: bool = False
     load_flowpad_assistant: bool = True
+    #: Whether each agent placement on this machine runs its channel serve loop
+    #: (``builtin/agent_serve``). On for every real app; the test tier turns it off,
+    #: since a lifespan there would poll every agent-owned source in the shared DB —
+    #: a test that exercises the loop starts ``serve()`` itself.
+    agent_serve_channels: bool = True
 
     @field_validator("deep_testing", "manual_testing", mode="before")
     @classmethod

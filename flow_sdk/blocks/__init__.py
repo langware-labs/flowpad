@@ -40,6 +40,7 @@ from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
+from .arrivals import arrivals, until
 from .delivery import Delivered, DeliveredPage
 from .folder_changes import FolderChange, FolderChanges
 from .merge import listen, pages
@@ -93,29 +94,6 @@ async def workflow(name: str):
         yield
     finally:
         current_workflow.reset(token)
-
-
-#: ``context_data`` key holding a session's turn records: ``{turn key: {status, text}}``.
-_TURNS = "turns"
-_STARTED, _DONE = "started", "done"
-#: Records kept per session. A redelivery is always of a RECENT item; older records are noise.
-_TURNS_KEPT = 200
-
-
-def _turns(ap) -> dict:
-    data = getattr(ap, "context_data", None) or {}
-    turns = data.get(_TURNS) or {}
-    return turns if isinstance(turns, dict) else {}
-
-
-def _turn_key(m: _AgentInput) -> str:
-    """One message, one key. The natural key (source + origin) when the message has one, else its own id."""
-    source = getattr(m, "data_source_id", "") or ""
-    external = str(getattr(m, "external_id", "") or "")
-    if not source:
-        return external
-    parts = (getattr(m, "origin_kind", ""), getattr(m, "origin_namespace", ""), getattr(m, "origin_key", "") or external)
-    return ":".join([source, *(str(p or "") for p in parts)])
 
 
 class _AgentRunner:
@@ -199,40 +177,20 @@ class _AgentRunner:
         the persona's declared shape, ``executor`` the process. Never raises for
         an outcome: a prompt the process refuses is ``NOT_YET`` with ``ran=False``.
 
-        **Safe to call twice with the same message.** A listener redelivers an
-        item after a crash, and a session is a thread — so a second turn on
-        the same text would be a duplicate answer, not a repeat of the first.
-        The turn is recorded on the process's own ``context_data`` (an entity,
-        so durable) BEFORE the prompt, and its text after; a repeat answers
-        from the record. Only a turn that was started and never finished asks
-        the transcript, and only because that is the one case with no record.
+        **Safe to call twice with the same message.** The turn runs through the
+        agent's one turn engine (``builtin/agent_serve``), which records it on the
+        process before the prompt and its text after — a redelivery is answered
+        from the record, never by a second turn.
         """
-        from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply  # noqa: PLC0415
+        from flow_sdk.builtin.agent_serve import Turn, TurnEngine, turn_key  # noqa: PLC0415
 
         ap = await self.process_for(m)
         executor = str(ap.typeid)
-        key = _turn_key(m)
-        prior = _turns(ap).get(key)
-        if prior and prior.get("status") == _DONE:
-            return self._output(prior.get("text", ""), executor)
-        if prior and prior.get("status") == _STARTED:
-            # We died mid-turn. Did the agent finish? The transcript knows.
-            text = await _capture_assistant_reply(ap)
-            if text:
-                await self._record_turn(ap, key, text)
-                return self._output(text, executor)
-        await self._stamp_turn(ap, key, {"status": _STARTED})
-        taken = await ap.send_turn(m.body or m.name or "")
-        # A turn not taken, left unchecked, turns into an infinite transcript
-        # wait downstream — so it is answered here, as it is. Its STARTED stamp
-        # goes too: left behind, the redelivery would read the transcript's
-        # latest reply — another turn's — as this message's answer.
-        if not taken.ok:
-            await self._forget_turn(ap, key)
-            return taken
-        text = await _capture_assistant_reply(ap)
-        await self._record_turn(ap, key, text or "")
-        return self._output(text or "", executor)
+        turn = Turn(session=str(ap.typeid), key=turn_key(m), body=m.body or m.name or "")
+        outcome = await TurnEngine(self.agent, None).run(turn, process=ap)
+        if outcome.kind == "refused":
+            return PromptResult.not_yet(outcome.text, ran=False, executor=executor)
+        return self._output(outcome.text, executor)
 
     def _output(self, text: str, executor: str) -> PromptResult:
         """The turn's reply as a value, held to the persona's declared shape.
@@ -260,34 +218,6 @@ class _AgentRunner:
                 text=text, executor=executor,
             )
         return PromptResult.satisfied("The agent replied.", value=value, text=text, executor=executor)
-
-    async def _record_turn(self, ap, key: str, text: str) -> None:
-        await self._stamp_turn(ap, key, {"status": _DONE, "text": text})
-
-    @staticmethod
-    async def _forget_turn(ap, key: str) -> None:
-        """Drop one turn's record — a turn that was never taken has none."""
-        turns = dict(_turns(ap))
-        if turns.pop(key, None) is not None:
-            await _AgentRunner._write_turns(ap, turns)
-
-    @staticmethod
-    async def _stamp_turn(ap, key: str, entry: dict) -> None:
-        """Write one turn's record, bounded so a long-lived session cannot grow it forever."""
-        turns = dict(_turns(ap))
-        turns[key] = entry
-        if len(turns) > _TURNS_KEPT:
-            for stale in list(turns)[: len(turns) - _TURNS_KEPT]:
-                turns.pop(stale, None)
-        await _AgentRunner._write_turns(ap, turns)
-
-    @staticmethod
-    async def _write_turns(ap, turns: dict) -> None:
-        """The ONE writer of a session's turn records."""
-        data = dict(getattr(ap, "context_data", None) or {})
-        data[_TURNS] = turns
-        ap.context_data = data
-        await ap.save()
 
     @staticmethod
     async def _exit_process(ap) -> None:
@@ -433,6 +363,18 @@ class StreamInbox:
         self._owner_arg = owner
         self._source = None
 
+    @classmethod
+    def of(cls, source) -> "StreamInbox":
+        """The block over a source that already exists — no adoption step, no connection check.
+
+        What a runtime that already holds its rows uses (an agent's serve loop): the
+        account was connected when the source was made, and looking it up again by
+        address would only find the same row.
+        """
+        block = cls("", provider=source.provider, owner=source.owner)
+        block._source = source
+        return block
+
     def _owner(self):
         """The ``TypeId`` this block's source belongs to, or None for the local
         user (the DataSource stamps that itself on save)."""
@@ -537,7 +479,8 @@ class StreamInbox:
 
         ``poll_every`` defaults to the driver's attention cadence when it declares one, else
         3 s. The row's own ``poll_interval_seconds`` still governs the heartbeat; this is the
-        rate of THIS loop.
+        rate of THIS loop — and only its fallback: an item pushed into the source (a webhook, a
+        hub mirror) wakes the next cycle at once.
         """
         from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
@@ -555,45 +498,48 @@ class StreamInbox:
         last_seen = position.watermark()
         in_flight_at_start = position.in_flight_key()
 
-        while True:
-            await poll_source(source, datetime.now(timezone.utc))
+        # A pushed item wakes the next cycle at once; the cadence is the fallback (``blocks/arrivals``).
+        async with arrivals(str(source.id)) as arrived:
             while True:
-                rows = await SourceItem.page_after(str(source.id), last_seen, limit=max(1, int(size)))
-                if not rows:
-                    break
-                handed: list[Delivered] = []
-                for item in rows:
-                    key = key_of(item)
-                    last_seen = key
-                    redelivered = in_flight_at_start is not None and key <= in_flight_at_start
-                    # Place it in its conversation regardless of the filters below — the
-                    # stream inbox UI shows everything; the LOOP only acts on what passes.
-                    try:
-                        await project_source_item(item, source=source, announce=False)
-                    except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
-                        logger.exception("blocks: projection failed for %s", item.id)
-                    sender = str(item.author_external_id or "").strip().lower()
-                    if is_self_address(source, item.author_external_id or "") or (
-                        self.senders and sender not in self.senders
-                    ):
-                        # Acked now while nothing in this page has been handed over — an ack is an
-                        # offset, so once something has, the page's own ack (or a later item's) covers it.
-                        if not handed and position.advance_to(item):
-                            await position.commit()
+                arrived.clear()
+                await poll_source(source, datetime.now(timezone.utc))
+                while True:
+                    rows = await SourceItem.page_after(str(source.id), last_seen, limit=max(1, int(size)))
+                    if not rows:
+                        break
+                    handed: list[Delivered] = []
+                    for item in rows:
+                        key = key_of(item)
+                        last_seen = key
+                        redelivered = in_flight_at_start is not None and key <= in_flight_at_start
+                        # Place it in its conversation regardless of the filters below — the
+                        # stream inbox UI shows everything; the LOOP only acts on what passes.
+                        try:
+                            await project_source_item(item, source=source, announce=False)
+                        except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
+                            logger.exception("blocks: projection failed for %s", item.id)
+                        sender = str(item.author_external_id or "").strip().lower()
+                        if is_self_address(source, item.author_external_id or "") or (
+                            self.senders and sender not in self.senders
+                        ):
+                            # Acked now while nothing in this page has been handed over — an ack is an
+                            # offset, so once something has, the page's own ack (or a later item's) covers it.
+                            if not handed and position.advance_to(item):
+                                await position.commit()
+                            continue
+                        spec = SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
+                        handed.append(Delivered(
+                            spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered
+                        ))
+                    page = DeliveredPage(handed, position=position, source_id=str(source.id), last=rows[-1])
+                    if not handed:
+                        await page.ack()          # nothing to hand over; the filtered rows are covered
                         continue
-                    spec = SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
-                    handed.append(Delivered(
-                        spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered
-                    ))
-                page = DeliveredPage(handed, position=position, source_id=str(source.id), last=rows[-1])
-                if not handed:
-                    await page.ack()          # nothing to hand over; the filtered rows are covered
-                    continue
-                # The in-flight stamp names the LAST row handed, so a restart redelivers the page.
-                if position.mark_in_flight(rows[-1]):
-                    await position.commit()
-                yield page
-            await asyncio.sleep(cadence)
+                    # The in-flight stamp names the LAST row handed, so a restart redelivers the page.
+                    if position.mark_in_flight(rows[-1]):
+                        await position.commit()
+                    yield page
+                await until(arrived, cadence)
 
     async def listen(
         self,

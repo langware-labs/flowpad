@@ -1,7 +1,7 @@
 """``docs/snippets/agents-on-channels.md``, run as written against the WhatsApp double.
 
-§1 declares the credential; §2 (variant A) leaves an agent-owned, verified source that a delivery
-lands in; §3 (variant B) is the loop, driven by a mock worker until its first reply leaves through
+§1 declares the credential; §2 (variant A) leaves an agent-owned, verified source that the app's
+agent server answers on the channel; §3 (variant B) is the loop, driven by a mock worker until its first reply leaves through
 the channel. The Docker proof of §3 is ``tests/long_tests/test_whatsapp_agent_in_docker.py``.
 """
 from __future__ import annotations
@@ -57,16 +57,30 @@ async def test_1_the_credential_is_declared_once(whatsapp):
     assert any(c.name == "whatsapp" and c.scope == "user" for c in status.credentials)
 
 
-async def test_2_variant_a_leaves_the_agent_an_active_source(whatsapp):
+@pytest.mark.long  # 3.2s: a real turn on the mock worker waits out the transcript's 2s settle window
+async def test_2_variant_a_the_app_answers_on_the_channel(whatsapp, monkeypatch, tmp_path):
+    """Nothing of the owner's runs: the app's agent server serves the agent's source from its
+    placement here, and a customer's message is answered on the channel."""
+    from flow_sdk.builtin.agent_serve import AgentServer
+
+    worker = MockDriver(tmp_path / "mock-transcripts")
+    monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process.get_driver", lambda _t: worker)
     ns = await run_fence(fence_under(doc(DOC), "2."), _names(whatsapp), filename=f"{DOC} §2")
     source, agent = ns["source"], ns["agent"]
+    server = AgentServer(serve_channels=True)  # what the app starts (the test tier turns it off)
     try:
         assert ns["verdict"]["ready"] is True and source.status == "active"
         assert str(source.owner) == str(agent.typeid) and source.inbound_allowed_senders == [whatsapp.sender]
+        await server.start()
+        await server.reconcile()  # the start's own runs in the background; this one is awaited
         await _push(whatsapp, source, "is anyone there?")
-        (item,) = await _items(source)
-        assert item.body == "is anyone there?" and item.author_external_id == whatsapp.sender
+        while not whatsapp.sent():
+            await asyncio.sleep(0.05)
+        assert worker.received_prompts == ["is anyone there?"]
+        (reply,) = whatsapp.sent()
+        assert reply["to"] == whatsapp.sender and reply["text"].startswith("Mock reply")
     finally:
+        await server.stop()
         await source.delete()
         await agent.delete()
 
@@ -77,6 +91,7 @@ async def _items(source):
     return await SourceItem.get_all({"data_source_id": str(source.id)})
 
 
+@pytest.mark.long  # 2.6s: a real turn on the mock worker waits out the transcript's 2s settle window
 async def test_3_variant_b_answers_on_the_channel(whatsapp, monkeypatch, tmp_path):
     worker = MockDriver(tmp_path / "mock-transcripts")
     monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process.get_driver", lambda _t: worker)

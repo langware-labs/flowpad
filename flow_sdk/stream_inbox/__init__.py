@@ -220,30 +220,22 @@ _STREAM_INBOX_STARTED = False
 
 
 def start_stream_inbox() -> None:
-    """Arm every stream inbox lane, in the order they depend on each other.
+    """Arm the stream inbox: ingested messages are projected into conversations.
 
-    ONE entry point because the order is a contract, not a preference: the agent
-    runner keys off `stream_inbox.*.message.projected`, which only the projection
-    emits, so a process that armed the runner alone ingests mail and answers
-    nothing. Stating that once here means a caller cannot get it wrong, and a
-    third lane added later reaches every caller — where two hand-ordered call
-    sites would leave the second one silently half-wired.
+    Answering is not armed here. An agent answers its channels from its placement's
+    serve loop (``builtin/agent_serve``, started by the app beside this), which
+    drains the sources itself — it does not wait on the projection's tags.
 
-    Idempotent, and it has to own that itself: `start_stream_inbox_projection` carries
-    its own `_started` guard but `subscribe()` is a plain `on_tag` that returns
-    an unsubscriber, so arming twice would attach the runner twice and every
-    message would drive two turns.
+    Idempotent: a second call is a no-op.
     """
     global _STREAM_INBOX_STARTED
     if _STREAM_INBOX_STARTED:
         return
     _STREAM_INBOX_STARTED = True
 
-    from flow_sdk.stream_inbox.agent_runner import subscribe as subscribe_agent_mail  # noqa: PLC0415
     from flow_sdk.stream_inbox.projection import start_stream_inbox_projection  # noqa: PLC0415
 
     start_stream_inbox_projection()
-    subscribe_agent_mail()
 
 
 # ── public surface ───────────────────────────────────────────────────────────
