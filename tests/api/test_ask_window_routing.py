@@ -16,8 +16,8 @@ import json
 
 import pytest
 
-from flow_sdk.core.compute.ask import open_question
-from flow_sdk.core.compute.ask_window import ask_url, raise_question
+from flow_sdk.core.compute_op.ask import _PENDING, open_question
+from flow_sdk.core.compute_op.ask_window import ask_url, raise_question
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -25,6 +25,19 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.fixture(autouse=True)
 def _no_browser(monkeypatch):
     monkeypatch.setenv("FLOWPAD_NO_BROWSER", "1")
+
+
+@pytest.fixture(autouse=True)
+def _no_leaked_questions():
+    """Leave the registry as we found it.
+
+    A question opened here is never answered, and `_PENDING` is module state:
+    a later test that answers `open_questions()[0]` would answer OURS, and then
+    wait out its own deadline for an answer that already went somewhere else.
+    """
+    _PENDING.clear()
+    yield
+    _PENDING.clear()
 
 
 def test_the_url_is_the_chromeless_layout():

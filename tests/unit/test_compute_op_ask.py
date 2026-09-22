@@ -17,7 +17,7 @@ from typing import ClassVar
 
 import pytest
 
-from flow_sdk.core.compute.ask import answer, cancel, open_questions
+from flow_sdk.core.compute_op.ask import answer, cancel, open_questions
 from flow_sdk.core.compute_op import run_op
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import AskResult, ExitCode
@@ -48,7 +48,7 @@ def _only_our_questions():
     THIS op — not about whatever another test in the same process left behind.
     Clearing it on the way in and out makes that assertion mean what it says.
     """
-    from flow_sdk.core.compute import ask
+    from flow_sdk.core.compute_op import ask
 
     ask._PENDING.clear()
     yield

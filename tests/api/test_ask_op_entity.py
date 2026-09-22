@@ -17,7 +17,7 @@ from typing import ClassVar
 import pytest
 
 from flow_sdk.builtin.compute_op import ComputeOp
-from flow_sdk.core.compute.ask import _PENDING, open_questions
+from flow_sdk.core.compute_op.ask import _PENDING, open_questions
 from flow_sdk.schema.data_spec.returned_value_spec import AskResult, ExitCode
 from flow_sdk.schema.data_spec.spec import DataSpec
 
