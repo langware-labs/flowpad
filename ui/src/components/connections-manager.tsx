@@ -112,15 +112,19 @@ interface ExtendedOAuthConnection extends OAuthConnection {
  *  different question, answered by the Used-by column — conflating the two is
  *  how a held credential used to render as the baffling "Ready to connect",
  *  which reads like "not connected" to everyone who isn't holding the data
- *  model in their head. */
-const GRANT_META: Record<GrantStatus, { dot: string; text: string }> = {
-  [GrantStatus.NONE]: { dot: 'bg-muted-foreground/40', text: 'text-muted-foreground' },
+ *  model in their head.
+ *
+ *  The dot is NOT here: it comes from `STATE_VISUAL` through `GRANT_STATE`
+ *  below, so a re-colour lands on every row of the table at once. What is
+ *  left is the colour of the WORD, which only these rows vary. */
+const GRANT_TEXT: Record<GrantStatus, string> = {
+  [GrantStatus.NONE]: 'text-muted-foreground',
   // Healthy reads in plain text, like every other row: the dot carries the
   // state, and colour in the WORD is kept for the states that need you.
-  [GrantStatus.HELD]: { dot: 'bg-emerald-500', text: '' },
+  [GrantStatus.HELD]: '',
   // Held but dead. Red rather than amber: amber would say "one click from
   // working", and this needs the whole grant again.
-  [GrantStatus.NEEDS_REAUTH]: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-500' },
+  [GrantStatus.NEEDS_REAUTH]: 'text-red-600 dark:text-red-500',
 };
 
 /** A grant, in the table's one vocabulary (`STATE_VISUAL`). */
@@ -749,21 +753,21 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
                   <TableCell>
                     {(() => {
-                      const meta = GRANT_META[grant];
+                      const dot = STATE_VISUAL[GRANT_STATE[grant]].dot;
                       const connecting = connectingConnectionId === connection.id;
                       return (
                         <div className="flex items-center gap-2 text-sm">
                           <span
                             className={cn(
                               'h-2 w-2 shrink-0 rounded-full',
-                              connecting ? 'animate-pulse bg-primary' : meta.dot,
+                              connecting ? 'animate-pulse bg-primary' : dot,
                             )}
                           />
                           {/* The connect time is this BROWSER's memory, not a backend
                               fact, so it is a hover detail rather than a bare date
                               beside one row's status and not the next one's. */}
                           <span
-                            className={cn('whitespace-nowrap', connecting ? 'text-muted-foreground' : meta.text)}
+                            className={cn('whitespace-nowrap', connecting ? 'text-muted-foreground' : GRANT_TEXT[grant])}
                             title={
                               !connecting && connection.connectedAt
                                 ? t`Connected in this browser ${formatTimeAgo(connection.connectedAt.toISOString())}`

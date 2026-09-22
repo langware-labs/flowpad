@@ -206,7 +206,8 @@ describe('SnippetView', () => {
     const runId = calls.find(([url]) => url.endsWith('/run'))?.[1].run_id;
     expect(typeof runId).toBe('string');
     expect(calls.find(([url]) => url.endsWith('/stop'))?.[1]).toEqual({ run_id: runId });
-    finishRun({ returncode: -9, stdout: 'started\n', stderr: '', timed_out: false, duration_s: 0.4 });
+    // What a killed run really answers with: the reason is the backend's own sentence.
+    finishRun({ returncode: -9, stdout: 'started\n', stderr: '', timed_out: false, duration_s: 0.4, detail: 'The run was stopped.' });
     expect((await screen.findByTestId('snippet-status')).textContent).toMatch(/stopped/);
     expect(screen.getByTestId('snippet-stdout').textContent).toContain('started');
     expect(screen.getByTestId('snippet-run')).toBeTruthy();

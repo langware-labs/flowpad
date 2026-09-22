@@ -43,7 +43,12 @@ interface SnippetRunResult {
   stderr: string;
   timed_out: boolean;
   duration_s: number;
+  /** One sentence about how the run ended, when there is one to say — "The run was stopped." */
+  detail?: string;
 }
+
+/** The one caller of the stop route: the button and the unmount both go through here. */
+const stopRun = (runId: string) => apiClient.post<{ stopped?: boolean }>('/api/v1/snippet/stop', { run_id: runId });
 
 const LINE_HEIGHT = 19;
 const SAVE_DEBOUNCE_MS = 500;
@@ -85,7 +90,6 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   const [result, setResult] = useState<SnippetRunResult | null>(null);
   // The run in flight, by the id the backend knows it by — what Stop names.
   const runIdRef = useRef<string | null>(null);
-  const [stopped, setStopped] = useState(false);
   // Editors mount only once the shared shiki themes exist (see shikiMonaco.ts).
   const [themed, setThemed] = useState(false);
 
@@ -225,7 +229,6 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
     if (runIdRef.current) return;
     const runId = crypto.randomUUID();
     runIdRef.current = runId;
-    setStopped(false);
     setRunning(true);
     try {
       // Run what is on screen: flush unsaved edits first.
@@ -256,8 +259,7 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
     const runId = runIdRef.current;
     if (!runId) return;
     try {
-      const res = await apiClient.post<{ stopped?: boolean }>('/api/v1/snippet/stop', { run_id: runId });
-      if (res?.stopped) setStopped(true);
+      await stopRun(runId);
     } catch (reason) {
       setNotice(errorMessage(reason, t`Could not stop the snippet`));
     }
@@ -268,7 +270,7 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
       pendingRef.current.forEach((handle) => clearTimeout(handle));
       // Leaving the view must not leave its run going.
       const runId = runIdRef.current;
-      if (runId) apiClient.post('/api/v1/snippet/stop', { run_id: runId }).catch(() => undefined);
+      if (runId) stopRun(runId).catch(() => undefined);
     },
     [],
   );
@@ -335,7 +337,7 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
             <div className="mt-1 text-muted-foreground" data-testid="snippet-status">
               {result.timed_out
                 ? t`timed out after ${timeoutSeconds}s — killed`
-                : stopped
+                : result.detail
                   ? t`stopped — killed after ${result.duration_s.toFixed(2)}s`
                   : result.returncode === null
                   ? t`did not run`

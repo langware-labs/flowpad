@@ -254,15 +254,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   );
 
   // A tree pick: re-picking the file already shown keeps its tab (leaves
-  // preview); any other file navigates. Read through a ref so the callback is
-  // stable and the memoized tree does not re-render on every file switch.
-  const treePickRef = useRef({ activePath, keepTab, openTabPath });
-  treePickRef.current = { activePath, keepTab, openTabPath };
-  const handleTreeOpenFile = useCallback((path: string) => {
-    const { activePath: current, keepTab: keep, openTabPath: open } = treePickRef.current;
-    if (path === current) keep(path);
-    else open(path);
-  }, []);
+  // preview); any other file navigates.
+  const handleTreeOpenFile = useCallback(
+    (path: string) => (path === activePath ? keepTab(path) : openTabPath(path)),
+    [activePath, keepTab, openTabPath],
+  );
 
   const handleTabChange = useCallback(
     (value: string) => {

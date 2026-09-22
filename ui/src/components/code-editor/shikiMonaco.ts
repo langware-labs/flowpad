@@ -11,15 +11,25 @@ import { createHighlighter, Highlighter } from 'shiki';
  * own theme. So every editor goes through here and uses `monacoTheme`.
  */
 let highlighter: Promise<Highlighter> | null = null;
+/** Languages already registered with Monaco and wired to shiki. */
+const wired = new Set<string>();
 
 export async function ensureShikiMonaco(monaco: Monaco, language: string): Promise<void> {
   highlighter ??= createHighlighter({ themes: ['dark-plus', 'light-plus'], langs: [] });
   const h = await highlighter;
+  // Once per language, not once per editor mount: `shikiToMonaco` re-defines both
+  // themes (~1000 rules each) and WRAPS `monaco.editor.setTheme`/`create` around the
+  // previous wrapper, so mounting N editors left N nested wrappers and N pairs of
+  // themes reachable for the life of the page — every later theme switch paying for
+  // all of them. `monaco.languages.register` likewise appends a duplicate each time.
+  if (wired.has(language)) return;
   try {
     await h.loadLanguage(language as Parameters<Highlighter['loadLanguage']>[0]);
   } catch {
     // A language shiki doesn't ship still edits fine as plain text.
   }
+  if (wired.has(language)) return; // another mount got there while we awaited
+  wired.add(language);
   monaco.languages.register({ id: language });
   shikiToMonaco(h, monaco);
 }
