@@ -11,14 +11,16 @@ export interface WizardAwaiting {
   description?: string;
 }
 
-/** ONE command a step ran, with what it printed.
+/** ONE attempt a step's call made, with what it printed.
  *
- *  A step runs up to three commands — precondition, action, verify — so a flat
- *  `command`/`stdout` pair on the outcome would have to pick one. Streams are
+ *  `phase` names the RUNG that ran — a ComputeOp tries them cheapest-first, so a
+ *  flat `command`/`stdout` pair on the outcome would have to pick one. (It used
+ *  to be precondition/action/verify, the three commands a step ran itself;
+ *  a step now makes one call and the rungs are inside it.) Streams are
  *  tail-capped by the backend (`truncated` says so); the END is kept, because
  *  that is where the error is. */
 export interface WizardStepProbe {
-  phase: 'precondition' | 'action' | 'verify';
+  phase: 'command' | 'prompt' | 'agent';
   /** The RESOLVED command for this platform, not the per-OS map. */
   command: string;
   returncode?: number | null;
@@ -57,21 +59,13 @@ export interface WizardStepOutcome {
   step_id: string;
   status: 'satisfied' | 'not_applicable' | 'completed' | 'failed' | 'not_reached' | 'awaiting_input';
   message?: string;
-  returncode?: number | null;
   process_id?: string | null;
   duration_s?: number;
   /** Every command this step ran. Present ONLY on `runDetail()` — `run_state`
    *  strips them, because it rides every row of a list and every WS push. */
   probes?: WizardStepProbe[];
-  /** The name an AGENTIC step declared as its output. Stays on `run_state`, so
-   *  a list can say the step produced something without carrying what. */
-  output?: string;
-  /** What the agent returned under that name. Like `probes`, present ONLY on
-   *  `runDetail()`. */
+  /** What the call returned. Like `probes`, present ONLY on `runDetail()`. */
   result?: unknown;
-  /** Where the agent wrote it — kept even where `result` is stripped, so a
-   *  person can go and read the value on disk. */
-  result_path?: string;
 }
 
 /** The whole run record for one wizard, probes included. */

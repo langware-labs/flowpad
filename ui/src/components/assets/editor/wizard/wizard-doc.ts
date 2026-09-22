@@ -1,49 +1,45 @@
 /**
  * The `wizard.json` document, as the editor manipulates it. Pure — no React, no
  * SDK calls — so the parts that are easy to get catastrophically wrong (losing a
- * key, producing a step with two actions) are testable in milliseconds.
+ * key, producing a step the backend refuses) are testable in milliseconds.
  *
  * Mirrors `WizardSpec` (flow_sdk/schema/data_spec/wizard_spec.py). The backend
  * is the validator: `extra="forbid"` there means every key IS known to the
  * schema, so the risk this module guards is different — keys unknown to the
- * FORM. The document is nested (triggers, per-OS command maps, `input.shape`,
- * three separate timeouts), and an McpForm-style shallow spread of one step
- * would silently delete its siblings.
+ * FORM. A step is now flat (`kind` / `ref` / `args`), but the document around it
+ * still nests (`inputs`, `args`, `output`), and a shallow spread of one step or
+ * one input would silently delete its siblings.
  */
 import type { WizardIssue } from '@sdk';
 
-export type WizardCommandMap = Record<string, string>;
+/** What a step invokes. `ref` is read against this: an op name, a wizard name,
+ *  or — for `ask` — one of this wizard's own `inputs` keys. */
+export const STEP_KINDS = ['compute', 'wizard', 'ask'] as const;
+export type StepKind = (typeof STEP_KINDS)[number];
 
-export interface WizardCheckDoc {
-  commands?: WizardCommandMap;
-  satisfied_codes?: number[];
-  timeout_seconds?: number;
-}
+/** What a step does when it fails. */
+export const ON_FAIL = ['abort', 'continue'] as const;
 
-/** An agentic step's action — it hands the work to an agent.
- *
- *  `output` is what makes the agent's answer READABLE: declare a name and the
- *  runner adds a result contract to the prompt, reads what the agent wrote, and
- *  fails the step if the agent says it failed. Leave it empty and the step is
- *  what it always was — "the agent stopped". */
-export interface WizardProcessDoc {
-  agent?: string;
-  prompt?: string;
-  name?: string;
-  timeout_seconds?: number;
-  output?: string;
+/** One declared PARAMETER of the wizard. The map key is its name — the same
+ *  name an `ask` step refs and an `args` value may pass along. */
+export interface WizardInputDoc {
+  /** Authoring form: `"string"`, `{field: shape}`, or `[shape]`. */
   shape?: unknown;
+  label?: string;
+  description?: string;
+  optional?: boolean;
 }
 
 export interface WizardStepDoc {
   id: string;
   label?: string;
   description?: string;
-  precondition?: WizardCheckDoc;
-  command?: { commands?: WizardCommandMap; timeout_seconds?: number };
-  process?: WizardProcessDoc;
-  input?: { name: string; shape?: unknown; label?: string; description?: string };
-  verify?: WizardCheckDoc;
+  kind?: StepKind;
+  /** An op name · a wizard name · an input name, per `kind`. */
+  ref?: string;
+  /** Callee param -> a name in scope, or a literal. A FLAT string map: this is
+   *  not a template language, so there is nothing nested to render. */
+  args?: Record<string, string>;
   on_fail?: string;
 }
 
@@ -51,23 +47,16 @@ export interface WizardDoc {
   name?: string;
   description?: string;
   enabled?: boolean;
-  version?: string;
+  version?: number;
+  icon?: string;
+  /** Non-empty ⇒ a CONVERSATIONAL wizard: one agent, no steps. */
   agent?: string;
+  /** The wizard's parameters, declared once for the whole document. */
+  inputs?: Record<string, WizardInputDoc>;
+  /** What the wizard returns, in authoring form. */
+  output?: unknown;
   steps?: WizardStepDoc[];
   [key: string]: unknown;
-}
-
-/** The three ways a step can act. Exactly one is present — the backend's
- *  `_exactly_one_action` refuses a document with none or two. */
-export const ACTION_KINDS = ['command', 'process', 'input'] as const;
-export type ActionKind = (typeof ACTION_KINDS)[number];
-
-/** The platforms a command map may key on, in the order the form shows them. */
-export const PLATFORMS = ['darwin', 'linux', 'win32'] as const;
-
-/** Which action a step currently carries, or `undefined` for a malformed one. */
-export function actionKindOf(step: WizardStepDoc): ActionKind | undefined {
-  return ACTION_KINDS.find((kind) => step[kind] != null);
 }
 
 /**
@@ -116,41 +105,125 @@ export function removeIn<T>(root: T, path: (string | number)[]): T {
 }
 
 /**
- * Switch a step to a different kind of action, ATOMICALLY.
+ * Switch a step to a different `kind`, ATOMICALLY.
  *
- * The old action is removed and the new one seeded in ONE transition, so the
- * document never passes through a state that violates `_exactly_one_action`.
- * Doing it as two edits — remove, then add — would make every intermediate
- * document invalid, and with validate-on-blur that means an error banner on a
- * change the person has not finished making. This is what makes the switch
- * livable rather than infuriating.
+ * `ref` is cleared with it, because its MEANING changed: the same string reads
+ * as an op name under `compute` and as an input name under `ask`, so carrying it
+ * across would leave a step pointing at something that does not exist while
+ * looking deliberate. `args` goes the same way — an `ask` step passes none.
  */
-export function setStepAction(doc: WizardDoc, index: number, kind: ActionKind): WizardDoc {
+export function setStepKind(doc: WizardDoc, index: number, kind: StepKind): WizardDoc {
   const step = doc.steps?.[index];
   if (!step) return doc;
-  const next: WizardStepDoc = { ...step };
-  for (const existing of ACTION_KINDS) delete next[existing];
-  if (kind === 'command') next.command = { commands: {} };
-  // Seeded with the fields the form edits, so a freshly switched step renders
-  // its inputs instead of an empty panel.
-  else if (kind === 'process') next.process = { agent: '', prompt: '' };
-  else next.input = { name: '', shape: 'string' };
+  const next: WizardStepDoc = { ...step, kind, ref: '' };
+  if (kind === 'ask') delete next.args;
+  else next.args = {};
   return setIn(doc, ['steps', index], next);
 }
 
-/** A blank step, seeded with the commonest action so it is valid on arrival. */
+/**
+ * The first `${prefix}${n}` nobody has taken.
+ *
+ * One home for what was three copies — steps, parameters and a step's args all
+ * mint a name this way, and the copies had already drifted on where `n` starts.
+ */
+export function nextFreeName(taken: Iterable<string>, prefix: string): string {
+  const used = new Set(taken);
+  let n = used.size + 1;
+  while (used.has(`${prefix}${n}`)) n += 1;
+  return `${prefix}${n}`;
+}
+
+/** A blank step, seeded with the commonest kind so it is valid on arrival. */
 export function blankStep(existing: WizardStepDoc[]): WizardStepDoc {
-  const taken = new Set(existing.map((step) => step.id));
-  let n = existing.length + 1;
-  while (taken.has(`step-${n}`)) n += 1;
-  return { id: `step-${n}`, command: { commands: {} } };
+  const id = nextFreeName(existing.map((step) => step.id), 'step-');
+  return { id, kind: 'compute', ref: '', args: {} };
+}
+
+/** A name for a new parameter that does not collide with a declared one. */
+export function blankInputName(inputs: Record<string, WizardInputDoc> | undefined): string {
+  return nextFreeName(Object.keys(inputs ?? {}), 'INPUT_');
+}
+
+/**
+ * Rename one `inputs` key IN PLACE in the map's order.
+ *
+ * Delete-then-add would move the parameter to the end of the form on every
+ * rename, which reads as the row jumping away from the caret. Order is also the
+ * order the run asks for values, so it is not merely cosmetic.
+ */
+export function renameInput(doc: WizardDoc, from: string, to: string): WizardDoc {
+  const inputs = doc.inputs;
+  if (!inputs || !(from in inputs) || to === from || !to || to in inputs) return doc;
+  const next: Record<string, WizardInputDoc> = {};
+  for (const [key, value] of Object.entries(inputs)) next[key === from ? to : key] = value;
+  return setIn(doc, ['inputs'], next);
+}
+
+/**
+ * Step ids declared more than once.
+ *
+ * A step id is an activity address segment and the key a run outcome joins on,
+ * so two steps sharing one collapse onto a single node and one silently
+ * overwrites the other's result. Answered here rather than waited on from the
+ * backend because it costs nothing and the form can point at the offending row.
+ */
+export function duplicateStepIds(steps: WizardStepDoc[] | undefined): Set<string> {
+  const seen = new Set<string>();
+  const twice = new Set<string>();
+  for (const step of steps ?? []) {
+    if (seen.has(step.id)) twice.add(step.id);
+    else seen.add(step.id);
+  }
+  return twice;
+}
+
+/**
+ * The names an `args` value may refer to, in the order they come into scope:
+ * the wizard's own parameters, then every step BEFORE this one.
+ *
+ * Offered, never enforced — a value is a name in scope or a literal, and the
+ * form cannot tell which was meant.
+ */
+export function namesInScope(doc: WizardDoc, index: number): string[] {
+  const steps = doc.steps ?? [];
+  return [...Object.keys(doc.inputs ?? {}), ...steps.slice(0, index).map((step) => step.id)].filter(
+    Boolean,
+  );
+}
+
+/**
+ * An authoring-form shape, as one editable line, and back.
+ *
+ * `"string"` is the overwhelmingly common case and must stay typeable as three
+ * plain words; anything structured is JSON. Unparseable text is kept as a
+ * STRING rather than rejected — the backend is the validator, and refusing to
+ * record what someone typed loses it.
+ */
+export function shapeToText(shape: unknown): string {
+  if (shape == null) return '';
+  if (typeof shape === 'string') return shape;
+  return JSON.stringify(shape);
+}
+
+export function shapeFromText(text: string): unknown {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return trimmed;
+    }
+  }
+  return trimmed;
 }
 
 /**
  * Backend issues, indexed by the field they address.
  *
- * The key is the `loc` joined with `.` — `steps.0.command.commands` — so a field
- * can look up its own problems without every field scanning the whole list.
+ * The key is the `loc` joined with `.` — `steps.0.args` — so a field can look up
+ * its own problems without every field scanning the whole list.
  */
 export function issuesByLoc(issues: WizardIssue[] | undefined): Map<string, WizardIssue[]> {
   const map = new Map<string, WizardIssue[]>();

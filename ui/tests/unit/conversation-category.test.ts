@@ -59,9 +59,17 @@ describe('conversationFacets', () => {
     expect(f).toEqual({ kind: 'direct', isInvitation: false, isArchived: false, isUnread: false });
   });
 
-  it('unread latest message → unread', () => {
+  it('hub runtime (no is_unread on the row): an unread latest message → unread', () => {
     const f = conversationFacets(makeInputs({ latestRead: false }));
     expect(f.isUnread).toBe(true);
+  });
+
+  it("the backend's is_unread wins over the latest message", () => {
+    const stamped = (isUnread: boolean) =>
+      conversationFacets({ ...makeInputs({ latestRead: !isUnread }), conv: { is_unread: !isUnread } as unknown as Conversation });
+    // The latest message says one thing, the stamped flag the other: the row renders the flag.
+    expect(stamped(true).isUnread).toBe(false);
+    expect(stamped(false).isUnread).toBe(true);
   });
 
   it('helpdesk kind → helpdesk facet set', () => {

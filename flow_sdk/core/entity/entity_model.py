@@ -1381,7 +1381,7 @@ class Entity(DBEntity):
 
         Values are dumped THROUGH Pydantic (``model_dump(mode="json")`` on the
         persisted subset), so a field's own serializer runs — a shape CLASS
-        held by a ``SpecType`` field lands as its authoring form, a model as
+        held by a ``ShapeForm`` field lands as its authoring form, a model as
         its JSON. The record writer never has to know what a field holds.
         """
         from flow_sdk.api.api_types.api_field import Persist, persist_policy
@@ -3872,7 +3872,7 @@ async def _asset_ref_is_borrowed(record) -> bool:
     round trip: ``FSRecord.meta_dict`` persists only ``ar.path``, so a ref the
     indexer deliberately created read-only comes back WRITABLE on the next load.
     For an ``owns_main_ref`` type that loses the guard completely — ``Agent``
-    re-renders ``agent.md`` on every save, so one Enabled toggle would rewrite a
+    re-renders ``agent.json`` on every save, so one Enabled toggle would rewrite a
     tracked file inside a cloned help desk and break the vendor's next
     ``git pull``.
 

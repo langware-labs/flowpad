@@ -31,9 +31,13 @@ export function useGitChangeCount(
   const [count, setCount] = useState<number | null>(null);
   const [hasRepo, setHasRepo] = useState(false);
   const [branch, setBranch] = useState<string | null>(null);
-  const mountedRef = useRef(true);
+  // Only the latest request may write: after a project switch the previous
+  // workdir's status can still land, and a slow repo lands last. Unmount bumps
+  // it too, so nothing in flight writes into an unmounted hook.
+  const latestRequestRef = useRef(0);
 
   const fetchStatus = useCallback(async (force = false) => {
+    const request = ++latestRequestRef.current;
     if (!computeNodeId || !workdir) {
       setCount(null);
       setHasRepo(false);
@@ -42,7 +46,7 @@ export function useGitChangeCount(
     }
     // Shared cache dedups the cross-tab mount burst; force on poll/refresh.
     const result = await getGitStatus(computeNodeId, workdir, { force });
-    if (!mountedRef.current) return;
+    if (request !== latestRequestRef.current) return;
     if (!result || result.error) {
       setHasRepo(false);
       setCount(null);
@@ -55,11 +59,10 @@ export function useGitChangeCount(
   }, [computeNodeId, workdir]);
 
   useEffect(() => {
-    mountedRef.current = true;
     void fetchStatus();
     const interval = setInterval(() => { void fetchStatus(true); }, POLL_MS);
     return () => {
-      mountedRef.current = false;
+      latestRequestRef.current++;
       clearInterval(interval);
     };
   }, [fetchStatus]);

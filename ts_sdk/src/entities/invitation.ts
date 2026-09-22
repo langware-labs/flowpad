@@ -10,7 +10,7 @@ export interface IInvitation extends IEntity {
   sent?: boolean;
   message?: string;
   // Membership invitations (organization / team / workspace / project) carry
-  // a target descriptor instead of a backing conversation, so the inbox
+  // a target descriptor instead of a backing conversation, so the stream inbox
   // renders a membership row.
   target_type?: string;
   target_id?: string;
@@ -100,10 +100,10 @@ interface PendingInvitationWire extends IInvitation {
  *
  * On the desktop this is invisible: the local SDK polls `pending` and mirrors
  * the rows into local entities, so a generic query finds them. Against the hub
- * directly there is no mirror, which is why the hub inbox needs this call.
+ * directly there is no mirror, which is why the hub stream inbox needs this call.
  *
  * The nested `target`/`inviter` are flattened to the `target_*`/`sender_*`
- * fields the `Invitation` entity and the inbox row already read, so callers
+ * fields the `Invitation` entity and the stream inbox row already read, so callers
  * see one shape regardless of where the rows came from.
  */
 export async function fetchPendingInvitations(): Promise<Invitation[]> {
@@ -131,7 +131,7 @@ export async function fetchPendingInvitations(): Promise<Invitation[]> {
  * Not the same endpoint as `acceptInvitation`, which posts to the desktop-only
  * `invitation-accept` action (it also unpacks the conversation bundle, which is
  * a local-SDK concern). Against the hub that action does not exist and answers
- * 422, so the hub inbox needs this instead.
+ * 422, so the hub stream inbox needs this instead.
  *
  * The hub answers with a 302 to the post-accept landing; the grant has already
  * happened by then, so the redirect is irrelevant here and only the absence of

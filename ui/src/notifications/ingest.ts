@@ -60,7 +60,7 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
     });
   } else if (statusCode === 401) {
     // A 401 while we were never authenticated (or after an explicit logout) is
-    // the *normal* logged-out state — not an error. The inbox/conversation
+    // the *normal* logged-out state — not an error. The stream inbox/conversation
     // surfaces show a Login CTA overlay for that case, so swallow the toast.
     // Only surface "sign-in expired" when a previously-valid cloud session
     // actually lapsed (we still believe we're logged in) — without it the

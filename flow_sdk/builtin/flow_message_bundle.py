@@ -1953,7 +1953,7 @@ def _send_time_from_pointer_index(tmp_root: Path, fm_id: str) -> str | None:
     ``_FM_FIELDS`` only gained ``created_date`` on 2026-06-30, so every bundle
     packed by an older sender ships a header with no send-time — and those bundles
     are frozen that way on the hub forever. Without a fallback the receiver stamps
-    ``now()``, which for a months-old message re-download throws the inbox order
+    ``now()``, which for a months-old message re-download throws the stream inbox order
     out (and, once stamped, looks newer than the hub, so no later sync repairs it).
 
     The time is not actually lost: ``_pack_conversation_attachment`` copies the
@@ -1997,7 +1997,7 @@ def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: s
     row is already born stamped ``now()``, and the materialize then takes its
     existing-row branch and never applies the recovered value.
 
-    Both clocks, not just ``created_date``: inbox recency is
+    Both clocks, not just ``created_date``: stream inbox recency is
     ``max(message.updated_date)``, so leaving ``updated_date`` at ``now()``
     drags the whole conversation to the sync instant.
 
@@ -2008,7 +2008,7 @@ def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: s
     diverge by however long the message sat undelivered: days, for a backlog.
     The pointer index only knows the send-time, so filling ``updated_date`` from
     it sends the conversation DAYS into the past until the hub corrects it a
-    beat later — measured live at 10–11 inbox positions, dipping and snapping
+    beat later — measured live at 10–11 stream inbox positions, dipping and snapping
     back. Hence ``hub_updated``: the caller passes the hub's authoritative value
     when it has one (it is sitting in the same payload that triggered the
     download), so the row is born correct instead of corrected afterwards.
@@ -2706,7 +2706,7 @@ async def unpack_bundle(
         # Send-time precedence, one place: the header (post-2026-06-30 senders) →
         # the pointer index the bundle already carries (pre-fix senders) → now().
         # Recovered time goes onto the ROW too, not just the pointer: the row's
-        # ``created_date`` is what the inbox sorts on, and a ``now()`` there is
+        # ``created_date`` is what the stream inbox sorts on, and a ``now()`` there is
         # self-sealing (it outranks the hub, so no later sync repairs it).
         # Same restore as the attachment entry above — this path is reached when the
         # bundle has no per-message attachment entry, so the row is born here instead.

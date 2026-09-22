@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 from typing import TYPE_CHECKING, Callable
 
+from flow_sdk import toplog
 from flow_sdk.api.messages import PtyOutputMessage, PtySessionStatusMessage, ResponseMessage
 from flow_sdk.core.network.connection import Connection
 from flow_sdk.core.network.connection_manager import get_connection_handler
@@ -56,18 +58,15 @@ class PtyActionsMixin:
         - close: Close PTY session
         - list: List all active PTY sessions for this compute node
         """
-        logging.info("[PTY] terminal_command action called")
         request_info = get_current_request_info()
         if not request_info or not request_info.sub_path:
             logging.error("[PTY] No operation specified in sub_path")
             return ApiFailResponse(message="No operation specified")
 
         op = request_info.sub_path.strip("/").lower()
-        logging.info(f"[PTY] Terminal operation: {op}")
 
         try:
             body = await request_info.get_post_data()
-            logging.info(f"[PTY] Request body: {body}")
 
             if op == "start":
                 result = await self._start_pty_session(body)
@@ -88,7 +87,6 @@ class PtyActionsMixin:
             else:
                 result = ApiFailResponse(message=f"Unknown terminal operation: {op}")
 
-            logging.info(f"[PTY] Returning result: {result}")
             return result
         except Exception as e:
             logging.error(f"[PTY] Error in terminal_command: {str(e)}", exc_info=True)
@@ -279,6 +277,7 @@ class PtyActionsMixin:
         if len(node_sessions) >= _PTY_CAP:
             evict_keys = node_sessions[:_PTY_EVICT_COUNT]
             logging.warning(f"[PTY] Cap ({_PTY_CAP}) reached — evicting {len(evict_keys)} oldest sessions")
+            toplog.log("pty", "cap_evict cap=%s evicting=%s", _PTY_CAP, [k[2] for k in evict_keys])
             for evict_key in evict_keys:
                 evict_shell_id = evict_key[2]
                 try:
@@ -298,6 +297,8 @@ class PtyActionsMixin:
 
         # Mutable holder for session_state, populated after generate_session()
         session_state_holder: list = []
+        # `pty` toplog: last time a delayed-output line was logged (≤1/s).
+        slow_output_logged_at = [0.0]
 
         def on_pty_output(data: bytes):
             logging.debug(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
@@ -322,6 +323,13 @@ class PtyActionsMixin:
                     asyncio.run_coroutine_threadsafe(_q.put((seq, data)), main_loop)
 
             async def get_and_send():
+                if toplog.is_on("pty"):
+                    # Reader thread → event loop hop. A large lag means the loop is
+                    # stalled or flooded — every client's output is late by this much.
+                    lag_ms = (time.time() - chunk_timestamp) * 1000
+                    if lag_ms > 200 and time.time() - slow_output_logged_at[0] >= 1.0:
+                        slow_output_logged_at[0] = time.time()
+                        toplog.log("pty", "output_delayed shell=%s seq=%s loop_lag_ms=%.0f", shell_id, seq, lag_ms)
                 current_session = await pty_registry.get_session(current_pty_key)
                 if current_session and current_session.attached_connections:
                     for current_connection_id in current_session.attached_connections:
@@ -422,6 +430,11 @@ class PtyActionsMixin:
             if persisted_max > session_state.seq:
                 session_state.seq = persisted_max
             session_state.generation_start_seq = session_state.seq
+            toplog.log(
+                "pty", "session_start shell=%s pid=%s persisted_max_seq=%s start_seq=%s size=%sx%s",
+                shell_id, provider_session_data.get("pid") if isinstance(provider_session_data, dict) else None,
+                persisted_max, session_state.seq, cols, rows,
+            )
 
             # Write-through: create/update the Shell DB entity from the record
             # via the generic base sync, then apply the shell-specific side
@@ -781,6 +794,10 @@ class PtyActionsMixin:
         if not pty_handle:
             # Session not found or expired (expected after server restart)
             logging.debug(f"[PTY] Session {pty_id} not found")
+            toplog.log(
+                "pty", "attach_not_found shell=%s connection=%s backend_pid=%s",
+                pty_id, request_connection_id, os.getpid(),
+            )
             status_msg = PtySessionStatusMessage(
                 shell_id=pty_id,
                 status="not_found",
@@ -817,6 +834,7 @@ class PtyActionsMixin:
             rows = int(body.get("rows") or 0) or None
         except (TypeError, ValueError):
             cols = rows = None
+        repaint_t0 = time.monotonic()
         try:
             await pty_handle.repaint(cols, rows)
         except Exception as e:
@@ -826,6 +844,11 @@ class PtyActionsMixin:
 
         # Send status message
         latest_seq = pty_handle.latest_seq
+        toplog.log(
+            "pty", "attach shell=%s connection=%s latest_seq=%s size=%sx%s repaint_ms=%.0f backend_pid=%s",
+            pty_id, request_connection_id, latest_seq, cols, rows,
+            (time.monotonic() - repaint_t0) * 1000, os.getpid(),
+        )
         status_msg = PtySessionStatusMessage(
             shell_id=pty_id,
             status="reattached",
@@ -934,6 +957,7 @@ class PtyActionsMixin:
 
         pty = self.get_pty(shell_id)
         if not pty:
+            toplog.log("pty", "input_dropped shell=%s reason=session_not_found bytes=%s", shell_id, len(data))
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,
@@ -955,6 +979,7 @@ class PtyActionsMixin:
             return ApiSuccessResponse(data=response_msg.model_dump())
         except Exception as e:
             logging.error(f"Failed to send PTY input: {e}")
+            toplog.log("pty", "input_dropped shell=%s reason=write_failed error=%r", shell_id, e)
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,
@@ -1005,6 +1030,7 @@ class PtyActionsMixin:
             )
             return ApiFailResponse(message=f"PTY session not found: {shell_id}", data=response_msg.model_dump())
 
+        toplog.log("pty", "resize shell=%s size=%sx%s", shell_id, cols, rows)
         try:
             await pty.resize(cols, rows)
             response_msg = ResponseMessage(

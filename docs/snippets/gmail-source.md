@@ -7,18 +7,18 @@ GMAIL_ADDRESS=you@gmail.com
 GMAIL_APP_PASSWORD=abcdefghijklmnop
 ```
 
-Then create the official Gmail `DataSource`:
+Then create a source of the shipped Gmail driver:
 
 ```python
 import os
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_driver import DataDriver
 
 address = os.environ["GMAIL_ADDRESS"]
 
-gmail = DataSource(
+driver = await DataDriver.get("gmail")
+gmail = driver.create_source(
+    driver.create_config(address=address),
     name="gmail",
-    provider="gmail",
-    config={"address": address},
     account_key=address,
     account_identities=[address],
     poll_interval_seconds=60,

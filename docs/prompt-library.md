@@ -76,7 +76,7 @@ click "Prompt Library"
         namespace: 'prompt-library',
         leafTypes: ['prompt'],
         leafToBrowseable: prompt -> {label: name, icon/color, pointer: editor}
-        onSelectLeaf: prompt -> sdk.enqueueFromPrompt(process, prompt)
+        onSelectLeaf: prompt -> prompt.enqueueTo(process)
         capabilities: {createFolder: true, rename: true, delete: true, move: true}
      }))
 ```
@@ -85,7 +85,7 @@ click "Prompt Library"
 
 ```
 click prompt leaf
-  -> SDK enqueueFromPrompt(process, prompt)
+  -> SDK prompt.enqueueTo(process)
        = process.enqueue(prompt.text, source='library')      (+ flags, v1.1)
   -> existing backend queue path: file write -> notify -> drain when ready
   -> queue log shows source='library'
@@ -108,7 +108,7 @@ queue actions; injection/readiness stay exactly as specified in
 | Layer | This feature's content |
 |---|---|
 | backend | `prompt` entity type + (v1.1) enqueue-flag honoring in the existing enqueue action. Nothing else — folders and queue already exist below. |
-| ts_sdk | `Prompt` entity; `enqueueFromPrompt(process, prompt)`; quick-create wrapper. |
+| ts_sdk | `Prompt` entity; `prompt.enqueueTo(process)`; quick-create wrapper. |
 | hooks | none beyond the generic `useGroupTreeRefresh`. |
 | tsx | ribbon button + popover composition; prompt leaf rendering. Zero logic. |
 

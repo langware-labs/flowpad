@@ -1,3 +1,5 @@
+import uuid
+
 """Shared setup for the folder-source matrix.
 
 Two things this package cannot run without, both lifted from
@@ -21,7 +23,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 
 
 @pytest_asyncio.fixture
@@ -97,7 +99,7 @@ def make_source(watched, project, in_workspace):
         await proj.save()
 
         src = DataSource(
-            name="watched-folder",
+            name=f"watched-folder {uuid.uuid4().hex[:8]}",
             provider="folder",
             config={"root": str(watched)},
             reflect=mode,

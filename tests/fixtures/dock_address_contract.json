@@ -35,6 +35,7 @@
     "skills",
     "ai-config",
     "show",
+    "ask",
     "apps",
     "graph",
     "worldview",
@@ -62,7 +63,7 @@
     "assets",
     "project",
     "agent",
-    "inbox",
+    "stream_inbox",
     "conversation",
     "spec",
     "graph_context",
@@ -518,7 +519,7 @@
       "folds_sub_pointer": false,
       "chrome": "workspace"
     },
-    "inbox": {
+    "stream_inbox": {
       "addressable": true,
       "pointer": "none",
       "folds_pointer": false,
@@ -669,6 +670,14 @@
       "scope_keyed": false,
       "folds_sub_pointer": false,
       "chrome": "workspace"
+    },
+    "ask": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "fullbleed"
     }
   },
   "tab_identity_cases": [
@@ -774,11 +783,11 @@
     },
     {
       "name": "singleton carrying its address in options",
-      "view_type": "inbox",
+      "view_type": "stream_inbox",
       "options": {
         "conversation": "6ba7b810-9dad-41d1-80b4-00c04fd430c8"
       },
-      "url": "/dock/inbox?conversation=6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+      "url": "/dock/stream_inbox?conversation=6ba7b810-9dad-41d1-80b4-00c04fd430c8"
     },
     {
       "name": "events with a rule selected",

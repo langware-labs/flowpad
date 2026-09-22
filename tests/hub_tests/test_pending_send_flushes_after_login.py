@@ -16,7 +16,7 @@ re-attempted the message, and no login path referenced pending messages at all.
 ``handle_add_message`` documented the queue as flushed "when the conversation
 next becomes remote", which for an already-remote conversation is never.
 
-Fixed by ``flow_sdk.inbox.catchup.flush_pending_outbox``, which runs on the same
+Fixed by ``flow_sdk.stream_inbox.catchup.flush_pending_outbox``, which runs on the same
 "no hub session -> hub session" transition the backlog pull already runs on --
 the two are halves of one thing: what we missed while away, and what we queued
 while away.
@@ -61,7 +61,7 @@ async def _drain_catchup_tasks() -> None:
     task. Awaiting the task is deterministic and leaves no polling budget to
     tune -- and it is the task the outbox flush now runs in.
     """
-    for task in [t for t in asyncio.all_tasks() if (t.get_name() or "").startswith("inbox-catchup:")]:
+    for task in [t for t in asyncio.all_tasks() if (t.get_name() or "").startswith("stream-inbox-catchup:")]:
         await task
 
 
@@ -148,6 +148,6 @@ async def test_message_queued_while_logged_out_reaches_the_hub_after_login(
     assert queued_text in texts, (
         f"a message queued while signed out never reached the hub after login, though a "
         f"message sent moments later did; hub holds {texts!r}. The login transition must "
-        f"flush the outbox (inbox.catchup.flush_pending_outbox) -- share() alone only "
+        f"flush the outbox (stream_inbox.catchup.flush_pending_outbox) -- share() alone only "
         f"covers a conversation the moment its hub row is first created."
     )

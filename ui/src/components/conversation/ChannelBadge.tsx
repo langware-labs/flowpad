@@ -8,7 +8,7 @@ import { useChannelAttribution } from './channel-attribution';
  * unmarked by construction — no flag to keep in sync, no backfill.
  *
  * The glyph is spec-resolved (`useChannelAttribution`): the same
- * `data_source_spec` assets the Data Sources screen renders name every
+ * `data_driver` assets the Data Sources screen renders name every
  * channel's icon, so Slack shows one mark everywhere and a new channel needs
  * no frontend release — there is deliberately NO per-vendor map here.
  */

@@ -15,7 +15,7 @@ import pytest
 
 from flow_sdk.assets.types.dataset import derive_dataset, iter_examples
 from flow_sdk.schema.data_spec.dataset_spec import DataLayoutEnum, FileRef, FolderSpec, TextSpec
-from flow_sdk.schema.data_spec.layout import FolderLayout, layout_for
+from flow_sdk.schema.data_spec.layout import FolderLayout, dataset_layout_for
 
 #: name → (files to write, annotated?)
 VARIANTS = {
@@ -47,7 +47,7 @@ def test_each_variant_counts_once_on_both_paths(tmp_path):
     expected = {name: flag for name, (_, flag) in VARIANTS.items()}
 
     # the entity's path: the per-example index
-    rows = layout_for(DataLayoutEnum.IO_FOLDER).index(ds, dataset_id="d")
+    rows = dataset_layout_for(DataLayoutEnum.IO_FOLDER).index(ds, dataset_id="d")
     by_name = dict(zip(sorted(VARIANTS), (r["annotated"] for r in rows)))
     assert by_name == expected
 

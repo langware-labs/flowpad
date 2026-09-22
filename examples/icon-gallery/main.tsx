@@ -48,7 +48,7 @@ function DomGlyph({ tag, packs }: { tag: string; packs: IconPackSpec[] }) {
   return <span className="glyph" ref={host} />;
 }
 
-/** The chip form — glyph + label, as an inbox row wears it. */
+/** The chip form — glyph + label, as a stream inbox row wears it. */
 function Chip({ tag, label, compact, packs }: { tag: string; label: string; compact?: boolean; packs: IconPackSpec[] }) {
   const host = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -503,7 +503,7 @@ function App() {
           title="Chips"
           lede={
             <>
-              The glyph with its name, as an inbox row wears it — this is where the icon system is
+              The glyph with its name, as a stream inbox row wears it — this is where the icon system is
               actually judged. At 14px beside 10px text, on a muted plate, a wrong glyph or an
               untinted brand mark is obvious in a way a 26px tile never makes it.
             </>

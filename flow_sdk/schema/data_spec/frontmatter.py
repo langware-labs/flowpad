@@ -21,8 +21,15 @@ from pydantic import ConfigDict, SerializationInfo, model_serializer, model_vali
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
-class FrontMatter(DataSpec):
+class AssetDocumentSpec(DataSpec):
+    """The fields an ASSET DOCUMENT holds, whatever carries them — a markdown header or an entity's
+    ``<type>.json``. ``extra="ignore"``: a key the class does not declare is dropped on read."""
+
     model_config = ConfigDict(extra="ignore")
+
+
+class FrontMatter(AssetDocumentSpec):
+    """An asset document carried as a markdown document's YAML frontmatter."""
 
 
 class SectionedHeader(FrontMatter):

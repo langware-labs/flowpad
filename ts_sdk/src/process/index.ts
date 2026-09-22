@@ -36,6 +36,7 @@ export { WORKER_STATUS_LABEL, PROCESS_STATUS_LABEL, workerStatusText } from './s
 export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
 export type {
   AgenticProcessReportEventResult,
+  DisplayContextState,
   DisplayEntry,
   IAgenticProcess,
   MarkdownDoc,

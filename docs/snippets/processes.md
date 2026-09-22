@@ -75,7 +75,7 @@ author time, not at spawn.
 ```python
 agent = await Agent.get_one({"name": "researcher"})
 
-proc = await agent.launch("Summarize today's inbox in three bullets.", wait=True)
+proc = await agent.launch("Summarize today's stream inbox in three bullets.", wait=True)
 ```
 
 * `agent.create_process(prompt, **options)` is the primitive: the process is
@@ -94,6 +94,23 @@ outcome instead: the transcript, or the artifact the run declared.
 from flow_sdk.builtin.artifact import Artifact
 
 produced = await Artifact.get_all({"generated_by": str(proc.typeid)})
+```
+
+To read the ANSWER of a print-mode turn, wait until the turn is no longer busy and take the
+last thing the assistant said — its `chat` element, not its reasoning. The whole script is
+[llm-endpoints §7](llm-endpoints.md), pinned by `tests/long_tests/test_loginless_in_docker.py`:
+
+```python
+from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
+
+fresh = await AgenticProcess.get_by_id(proc.id)
+if not is_turn_busy(fresh, fresh.fetch_worker_status()):
+    said = [
+        item.flow_value
+        for item in fresh.driver.load_history(fresh)
+        if item.attributes.get("role") == "assistant" and item.attributes.get("element-type") == "chat"
+    ]
 ```
 
 Always release the worker; a leaked one outlives its caller and holds a slot.

@@ -58,6 +58,7 @@ EXPECTED = {
     "TRANSCRIPT_CUSTOM_TITLE": "transcript_entry:custom_title",
     "TRANSCRIPT_PR_LINK": "transcript_entry:pr_link",
     "COMPUTE_NODE": "compute_node",
+    "COMPUTE_OP": "compute_op",
     "ENVIRONMENT": "environment",
     "SESSION_ANALYSIS": "session_analysis",
     "SESSION_CLASSIFICATION": "session_classification",
@@ -141,7 +142,7 @@ EXPECTED = {
     "MESSAGE_ATTACHMENT": "message_attachment",
     "TEAM_SPACE": "team_space",
     "NOTIFICATION": "notification",
-    "INBOX_MANAGER": "inbox_manager",
+    "STREAM_INBOX_MANAGER": "stream_inbox_manager",
     "RUN": "run",
     "PROMPT_COMPLETION": "prompt_completion",
     "REMOTE_WORKER_SESSION": "remote_worker_session",
@@ -205,17 +206,16 @@ EXPECTED = {
     # source, its per-stream cursor, and the records it produces — additive
     # members, no existing value changed.
     "DATA_SOURCE": "data_source",
-    "DATA_SOURCE_CURSOR": "data_source_cursor",
-    "CREDENTIAL_SPEC": "credential_spec",
-    "DATA_SOURCE_SPEC": "data_source_spec",
+    "SECRET_PACK": "secret_pack",
+    "DATA_DRIVER": "data_driver",
     "SOURCE_ITEM": "source_item",
-    # The inbox projection's thread grouping — additive member, no existing
+    # The stream inbox projection's thread grouping — additive member, no existing
     # value changed.
     "MESSAGE_THREAD": "message_thread",
     # The Hub's server-minted mailbox row. Its value deliberately differs from
-    # the Agent action name ("email_inbox") so graph paths stay unambiguous —
+    # the Agent action name ("mailbox") so graph paths stay unambiguous —
     # additive member, no existing value changed.
-    "EMAIL_INBOX": "agent_mailbox",
+    "AGENT_MAILBOX": "agent_mailbox",
 }
 
 
@@ -237,3 +237,18 @@ def test_back_compat_aliases_are_the_same_class():
     assert SkillitRecordType is EntityType
     # shared members resolve to the same singleton
     assert RecordType.SUBAGENT is BuiltinEntityType.SUBAGENT
+
+
+#: Values an EntityType once had and may never be given again. A persisted row, shadow folder or
+#: TypeId still carrying one on an unmigrated install must read as unknown — never as a different type.
+RETIRED_VALUES: dict[str, str] = {
+    "data_source_spec": "the driver definition, now data_driver (0.2.170; old rows are pruned at boot, no migration)",
+    "credential_spec": "the named set of environment variables, now secret_pack (0.2.170; old rows are pruned at boot)",
+    "data_source_cursor": "a source's per-segment position, now DataSource.cursor (one source = one stream; old rows are pruned at boot)",
+    "inbox_manager": "the unread-badge singleton, now stream_inbox_manager (old rows are pruned at boot, no migration)",
+}
+
+
+def test_a_retired_value_is_never_reused():
+    reused = {value: why for value, why in RETIRED_VALUES.items() if value in {m.value for m in EntityType}}
+    assert not reused, f"retired EntityType values were reused: {reused}"

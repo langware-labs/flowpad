@@ -132,20 +132,6 @@ async def get_by_id(target: TypeId) -> Tuple[Type[Entity], Entity]:
 async def handle_request(
     request: Request, response: Response | None = None, background_tasks: BackgroundTasks | None = None
 ) -> ApiResponse | Response:
-    import time as _bench_time
-
-    _hr_t0 = _bench_time.perf_counter()
-
-    def _hr_bench(label):
-        try:
-            with open("/tmp/bench_open.log", "a") as _f:
-                _f.write(
-                    f"[BENCH handle_request {request.url.path[-30:]}] {label}: {(_bench_time.perf_counter() - _hr_t0) * 1000:.1f}ms\n"
-                )
-        except Exception:
-            pass
-
-    _hr_bench("entry")
     request_info = get_current_request_info()
     if not request_info:
         service_log.warn("Request info not found in handle_request")
@@ -166,7 +152,6 @@ async def handle_request(
             detail=f"Action handler not found: {request_info.action}",
         )
 
-    _hr_bench("after action lookup")
     sig = inspect.signature(a.handler)
     params = sig.parameters
     kwargs = {}
@@ -175,7 +160,6 @@ async def handle_request(
     first_param = list(params.values())[0] if params else None
     if first_param:
         await fill_self_cls_param_if_needed(kwargs, first_param, request_info)
-    _hr_bench("after fill_self_cls_param")
 
     # A published Git-backed asset has no local byte authority. Forward its
     # ordinary entity-VFS request before parsing/binding the action body so the
@@ -268,8 +252,6 @@ async def handle_request(
             if name in json_data:
                 kwargs[name] = json_data[name]
 
-    _hr_bench("before handler call")
-
     # Hub reflection: if the call opts in (``request_info.hub_reflect``) and the
     # entity has a hub counterpart (remote=True), forward the call to the
     # hub and mirror its response into the local row instead of running
@@ -301,7 +283,6 @@ async def handle_request(
                 request_info.method,
                 request_info.sub_path,
             )
-            _hr_bench("after hub reflect")
             # Write-through actions (entity files) mirrored to the hub but still
             # need their LOCAL write — the local store is the cache. Everything
             # else replaces the local handler with the hub's answer.
@@ -338,7 +319,6 @@ async def handle_request(
     except Exception as e:
         service_log.error(f"Action failed: {request_info.action}, {e}")
         raise e
-    _hr_bench("after handler call")
 
     if isinstance(response, Response):
         return response
@@ -363,7 +343,6 @@ async def handle_request(
         if getattr(response, "status_code", None) != 404:
             service_log.warn(f"Action returned non-success: {request_info.action}, message: {response.message}")
 
-    _hr_bench("before return (response built)")
     return response
 
 

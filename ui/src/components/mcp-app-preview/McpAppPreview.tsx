@@ -6,10 +6,13 @@ import { isReadyForInput, type AgenticProcess } from '@sdk';
 import { useAgentContext } from '@src/contexts/agent-context';
 import {
   MCP_APP_MIME_TYPE,
+  injectHeadScript,
   isMcpAppPath,
   mcpAppResourceUriForPath,
+  pageSdkPrelude,
   readFlowpadLocalResource,
 } from '@src/lib/mcp-app-resources';
+import { sdkConfig } from '@sdk/config/index';
 import { SANDBOX_URL } from '@src/lib/mcp-sandbox';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import '@src/lib/mcp-host.css';
@@ -128,15 +131,38 @@ export function McpAppPreview({ path, process, refreshKey }: McpAppPreviewProps)
   const latestModelContextRef = useRef<McpUiUpdateModelContextRequest['params'] | null>(null);
 
   const resourceUri = useMemo(() => mcpAppResourceUriForPath(path), [path]);
+  const processId = process?.id ?? null;
+
+  // The page may use the Flowpad SDK against this backend: script-src for
+  // `/sdk/flowpad-sdk.js`, connect-src for its HTTP + WebSocket. AppFrame applies
+  // it to both sandbox layers (`?csp=` on the proxy and the resource-ready meta).
+  // Memoized: AppFrame re-sends the page whenever this object's identity changes.
+  const apiOrigin = useMemo(() => new URL(sdkConfig.apiUrl).origin, []);
+  const csp = useMemo(
+    () => ({ connectDomains: [apiOrigin, new URL(sdkConfig.wsUrl).origin], resourceDomains: [apiOrigin] }),
+    [apiOrigin],
+  );
+  const sandbox = useMemo(() => ({ url: SANDBOX_URL, csp }), [csp]);
 
   const handleReadResource = useCallback(
     async (params: ReadResourceRequest['params']) => {
       if (!computeNode?.typeId) {
         throw new Error('No compute node is available for local MCP App resource reads.');
       }
-      return readFlowpadLocalResource(params.uri, computeNode.typeId);
+      const result = await readFlowpadLocalResource(params.uri, computeNode.typeId);
+      // The page gets the backend origin and the process it is shown beside
+      // before its own scripts run, so it can load the SDK and reach that process.
+      const prelude = pageSdkPrelude(apiOrigin, processId);
+      return {
+        ...result,
+        contents: result.contents.map((content) =>
+          'text' in content && typeof content.text === 'string'
+            ? { ...content, text: injectHeadScript(content.text, prelude) }
+            : content,
+        ),
+      };
     },
-    [computeNode?.typeId],
+    [computeNode?.typeId, apiOrigin, processId],
   );
 
   const handleMessage = useCallback(
@@ -178,7 +204,7 @@ export function McpAppPreview({ path, process, refreshKey }: McpAppPreviewProps)
         toolName={TOOL_NAME}
         toolResourceUri={resourceUri}
         toolInput={{ path, source: 'flow-show', mimeType: MCP_APP_MIME_TYPE }}
-        sandbox={{ url: SANDBOX_URL }}
+        sandbox={sandbox}
         hostInfo={HOST_INFO}
         hostCapabilities={HOST_CAPABILITIES}
         onCallTool={handleCallTool}

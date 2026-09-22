@@ -3,7 +3,10 @@ from typing import ClassVar, Optional
 
 from pydantic import ConfigDict
 
-from flow_sdk.schema.data_spec import Body, FrontMatter, SpecType
+from flow_sdk.schema.data_spec import AssetDocumentSpec
+from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.io.native import Text
+from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: The launch settings a place may override. Anything else is the definition's.
@@ -13,7 +16,7 @@ PLACE_OVERRIDABLE_FIELDS: tuple[str, ...] = ("worker_type", "model", "permission
 class AgentPlaceSpec(DataSpec):
     """How this agent runs on ONE place — a Deployment it is placed on.
 
-    Keyed by the Deployment id and carried in agent.md, so a place's overrides
+    Keyed by the Deployment id and carried in agent.json, so a place's overrides
     travel with the definition like its schedules do; each machine applies only
     the entry naming a placement that runs there. ``None`` = inherit the
     definition. ``mcp_servers`` names servers (names travel; ids do not).
@@ -37,10 +40,10 @@ class AgentPlaceSpec(DataSpec):
         return {name: getattr(self, name) for name in PLACE_OVERRIDABLE_FIELDS if getattr(self, name) is not None}
 
 
-class AgentSpec(FrontMatter):
-    """``agent.md`` — the shape of the document. ``name`` is deliberately NOT
-    here: it comes from the folder (``TypeInfo.name_from_path``), so a rename
-    can never desync the two. ``system_prompt`` is the markdown ``Body``.
+class AgentSpec(AssetDocumentSpec):
+    """``agent.json`` — the agent's ENTITY DOCUMENT: every field here is a key of ``agent.json``, and
+    ``system_prompt`` (the ``Body``) is the file ``system_prompt.md`` beside it. ``name`` is not a spec
+    field: it comes from the folder (``TypeInfo.name_from_path``), so a rename can never desync the two.
 
     ``input`` / ``output`` are the agent's I/O contract — shapes authored
     in YAML. They are declaration only and never enter ``to_agent_options``:
@@ -48,9 +51,14 @@ class AgentSpec(FrontMatter):
     flip ``restart_required`` on every running process.
     """
 
+    main_file: ClassVar[str | None] = "agent.json"
+    manifest_layout: ClassVar[str | None] = "entity"
+
     title: Optional[str] = None
     description: Optional[str] = None
     avatar: Optional[str] = None
+    #: The avatar circle's background — a palette hex. Unset = derived from the name.
+    color: Optional[str] = None
     worker_type: Optional[str] = None
     model: Optional[str] = None
     permission_mode: Optional[str] = None
@@ -74,6 +82,8 @@ class AgentSpec(FrontMatter):
     #: The ONE place (Deployment id) that answers this agent's email. Unset = legacy:
     #: every machine that polls the mailbox answers.
     email_place: Optional[str] = None
-    input: Optional[SpecType] = None
-    output: Optional[SpecType] = None
-    system_prompt: Body = ""
+    #: The agent's own phone number (the one its WhatsApp channel answers on). Declaration only.
+    phone: Optional[PhoneNumberSpec] = None
+    input: Optional[ShapeForm] = None
+    output: Optional[ShapeForm] = None
+    system_prompt: Text = ""

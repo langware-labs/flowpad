@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sqlite3
-import unicodedata
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -30,8 +30,7 @@ def _timestamp_ns(value: object) -> int | None:
 
 class NamingAdapter(Protocol):
     def read(self, process: AgenticProcess) -> list[NameObservation]: ...
-    def watch_paths(self, process: AgenticProcess) -> tuple[Path, ...]: ...
-    def terminal_observation(self, process: AgenticProcess, title: str) -> NameObservation | None: ...
+    def transcript_may_rename(self, entries: Sequence[object]) -> bool: ...
 
 
 def _observation(process: AgenticProcess, title: object, origin: NameOrigin, source: str,
@@ -44,21 +43,22 @@ def _observation(process: AgenticProcess, title: object, origin: NameOrigin, sou
 
 
 class MetadataNamingAdapter:
-    """No terminal title is trusted unless a provider explicitly implements it."""
-    def terminal_observation(self, process: AgenticProcess, title: str) -> NameObservation | None:
-        return None
+    """Titles are read from the provider's native store on a transcript event.
+
+    A provider whose title lives outside the transcript cannot tell from the
+    delivered entries whether it moved, so every event is a reason to read.
+    """
+    def transcript_may_rename(self, entries: Sequence[object]) -> bool:
+        return True
 
 
 class ClaudeNamingAdapter(MetadataNamingAdapter):
-    def watch_paths(self, process: AgenticProcess) -> tuple[Path, ...]:
-        path = getattr(process, "transcript_path", None)
-        if path:
-            return (Path(path).resolve(),)
-        # A first turn has no file yet. Watch the native store until discovery
-        # resolves its real path, then the shared runtime narrows this binding.
-        from flow_sdk.instance_settings import get_instance_settings
+    #: Claude writes its title into the transcript itself; any other entry
+    #: cannot have changed it.
+    TITLE_KINDS = frozenset({"ai-title", "custom-title"})
 
-        return (get_instance_settings().claude_projects_dir.resolve(),)
+    def transcript_may_rename(self, entries: Sequence[object]) -> bool:
+        return any(getattr(entry, "meta_kind", None) in self.TITLE_KINDS for entry in entries)
 
     def read(self, process: AgenticProcess) -> list[NameObservation]:
         from flow_sdk.assets.types.claude_titles import read_claude_title
@@ -71,36 +71,16 @@ class ClaudeNamingAdapter(MetadataNamingAdapter):
                             'claude.metadata', title.sequence, title.revision)
         return [item] if item else []
 
-    def terminal_observation(self, process: AgenticProcess, title: str) -> NameObservation | None:
-        # Prefer the durable native metadata, including its manual-name marker.
-        metadata = self.read(process)
-        if metadata:
-            return metadata[0]
-        cleaned = re.sub(r'\x1b\[[0-9;?]*[ -/]*[@-~]', '', title)
-        cleaned = ''.join(c for c in cleaned if unicodedata.category(c) not in ('Cc', 'So', 'Sk')
-                          and not ('\u2190' <= c <= '\u21ff')
-                          and not ('\u2500' <= c <= '\u28ff') and c != '\ufe0f')
-        cleaned = ' '.join(cleaned.split())
-        if not any(c.isalpha() for c in cleaned) or 'claude code' in cleaned.lower():
-            return None
-        if cleaned.lower() in ('claude', 'claude.exe') or re.match(r'^(?:[a-z]:[\\/]|\\\\).*\.exe$', cleaned, re.I):
-            return None
-        if re.fullmatch(r'[a-z][a-z0-9_-]*-[0-9a-f]{8}-[0-9a-f]{4}-[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', cleaned, re.I):
-            return None
-        # OSC has no manual/automatic bit. Preserve that uncertainty instead of
-        # silently allowing a later automatic title to undo a manual CLI rename.
-        return _observation(process, cleaned, NameOrigin.UNKNOWN, 'claude.terminal')
-
 
 class CodexNamingAdapter(MetadataNamingAdapter):
-    def watch_paths(self, process: AgenticProcess) -> tuple[Path, ...]:
+    def _source_path(self, process: AgenticProcess) -> Path | None:
         from flow_sdk.instance_settings import get_instance_settings
-        return ((get_instance_settings().codex_session_index_path).resolve(),)
+        return get_instance_settings().codex_session_index_path.resolve()
 
     def read(self, process: AgenticProcess) -> list[NameObservation]:
         from flow_sdk.assets.types.codex_titles import read_codex_title
 
-        title = read_codex_title(self.watch_paths(process)[0], process.session_id)
+        title = read_codex_title(self._source_path(process), process.session_id)
         if title is None:
             return []
         # Codex persists exactly the same record for automatic and manual titles.
@@ -110,16 +90,16 @@ class CodexNamingAdapter(MetadataNamingAdapter):
 
 
 class CopilotNamingAdapter(MetadataNamingAdapter):
-    def watch_paths(self, process: AgenticProcess) -> tuple[Path, ...]:
+    def _source_path(self, process: AgenticProcess) -> Path | None:
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import copilot_session_state_root
-        return ((copilot_session_state_root() / process.session_id / 'workspace.yaml').resolve(),) if process.session_id else ()
+        return (copilot_session_state_root() / process.session_id / 'workspace.yaml').resolve() if process.session_id else None
 
     def read(self, process: AgenticProcess) -> list[NameObservation]:
-        paths = self.watch_paths(process)
-        if not paths:
+        path = self._source_path(process)
+        if path is None:
             return []
         try:
-            raw = yaml.safe_load(paths[0].read_text(encoding='utf-8'))
+            raw = yaml.safe_load(path.read_text(encoding='utf-8'))
             if not isinstance(raw, dict):
                 return []
             named = raw.get('user_named')
@@ -133,20 +113,19 @@ class CopilotNamingAdapter(MetadataNamingAdapter):
                 named = True
             origin = (NameOrigin.EXPLICIT_USER if named is True else
                       NameOrigin.HARNESS_AUTO if named is False else NameOrigin.UNKNOWN)
-            item = _observation(process, title, origin, 'copilot.workspace', _timestamp_ns(raw.get('updated_at')) or paths[0].stat().st_mtime_ns)
+            item = _observation(process, title, origin, 'copilot.workspace', _timestamp_ns(raw.get('updated_at')) or path.stat().st_mtime_ns)
             return [item] if item else []
         except (OSError, UnicodeDecodeError, yaml.YAMLError):
             return []
 
 
 class OpenCodeNamingAdapter(MetadataNamingAdapter):
-    def watch_paths(self, process: AgenticProcess) -> tuple[Path, ...]:
+    def _source_path(self, process: AgenticProcess) -> Path | None:
         from flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history import opencode_db_path
-        path = opencode_db_path().resolve()
-        return (path, Path(str(path) + '-wal'))
+        return opencode_db_path().resolve()
 
     def read(self, process: AgenticProcess) -> list[NameObservation]:
-        path = self.watch_paths(process)[0]
+        path = self._source_path(process)
         if not path.exists() or not process.session_id:
             return []
         try:

@@ -35,17 +35,14 @@ Stdlib + pydantic only, like the rest of ``data_spec``.
 
 from __future__ import annotations
 
-import sys
-from typing import Annotated, Any, ClassVar, Optional, Union
+from typing import Any, ClassVar, Optional, Union
 
-from pydantic import ConfigDict, StringConstraints, model_validator
+from pydantic import ConfigDict, model_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.schema.data_spec.spec import DataSpec, SpecType
-
-#: A step id is a handle used as an activity address segment and an error ref;
-#: a blank one would collapse two steps onto one node.
-NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec._types import NonBlank
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: What a step does when its action fails.
 ON_FAIL_ABORT = "abort"
@@ -53,178 +50,98 @@ ON_FAIL_CONTINUE = "continue"
 ON_FAIL_VALUES = (ON_FAIL_ABORT, ON_FAIL_CONTINUE)
 
 
-class CheckOutcome(StrEnum):
-    """What a check says should happen to its step."""
+class StepKind(StrEnum):
+    """What a step CALLS. Every one of them answers a ``ReturnedValue``.
 
-    #: The thing is already true. Skip, and report it as done.
-    SATISFIED = "satisfied"
-    #: This step does not apply to this machine. Skip, and report it as such.
-    NOT_APPLICABLE = "not_applicable"
-    #: There is work to do. Run the action.
-    EXECUTE = "execute"
+    The three differ in who does the work, not in how the answer is read:
 
+    * ``compute`` — a ComputeOp: reach a goal on this machine, or produce a value.
+    * ``wizard`` — another Wizard: a sequence, which may itself ask.
+    * ``ask`` — the person. The ONLY waiting a Wizard does.
 
-class WizardCheckSpec(DataSpec):
-    """A per-OS command whose EXIT CODE decides what happens to the step.
-
-    One shape serves both ``precondition`` and ``verify``, because verify IS
-    the precondition re-asked. That is not a saving, it is the design: a step
-    counts as done only when re-asking the original question answers
-    ``satisfied``. Two properties fall out of it.
-
-    *Idempotency is structural.* Nothing persists a cursor, so no cursor can go
-    stale — a re-run re-derives every step from the live machine, and steps
-    already done skip.
-
-    *An agentic step cannot lie.* A worker that installs nothing and reports a
-    cheerful summary still fails its verify, because ``python3 --version``
-    exiting 0 is the evidence and the summary is not.
-
-    The default map is chosen so the common case needs no configuration at all:
-    ``command -v python3`` exits 0 when present and non-zero when absent, which
-    is exactly ``satisfied`` / ``execute``. ``not_applicable_codes`` defaults
-    EMPTY so nothing is ever silently skipped unless an author asked for it.
+    An agent is not a kind. An agent run IS a ComputeOp (an op whose attempt is
+    an agent), so a step that wants one references that op — which also means
+    the agent's work is checkable, reusable and runnable on its own.
     """
 
-    spec_kind: ClassVar[str] = "wizard.check"
-
-    #: ``sys.platform`` -> shell one-liner. A platform with no entry means the
-    #: check cannot be answered here, which is ``not_applicable`` (see
-    #: ``outcome_for``), never a failure.
-    commands: dict[str, str] = {}
-    timeout_seconds: float = 30.0
-    satisfied_codes: list[int] = [0]
-    not_applicable_codes: list[int] = []
-
-    def command_for(self, platform: str = "") -> Optional[str]:
-        """This machine's command, or ``None`` when the check is silent here."""
-        return self.commands.get(platform or sys.platform)
-
-    def outcome_for(self, returncode: Optional[int], *, timed_out: bool = False) -> CheckOutcome:
-        """Map one command result onto a step outcome.
-
-        ``timed_out`` and a missing returncode both resolve to ``EXECUTE``:
-        an unanswered question is not a satisfied one, and the cost of running
-        an idempotent installer we did not need is far below the cost of
-        skipping one we did.
-        """
-        if timed_out or returncode is None:
-            return CheckOutcome.EXECUTE
-        if returncode in self.satisfied_codes:
-            return CheckOutcome.SATISFIED
-        if returncode in self.not_applicable_codes:
-            return CheckOutcome.NOT_APPLICABLE
-        return CheckOutcome.EXECUTE
+    COMPUTE = "compute"
+    WIZARD = "wizard"
+    ASK = "ask"
 
 
-class WizardCommandActionSpec(DataSpec):
-    """A step that runs a shell one-liner. Success is exit 0."""
+class InputSpec(DataSpec):
+    """One PARAMETER of a wizard: a value it needs before it can finish.
 
-    spec_kind: ClassVar[str] = "wizard.action.command"
-
-    commands: dict[str, str] = {}
-    timeout_seconds: float = 600.0
-
-    def command_for(self, platform: str = "") -> Optional[str]:
-        return self.commands.get(platform or sys.platform)
-
-
-class WizardProcessActionSpec(DataSpec):
-    """A step that hands the work to an agent, and waits for it.
-
-    Deliberately AWAITED rather than monitored. ``run_capability_install_process``
-    returns as soon as the worker starts and lets a background monitor settle
-    the verdict, because a browser needs the process id while the run is still
-    live. A wizard step has no such caller — the next step's precondition
-    depends on this one having finished, so the runner blocks.
-    """
-
-    spec_kind: ClassVar[str] = "wizard.action.process"
-
-    #: Agent name, resolved through ``get_agent_local_deployment``.
-    agent: NonBlank = "capability-installer"
-    prompt: NonBlank
-    #: Display name for the spawned process. Falls back to the step label.
-    name: str = ""
-    timeout_seconds: float = 1800.0
-    #: The name this step's agent RETURNS a value under.
-    #:
-    #: Empty ⇒ the step declares no output: no result contract is added to the
-    #: prompt, nothing is read back, and the verdict is what it was before this
-    #: field existed — the agent reached a terminal state. Opt-in on purpose, a
-    #: contract nobody asked for cannot silently fail a wizard that ships.
-    output: str = ""
-    #: The value's shape, in the AUTHORING form — the same ``SpecType`` field
-    #: ``WizardInputActionSpec.shape`` and ``AgentSpec.input`` use, so a step
-    #: declares what it RETURNS the way a wizard declares what it is GIVEN.
-    #: Shown to the agent in the contract; not enforced (see the reader).
-    shape: Optional[SpecType] = None
-
-
-class WizardInputActionSpec(DataSpec):
-    """A step that obtains a named, typed value from the person running the wizard.
-
-    This is the ONLY kind of waiting a Wizard does, and the distinction is the
-    line against Journey. A wizard may park because it is MISSING SOMETHING IT
-    NEEDS — it cannot clone without a URL. It may not park merely to be read;
-    presenting a result and waiting to be acknowledged is what a Journey is for.
+    Declared once on the wizard rather than inside a step, which is what makes a
+    caller able to SUPPLY it: a step calling this wizard binds its `args` to
+    these names, and an `ask` step for a parameter already supplied does nothing.
 
     Parking does not block. The run RETURNS ``pending`` and the caller is
     released; ``Wizard.set_input`` stores the value and runs the wizard again.
-    Resume is just a re-run because verify re-asks every precondition, so steps
-    already done skip — there is no cursor to persist and none to go stale.
+    Resume is just a re-run, because every step asks its own question first and
+    the ones already done skip — there is no cursor to persist and none to go
+    stale.
 
-    The value reaches a command step as an ENVIRONMENT VARIABLE
+    The value reaches a command as an ENVIRONMENT VARIABLE
     (``FLOWPAD_WIZARD_INPUT_<NAME>``), never by substitution into the command
-    string. Interpolating would make an input of ``; rm -rf /`` executable,
-    straight through the trust gate that decides whether this wizard may run
-    shell at all.
+    string. Interpolating would make a value of ``; rm -rf /`` executable,
+    straight through the trust gate that decides whether this may run shell at
+    all.
     """
 
-    spec_kind: ClassVar[str] = "wizard.action.input"
+    spec_kind: ClassVar[str] = "wizard.input"
 
-    #: The key in the run's input dict. Uppercased for the env var.
-    name: NonBlank
     #: The value's shape, in the authoring form — ``"string"``, an object, or a
-    #: one-element list. Same ``SpecType`` field ``AgentSpec.input`` uses, so a
-    #: wizard declares its arguments the way an agent declares its contract.
-    shape: Optional[SpecType] = None
-    #: What the form asks. Falls back to the step's label.
+    #: one-element list. The same ``ShapeForm`` an agent declares its contract with.
+    shape: Optional[ShapeForm] = None
+    #: What the form asks. Falls back to the parameter's name.
     label: str = ""
     description: str = ""
-    #: An absent optional input SKIPS the step instead of parking.
+    #: An absent optional value SKIPS the ask instead of parking.
     optional: bool = False
 
 
 class WizardStepSpec(DataSpec):
-    """One step: ask, act, prove."""
+    """One step: a call.
+
+    Everything a step used to hold about HOW to do the work — a per-OS
+    precondition, a command, an agent, a verify — now lives in the ComputeOp it
+    names. What is left is the call itself and what the SEQUENCE does about the
+    answer, which is the only part that was ever the wizard's.
+    """
 
     spec_kind: ClassVar[str] = "wizard.step"
 
     id: NonBlank
     label: str = ""
     description: str = ""
-    #: Asked BEFORE the action. Absent ⇒ always execute.
-    precondition: Optional[WizardCheckSpec] = None
-    command: Optional[WizardCommandActionSpec] = None
-    process: Optional[WizardProcessActionSpec] = None
-    #: Ask the person for a value. The only kind of waiting a Wizard does.
-    input: Optional[WizardInputActionSpec] = None
-    #: Asked AFTER the action. Absent ⇒ the action's own result is the verdict.
-    verify: Optional[WizardCheckSpec] = None
+    kind: StepKind = StepKind.COMPUTE
+    #: A ComputeOp name, a Wizard name, or one of this wizard's own ``inputs`` keys.
+    ref: NonBlank
+    #: The callee's parameter -> a value in this wizard's scope, or a literal.
+    #:
+    #: A MAPPING, never a template: there is no ``${…}`` form, and there must not
+    #: be. Values reach a command as environment, and the moment an argument can
+    #: be spliced into a string the injection guard that keeps them out of the
+    #: command line is gone.
+    args: dict[str, str] = {}
+    #: Put what this call RETURNED into scope under this name, for later steps
+    #: and for this wizard's own output. Empty ⇒ the value is reported and
+    #: dropped: a step that returns something nobody named is not an error,
+    #: and naming it by default would put every value into the environment.
+    bind: str = ""
     on_fail: str = ON_FAIL_ABORT
 
     @model_validator(mode="after")
-    def _exactly_one_action(self) -> "WizardStepSpec":
-        chosen = [name for name in ("command", "process", "input") if getattr(self, name) is not None]
-        if len(chosen) != 1:
-            raise ValueError(
-                f"step {self.id!r}: exactly one of `command` / `process` / `input` is required, got "
-                + (", ".join(chosen) if chosen else "neither")
-            )
+    def _legal(self) -> "WizardStepSpec":
         if self.on_fail not in ON_FAIL_VALUES:
             raise ValueError(
                 f"step {self.id!r}: on_fail must be one of {ON_FAIL_VALUES}, got {self.on_fail!r}"
+            )
+        if self.kind is StepKind.ASK and self.args:
+            raise ValueError(
+                f"step {self.id!r}: an `ask` step takes no args — it names one of the "
+                "wizard's own inputs and the person supplies the value"
             )
         return self
 
@@ -234,7 +151,12 @@ class WizardStepSpec(DataSpec):
 
 
 class WizardSpec(DataSpec):
-    """``wizard.json`` — the whole document."""
+    """``wizard.json`` — the whole document.
+
+    A Wizard SEQUENCES calls and can ask a person; a ComputeOp does the work.
+    If a document never asks anything, it does not need to be a wizard at all —
+    ops joined by ``requires`` already express an ordering.
+    """
 
     spec_kind: ClassVar[str] = "wizard"
 
@@ -249,12 +171,15 @@ class WizardSpec(DataSpec):
     #: conversation is the run.
     #:
     #: Fabricating a single step to hold the agent instead looked tidier and was
-    #: a trap: every field on that step (id, label, prompt, timeout) is inert on
-    #: the launched path — `startWizardProcess` builds the prompt from the
-    #: caller's request — while the viewer's Run button would happily execute the
-    #: placeholder prompt against no payload at all, ungated, because a shipped
-    #: wizard needs no approval.
+    #: a trap: every field on that step is inert on the launched path, while the
+    #: viewer's Run button would happily execute the placeholder against no
+    #: payload at all, ungated, because a shipped wizard needs no approval.
     agent: str = ""
+    #: This wizard's PARAMETERS, by name. A caller supplies them through a step's
+    #: ``args``; an ``ask`` step obtains one from the person.
+    inputs: dict[str, InputSpec] = {}
+    #: The shape this wizard RETURNS, in the authoring form.
+    output: Optional[ShapeForm] = None
     steps: list[WizardStepSpec] = []
 
     @model_validator(mode="after")
@@ -275,14 +200,20 @@ class WizardSpec(DataSpec):
             raise ValueError(
                 f"wizard {self.name!r} declares neither an agent nor any steps, so nothing can run it"
             )
+        for step in self.steps:
+            if step.kind is StepKind.ASK and step.ref not in self.inputs:
+                raise ValueError(
+                    f"step {step.id!r} asks for {step.ref!r}, which this wizard does not declare "
+                    f"in `inputs` — a question nobody can answer parks the run forever"
+                )
         return self
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # What a RUN produced. These travel — into `run.json`, onto the entity payload
 # as `Wizard.run_state`, and out to the TS mirror — so they are `DataSpec`s and
 # not dataclasses, per the repo's one-type-system rule. `frozen=True`: a value
-# is a value. The hand-written `to_payload()` each used to carry is now
-# `model_dump(mode="json")`.
+# is a value.
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -360,21 +291,15 @@ class WizardStepOutcomeSpec(DataSpec):
     step_id: str
     status: str
     message: str = ""
-    returncode: Optional[int] = None
     process_id: Optional[str] = None
     duration_s: float = 0.0
     #: Every command this step ran. Additive with a default, so a `run.json`
     #: written before probes existed still validates under `extra="forbid"`.
     probes: list[WizardStepProbeSpec] = []
-    #: The name this step declared as its output, when it was an agentic step.
-    output: str = ""
-    #: What the agent RETURNED under that name. Served only by ``run-detail``,
-    #: never on ``run_state`` — the same rule as `probes`, and for the same
-    #: reason: that payload rides every row of a list and every WS push.
+    #: What the call RETURNED. Served only by ``run-detail``, never on
+    #: ``run_state`` — the same rule as `probes`, and for the same reason: that
+    #: payload rides every row of a list and every WS push.
     result: Optional[Any] = None
-    #: Where the agent wrote it. Survives the strip, so a person reading a list
-    #: payload can still go and find the value on disk.
-    result_path: str = ""
 
 
 class WizardAwaitingInputSpec(DataSpec):

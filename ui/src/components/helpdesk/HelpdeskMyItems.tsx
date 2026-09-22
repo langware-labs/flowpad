@@ -16,7 +16,7 @@ import { MessageSquare } from 'lucide-react';
  *
  * Closes a real gap: before this, someone could open a ticket from the portal
  * and then had nowhere in it to see the reply — the answer only surfaced in the
- * global Inbox, which is not where they were looking.
+ * global Stream Inbox, which is not where they were looking.
  *
  * Reads local conversations and filters to helpdesk ones. Deliberately NOT the
  * staff queue (`listHelpdeskTickets`), which is a hub call gated on project

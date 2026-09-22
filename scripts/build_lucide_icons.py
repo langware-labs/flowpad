@@ -43,7 +43,7 @@ def emitted_names() -> dict[str, set[str]]:
     """Every icon name the codebase publishes -> the files it came from.
 
     The provenance is what makes a fence failure actionable: "GoogleDrive is not
-    served" is a puzzle, "GoogleDrive, from gdrive/data_source.json" is a fix.
+    served" is a puzzle, "GoogleDrive, from gdrive/data_driver.json" is a fix.
     ``tests/unit/test_icon_spec.py`` imports this so the check and the generator
     can never disagree about what counts as an emitted name.
     """
@@ -64,7 +64,7 @@ def emitted_names() -> dict[str, set[str]]:
             for found in pattern.findall(text):
                 add(found, path.name)
     for path in (REPO / "flow_sdk").rglob("*.json"):
-        if path.name not in ("data_source.json", "credential.json"):
+        if path.name not in ("data_driver.json", "secret_pack.json"):
             continue
         try:
             blob = json.loads(path.read_text())

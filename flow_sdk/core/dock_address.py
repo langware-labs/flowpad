@@ -116,6 +116,9 @@ class ViewType(StrEnum):
     SKILLS = "skills"  # Retired: folded into assets `list/skill`
     AI_CONFIG = "ai-config"  # AI configuration (LLM APIs, CLIs)
     SHOW = "show"  # MCP UI display dock pointer
+    # A question a ComputeOp put to a person. Drawn on its own in `win/`, where
+    # the routed view IS the window — the pointer is the question's id.
+    ASK = "ask"
     APPS = "apps"  # Skill UI apps - /dock/apps/<uname>/<router>
     GRAPH = "graph"  # Dep-graph viewer - /dock/graph/<type>/<id>
     WORLDVIEW = "worldview"  # /dock[/hub]/worldview/<world|organization|deployment>
@@ -147,8 +150,8 @@ class ViewType(StrEnum):
     CRON = "cron"  # Alias of EVENTS (scheduled jobs)
     ASSETS = "assets"  # Unified docs/skills/workflows tree
     PROJECT = "project"  # Collaboration on a project
-    AGENT = "agent"  # Agent-owned surfaces — /dock/agent/<agent-id>/inbox
-    INBOX = "inbox"  # Received FlowMessages from hub
+    AGENT = "agent"  # Agent-owned surfaces — /dock/agent/<agent-id>/stream_inbox
+    STREAM_INBOX = "stream_inbox"  # Stream Inbox — every owned message source, merged into conversations
     CONVERSATION = "conversation"  # Single Conversation viewer
     SPEC = "spec"  # Single Spec viewer
     GRAPH_CONTEXT = "graph_context"  # Frozen-context viewer
@@ -383,6 +386,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.SKILLS: _m(_OPT, addressable=False),
     ViewType.AI_CONFIG: _m(_OPT, label="AI Configuration", aliases=("ai config", "llm apis", "models", "clis")),
     ViewType.SHOW: _m(_REQ, label="Show"),
+    # Fullbleed: the question IS the window, so there is no workspace around it.
+    ViewType.ASK: _m(_REQ, label="Ask", chrome="fullbleed"),
     ViewType.APPS: _m(_REQ, folds_sub_pointer=True, label="Skill apps"),
     ViewType.GRAPH: _m(_REQ, label="Graph", aliases=("dep graph", "dependency graph")),
     ViewType.WORLDVIEW: _m(_REQ, label="WorldView", aliases=("world", "org graph"), pages=("desk", "hub")),
@@ -430,9 +435,9 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     # Same: a bare project dock is the assets workspace (see the PROJECT arm in
     # `content-panel.tsx`, which documents exactly that and was unaddressable).
     ViewType.PROJECT: _m(_OPT, label="Collaboration", aliases=("room",), pages=("desk", "hub")),
-    # `<agentId>/inbox` — the id leads, so the pointer is required.
+    # `<agentId>/stream_inbox` — the id leads, so the pointer is required.
     ViewType.AGENT: _m(_REQ, label="Agent"),
-    ViewType.INBOX: _m(_NONE, label="Inbox", aliases=("messages",)),
+    ViewType.STREAM_INBOX: _m(_NONE, label="Stream Inbox", aliases=("messages",)),
     ViewType.CONVERSATION: _m(_REQ, folds_sub_pointer=True, label="Conversation", pages=("desk", "hub")),
     ViewType.SPEC: _m(_REQ, label="Spec"),
     ViewType.GRAPH_CONTEXT: _m(_REQ, label="Context", aliases=("frozen context",)),

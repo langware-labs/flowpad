@@ -1,0 +1,18 @@
+{
+  "type": "agent",
+  "id": "004f3ab7-d33b-48c0-ae0e-6e61e181a343",
+  "name": "Q",
+  "version": 3,
+  "title": "QA manager",
+  "description": "Flowpad's QA manager for evidence-driven end-to-end validation.",
+  "avatar": "./avatar.png",
+  "skills": [
+    "skill-ae32bd1d-2fca-50c2-bf33-fa24a06aad61"
+  ],
+  "mcp_servers": [],
+  "subagents": [],
+  "additional_dirs": [],
+  "load_flowpad_assistant": false,
+  "cli_options": {},
+  "enabled": true
+}

@@ -1,7 +1,7 @@
 import { cn } from '@src/lib/utils';
 
 /**
- * The small count chip that rides an icon button — unread inbox, unopened
+ * The small count chip that rides an icon button — unread stream inbox, unopened
  * bookmarks. Absolutely positioned, so its host only has to be `relative`.
  *
  * Module scope, not declared inside a component: a component defined in a render

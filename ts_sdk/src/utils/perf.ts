@@ -12,6 +12,8 @@
 // The same steps also emit under the `process_load` toplog tag (runtime
 // toggleable, no T0 stamp needed) so a slow tab-switch can be traced in any
 // session — `toplog.on('process_load')` — without pre-instrumenting the click.
+// They are co-tagged `agentic_process.load`, the topic for the whole session
+// start (click → createProcess → navigate → /open → attach), front and back.
 
 import { toplog } from '../services/toplog';
 
@@ -33,7 +35,7 @@ function readT0(): number | undefined {
 }
 
 export function perfLog(label: string): void {
-  if (toplog.isOn('process_load')) toplog.log('process_load', label);
+  toplog.log(['process_load', 'agentic_process.load'], label);
   if (!import.meta.env.DEV) return;
   const t0 = readT0();
   if (t0 === undefined) return;
@@ -41,7 +43,7 @@ export function perfLog(label: string): void {
 }
 
 export async function perfTime<T>(label: string, fn: () => T | Promise<T>): Promise<T> {
-  const tagOn = toplog.isOn('process_load');
+  const tagOn = toplog.isOn(['process_load', 'agentic_process.load']);
   if (!import.meta.env.DEV && !tagOn) return fn(); // zero-cost when nothing listens
   const t0 = readT0();
   const start = performance.now();
@@ -49,7 +51,7 @@ export async function perfTime<T>(label: string, fn: () => T | Promise<T>): Prom
     return await fn();
   } finally {
     const dur = performance.now() - start;
-    if (tagOn) toplog.log('process_load', `${label} took ${dur.toFixed(1)}ms`);
+    if (tagOn) toplog.log(['process_load', 'agentic_process.load'], `${label} took ${dur.toFixed(1)}ms`);
     if (import.meta.env.DEV && t0 !== undefined) {
       console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms ${label} took ${dur.toFixed(1)}ms`);
     }

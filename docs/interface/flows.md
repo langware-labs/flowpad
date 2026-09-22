@@ -454,12 +454,19 @@ full worker-status state machine.
 ### #ready-for-input — can a caller send a prompt?
 
 `is_ready_for_input(process, worker_status=None)`
-(`flow_sdk/builtin/agentic_process/status_predicates.py:72`) is the gate every send/enqueue path
+(`flow_sdk/builtin/agentic_process/status_predicates.py:203`) is the gate every send/enqueue path
 consults. Contract (truth-tabled in both the pytest and vitest suites):
 
 ```
-is_ready_for_input(p)  ⇔  p.status == RUNNING  AND  worker_status ∈ {IDLE, COMPLETE, INTERRUPTED}
+is_ready_for_input(p)  ⇔  not is_turn_busy(p)  AND  (
+    p.status == RUNNING
+    OR (p.status == NEW      AND not p.pty_mode)                  # fresh headless
+    OR (p.status == STOPPED  AND not p.pty_mode AND p.session_id)  # headless-idle
+)
 ```
+
+`is_turn_busy` is the busy axis: the prompt lock, a registered print-mode worker,
+`_turn_in_flight`, or — PTY transport only — a mid-turn `worker_status`.
 
 Special case: `worker_status is None` means the transcript hasn't been discovered yet — a RUNNING
 process with no derivable status is *spawned-and-idle* (ready for its first prompt) unless a turn

@@ -1,4 +1,4 @@
-"""DataSource + DataSourceCursor: due-selection, the window floor, health rollup.
+"""DataSource: due-selection, the window floor, health, and the position it holds.
 
 These are the pieces the poller depends on being correct before it does any
 network I/O at all, so they are tested with an injected clock and no sleeping.
@@ -11,14 +11,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
-from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.ingest.health import SourceError, SourceHealth, classify, worst_of
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 
 def _source(**kw) -> DataSource:
-    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name="Test feed")
+    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"Test feed {uuid.uuid4().hex[:8]}", config={"feed_url": "http://127.0.0.1:1/feed"})
     base.update(kw)
     return DataSource(**base)
 
@@ -135,26 +134,7 @@ def test_source_error_carries_its_own_classification():
     assert code == "missing_scope" and "channels:history" in detail
 
 
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_cursor_ensure_for_is_get_or_create_and_never_resets_position():
-    ds_id = f"ds-{uuid.uuid4().hex[:8]}"
+def test_the_position_is_runtime_never_the_file():
+    from flow_sdk.builtin.data_source import RUNTIME_FIELDS
 
-    first = await DataSourceCursor.ensure_for(ds_id, "https://a.test/feed", segment_label="A")
-    first.high_water = "2026-07-30T00:00:00Z"
-    first.state = {"etag": 'W/"abc"'}
-    await first.save()
-
-    again = await DataSourceCursor.ensure_for(ds_id, "https://a.test/feed", segment_label="A")
-    assert again.id == first.id
-    assert again.high_water == "2026-07-30T00:00:00Z", "re-declaring a stream reset its cursor"
-    assert again.state == {"etag": 'W/"abc"'}
-
-
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_cursors_are_independent_per_stream():
-    ds_id = f"ds-{uuid.uuid4().hex[:8]}"
-    a = await DataSourceCursor.ensure_for(ds_id, "https://a.test/feed")
-    b = await DataSourceCursor.ensure_for(ds_id, "https://b.test/feed")
-    assert a.id != b.id, "two streams of one source must not share a cursor row"
+    assert {"cursor", "manifest", "high_water", "last_attempted_at", "consecutive_failures"} <= set(RUNTIME_FIELDS)

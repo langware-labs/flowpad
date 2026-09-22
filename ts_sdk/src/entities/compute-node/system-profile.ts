@@ -844,8 +844,12 @@ export interface ProjectListItem {
   codex?: boolean;
   copilot?: boolean;
   worker_types?: string[];
-  /** True when this project entry represents an SDK-shipped system project. */
-  system?: boolean;
+  /**
+   * True when this project is app-managed — SDK-shipped, the agent mount root,
+   * or a help-desk portal checkout. The backend's `is_hidden_project`, the same
+   * answer `Project.hidden` carries on the entity. Absent on older backends.
+   */
+  hidden?: boolean;
 }
 
 /**

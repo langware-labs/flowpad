@@ -13,6 +13,8 @@ import { IEntity, EntityMerge } from '../IEntity';
 
 export interface IMessageThread extends IEntity {
   owner?: string | null;
+  /** The source that read this thread — the account half of its identity. */
+  data_source_id?: string | null;
   /** The channel: gmail | slack | jira. The badge axis. */
   channel?: string;
   /** The provider's own thread handle (Gmail threadId, Slack thread_ts, …). */
@@ -35,8 +37,10 @@ export class MessageThread extends APIEntity<MessageThread> implements IMessageT
 
   channel: string = '';
   thread_key: string = '';
-  /** Whose inbox this thread belongs to — a user or agent typeid string. */
+  /** Whose stream inbox this thread belongs to — a user or agent typeid string. */
   owner: string | null = null;
+  /** The source that read this thread; two accounts on one channel never share one. */
+  data_source_id: string | null = null;
   conversation_id: string = '';
   title: string = '';
   message_count: number = 0;
@@ -46,6 +50,7 @@ export class MessageThread extends APIEntity<MessageThread> implements IMessageT
     this.channel = entity.channel ?? '';
     this.thread_key = entity.thread_key ?? '';
     this.owner = entity.owner ?? null;
+    this.data_source_id = entity.data_source_id ?? null;
     this.conversation_id = entity.conversation_id ?? '';
     this.title = entity.title ?? '';
     this.message_count = entity.message_count ?? 0;

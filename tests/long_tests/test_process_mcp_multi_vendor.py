@@ -21,6 +21,8 @@ its subprocesses get the sandbox HOME and every turn fails "not logged in".
 
 from __future__ import annotations
 
+import json
+
 import asyncio
 import shutil
 import sys
@@ -171,9 +173,10 @@ async def _agent_with_mcp_on_disk(root: Path, worker: str) -> Agent:
     name = f"mcp-probe-{worker}"
     agent_dir = root / "agentic-assets" / "agent" / name
     agent_dir.mkdir(parents=True, exist_ok=True)
-    (agent_dir / "agent.md").write_text(
-        f"---\nname: {name}\nworker_type: {worker}\n---\n\nA probe agent.\n", encoding="utf-8"
+    (agent_dir / "agent.json").write_text(
+        json.dumps({"type": "agent", "name": name, "worker_type": worker}) + "\n", encoding="utf-8"
     )
+    (agent_dir / "system_prompt.md").write_text("A probe agent.\n", encoding="utf-8")
     mcp_dir = agent_dir / "agentic-assets" / "mcp" / "dummy"
     mcp_dir.mkdir(parents=True, exist_ok=True)
     spec = McpSpec(name="dummy", command=sys.executable, args=[str(_SERVER)])

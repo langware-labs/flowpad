@@ -321,6 +321,13 @@ export class Project extends APIEntity<Project> {
   /** Optional per-project home branding from `.flow/customization/`. Mirrors the
    *  backend computed `Project.customization`. Read-only. */
   customization: ProjectCustomization = {};
+  /** True when this project is app-managed — SDK-shipped (the Flowpad
+   *  Assistant), the agent mount root, or a help-desk portal checkout. Mirror
+   *  of the backend computed `Project.hidden`; read-only, and the ONE answer to
+   *  "is this a project the user works in". Do NOT re-derive it from `system`
+   *  or from the uname: the portal is recognised by where it LIVES, and
+   *  `system` means the narrower "SDK-shipped". See `isHiddenProject`. */
+  hidden: boolean = false;
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
@@ -338,6 +345,7 @@ export class Project extends APIEntity<Project> {
     this.context_roots = (entity.context_roots as string[] | undefined) ?? [];
     this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
     this.customization = (entity.customization as ProjectCustomization | undefined) ?? {};
+    this.hidden = (entity.hidden as boolean | undefined) ?? false;
   }
 
   // Land on the project's collaboration/home view at /dock/project/<id>
@@ -556,6 +564,10 @@ export class Project extends APIEntity<Project> {
   /** Clone/materialize the shared project's portable GitOrigin locally. */
   async setupFromGitOrigin(): Promise<Project> {
     const response = await this.post<Project>('setup-from-git');
+    // A refused install answers with a FAIL envelope, which the client unwraps
+    // to `undefined` rather than throwing. Left alone, the next line fails on a
+    // missing field and the user is shown that instead of what went wrong.
+    if (!response) throw new Error('The project could not be set up from its Git origin.');
     return dataManager.updateEntityFromJson<Project>(response as unknown as Record<string, unknown>);
   }
 

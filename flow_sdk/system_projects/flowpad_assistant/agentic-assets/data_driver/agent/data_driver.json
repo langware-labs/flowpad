@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "name": "agent",
+  "title": "Agent transport",
+  "icon_name": "AgentTransport",
+  "channel_icon_names": {
+    "gmail": "Gmail",
+    "slack": "Slack"
+  },
+  "description": "Reaches a channel through a local agent harness — how Gmail and Slack are read today.",
+  "kind": "datasource.agent",
+  "config": {
+    "connector": {
+      "type": "text",
+      "label": "Connector",
+      "placeholder": "gmail | slack",
+      "account_key": true,
+      "hint": "This is the CHANNEL, and half of every thread key. Required — an empty or unknown connector parks the source on config_error."
+    },
+    "harness": {
+      "type": "text",
+      "label": "Harness",
+      "placeholder": "claude",
+      "hint": "The worker CLI that runs the fetch. Without a launchable one the source parks on config_error."
+    },
+    "mailbox": {
+      "type": "text",
+      "label": "Mailbox",
+      "placeholder": "INBOX — or a channel ID (C…) for slack",
+      "hint": "What to walk: a mailbox/label for gmail (defaults to INBOX), a channel ID for slack (required — a channel id cannot be guessed). Watching several? Add one source per mailbox."
+    },
+    "agent": {
+      "type": "text",
+      "advanced": true,
+      "label": "Agent"
+    },
+    "subagent": {
+      "type": "text",
+      "advanced": true,
+      "label": "Subagent"
+    },
+    "max_items": {
+      "type": "number",
+      "advanced": true,
+      "label": "Max items per run"
+    },
+    "send_agent": {
+      "type": "text",
+      "advanced": true,
+      "label": "Send agent",
+      "hint": "The persona that writes a reply. Empty means the connector's own (`emailer` for gmail, `slack-poster` for slack)."
+    },
+    "send_subagent": {
+      "type": "text",
+      "advanced": true,
+      "label": "Send subagent",
+      "hint": "Empty means the connector's own (`email_sender` for gmail, `slack_sender` for slack)."
+    },
+    "deadline_seconds": {
+      "type": "number",
+      "advanced": true,
+      "label": "Fetch deadline (seconds)",
+      "hint": "Wall-clock for one fetch; a worker past it is killed so it cannot hold the source's slot forever."
+    },
+    "send_deadline_seconds": {
+      "type": "number",
+      "advanced": true,
+      "label": "Send deadline (seconds)",
+      "hint": "Wall-clock for one send — shorter than a fetch: a fetch may sweep a mailbox, a send writes one message."
+    }
+  }
+}

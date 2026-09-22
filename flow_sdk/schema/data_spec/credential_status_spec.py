@@ -9,7 +9,7 @@ from typing import Optional
 from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
-from flow_sdk.schema.data_spec.credential_manifest_spec import CredentialEnvironmentSpec
+from flow_sdk.schema.data_spec.credential_spec import CredentialEnvironmentSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 

@@ -30,15 +30,24 @@ backend-derived lowercase filesystem slug. For example, an Agent whose name is
 
 ```text
 agentic-assets/agent/q/
-├── agent.md
+├── agent.json
+├── system_prompt.md
 └── avatar.png
 ```
 
+The Agent is an **entity document** (`AgentSpec.manifest_layout="entity"`, see
+[data-spec.md](data-management/data-spec.md#entity-document--typejson)): every field lives in
+`agent.json` — `type`, `id`, `name`, `version`, then the `AgentSpec` fields — and the system
+prompt is the plain file `system_prompt.md` beside it. A folder still holding the retired
+`agent.md` is reported by the scan and not indexed until
+`uv run -m flow_sdk.migrations.migration_2026_09_entity_json_mains --apply` converts it (the
+0.2.169 upgrade runs it).
+
 `name` is the addressable identity (`Q`) and supplies the filesystem slug
 (`q`). `title` is the human role shown in the profile (`QA manager`); it does
-not rename the Agent. Both values round-trip through `agent.md` frontmatter.
+not rename the Agent. Both values round-trip through `agent.json`.
 
-An uploaded image is kept beside `agent.md`, and frontmatter stores only the
+An uploaded image is kept beside `agent.json`, which stores only the
 portable bundle-relative reference `avatar: ./avatar.png`. Absolute paths,
 parent traversal such as `../avatar.png`, and generated download URLs are not
 portable identity data and are rejected by the authoring UI. Emoji and registry
@@ -49,12 +58,13 @@ returns a conflict and never overwrites the existing Agent or its files.
 
 ### Intro and project auto-launch
 
-Three frontmatter keys are **declaration only**: they round-trip through
-`agent.md`, show in the profile editor, and never enter `to_agent_options`, so
+These keys are **declaration only**: they round-trip through
+`agent.json`, show in the profile editor, and never enter `to_agent_options`, so
 setting them does not flip `restart_required` on a running process.
 
 | Key | Meaning |
 |-----|---------|
+| `phone` | The agent's own phone number, the one its WhatsApp channel answers on: `{"country_code": "972", "number": "557709288"}` (`PhoneNumberSpec`). Input is normalised — `+972` and `055-770-9288` are accepted; `digits` / `e164` give `972557709288` / `+972557709288`. |
 | `intro` | Welcome text rendered as the agent's first message in Vibe and Standard chat (`AgentIntroMessage`). Presentation only: not in the transcript, never sent to the model. Hidden in Advanced/Dev, which show the raw session. |
 | `auto_launch` | Launch this agent once, the first time the project it lives in is opened. |
 | `auto_launch_prompt` | First prompt of that session, delivered through the process prompt queue. Empty opens the session with no first turn. |

@@ -8,10 +8,16 @@ import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { IDeployment } from './deployment';
 import { DataSource, type IDataSource } from './data-source';
-import { EmailInbox, type IEmailInbox } from './email-inbox';
+import { AgentMailbox, type IAgentMailbox } from './agent-mailbox';
 import { Trigger } from './trigger';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
+
+/** `GET /agent/<id>/auto_launch_state`. */
+export interface AgentAutoLaunchState {
+  /** Already auto-launched in the agent's own project; `null` when it has no project. */
+  launched: boolean | null;
+}
 
 /**
  * The launchable agent — identity (name / avatar / system prompt) plus the
@@ -26,7 +32,7 @@ export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
  * constructor not found for type"), so without it every `agent` row fetched
  * from the backend is silently discarded client-side.
  *
- * The entity projects agent.md for actions and launching. File editors use the
+ * The entity projects agent.json (+ system_prompt.md) for actions and launching. File editors use the
  * revision-checked FS document action to preserve unknown metadata and identity
  * capsules. The backend refreshes this projection after a document write.
  * `system_prompt` is the Markdown body; profile controls submit typed field patches.
@@ -39,14 +45,17 @@ export class Agent extends APIEntity<Agent> {
   name?: string;
   description?: string;
   /** Emoji (`🩺`) or a lucide icon name — the same one-string contract
-   *  `IconPicker` stores and `renderIconValue()` renders. */
+   *  `IconPicker` stores and `AvatarValue` renders. */
   avatar?: string | null;
+  /** Avatar circle background — a palette hex (`ColorPicker`). Unset = derived
+   *  from the agent's name. */
+  color?: string | null;
   /** Who this agent is. Delivered to the worker via `context_data.instructions`;
-   *  on disk it is the markdown body of `agent.md`. */
+   *  on disk it is `system_prompt.md` beside `agent.json`. */
   system_prompt?: string;
 
   // ── launch bundle ──────────────────────────────────────────────────────
-  /** The DRIVER short-id an agent.md declares: `claude` | `codex` | `copilot`.
+  /** The DRIVER short-id an agent.json declares: `claude` | `codex` | `copilot`.
    *  Deliberately NOT the `AgentConfig.WorkerType` vocabulary (`claude_code`),
    *  which is what `AgenticProcess.worker_type` stores. Feeding one where the
    *  other belongs is a real, previously-shipped bug. */
@@ -76,7 +85,7 @@ export class Agent extends APIEntity<Agent> {
 
   // ── lifecycle ──────────────────────────────────────────────────────────
   enabled: boolean;
-  /** Absolute on-disk path to the agent's folder (`agent.md` sits inside). */
+  /** Absolute on-disk path to the agent's folder (`agent.json` sits inside). */
   asset_ref?: string;
   /** Where the hub published this agent from: the repo, the branch it was pushed to
    *  (`flow-cloud`) and the agent's folder as `rel_path`. Hub-written provenance —
@@ -94,16 +103,19 @@ export class Agent extends APIEntity<Agent> {
   auto_launch: boolean;
   /** First prompt of the auto-launched session, delivered via the prompt queue. */
   auto_launch_prompt?: string;
-  /** Per-place launch overrides, keyed by Deployment id (agent.md `places`). */
+  /** Per-place launch overrides, keyed by Deployment id (agent.json `places`). */
   places?: AgentPlaceSpecWire[] | null;
   /** Deployment id of the one place that answers this agent's email. */
   email_place?: string | null;
+  /** The agent's own phone number (agent.json `phone`) — declaration only. */
+  phone?: PhoneNumberWire | null;
 
   constructor(entity: Partial<Agent> = {}) {
     super(entity);
     this.name = entity.name;
     this.description = entity.description;
     this.avatar = entity.avatar;
+    this.color = entity.color;
     this.system_prompt = entity.system_prompt;
 
     this.worker_type = entity.worker_type;
@@ -132,6 +144,7 @@ export class Agent extends APIEntity<Agent> {
     this.auto_launch_prompt = entity.auto_launch_prompt;
     this.places = entity.places ?? null;
     this.email_place = entity.email_place ?? null;
+    this.phone = entity.phone ?? null;
   }
 
   /**
@@ -157,17 +170,17 @@ export class Agent extends APIEntity<Agent> {
     const typeId = dataContext.computeNodeTypeId;
     const directory = this.bundleDirectory;
     if (!typeId || !directory) return null;
-    return new FrontMatterFsRef(`${directory}/${mainFileForType(Agent.type, 'agent.md')}`, typeId);
+    return new FrontMatterFsRef(`${directory}/${mainFileForType(Agent.type, 'agent.json')}`, typeId);
   }
 
   /** Directory containing the portable Agent bundle: `asset_ref` (a row from
-   *  before the unification may still name the inner `agent.md`). */
+   *  before the unification may still name the inner main file). */
   get bundleDirectory(): string | null {
     // `asset_ref` is stored natively (backslashes on Windows) but `FSRef.parent`
     // splits on `/` only.
     const normalized = this.asset_ref?.replace(/\\/g, '/').replace(/\/+$/, '');
     if (!normalized) return null;
-    const main = mainFileForType(Agent.type, 'agent.md') as string;
+    const main = mainFileForType(Agent.type, 'agent.json') as string;
     if (normalized === main) return '.';
     if (normalized.endsWith(`/${main}`)) return normalized.slice(0, -(main.length + 1)) || '/';
     return normalized;
@@ -300,6 +313,16 @@ export class Agent extends APIEntity<Agent> {
     await this.post('set_email_place', { deployment_id: deploymentId });
   }
 
+  /** Whether this agent already auto-launched in its project (the once-only mark is set). */
+  async autoLaunchState(): Promise<AgentAutoLaunchState> {
+    return this.get<AgentAutoLaunchState>('auto_launch_state');
+  }
+
+  /** Clear the once-only mark, so the project's next open auto-launches this agent again. */
+  async resetAutoLaunch(): Promise<void> {
+    await this.post<void>('reset_auto_launch');
+  }
+
   /** Published commit and the changes on this computer that aren't published. */
   async versionState(): Promise<AgentVersionState> {
     return this.get<AgentVersionState>('version');
@@ -323,10 +346,10 @@ export class Agent extends APIEntity<Agent> {
    *
    * An Agent HOLDS a mailbox; it is not one. These five are the whole of the
    * Agent's mail surface — everything else about a mailbox (its allowlist, its
-   * lifecycle) belongs to `EmailInbox`, which this hydrates.
+   * lifecycle) belongs to `AgentMailbox`, which this hydrates.
    */
-  async inboxState(): Promise<AgentInboxState> {
-    return normalizeAgentInboxState(await this.get<AgentInboxStateWire>('inbox_state'));
+  async mailboxState(): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.get<AgentMailboxStateWire>('mailbox_state'));
   }
 
   /**
@@ -336,30 +359,30 @@ export class Agent extends APIEntity<Agent> {
    * asking twice never buys twice. It also wires the local source and turns both
    * on — there is no separate "enable".
    */
-  async allocateInbox(options: InboxAllocation = {}): Promise<AgentInboxState> {
-    return normalizeAgentInboxState(await this.post<AgentInboxStateWire>('allocate_inbox', { ...options }));
+  async allocateMailbox(options: MailboxAllocation = {}): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('allocate_mailbox', { ...options }));
   }
 
   /** Pause the mailbox. Reversible — the address and the cursor survive. */
-  async disableInbox(): Promise<AgentInboxState> {
-    return normalizeAgentInboxState(await this.post<AgentInboxStateWire>('disable_inbox'));
+  async disableMailbox(): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('disable_mailbox'));
   }
 
-  async configureInbox(options: InboxConfiguration): Promise<AgentInboxState> {
-    return normalizeAgentInboxState(await this.post<AgentInboxStateWire>('configure_inbox', { ...options }));
+  async configureMailbox(options: MailboxConfiguration): Promise<AgentMailboxState> {
+    return normalizeAgentMailboxState(await this.post<AgentMailboxStateWire>('configure_mailbox', { ...options }));
   }
 
   /** Release the address for good. Distinct from disabling, on purpose. */
-  async releaseInbox(): Promise<{ agent_id: string; released: boolean }> {
-    return this.post<{ agent_id: string; released: boolean }>('release_inbox');
+  async releaseMailbox(): Promise<{ agent_id: string; released: boolean }> {
+    return this.post<{ agent_id: string; released: boolean }>('release_mailbox');
   }
 
-  async inboxScope(): Promise<AgentInboxScope> {
-    return this.get<AgentInboxScope>('inbox_scope');
+  async streamInboxScope(): Promise<AgentStreamInboxScope> {
+    return this.get<AgentStreamInboxScope>('stream_inbox_scope');
   }
 }
 
-export interface InboxConfiguration {
+export interface MailboxConfiguration {
   /** Who may drive the agent through this mailbox. Empty admits nobody. Hub-stored. */
   allowed_senders?: string[];
   /** Standing read defaults, in the Hub's wire vocabulary. Hub-stored. */
@@ -368,33 +391,33 @@ export interface InboxConfiguration {
   poll_interval_seconds?: number;
 }
 
-export interface InboxAllocation {
+export interface MailboxAllocation {
   allowed_senders?: string[];
   display_name?: string;
   username?: string;
 }
 
-interface AgentInboxStateWire {
+interface AgentMailboxStateWire {
   agent_id: string;
   enabled: boolean;
-  inbox: (Omit<Partial<IEmailInbox>, 'agent_typeid'> & { typeid?: string; agent_typeid: TypeId | string }) | null;
+  mailbox: (Omit<Partial<IAgentMailbox>, 'agent_typeid'> & { typeid?: string; agent_typeid: TypeId | string }) | null;
   source: (Partial<IDataSource> & { id?: string; typeid?: string }) | null;
   /** Every message source the agent owns; the mailbox is one of them. */
   sources?: (Partial<IDataSource> & { id?: string; typeid?: string })[];
 }
 
-export interface AgentInboxState {
+export interface AgentMailboxState {
   agent_id: string;
   enabled: boolean;
   /** The mailbox channel's own row and source — kept for readers that predate
    *  an agent holding more than one channel. */
-  inbox: EmailInbox | null;
+  mailbox: AgentMailbox | null;
   source: DataSource | null;
   /** Every message source the agent owns (the mailbox included). */
   sources: DataSource[];
 }
 
-export interface AgentInboxScope {
+export interface AgentStreamInboxScope {
   agent_id: string;
   source_id: string | null;
   conversation_ids: string[];
@@ -407,21 +430,21 @@ function entityId(value: { id?: string; typeid?: string } | null): string | unde
   return value.id ?? (value.typeid ? new TypeId(value.typeid).id : undefined);
 }
 
-function normalizeAgentInboxState(state: AgentInboxStateWire): AgentInboxState {
-  const inboxId = entityId(state.inbox);
+function normalizeAgentMailboxState(state: AgentMailboxStateWire): AgentMailboxState {
+  const mailboxId = entityId(state.mailbox);
   const sourceId = entityId(state.source);
   return {
     agent_id: state.agent_id,
     enabled: state.enabled,
-    inbox:
-      state.inbox && inboxId
-        ? new EmailInbox({
-            ...state.inbox,
-            id: inboxId,
+    mailbox:
+      state.mailbox && mailboxId
+        ? new AgentMailbox({
+            ...state.mailbox,
+            id: mailboxId,
             agent_typeid:
-              typeof state.inbox.agent_typeid === 'string'
-                ? new TypeId(state.inbox.agent_typeid)
-                : state.inbox.agent_typeid,
+              typeof state.mailbox.agent_typeid === 'string'
+                ? new TypeId(state.mailbox.agent_typeid)
+                : state.mailbox.agent_typeid,
           })
         : null,
     source: state.source && sourceId ? new DataSource({ ...state.source, id: sourceId }) : null,
@@ -439,7 +462,7 @@ function normalizeAgentInboxState(state: AgentInboxStateWire): AgentInboxState {
  * local backend has already adopted by the time this resolves. Callers render
  * the persisted Deployment rather than this response: it is a receipt, not the
  * state. `agent_definition_error` is present when the box came up but
- * `agent.md` failed to land — a live machine that is not yet the agent.
+ * `agent.json` failed to land — a live machine that is not yet the agent.
  */
 export interface AgentDeployResult {
   agent_id: string;
@@ -486,6 +509,12 @@ export interface AgentPlaceOverrides {
 
 export interface AgentPlaceSpecWire extends AgentPlaceOverrides {
   deployment_id: string;
+}
+
+/** `PhoneNumberSpec` — digits only; the backend strips `+`, separators and one trunk `0`. */
+export interface PhoneNumberWire {
+  country_code: string;
+  number: string;
 }
 
 /** One place an agent runs on (`GET /agent/<id>/places`). */

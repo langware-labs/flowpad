@@ -541,7 +541,7 @@ params:
   sharedContextEntities: "string[]"
   targetVfsPath: "string | undefined"
   outputFormat: "string | undefined"
-  workerType: "claude_code | codex | copilot"
+  workerType: "claude_code | codex | copilot | opencode"
   processType: "ProcessKind | undefined"
   contextData: "Record<string, unknown>"
 returns: "Record<string, unknown> via serializeAgenticContext"
@@ -550,7 +550,7 @@ source:
     kind: local
     base: /Users/shlom/Documents/dev/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-context.ts
-  line: 37
+  line: 36
 ```
 
 ```interface
@@ -627,7 +627,7 @@ params:
   dockPointer: "getter -> DockPointerData"
   searchDockPointer: "getter -> DockPointerData"
   wasRestoredFromSession: "getter -> boolean"
-  icon: "getter -> ProcessIconKey"
+  processIconKey: "getter -> ProcessIconKey"
   status: "getter -> ProcessStatus"
   busy: "getter -> boolean"
   workerStatus: "getter -> WorkerStatus"
@@ -649,7 +649,7 @@ source:
     kind: local
     base: /Users/shlom/Documents/dev/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
-  line: 403
+  line: 524
 ```
 
 ### Prompting and queue

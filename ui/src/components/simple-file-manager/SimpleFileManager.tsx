@@ -22,6 +22,8 @@ import {
   Download,
   Edit2,
   ExternalLink,
+  Eye,
+  EyeOff,
   File,
   FilePlus,
   FileText,
@@ -38,6 +40,7 @@ import { writeBrowseableDrag } from '@src/components/browseable-tree/drag';
 import { attachMultiDragGhost, buildRowDragItem } from './drag-payload';
 import { fileShareSource } from '@src/hooks/share-sources';
 import { FileItem, SimpleFileManagerProps, SortDirection, SortField } from './types';
+import { FilterName } from './filters';
 import { formatBytes } from '@src/utils/format-bytes';
 
 function formatDate(date: Date): string {
@@ -249,6 +252,7 @@ export function SimpleFileManager({
   onPathChange,
   filterDefinitions,
   enabledFilters,
+  onEnabledFiltersChange,
   compact = false,
   className = '',
   onFsMutated,
@@ -260,6 +264,16 @@ export function SimpleFileManager({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  // The hidden-files toggle is offered only where the host can switch the HIDDEN filter.
+  const canToggleHidden =
+    !!onEnabledFiltersChange && !!filterDefinitions?.some((f) => f.name === FilterName.HIDDEN);
+  const showHidden = !enabledFilters?.includes(FilterName.HIDDEN);
+  const toggleHidden = () => {
+    const others = (enabledFilters ?? []).filter((f) => f !== FilterName.HIDDEN);
+    // Hiding dotfiles must not leave them selected — a hidden row can't be a delete/cut target.
+    if (showHidden) setSelectedItems(new Set());
+    onEnabledFiltersChange?.(showHidden ? [...others, FilterName.HIDDEN] : others);
+  };
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [clipboard, setClipboard] = useState<{ items: FileItem[]; operation: 'copy' | 'cut' } | null>(null);
@@ -696,6 +710,27 @@ export function SimpleFileManager({
               <Trans>Refresh</Trans>
             </TooltipContent>
           </Tooltip>
+
+          {canToggleHidden && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  data-testid="file-manager-toggle-hidden-button"
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 ${showHidden ? 'bg-accent text-accent-foreground' : ''}`}
+                  aria-pressed={showHidden}
+                  aria-label={t`Show hidden files`}
+                  onClick={toggleHidden}
+                >
+                  {showHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <Trans>Show hidden files</Trans>
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           {!compact && (
             <>

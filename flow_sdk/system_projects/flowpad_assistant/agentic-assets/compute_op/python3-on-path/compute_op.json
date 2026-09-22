@@ -1,0 +1,33 @@
+{
+  "type": "compute_op",
+  "id": "b8d3911b-05eb-48b6-a6f2-4ddd22edcad7",
+  "name": "python3-on-path",
+  "label": "Python 3",
+  "description": "python3 is on the PATH and runnable.",
+  "completion_check": {
+    "commands": {
+      "darwin": "python3 --version >/dev/null 2>&1",
+      "linux": "python3 --version >/dev/null 2>&1",
+      "win32": "python3 --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  },
+  "attempts": [
+    {
+      "kind": "command",
+      "commands": {
+        "darwin": "brew install python3",
+        "linux": "apt-get update && apt-get install -y python3",
+        "win32": "winget install --id Python.Python.3 --silent"
+      },
+      "timeout_seconds": 600
+    },
+    {
+      "kind": "agent",
+      "agent": "capability-installer",
+      "prompt": "Capability to install: Python 3. Official page with install instructions: https://www.python.org/downloads/\n\nInstall Python 3 on this machine so that `python3 --version` succeeds from a fresh non-login shell. Assume a bare machine: there may be no package manager configured. Prefer the platform's official package manager (apt-get/dnf/apk on Linux, Homebrew on macOS, winget on Windows). Do NOT create virtualenvs, do NOT install any Python packages, and do NOT touch an existing Python installation. Report the version you installed and stop.",
+      "name": "Install Python 3",
+      "timeout_seconds": 1800
+    }
+  ]
+}

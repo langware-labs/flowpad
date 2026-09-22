@@ -1751,8 +1751,17 @@ def project_to_dict(project) -> dict:
     the database said Hebrew. It only came right on a refresh, when the full
     entity was fetched. "Correctly, from what it could see" is exactly how a
     missing field fails: silently, and looking like a timing bug.
+
+    ``hidden`` is another: a sandbox adopts `default_project` before any route
+    runs, so a project that must never become CURRENT has to say so here —
+    without it, the compact dict looks like an ordinary project and the app
+    opens in it.
     """
-    return {**entity_to_dict(project), "locale": getattr(project, "locale", None)}
+    return {
+        **entity_to_dict(project),
+        "locale": getattr(project, "locale", None),
+        "hidden": bool(getattr(project, "hidden", False)),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2056,7 +2065,7 @@ async def _build_info() -> DeferredInfo:
     user, project, _, _ = await _ensure_local_entities()
     from flow_sdk.core.capabilities.harness_state import compute_harness_state
     from flow_sdk.core.capabilities.summary import compute_capabilities_summary
-    from flow_sdk.inbox import recompute_unread
+    from flow_sdk.stream_inbox import recompute_unread
     from flow_sdk.system_tools import get_scan_info
 
     notice, desktop, scan, harness, capabilities, sandbox, sniffer, _ = await asyncio.gather(
@@ -2067,7 +2076,7 @@ async def _build_info() -> DeferredInfo:
         _optional_info("capability summary", compute_capabilities_summary(wait_for_discovery=False)),
         _optional_info("sandbox", _sandbox_status(user, project)),
         _optional_info("sniffer", _sniffer_status(user)),
-        _optional_info("inbox repair", recompute_unread("info", user.typeid)),
+        _optional_info("stream inbox repair", recompute_unread("info", user.typeid)),
     )
     fields = dict(desktop_info=desktop, scan_info=scan, harness_state=harness,
                   capabilities_summary=capabilities.model_dump(mode="json") if capabilities is not None else None,

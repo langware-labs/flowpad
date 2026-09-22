@@ -33,7 +33,7 @@ import { VibeModelSelect, useVibeModelTier } from '@src/pages/flow-page/vibe-mod
  * Layout:
  * - Top row: Usage bar
  * - Main row:
- *   - Left column: Inbox
+ *   - Left column: Stream Inbox
  *   - Middle column: Greeting, session input, and Quick Access
  *   - Right column: Feed
  * URL: /dock/home
@@ -70,14 +70,17 @@ export function HomeLanding() {
 
   const [draftPrompt, setDraftPrompt] = useState('');
 
-  // Inbox unread count: backend-owned (InboxManager.unread) — the sidebar pip
-  // reads it via useInboxManager(); no per-view recount here anymore.
+  // Stream inbox unread count: backend-owned (StreamInboxManager.unread) — the sidebar pip
+  // reads it via useStreamInboxManager(); no per-view recount here anymore.
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
   const [vibeModel, setVibeModel] = useVibeModelTier();
-  const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
+  // The project list is a disk scan; Home only needs it once results render.
+  const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope({
+    enabled: searchQuery.trim().length >= 2,
+  });
 
   useEffect(() => {
     setSelectedResultIndex(-1);
@@ -199,11 +202,11 @@ export function HomeLanding() {
 
               {/* Main row: Sidebar + Content */}
               <div className="flex min-h-0 flex-1 gap-4 px-3 pb-3 lg:gap-6 lg:px-4 lg:pb-4">
-                {/* Left column: Inbox. Never hidden — a pending invitation is only
+                {/* Left column: Stream Inbox. Never hidden — a pending invitation is only
             actionable from here, so gating it behind `lg` stranded invitees on
             narrower windows with no way to accept. */}
                 <div className="flex w-60 shrink-0 flex-col gap-2 lg:w-72">
-                  {/* Invisible spacer mirroring the right Feed column so Inbox aligns with Feed */}
+                  {/* Invisible spacer mirroring the right Feed column so Stream Inbox aligns with Feed */}
                   <div aria-hidden className="h-9 shrink-0" />
                   <RecentConversationsStrip />
                 </div>

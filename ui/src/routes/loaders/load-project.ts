@@ -235,7 +235,9 @@ export async function loadProjectRoute(
     throwProjectRouteError(cause);
   }
 
-  if (project?.fs_storage_mount_path) {
+  // Only while this route's project is still current: a newer navigation may
+  // have superseded it while it loaded, and its folder must not win.
+  if (project?.fs_storage_mount_path && dataContext.project?.id === project.id) {
     dataContext.setWorkdir(project.fs_storage_mount_path);
   }
 

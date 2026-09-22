@@ -1,6 +1,6 @@
 """Saving a project asset must not relabel it ``scope='user'``.
 
-The agent profile editor saves through ``POST /graph/agent/<id>/fs/write/agent.md``,
+The agent profile editor saves through ``POST /graph/agent/<id>/fs/write/agent.json``,
 which lands in ``fs_actions`` → ``reindex_paths([path], mint=False)`` (fs_actions.py:726).
 That resync re-derives ``scope`` from the file PATH via ``classify_path``, which knows
 only three roots (system / user_home / cwd). A project stored under the user's home —
@@ -20,6 +20,7 @@ asset list.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -34,7 +35,7 @@ from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.reindex import reindex_paths
 from flow_sdk.instance_settings import reset_instance_settings
 
-AGENT_MD = "---\nname: greeter\ndescription: fixture agent\n---\n\nYou are a greeter.\n"
+AGENT_JSON = {"type": "agent", "name": "greeter", "description": "fixture agent"}
 
 
 @pytest.fixture
@@ -60,9 +61,10 @@ async def _project_with_agent(mount: Path) -> tuple[Project, Agent, Path]:
     This is the project-aware root registry: a root per project mount, which is how
     an asset legitimately becomes ``scope='project'`` wherever the project lives.
     """
-    md = mount / "agentic-assets" / "agent" / "greeter" / "agent.md"
+    md = mount / "agentic-assets" / "agent" / "greeter" / "agent.json"
     md.parent.mkdir(parents=True)
-    md.write_text(AGENT_MD, encoding="utf-8")
+    md.write_text(json.dumps(AGENT_JSON, indent=2) + "\n", encoding="utf-8")
+    (md.parent / "system_prompt.md").write_text("You are a greeter.\n", encoding="utf-8")
 
     project = Project(name=mount.name, fs_storage_mount_path=str(mount))
     await project.save()
@@ -97,9 +99,9 @@ async def test_editor_save_keeps_a_project_asset_project_scoped(user_home: Path)
 
     assert agent.scope == "project", f"precondition: discovered scope={agent.scope!r}"
 
-    # Exactly what POST /graph/agent/<id>/fs/write/agent.md does: rewrite the
+    # Exactly what POST /graph/agent/<id>/fs/write/agent.json does: rewrite the
     # file, then resync it (fs_actions.py:726).
-    md.write_text(AGENT_MD + "\nEdited.\n", encoding="utf-8")
+    md.write_text(json.dumps({**json.loads(md.read_text(encoding="utf-8")), "description": "edited"}, indent=2) + "\n", encoding="utf-8")
     await reindex_paths([str(md)], mint=False)
 
     reloaded = await Agent.get_by_id(agent.id)
@@ -127,7 +129,7 @@ async def test_same_save_is_harmless_when_the_project_sits_outside_the_home(
 
     assert agent.scope == "project", f"precondition: discovered scope={agent.scope!r}"
 
-    md.write_text(AGENT_MD + "\nEdited.\n", encoding="utf-8")
+    md.write_text(json.dumps({**json.loads(md.read_text(encoding="utf-8")), "description": "edited"}, indent=2) + "\n", encoding="utf-8")
     await reindex_paths([str(md)], mint=False)
 
     assert (await Agent.get_by_id(agent.id)).scope == "project"

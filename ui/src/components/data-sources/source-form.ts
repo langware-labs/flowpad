@@ -1,12 +1,12 @@
 import { t } from '@lingui/core/macro';
-import { FieldType, type DataSourceChoice, type DataSourceSpec, type SpecConfigField } from '@sdk';
+import { FieldType, type ConfigSchemaProperty, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
 
 /**
  * The create form's logic, over a manifest the BACKEND supplies.
  *
  * This file used to be `provider-catalog.ts` and hardcoded every provider's
  * fields as literal strings, because the driver registry had no list accessor
- * and no route. It does now: a source is a `data_source_spec` asset, so the
+ * and no route. It does now: a source is a `data_driver` asset, so the
  * form reads the spec's `config` and a new source lights the dialog up with no
  * frontend release.
  *
@@ -45,23 +45,69 @@ export interface SourceDraft {
 }
 
 /** `[key, field]` pairs in declaration order — the order the form renders. */
-export function specFields(spec?: DataSourceSpec): [string, SpecConfigField][] {
+export function specFields(spec?: DataDriver): [string, SpecConfigField][] {
   return Object.entries(spec?.config ?? {});
 }
 
-export function emptyDraft(provider: string): SourceDraft {
+/** The rules for one field, read off the driver's `Config` schema: whether it is required, the
+ *  pattern a typed value (each entry, for a list) must match, and its default. */
+export function fieldRules(spec: DataDriver | undefined, key: string): { required: boolean; pattern?: string; default?: unknown } {
+  const schema = spec?.config_schema;
+  const prop: ConfigSchemaProperty = schema?.properties?.[key] ?? {};
+  const patternOf = (p?: ConfigSchemaProperty): string | undefined =>
+    p?.pattern ?? p?.anyOf?.map((a) => a.pattern).find(Boolean);
+  return {
+    required: (schema?.required ?? []).includes(key),
+    pattern: patternOf(prop) ?? patternOf(prop.items),
+    default: prop.default,
+  };
+}
+
+/** A new source's draft for `spec` — its provider, and the fields its `Config` gives a `default`. */
+export function emptyDraft(spec?: DataDriver): SourceDraft {
   return {
     name: '',
-    provider,
+    provider: spec?.name ?? '',
     // Empty means "derive from the fields" — `accountKeyFor` owns the default,
     // so exactly one place knows it.
     account_key: '',
     enabled: true,
     poll_interval_seconds: 300,
     window_days: 7,
-    fields: {},
+    // A manifest `default` is what a new source starts with, not a hint the user must retype —
+    // rendered the way an edited source's stored value is, so create and edit show the same text.
+    fields: Object.fromEntries(
+      specFields(spec)
+        .map(([key, field]) => [key, fieldValue(key, field, { [key]: fieldRules(spec, key).default })] as const)
+        .filter(([, value]) => value !== ''),
+    ),
     picked: {},
   };
+}
+
+/** Config value → the string its input shows. Arrays rejoin the way they split. */
+export function fieldValue(key: string, field: SpecConfigField, config: Record<string, unknown>): string {
+  const raw = config?.[key];
+  if (raw === undefined || raw === null) return '';
+  // A choosable field's entries may be `{id, name}`. Joining those directly is how a
+  // Slack source configured with named channels rendered as `[object Object]` — and then
+  // SAVED that back over the real ids.
+  //
+  // IDs, not names, even though a name is friendlier: this string is only ever shown in
+  // the TYPED fallback, and whatever sits there is what gets stored the moment someone
+  // edits it. Showing "Marketing" in a box whose next keystroke saves "Marketing" as a
+  // drive id is a silent corruption. The name belongs to the picker, which reads `picked`.
+  if (field.choices) {
+    const picked = pickedFrom(key, field, config);
+    return picked.map((c) => c.id).join(field.type === FieldType.LINES ? '\n' : ', ');
+  }
+  if (Array.isArray(raw)) return raw.join(field.type === FieldType.LINES ? '\n' : ', ');
+  // Only scalars round-trip through an input. A nested object in config means
+  // the driver grew a shape this form does not model — show nothing rather than
+  // "[object Object]", which would be saved back verbatim and corrupt it.
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);
+  return '';
 }
 
 /**
@@ -145,7 +191,7 @@ function patternFor(pattern: string): RegExp {
  * `sync_source` writes both from the driver on the first poll, so a form-set
  * value is authoritative-looking, owned by nobody, and silently corrected later.
  */
-export function buildConfig(draft: SourceDraft, spec?: DataSourceSpec): Record<string, unknown> {
+export function buildConfig(draft: SourceDraft, spec?: DataDriver): Record<string, unknown> {
   const config: Record<string, unknown> = {};
   for (const [key, field] of specFields(spec)) {
     // A pick wins over the text box: the two are never both filled, because hand-editing
@@ -176,7 +222,7 @@ export function buildConfig(draft: SourceDraft, spec?: DataSourceSpec): Record<s
  * is a plain edit. A spec with no `account_key` field has no account to name —
  * Slack's case, where the workspace belongs to the connection, not the form.
  */
-export function accountKeyFor(draft: SourceDraft, spec?: DataSourceSpec): string {
+export function accountKeyFor(draft: SourceDraft, spec?: DataDriver): string {
   const explicit = draft.account_key.trim();
   if (explicit) return explicit;
   const named = specFields(spec).find(([, f]) => f.account_key);
@@ -199,7 +245,7 @@ export function accountKeyFor(draft: SourceDraft, spec?: DataSourceSpec): string
  * the same account, and that is allowed — the cost of a second poller is the
  * operator's call, not this form's.
  */
-export function validateDraft(draft: SourceDraft, spec?: DataSourceSpec): string[] {
+export function validateDraft(draft: SourceDraft, spec?: DataDriver): string[] {
   const problems: string[] = [];
 
   if (!draft.name.trim()) problems.push('Name is required.');
@@ -213,14 +259,15 @@ export function validateDraft(draft: SourceDraft, spec?: DataSourceSpec): string
     // the provider says is real.
     const picked = pickedIn(draft, key, field);
     if (picked.length) continue;
-    if (field.required && !raw) {
+    const rules = fieldRules(spec, key);
+    if (rules.required && !raw) {
       problems.push(t`${label} is required.`);
       continue;
     }
-    if (!raw || !field.pattern) continue;
+    if (!raw || !rules.pattern) continue;
     // One regex, applied per value, so a multi-line field reports the exact
     // entries at fault rather than "something is wrong".
-    const re = patternFor(field.pattern);
+    const re = patternFor(rules.pattern);
     const values =
       field.type === FieldType.LINES ? splitLines(raw) : field.type === FieldType.CSV ? splitCsv(raw) : [raw];
     const bad = values.filter((v) => !re.test(v));

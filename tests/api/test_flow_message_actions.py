@@ -222,7 +222,7 @@ async def test_unpack_conversation_bundle_relinks_existing_top_flow_message(
     bootstrapped_client,
     tmp_path,
 ):
-    """Invitation accept repairs the conversation pointer when inbox sync already saved the FM."""
+    """Invitation accept repairs the conversation pointer when stream inbox sync already saved the FM."""
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.builtin.flow_message_bundle import unpack_bundle

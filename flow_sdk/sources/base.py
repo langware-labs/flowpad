@@ -23,6 +23,7 @@ from typing import Any, AsyncGenerator, Callable, ClassVar, Mapping, Optional, S
 from flow_sdk._compat import StrEnum
 from flow_sdk.sources import _paging
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import Credentials
 from flow_sdk.sources.errors import AccessDenied, NotFound, SourceError, SourceUnavailable, Unsupported
 from flow_sdk.sources.values.event import ChangeHandler, DataSourceEvent
@@ -66,10 +67,8 @@ class Source:
     #: Pages one pass may read; ``None`` reads a traversal to its end. A provider whose rate cap
     #: allows one request per interval declares 1.
     pages_per_pass: ClassVar[Optional[int]] = None
-    #: Ceiling on segments synced per pass; ``None`` means the runtime's budget.
-    segment_budget: ClassVar[Optional[int]] = None
     #: The config field naming WHICH remote account a row serves.
-    identity_config_key: ClassVar[str] = "inbox"
+    identity_config_key: ClassVar[str] = "address"
     #: The machine-level connection this source reads with, when the credential is not in the row.
     connection: ClassVar[Optional[str]] = None
     #: The payload is files placed on disk (reflection), not records in the graph.
@@ -77,6 +76,9 @@ class Source:
     #: The config key naming the local tree a reflecting source reads in place (``root``,
     #: ``repo``). Empty on a reflecting source: its bytes are remote, pulled into a cache.
     local_tree_key: ClassVar[str] = ""
+    #: The typed config this driver takes (``flow_sdk.sources.config.SourceConfig``). The manifest's
+    #: ``config`` catalog holds only the form hints for these fields; the loader checks they agree.
+    Config: ClassVar[Optional[type["SourceConfig"]]] = None
 
     # ── what the application asks the class ─────────────────────────────────
     # Everything the application needs to know about ONE source, the source says itself — so no
@@ -96,12 +98,6 @@ class Source:
     def configure(cls, row: Any) -> Mapping[str, Any]:
         """Config the application derives for a row beyond what it stores (the agent a mailbox serves)."""
         return {}
-
-    @classmethod
-    def lift_cursor(cls, state: Mapping[str, Any]) -> Optional[str]:
-        """The cursor an older build left on a row as a dict, as this class's cursor string — read
-        once, never written. ``None`` when there is nothing to adopt."""
-        return None
 
     @classmethod
     def outbound_spec(cls) -> Optional[type]:
@@ -130,6 +126,25 @@ class Source:
         self._handler: Optional[ChangeHandler] = None
         self._notify_lock: Optional[asyncio.Lock] = None
 
+    # ── the one stream this source reads ────────────────────────────────────
+    def query(self) -> Optional[DataQuery]:
+        """What this source lists, from its config: a channel's history, a feed, a prefix. ``None`` for
+        a source whose listing needs no parameters."""
+        return None
+
+    def effective_query(self, narrow: Optional[Mapping[str, Any]] = None) -> Optional[DataQuery]:
+        """``query()`` with ``narrow`` applied for one read (``since``, ``prefix``). A narrowing names a
+        field the query has; a source with no query cannot be narrowed."""
+        query = self.query()
+        if not narrow:
+            return query
+        if query is None:
+            raise ValueError(f"{type(self).__name__} lists without a query; nothing to narrow")
+        unknown = sorted(set(narrow) - set(type(query).model_fields))
+        if unknown:
+            raise ValueError(f"{type(query).__name__} has no field {unknown[0]!r} to narrow")
+        return query.model_copy(update=dict(narrow))
+
     # ── what a subclass says about a configuration ──────────────────────────
     @classmethod
     def origin_kind_for(cls, config: Mapping[str, Any]) -> str:
@@ -138,8 +153,8 @@ class Source:
     @classmethod
     def namespace_for(cls, binding: SourceBinding) -> str:
         """The per-row scope prefix of every origin this source produces: the account it reads
-        as. A source whose resources live in segments joins the segment on per origin
-        (``origin(key, segment)``); one with no account at all scopes by segment alone."""
+        as. A source whose ids repeat across containers (a Slack ``ts`` per channel) joins the
+        container on per origin (``origin(key, channel)``)."""
         return binding.account_key
 
     @property
@@ -155,8 +170,8 @@ class Source:
         return self.binding.page_size or type(self).page_size
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
-        """The identity of ``key`` within this source's scope, narrowed by ``within`` (a
-        segment). No I/O."""
+        """The identity of ``key`` within this source's scope, narrowed by ``within`` (the container
+        a provider's ids are unique in: a channel, a feed). No I/O."""
         return self._scope.origin(key, *within)
 
     # ── session ─────────────────────────────────────────────────────────────
@@ -272,12 +287,13 @@ class CollectionSource(Source, ABC):
 
     async def fetch(
         self,
-        query: Optional[DataQuery] = None,
-        *,
         cursor: Optional[str] = None,
+        *,
         page_size: Optional[int] = None,
+        narrow: Optional[Mapping[str, Any]] = None,
     ) -> DataPage:
         self._require_open()
+        query = self.effective_query(narrow)
         self._check_query(query)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         token = _paging.query_token(query)
@@ -289,11 +305,11 @@ class CollectionSource(Source, ABC):
         )
 
     async def iterate(
-        self, query: Optional[DataQuery] = None, *, page_size: Optional[int] = None
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
     ) -> AsyncGenerator[SourceItemSpec, None]:
         cursor: Optional[str] = None
         while True:
-            page = await self.fetch(query, cursor=cursor, page_size=page_size)
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
             for item in page.items:
                 yield item
             if (cursor := page.next_cursor) is None:
@@ -322,7 +338,7 @@ class CollectionSource(Source, ABC):
 
     @abstractmethod
     async def _scan(self, query: Optional[DataQuery]) -> Sequence[tuple[str, Any]]:
-        """``(key, raw)`` pairs matching ``query``, sorted by key."""
+        """``(key, raw)`` pairs matching ``query`` (this source's ``query()``, possibly narrowed), sorted by key."""
 
     @abstractmethod
     def _item(self, key: str, raw: Any) -> SourceItemSpec:
@@ -340,7 +356,7 @@ class Scope:
         self.namespace = namespace
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
-        """``namespace`` joined with ``within`` — ``<account>/<segment>``, or whichever exists."""
+        """``namespace`` joined with ``within`` — ``<account>/<container>``, or whichever exists."""
         namespace = "/".join(part for part in (self.namespace, *within) if part)
         return CloudOrigin(kind=self.kind, namespace=namespace, key=key)
 

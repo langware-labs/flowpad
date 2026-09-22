@@ -23,6 +23,9 @@ import pytest
 
 from flow_sdk.responses.response import ApiResponse
 
+# These open real claude workers: without a usable source the launch is refused.
+pytestmark = pytest.mark.usefixtures("usable_claude_source")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

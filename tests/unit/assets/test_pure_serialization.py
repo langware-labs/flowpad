@@ -7,16 +7,17 @@ from flow_sdk.assets.folder import AssetScanError, collect_asset_scan, collect_a
 from flow_sdk.assets.serialization import read_asset_data, read_asset_parent
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.serializer.fields import FieldKind, field_kinds, field_persistence
-from flow_sdk.schema.data_spec import Body, FrontMatter, SubAsset
+from flow_sdk.schema.data_spec import FrontMatter
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 from flow_sdk.schema.data_spec.skill_spec import SkillSpec
 from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.data_spec.io.native import Text
 
 
 class NestedAgentSpec(FrontMatter):
-    child: SubAsset[SkillSpec]
+    child: SkillSpec   # a registered asset type nests by TYPE — no marker needed
     config: list[McpSpec] = []
-    system_prompt: Body = ""
+    system_prompt: Text = ""
 
 
 def test_nested_spec_tree_roundtrip_and_inline_config(tmp_path, monkeypatch):

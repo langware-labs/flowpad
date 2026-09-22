@@ -5,10 +5,10 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent",
   "folder_name": "agent",
-  "inputs_hash": "d5539e4f7d1e71d4de3e207759b38ad59c99c3f9016fb8f6fc73025087d5be7e",
+  "inputs_hash": "1884ffd36f073deeb07cdc302535b2c17fac858e710f79b6427a872391f7c54a",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "Reference material for the agent runtime's status contract and API surface: the canonical four-axis AgenticProcess status model, and a rendered interface tour of the entity's fields, methods, backend actions and TypeScript SDK.",
+  "self_summary": "The AgenticProcess entity up close: the four-axis status model that says what a worker is doing and on what evidence, and a tour of its persisted fields, actions and public TypeScript surface.",
   "files": [
     {
       "name": "agentic_process_statuses.md",
@@ -22,12 +22,12 @@
       "name": "interface.md",
       "rel_path": "interface.md",
       "title": "AgenticProcess interface \u2014 rendered demo",
-      "summary": "Rendered contract tour of AgenticProcess: the Python entity, its backend action surface, and the public TypeScript SDK API, demoed through interface fences.",
-      "content_hash": "4e1bcc41b9fdad0932b6d25b80c80ca5e8f4b9c0caecb0cdb07d75f77bda409d",
-      "size_bytes": 28866
+      "summary": "Visual contract tour of the AgenticProcess entity: persisted fields, all 42 actions, and the public TypeScript SDK surface, rendered through interface fences.",
+      "content_hash": "104569cfd9f431918683588f13879c8b2ba6d49901f6cb1f0a4f0ebca7b94696",
+      "size_bytes": 28863
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-08-23T22:11:28.823621+00:00",
+  "generated_at": "2026-09-19T23:43:14.228355+00:00",
   "latest_process_ref": ""
 }

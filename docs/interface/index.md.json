@@ -5,34 +5,34 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "interface",
   "folder_name": "interface",
-  "inputs_hash": "03dc43522d53c72648ee268f6b37164d9f0d2da44f931d357c3fa70f60c84ab0",
+  "inputs_hash": "6b9cd2f6fa74460cb089c3352584906773800577a5f7f3296e99c3e3c1fe7d86",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "API-surface references for the agentic-process stack, each following one skeleton: Python object, backend actions, frontend TypeScript, then flows. Covers AgenticProcess, Shell, the PTY layer, ComputeNode, the CLI driver contract, the status model, test-derived flows, and the per-area coverage audit.",
+  "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode \u2014 their fields, HTTP actions and TypeScript surfaces \u2014 plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
   "files": [
     {
       "name": "README.md",
       "rel_path": "README.md",
       "title": "Interface Reference \u2014 the agentic-process stack",
-      "summary": "Index and layering map for the agentic-process interface references, with the shared page skeleton: Python object, backend actions, frontend TypeScript, then flows.",
-      "content_hash": "f1838ae79c470ab2335e226a5ba7a0e75e25016a28d5b5536a9188d5efe58cfc",
-      "size_bytes": 6844
+      "summary": "Index of the interface reference pages for the agentic-process stack, and the layering from AgenticProcess through Shell down to the PTY.",
+      "content_hash": "a7759d2aba3ef3180bfba9742286c6ee92c6ce601147e25ae4d5643ad10b678c",
+      "size_bytes": 7537
     },
     {
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess \u2014 interface",
-      "summary": "Interface reference for the AgenticProcess entity: field semantics, public methods, display-target and wizard contracts, the HTTP action surface, and the TypeScript class.",
-      "content_hash": "96c22f2c6c741e85269edb60a011a7e7fa06b44f6f94be028e29363193a32afe",
-      "size_bytes": 29428
+      "summary": "Complete interface reference for AgenticProcess: its fields, the HTTP action surface under /api/v1/graph, and the frontend TypeScript class.",
+      "content_hash": "4577e3970d5fce6f6ddbb91082fb74db226f0b1c5e8cb816515fea9e08e642e2",
+      "size_bytes": 62242
     },
     {
       "name": "cli-drivers.md",
       "rel_path": "cli-drivers.md",
       "title": "CLI drivers \u2014 interface",
-      "summary": "The CLI driver layer that lets AgenticProcess talk to Claude Code, Codex, and Copilot through one WorkerDriver Protocol: contract, per-vendor and capability matrices.",
-      "content_hash": "8aee929faaad49c6b6e1f38b7031eb3cfa84ae3a8fcc200baee53dfc2efe8c5a",
-      "size_bytes": 33687
+      "summary": "CLI driver layer: the one WorkerDriver protocol that lets AgenticProcess talk to Claude, Codex, Copilot and OpenCode without branching on vendor.",
+      "content_hash": "cfbdbbddc198941a7e90c3c8e80083a44e9b0bc732a5d3608f529a5948eaa4ff",
+      "size_bytes": 37874
     },
     {
       "name": "compute-node.md",
@@ -46,17 +46,25 @@
       "name": "flows.md",
       "rel_path": "flows.md",
       "title": "Agentic-process flows (test-derived)",
-      "summary": "Test-derived end-to-end flows of the agentic-process stack, naming the actual SDK call, graph action, and Python method at every layer of each flow.",
-      "content_hash": "92f3037eb51427df8cce259b138b93f79f56c5fb9245d56a0b04795475c60040",
-      "size_bytes": 33512
+      "summary": "End-to-end agentic-process flows reconstructed from reference tests, naming the TS SDK call, graph action and Python method at every step, plus pty_mode routing.",
+      "content_hash": "be8e003de4a48cd757f2af761536c3ca0d2ab041486001a031c7a3ca292c0245",
+      "size_bytes": 33543
     },
     {
       "name": "pty-layer.md",
       "rel_path": "pty-layer.md",
       "title": "PTY layer \u2014 interface",
-      "summary": "Interface reference for the internal PTY layer: membership FSM, framed rolling buffer, local provider, Pty handles, transport endpoints, and output-to-client flow.",
-      "content_hash": "30456f3b3a4ee09a499df26a8a4348c08ad115bcf12bd445b00456e0c83e37c6",
-      "size_bytes": 15640
+      "summary": "The internal PTY layer's API surface: PtyRegistry and PtyState membership FSM, stream files, WS attach lifecycle and the replay route.",
+      "content_hash": "79683b68a719713ec8d8a032998f14f5c773d9e4883459f8d536d707e67de8f6",
+      "size_bytes": 15641
+    },
+    {
+      "name": "session-naming.md",
+      "rel_path": "session-naming.md",
+      "title": "Worker session names",
+      "summary": "How a worker session gets its display name: the five-phase priority reducer, user versus harness provenance, and the transcript and lifecycle edges moving it.",
+      "content_hash": "67625a16e201c85493bc6d40890fad37dbe113e0fa4a0939b4e18aab4d34c600",
+      "size_bytes": 6563
     },
     {
       "name": "shell.md",
@@ -70,20 +78,20 @@
       "name": "status-model.md",
       "rel_path": "status-model.md",
       "title": "Status model \u2014 interface",
-      "summary": "Interface reference for the paired process and worker status model: enums, predicates, the deriving tail function, and computed-versus-stored wire values.",
-      "content_hash": "4f0738a34df480d9b91e28f63badbdd8f3ed8047ee6bddd12d0f4cefdad6e9a6",
-      "size_bytes": 15342
+      "summary": "Interface reference for the two-axis process status model: stored ProcessStatus versus transcript-derived WorkerStatus, their enums, and derived projections.",
+      "content_hash": "3f54d1450e81fcb62c20f646c8023070fc92ec2fe08f79d0ca1cf2df759f4b98",
+      "size_bytes": 15382
     },
     {
       "name": "test-coverage.md",
       "rel_path": "test-coverage.md",
       "title": "Test coverage \u2014 the agentic-process stack, per area \u00d7 per front",
-      "summary": "Audited coverage matrix for the agentic-process stack by area and test front, naming covered suites, cross-area findings, and deliberate gaps.",
-      "content_hash": "64b38afa14fe4e1423f73361c98adc3ef00259ac5280162a564e8d23b4fc6fcf",
-      "size_bytes": 20003
+      "summary": "Audited coverage matrix for the agentic-process stack: each action against the pytest unit, live-api, vitest and react fronts, with the test file named.",
+      "content_hash": "29921d770351e541fba29a98daf7a28f50827979e4d9694f97d52520618c4195",
+      "size_bytes": 20220
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-08-23T22:11:28.823621+00:00",
+  "generated_at": "2026-09-19T23:43:15.003751+00:00",
   "latest_process_ref": ""
 }

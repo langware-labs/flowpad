@@ -104,3 +104,31 @@ async def test_drain_queue_action_is_a_prompt_less_kick(bootstrapped_client, mon
     assert resp.status_code == 200, resp.text
     assert [e["prompt"] for e in ApiResponse(**resp.json()).data["entries"]] == ["later"]
     assert kicks[-1] == "ui"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_launch_answers_with_an_error_the_loader_can_read(
+    bootstrapped_client, tmp_path, monkeypatch
+):
+    """A launch that raised must be legible to the caller.
+
+    The route carries `error` in a normal payload rather than returning
+    `ApiFailResponse`, which the caller cannot see — the reasoning is with the
+    route.
+    """
+    project, _ = await _seed(tmp_path, "tutor")
+
+    async def _boom(self, project_id=None, *, deployment=None):
+        raise RuntimeError("no worker binary")
+
+    monkeypatch.setattr(Agent, "use", _boom)
+    resp = await bootstrapped_client.post(ROUTE, json={"project_id": project.id})
+
+    assert resp.status_code == 200, resp.text
+    body = ApiResponse(**resp.json())
+    assert body.status == ApiResponseStatus.SUCCESS.value
+    assert "no worker binary" in body.data["error"]
+    # Shape preserved, so a caller needs no special case to read it.
+    assert body.data["agent_id"] is None and body.data["process_id"] is None
+    # And the project keeps its chance: the mark was never written.
+    assert Agent.auto_launched_ids(project.id) == []

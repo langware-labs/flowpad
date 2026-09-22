@@ -121,7 +121,7 @@ export interface ViewerMeta {
    * failure is silent (tabs merge, nothing errors), so check this before setting
    * the flag on a new view.
    *
-   * Prefer OPTIONS for new sub-state (`forInbox` puts `conversation`/`message`
+   * Prefer OPTIONS for new sub-state (`forStreamInbox` puts `conversation`/`message`
    * there, and options are excluded from `tabHash` for free). Use this flag when
    * the sub-state is already a documented, deep-linkable PATH that cannot move
    * without breaking existing links.
@@ -261,6 +261,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Eye',
     tabLocation: 'dedicated',
     canAddAsTab: false,
+  },
+  // A question waiting on a person. Never a tab: it is raised in `win/` where
+  // it IS the window, and it stops existing once answered.
+  [ViewType.ASK]: {
+    title: msg`Ask`,
+    iconName: 'MessageCircleQuestion',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    // The question IS the window: no workspace frame around it.
+    chrome: 'fullbleed',
   },
   [ViewType.APPS]: {
     title: msg`App`,
@@ -498,8 +508,8 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
-  [ViewType.INBOX]: {
-    title: msg`Inbox`,
+  [ViewType.STREAM_INBOX]: {
+    title: msg`Stream Inbox`,
     iconName: 'Mail',
     tabLocation: 'dedicated',
     canAddAsTab: false,

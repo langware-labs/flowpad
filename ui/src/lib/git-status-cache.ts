@@ -12,7 +12,10 @@ import type { GitStatus } from '@sdk';
  *
  * This coalesces concurrent callers on the same ``(computeNodeId, workdir)``
  * onto one in-flight request, and serves the resolved result for a brief TTL so
- * a burst of mounts/re-renders collapses to a single git call. Callers that need
+ * a burst of mounts/re-renders collapses to a single git call. The TTL runs from
+ * when the request SETTLES, not when it started: a status slower than the TTL
+ * would otherwise expire while still in flight, and the next caller would start a
+ * second identical request on top of it. Callers that need
  * fresh state (after a push/commit) pass ``{ force: true }`` or call
  * ``invalidateGitStatus`` first.
  */
@@ -25,15 +28,11 @@ export type { GitStatus, GitStatusFile } from '@sdk';
  *  that an explicit refresh is rarely needed for routine UI freshness. */
 const TTL_MS = 3000;
 
-interface Entry {
-  at: number;
-  promise: Promise<GitStatus | null>;
-}
+/** In-flight or fresh requests only: each entry evicts itself TTL_MS after it
+ *  settles, so anything still in the map may be served. */
+const cache = new Map<string, Promise<GitStatus | null>>();
 
-const cache = new Map<string, Entry>();
-
-const keyFor = (computeNodeId: string, workdir: string): string =>
-  `${computeNodeId} ${workdir}`;
+const keyFor = (computeNodeId: string, workdir: string): string => `${computeNodeId} ${workdir}`;
 
 /**
  * Fetch ``git-ops status`` for a working tree, deduped across callers.
@@ -46,28 +45,24 @@ export function getGitStatus(
 ): Promise<GitStatus | null> {
   if (!computeNodeId || !workdir) return Promise.resolve(null);
   const key = keyFor(computeNodeId, workdir);
-  const now = Date.now();
   const hit = cache.get(key);
-  if (!opts?.force && hit && now - hit.at < TTL_MS) return hit.promise;
+  if (hit && !opts?.force) return hit;
 
-  const promise: Promise<GitStatus | null> = new GitWorkdir(workdir, computeNodeId)
-    .getStatus()
-    .catch(() => null);
-  cache.set(key, { at: now, promise });
-  // Auto-evict after the TTL so the Map stays bounded across a long session
-  // that touches many workdirs (the entry is useless once stale anyway).
-  setTimeout(() => {
-    if (cache.get(key)?.promise === promise) cache.delete(key);
-  }, TTL_MS);
+  const promise: Promise<GitStatus | null> = new GitWorkdir(workdir, computeNodeId).getStatus().catch(() => null);
+  cache.set(key, promise);
+  void promise.then(() => {
+    // Evict only the entry this request created: an invalidation or a forced
+    // refetch while it was in flight has already replaced or dropped it.
+    setTimeout(() => {
+      if (cache.get(key) === promise) cache.delete(key);
+    }, TTL_MS);
+  });
   return promise;
 }
 
 /** Drop the cached entry so the next ``getGitStatus`` re-fetches (e.g. after a
  *  push/commit that changed the working tree). */
-export function invalidateGitStatus(
-  computeNodeId: string | null,
-  workdir: string | null,
-): void {
+export function invalidateGitStatus(computeNodeId: string | null, workdir: string | null): void {
   if (!computeNodeId || !workdir) return;
   cache.delete(keyFor(computeNodeId, workdir));
 }

@@ -47,6 +47,7 @@ async def execute_wizard(
     asset_ref: str,
     *,
     trusted: bool,
+    approved: bool = False,
     subject_entity: Optional[str],
     #: Carry the stored answers into this run. Defaults ON because the
     #: UNATTENDED caller (a trigger fire) has nobody to ask — stored answers are
@@ -105,6 +106,11 @@ async def execute_wizard(
             # agent returned last time is never re-derived. A fresh run drops
             # both — "run it again" must not silently reuse either.
             inputs={**read_inputs(wizard_id), **read_outputs(wizard_id)} if resume else {},
+            # A step's `ref` is a NAME; only the entity layer knows what is
+            # indexed, and only it can say whether a callee is trusted HERE.
+            approved=approved,
+            resolve_op=_resolve_op,
+            resolve_wizard=_resolve_wizard,
         )
     finally:
         lock.release()
@@ -139,3 +145,31 @@ def _slug(asset_ref: str) -> str:
     from pathlib import Path  # noqa: PLC0415
 
     return Path(asset_ref).name if asset_ref else ""
+
+
+async def _resolve_op(name: str):
+    """A ComputeOp by name, with ITS own trust — never the caller's.
+
+    A shipped wizard that reaches an op living in a cloned project must not lend
+    it approval; that is the whole reason trust is resolved per callee.
+    """
+    from flow_sdk.builtin.compute_op import ComputeOp  # noqa: PLC0415
+    from flow_sdk.core.wizard.runner import Resolved  # noqa: PLC0415
+
+    row = await ComputeOp.by_name(name)
+    if row is None:
+        return None
+    spec = row.spec()
+    return None if spec is None else Resolved(spec, row.is_system())
+
+
+async def _resolve_wizard(name: str):
+    """Another Wizard by name, with its own trust. Same rule."""
+    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+    from flow_sdk.core.wizard.runner import Resolved  # noqa: PLC0415
+
+    row = await Wizard.get_one({"name": name})
+    if row is None:
+        return None
+    spec = row.spec()
+    return None if spec is None else Resolved(spec, row.is_system())

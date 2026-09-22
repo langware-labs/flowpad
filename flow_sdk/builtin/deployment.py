@@ -554,7 +554,7 @@ class Deployment(Entity):
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
         agent = await self._require_agent()
-        # This place's overrides (agent.md ``places``) win over the definition
+        # This place's overrides (agent.json ``places``) win over the definition
         # for every launch through it — chat, run, schedule, email alike.
         place = agent.place_for(self.id)
         place_mcp = place.mcp_servers if place is not None else None
@@ -587,7 +587,7 @@ class Deployment(Entity):
         context_data.setdefault("launched_by_agent", agent.name)
 
         # Declared -> attached, BEFORE the folder is read below. ``mcp_servers``
-        # on agent.md is the authored intent; ``mcp_assets()`` is the structural
+        # on agent.json is the authored intent; ``mcp_assets()`` is the structural
         # attachment a launch resolves, and this is the one place that turns the
         # first into the second. Idempotent, so a re-launch of an unchanged
         # agent writes nothing.

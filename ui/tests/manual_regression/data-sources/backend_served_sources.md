@@ -5,12 +5,12 @@ id: 3f1c9a44-7c2e-4a1e-9c6b-2f0d5a8b41e7
 # Data sources come from the backend, not from the frontend
 
 precondition: an instance is up (`scripts/instance_ctl.sh launch dev-5`) and its
-`agentic-assets/data_source/*` manifests are indexed. Run with
+`agentic-assets/data_driver/*` manifests are indexed. Run with
 `FLOW_INSTANCE=<name> npx playwright test --config tests/manual_regression/data-sources/playwright.config.ts`.
 
 What these tests are actually proving: `provider-catalog.ts` is gone. Every provider
 button, every field, every label and placeholder in the Add dialog now comes from a
-`data_source_spec` asset the backend indexed off disk. So each test compares the rendered
+`data_driver` asset the backend indexed off disk. So each test compares the rendered
 form against the manifest fetched over the API — not against a list written here, which
 would just be the deleted catalog in a new file.
 
@@ -24,7 +24,7 @@ test 1: The Data Sources screen renders
 - [browser] validate the element with data-testid="add-data-source" is visible
 
 test 2: Every installed spec is offered as a provider
-- [api] GET /api/v1/graph/data_source_spec — collect every `name`
+- [api] GET /api/v1/graph/data_driver — collect every `name`
 - [browser] open the Add dialog
 - [browser] for each name, validate a button with data-testid="provider-<name>" is visible
 - this is the phase-2 contract: the dialog renders what is INSTALLED

@@ -22,7 +22,7 @@ class CloudOriginLocal(BaseModel):
     Split out of :class:`CloudOrigin` because these two ids are row ids in THIS
     instance's database and mean nothing anywhere else. Shared wholesale they
     were worse than useless: a receiver dereferencing them misses, and
-    ``inbox/outbound`` then reports the record as *deleted* when the truth is
+    ``stream_inbox/outbound`` then reports the record as *deleted* when the truth is
     that it is *foreign*.
     """
 

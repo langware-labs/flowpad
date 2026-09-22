@@ -18,10 +18,10 @@ description: App HTML is UTF-8 by definition; serving must never consult the hos
 tag: breadcrumb.test.served_html_encoding.rules
 sites:
   - rel_path: "tests/unit/test_serve_static_encoding.py"
-    line: 81
+    line: 88
     note: "FAILING? read this tag's rules before editing — a UTF-8 CI cannot see this bug, do not relax the assertion"
   - rel_path: "tests/api/test_micro_app_view.py"
-    line: 58
+    line: 61
     note: "FAILING? read this tag's rules before editing — a 200 is not a pass, assert the served text matches disk"
 ```
 

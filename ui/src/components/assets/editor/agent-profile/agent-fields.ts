@@ -7,6 +7,7 @@ export type AgentDocumentPatch = Partial<
     | 'title'
     | 'description'
     | 'avatar'
+    | 'color'
     | 'worker_type'
     | 'model'
     | 'permission_mode'
@@ -24,6 +25,7 @@ export type AgentDocumentPatch = Partial<
     | 'intro'
     | 'auto_launch'
     | 'auto_launch_prompt'
+    | 'phone'
     | 'system_prompt'
   >
 >;

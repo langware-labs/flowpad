@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from flow_sdk import toplog
 from flow_sdk.core.network.connection_manager import set_external_connection_lookup
 from flow_sdk.core.network.connections import (
     add_connection as add_registry_connection,
@@ -523,6 +524,11 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
     # the peer sent a proper close frame; 1006/receive-error means the TCP
     # connection died without one (the client may not know it's gone).
     disconnect_reason = "endpoint_exit"
+    # `pty` toplog: slow messages block this connection's whole lane (every later
+    # keystroke/resize waits behind them). Logged at most once a second, with the
+    # count of slow messages folded in.
+    slow_logged_at = 0.0
+    slow_since_log = 0
     try:
         while True:
             # Receive message (text or binary)
@@ -566,7 +572,31 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
                 continue
 
             # Handle message
+            handle_t0 = time.monotonic() if toplog.is_on("pty") else 0.0
             continue_loop = await handle_json_message(connection_id, websocket, message_data)
+            if handle_t0:
+                handle_ms = (time.monotonic() - handle_t0) * 1000
+                if handle_ms > 100:
+                    slow_since_log += 1
+                    if time.monotonic() - slow_logged_at >= 1.0:
+                        slow_logged_at = time.monotonic()
+                        # ``sub_path`` + the body's ``shell_id``, never the body
+                        # itself: a ``terminal-command`` body carries the user's
+                        # keystrokes. Without these two the line could not say
+                        # which terminal stalled, or whether it was input or a
+                        # resize — ``api_path`` was never a field on a
+                        # ``rest_api_msg`` and always logged as None.
+                        body = message_data.get("body")
+                        shell_id = body.get("shell_id") if isinstance(body, dict) else None
+                        toplog.log(
+                            "pty",
+                            "ws_slow_message connection=%s type=%s action=%s sub_path=%s shell=%s "
+                            "ms=%.0f slow_in_window=%s",
+                            connection_id, message_data.get("message_type"),
+                            message_data.get("action"), message_data.get("sub_path"), shell_id,
+                            handle_ms, slow_since_log,
+                        )
+                        slow_since_log = 0
             if not continue_loop:
                 disconnect_reason = "send_failed_client_gone"
                 break

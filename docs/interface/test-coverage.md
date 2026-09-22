@@ -54,6 +54,7 @@ side-effect · ❌ none.
 | `status` | ✅ test_agentic_process_status | ✅ test_agentic_process_status_api | ◐ | ✅ WorkerStatusChip, process-status-line |
 | `get-host` | ❌ | ✅ test_agentic_process_actions (resolves local port; rejects out-of-range) | ❌ | ❌ |
 | `set-graph-context` | ❌ | ✅L test_context_process | ❌ | ❌ |
+| `set-display-context` / `display-context` | ✅ test_display_context, test_display_context_hook_install | ✅ test_display_context | ✅ mcp-app-preview-page-sdk, html-preview-served-url | ✅ e2e page-sdk-bridge |
 | `add-dir` / `remove-dir` | ✅ via get_assets + restart_snapshot | ✅ test_agentic_process_actions (add then remove) | ❌ | ❌ |
 | `open` | ◐ lifecycle/latched_start_failure | ✅ test_pty_process_e2e | ✅ chat_ui_vs_pty_content, pty_test | ✅ new-agentic-tab-loader-regression |
 | `os-status` | ❌ | ✅ test_agentic_process_actions (ready_false, no shell) | ✅ agentic_survives_restart | ❌ |

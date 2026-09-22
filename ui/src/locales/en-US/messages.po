@@ -94,8 +94,12 @@ msgstr "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 
 #. placeholder {0}: deleting?.name || deleting?.provider || ''
 #: src/components/data-sources/use-source-delete.ts
-msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
-msgstr "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
+msgid "\"{0}\" will be removed along with every record it ingested. This cannot be undone."
+msgstr "\"{0}\" will be removed along with every record it ingested. This cannot be undone."
+
+#: src/components/data-sources/use-source-delete.ts
+#~ msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
+#~ msgstr "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
 
 #. placeholder {0}: deleting?.name ?? ''
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
@@ -138,7 +142,7 @@ msgstr "(no fields)"
 msgid "(no repo given)"
 msgstr "(no repo given)"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "(no subject)"
 msgstr "(no subject)"
 
@@ -213,10 +217,9 @@ msgstr "{0, plural, one {# person on this team has no email address, so they can
 msgid "{0, plural, one {# person} other {# people}}"
 msgstr "{0, plural, one {# person} other {# people}}"
 
-#. placeholder {0}: source.segment_count
 #: src/components/data-sources/DataSourceRow.tsx
-msgid "{0, plural, one {# stream} other {# streams}}"
-msgstr "{0, plural, one {# stream} other {# streams}}"
+#~ msgid "{0, plural, one {# stream} other {# streams}}"
+#~ msgstr "{0, plural, one {# stream} other {# streams}}"
 
 #. placeholder {0}: teams.length
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -784,8 +787,8 @@ msgstr "{removed} assets removed."
 msgid "{replyCount, plural, one {# reply} other {# replies}}"
 msgstr "{replyCount, plural, one {# reply} other {# replies}}"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "{selectedCount} selected"
 msgstr "{selectedCount} selected"
 
@@ -801,7 +804,7 @@ msgstr "{stepsLeft} steps left"
 msgid "{suppressed} hub errors were suppressed in the current window."
 msgstr "{suppressed} hub errors were suppressed in the current window."
 
-#: src/components/inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "{targetLabel} is now available in your workspace."
 msgstr "{targetLabel} is now available in your workspace."
 
@@ -1078,8 +1081,12 @@ msgid "a key the hub holds (the chain could not be read from here)"
 msgstr "a key the hub holds (the chain could not be read from here)"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "a name — leave empty and the step only reports that the agent stopped"
-msgstr "a name — leave empty and the step only reports that the agent stopped"
+#~ msgid "a name — leave empty and the step only reports that the agent stopped"
+#~ msgstr "a name — leave empty and the step only reports that the agent stopped"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "a name in scope, or a literal"
+msgstr "a name in scope, or a literal"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
@@ -1114,14 +1121,23 @@ msgid "a server someone else hosts"
 msgstr "a server someone else hosts"
 
 #: src/components/data-sources/DataSourceDialog.tsx
-msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
-msgstr "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+#~ msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+#~ msgstr "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+msgstr "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "a wizard name"
+msgstr "a wizard name"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "about"
 msgstr "about"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "About"
 msgstr "About"
 
@@ -1162,7 +1178,7 @@ msgstr "Absolute path of the folder to cover"
 msgid "Accept"
 msgstr "Accept"
 
-#: src/components/inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "Accept failed"
 msgstr "Accept failed"
 
@@ -1203,8 +1219,8 @@ msgid "Act as the \"{name}\" agent and work on the current context."
 msgstr "Act as the \"{name}\" agent and work on the current context."
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Action"
-msgstr "Action"
+#~ msgid "Action"
+#~ msgstr "Action"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Action Type"
@@ -1333,7 +1349,7 @@ msgstr "Add a personal note..."
 msgid "Add a personal note…"
 msgstr "Add a personal note…"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Add a source"
 msgstr "Add a source"
 
@@ -1352,6 +1368,10 @@ msgstr "Add annotation"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Add another"
 msgstr "Add another"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Add argument"
+msgstr "Add argument"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifact-form.tsx
@@ -1457,6 +1477,10 @@ msgstr "Add help desk"
 msgid "Add Hook"
 msgstr "Add Hook"
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "Add input"
+msgstr "Add input"
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add key"
 msgstr "Add key"
@@ -1498,6 +1522,10 @@ msgstr "Add secret"
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Add someone to share with."
 msgstr "Add someone to share with."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Add someone with an email address to share this project with."
+msgstr "Add someone with an email address to share this project with."
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Add source"
@@ -1644,8 +1672,6 @@ msgstr "Advanced: per-window limits, rate caps and filters (view only)"
 msgid "agent"
 msgstr "agent"
 
-#: src/components/assets/editor/wizard/WizardStepForm.tsx
-#: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/types/ViewType.ts
@@ -1672,10 +1698,9 @@ msgstr "Agent funding"
 msgid "Agent Hook"
 msgstr "Agent Hook"
 
-#: src/routes/loaders/load-agent-inbox.ts
-#: src/routes/loaders/load-agent-inbox.ts
-msgid "Agent inbox not found"
-msgstr "Agent inbox not found"
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Agent mailbox"
+msgstr "Agent mailbox"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Agent is public"
@@ -1685,13 +1710,18 @@ msgstr "Agent is public"
 #~ msgid "Agent name"
 #~ msgstr "Agent name"
 
-#: src/routes/loaders/load-agent-inbox.ts
+#: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "Agent not found"
 msgstr "Agent not found"
 
 #: src/components/agent-resources/AgentResourcesNavigator.tsx
 msgid "Agent resources"
 msgstr "Agent resources"
+
+#: src/routes/loaders/load-agent-stream-inbox.ts
+#: src/routes/loaders/load-agent-stream-inbox.ts
+msgid "Agent stream inbox not found"
+msgstr "Agent stream inbox not found"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -1770,6 +1800,7 @@ msgstr "all"
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/hooks/useClaudeErrorRecords.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "All"
@@ -1924,7 +1955,7 @@ msgstr "Allow Unsandboxed Commands"
 msgid "Allowed Domains"
 msgstr "Allowed Domains"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Allowed senders"
 msgstr "Allowed senders"
 
@@ -1961,6 +1992,10 @@ msgstr "Already installed globally — uninstall first"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Already installed in a project — uninstall first"
 msgstr "Already installed in a project — uninstall first"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Already launched in this project"
+msgstr "Already launched in this project"
 
 #. placeholder {0}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -2007,6 +2042,10 @@ msgstr "Amount"
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 msgstr "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "An absent optional value does not park the run"
+msgstr "An absent optional value does not park the run"
+
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-list.tsx
 msgid "An error occurred"
@@ -2015,6 +2054,10 @@ msgstr "An error occurred"
 #: src/components/rag/RagView.tsx
 msgid "An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file tree, and a folder removed here loses it."
 msgstr "An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file tree, and a folder removed here loses it."
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "an op name"
+msgstr "an op name"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
@@ -2133,6 +2176,10 @@ msgstr "another hub budget — {label}"
 #: src/components/install/AddAssetDialog.tsx
 msgid "another project"
 msgstr "another project"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Another step already uses this id — their results will overwrite each other."
+msgstr "Another step already uses this id — their results will overwrite each other."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "Answer here instead"
@@ -2299,8 +2346,8 @@ msgid "Apps"
 msgstr "Apps"
 
 #: src/components/account/system-log.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Archive"
 msgstr "Archive"
 
@@ -2308,7 +2355,7 @@ msgstr "Archive"
 msgid "Archive — moves to Archived, kept"
 msgstr "Archive — moves to Archived, kept"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Archive all"
 msgstr "Archive all"
 
@@ -2329,7 +2376,7 @@ msgid "Archive this run and start the record fresh. It stays approved to run."
 msgstr "Archive this run and start the record fresh. It stays approved to run."
 
 #: src/components/conversation/conversation-category.ts
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Archived"
 msgstr "Archived"
 
@@ -2344,6 +2391,10 @@ msgstr "Are you sure?"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 msgid "Args"
 msgstr "Args"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Arguments"
+msgstr "Arguments"
 
 #: src/components/artifacts/artifacts-view.tsx
 msgid "artifact"
@@ -2371,6 +2422,7 @@ msgid "Artifacts created during flow execution will appear here"
 msgstr "Artifacts created during flow execution will appear here"
 
 #: src/components/settings-view/settings-utils.ts
+#: src/types/ViewType.ts
 msgid "Ask"
 msgstr "Ask"
 
@@ -2391,8 +2443,8 @@ msgid "Ask for help"
 msgstr "Ask for help"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Ask it to"
-msgstr "Ask it to"
+#~ msgid "Ask it to"
+#~ msgstr "Ask it to"
 
 #: src/pages/flow-page/VibeAssignTaskButton.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
@@ -2416,8 +2468,8 @@ msgid "Ask whoever shared it to start it, or to send a new link."
 msgstr "Ask whoever shared it to start it, or to send a new link."
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Asks for"
-msgstr "Asks for"
+#~ msgid "Asks for"
+#~ msgstr "Asks for"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "asset"
@@ -2560,7 +2612,7 @@ msgstr "Attached asset types"
 msgid "Attached assets"
 msgstr "Attached assets"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Attached channels"
 msgstr "Attached channels"
 
@@ -2657,6 +2709,10 @@ msgstr "Auto-enable all project-level MCP servers"
 msgid "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
 msgstr "Auto-launch cancelled for: {names}. Only the oldest agent launches on project open."
 
+#: src/agents/agent-auto-launch-warning.ts
+msgid "Auto-launch failed: {reason}. Open the project again to retry."
+msgstr "Auto-launch failed: {reason}. Open the project again to retry."
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Auto-launch on project open"
@@ -2665,6 +2721,10 @@ msgstr "Auto-launch on project open"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Auto-launch prompt"
 msgstr "Auto-launch prompt"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Auto-launch reset"
+msgstr "Auto-launch reset"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "auto-login off"
@@ -2750,14 +2810,14 @@ msgstr "Back to full graph"
 msgid "Back to home"
 msgstr "Back to home"
 
-#: src/components/conversation/ConversationRoute.tsx
-#: src/components/conversation/ConversationRoute.tsx
-msgid "Back to inbox"
-msgstr "Back to inbox"
-
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Back to repositories"
 msgstr "Back to repositories"
+
+#: src/components/conversation/ConversationRoute.tsx
+#: src/components/conversation/ConversationRoute.tsx
+msgid "Back to stream inbox"
+msgstr "Back to stream inbox"
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
@@ -3164,6 +3224,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/ask/AskView.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
@@ -3192,7 +3253,6 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -3221,6 +3281,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -3244,6 +3305,10 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr "Cancel"
+
+#: src/components/ask/AskView.tsx
+msgid "Cancelled."
+msgstr "Cancelled."
 
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/useAssetsModel.tsx
@@ -3363,13 +3428,13 @@ msgstr "Changes"
 msgid "Changes committed and pushed"
 msgstr "Changes committed and pushed"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channel details"
 msgstr "Channel details"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceChannels.tsx
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channels"
 msgstr "Channels"
 
@@ -3414,7 +3479,7 @@ msgstr "Chats"
 msgid "Check again"
 msgstr "Check again"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Check for new messages"
 msgstr "Check for new messages"
 
@@ -3736,8 +3801,8 @@ msgstr "Clear folder filter"
 msgid "Clear Index"
 msgstr "Clear Index"
 
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear search"
 msgstr "Clear search"
 
@@ -3748,9 +3813,9 @@ msgstr "Clear search index?"
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear selection"
 msgstr "Clear selection"
 
@@ -4005,9 +4070,9 @@ msgstr "Cloud · {0}"
 msgid "Cloud access denied"
 msgstr "Cloud access denied"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Cloud disconnected"
 msgstr "Cloud disconnected"
 
@@ -4142,6 +4207,7 @@ msgid "Collapse side window"
 msgstr "Collapse side window"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/color-picker.tsx
 msgid "Color"
 msgstr "Color"
@@ -4359,6 +4425,7 @@ msgstr "Connect a data source to make it available here"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -4380,6 +4447,10 @@ msgstr "Connect GitHub to link this project to the cloud."
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect GitHub to pick from your repos, including private ones."
 msgstr "Connect GitHub to pick from your repos, including private ones."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Connect GitHub to share a project whose files live in a GitHub repository."
+msgstr "Connect GitHub to share a project whose files live in a GitHub repository."
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Connect to a URL"
@@ -4422,6 +4493,7 @@ msgstr "Connecting"
 #: src/components/account/user-info.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Connecting…"
 msgstr "Connecting…"
 
@@ -4553,8 +4625,8 @@ msgstr "Control reasoning effort level"
 msgid "Conversation"
 msgstr "Conversation"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Conversation deleted"
 msgstr "Conversation deleted"
 
@@ -4642,6 +4714,10 @@ msgstr "Copy as log"
 msgid "Copy attachment id"
 msgstr "Copy attachment id"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Copy branch name"
+msgstr "Copy branch name"
+
 #: src/components/markdown-view.tsx
 msgid "Copy code"
 msgstr "Copy code"
@@ -4663,7 +4739,7 @@ msgstr "Copy content to clipboard"
 msgid "Copy diagnosis to clipboard"
 msgstr "Copy diagnosis to clipboard"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Copy email address"
 msgstr "Copy email address"
 
@@ -4720,6 +4796,10 @@ msgstr "Copy prompt"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Provider ID"
 msgstr "Copy Provider ID"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Copy remote URL"
+msgstr "Copy remote URL"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Copy the full error"
@@ -4801,9 +4881,9 @@ msgstr "Could not add a cloud machine"
 msgid "Could not add the help desk."
 msgstr "Could not add the help desk."
 
-#: src/hooks/use-allocate-agent-inbox.ts
-msgid "Could not allocate an inbox"
-msgstr "Could not allocate an inbox"
+#: src/hooks/use-allocate-agent-mailbox.ts
+msgid "Could not allocate a mailbox"
+msgstr "Could not allocate a mailbox"
 
 #: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
@@ -5155,6 +5235,10 @@ msgstr "Could not replay {0}."
 msgid "Could not report diagnosis"
 msgstr "Could not report diagnosis"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Could not reset auto-launch"
+msgstr "Could not reset auto-launch"
+
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Could not resolve compute node or home directory"
 msgstr "Could not resolve compute node or home directory"
@@ -5200,9 +5284,9 @@ msgstr "Could not run the test"
 #~ msgid "Could not save agent"
 #~ msgstr "Could not save agent"
 
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Could not save inbox settings"
-msgstr "Could not save inbox settings"
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Could not save mailbox settings"
+msgstr "Could not save mailbox settings"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Could not save schedule"
@@ -5373,7 +5457,7 @@ msgid "Could not use {0}"
 msgstr "Could not use {0}"
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/use-source-verify.ts
 msgid "Could not verify {0}"
 msgstr "Could not verify {0}"
 
@@ -5502,6 +5586,10 @@ msgstr "Count"
 msgid "Count: {counter}"
 msgstr "Count: {counter}"
 
+#: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
+msgid "Country code"
+msgstr "Country code"
+
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -5554,7 +5642,7 @@ msgstr "Create {0}"
 msgid "Create a brand-new repository"
 msgstr "Create a brand-new repository"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Create a contacts group — add its members to any conversation in one click"
 msgstr "Create a contacts group — add its members to any conversation in one click"
 
@@ -5604,7 +5692,7 @@ msgstr "Create as Whiteboard"
 msgid "Create bookmark on the recipient's desktop"
 msgstr "Create bookmark on the recipient's desktop"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Create email for agent"
 msgstr "Create email for agent"
 
@@ -5831,8 +5919,8 @@ msgid "Data privacy mode"
 msgstr "Data privacy mode"
 
 #: src/i18n/type-labels.ts
-msgid "Data Source Cursor"
-msgstr "Data Source Cursor"
+#~ msgid "Data Source Cursor"
+#~ msgstr "Data Source Cursor"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -5927,7 +6015,7 @@ msgstr "Declared on the agent's card. Not yet applied to the worker."
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Decline"
 msgstr "Decline"
 
@@ -5935,11 +6023,11 @@ msgstr "Decline"
 msgid "Decline (delete) invitation"
 msgstr "Decline (delete) invitation"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Decline (notifies the inviter)"
 msgstr "Decline (notifies the inviter)"
 
-#: src/components/inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "Decline failed"
 msgstr "Decline failed"
 
@@ -6050,9 +6138,6 @@ msgstr "Delegating to"
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 #: src/components/helpdesk/HelpdeskResetButton.tsx
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -6065,12 +6150,15 @@ msgstr "Delegating to"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Delete"
 msgstr "Delete"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete — removes permanently"
 msgstr "Delete — removes permanently"
 
@@ -6114,7 +6202,7 @@ msgstr "Delete {0}?"
 msgid "Delete {label}"
 msgstr "Delete {label}"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete {selectedCount} conversations"
 msgstr "Delete {selectedCount} conversations"
 
@@ -6122,18 +6210,18 @@ msgstr "Delete {selectedCount} conversations"
 msgid "Delete {selectedCount} item(s)?"
 msgstr "Delete {selectedCount} item(s)?"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete 1 conversation"
 msgstr "Delete 1 conversation"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete all"
 msgstr "Delete all"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete all failed"
 msgstr "Delete all failed"
 
@@ -6141,7 +6229,7 @@ msgstr "Delete all failed"
 msgid "Delete API Key"
 msgstr "Delete API Key"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete archived conversations"
 msgstr "Delete archived conversations"
 
@@ -6188,7 +6276,7 @@ msgstr "Delete credential"
 msgid "Delete diagnosis"
 msgstr "Delete diagnosis"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete failed"
 msgstr "Delete failed"
 
@@ -6204,12 +6292,12 @@ msgstr "Delete folder"
 msgid "Delete folder (children move up)"
 msgstr "Delete folder (children move up)"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete for everyone"
 msgstr "Delete for everyone"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete for everyone — permanent"
 msgstr "Delete for everyone — permanent"
 
@@ -6280,7 +6368,7 @@ msgstr "Delete this chat"
 msgid "Delete this chat?"
 msgstr "Delete this chat?"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Delete this conversation"
 msgstr "Delete this conversation"
 
@@ -6316,19 +6404,19 @@ msgstr "Delete this new file — it isn't saved in git yet"
 msgid "Delete this step"
 msgstr "Delete this step"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Deleted {ok} conversations"
 msgstr "Deleted {ok} conversations"
 
 #. placeholder {0}: failed.length
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Deleted {ok}, {0} failed"
 msgstr "Deleted {ok}, {0} failed"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Deleted 1 conversation"
 msgstr "Deleted 1 conversation"
 
@@ -6730,8 +6818,8 @@ msgid "Discard this draft?"
 msgstr "Discard this draft?"
 
 #: src/components/spec-editor/SpecEditor.tsx
-msgid "Discard unsaved changes and go back to inbox"
-msgstr "Discard unsaved changes and go back to inbox"
+msgid "Discard unsaved changes and go back to stream inbox"
+msgstr "Discard unsaved changes and go back to stream inbox"
 
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/LiveSessionView.tsx
@@ -6796,7 +6884,7 @@ msgstr "Dismiss banner (the runtime error stays — this just hides the affordan
 msgid "Dismiss download error"
 msgstr "Dismiss download error"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Dismiss failed"
 msgstr "Dismiss failed"
 
@@ -6988,10 +7076,13 @@ msgid "Drop items here"
 msgstr "Drop items here"
 
 #. placeholder {0}: result.removed
-#. placeholder {1}: result.streams
 #: src/components/data-sources/ReplayDialog.tsx
-msgid "Dropped {0} records across {1} streams"
-msgstr "Dropped {0} records across {1} streams"
+msgid "Dropped {0} records"
+msgstr "Dropped {0} records"
+
+#: src/components/data-sources/ReplayDialog.tsx
+#~ msgid "Dropped {0} records across {1} streams"
+#~ msgstr "Dropped {0} records across {1} streams"
 
 #. placeholder {0}: result.removed
 #: src/components/data-sources/ReplayDialog.tsx
@@ -7210,10 +7301,6 @@ msgstr "Email"
 msgid "Email {0} an invitation to {teamName}"
 msgstr "Email {0} an invitation to {teamName}"
 
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Email inbox"
-msgstr "Email inbox"
-
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "Email is now answered here"
 #~ msgstr "Email is now answered here"
@@ -7222,7 +7309,7 @@ msgstr "Email inbox"
 #~ msgid "Email not moved."
 #~ msgstr "Email not moved."
 
-#: src/hooks/use-allocate-agent-inbox.ts
+#: src/hooks/use-allocate-agent-mailbox.ts
 msgid "Email settings could not be saved."
 msgstr "Email settings could not be saved."
 
@@ -7251,6 +7338,7 @@ msgid "Emitted, but nothing on the backend is subscribed to that tag."
 msgstr "Emitted, but nothing on the backend is subscribed to that tag."
 
 #: src/components/conversation/EmojiPicker.tsx
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Emoji"
@@ -8250,7 +8338,7 @@ msgstr "Feed Entry"
 msgid "Fetch"
 msgstr "Fetch"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Fetch new messages from hub"
 msgstr "Fetch new messages from hub"
 
@@ -8972,6 +9060,8 @@ msgstr "Git URL"
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "GitHub authorization did not complete."
 msgstr "GitHub authorization did not complete."
 
@@ -9066,8 +9156,8 @@ msgid "Go back"
 msgstr "Go back"
 
 #: src/components/spec-editor/SpecEditor.tsx
-msgid "Go back to inbox"
-msgstr "Go back to inbox"
+msgid "Go back to stream inbox"
+msgstr "Go back to stream inbox"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Go to Console"
@@ -9077,10 +9167,6 @@ msgstr "Go to Console"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Go to Homepage"
 msgstr "Go to Homepage"
-
-#: src/routes/loaders/load-conversation.ts
-msgid "Go to inbox"
-msgstr "Go to inbox"
 
 #: src/components/ui/pagination.tsx
 msgid "Go to next page"
@@ -9094,6 +9180,10 @@ msgstr "Go to previous page"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Go to session"
 msgstr "Go to session"
+
+#: src/routes/loaders/load-conversation.ts
+msgid "Go to stream inbox"
+msgstr "Go to stream inbox"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Go up"
@@ -9266,7 +9356,7 @@ msgstr "Heading 3"
 msgid "Health"
 msgstr "Health"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Health:"
 msgstr "Health:"
 
@@ -9312,9 +9402,9 @@ msgstr "Hey <0>{firstName}</0>"
 msgid "Hidden files"
 msgstr "Hidden files"
 
-#: src/components/inbox-view/InboxView.tsx
-msgid "Hidden from your inbox"
-msgstr "Hidden from your inbox"
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Hidden from your stream inbox"
+msgstr "Hidden from your stream inbox"
 
 #. placeholder {0}: header.title
 #: src/components/navigator-panel/NavigatorPanel.tsx
@@ -9351,8 +9441,8 @@ msgid "Hide filters & limits"
 msgstr "Hide filters & limits"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-msgid "Hide from Recent — still visible in Inbox; reappears when a new message arrives"
-msgstr "Hide from Recent — still visible in Inbox; reappears when a new message arrives"
+msgid "Hide from Recent — still visible in Stream Inbox; reappears when a new message arrives"
+msgstr "Hide from Recent — still visible in Stream Inbox; reappears when a new message arrives"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Hide from Recent conversations"
@@ -9635,11 +9725,11 @@ msgid "I18n"
 msgstr "I18n"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
-#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Icon"
 msgstr "Icon"
 
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Icons"
 msgstr "Icons"
@@ -9664,6 +9754,10 @@ msgstr "IDE Connections (VS Code, Cursor, etc.)"
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "Identity"
 msgstr "Identity"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "If it fails"
+msgstr "If it fails"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "ignore patterns"
@@ -9798,31 +9892,6 @@ msgstr "In-app only"
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Inactive"
 msgstr "Inactive"
-
-#: src/components/assets/editor/agent-profile/AgentPlaceChannels.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
-#: src/types/ViewType.ts
-msgid "Inbox"
-msgstr "Inbox"
-
-#: src/i18n/type-labels.ts
-msgid "Inbox Manager"
-msgstr "Inbox Manager"
-
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Inbox settings could not be saved."
-msgstr "Inbox settings could not be saved."
-
-#: src/components/inbox-view/AgentInboxView.tsx
-msgid "Inbox settings saved"
-msgstr "Inbox settings saved"
-
-#: src/components/inbox-view/InboxView.tsx
-msgid "Inbox view"
-msgstr "Inbox view"
 
 #: src/components/assets/AddContextFolderDialog.tsx
 msgid "Include another folder in this project's context."
@@ -10136,28 +10205,28 @@ msgstr "Invalid transcript path"
 msgid "invitation"
 msgstr "invitation"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/i18n/type-labels.ts
 msgid "Invitation"
 msgstr "Invitation"
 
-#: src/components/inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "Invitation accepted"
 msgstr "Invitation accepted"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Invitation declined"
 msgstr "Invitation declined"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Invitation dismissed"
 msgstr "Invitation dismissed"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/MembershipInvitations.tsx
-#: src/components/inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/MembershipInvitations.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Invitation no longer valid"
 msgstr "Invitation no longer valid"
 
@@ -10167,11 +10236,11 @@ msgstr "Invitation no longer valid"
 msgid "Invitation sent"
 msgstr "Invitation sent"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Invitations — decline"
 msgstr "Invitations — decline"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Invitations — dismiss"
 msgstr "Invitations — dismiss"
 
@@ -10221,6 +10290,10 @@ msgstr "It is no longer one of the endpoints the hub lists for you — or this m
 #: src/components/connections-manager.tsx
 msgid "It may be only partly removed."
 msgstr "It may be only partly removed."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "It runs again the next time the project opens."
+msgstr "It runs again the next time the project opens."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
@@ -10357,6 +10430,7 @@ msgid "kind"
 msgstr "kind"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Kind"
@@ -10465,7 +10539,7 @@ msgstr "Last success"
 msgid "Last successful sync"
 msgstr "Last successful sync"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Last sync:"
 msgstr "Last sync:"
 
@@ -10553,11 +10627,11 @@ msgstr "Learn about your data"
 msgid "Learn more"
 msgstr "Learn more"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave"
 msgstr "Leave"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave conversation"
 msgstr "Leave conversation"
 
@@ -10565,11 +10639,11 @@ msgstr "Leave conversation"
 msgid "Leave empty to keep"
 msgstr "Leave empty to keep"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
 msgstr "Leave this conversation?"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Left conversation"
 msgstr "Left conversation"
 
@@ -10749,11 +10823,11 @@ msgid "Listed twice"
 msgstr "Listed twice"
 
 #. placeholder {0}: source.name || source.provider
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Listen on {0}"
 msgstr "Listen on {0}"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "listening"
 msgstr "listening"
 
@@ -11113,6 +11187,7 @@ msgstr "Loading..."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
+#: src/components/ask/AskView.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
@@ -11125,7 +11200,6 @@ msgstr "Loading..."
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/open-project-component/open-project-component.tsx
@@ -11133,6 +11207,7 @@ msgstr "Loading..."
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 #: src/components/search-index/EntitySearchModal.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
@@ -11165,8 +11240,8 @@ msgstr "Local graph:"
 msgid "Local only"
 msgstr "Local only"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Local only — permanent"
 msgstr "Local only — permanent"
 
@@ -11277,6 +11352,14 @@ msgstr "Machine secrets"
 msgid "Machine size"
 msgstr "Machine size"
 
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Mailbox settings could not be saved."
+msgstr "Mailbox settings could not be saved."
+
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Mailbox settings saved"
+msgstr "Mailbox settings saved"
+
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Make a todo app"
 msgstr "Make a todo app"
@@ -11334,7 +11417,7 @@ msgstr "Map this conversation to a local project first."
 msgid "Mapping"
 msgstr "Mapping"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Mark all read"
 msgstr "Mark all read"
 
@@ -11938,14 +12021,14 @@ msgstr "name@example.com"
 #~ msgstr "Named by the manifest but gone from disk"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
-msgstr "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
+#~ msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
+#~ msgstr "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
 msgstr "Needs a look"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "needs attention"
 msgstr "needs attention"
 
@@ -11970,7 +12053,7 @@ msgstr "net"
 msgid "never"
 msgstr "never"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Never"
 msgstr "Never"
 
@@ -11982,18 +12065,18 @@ msgstr "never indexed"
 msgid "never run"
 msgstr "never run"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Never synced to cloud"
 msgstr "Never synced to cloud"
 
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/quick-create/DesktopSurface.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -12104,7 +12187,7 @@ msgstr "New folder in {0}"
 msgid "New folder name"
 msgstr "New folder name"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "New group"
 msgstr "New group"
 
@@ -12261,8 +12344,8 @@ msgid "No agent hooks configured"
 msgstr "No agent hooks configured"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "No agent named \"{value}\" on this machine — the step will fail when it runs."
-msgstr "No agent named \"{value}\" on this machine — the step will fail when it runs."
+#~ msgid "No agent named \"{value}\" on this machine — the step will fail when it runs."
+#~ msgstr "No agent named \"{value}\" on this machine — the step will fail when it runs."
 
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No alert logs found"
@@ -12285,7 +12368,7 @@ msgstr "No analysis yet — Analyze to produce a trace."
 msgid "No annotations yet"
 msgstr "No annotations yet"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No archived conversations"
 msgstr "No archived conversations"
 
@@ -12368,11 +12451,11 @@ msgstr "No changes to show"
 msgid "No changes to show."
 msgstr "No changes to show."
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "No channel is attached yet."
 msgstr "No channel is attached yet."
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "No channel reaches this Agent yet. Give it an email address to start."
 msgstr "No channel reaches this Agent yet. Give it an email address to start."
 
@@ -12445,8 +12528,8 @@ msgstr "No conversation specified."
 msgid "No conversation yet."
 msgstr "No conversation yet."
 
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No conversations"
 msgstr "No conversations"
 
@@ -12502,7 +12585,7 @@ msgstr "No document to show here."
 msgid "no edges"
 msgstr "no edges"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "No email address — create one"
 msgstr "No email address — create one"
 
@@ -12718,7 +12801,7 @@ msgstr "No matches found in the Flowpad known-issues database."
 msgid "No matches."
 msgstr "No matches."
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No matching conversations"
 msgstr "No matching conversations"
 
@@ -13094,8 +13177,8 @@ msgid "No spec specified."
 msgstr "No spec specified."
 
 #: src/components/data-sources/SourceStreams.tsx
-msgid "No streams yet — this source has not polled."
-msgstr "No streams yet — this source has not polled."
+#~ msgid "No streams yet — this source has not polled."
+#~ msgstr "No streams yet — this source has not polled."
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "No sub-teams yet."
@@ -13195,7 +13278,7 @@ msgstr "No types match filter"
 msgid "No uncommitted changes"
 msgstr "No uncommitted changes"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No unread conversations"
 msgstr "No unread conversations"
 
@@ -13308,6 +13391,10 @@ msgstr "Not in a git repository — can't be published"
 #~ msgid "Not installed"
 #~ msgstr "Not installed"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Not launched yet in this project"
+msgstr "Not launched yet in this project"
+
 #: src/i18n/cli-messages.ts
 msgid "Not logged in"
 msgstr "Not logged in"
@@ -13332,7 +13419,7 @@ msgstr "Not published yet"
 msgid "not reachable"
 msgstr "not reachable"
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/use-source-verify.ts
 msgid "Not ready yet"
 msgstr "Not ready yet"
 
@@ -13402,6 +13489,10 @@ msgstr "Note: File is missing"
 msgid "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
 msgstr "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "Nothing — this wizard runs with no parameters."
+msgstr "Nothing — this wizard runs with no parameters."
+
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Nothing caps this scope yet. Ask your team admin to set a budget."
 msgstr "Nothing caps this scope yet. Ask your team admin to set a budget."
@@ -13450,6 +13541,11 @@ msgstr "Nothing indexed yet. <0>Refresh Index</0> to populate."
 #: src/components/rag/RagView.tsx
 msgid "Nothing matched."
 msgstr "Nothing matched."
+
+#. placeholder {0}: step.ref ?? ''
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Nothing named \"{0}\" on this machine — the step will fail when it runs."
+msgstr "Nothing named \"{0}\" on this machine — the step will fail when it runs."
 
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Nothing new to push — message sent"
@@ -13544,7 +13640,7 @@ msgstr "Notification"
 msgid "Notifications"
 msgstr "Notifications"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Notifies the inviter"
 msgstr "Notifies the inviter"
 
@@ -13648,6 +13744,10 @@ msgstr "once per machine"
 msgid "Once per project, the first time it is opened. Oldest agent wins if several set this."
 msgstr "Once per project, the first time it is opened. Oldest agent wins if several set this."
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "one of this wizard's inputs"
+msgstr "one of this wizard's inputs"
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "One per line. Empty means everything the sources allow."
 msgstr "One per line. Empty means everything the sources allow."
@@ -13656,7 +13756,7 @@ msgstr "One per line. Empty means everything the sources allow."
 msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 msgstr "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "one@example.com"
 msgstr "one@example.com"
 
@@ -13702,6 +13802,10 @@ msgstr "Open {0}"
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Open {0} in editor"
 msgstr "Open {0} in editor"
+
+#: src/components/conversation/MessageBubble.tsx
+msgid "Open {displayName}"
+msgstr "Open {displayName}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Open {label}"
@@ -13880,6 +13984,7 @@ msgstr "Open in a new browser tab"
 msgid "Open in a new tab"
 msgstr "Open in a new tab"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
@@ -13950,10 +14055,6 @@ msgstr "Open in terminal"
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Open in Worktree"
 msgstr "Open in Worktree"
-
-#: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
-#~ msgid "Open inbox"
-#~ msgstr "Open inbox"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Open it now"
@@ -14239,13 +14340,17 @@ msgstr "Opening your project…"
 msgid "OpenRouter"
 msgstr "OpenRouter"
 
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "OpenRouter hosts to avoid (one per line)"
+msgstr "OpenRouter hosts to avoid (one per line)"
+
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"
 msgstr "Operation failed"
 
-#: src/components/connections-manager/credential-value-form.tsx
-#~ msgid "optional"
-#~ msgstr "optional"
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "optional"
+msgstr "optional"
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
@@ -14452,6 +14557,10 @@ msgstr "Page"
 msgid "pagination"
 msgstr "pagination"
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "parameter"
+msgstr "parameter"
+
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 msgid "Parent comments"
 msgstr "Parent comments"
@@ -14586,7 +14695,7 @@ msgstr "Pause machine"
 msgid "Pause this machine"
 msgstr "Pause this machine"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "paused"
 msgstr "paused"
 
@@ -14645,7 +14754,7 @@ msgstr "People you add here can see this organization. An admin can run its team
 msgid "People you share with can view this agent and its files. They can't edit, deploy or share it on."
 msgstr "People you share with can view this agent and its files. They can't edit, deploy or share it on."
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Permanently delete?"
 msgstr "Permanently delete?"
 
@@ -14671,6 +14780,14 @@ msgstr "Personal"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Personal note, actionable item"
 msgstr "Personal note, actionable item"
+
+#: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
+msgid "Phone number"
+msgstr "Phone number"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Phone number — recorded on the agent's card, not yet used to route messages"
+msgstr "Phone number — recorded on the agent's card, not yet used to route messages"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -14738,7 +14855,7 @@ msgstr "Pick the local project folder this conversation should run in. We'll use
 msgid "Pick up"
 msgstr "Pick up"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Pick what to do with this invitation."
 msgstr "Pick what to do with this invitation."
 
@@ -15358,8 +15475,8 @@ msgid "protected"
 msgstr "protected"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Proved by"
-msgstr "Proved by"
+#~ msgid "Proved by"
+#~ msgstr "Proved by"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager.tsx
@@ -15644,7 +15761,7 @@ msgid "Re-scan now"
 msgstr "Re-scan now"
 
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Read"
 msgstr "Read"
 
@@ -15782,12 +15899,12 @@ msgstr "Reconnect"
 msgid "Reconnect needed"
 msgstr "Reconnect needed"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Reconnect to the cloud to delete shared conversations."
 msgstr "Reconnect to the cloud to delete shared conversations."
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Reconnect to the cloud to delete this conversation."
 msgstr "Reconnect to the cloud to delete this conversation."
 
@@ -15910,7 +16027,7 @@ msgstr "Refresh docs"
 msgid "Refresh document"
 msgstr "Refresh document"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Refresh every (seconds)"
 msgstr "Refresh every (seconds)"
 
@@ -15926,7 +16043,7 @@ msgstr "Refresh from the tag index"
 msgid "Refresh index"
 msgstr "Refresh index"
 
-#: src/components/inbox-view/AgentInboxView.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Refresh interval must be at least 60 seconds"
 msgstr "Refresh interval must be at least 60 seconds"
 
@@ -16005,7 +16122,7 @@ msgstr "Remove"
 
 #. placeholder {0}: source.name
 #. placeholder {0}: source.name || source.provider
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
 msgstr "Remove {0}"
@@ -16097,6 +16214,10 @@ msgstr "Remove row"
 msgid "Remove rule"
 msgstr "Remove rule"
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Remove this argument"
+msgstr "Remove this argument"
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Remove this budget and start again?"
 msgstr "Remove this budget and start again?"
@@ -16108,6 +16229,10 @@ msgstr "Remove this budget?"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "Remove this file from the next commit (git restore --staged)"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "Remove this input"
+msgstr "Remove this input"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Remove this row from the manifest"
@@ -16122,17 +16247,17 @@ msgstr "Remove variable"
 msgid "Removed"
 msgstr "Removed"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for all participants"
 msgstr "Removed for all participants"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for all participants on the cloud"
 msgstr "Removed for all participants on the cloud"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for you; other members keep it"
 msgstr "Removed for you; other members keep it"
 
@@ -16148,7 +16273,7 @@ msgstr "Removed from the project's published assets."
 msgid "Removed vibe agent"
 msgstr "Removed vibe agent"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "Removes it everywhere"
 
@@ -16256,7 +16381,7 @@ msgstr "Replies:"
 msgid "Reply awaiting your review"
 msgstr "Reply awaiting your review"
 
-#. placeholder {0}: channelLabel(channel)
+#. placeholder {0}: channelSpec.title
 #: src/components/conversation/ConversationView.tsx
 msgid "Reply in {0}"
 msgstr "Reply in {0}"
@@ -16396,6 +16521,7 @@ msgstr "Rescanning…"
 
 #: src/components/account/settings-section.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset"
@@ -16408,6 +16534,10 @@ msgstr "Reset"
 #: src/components/account/settings-section.tsx
 msgid "Reset failed"
 msgstr "Reset failed"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Reset failed."
+msgstr "Reset failed."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Reset to default"
@@ -16596,12 +16726,15 @@ msgstr "Retry download"
 msgid "Retry pull"
 msgstr "Retry pull"
 
-#. placeholder {0}: outcome.output
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
-msgid "Returned {0}"
-msgstr "Returned {0}"
+msgid "Returned"
+msgstr "Returned"
 
-#: src/components/assets/editor/wizard/WizardStepForm.tsx
+#: src/components/assets/editor/wizard/WizardStepInspector.tsx
+#~ msgid "Returned {0}"
+#~ msgstr "Returned {0}"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Returns"
 msgstr "Returns"
 
@@ -16912,7 +17045,6 @@ msgid "Running…"
 msgstr "Running…"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
-#: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -17021,13 +17153,13 @@ msgstr "Sandboxes"
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
-#: src/components/inbox-view/AgentInboxView.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
@@ -17368,8 +17500,8 @@ msgstr "Search indexing for this folder"
 msgid "Search languages…"
 msgstr "Search languages…"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Search messages"
 msgstr "Search messages"
 
@@ -17484,7 +17616,7 @@ msgstr "Secrets enabled"
 msgid "See all {0} results →"
 msgstr "See all {0} results →"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "See all sources"
 msgstr "See all sources"
 
@@ -17560,11 +17692,11 @@ msgstr "Select a version to install:"
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/credentials/DetectedKeys.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Select all"
 msgstr "Select all"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Select all conversations"
 msgstr "Select all conversations"
 
@@ -17580,7 +17712,7 @@ msgstr "Select an available harness, or install one from its homepage and re-che
 msgid "Select capability…"
 msgstr "Select capability…"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Select conversation"
 msgstr "Select conversation"
 
@@ -17640,6 +17772,7 @@ msgstr "Selection toolbar"
 msgid "Self-Summary"
 msgstr "Self-Summary"
 
+#: src/components/ask/AskView.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -17693,7 +17826,7 @@ msgstr "Send message"
 msgid "Send one minimal call through this endpoint"
 msgstr "Send one minimal call through this endpoint"
 
-#. placeholder {0}: channelLabel(channel)
+#. placeholder {0}: channelSpec?.title
 #: src/components/conversation/ConversationView.tsx
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "Sending in {0}: “{sendingText}”"
@@ -18235,7 +18368,7 @@ msgstr "Show a progress bar in the terminal"
 msgid "Show all"
 msgstr "Show all"
 
-#: src/components/inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Show all channels"
 msgstr "Show all channels"
 
@@ -18266,6 +18399,11 @@ msgstr "Show detail panel"
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Show harness-generated entries (SYS) hidden from the standard list"
 msgstr "Show harness-generated entries (SYS) hidden from the standard list"
+
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+msgid "Show hidden files"
+msgstr "Show hidden files"
 
 #: src/components/top-nav-bar/AddressField.tsx
 msgid "Show hidden path segments"
@@ -18464,9 +18602,9 @@ msgstr "Sign in to view access."
 msgid "Sign in to your Flowpad Cloud account to view and reply to this conversation."
 msgstr "Sign in to your Flowpad Cloud account to view and reply to this conversation."
 
-#: src/components/inbox-view/InboxView.tsx
-msgid "Sign in to your Flowpad Cloud account to view your inbox and conversations."
-msgstr "Sign in to your Flowpad Cloud account to view your inbox and conversations."
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Sign in to your Flowpad Cloud account to view your stream inbox and conversations."
+msgstr "Sign in to your Flowpad Cloud account to view your stream inbox and conversations."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in with {account}"
@@ -18663,8 +18801,8 @@ msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox
 msgstr "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Skip if"
-msgstr "Skip if"
+#~ msgid "Skip if"
+#~ msgstr "Skip if"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Skip initial permission check on startup"
@@ -18918,7 +19056,7 @@ msgstr "Start a context process for this"
 msgid "Start a conversation"
 msgstr "Start a conversation"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Start a new conversation"
 msgstr "Start a new conversation"
 
@@ -19108,6 +19246,10 @@ msgstr "sticky for you"
 msgid "Still can't link this project"
 msgstr "Still can't link this project"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Still loading this project — try again in a moment."
+msgstr "Still loading this project — try again in a moment."
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Still signed in"
 msgstr "Still signed in"
@@ -19168,6 +19310,22 @@ msgstr "Stored key"
 msgid "stored line"
 msgstr "stored line"
 
+#: src/components/assets/editor/agent-profile/AgentPlaceChannels.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
+#: src/types/ViewType.ts
+msgid "Stream Inbox"
+msgstr "Stream Inbox"
+
+#: src/i18n/type-labels.ts
+msgid "Stream Inbox Manager"
+msgstr "Stream Inbox Manager"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Stream inbox view"
+msgstr "Stream inbox view"
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Streaming"
@@ -19178,8 +19336,16 @@ msgid "Streaming must be allow, require or deny."
 msgstr "Streaming must be allow, require or deny."
 
 #: src/components/data-sources/DataSourcesView.tsx
-msgid "Streams"
-msgstr "Streams"
+#~ msgid "Streams"
+#~ msgstr "Streams"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "string, or a JSON shape"
+msgstr "string, or a JSON shape"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "string, or a JSON shape — empty if it returns nothing"
+msgstr "string, or a JSON shape — empty if it returns nothing"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Structure"
@@ -19460,6 +19626,10 @@ msgstr "Tag view not found"
 msgid "Tags"
 msgstr "Tags"
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "Takes"
+msgstr "Takes"
+
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Takes ~4 seconds"
 msgstr "Takes ~4 seconds"
@@ -19619,6 +19789,10 @@ msgstr "Test passed — this source can fund a run"
 msgid "Test trigger"
 msgstr "Test trigger"
 
+#: src/components/ask/AskView.tsx
+msgid "Thank you — sent."
+msgstr "Thank you — sent."
+
 #: src/navigation/agentic-process-open.ts
 #: src/navigation/agentic-process-open.ts
 msgid "That agent is no longer in your workspace."
@@ -19647,6 +19821,10 @@ msgstr "That looks like an {0} key. This endpoint calls {1}, whose keys start wi
 #: src/hooks/useContextProcess.ts
 msgid "That project has no local workdir"
 msgstr "That project has no local workdir"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "That project is no longer available."
+msgstr "That project is no longer available."
 
 #: src/components/assets/editor/skill/skill-eval-analysis.ts
 msgid "The \"{attachSkillName}\" skill is not installed."
@@ -19714,7 +19892,7 @@ msgstr "The backend may have restarted. Click to reattach."
 msgid "The change was not saved."
 msgstr "The change was not saved."
 
-#: src/components/data-sources/DataSourceRow.tsx
+#: src/components/data-sources/use-source-verify.ts
 msgid "The check did not run."
 msgstr "The check did not run."
 
@@ -19913,6 +20091,11 @@ msgstr "The query failed"
 msgid "The recipient will see a PROMPT to approve."
 msgstr "The recipient will see a PROMPT to approve."
 
+#. placeholder {0}: anonAccess.repo ?? 'this project uses'
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
+msgstr "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "The repository {repoLabel} is private. Everyone here will still see the project and its language, but only people who connect GitHub and already have access to that repository can open its files and its skills — Flowpad can't grant that access."
 msgstr "The repository {repoLabel} is private. Everyone here will still see the project and its language, but only people who connect GitHub and already have access to that repository can open its files and its skills — Flowpad can't grant that access."
@@ -20015,8 +20198,8 @@ msgstr "There are merge conflicts in <0>{localPath}</0>. Please resolve them and
 msgid "These agents are added on top of the standard vibe agent, in the order shown, every vibe session."
 msgstr "These agents are added on top of the standard vibe agent, in the order shown, every vibe session."
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "These conversations exist only on this device."
 msgstr "These conversations exist only on this device."
 
@@ -20071,26 +20254,22 @@ msgstr "This action cannot be undone."
 msgid "This agent"
 msgstr "This agent"
 
-#: src/pages/entry/AgentLaunchLanding.tsx
-#~ msgid "This agent doesn't exist, or you don't have access to it."
-#~ msgstr "This agent doesn't exist, or you don't have access to it."
-
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "This agent has no email address yet."
 #~ msgstr "This agent has no email address yet."
-
-#: src/routes/loaders/load-agent-inbox.ts
-#: src/routes/loaders/load-agent-inbox.ts
-msgid "This Agent inbox URL is malformed."
-msgstr "This Agent inbox URL is malformed."
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "This agent isn't published from a git repository, so there's nothing to launch."
 msgstr "This agent isn't published from a git repository, so there's nothing to launch."
 
-#: src/routes/loaders/load-agent-inbox.ts
+#: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent no longer exists."
 msgstr "This Agent no longer exists."
+
+#: src/routes/loaders/load-agent-stream-inbox.ts
+#: src/routes/loaders/load-agent-stream-inbox.ts
+msgid "This Agent stream inbox URL is malformed."
+msgstr "This Agent stream inbox URL is malformed."
 
 #: src/navigation/record-type-nav.ts
 msgid "This app is no longer available."
@@ -20145,13 +20324,13 @@ msgstr "This conversation came from a project called \"{remoteProjectName}\" on 
 msgid "This conversation came from a project on another machine. Pick the local project folder it should map to."
 msgstr "This conversation came from a project on another machine. Pick the local project folder it should map to."
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "This conversation is local-only. It will be removed from this device."
 msgstr "This conversation is local-only. It will be removed from this device."
 
 #: src/components/conversation/ConversationRoute.tsx
-msgid "This conversation is not in this Agent inbox."
-msgstr "This conversation is not in this Agent inbox."
+msgid "This conversation is not in this Agent stream inbox."
+msgstr "This conversation is not in this Agent stream inbox."
 
 #: src/hooks/use-history-load-alert.ts
 msgid "This conversation is still saved, but part of it could not be read, so the chat is showing empty. Reloading may help. Details: {detail}"
@@ -20355,6 +20534,10 @@ msgstr "this project"
 msgid "This project"
 msgstr "This project"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This project could not be shared."
+msgstr "This project could not be shared."
+
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "This project declares the same variables, and its values win"
 msgstr "This project declares the same variables, and its values win"
@@ -20411,9 +20594,17 @@ msgstr "This project tab URL is malformed."
 msgid "this project uses"
 msgstr "this project uses"
 
+#: src/agents/agent-auto-launch-warning.ts
+msgid "This project's agent could not start"
+msgstr "This project's agent could not start"
+
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "this project's own desk"
 msgstr "this project's own desk"
+
+#: src/components/ask/AskView.tsx
+msgid "This question is no longer waiting."
+msgstr "This question is no longer waiting."
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "This removes the downloaded help desk folder and its indexed entries from this machine. Nothing on the server changes, and everything is downloaded again the next time you open the help desk."
@@ -20455,8 +20646,8 @@ msgstr "This sandbox hasn't been started yet"
 msgid "This sandbox loads code from a private repository."
 msgstr "This sandbox loads code from a private repository."
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "This sends a cloud action per conversation:"
 msgstr "This sends a cloud action per conversation:"
 
@@ -20510,6 +20701,7 @@ msgid "This starts the machine and sets up whatever it was created with."
 msgstr "This starts the machine and sets up whatever it was created with."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
+#: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "This step has not run."
 msgstr "This step has not run."
 
@@ -20518,8 +20710,8 @@ msgstr "This step has not run."
 #~ msgstr "This step launches an agent. Editing a process step is not supported here yet — change it in the file."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
-msgid "This step ran no commands."
-msgstr "This step ran no commands."
+#~ msgid "This step ran no commands."
+#~ msgstr "This step ran no commands."
 
 #: src/routes/loaders/load-tasks.ts
 msgid "This task no longer exists or is unavailable."
@@ -20581,6 +20773,11 @@ msgstr "This Wiki target has no readable content."
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
+
+#. placeholder {0}: step.ref ?? ''
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "This wizard declares no input named \"{0}\"."
+msgstr "This wizard declares no input named \"{0}\"."
 
 #: src/components/assets/editor/wizard/WizardDebugger.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -21082,8 +21279,8 @@ msgid "Unable to fetch branches. Please check your repository permissions."
 msgstr "Unable to fetch branches. Please check your repository permissions."
 
 #: src/components/conversation/conversation-category.ts
-msgid "Unarchive — back to Inbox"
-msgstr "Unarchive — back to Inbox"
+msgid "Unarchive — back to Stream Inbox"
+msgstr "Unarchive — back to Stream Inbox"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -21136,7 +21333,7 @@ msgid "unknown"
 msgstr "unknown"
 
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Unknown"
 msgstr "Unknown"
 
@@ -21202,8 +21399,8 @@ msgstr "Unpushed changes"
 msgid "Unreachable"
 msgstr "Unreachable"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Unread"
 msgstr "Unread"
 
@@ -21582,8 +21779,8 @@ msgstr "Value for {0}"
 #~ msgstr "Value for {envVar}"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "value name"
-msgstr "value name"
+#~ msgid "value name"
+#~ msgstr "value name"
 
 #: src/components/credentials/CredentialDialog.tsx
 #~ msgid "Value stays in .env.local"
@@ -21667,6 +21864,11 @@ msgstr "Verify"
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Verify the setup first."
 msgstr "Verify the setup first."
+
+#. placeholder {0}: source.setup_detail
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Verify: {0}"
+msgstr "Verify: {0}"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Version-bump + commit the asset"
@@ -21996,6 +22198,10 @@ msgstr "What should the agent do each time it runs?"
 msgid "What should the worker do with this message?"
 msgstr "What should the worker do with this message?"
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "what the form asks"
+msgstr "what the form asks"
+
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "What this machine's assistants are funded by right now"
 msgstr "What this machine's assistants are funded by right now"
@@ -22287,12 +22493,12 @@ msgstr "You don't have permission for this action. Contact your admin if this se
 msgid "You must be logged in"
 msgstr "You must be logged in"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You own — delete for everyone"
 msgstr "You own — delete for everyone"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You own this conversation — pick how you want to leave."
 msgstr "You own this conversation — pick how you want to leave."
 
@@ -22304,12 +22510,12 @@ msgstr "You spend through"
 msgid "You type a short code into the provider's site"
 msgstr "You type a short code into the provider's site"
 
-#: src/components/inbox-view/InboxView.tsx
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You will leave"
 msgstr "You will leave"
 
-#: src/components/inbox-view/InboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You'll be removed from the participant list. Other members keep the conversation."
 msgstr "You'll be removed from the participant list. Other members keep the conversation."
 
@@ -22329,9 +22535,9 @@ msgstr "You're signed in and ready to go."
 msgid "You're the only participant in this conversation — no one else will see this message."
 msgstr "You're the only participant in this conversation — no one else will see this message."
 
-#: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "You've been invited to a conversation"
 msgstr "You've been invited to a conversation"
 

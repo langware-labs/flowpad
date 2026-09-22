@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 async def remove_orphan_row(entity_id: str, type_name: str) -> bool:
-    """Drop the DB row, its FTS entry and its wiki edges. Returns whether a row went.
+    """Drop the DB row, its FTS entry and its wiki edges — and whatever the type's
+    ``orphan_cascade_fn`` says hangs off it. Returns whether a row went.
 
     Type-scoped driver delete ONLY — never ``Entity.delete()``. An orphan sweep
     wants minimal row removal; anything beyond that belongs in the regular API
@@ -31,8 +32,16 @@ async def remove_orphan_row(entity_id: str, type_name: str) -> bool:
     The source file is never touched by any caller of this.
     """
     from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     driver = get_db_driver()
+
+    # A type whose rows own children keyed by id (a data source's records) names its cascade; it runs
+    # first, so a failure leaves the row for the next sweep rather than orphaning what hangs off it.
+    info = SchemaRegistry.get(type_name)
+    cascade = getattr(info, "orphan_cascade_fn", None) if info is not None else None
+    if cascade is not None:
+        await cascade(entity_id)
 
     # Best-effort, and first: stale edges pointing at a deleted id outlive the
     # row otherwise. Idempotent, so it is safe when there is no row to delete.

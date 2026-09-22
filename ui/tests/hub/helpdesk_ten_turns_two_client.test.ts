@@ -13,10 +13,10 @@
  *     on a channel conversation, which picks the ticket up and posts;
  *   - the requester catches up with `fetchConversations`.
  *
- * What it proves, per turn: the requester's line reaches the helper's inbox
+ * What it proves, per turn: the requester's line reaches the helper's stream inbox
  * as a channel message (`origin.kind === 'helpdesk'`), the helper's answer
  * reaches the hub masked to the desk brand, and the requester sees that
- * answer under the brand, never the helper's name. At the end both inboxes
+ * answer under the brand, never the helper's name. At the end both stream inboxes
  * hold the same twenty hub messages, one row each.
  *
  * Uses the deployment's canonical desk (`/health/version`), because a
@@ -157,14 +157,14 @@ describe('a ten-turn support conversation', () => {
         await requester.sdk.sendReply({ conversationId: convId }, ask);
       }
 
-      // Helper: the line lands in the inbox — through the hub mirror once the
+      // Helper: the line lands in the stream inbox — through the hub mirror once the
       // ticket is picked up, and the desk source's poll stamps the channel on
       // it (or projects it outright on the first turn). Wait for the stamp.
       await postApi(helper.apiUrl, `/graph/data_source/${source.id}/request_poll`, {});
       const inbound: any = await pollUntil(
         async () => (await rowsOf(helper, convId)).find((m) => m.text === ask && m.origin?.kind === 'helpdesk') ?? null,
         15_000,
-        `turn ${turn}: the requester's line reached the helper's inbox as a channel message`,
+        `turn ${turn}: the requester's line reached the helper's stream inbox as a channel message`,
       );
       // The projection names an external sender `<channel>:<id>`; the hub
       // mirror writes the bare hub id. Either way it is the requester.
@@ -193,7 +193,7 @@ describe('a ten-turn support conversation', () => {
     });
   }
 
-  it('both inboxes hold exactly the hub\'s twenty messages, one row each', async () => {
+  it('both stream inboxes hold exactly the hub\'s twenty messages, one row each', async () => {
     expect(convId, 'the ticket exists').toBeTruthy();
     const hubIds = (await hubMessages(convId)).map((m) => m.id).sort();
     expect(hubIds).toHaveLength(TURNS * 2);
@@ -205,7 +205,7 @@ describe('a ten-turn support conversation', () => {
         return rows.length === hubIds.length ? rows : null;
       },
       15_000,
-      "the helper's inbox holds every hub message",
+      "the helper's stream inbox holds every hub message",
     );
     expect(helperRows.map((m) => m.id).sort()).toEqual(hubIds);
 
@@ -216,7 +216,7 @@ describe('a ten-turn support conversation', () => {
         return ids.length === hubIds.length ? ids : null;
       },
       15_000,
-      "the requester's inbox holds every hub message",
+      "the requester's stream inbox holds every hub message",
     );
     expect(requesterIds).toEqual(hubIds);
 

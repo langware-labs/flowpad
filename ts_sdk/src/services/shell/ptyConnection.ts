@@ -1,4 +1,5 @@
 import { perfLog } from '../../utils/perf';
+import { toplog } from '../toplog';
 import { dataContext } from '../../FlowSync/context';
 import type { OutputChunk } from '../../pty-sync/types.js';
 import type { OrphanEntry } from './ptyOrphanBuffer';
@@ -100,6 +101,9 @@ export class PtyConnection {
 
   /** True once attach() has completed and the output gate is open. */
   private _attached = false;
+  // `pty` toplog: log the first line of a run of dropped chunks / inputs only.
+  private _traceDedupRun = false;
+  private _traceInputDropRun = false;
 
   /** Backend PTY ID currently attached in this browser client. */
   private _attachedPtyId: string | null = null;
@@ -174,7 +178,16 @@ export class PtyConnection {
    */
   appendOutput(base64Data: string, seq?: number, timestamp_ms?: number): string | null {
     if (seq !== undefined) {
-      if (seq <= this.lastSeq && this.lastSeq > 0) return null; // dedup
+      if (seq <= this.lastSeq && this.lastSeq > 0) {
+        // One line per run of drops: a short overlap after reattach is normal;
+        // a run that never ends (seq far below lastSeq) is a lost epoch.
+        if (!this._traceDedupRun) {
+          this._traceDedupRun = true;
+          toplog.log('pty', `dedup_drop shell=${this.shellId} seq=${seq} last_seq=${this.lastSeq}`);
+        }
+        return null;
+      }
+      this._traceDedupRun = false;
       this.lastSeq = seq;
     }
     let bytes: Uint8Array;
@@ -412,8 +425,13 @@ export class PtyConnection {
   async sendInput(data: string): Promise<void> {
     if (!this.isLive) {
       console.warn('[PtyConnection] sendInput: PTY not live');
+      if (!this._traceInputDropRun) {
+        this._traceInputDropRun = true;
+        toplog.log('pty', `input_dropped shell=${this.shellId} reason=not_live started=${this.started}`);
+      }
       return;
     }
+    this._traceInputDropRun = false;
     if (!this.computeNodeId) return;
     const { ActionInfo } = await import('../../models/index.js');
     const { dataManager } = await import('../../APIEntity.js');
@@ -425,6 +443,7 @@ export class PtyConnection {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('PTY session not found')) {
+        toplog.log('pty', `input_dropped shell=${this.shellId} reason=session_not_found`);
         this.started = false;
         this._attached = false;
         this._attachedPtyId = null;
@@ -444,10 +463,12 @@ export class PtyConnection {
     const action = new ActionInfo('terminal-command', 'compute_node', this.computeNodeId, 'POST');
     action.subpath = 'resize';
     action.bodyParameters = { shell_id: this.shellId, cols, rows };
+    toplog.log('pty', `resize shell=${this.shellId} size=${cols}x${rows}`);
     try {
       await dataManager.callActionOverWS<any, any>(action);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      toplog.log('pty', `resize_failed shell=${this.shellId} error=${msg}`);
       if (msg.includes('PTY session not found') || msg.includes('Failed to resize PTY')) {
         this.started = false;
       }
@@ -492,7 +513,12 @@ export class PtyConnection {
         this._attached = false;
       }
 
+      const t0 = performance.now();
       const ok = await this._reattach(targetPtyId, timeout, cols, rows);
+      toplog.log(
+        'pty',
+        `attach shell=${this.shellId} pty=${targetPtyId} ok=${ok} force=${force} ms=${(performance.now() - t0).toFixed(0)}`,
+      );
       if (!ok) {
         this._attached = false;
         this._attachedPtyId = null;
@@ -643,6 +669,7 @@ export class PtyConnection {
 
   /** Reset all attach state for a force re-attach. */
   private _doReset(): void {
+    toplog.log('pty', `reset shell=${this.shellId} chunks=${this.chunks.size} last_seq=${this.lastSeq}`);
     this.clear();
     this._attached = false;
     this._attachedPtyId = null;

@@ -1242,6 +1242,10 @@ from flow_sdk.cli.commands.asset_cmd import asset_app
 
 app.add_typer(asset_app, name="asset")
 
+from flow_sdk.cli.commands.op_cmd import op_app
+
+app.add_typer(op_app, name="op")
+
 from flow_sdk.cli.commands.show_cmd import show_app
 
 app.add_typer(show_app, name="show")

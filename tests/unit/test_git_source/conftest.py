@@ -1,3 +1,5 @@
+import uuid
+
 """Shared setup for the git-source matrix.
 
 Two repositories, deliberately. The receiving project and the asset repository
@@ -18,7 +20,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
-from flow_sdk.schema.data_spec.data_source_manifest_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
 
 
 def git(path: Path, *args: str) -> str:
@@ -121,7 +123,7 @@ def make_source(asset_repo, receiving, tmp_path, monkeypatch):
         await proj.save()
 
         src = DataSource(
-            name="asset-repo",
+            name=f"asset-repo {uuid.uuid4().hex[:8]}",
             provider="git",
             config={"repo": str(asset_repo), "branch": "main"},
             reflect=mode,

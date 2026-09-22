@@ -266,6 +266,21 @@ export interface QueueEntry {
 }
 
 /**
+ * A shown page's live state as the agent receives it (`display-context` action).
+ * `fresh` is false when nothing is stored for the target currently on display.
+ */
+/** `context_data` keys the backend rewrites whole; merged by replacement, never deep-merged. */
+const WHOLESALE_CONTEXT_KEYS = ['display_stack', 'display_context'] as const;
+
+export interface DisplayContextState {
+  fresh: boolean;
+  target: Record<string, unknown> | null;
+  version: number | null;
+  updated_at: string | null;
+  data: Record<string, unknown> | null;
+}
+
+/**
  * Reflected state of a process's prompt queue. Read-only on the frontend:
  * the backend owns the file + the drain; the UI mutates only via the
  * `enqueue` / `dequeue` / `clear-queue` / `set-queue-enabled` actions.
@@ -854,13 +869,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     await dataManager.callAction<{ name: string }, { id: string; name: string }>(info);
   }
 
-  /** Report an OSC frame; the backend driver validates it and reconciles names. */
-  async observeTitle(title: string, sessionId = this.session_id): Promise<void> {
-    const info = new ActionInfo('observe-title', AgenticProcess.type, this.id, 'POST');
-    info.bodyParameters = { title, session_id: sessionId ?? null };
-    await dataManager.callAction(info);
-  }
-
   /**
    * Headless transport (`pty_mode === false`): the chat streams over
    * flowDataStream and the process legitimately has NO shell/xterm — a null
@@ -1291,6 +1299,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   async removeDir(path: string): Promise<void> {
     await this.post('remove-dir', { path });
     this.additional_dirs = (this.additional_dirs ?? []).filter((d) => d !== path);
+  }
+
+  // ── Display context (the shown page speaks for itself) ─────────────────────
+  // A page shown in this process's display reports its live state. It is bound
+  // to the target on display when written, never starts a turn, and reaches the
+  // agent on its next turn (prompt hook) or via `flow context display`.
+  // `flow_sdk/builtin/agentic_process/display_context.py` owns the semantics.
+
+  /** Replace the shown page's display context with `data` (a JSON object). */
+  async setDisplayContext(data: Record<string, unknown>): Promise<DisplayContextState> {
+    return this.post<DisplayContextState>('set-display-context', { data });
+  }
+
+  /** The display context as the agent sees it; `fresh: false` when nothing current is stored. */
+  async getDisplayContext(): Promise<DisplayContextState> {
+    return this.get<DisplayContextState>('display-context');
   }
 
   // ── Prompt queue (backend-owned; these are thin action wrappers) ───────────
@@ -2502,8 +2526,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       }
 
       const processor = new FlowStreamProcessor();
+      toplog.log('chat_delivery', `prompt_stream_open process=${this.id}`);
       processor.on(FlowEvents.DATA, (fd: FlowData) => {
         try {
+          if (fd.elementType === FlowElementTypes.CHAT) {
+            toplog.log('chat_delivery', `from_prompt_stream group=${fd.groupId ?? 'none'} t=${fd.attributes['t'] ?? 'none'}`);
+          }
           this.flowDataStream.ingest(fd);
         } catch (err) {
           console.error('[AgenticProcess.prompt] ingest error', err);
@@ -2629,8 +2657,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     if (!response || !response.body) return; // nothing in flight — not an error
 
     const processor = new FlowStreamProcessor();
+    toplog.log('chat_delivery', `observe_turn_open process=${this.id} after_entry=${afterEntryId ?? 'none'}`);
     processor.on(FlowEvents.DATA, (fd: FlowData) => {
       try {
+        if (fd.elementType === FlowElementTypes.CHAT) {
+          toplog.log('chat_delivery', `from_observe_turn group=${fd.groupId ?? 'none'} t=${fd.attributes['t'] ?? 'none'}`);
+        }
         this.flowDataStream.ingest(fd);
       } catch (err) {
         console.error('[AgenticProcess.observeTurn] ingest error', err);
@@ -2994,6 +3026,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     const theme = hostTerminalTheme();
     actionInfo.bodyParameters = { ...(options ?? {}), ...(theme ? { theme } : {}) };
     const tOpen = performance.now();
+    toplog.log('agentic_process.load', `AgenticProcess.start POST /open sent proc=${this.id.slice(0, 8)}`);
     const result = await dataManager.callAction<
       unknown,
       {
@@ -3005,7 +3038,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       } | null
     >(actionInfo);
     toplog.log(
-      'process_load',
+      ['process_load', 'agentic_process.load'],
       `AgenticProcess.start POST /open took ${msSince(tOpen)}ms proc=${this.id.slice(0, 8)} ok=${!!result}`,
     );
     return this.adoptOpenPayload(result, options);
@@ -3052,7 +3085,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       ptyId: result.pty_id,
     });
     toplog.log(
-      'process_load',
+      ['process_load', 'pty', 'agentic_process.load'],
       `AgenticProcess.start attachPty took ${msSince(tAttach)}ms pty=${result.pty_id?.slice(0, 8)}`,
     );
     // Successful open clears any prior user-stop intent.
@@ -3489,20 +3522,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       this.queue = q ? { enabled: !!q.enabled, entries: [...(q.entries ?? [])] } : null;
       delete data.queue;
     }
-    // ``context_data.display_stack`` (the flow-show history) has the SAME
+    // Backend-owned ``context_data`` keys that hold arrays have the SAME
     // array-index-merge hazard as ``queue``: deepAssign recurses into
-    // ``context_data`` and then index-merges the nested array, never shrinking
-    // it — so a dedupe/cap/reorder would leave stale tail entries. Replace the
-    // stack wholesale and strip it from the payload, letting the following
-    // deepAssign deep-merge the REST of context_data untouched.
-    if (data.context_data && typeof data.context_data === 'object' && 'display_stack' in data.context_data) {
-      const ctx = data.context_data as Record<string, unknown>;
-      const stack = ctx.display_stack;
-      this.context_data = {
-        ...(this.context_data ?? {}),
-        display_stack: Array.isArray(stack) ? [...stack] : stack,
-      };
-      const { display_stack: _omit, ...rest } = ctx;
+    // ``context_data`` and index-merges nested arrays, never shrinking them — so a
+    // dedupe/cap/reorder (``display_stack``) or a shorter page state
+    // (``display_context.data``) would leave stale tail entries. Replace these keys
+    // wholesale and strip them from the payload, letting the following deepAssign
+    // deep-merge the REST of context_data untouched.
+    if (data.context_data && typeof data.context_data === 'object') {
+      const rest = { ...(data.context_data as Record<string, unknown>) };
+      for (const key of WHOLESALE_CONTEXT_KEYS) {
+        if (!(key in rest)) continue;
+        const value = rest[key];
+        this.context_data = { ...(this.context_data ?? {}), [key]: Array.isArray(value) ? [...value] : value };
+        delete rest[key];
+      }
       data.context_data = rest as IAgenticProcess['context_data'];
     }
     // Desired-value latch: once the client optimistically sets the transport /

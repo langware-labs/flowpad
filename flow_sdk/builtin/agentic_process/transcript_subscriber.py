@@ -49,6 +49,8 @@ async def _route_to_ap(
         _log.exception("transcript_subscriber: AP lookup failed for session %s", session_id)
         return
     if not aps:
+        aps = await _adopt_unstamped_session(session_id, jsonl_path, new_entries)
+    if not aps:
         # Unmanaged session — transcript exists but no AP paired with it.
         return
     # Dispatch to every matching AP (forked / shared sessions are rare but
@@ -60,6 +62,40 @@ async def _route_to_ap(
             _log.exception(
                 "transcript_subscriber: on_transcript_change raised on AP %s", ap.id
             )
+
+
+async def _adopt_unstamped_session(
+    session_id: str, jsonl_path: Path, entries: list["TranscriptEntry"],
+) -> list:
+    """Pair a new transcript with the running process that launched it before its id was known.
+
+    A harness that mints its session id after launch (codex, opencode) starts
+    with no ``session_id``, so the lookup above cannot match its events. A
+    transcript announces its identity once, in its ``session_meta`` header, so
+    adoption runs only on the batch carrying it — once per file, not per write.
+    Each id-less running process of that vendor resolves its own transcript
+    through its driver; the one that owns this file adopts the id.
+    """
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus
+    from flow_sdk.flowpad_types.vendors import vendor_for_path
+
+    if not any(getattr(entry, "meta_kind", None) == "session_meta" for entry in entries):
+        return []
+    vendor = vendor_for_path(jsonl_path)
+    if vendor is None:
+        return []
+    try:
+        candidates = await AgenticProcess.local_rows(entities_filter=QueryFilter(match=ExpressionNode(
+            worker_type=vendor.worker_type, status=ProcessStatus.RUNNING.value,
+        )))
+    except Exception:
+        _log.exception("transcript_subscriber: adoption lookup failed for session %s", session_id)
+        return []
+    for ap in candidates:
+        if not ap.session_id and await ap.adopt_discovered_session() == session_id:
+            return [ap]
+    return []
 
 
 # Register at module load. The AP package's __init__ imports this submodule

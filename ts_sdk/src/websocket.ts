@@ -125,6 +125,7 @@ export interface ToplogStateMessage extends BaseMessage {
   message_type: 'toplog_state_msg';
   enabled: boolean;
   filter: Record<string, boolean>;
+  persist?: boolean;
 }
 
 /** The unified event-bus frame — one serialized FlowEvent (docs/flow-events.md). */
@@ -156,6 +157,11 @@ export interface UiCommandMessage extends BaseMessage {
   pointer?: string | null;
   options?: Record<string, string> | null;
   page?: string;
+  /** For `navigate_dock`: which layout to land in. Absent means `dock` — the
+   *  app as usual. `win` is the chrome-less focus window, which is how a
+   *  backend can raise ONE component with no app around it. Without this field
+   *  a pushed command could only ever land in the dock. */
+  layout?: string;
   /** For `desktop_notify`: the notification kind (e.g. "message"). */
   notify_type?: string;
   /** For `desktop_notify`: the kind-specific payload (conversation_id, message_id, sender_name, preview, …). */
@@ -810,7 +816,7 @@ export class ConnectionManager extends EventEmitter {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(message.message_id);
         toplog.log(
-          'process_load',
+          ['process_load', 'pty', 'agentic_process.load'],
           `WS request TIMEOUT after ${(performance.now() - tSent).toFixed(0)}ms (budget ${timeoutMs}ms) ` +
             `${message.method} action=${message.action ?? ''} target=${message.target_typeid?.type ?? ''}-${(message.target_typeid?.id ?? '').slice(0, 8)} pending=${this.pendingRequests.size}`,
         );

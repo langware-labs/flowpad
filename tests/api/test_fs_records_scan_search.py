@@ -50,7 +50,7 @@ class _RecentActivityInfrastructure(Entity):
 
 # The registry flag is the generic infrastructure signal consumed by the
 # recent-activity projection (the real built-ins using it are Tab and
-# DataSourceCursor). Registering a probe keeps this test independent of those
+# ConsumerPosition). Registering a probe keeps this test independent of those
 # types' unrelated required fields.
 SchemaRegistry.register(
     TypeInfo(
