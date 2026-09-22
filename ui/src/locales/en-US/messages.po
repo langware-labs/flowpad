@@ -1698,13 +1698,13 @@ msgstr "Agent funding"
 msgid "Agent Hook"
 msgstr "Agent Hook"
 
-#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "Agent mailbox"
-msgstr "Agent mailbox"
-
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Agent is public"
 msgstr "Agent is public"
+
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Agent mailbox"
+msgstr "Agent mailbox"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "Agent name"

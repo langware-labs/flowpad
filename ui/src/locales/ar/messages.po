@@ -1698,13 +1698,13 @@ msgstr "تمويل الوكيل"
 msgid "Agent Hook"
 msgstr "خطاف الوكيل"
 
-#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "Agent mailbox"
-msgstr "صندوق بريد الوكيل"
-
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Agent is public"
 msgstr ""
+
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Agent mailbox"
+msgstr "صندوق بريد الوكيل"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "Agent name"
