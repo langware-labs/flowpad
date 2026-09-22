@@ -48,12 +48,10 @@ from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
 OUTPUT_CAP = 8192
 
 
-def capped(text: str, limit: int = OUTPUT_CAP) -> "tuple[str, bool]":
-    """``(text, truncated)``, keeping the END — where the error is: a compiler's
-    last line, a traceback's final frame, the shell's complaint."""
-    if len(text) <= limit:
-        return text, False
-    return text[-limit:], True
+def capped(text: str, limit: int = OUTPUT_CAP) -> str:
+    """*text*, keeping the END — where the error is: a compiler's last line, a
+    traceback's final frame, the shell's complaint."""
+    return text if len(text) <= limit else text[-limit:]
 
 
 class ExitCode(IntEnum):
@@ -196,7 +194,7 @@ class CliResult(ReturnedValue):
         Each stream keeps its END, up to ``cap`` (``None`` keeps it whole).
         """
         if cap is not None:
-            stdout, stderr = capped(stdout, cap)[0], capped(stderr, cap)[0]
+            stdout, stderr = capped(stdout, cap), capped(stderr, cap)
         reached = returncode == 0 and not timed_out
         if not detail:
             if returncode is None and not timed_out:
@@ -215,7 +213,7 @@ class CliResult(ReturnedValue):
 
     def tail(self, limit: int = 300) -> str:
         """The most useful thing to show a person: stderr if there is any, else stdout."""
-        return capped((self.stderr or self.stdout or "").strip(), limit)[0]
+        return capped((self.stderr or self.stdout or "").strip(), limit)
 
 
 class PromptResult(ReturnedValue):

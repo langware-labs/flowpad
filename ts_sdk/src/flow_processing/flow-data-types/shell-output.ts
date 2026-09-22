@@ -3,10 +3,12 @@ import { FlowDataAttribute } from '../flow-data';
 import { FlowElementTypes } from '../flow-element-types';
 
 /**
- * Shell result data structure for shell-output FlowData elements
- * Replaces the legacy ICommandResult interface
+ * The payload of a `shell-output` FlowData element — what a command printed as
+ * it STREAMED. Not to be confused with `CliResult` (`models/ReturnedValue`),
+ * the answer a `Shell.run` action returns: that one carries the op's verdict
+ * (`exit_code`) alongside the process's own (`returncode`).
  */
-export interface ShellResult {
+export interface ShellOutput {
   stdout: string;
   stderr: string;
   exitCode?: number;
@@ -14,11 +16,10 @@ export interface ShellResult {
 
 /**
  * Specialized FlowData for shell command output
- * Replaces the legacy ICommandResult and ShellCommand.result
  */
-export class ShellOutputFlowData extends JsonFlowData<ShellResult> {
+export class ShellOutputFlowData extends JsonFlowData<ShellOutput> {
   constructor(stdout: string = '', stderr: string = '', exitCode?: number) {
-    const data: ShellResult = {
+    const data: ShellOutput = {
       stdout,
       stderr,
       exitCode,

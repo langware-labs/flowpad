@@ -28,8 +28,6 @@ from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 _log = logging.getLogger(__name__)
 
 _DEFAULT_SCRIPT_TIMEOUT_S = 30.0
-# Bytes captured from stdout/stderr — bounded so TriggerLogRecord stays small.
-_SCRIPT_OUTPUT_CAP = 8192
 
 # POSIX-only: Windows has no process groups in this sense, so there the script
 # is spawned and killed as a lone child (a Windows script that forks a detached
@@ -207,7 +205,7 @@ async def _exec_script(
     tempfile (cross-platform via tempfile.NamedTemporaryFile) and its path
     passed via CHANGES_JSON_PATH so scripts that need the batch can read it.
 
-    Captures stdout/stderr (the last _SCRIPT_OUTPUT_CAP of each). Kills the
+    Captures stdout/stderr (the last ``OUTPUT_CAP`` of each). Kills the
     process at `timeout_seconds`. Cleans up the tempfile after the subprocess.
     """
     import json
@@ -273,7 +271,8 @@ async def _exec_script(
             proc.returncode,
             stdout.decode(errors="replace") if stdout else "",
             stderr.decode(errors="replace") if stderr else "",
-            cap=_SCRIPT_OUTPUT_CAP,  # the END of each stream, where the error is
+            # cap=OUTPUT_CAP by default: the END of each stream, where the error
+            # is, bounded so a TriggerLogRecord stays small.
             timed_out=timed_out,
             duration_s=time.monotonic() - t0,
         )
