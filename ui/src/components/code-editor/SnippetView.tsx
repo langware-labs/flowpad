@@ -4,6 +4,7 @@ import { usePreference } from '@src/hooks/use-preference';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import Editor, { loader } from '@monaco-editor/react';
+import type { editor as monacoEditor } from 'monaco-editor';
 import { ensureShikiMonaco, monacoTheme } from './shikiMonaco';
 import { useLingui } from '@lingui/react/macro';
 import { Import, ListStart, Play } from 'lucide-react';
@@ -114,13 +115,25 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
     [onSynced],
   );
 
+  const loadedRef = useRef(false);
+
   const load = useCallback(async () => {
-    const res = await apiClient.post<SnippetRead>('/api/v1/snippet/read', { path });
+    let res: SnippetRead;
+    try {
+      res = await apiClient.post<SnippetRead>('/api/v1/snippet/read', { path });
+    } catch (reason) {
+      // Never a spinner forever: before the first read the raw editor takes the
+      // file (it can show it without this route); after it, keep the view.
+      if (loadedRef.current) setNotice(errorMessage(reason, t`Could not read the snippet`));
+      else onNotSnippet();
+      return;
+    }
     if (!res?.regions) {
       if (res?.error_code === 'NOT_A_SNIPPET') onNotSnippet();
       else setReadError(res?.error_code ?? t`Could not read the snippet`);
       return;
     }
+    loadedRef.current = true;
     setReadError('');
     synced(res.text);
     const changed = res.regions.some((r) => (localRef.current.get(r.index) ?? null) !== r.shown);
@@ -255,36 +268,18 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {visible.map((region) => {
-          const text = localRef.current.get(region.index) ?? region.shown;
-          const lines = Math.max(text.split('\n').length, 1);
-          return (
-            <div key={`${generation}-${region.index}`} data-testid={`snippet-region-${region.kind}`} className="border-b">
-              {label[region.kind] && <div className="px-3 pt-1 text-[11px] uppercase tracking-wide text-muted-foreground">{label[region.kind]}</div>}
-              <Editor
-                height={lines * LINE_HEIGHT + 8}
-                language={language}
-                defaultValue={region.shown}
-                onChange={(value) => onEdit(region, value)}
-                theme={monacoTheme(resolvedTheme)}
-                options={{
-                  readOnly,
-                  fontSize: 14,
-                  lineHeight: LINE_HEIGHT,
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  automaticLayout: true,
-                  lineNumbers: (n: number) => String(n + region.line - 1),
-                  folding: false,
-                  glyphMargin: false,
-                  renderLineHighlight: 'none',
-                  scrollbar: { vertical: 'hidden', alwaysConsumeMouseWheel: false },
-                  padding: { top: 4, bottom: 4 },
-                }}
-              />
-            </div>
-          );
-        })}
+        {visible.map((region) => (
+          <div key={`${generation}-${region.index}`} data-testid={`snippet-region-${region.kind}`} className="border-b">
+            {label[region.kind] && <div className="px-3 pt-1 text-[11px] uppercase tracking-wide text-muted-foreground">{label[region.kind]}</div>}
+            <RegionEditor
+              region={region}
+              language={language}
+              theme={monacoTheme(resolvedTheme)}
+              readOnly={readOnly}
+              onChange={(value) => onEdit(region, value)}
+            />
+          </div>
+        ))}
 
         {result && (
           <div className="p-3 font-mono text-xs" data-testid="snippet-console">
@@ -301,5 +296,56 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * One region's editor, as tall as its content. Sized from Monaco's own content
+ * height, which follows every keystroke: a height computed from the line count
+ * at render time lagged until the next save, and a new line pushed the first one
+ * out of sight meanwhile.
+ */
+function RegionEditor({
+  region,
+  language,
+  theme,
+  readOnly,
+  onChange,
+}: {
+  region: SnippetRegionView;
+  language: string;
+  theme: string;
+  readOnly?: boolean;
+  onChange: (value: string | undefined) => void;
+}) {
+  const [height, setHeight] = useState(() => Math.max(region.shown.split('\n').length, 1) * LINE_HEIGHT + 8);
+  const onMount = useCallback((editor: monacoEditor.IStandaloneCodeEditor) => {
+    const fit = () => setHeight(editor.getContentHeight());
+    editor.onDidContentSizeChange(fit);
+    fit();
+  }, []);
+  return (
+    <Editor
+      height={height}
+      language={language}
+      defaultValue={region.shown}
+      onChange={onChange}
+      onMount={onMount}
+      theme={theme}
+      options={{
+        readOnly,
+        fontSize: 14,
+        lineHeight: LINE_HEIGHT,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        automaticLayout: true,
+        lineNumbers: (n: number) => String(n + region.line - 1),
+        folding: false,
+        glyphMargin: false,
+        renderLineHighlight: 'none',
+        scrollbar: { vertical: 'hidden', alwaysConsumeMouseWheel: false },
+        padding: { top: 4, bottom: 4 },
+      }}
+    />
   );
 }

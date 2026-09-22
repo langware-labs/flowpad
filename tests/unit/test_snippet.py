@@ -209,6 +209,25 @@ def test_write_temp_snippet_goes_to_the_os_temp_dir(tmp_path, monkeypatch):
         path.unlink()
 
 
+def test_unnamed_temp_snippets_never_share_a_file():
+    paths = [write_temp_snippet(f"# %% flowpad:snippet\nprint({i})\n", "py") for i in range(20)]
+    try:
+        assert len(set(paths)) == 20
+        assert [p.read_text().splitlines()[-1] for p in paths] == [f"print({i})" for i in range(20)]
+    finally:
+        for p in paths:
+            p.unlink()
+
+
+@pytest.mark.parametrize("name", ["../../escaped", "/etc/escaped", "a/b/escaped", "..", " . "])
+def test_a_name_cannot_leave_the_snippet_folder(name):
+    path = write_temp_snippet("x", "py", name=name)
+    try:
+        assert path.parent == (Path(tempfile.gettempdir()) / "flowpad-snippets")
+    finally:
+        path.unlink()
+
+
 # ── run ─────────────────────────────────────────────────────────────────────
 
 

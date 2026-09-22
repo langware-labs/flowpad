@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import re
+import secrets
 import shlex
 import tempfile
 import time
@@ -206,10 +207,16 @@ def edit_region(
 
 
 def write_temp_snippet(code: str, ext: str, name: Optional[str] = None) -> Path:
-    """A file for code that has no file yet, under the OS temp dir."""
+    """A file for code that has no file yet, under the OS temp dir.
+
+    A given *name* is reused on purpose (the agent rewrites its snippet by name)
+    and kept to a bare file name, so it cannot point outside the folder. Without
+    one the name is unique: two snippets shown within one second must not share
+    a file, or the second silently replaces the first.
+    """
     folder = Path(tempfile.gettempdir()) / TEMP_DIR_NAME
     folder.mkdir(parents=True, exist_ok=True)
-    stem = name or time.strftime("%Y%m%d-%H%M%S")
+    stem = Path(name or "").name.strip(". ") or f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}"
     target = folder / f"{stem}.{ext.lstrip('.')}"
     target.write_text(code, encoding="utf-8")
     return target
