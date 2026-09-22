@@ -172,10 +172,10 @@ export function AgentPhoneField({
 }
 
 /**
- * Comma-separated editor for a DECLARED-ONLY field. `tools`,
- * `disallowed_tools` and `subagents` round-trip through `agent.json` but reach no
- * worker yet. `mcp_servers` is NOT one of these — it is derived rather than
- * typed, and it does reach the worker; see `AgentMcpField`.
+ * Comma-separated editor for a list field. `tools` and `disallowed_tools`
+ * round-trip through `agent.json` but reach no worker yet; `subagents` is a
+ * Chief of Staff's staff roster. `mcp_servers` is NOT one of these — it is
+ * derived rather than typed, and it does reach the worker; see `AgentMcpField`.
  */
 export function AgentListField({
   label,

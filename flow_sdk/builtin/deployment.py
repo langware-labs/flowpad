@@ -620,6 +620,14 @@ class Deployment(Entity):
                 p for p in (agent.system_prompt.strip(), existing) if p
             )
         context_data.setdefault("launched_by_agent", agent.name)
+        # Chief of Staff mode — CoS.md, the skill, the native staff roster. Off: nothing changes.
+        from flow_sdk.tasks.cos import apply_to_launch, staff_dir  # noqa: PLC0415
+
+        cli_config = opts.to_json()
+        cos_options = apply_to_launch(
+            agent, context_data=context_data, cli_config=cli_config, worker_type=worker_override or agent.worker_type,
+            project_dir=await staff_dir(agent) if getattr(agent, "chief_of_staff", False) else None,
+        )
 
         # Declared -> attached, BEFORE the folder is read below. ``mcp_servers``
         # on agent.json is the authored intent; ``mcp_assets()`` is the structural
@@ -639,7 +647,7 @@ class Deployment(Entity):
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
             worker_type=worker_type_value(worker_override or agent.worker_type),
             project_id=options.pop("project_id", None) or agent.project_id,
-            load_flowpad_assistant=agent.load_flowpad_assistant,
+            load_flowpad_assistant=cos_options.get("load_flowpad_assistant", agent.load_flowpad_assistant),
             additional_dirs=list(agent.additional_dirs or []),
             # The agent's MCP assets, resolved from its folder. Set on the
             # constructor rather than via ``process.add_mcp`` because this verb
@@ -648,7 +656,7 @@ class Deployment(Entity):
             # Reads the folder AFTER the attach above, which is what puts the
             # editor's declared ids there.
             mcp_servers=await _place_mcp_specs(agent, place_mcp),
-            cli_config=opts.to_json(),
+            cli_config=cli_config,
             instruction_content=prompt,
             context_data=context_data,
             deployment_id=self.id,

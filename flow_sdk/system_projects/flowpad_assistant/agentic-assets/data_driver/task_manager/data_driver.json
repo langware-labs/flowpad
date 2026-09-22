@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "name": "task_manager",
+  "title": "Tasks",
+  "icon_name": "ListChecks",
+  "channel_icon_names": {"tasks": "ListChecks"},
+  "description": "The task ledger as a channel: every task this agent created or owns is a thread, every change to it a message. A Chief of Staff agent is woken here when its staff finish, fail, ask or stall.",
+  "kind": "datasource.internal.tasks",
+  "config": {
+    "principal": {
+      "type": "text",
+      "label": "Principal",
+      "placeholder": "agent:<id>",
+      "hint": "Whose tasks this channel carries — the agent that created or owns them. Set when Chief of Staff mode is turned on."
+    }
+  }
+}

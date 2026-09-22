@@ -295,3 +295,21 @@ built to replace in phase 2.
 Verb casing is deliberately per-language: `inc_success` in Python, `incSuccess` in
 TypeScript, `inc-success` from a shell. The route accepts all three, so it stays one
 vocabulary rather than three APIs.
+
+## Chief of Staff (2026-09-22)
+
+**All ours, none a provider mirror.** The pattern is the orchestrator–worker one (A2A's task
+states for the lifecycle), but no provider owns these nouns. Claude Code's own **subagent**
+is what our `SubAgent` mirrors; a Chief of Staff uses it natively for short jobs, and as the
+*owner* of a task for long ones.
+
+| Ours | One place | Notes |
+|---|---|---|
+| **Chief of Staff** (the mode) | `Agent.chief_of_staff`, `flow_sdk/tasks/cos.py` | A checkbox on the Agent. On: CoS.md joins its instructions, the Flowpad assistant (and its `task-management` skill) is mounted, its staff are registered natively where the harness spawns (`driver.spawns_subagents`), and each turn carries its open tasks. Off: the launch is byte-for-byte what it was. Not a separate entity and not an `Agent` kind. |
+| **staff** | `Agent.subagents` + `general-worker` | The SubAgents a chief may hand work to — the ones that resolve (the agent's project, the user's, the system's). `general-worker` is always there. |
+| **task ledger** | `flow_sdk/tasks/ledger.py` | The ONE writer of a delegated task's lifecycle: the row, a Comment and a `task.<event>` bus tag together. Refuses an event out of turn or by a stranger. Not a queue and not the Task board — the board shows its rows. |
+| **delegated task** | `Task` with `owner` set | A task a principal (`agent:<id>`) handed to an owner (`subagent:<name>`). `placement="instance"`: it lives in the DB + records shadow, never in the project's git tree, until a person **keeps** it (`flow task keep` → a `task.md` folder asset). Authored configuration may live in the repo; runtime state never does. |
+| **task run** | `AgenticProcess` with `context_data.task_id` | The headless worker that works one task as its owner, in `records_data/task/<id>/work/`. It may act only on that task. |
+| **Tasks channel** | `data_driver/task_manager` | A principal's view of the ledger as a message source (`principal_channel`, bus-fed on `task.*`). One per chief; follows the checkbox. The machinery finds it by what it declares, never by name. |
+| `created · started · note · asked · replied · done · failed · canceled · stalled` | `TaskEvent` | Ledger events. Statuses: `submitted → working ⇄ input_required → done \| failed \| canceled` (A2A), each on the three-bucket board via `status_family`. |
+

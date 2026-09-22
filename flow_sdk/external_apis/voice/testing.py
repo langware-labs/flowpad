@@ -180,13 +180,16 @@ def sign(body: bytes, secret: str, *, webhook_id: str = "wh_1", timestamp: Optio
     return {"webhook-id": webhook_id, "webhook-timestamp": ts, "webhook-signature": "v1," + base64.b64encode(mac).decode()}
 
 
-def incoming_call(call_id: str, *, caller: str, dialled: str, number_header: str = "") -> dict:
-    """A ``realtime.call.incoming`` webhook body, as OpenAI posts it for a SIP call."""
+def incoming_call(call_id: str, *, caller: str, dialled: str, number_header: str = "",
+                  extra_headers: Optional[dict[str, str]] = None) -> dict:
+    """A ``realtime.call.incoming`` webhook body, as OpenAI posts it for a SIP call. ``extra_headers``
+    are the custom ones the bridging TwiML put on the leg (Twilio passes a SIP URI's ``X-`` params)."""
     headers = [{"name": "From", "value": f"sip:{caller}@pstn.twilio.com"},
                {"name": "To", "value": f"sip:{dialled}@sip.api.openai.com"},
                {"name": "Call-ID", "value": f"sip-{call_id}"}]
     if number_header:
         headers.append({"name": "X-Flow-Number", "value": number_header})
+    headers.extend({"name": k, "value": v} for k, v in (extra_headers or {}).items())
     return {"object": "event", "id": f"evt_{call_id}", "type": "realtime.call.incoming", "created_at": 1750287018,
             "data": {"call_id": call_id, "sip_headers": headers}}
 

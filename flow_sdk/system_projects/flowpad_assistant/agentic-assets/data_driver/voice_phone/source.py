@@ -15,12 +15,13 @@ Two webhooks reach ``/api/v1/data_source/webhook/voice_phone``, told apart by th
 
 **Who is on the line.** The SIP leg names our number in a header we set (``X-Flow-Number``) when
 the provider passes it, else by the ``From`` of a call we dialled. A call the agent placed is matched
-to its dial (``_dialled``) by our number, which gives the callee and what the call is for.
+to its dial (``_dialled``) by the token its TwiML stamps on the leg (``X-Flow-Dial``), which gives the
+callee and what the call is for — exactly that dial's, so one that never connected is never mistaken
+for the next call on the line.
 """
 from __future__ import annotations
 
 import secrets
-from collections import deque
 from typing import Any, ClassVar, Mapping, Optional
 from urllib.parse import quote
 from xml.sax.saxutils import escape
@@ -38,6 +39,8 @@ TWILIO_API = "https://api.twilio.com"
 OPENAI_SIP_HOST = "sip.api.openai.com"
 #: The header our TwiML stamps on the SIP leg: which of our numbers the call is on.
 NUMBER_HEADER = "X-Flow-Number"
+#: The header a dial's TwiML stamps on its leg: which of our dials this ring-back answers.
+DIAL_HEADER = "X-Flow-Dial"
 
 
 class VoicePhoneConfig(SourceConfig):
@@ -59,8 +62,8 @@ class VoicePhoneSource(VoiceChannel):
     provider = "voice_phone"
     identity_config_key: ClassVar[str] = "number"
 
-    #: Calls we dialled and OpenAI has not rung back yet, per our number: (callee, what it is for).
-    _dialled: ClassVar[dict[str, deque]] = {}
+    #: Calls we dialled and OpenAI has not rung back yet, by dial token: (callee, what it is for).
+    _dialled: ClassVar[dict[str, tuple[str, str]]] = {}
     #: Calls on the line from this process, by the person: what ``say_to`` speaks into.
     _live: ClassVar[dict[str, Any]] = {}
 
@@ -79,8 +82,8 @@ class VoicePhoneSource(VoiceChannel):
         if headers.get(NUMBER_HEADER.lower()):
             return realtime.sip_user(headers[NUMBER_HEADER.lower()])
         caller, dialled = realtime.sip_user(headers.get("from", "")), realtime.sip_user(headers.get("to", ""))
-        # A call we placed comes FROM our number; one placed to us was dialled TO it.
-        return caller if caller in cls._dialled else dialled
+        # A call we placed comes FROM our number (its leg carries our dial token); one placed to us was dialled TO it.
+        return caller if headers.get(DIAL_HEADER.lower()) in cls._dialled else dialled
 
     @classmethod
     def webhook_authentic(cls, headers: Mapping[str, str], body: bytes, credentials: Credentials) -> bool:
@@ -104,9 +107,9 @@ class VoicePhoneSource(VoiceChannel):
         call = realtime.incoming(payload) if not _is_carrier(payload) else None
         if call is None or not call.call_id:
             return []
-        dialled = self._dialled.get(self.account)
-        if call.caller == self.account and dialled:
-            callee, brief = dialled.popleft()
+        placed = self._dialled.pop(_sip_headers(payload).get(DIAL_HEADER.lower(), ""), None)
+        if placed is not None:
+            callee, brief = placed
             return [call.model_copy(update={"caller": callee, "dialed": self.account, "brief": brief, "caller_name": ""})]
         return [call.model_copy(update={"dialed": self.account})]
 
@@ -124,11 +127,13 @@ class VoicePhoneSource(VoiceChannel):
         if not (sid and token):
             raise Rejected("no Twilio credentials — set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN")
         base = str(self.config.get("twilio_base_url") or TWILIO_API).rstrip("/")
-        self._dialled.setdefault(self.account, deque()).append((to, brief))
+        dial = secrets.token_hex(8)
+        self._dialled[dial] = (to, brief)
         async with http.client() as client:
             response = await http.request(
                 client, "POST", f"{base}/2010-04-01/Accounts/{sid}/Calls.json", auth=(sid, token),
-                data={"To": to, "From": self.account, "Twiml": bridge(str(self.config.get("project") or ""), self.account)},
+                data={"To": to, "From": self.account,
+                      "Twiml": bridge(str(self.config.get("project") or ""), self.account, dial=dial)},
                 hint="Twilio refused the call",
             )
         body = response.json()
@@ -155,11 +160,14 @@ class VoicePhoneSource(VoiceChannel):
         return self.said(person, f"Calling {person}: {text}", f"dial-{placed.get('call_sid') or secrets.token_hex(6)}")
 
 
-def bridge(project: str, number: str) -> str:
-    """TwiML that bridges the call to OpenAI's SIP connector, naming our number on the leg."""
+def bridge(project: str, number: str, *, dial: str = "") -> str:
+    """TwiML that bridges the call to OpenAI's SIP connector, naming our number (and, for a call we
+    placed, which dial it is) on the leg."""
     if not project:
         raise Rejected("this phone line names no OpenAI project; set it first")
     uri = f"sip:{project}@{OPENAI_SIP_HOST};transport=tls?{NUMBER_HEADER}={quote(number)}"
+    if dial:
+        uri += f"&{DIAL_HEADER}={quote(dial)}"
     return f'<Response><Dial answerOnBridge="true"><Sip>{escape(uri)}</Sip></Dial></Response>'
 
 
