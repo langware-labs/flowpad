@@ -151,9 +151,13 @@ class FlowServer:
 
         @asynccontextmanager
         async def lifespan(_app: FastAPI):
+            from flow_sdk import boot_progress
             from flow_sdk.db.database import close_db, init_db
 
             # ── Startup ──────────────────────────────────────────────
+            # The steps here import nothing, so the boot reporter would see no
+            # progress in them: each declares itself. No-ops outside a boot.
+            boot_progress.set_phase("db")
             await init_db()
 
             # Record "the Electron app owns this instance" while FLOWPAD_DESKTOP
@@ -190,9 +194,11 @@ class FlowServer:
                 init_local_storage_driver()
 
             # User startup hooks
+            boot_progress.set_phase("startup_hooks")
             for hook in startup_hooks:
                 await hook()
 
+            boot_progress.stop()
             yield
 
             # ── Shutdown ─────────────────────────────────────────────

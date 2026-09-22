@@ -15,7 +15,7 @@
  */
 
 const assert = require('assert');
-const { waitForBackend, createLogActivityProbe } = require('./backend-wait');
+const { waitForBackend, createLogActivityProbe, createChangeProbe } = require('./backend-wait');
 
 let passed = 0;
 function eq(actual, expected, msg) {
@@ -26,13 +26,14 @@ function eq(actual, expected, msg) {
 const silentLog = { info() {}, warn() {}, error() {} };
 
 // A gate with a fake clock: every "sleep" advances time by intervalMs.
-function gate({ healthyAt = Infinity, activeChecks = () => false, maxChecks = 4, stallChecks = 3, hardCapChecks = 20, onExtended } = {}) {
+function gate({ healthyAt = Infinity, activeChecks = () => false, abortedAt = () => null, maxChecks = 4, stallChecks = 3, hardCapChecks = 20, onExtended } = {}) {
   let clock = 0;
   let checks = 0;
   const notices = [];
   return waitForBackend({
     probeHealth: async () => ++checks >= healthyAt,
     logActivity: () => activeChecks(checks),
+    aborted: () => abortedAt(checks),
     maxChecks,
     stallChecks,
     hardCapChecks,
@@ -132,6 +133,39 @@ async function main() {
   {
     const probe = createLogActivityProbe({ newestLogFile: () => null, fileSize: () => 0 });
     eq(probe(), false, 'nothing to watch → never active');
+  }
+
+  // ── the launcher exited non-zero: nothing to wait for, its reason wins ───
+  {
+    const r = await gate({ activeChecks: () => true, abortedAt: (n) => (n >= 2 ? 'launcher-failed' : null) });
+    eq([r.ready, r.reason, r.extended, r.checks], [false, 'launcher-failed', false, 2],
+      'an abort ends the gate at once, inside the base window and despite activity');
+  }
+  {
+    const r = await gate({ healthyAt: 1, abortedAt: () => 'launcher-failed' });
+    eq([r.ready, r.reason], [true, 'healthy'],
+      'health is checked before the abort: a backend that answers is up, whatever the launcher said');
+  }
+
+  // ── activity that only starts after the base window is over cannot help ──
+  {
+    // Nothing moved for the whole base window (4 checks ≥ stallChecks 3): the
+    // boot was dead before its log woke up. The reporter writes its first line
+    // at t=0 precisely so a live boot never looks like this.
+    const r = await gate({ activeChecks: (n) => n >= 5 });
+    eq([r.reason, r.checks], ['timeout', 4], 'late activity does not resurrect a window already silent for stallChecks');
+  }
+
+  // ── the change probe: any counter becomes an activity signal ─────────────
+  {
+    let lines = 3;
+    const probe = createChangeProbe(() => lines);
+    eq(probe(), false, 'primed at construction: history is not activity');
+    lines = 4;
+    eq(probe(), true, 'a new line → active');
+    eq(probe(), false, 'no new line → idle');
+    lines = 6;
+    eq(probe(), true, 'two lines since the last look → active once');
   }
 
   console.log(`backend-wait.test.js: ${passed} assertions passed`);

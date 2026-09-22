@@ -369,12 +369,26 @@ def test_start_server_process_arms_boot_evidence(monkeypatch, tmp_path):
     monkeypatch.setattr(launch, "_logs_base", lambda: tmp_path)
     monkeypatch.setattr(launch, "cleanup_old_logs", lambda _dir: None)
     monkeypatch.setattr(launch, "generate_timestamped_log_path", lambda _kind: server_log)
-    monkeypatch.setattr(launch, "start_detached_process", lambda *_a, **_k: FakeChild(456))
+    spawned: dict = {}
+
+    def fake_spawn(args, **kwargs):
+        spawned.update(kwargs, args=args, stdout_name=kwargs["stdout"].name, stderr_name=kwargs["stderr"].name)
+        return FakeChild(456)
+
+    monkeypatch.setattr(launch, "start_detached_process", fake_spawn)
     monkeypatch.setattr(launch, "_server_booting", False)
     monkeypatch.setattr(launch, "_server_log_seen", 999)
     monkeypatch.setattr(launch.time, "monotonic", lambda: 42.0)
+    monkeypatch.setenv(launch.ENV_MONITOR_LOG, "/monitor.log")
 
     assert launch.start_server_process(9007) == 456
+
+    # Both of the child's streams are the server log, unbuffered, so the boot's
+    # own account of itself (stdout) lands there as it happens.
+    assert spawned["stdout_name"] == spawned["stderr_name"] == str(server_log)
+    assert spawned["args"][1:] == ["-u", "-m", "flow_sdk.server.run"]
+    assert launch.ENV_MONITOR_LOG not in spawned["env"], "the monitor's log is not the server's"
+    assert spawned["env"]["LOCAL_SERVER_PORT"] == "9007"
 
     assert launch._server_log_path == server_log
     assert launch._server_log_seen == 0
@@ -383,6 +397,66 @@ def test_start_server_process_arms_boot_evidence(monkeypatch, tmp_path):
     server_log.write_bytes(b"importing")
     assert launch._boot_still_progressing() is True
     assert launch._boot_still_progressing() is False  # no new bytes since the last look
+
+
+def test_start_monitor_detached_points_the_monitors_stdio_at_its_log(monkeypatch, tmp_path):
+    """What the monitor says outside its logger — an interpreter traceback, an
+    'Exception ignored in' — lands in the monitor log, not in DEVNULL, and the
+    monitor is told which file that is so it logs into the same one."""
+    monitor_log = tmp_path / "monitor" / "monitor.log"
+    monitor_log.parent.mkdir()
+    monkeypatch.setattr(launch, "_logs_base", lambda: tmp_path)
+    monkeypatch.setattr(launch, "cleanup_old_logs", lambda _dir: None)
+    monkeypatch.setattr(launch, "generate_timestamped_log_path", lambda _kind: monitor_log)
+    spawned: dict = {}
+
+    def fake_spawn(args, **kwargs):
+        spawned.update(kwargs, args=args, stdout_name=kwargs["stdout"].name, stderr_name=kwargs["stderr"].name)
+        return FakeChild(789)
+
+    monkeypatch.setattr(launch, "start_detached_process", fake_spawn)
+
+    assert launch.start_monitor_detached(9007) == 789
+
+    assert spawned["stdout_name"] == spawned["stderr_name"] == str(monitor_log)
+    assert spawned["args"][1:] == ["-u", "-m", "flow_sdk.server.launch", "9007"]
+    assert spawned["env"][launch.ENV_MONITOR_LOG] == str(monitor_log)
+    assert spawned["stdout"].closed, "the parent's handle is closed once the child holds the fd"
+
+
+def test_setup_logging_writes_to_the_preopened_log_and_skips_the_stderr_copy(monkeypatch, tmp_path):
+    """With stdio already pointed at the log by the spawner, a stderr handler
+    would write every record into the same file twice."""
+    preopened = tmp_path / "monitor.log"
+    monkeypatch.setenv(launch.ENV_MONITOR_LOG, str(preopened))
+    monkeypatch.setattr(launch.log, "handlers", [])
+    monkeypatch.setattr(launch.log, "propagate", True)
+
+    launch._setup_logging()
+
+    handlers = launch.log.handlers
+    assert [type(h).__name__ for h in handlers] == ["FileHandler"]
+    assert handlers[0].baseFilename == str(preopened)
+    assert launch.log.propagate is False, "root's own stderr handler would write each line a second time"
+    handlers[0].close()
+
+
+def test_setup_logging_without_a_preopened_log_opens_its_own_and_mirrors_stderr(monkeypatch, tmp_path):
+    """`python -m flow_sdk.server.launch` from a terminal: its own file, plus stderr."""
+    own = tmp_path / "monitor" / "own.log"
+    own.parent.mkdir()
+    monkeypatch.delenv(launch.ENV_MONITOR_LOG, raising=False)
+    monkeypatch.setattr(launch, "_logs_base", lambda: tmp_path)
+    monkeypatch.setattr(launch, "cleanup_old_logs", lambda _dir: None)
+    monkeypatch.setattr(launch, "generate_timestamped_log_path", lambda _kind: own)
+    monkeypatch.setattr(launch.log, "handlers", [])
+    monkeypatch.setattr(launch.log, "propagate", True)
+
+    launch._setup_logging()
+
+    kinds = [type(h).__name__ for h in launch.log.handlers]
+    assert kinds == ["FileHandler", "StreamHandler"]
+    launch.log.handlers[0].close()
 
 
 # ---------------------------------------------------------------------------

@@ -261,6 +261,20 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       '_uvToolInstallForce: quarantines the corrupt env once, then rebuilds and succeeds');
   }
 
+  // ── _uvToolInstallForce compiles bytecode in the install, not on first boot ─
+  {
+    const m = new UvManager(silentLog);
+    let seenArgs = null;
+    m._drainVenvProcesses = async () => {};
+    m._runStreaming = async (_cmd, args) => { seenArgs = args; return { stdout: '', stderr: '' }; };
+    await m._uvToolInstallForce(['tool', 'install', 'flowpad', '--force']);
+    eq(seenArgs, ['tool', 'install', 'flowpad', '--force', '--compile-bytecode'],
+      '_uvToolInstallForce: every install/upgrade/reinstall passes --compile-bytecode');
+    await m._uvToolInstallForce(['tool', 'install', 'flowpad', '--compile-bytecode']);
+    eq(seenArgs.filter((a) => a === '--compile-bytecode').length, 1,
+      '_uvToolInstallForce: never doubled when the caller already passed it');
+  }
+
   // ── isInstallProgressLine (what the loading-screen ticker shows) ────────────
   ok(isInstallProgressLine('Downloading flowpad (34.6MiB)'), 'progress: Downloading');
   ok(isInstallProgressLine('Resolved 132 packages in 23.96s'), 'progress: Resolved');
@@ -271,6 +285,19 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
   ok(!isInstallProgressLine('error: Failed to download cpython-3.10'), 'progress: an error is NOT ticker material');
   ok(!isInstallProgressLine(''), 'progress: empty line → false');
   ok(!isInstallProgressLine(null), 'progress: null → false (no throw)');
+  ok(isInstallProgressLine('Bytecode compiled 6013 files in 1.47s'),
+    'progress: the --compile-bytecode step is ticker material (it can take a while on a weak machine)');
+
+  // ── splitLines (chunk → line adapter for a child's pipes) ──────────────────
+  {
+    const lines = [];
+    const feed = UvManager.splitLines((l) => lines.push(l));
+    feed(Buffer.from('Resolved 1 pack'));
+    feed(Buffer.from('ages\r\n\n  Downloading x\nleft'));
+    eq(lines, ['Resolved 1 packages', 'Downloading x'], 'splitLines: joins chunks, strips CR, drops blanks, holds the partial tail');
+    feed(Buffer.from('over\n'));
+    eq(lines[2], 'leftover', 'splitLines: the held tail completes on the next chunk');
+  }
 
   // ── _runStreaming (uncapped, line-streaming runner for `uv tool install`) ───
   // Real child processes (node itself). Lines must reach onLine in order as they
