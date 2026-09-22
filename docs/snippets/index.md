@@ -1,14 +1,14 @@
 ---
 type: markdown_index
 id: markdown_index-a34feae9-8881-5202-b520-9281688839f2
-inputs_hash: e0eb4453788680d3ee4293e506c950127a5c2fa75480cf017c168a7d34c45954
+inputs_hash: f36bfbcee29da2c5380cd3923410cf564cb0d475f1bc6142c5fe3ea739b70947
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-22T20:38:25.912618+00:00'
+generated_at: '2026-09-22T21:12:30.105833+00:00'
 latest_process_ref: ''
-file_count: 20
+file_count: 21
 subfolder_count: 0
 ---
 
@@ -37,4 +37,5 @@ subfolder_count: 0
 - [RAG — snippets](rag.md) — Runnable snippets for RagIndex: marking folders searchable, chunking and embedding markdown, why re-indexing is cheap, and querying the vectors.
 - [Secret stores](secret-stores.md) — SecretStore and Connection: how a consumer declares the names and scopes it needs, gets a provider, and binds it onto the row.
 - [Service endpoints — snippets](service-endpoints.md) — ServiceEndpoint snippets: what a placement answers on, reaching endpoints, web-app endpoints, cloud boxes, hub-served endpoints and an agent's chat.
+- [Wizards — a sequence of calls, and what travels between them](wizards.md) — Wizard snippets, every fence tested: step order and a step with nothing to do, values passed between steps as environment, a fallback as two steps with one check, a declared output that binds, and a cycle that answers instead of recursing.
 - [Workflows — snippets](workflows.md) — Plain-Python workflow snippets with flow_sdk.blocks: a mail concierge, Telegram and Slack bots, and one loop on every channel.

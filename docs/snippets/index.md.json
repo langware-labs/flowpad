@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "e0eb4453788680d3ee4293e506c950127a5c2fa75480cf017c168a7d34c45954",
+  "inputs_hash": "f36bfbcee29da2c5380cd3923410cf564cb0d475f1bc6142c5fe3ea739b70947",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
@@ -163,6 +163,14 @@
       "size_bytes": 7404
     },
     {
+      "name": "wizards.md",
+      "rel_path": "wizards.md",
+      "title": "Wizards — a sequence of calls, and what travels between them",
+      "summary": "Wizard snippets, every fence tested: step order and a step with nothing to do, values passed between steps as environment, a fallback as two steps with one check, a declared output that binds, and a cycle that answers instead of recursing.",
+      "content_hash": "ff855feb71a071829e01b0ab939c157391885e6acc5ecdded868642f8caf93bf",
+      "size_bytes": 7668
+    },
+    {
       "name": "workflows.md",
       "rel_path": "workflows.md",
       "title": "Workflows — snippets",
@@ -172,6 +180,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T20:38:25.912618+00:00",
+  "generated_at": "2026-09-22T21:12:30.105833+00:00",
   "latest_process_ref": ""
 }
