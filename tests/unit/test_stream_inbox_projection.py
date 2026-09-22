@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.stream_inbox.projection import (
     channel_of,
     is_message,
@@ -218,7 +219,7 @@ class TestSenderMapping:
     async def test_an_external_sender_is_never_empty(self):
         from flow_sdk.stream_inbox.projection import _sender_for
 
-        item = SimpleNamespace(author_external_id="ami@langware.ai", author_display="Ami")
+        item = SourceItem(author_external_id="ami@langware.ai", author_display="Ami")
         source = SimpleNamespace(account_key="me@example.com")
         sender, name = await _sender_for(item, source, "gmail")
         # A message with no sender is never counted unread at all, so a stranger
@@ -231,7 +232,7 @@ class TestSenderMapping:
         from flow_sdk.stream_inbox.projection import _sender_for
 
         sender, _ = await _sender_for(
-            SimpleNamespace(author_external_id=None, author_display=None),
+            SourceItem(author_external_id=None, author_display=None),
             SimpleNamespace(account_key="me@example.com"), "gmail",
         )
         assert (sender.kind, sender.wire_id) == ("external", "gmail:unknown")
@@ -244,7 +245,7 @@ class TestSenderMapping:
             "flow_sdk.builtin.user.User.get_local",
             classmethod(lambda cls: _resolved(SimpleNamespace(id="local-42"))),
         )
-        item = SimpleNamespace(author_external_id="Me@Example.com", author_display="Me")
+        item = SourceItem(author_external_id="Me@Example.com", author_display="Me")
         source = SimpleNamespace(account_key="me@example.com")
         sender, _ = await projection._sender_for(item, source, "gmail")
         # Case-insensitive: providers do not agree on address casing.

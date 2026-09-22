@@ -35,6 +35,14 @@ def test_the_spec_refuses_unknown_and_blank_header_fields():
         spec.name = "frozen"  # type: ignore[misc]
 
 
+def test_sent_by_us_is_the_rows_and_no_ingest_caller_can_claim_it():
+    """Only the send path marks a row ours — a field on the spec would let ``POST /ingest/items``
+    say so, and would let the provider's echo reset it."""
+    assert "sent_by_us" in SourceItem.model_fields and "sent_by_us" not in SourceItemSpec.model_fields
+    with pytest.raises(ValidationError, match="sent_by_us"):
+        SourceItemSpec.model_validate({**_HEADER, "sent_by_us": True})
+
+
 def test_the_spec_is_registered_under_its_kind():
     assert SchemaRegistry.kind_type("ingest.source_item") is SourceItemSpec
 
@@ -44,7 +52,7 @@ def test_derived_meta_model_is_header_plus_local_state():
     the header (incl. ``body`` — the FTS pin) ∪ ``content_digest/read/starred``."""
     info = SchemaRegistry.get(EntityType.SOURCE_ITEM)
     names = set(info.effective_meta_model.model_fields) - {"name", "id", "type"}
-    expected = (set(SourceItemSpec.model_fields) - {"name", "raw"}) | {"content_digest", "read", "starred"}
+    expected = (set(SourceItemSpec.model_fields) - {"name", "raw"}) | {"content_digest", "read", "starred", "sent_by_us"}
     assert expected <= names, expected - names
     assert "raw" not in names, "raw is Persist.FALSE — never mirrored"
 

@@ -8,7 +8,7 @@ webhook route hands them to its one ingestion chokepoint.
 Three more facts:
 
 * **No echo of itself.** Our own outbound comes back only as a delivery ``status``, never as a
-  message (``echoes_sends = False``): what ``send`` returns is the only copy there will be.
+  message: what ``send`` returns is the only copy there will be.
 * **No threads.** The conversation IS the pair (business number, person), so a conversation's
   key is the person's ``wa_id`` and a message lives in that person's scope —
   ``(whatsapp, <account>/messages/<wa_id>, <wamid>)`` — which is what lets a reply be routed
@@ -75,7 +75,6 @@ class WhatsAppSource(Source):
 
     Config = WhatsAppConfig
     provider = "whatsapp"
-    echoes_sends = False
     identity_config_key = "phone_number_id"
 
     def __init__(self, binding: SourceBinding) -> None:

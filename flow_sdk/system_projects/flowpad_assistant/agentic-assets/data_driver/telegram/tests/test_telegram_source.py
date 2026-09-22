@@ -193,10 +193,10 @@ class TestSend:
     def recorded(self, monkeypatch):
         seen: list = []
 
-        async def _ingest(items, **_kw):
-            seen.extend(items)
+        async def _ingest(item, **_kw):
+            seen.append(item)
 
-        monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", _ingest)
+        monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_item", _ingest)
         return seen
 
     async def test_a_reply_maps_onto_send_message(self, bot, recorded):
@@ -209,7 +209,7 @@ class TestSend:
         out = await DataDriver.loaded("telegram").send(_row(bot), thread_key=CHAT, to=CHAT, text="hi")
         assert out.recorded is True
         assert [i.external_id for i in recorded] == [f"{CHAT}/8"]
-        assert recorded[0].author_external_id == "777", "the copy's author is the bot, which is how it reads as ours"
+        assert recorded[0].author_external_id == "777", "the copy's author is the bot"
 
     async def test_a_forum_thread_key_sets_the_topic(self, bot, recorded):
         await DataDriver.loaded("telegram").send(_row(bot), thread_key="-100123/42", to="", text="hi")
@@ -259,10 +259,10 @@ async def test_the_double_delivers_after_the_source_exists_and_records_the_reply
 
     recorded: list = []
 
-    async def _ingest(items, **_kw):
-        recorded.extend(items)
+    async def _ingest(item, **_kw):
+        recorded.append(item)
 
-    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", _ingest)
+    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_item", _ingest)
     with Double() as double:
         monkeypatch.setattr(DataDriver.loaded("telegram"), "credentials_for", double.credentials)
         row = SimpleNamespace(id="ds-tg", provider="telegram", name="Telegram bot", config=double.config, **double.fields)

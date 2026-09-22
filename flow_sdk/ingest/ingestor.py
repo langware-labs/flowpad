@@ -51,9 +51,15 @@ async def ingest_item(
     owner: Optional[TypeId] = None,
     mode: IngestMode = IngestMode.INCREMENTAL,
     known: Optional[dict[tuple[str, ...], SourceItem]] = None,
+    sent_by_us: bool = False,
 ) -> IngestOutcome:
     """``known`` is a pre-loaded ``{natural key: row}`` map from
     ``ingest_items``; without it this falls back to a single lookup.
+
+    ``sent_by_us`` is the send path's: the row is marked ours BEFORE it is saved, so the
+    first event anyone sees already says who wrote it. The mark is set, never cleared — an
+    echo that got here first is marked now (and announced as an update), and a later echo
+    rewrites only the snapshot.
 
     **Identity is the natural key, not the id.** The DB serializer resolves the
     row by ``(data_source, origin)`` and gates on the digest; a
@@ -69,9 +75,14 @@ async def ingest_item(
     else:
         existing = await ser.resolve(SourceItem, item)
 
+    mark = sent_by_us and not (existing is not None and existing.sent_by_us)
     row, status = ser.upsert(SourceItem, item, existing=existing)
-    if row is None:
+    if row is None and not mark:
         return IngestOutcome(entity_id=str(existing.id), external_id=item.external_id, status="unchanged")
+    if row is None:
+        row, status = existing, "updated"
+    if mark:
+        row.sent_by_us = True
 
     # ── record + index ────────────────────────────────────────────────────
     # save() writes the DB row, the shadow metadata.json and the FTS row. For a
