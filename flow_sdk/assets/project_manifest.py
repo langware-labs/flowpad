@@ -42,7 +42,6 @@ in the tree, ``missing`` when it does not (``state_in_tree``). The desk adds
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -52,7 +51,7 @@ from pydantic import ValidationError
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.capsules.atomic import atomic_write, capsule_lock
 from flow_sdk.instances.model import utc_now_iso
-from flow_sdk.tags.grammar import join_namespace
+from flow_sdk.tags.grammar import namespace_from_name
 from flow_sdk.schema.data_spec.project_manifest_spec import (
     DEPS_MAIN,
     PROJECT_MANIFEST_MAIN,
@@ -228,14 +227,7 @@ def namespace_seed(root: Path) -> str:
     namespace; that is allowed — a namespace is an unvalidated claim — and a human who
     cares edits the file, which is then never overwritten.
     """
-    seed = re.sub(r"[^a-z0-9_]", "_", Path(root).name.lower()).strip("_")
-    if not seed:
-        return ""
-    try:
-        join_namespace(seed, "probe")
-    except ValueError:
-        return ""
-    return seed
+    return namespace_from_name(Path(root).name)
 
 
 def ensure_namespace(root: Path, ns: str) -> Optional[ProjectManifestSpec]:
@@ -249,13 +241,19 @@ def ensure_namespace(root: Path, ns: str) -> Optional[ProjectManifestSpec]:
     if not ns:
         return None
     path = manifest_path(root)
+    # Read BEFORE locking. From the second boot onward every project answers here, and
+    # the lock is a cross-process file lock — a resolve(), a sha256 and a flock, three
+    # times the cost of the read it was guarding. The re-read inside the lock is what
+    # keeps the write correct.
+    declared = _read(path, ProjectManifestSpec)
+    if declared is not None and declared.ns:
+        return declared
     with capsule_lock(path):
         spec = _read(path, ProjectManifestSpec) or ProjectManifestSpec.empty()
         if spec.ns:
             return spec
         spec = spec.model_copy(update={"ns": ns})
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _write(path, spec)
+        _write(path, spec)   # ``atomic_write`` makes the parent and skips an identical write
         return spec
 
 

@@ -28,8 +28,14 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-#: ``ns -> project root``. ``None`` = never built; ``{}`` = built and empty.
-_ROOTS: Optional[dict[str, Path]] = None
+#: ``ns -> project root``, as the indexing paths have reported it.
+_ROOTS: dict[str, Path] = {}
+
+#: The namespaces whose driver folders have already been imported in this process.
+#: Lives beside the map rather than in the driver registry because it is a property
+#: OF the map — "we have acted on this entry" — and splitting the two across modules
+#: meant dropping one had to reach into the other to drop the rest.
+_LOADED: set[str] = set()
 
 
 def root_for(ns: str) -> Optional[Path]:
@@ -39,16 +45,29 @@ def root_for(ns: str) -> Optional[Path]:
     does the same thing either way (register nothing, leave the kind anonymous), and
     collapsing them keeps this readable from inside a validator.
     """
-    return (_ROOTS or {}).get(ns) if ns else None
+    return _ROOTS.get(ns) if ns else None
+
+
+def claim_unloaded(ns: str) -> Optional[Path]:
+    """``ns``'s project root the FIRST time it is asked for, else None.
+
+    One call so that "where is it" and "have we already imported it" cannot be asked
+    in the wrong order. A namespace with no known root is NOT claimed: the map may
+    simply not be filled yet, and recording it as done would leave that namespace
+    unreadable for the life of the process.
+    """
+    if not ns or ns in _LOADED:
+        return None
+    root = _ROOTS.get(ns)
+    if root is not None:
+        _LOADED.add(ns)
+    return root
 
 
 def remember(ns: str, root: Path) -> None:
     """Record one project's namespace, from a path that has already read its manifest."""
-    global _ROOTS
     if not ns:
         return
-    if _ROOTS is None:
-        _ROOTS = {}
     known = _ROOTS.get(ns)
     if known == Path(root):
         return
@@ -62,9 +81,10 @@ def remember(ns: str, root: Path) -> None:
 
 
 def invalidate() -> None:
-    """Drop the map (a project was removed, renamed, or its manifest rewritten)."""
-    global _ROOTS
-    _ROOTS = None
-    from flow_sdk.ingest.driver_registry import forget_namespace_loads  # noqa: PLC0415 — cycle
+    """Drop the map (a project was removed, renamed, or its manifest rewritten).
 
-    forget_namespace_loads()
+    Clears what has been loaded too: the two are one fact, and keeping the "already
+    imported" half would leave a moved project's folders permanently unreachable.
+    """
+    _ROOTS.clear()
+    _LOADED.clear()

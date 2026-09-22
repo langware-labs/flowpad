@@ -42,6 +42,11 @@ class KindRegistry(Generic[T]):
         name = str(getattr(kind, "value", kind) or "").strip().lower()
         return self._aliases.get(name, name)
 
+    def ensure(self) -> None:
+        """Force the one-shot build, for a caller that wants the registrations and not
+        the items — ``kinds()`` sorts the whole table and throws the list away."""
+        self._ensure()
+
     def _ensure(self) -> None:
         if not self._built:
             self._built = True           # before the call: a builder may re-enter

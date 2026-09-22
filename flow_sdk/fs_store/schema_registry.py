@@ -928,13 +928,10 @@ class SchemaRegistry:
     # table is the standing rule. Runtime-only, like ``entity_cls`` — not part
     # of ``to_dict()`` or the schema hash. A miss is None, never a mint.
     _kinds: ClassVar[dict[str, Any]] = {}
-    #: Loaded on a miss, chosen by the kind's NAMESPACE — never by how it is
-    #: spelled. ``_kinds_ours`` covers everything we ship (including the shipped
-    #: driver folders, whose payload classes live in asset code); ``_kinds_external``
-    #: is asked for one namespace at a time. Both are called SYNCHRONOUSLY from
-    #: ``kind_type``, so neither may await.
-    _kinds_ours: ClassVar[Optional[Callable[[], Any]]] = None
-    _kinds_external: ClassVar[Optional[Callable[[str], Any]]] = None
+    #: Loaded on a miss, and handed the kind's NAMESPACE — ``None`` for ours, the
+    #: marker's name for anyone else's. Never chosen by how a kind is SPELLED.
+    #: Called SYNCHRONOUSLY from ``kind_type``, so it may not await.
+    _kind_loader: ClassVar[Optional[Callable[[Optional[str]], Any]]] = None
     _kind_of_shape: ClassVar[dict[int, str]] = {}   # id(shape) → kind; the O(1) inverse
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
@@ -1039,6 +1036,15 @@ class SchemaRegistry:
             cls._kind_of_shape.setdefault(id(shape), kind)
         else:
             cls._kind_of_shape[id(shape)] = kind
+        # Registering IS naming: the class carries the name it was bound under, so a
+        # dump writes the key a read looks up. Stamped HERE rather than at the call
+        # site because this is the only writer of the binding — a registration made
+        # any other way would otherwise leave the class writing a name nothing
+        # resolves, which is the bug this pairing exists to prevent. The inverse map
+        # cannot serve: it is keyed on ``id(shape)``, so a subclass that declares no
+        # kind of its own has no entry, while the stamp inherits like ``spec_kind``.
+        if isinstance(shape, type) and hasattr(shape, "__spec_tag__"):
+            shape.__spec_tag__ = kind
 
     @classmethod
     def kind_for(cls, shape: Any) -> "str | None":
@@ -1070,23 +1076,21 @@ class SchemaRegistry:
             # spelled differently, and could never reach an authored asset at all.
             from flow_sdk.tags.grammar import split_namespace  # lazy: avoid import cycle
 
-            ns, _ = split_namespace(kind)
-            loader = cls._kinds_ours if ns is None else cls._kinds_external
-            if loader is not None:
-                loader() if ns is None else loader(ns)  # type: ignore[operator]
+            if cls._kind_loader is not None:
+                cls._kind_loader(split_namespace(kind)[0])
             hit = cls._kinds.get(kind)
         return hit
 
     @classmethod
-    def set_kind_loaders(cls, *, ours: Callable[[], Any], external: Callable[[str], Any]) -> None:
-        """Who to ask when a kind misses, by namespace.
+    def set_kind_loader(cls, loader: Callable[[Optional[str]], Any]) -> None:
+        """Who to ask when a kind misses. Handed the namespace: ``None`` means ours.
 
-        ``ours`` loads everything the SDK vouches for and takes no argument — there is
-        one flow ontology. ``external`` is handed the namespace off the kind and loads
-        that owner's assets. Both must be cheap once loaded and must not await: they run
-        inside ``kind_type``, which a pydantic validator calls while restoring a row.
+        Must be cheap once loaded and must not await — it runs inside ``kind_type``,
+        which a pydantic validator calls while restoring a row. Which loader serves
+        which namespace is the caller's to decide, because the module that owns the
+        loaders is the one that knows.
         """
-        cls._kinds_ours, cls._kinds_external = ours, external
+        cls._kind_loader = loader
 
     @classmethod
     def register_crud_type(cls, type_name: str, *, icon: str | None = None) -> None:

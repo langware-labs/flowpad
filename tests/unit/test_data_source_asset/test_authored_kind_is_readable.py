@@ -71,7 +71,7 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 # no source has synced, no driver has been resolved by name.
 namespace_roots.remember("acme", Path(sys.argv[1]))
 
-shape = SchemaRegistry.kind_type("--acme--.ingest.feed.item.quake")
+shape = SchemaRegistry.kind_type(sys.argv[2])
 print(getattr(shape, "__name__", None))
 print(SchemaRegistry.kind_type("ingest.feed.item.quake") is None)
 '''
@@ -94,9 +94,10 @@ def _project(root: Path, *, ns: str = "acme") -> Path:
     return root
 
 
-def _probe(root: Path) -> list[str]:
+def _probe(root: Path, kind: str = "--acme--.ingest.feed.item.quake") -> list[str]:
+    """``[<class the kind resolved to>, <the BARE name is unreachable>]``."""
     done = subprocess.run(
-        [sys.executable, "-c", textwrap.dedent(PROBE), str(root)],
+        [sys.executable, "-c", textwrap.dedent(PROBE), str(root), kind],
         capture_output=True, text=True, check=True,
         env={"FLOWPAD_SKIP_DOTENV": "true", "PATH": ""},
     )
@@ -104,26 +105,17 @@ def _probe(root: Path) -> list[str]:
 
 
 def test_an_authored_kind_resolves_in_a_process_that_never_synced(tmp_path):
-    """The restart case. Before this, the only loader a read could reach scanned the
-    SHIPPED tree, and an authored driver was reachable solely through an `async`
-    resolve — which a validator cannot await."""
+    """The restart case, and the other half of the namespace's job in one probe: the
+    kind resolves under its OWNER, and not under the bare name in our ontology.
+
+    Before this, the only loader a read could reach scanned the SHIPPED tree, and an
+    authored driver was reachable solely through an `async` resolve — which a
+    validator cannot await.
+    """
     assert _probe(_project(tmp_path)) == ["QuakeData", "True"]
-
-
-def test_the_kind_is_not_reachable_under_the_bare_name(tmp_path):
-    """The other half of the namespace's job: an authored asset cannot answer for a
-    name in OUR ontology, even when it declares the same string a shipped one does."""
-    assert _probe(_project(tmp_path))[1] == "True"
 
 
 def test_an_unknown_namespace_loads_nothing(tmp_path):
     """No search of other projects for a matching kind: finding one under the wrong
     owner is exactly the collision the namespace exists to prevent."""
-    _project(tmp_path, ns="acme")
-    probe = PROBE.replace('"--acme--.ingest', '"--nobody--.ingest')
-    done = subprocess.run(
-        [sys.executable, "-c", textwrap.dedent(probe), str(tmp_path)],
-        capture_output=True, text=True, check=True,
-        env={"FLOWPAD_SKIP_DOTENV": "true", "PATH": ""},
-    )
-    assert done.stdout.split()[0] == "None"
+    assert _probe(_project(tmp_path, ns="acme"), "--nobody--.ingest.feed.item.quake")[0] == "None"

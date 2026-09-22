@@ -180,22 +180,40 @@ def asset_module(name: str, module: str = "source") -> ModuleType:
 
 
 def load_driver_value_kinds() -> None:
-    """Load the shipped source folders, which registers the payload kinds their classes define. The
-    registry builds once; every later call is a dict hit."""
+    """Load the shipped source folders, which registers the payload kinds their classes
+    define. The registry builds once; every later call is a flag check.
+
+    ``ensure()`` rather than ``kinds()``: this runs on every bare-kind miss, and
+    ``kinds()`` sorted the whole table to produce a list nobody reads.
+    """
     from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
 
-    DRIVERS.kinds()
+    DRIVERS.ensure()
 
 
-#: Namespaces whose drivers this process has already imported. A MISS is never
-#: recorded: the map may simply not be built yet, and recording absence would make
-#: a namespace unreadable for the life of the process.
-_NS_LOADED: set[str] = set()
+def _register_folders(registry: "KindRegistry[DataDriver]", root: Path, label: str) -> None:
+    """Every driver folder under ``root``, into ``registry``.
 
-
-def forget_namespace_loads() -> None:
-    """Allow authored folders to be re-imported (the ns → root map was dropped)."""
-    _NS_LOADED.clear()
+    One definition of "import every driver folder here", because there are two roots
+    — what we ship, and a project's own — and only the root differs. A name already
+    registered (a test's double, a driver an earlier pass loaded) is left alone, and a
+    folder that fails is logged and recorded, never raised: one broken source must not
+    take the registry down with it.
+    """
+    if not root.is_dir():
+        return
+    for folder in sorted(p for p in root.iterdir() if (p / MANIFEST_FILE).is_file()):
+        name = folder.name
+        if registry.get_or_none(name) is not None:
+            continue
+        try:
+            # ``load_driver`` re-derives the namespace from the folder's own manifest,
+            # so an authored driver's kinds land under the owner the ASSET declares.
+            registry.register(load_driver(folder))
+            _LOAD_ERRORS.pop(name, None)
+        except DriverLoadError as exc:
+            _LOAD_ERRORS[name] = str(exc)
+            logger.error("[sources] %s data source %s did not load: %s", label, name, exc)
 
 
 def load_namespace_value_kinds(ns: str) -> None:
@@ -210,47 +228,16 @@ def load_namespace_value_kinds(ns: str) -> None:
     collision the namespace exists to prevent (see ``_importing``).
     """
     from flow_sdk.fs_store.operations import namespace_roots  # noqa: PLC0415 — cycle
-
-    if not ns or ns in _NS_LOADED:
-        return
-    root = namespace_roots.root_for(ns)
-    if root is None:
-        return
-    _NS_LOADED.add(ns)
-    folder_root = root / AGENTIC_ASSETS_DIR / "data_driver"
-    if not folder_root.is_dir():
-        return
     from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
 
-    for folder in sorted(p for p in folder_root.iterdir() if (p / MANIFEST_FILE).is_file()):
-        name = folder.name
-        if DRIVERS.get_or_none(name) is not None:
-            continue
-        try:
-            # ``load_driver`` re-derives the namespace from the folder's own manifest, so
-            # the kinds land under the owner the ASSET declares, never under the ``ns``
-            # that happened to be asked for.
-            DRIVERS.register(load_driver(folder))
-            _LOAD_ERRORS.pop(name, None)
-        except DriverLoadError as exc:
-            _LOAD_ERRORS[name] = str(exc)
-            logger.error("[sources] authored data source %s did not load: %s", name, exc)
+    root = namespace_roots.claim_unloaded(ns)
+    if root is not None:
+        _register_folders(DRIVERS, root / AGENTIC_ASSETS_DIR / "data_driver", "authored")
 
 
 def register_shipped(registry: "KindRegistry[DataDriver]") -> None:
-    """Every shipped folder, into ``registry``; a name already registered (a test's) is left alone.
-    A folder that fails is logged and recorded, never raised: one broken source must not take the
-    registry down with it."""
-    for folder in sorted(p for p in SHIPPED_ROOT.iterdir() if (p / MANIFEST_FILE).is_file()):
-        name = folder.name
-        if registry.get_or_none(name) is not None:
-            continue
-        try:
-            registry.register(load_driver(folder))
-            _LOAD_ERRORS.pop(name, None)
-        except DriverLoadError as exc:
-            _LOAD_ERRORS[name] = str(exc)
-            logger.error("[sources] shipped data source %s did not load: %s", name, exc)
+    """Every folder this build ships, into ``registry``."""
+    _register_folders(registry, SHIPPED_ROOT, "shipped")
 
 
 async def resolve(name: str) -> "Optional[DataDriver]":

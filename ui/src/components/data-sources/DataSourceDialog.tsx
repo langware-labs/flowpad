@@ -129,17 +129,16 @@ export function DataSourceDialog({
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Seed the form once per opening, keyed on WHAT is being edited. `specs` /
-  // `specFor` change identity on every live `DataDriver` emission, and
-  // depending on them re-seeded the draft mid-typing — discarding whatever had
-  // been entered. The spec is read through a ref so the seed still sees the
-  // current one without subscribing the effect to it.
-  const seedRef = useRef({ specFor, specs });
-  seedRef.current = { specFor, specs };
+  // Seed the form once per opening, keyed on WHAT is being edited. `specFor`
+  // changes identity on every live `DataDriver` emission, and depending on it
+  // re-seeded the draft mid-typing — discarding whatever had been entered. It is
+  // read through a ref so the seed still sees the current one without
+  // subscribing the effect to it.
+  const seedRef = useRef(specFor);
+  seedRef.current = specFor;
   useEffect(() => {
     if (!open) return;
-    const { specFor: lookup } = seedRef.current;
-    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft());
+    setDraft(editing ? draftFrom(editing, seedRef.current(editing.provider)) : emptyDraft());
     setShowAdvanced(false);
     setTried(false);
   }, [open, editing]);

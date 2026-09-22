@@ -63,7 +63,7 @@ function asSentence(detail: unknown): string {
  */
 export function errorDetail(error: unknown): string {
   const e = typeof error === 'object' && error !== null ? (error as ErrorEnvelope) : null;
-  return asSentence(e?.response?.data?.detail) || asSentence(e?.response?.data?.message) || '';
+  return asSentence(e?.response?.data?.detail) || asSentence(e?.response?.data?.message);
 }
 
 export function errorMessage(error: unknown, fallback: string): string {

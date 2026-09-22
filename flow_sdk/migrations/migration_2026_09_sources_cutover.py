@@ -110,6 +110,7 @@ def _lift(row: _Row, sources: dict[str, SimpleNamespace]) -> tuple[str, str, str
     from pydantic import ValidationError
 
     from flow_sdk.ingest.legacy_lift import data_of, origin_of
+    from flow_sdk.schema.data_spec.spec import spec_tag
 
     blob = row.blob
     if blob.get("origin_key") and blob.get("data"):
@@ -123,7 +124,9 @@ def _lift(row: _Row, sources: dict[str, SimpleNamespace]) -> tuple[str, str, str
         return None
     blob["origin"] = origin.model_dump(mode="json")
     blob.update(origin_kind=origin.kind, origin_namespace=origin.namespace, origin_key=origin.key)
-    blob["data"] = {"spec_kind": payload.spec_kind, **payload.model_dump(mode="json")}
+    # The registered name, like every other tag writer: a bare one here would MINT the
+    # "legacy row nothing can resolve" this migration exists to avoid.
+    blob["data"] = {"spec_kind": spec_tag(payload), **payload.model_dump(mode="json")}
     row.dirty = True
     return (origin.kind, origin.namespace, origin.key)
 

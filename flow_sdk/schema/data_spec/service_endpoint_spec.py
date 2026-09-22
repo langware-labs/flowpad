@@ -22,7 +22,7 @@ from typing import Annotated, Any, ClassVar, Literal, Optional, Union
 
 from pydantic import BeforeValidator, ConfigDict, Field, PlainSerializer
 
-from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.spec import DataSpec, spec_tag
 from flow_sdk.tags.grammar import NAMESPACE_SEGMENT_PATTERN, normalize_tag
 
 PROTOCOL_WEB_APP = "web.app"
@@ -149,7 +149,10 @@ def _protocol_in(value: Any) -> Any:
 def _protocol_out(value: Any) -> dict:
     if isinstance(value, ExternalProtocol):
         return {"spec_kind": value.external_kind, **value.fields}
-    return {"spec_kind": value.spec_kind, **value.model_dump(mode="json")}
+    # The REGISTERED name — ``_protocol_in`` refuses a kind it cannot resolve, so a
+    # protocol declared by an authored asset would be written under a name its own
+    # reader then rejects.
+    return {"spec_kind": spec_tag(value), **value.model_dump(mode="json")}
 
 
 def _registered_protocol(kind: str) -> Optional[type[ProtocolSpec]]:

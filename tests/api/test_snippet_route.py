@@ -147,3 +147,22 @@ async def test_ten_concurrent_runs_through_the_route(client, tmp_path):
         paths.append(p)
     results = await asyncio.gather(*(_post(client, "run", {"path": str(p)}) for p in paths))
     assert [r["data"]["stdout"] for r in results] == [f"{i}\n" for i in range(10)]
+
+
+async def test_a_rejected_body_answers_in_the_standard_envelope(client, tmp_path):
+    """A 422 is a FAIL envelope with a sentence, like every other failure.
+
+    FastAPI handles `RequestValidationError` itself, so it never reaches the catch-all
+    middleware, and a route bound straight to FastAPI used to answer with a raw
+    `{"detail": [ {...} ]}` — a shape no client of ours reads. `apiClient` unwraps
+    `{status,data}`; the UI's error reader was handed that LIST where it expected a
+    sentence, put an object into React, and the whole page was replaced by the error
+    screen. A mistyped field must not be able to do that.
+    """
+    resp = await client.post("/api/v1/snippet/run", json={"path": str(tmp_path / "x.py"), "bogus": 1})
+
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["status"] == "FAIL" and body["data"] is None
+    assert body["message"] == "body.bogus: Extra inputs are not permitted"
+    assert "detail" not in body, "the raw pydantic issue list must not reach a client"

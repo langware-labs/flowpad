@@ -208,26 +208,24 @@ def test_a_kind_miss_asks_the_loader_that_owns_its_namespace(monkeypatch) -> Non
     ``--ns--.`` is theirs. Under the prefix rule an authored asset's kind could not be
     reached from a read at all — the only loader registered scanned the shipped tree.
     """
-    asked: list[str] = []
+    asked: list[str | None] = []
 
-    def ours() -> None:
-        asked.append("ours")
-        SchemaRegistry.register_kind("test.lazy.loaded", DataSpec.parse({"a": "int"}))
-
-    def external(ns: str) -> None:
+    def loader(ns: str | None) -> None:
         asked.append(ns)
-        SchemaRegistry.register_kind(f"--{ns}--.test.lazy.theirs", DataSpec.parse({"b": "int"}))
+        if ns is None:
+            SchemaRegistry.register_kind("test.lazy.loaded", DataSpec.parse({"a": "int"}))
+        else:
+            SchemaRegistry.register_kind(f"--{ns}--.test.lazy.theirs", DataSpec.parse({"b": "int"}))
 
-    monkeypatch.setattr(SchemaRegistry, "_kinds_ours", staticmethod(ours))
-    monkeypatch.setattr(SchemaRegistry, "_kinds_external", staticmethod(external))
+    monkeypatch.setattr(SchemaRegistry, "_kind_loader", staticmethod(loader))
 
-    # A bare miss is ours, whatever it is called — no prefix to match.
-    assert SchemaRegistry.kind_type("test.lazy.loaded") is not None and asked == ["ours"]
+    # A bare miss is OURS, whatever it is called — there is no prefix to match.
+    assert SchemaRegistry.kind_type("test.lazy.loaded") is not None and asked == [None]
 
-    # A namespaced miss asks the owner, and hands it the namespace off the kind.
+    # A namespaced miss hands the loader the namespace off the kind.
     assert SchemaRegistry.kind_type("--acme--.test.lazy.theirs") is not None
-    assert asked == ["ours", "acme"], "the external loader is asked for ITS namespace only"
+    assert asked == [None, "acme"]
 
-    # Neither loader is asked for the other's kind.
+    # And one namespace's answer is never another's.
     assert SchemaRegistry.kind_type("--other--.test.lazy.theirs") is not None
-    assert asked == ["ours", "acme", "other"]
+    assert asked == [None, "acme", "other"]
