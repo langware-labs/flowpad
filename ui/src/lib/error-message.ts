@@ -13,9 +13,42 @@
  */
 
 interface ErrorEnvelope {
-  response?: { data?: { detail?: string; message?: string } };
-  detail?: string;
-  message?: string;
+  response?: { data?: { detail?: unknown; message?: unknown } };
+  detail?: unknown;
+  message?: unknown;
+}
+
+/** One pydantic issue, as FastAPI's 422 body carries it. */
+interface ValidationIssue {
+  loc?: unknown[];
+  msg?: string;
+}
+
+/**
+ * A `detail` as a SENTENCE, whatever shape the backend sent.
+ *
+ * Most routes explain themselves in a string. A route bound straight to FastAPI answers a
+ * rejected body with `RequestValidationError`, whose `detail` is a LIST of issues — and the
+ * declared `string` type was a lie at runtime: the array sailed through `||`, was handed to
+ * `setNotice`, and React was asked to render an object. That throws during render, and with no
+ * ErrorBoundary between a view and the route's `errorElement`, the whole app was replaced by
+ * the error screen. A 422 must be a message, not a white screen.
+ *
+ * Issues read as `body.field: message`, the wording the wizard already uses for the same shape.
+ */
+function asSentence(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((issue: ValidationIssue) => {
+        const where = (issue?.loc ?? []).map(String).join('.');
+        const what = typeof issue?.msg === 'string' ? issue.msg : '';
+        return where && what ? `${where}: ${what}` : what || where;
+      })
+      .filter(Boolean)
+      .join('; ');
+  }
+  return '';
 }
 
 /**
@@ -30,7 +63,7 @@ interface ErrorEnvelope {
  */
 export function errorDetail(error: unknown): string {
   const e = typeof error === 'object' && error !== null ? (error as ErrorEnvelope) : null;
-  return e?.response?.data?.detail || e?.response?.data?.message || '';
+  return asSentence(e?.response?.data?.detail) || asSentence(e?.response?.data?.message) || '';
 }
 
 export function errorMessage(error: unknown, fallback: string): string {
@@ -46,7 +79,7 @@ export function errorMessage(error: unknown, fallback: string): string {
 
   if (error instanceof Error && error.message) return error.message;
 
-  return e?.detail || e?.message || fallback;
+  return asSentence(e?.detail) || asSentence(e?.message) || fallback;
 }
 
 /**

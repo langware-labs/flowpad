@@ -90,3 +90,40 @@ describe('isUnfundedHarness', () => {
     expect(isUnfundedHarness(null)).toBe(false);
   });
 });
+
+describe('a FastAPI 422 is a sentence, not an object', () => {
+  // The crash: `detail` is typed `string` but a route bound straight to FastAPI answers a
+  // rejected body with a LIST of pydantic issues. The array passed through `||`, reached
+  // `setNotice`, and React was asked to render an object — which killed the whole page,
+  // because there is no ErrorBoundary between a view and the route's errorElement.
+  const validationError = {
+    response: {
+      data: {
+        detail: [
+          { type: 'extra_forbidden', loc: ['body', 'run_id'], msg: 'Extra inputs are not permitted', input: 'x1' },
+        ],
+      },
+    },
+  };
+
+  it('reads the issue as body.field: message', () => {
+    expect(errorMessage(validationError, 'fallback')).toBe('body.run_id: Extra inputs are not permitted');
+  });
+
+  it('always returns a string, which is what a caller renders', () => {
+    expect(typeof errorMessage(validationError, 'fallback')).toBe('string');
+  });
+
+  it('joins several issues', () => {
+    const two = { response: { data: { detail: [
+      { loc: ['body', 'a'], msg: 'required' },
+      { loc: ['body', 'b'], msg: 'too long' },
+    ] } } };
+    expect(errorMessage(two, 'fallback')).toBe('body.a: required; body.b: too long');
+  });
+
+  it('falls back when the detail carries nothing sayable', () => {
+    expect(errorMessage({ response: { data: { detail: [{}] } } }, 'fallback')).toBe('fallback');
+    expect(errorMessage({ response: { data: { detail: {} } } }, 'fallback')).toBe('fallback');
+  });
+});
