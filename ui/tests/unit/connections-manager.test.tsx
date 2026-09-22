@@ -210,8 +210,11 @@ describe('ConnectionsManager', () => {
     h.grants = { github: 'held', anthropic: 'held' };
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
-    expect(screen.getByTestId('connection-kind-github').textContent).toBe('OAuth');
-    expect(screen.getByTestId('connection-kind-anthropic').textContent).toBe('OAuth + PKCE');
+    // One method per cell; the grant flavour (PKCE) is the tooltip's detail.
+    const method = (id: string) => screen.getByTestId(`connection-kind-${id}`).querySelector('[data-method]')!;
+    expect(method('github').getAttribute('data-method')).toBe('oauth');
+    expect(method('anthropic').getAttribute('data-method')).toBe('oauth');
+    expect(method('anthropic').getAttribute('aria-label')).toMatch(/PKCE/);
 
     // One chip and a count, not a stack: four chips wrapped the row to four
     // lines and pushed Status and Actions out of view. The rest is a hover away.
@@ -526,7 +529,9 @@ describe('ConnectionsManager — credential rows', () => {
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
     expect(screen.getByTestId('connection-row-user-twilio')).toBeTruthy();
-    expect(screen.getByTestId('connection-store-user-twilio').textContent).toMatch(/vault/i);
+    const method = screen.getByTestId('connection-store-user-twilio');
+    expect(method.dataset.method).toBe('api_key');
+    expect(method.getAttribute('aria-label')).toMatch(/vault/i);
     expect(screen.getByTestId('connection-scope-user-twilio').textContent).toMatch(/all projects/i);
   });
 

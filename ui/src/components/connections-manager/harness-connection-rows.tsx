@@ -1,13 +1,14 @@
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 import { ConnectionState, type ConnectionSpec } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { HarnessMark } from './harness-mark';
-import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { TableCell, TableRow } from '../ui/table';
+import { SignInMethodIcon } from './sign-in-method';
+import { MachineWideCell, TextActionCell } from './machine-wide-cell';
 
 /**
  * The harness device logins — Claude, Codex, Copilot, OpenCode — as Connections rows.
@@ -45,8 +46,10 @@ import { TableCell, TableRow } from '../ui/table';
  * every time the backend restarts.
  */
 const STATE_VISUAL: Record<ConnectionState, { text: MessageDescriptor; dot: string }> = {
-  [ConnectionState.Connected]: { text: msg`Signed in`, dot: 'bg-emerald-400' },
-  [ConnectionState.Disconnected]: { text: msg`Signed out`, dot: 'bg-muted-foreground/40' },
+  // The table's one vocabulary: an OAuth grant, the FlowPad account and a CLI
+  // login are all "Connected" — three words for one state read as three states.
+  [ConnectionState.Connected]: { text: msg`Connected`, dot: 'bg-emerald-500' },
+  [ConnectionState.Disconnected]: { text: msg`Not connected`, dot: 'bg-muted-foreground/40' },
   [ConnectionState.NeedsReauth]: { text: msg`Reconnect needed`, dot: 'bg-red-500' },
   [ConnectionState.Unknown]: { text: msg`Not checked`, dot: 'bg-muted-foreground/40' },
 };
@@ -58,13 +61,12 @@ export function HarnessConnectionRows({
   rows: ConnectionSpec[];
   onDetails?: (worker: string) => void;
 }) {
-  const { t } = useLingui();
-
   return (
     <>
       {rows.map((row) => {
         const worker = row.provider;
         const visual = STATE_VISUAL[row.state] ?? STATE_VISUAL[ConnectionState.Unknown];
+        const needsYou = row.state === ConnectionState.Disconnected || row.state === ConnectionState.NeedsReauth;
 
         return (
           <TableRow key={`harness:${worker}`} data-testid={`connection-row-harness-${worker}`}>
@@ -76,23 +78,17 @@ export function HarnessConnectionRows({
             </TableCell>
 
             <TableCell>
-              {/* The account when the vendor named one, the mechanism otherwise.
-                  NOT "Device code": that label belongs to the RFC 8628 OAuth device
-                  grant, which exactly one registered provider uses. This is the
-                  vendor CLI's own OAuth session — same words, different mechanism. */}
-              <Badge
-                variant="outline"
-                className="text-xs font-normal"
-                title={row.identity || t`The assistant's own CLI sign-in, kept by the vendor on this machine`}
-                data-testid={`connection-kind-harness-${worker}`}
-              >
-                {row.account || <Trans>CLI login</Trans>}
-              </Badge>
+              {/* The CLI's own login on this machine. What account and plan it is
+                  on — when the vendor says — goes in the tooltip. */}
+              <SignInMethodIcon
+                method={row.sign_in || 'device'}
+                lines={[row.account, row.identity]}
+                testId={`connection-kind-harness-${worker}`}
+              />
             </TableCell>
 
-            {/* Access requested and Used by are both empty: a harness login is
-                machine-level, asks for no per-project scopes, and attaches to no
-                project. */}
+            {/* A harness login asks for no per-project scopes, so Access requested is
+                empty; it is machine-level, so Used by says so rather than "—". */}
             <TableCell className="text-sm text-muted-foreground">—</TableCell>
 
             <TableCell>
@@ -111,19 +107,21 @@ export function HarnessConnectionRows({
               </div>
             </TableCell>
 
-            <TableCell className="text-sm text-muted-foreground">—</TableCell>
+            <MachineWideCell />
 
-            <TableCell className="text-end">
+            <TextActionCell>
+              {/* Quiet while it works; the outlined call to action only when the
+                  login needs you — the same rule every other row follows. */}
               <Button
-                variant="outline"
+                variant={needsYou ? 'outline' : 'ghost'}
                 size="sm"
-                className="h-7"
+                className={cn('h-7', !needsYou && 'text-muted-foreground hover:text-foreground')}
                 onClick={() => onDetails?.(worker)}
                 data-testid={`connection-harness-details-${worker}`}
               >
                 <Trans>Details</Trans>
               </Button>
-            </TableCell>
+            </TextActionCell>
           </TableRow>
         );
       })}

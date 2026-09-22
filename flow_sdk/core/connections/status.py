@@ -59,6 +59,7 @@ async def _flowpad_row() -> ConnectionSpec:
         provider=FLOWPAD_ACCOUNT_PROVIDER,
         display_name="FlowPad",
         kind=ConnectionKind.FLOWPAD,
+        sign_in="oauth",
         state=ConnectionState.CONNECTED if logged_in else ConnectionState.DISCONNECTED,
         connected=logged_in,
         identity=str(user.get("email") or "") if isinstance(user, dict) else "",
@@ -102,6 +103,7 @@ async def _harness_rows() -> list[ConnectionSpec]:
                 connected=state is ConnectionState.CONNECTED,
                 identity=str(getattr(cap, "login_identity", "") or ""),
                 account=_account_for(worker, cap, state),
+                sign_in=_sign_in_for(worker),
                 # The resolver owns this sentence. Passed through untouched — it is
                 # the only side that knows whether a probe ran and what it saw.
                 detail=(source.reason or source.detail) if source else "",
@@ -188,6 +190,17 @@ def _account_for(worker: str, cap, state: ConnectionState) -> str:
     return f"{noun} · {plan}" if noun else plan
 
 
+def _sign_in_for(worker: str) -> str:
+    """A harness's own login is a device login — unless it has no account of its
+    own and is funded only by a key or an endpoint (``has_device_login``)."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (  # noqa: PLC0415
+        driver_api_auth_spec,
+    )
+
+    spec = driver_api_auth_spec(worker)
+    return "device" if spec is None or spec.has_device_login else "api_key"
+
+
 def _harness_state(source) -> ConnectionState:
     """Only assert a sign-out when a probe actually said so.
 
@@ -224,6 +237,7 @@ async def _credential_rows(project: Optional["Project"]) -> list[ConnectionSpec]
             provider=row.name,
             display_name=row.title or row.name,
             kind=ConnectionKind.API_KEY,
+            sign_in="api_key",
             state=ConnectionState.CONNECTED,
             connected=True,
             icon=row.icon_name,

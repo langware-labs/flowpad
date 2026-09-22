@@ -53,6 +53,10 @@ export interface ConnectionSpec {
    *  account · Max", "GitHub account". Empty when the provider does not say;
    *  render nothing rather than a guess about someone's billing. */
   account: string;
+  /** HOW it signs in: `oauth`, `device` (a vendor CLI's own login) or `api_key`.
+   *  Empty on an OAuth grant, whose flow is the provider catalogue's `kind`.
+   *  Optional: an older backend omits it. */
+  sign_in?: 'oauth' | 'device' | 'api_key' | '';
   icon: string;
   /** `machine` or `project`. Only API-key credentials are project-scoped. */
   scope: string;

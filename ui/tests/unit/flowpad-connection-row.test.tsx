@@ -102,6 +102,24 @@ describe('FlowpadConnectionRow', () => {
     expect(screen.queryByTestId('connection-flowpad-connect')).toBeNull();
   });
 
+  it('reads a connected-but-unverified hub as healthy, not amber', () => {
+    // An amber dot beside the word "Connected" contradicted itself.
+    h.login = { status: 'logged_in', user: { email: 'me@example.com' }, reason: null };
+    h.connection = { status: 'connected', error: null };
+    renderRow();
+    const dot = screen.getByTestId('connection-status-flowpad').previousElementSibling!;
+    expect(dot.className).toContain('bg-emerald-500');
+  });
+
+  it('shows its sign-in as a browser (OAuth) sign-in, with the account in the tooltip', () => {
+    h.login = { status: 'logged_in', user: { email: 'me@example.com' }, reason: null };
+    h.connection = { status: 'verified', error: null };
+    renderRow();
+    const icon = screen.getByTestId('connection-kind-flowpad');
+    expect(icon.dataset.method).toBe('oauth');
+    expect(icon.getAttribute('aria-label')).toContain('me@example.com');
+  });
+
   it('signs out as-is when signed in — `cloudManager.logout()` and nothing else', async () => {
     h.login = { status: 'logged_in', user: { email: 'me@example.com' }, reason: null };
     h.connection = { status: 'verified', error: null };
