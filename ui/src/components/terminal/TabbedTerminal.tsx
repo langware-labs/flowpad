@@ -253,7 +253,9 @@ const TerminalPanel: React.FC<{
     void startProcessRuntime(activeProcess, cols, rows)
       .then(() => {
         if (stale) return;
-        toplog.log('tab_switch', `terminal_runtime_ready ${sinceTabSwitch()} proc=${activeProcess.id.slice(0, 8)}`);
+        if (toplog.isOn('tab_switch')) {
+          toplog.log('tab_switch', `terminal_runtime_ready ${sinceTabSwitch()} proc=${activeProcess.id.slice(0, 8)}`);
+        }
         setRuntimeStatus('ready');
         dataContext.setTerminalRuntimeError(null);
       })
@@ -262,7 +264,8 @@ const TerminalPanel: React.FC<{
         const error = classifyRuntimeFailure(activeProcess.id, activeProcess, cause);
         toplog.log(
           'tab_switch',
-          `error ${sinceTabSwitch()} sink=terminal_runtime kind=${error.kind} proc=${activeProcess.id.slice(0, 8)} err=${cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause)}`,
+          `error ${sinceTabSwitch()} sink=terminal_runtime kind=${error.kind} proc=${activeProcess.id.slice(0, 8)} err:`,
+          cause,
         );
         setRuntimeStatus('failed');
         dataContext.setTerminalRuntimeError({
@@ -387,25 +390,24 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   // Lazy-mount: mount the active panel on first visit; keep mounted ones warm
   // (the Set never shrinks) so re-activation is instant.
   const [mounted, setMounted] = useState<Set<string>>(() => new Set(activeKey ? [activeKey] : []));
-  // `tab_switch`: which panels this TabbedTerminal has already SHOWN. Not
-  // `mounted` — that Set is seeded with the first active key, so it would call
-  // every first mount warm — and deduped on the key so StrictMode's double
-  // effect run writes one line.
-  const shownRef = useRef<{ keys: Set<string>; last: string | null }>({ keys: new Set(), last: null });
+  // The last key an activation was traced for: null until the first one, which
+  // is always cold even though `mounted` is seeded with it; and a repeat of the
+  // same key is StrictMode's second effect run, not a switch.
+  const lastShownRef = useRef<string | null>(null);
   useEffect(() => {
     if (!activeKey) return;
-    const shown = shownRef.current;
-    if (shown.last !== activeKey) {
-      // Warm switch = the panel was already shown (visibility flip only);
+    if (lastShownRef.current !== activeKey) {
+      // Warm switch = the panel is already mounted (visibility flip only);
       // cold = first visit mounts InteractiveTerminal (attach + replay).
-      const warm = shown.keys.has(activeKey);
-      toplog.log('tab_switch', `terminal_flip ${sinceTabSwitch()} mode=${warm ? 'warm' : 'cold'} key=${activeKey}`);
+      const warm = lastShownRef.current !== null && mounted.has(activeKey);
+      lastShownRef.current = activeKey;
+      if (toplog.isOn('tab_switch')) {
+        toplog.log('tab_switch', `terminal_flip ${sinceTabSwitch()} mode=${warm ? 'warm' : 'cold'} key=${activeKey}`);
+      }
       toplog.log(
         ['process_load', 'pty', 'agentic_process.load'],
         `TabbedTerminal active flip → ${activeKey} (${warm ? 'warm' : 'cold mount'})`,
       );
-      shown.keys.add(activeKey);
-      shown.last = activeKey;
     }
     setMounted((prev) => {
       if (prev.has(activeKey)) return prev;
@@ -413,6 +415,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       next.add(activeKey);
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `mounted` is read at the flip only; the effect runs per activation
   }, [activeKey]);
 
   if (hostDisconnected) {

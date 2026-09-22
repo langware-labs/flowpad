@@ -119,17 +119,21 @@ export function redirectLegacyAssetFsDock(dock: DockPointer, requestPath: string
  * A run with no switch before it is a revalidation (search-param write, etc.).
  */
 export async function loadAgentApp(args: LoaderArgs) {
+  // Timed unconditionally and checked at log time: on a cold page load the
+  // loader starts before toplog has fetched its state.
   const started = performance.now();
-  const path = new URL(args.request.url).pathname;
   const kind = args.params.viewType ?? '-';
   try {
     const result = await loadAgentAppBody(args);
-    toplog.log(
-      'tab_switch',
-      `loader ${sinceTabSwitch()} kind=${kind} ms=${Math.round(performance.now() - started)} path=${path}`,
-    );
+    if (toplog.isOn('tab_switch')) {
+      toplog.log(
+        'tab_switch',
+        `loader ${sinceTabSwitch()} kind=${kind} ms=${Math.round(performance.now() - started)} path=${new URL(args.request.url).pathname}`,
+      );
+    }
     return result;
   } catch (err) {
+    if (!toplog.isOn('tab_switch')) throw err;
     const ms = Math.round(performance.now() - started);
     if (err instanceof Response) {
       toplog.log(
@@ -137,10 +141,7 @@ export async function loadAgentApp(args: LoaderArgs) {
         `loader_redirect ${sinceTabSwitch()} kind=${kind} ms=${ms} status=${err.status} to=${err.headers.get('Location') ?? '-'}`,
       );
     } else {
-      toplog.log(
-        'tab_switch',
-        `loader_error ${sinceTabSwitch()} kind=${kind} ms=${ms} path=${path} err=${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`,
-      );
+      toplog.log('tab_switch', `loader_error ${sinceTabSwitch()} kind=${kind} ms=${ms} err:`, err);
     }
     throw err;
   }

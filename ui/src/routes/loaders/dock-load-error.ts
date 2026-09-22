@@ -2,7 +2,7 @@ import { replace, redirect } from 'react-router';
 import type { DockPointer } from '@src/navigation';
 import { notify } from '@src/notifications';
 import { toplog } from '@sdk';
-import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
+import { dockLabel, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import {
   clearDockLoadError,
   setDockLoadError,
@@ -75,7 +75,7 @@ export function handleDockLoadError(error: unknown, dock: DockPointer | null): v
   // redirect away, a toast, a banner or nothing visible at all.
   toplog.log(
     'tab_switch',
-    `error ${sinceTabSwitch()} sink=dock_load_error kind=${error.kind} source=${error.source} action=${error.resolution.action} dock=${dock ? `${dock.viewType}:${dock.pointer ?? ''}` : '-'}`,
+    `error ${sinceTabSwitch()} sink=dock_load_error kind=${error.kind} source=${error.source} action=${error.resolution.action} dock=${dockLabel(dock) ?? '-'}`,
   );
 
   switch (error.resolution.action) {

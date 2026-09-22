@@ -14,7 +14,7 @@ import { DiagnoseErrorModal } from '@src/notifications';
 import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
 import { NavigationActions } from '@src/navigation/NavigationActions';
-import { sinceTabSwitch, tabSwitch } from '@src/navigation/tab-switch-state';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import './styles/highlightjs.css';
 
 function defineGlobals() {
@@ -44,14 +44,10 @@ function bindNavigationTrace() {
       state: e.state,
       historyLen: window.history.length,
     });
-    // A real history step (browser/Electron back-forward) starts a tab switch.
-    // Our own synthetic popstate (commitDetached) is untrusted and already
-    // logged its start; goBack/goForward flagged the popstate they cause.
-    if (tabSwitch.awaitingPopstate) {
-      tabSwitch.awaitingPopstate = false;
-    } else if (e.isTrusted) {
-      NavigationActions.logTabSwitchStart('popstate', null);
-    }
+    // A real history step — the nav bar's Back/Forward, the browser, the
+    // Electron gesture — starts a tab switch. Our own synthetic popstate
+    // (commitDetached) is untrusted and already logged its start.
+    if (e.isTrusted) NavigationActions.logTabSwitchStart('popstate', null);
   });
 }
 
@@ -59,15 +55,11 @@ function bindNavigationTrace() {
 // mount effect, a throw in a timer — shows up only here. Attributed to the switch
 // in flight so a broken tab's error lands in its own trail.
 function bindUncaughtErrorTrace() {
-  const errText = (err: unknown) =>
-    err instanceof Error ? `${err.name}: ${err.message}` : String(err).slice(0, 300);
   window.addEventListener('error', (e) => {
-    if (!toplog.isOn('tab_switch')) return;
-    toplog.log('tab_switch', `uncaught ${sinceTabSwitch()} kind=error err=${errText(e.error ?? e.message)}`);
+    if (toplog.isOn('tab_switch')) toplog.log('tab_switch', `uncaught ${sinceTabSwitch()} kind=error err:`, e.error ?? e.message);
   });
   window.addEventListener('unhandledrejection', (e) => {
-    if (!toplog.isOn('tab_switch')) return;
-    toplog.log('tab_switch', `uncaught ${sinceTabSwitch()} kind=rejection err=${errText(e.reason)}`);
+    if (toplog.isOn('tab_switch')) toplog.log('tab_switch', `uncaught ${sinceTabSwitch()} kind=rejection err:`, e.reason);
   });
 }
 
@@ -97,10 +89,7 @@ async function init() {
             router={router}
             onError={(error) => {
               console.error('Error loading session:', error);
-              toplog.log(
-                'tab_switch',
-                `error ${sinceTabSwitch()} sink=router_on_error to=${tabSwitch.to || '-'} err=${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`,
-              );
+              toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=router_on_error err:`, error);
             }}
           />
           {/* Outside the router on purpose: the root `errorElement`

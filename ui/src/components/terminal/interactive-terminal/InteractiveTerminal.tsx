@@ -19,7 +19,7 @@ import {
   type AgenticProcess,
 } from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
-import { sinceTabSwitch, tabSwitch } from '@src/navigation/tab-switch-state';
+import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
@@ -1170,7 +1170,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           }
         } catch (e) {
           console.warn('[InteractiveTerminal] history replay failed, live-only:', e);
-          toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=pty_replay shell=${sessionId} err=${String(e)}`);
+          toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=pty_replay shell=${sessionId} err:`, e);
           toplog.log('pty', `on_connected replay_failed shell=${sessionId} source=${source} error=${String(e)}`);
         }
         if (gen !== connectGen) return superseded('replay');
@@ -1222,8 +1222,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         unsubOutput = shell.onOutput(handlePtyData);
 
         setShellReady(true);
-        if (activeRef.current && !showSimpleChatRef.current && !tabSwitch.readyLogged) {
-          tabSwitch.readyLogged = true;
+        if (activeRef.current && !showSimpleChatRef.current && toplog.isOn('tab_switch') && claimTabSwitchReady()) {
           toplog.log(
             'tab_switch',
             `ready ${sinceTabSwitch()} kind=terminal mode=cold source=${source} shell=${sessionId} attach_ms=${(performance.now() - tConnect).toFixed(0)} history_kb=${historySerialized ? (historySerialized.length / 1024).toFixed(0) : 0}`,
@@ -1556,11 +1555,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     }
     if (!wasHiddenRef.current) return; // first showing — SimpleChatPane logs the cold ready
     wasHiddenRef.current = false;
-    if (!showSimpleChat || tabSwitch.readyLogged || !toplog.isOn('tab_switch')) return;
+    if (!showSimpleChat || !toplog.isOn('tab_switch')) return;
     const frame = requestAnimationFrame(() => {
-      if (tabSwitch.readyLogged) return;
-      tabSwitch.readyLogged = true;
-      toplog.log('tab_switch', `ready ${sinceTabSwitch()} kind=chat mode=warm proc=${process?.id.slice(0, 8) ?? '-'}`);
+      if (claimTabSwitchReady()) {
+        toplog.log('tab_switch', `ready ${sinceTabSwitch()} kind=chat mode=warm proc=${process?.id.slice(0, 8) ?? '-'}`);
+      }
     });
     return () => cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per activation
@@ -1585,8 +1584,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         handlePtyResize(term.cols, term.rows);
         // Warm = this panel already replayed its history; the refresh above is
         // the whole switch. A panel still attaching logs its cold `ready` later.
-        if (shellReadyRef.current && !showSimpleChatRef.current && !tabSwitch.readyLogged) {
-          tabSwitch.readyLogged = true;
+        if (shellReadyRef.current && !showSimpleChatRef.current && toplog.isOn('tab_switch') && claimTabSwitchReady()) {
           toplog.log('tab_switch', `ready ${sinceTabSwitch()} kind=terminal mode=warm shell=${sessionId}`);
         }
       } catch (e) {

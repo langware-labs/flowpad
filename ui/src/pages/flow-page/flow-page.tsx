@@ -5,10 +5,7 @@ import { SidebarProvider } from '@src/components/ui/sidebar';
 import { useIsVibe } from '@src/components/view-mode';
 import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
-import { PageId, toplog } from '@sdk';
-import { useEffect } from 'react';
-import { useLocation } from 'react-router';
-import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
+import { PageId } from '@sdk';
 import { ContentPanel } from './content-panel/content-panel';
 import { VibeWorkspace } from './vibe-workspace';
 import { VibeNewChat } from './vibe-new-chat';
@@ -45,33 +42,6 @@ export default function FlowPage() {
   // the agent's own pin — a file the USER opened keeps the asset chrome.
   const isPreviewDisplay = isVibe && !!currentDock && currentDock.isActiveDisplay && isPreviewAssetDock(currentDock);
   const isAssetContent = !!currentDock && !hubMode && isContentAssetDock(currentDock) && !isPreviewDisplay;
-
-  // `tab_switch` paint point for EVERY tab kind: FlowPage is the one parent of
-  // every body, and a parent's effect runs after its children committed, so the
-  // rAF below lands on the first frame that shows the new URL's body. Kinds with
-  // async content (terminal replay, chat history…) add their own `ready` line.
-  const body = isAssetContent
-    ? 'asset_vibe_workspace'
-    : isVibe && !hubMode
-      ? vibeSession
-        ? 'vibe_workspace'
-        : isVibeNoProcess
-          ? 'vibe_no_process'
-          : isHomeSurface
-            ? 'vibe_new_chat'
-            : 'content_panel'
-      : 'content_panel';
-  const location = useLocation();
-  const urlKey = location.pathname + location.search;
-  const kind = currentDock?.viewType ?? '-';
-  useEffect(() => {
-    if (!toplog.isOn('tab_switch')) return;
-    const frame = requestAnimationFrame(() => {
-      toplog.log('tab_switch', `painted ${sinceTabSwitch()} kind=${kind} body=${body} path=${location.pathname}`);
-    });
-    return () => cancelAnimationFrame(frame);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one line per URL, labelled with what rendered it
-  }, [urlKey]);
 
   // One common tree keeps asset/file ContentPanel ancestry stable while the URL
   // changes only its view mode. Non-asset Vibe destinations retain the existing
