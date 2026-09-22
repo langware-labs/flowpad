@@ -1863,6 +1863,7 @@ msgid "All observed deployments are current"
 msgstr "All observed deployments are current"
 
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/connections-manager/machine-wide-cell.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/record-search-bar/SearchScopeToggle.tsx
 #: src/components/terminal/HistoryModal.tsx
@@ -2232,6 +2233,7 @@ msgstr "Anyone you share with can spend this budget and see what it has cost. Th
 msgid "Api Key"
 msgstr "Api Key"
 
+#: src/components/connections-manager/sign-in-method.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "API key"
@@ -3838,8 +3840,8 @@ msgid "CLI Log Level"
 msgstr "CLI Log Level"
 
 #: src/components/connections-manager/harness-connection-rows.tsx
-msgid "CLI login"
-msgstr "CLI login"
+#~ msgid "CLI login"
+#~ msgstr "CLI login"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "CLI Options"
@@ -4459,6 +4461,7 @@ msgstr "Connect your GitHub account to open it. Whoever shared the sandbox can't
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Connected"
 msgstr "Connected"
 
@@ -4466,6 +4469,11 @@ msgstr "Connected"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Connected · {0}"
 msgstr "Connected · {0}"
+
+#. placeholder {0}: formatTimeAgo(connection.connectedAt.toISOString())
+#: src/components/connections-manager.tsx
+msgid "Connected in this browser {0}"
+msgstr "Connected in this browser {0}"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Connected to {hostName}'s machine."
@@ -6605,9 +6613,10 @@ msgid "development · this computer"
 msgstr "development · this computer"
 
 #: src/components/connections-manager.tsx
-msgid "Device code"
-msgstr "Device code"
+#~ msgid "Device code"
+#~ msgstr "Device code"
 
+#: src/components/connections-manager/sign-in-method.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Device login"
@@ -7562,8 +7571,8 @@ msgid "Env"
 msgstr "Env"
 
 #: src/components/connections-manager/credential-rows-view.tsx
-msgid "Env file"
-msgstr "Env file"
+#~ msgid "Env file"
+#~ msgstr "Env file"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Env:"
@@ -8631,8 +8640,8 @@ msgid "Flowpad"
 msgstr "Flowpad"
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
-msgid "FlowPad"
-msgstr "FlowPad"
+#~ msgid "FlowPad"
+#~ msgstr "FlowPad"
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "FlowPad API Key"
@@ -13381,6 +13390,7 @@ msgstr "Not checked"
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager.tsx
+#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Not connected"
 msgstr "Not connected"
 
@@ -13674,13 +13684,13 @@ msgstr "Notify people about this push"
 msgid "Now using {0}"
 msgstr "Now using {0}"
 
-#: src/components/connections-manager.tsx
+#: src/components/connections-manager/sign-in-method.tsx
 msgid "OAuth"
 msgstr "OAuth"
 
 #: src/components/connections-manager.tsx
-msgid "OAuth + PKCE"
-msgstr "OAuth + PKCE"
+#~ msgid "OAuth + PKCE"
+#~ msgstr "OAuth + PKCE"
 
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "off"
@@ -18352,7 +18362,6 @@ msgstr "Short-lived key for Open-in-FlowPad deep link"
 msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "Should I allow this tool? Respond with JSON: {0}"
 
-#: src/components/connections-manager/usage-cell.tsx
 #: src/types/ViewType.ts
 msgid "Show"
 msgstr "Show"
@@ -18456,6 +18465,10 @@ msgstr "Show panel"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Show positioning info"
 msgstr "Show positioning info"
+
+#: src/components/connections-manager/usage-cell.tsx
+msgid "Show projects"
+msgstr "Show projects"
 
 #: src/components/settings-view/ClaudeSettingsPanel.tsx
 msgid "Show scope overrides"
@@ -18662,7 +18675,6 @@ msgid "Sign-in not confirmed"
 msgstr "Sign-in not confirmed"
 
 #: src/components/account/user-info.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
@@ -18673,6 +18685,14 @@ msgstr "Signed in"
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed in as {loggedInUser}"
 msgstr "signed in as {loggedInUser}"
+
+#: src/components/connections-manager/machine-wide-cell.tsx
+msgid "Signed in on this computer, so every project here can use it"
+msgstr "Signed in on this computer, so every project here can use it"
+
+#: src/components/connections-manager/flowpad-connection-row.tsx
+msgid "Signed in through your browser"
+msgstr "Signed in through your browser"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Signed in to Flowpad cloud"
@@ -18687,8 +18707,8 @@ msgid "signed out"
 msgstr "signed out"
 
 #: src/components/connections-manager/harness-connection-rows.tsx
-msgid "Signed out"
-msgstr "Signed out"
+#~ msgid "Signed out"
+#~ msgstr "Signed out"
 
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
@@ -19900,8 +19920,8 @@ msgstr "The asset was not added."
 #~ msgstr "The assets published with this project — its skills, agents, specs, and docs."
 
 #: src/components/connections-manager/harness-connection-rows.tsx
-msgid "The assistant's own CLI sign-in, kept by the vendor on this machine"
-msgstr "The assistant's own CLI sign-in, kept by the vendor on this machine"
+#~ msgid "The assistant's own CLI sign-in, kept by the vendor on this machine"
+#~ msgstr "The assistant's own CLI sign-in, kept by the vendor on this machine"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The backend may have restarted. Click to reattach."
@@ -21863,8 +21883,8 @@ msgid "Variables"
 msgstr "Variables"
 
 #: src/components/connections-manager/credential-rows-view.tsx
-msgid "Vault"
-msgstr "Vault"
+#~ msgid "Vault"
+#~ msgstr "Vault"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Vault root"
@@ -22633,8 +22653,8 @@ msgid "Your display name"
 msgstr "Your display name"
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
-msgid "Your FlowPad account"
-msgstr "Your FlowPad account"
+#~ msgid "Your FlowPad account"
+#~ msgstr "Your FlowPad account"
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup on this image will be lost."

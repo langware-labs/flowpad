@@ -36,8 +36,8 @@ export const UsageCell: React.FC<{
 
   if (!isEnabled) {
     return (
-      <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={onEnable}>
-        <Trans>Show</Trans>
+      <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground" onClick={onEnable}>
+        <Trans>Show projects</Trans>
       </Button>
     );
   }
@@ -54,7 +54,7 @@ export const UsageCell: React.FC<{
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex max-w-full flex-wrap items-center gap-1 rounded-md px-1 py-0.5 text-start transition-colors hover:bg-accent"
+          className="-ms-1 flex max-w-full flex-wrap items-center gap-1 rounded-md px-1 py-0.5 text-start transition-colors hover:bg-accent"
           data-testid="connection-usage-trigger"
         >
           {attached.length === 0 ? (

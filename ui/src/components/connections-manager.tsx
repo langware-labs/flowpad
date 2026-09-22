@@ -37,6 +37,7 @@ import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use
 import { CredentialConnectionRows } from './connections-manager/credential-rows-view';
 import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
 import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
+import { methodForOAuthFlow, SignInMethodIcon } from './connections-manager/sign-in-method';
 import { useCheckHarnessLogins, useConnections } from '@src/hooks/use-connections';
 import { openLlmSources } from './llm-sources/llm-sources-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -111,7 +112,9 @@ interface ExtendedOAuthConnection extends OAuthConnection {
  *  model in their head. */
 const GRANT_META: Record<GrantStatus, { dot: string; text: string }> = {
   [GrantStatus.NONE]: { dot: 'bg-muted-foreground/40', text: 'text-muted-foreground' },
-  [GrantStatus.HELD]: { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-500' },
+  // Healthy reads in plain text, like every other row: the dot carries the
+  // state, and colour in the WORD is kept for the states that need you.
+  [GrantStatus.HELD]: { dot: 'bg-emerald-500', text: '' },
   // Held but dead. Red rather than amber: amber would say "one click from
   // working", and this needs the whole grant again.
   [GrantStatus.NEEDS_REAUTH]: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-500' },
@@ -397,9 +400,6 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         ? t`Reconnect needed`
         : t`Not connected`;
 
-  const grantLabel = (kind: OAuthFlowKind): string =>
-    kind === 'device' ? t`Device code` : kind === 'loopback' ? t`OAuth + PKCE` : t`OAuth`;
-
   const grantHint = (kind: OAuthFlowKind): string =>
     kind === 'device'
       ? t`You type a short code into the provider's site`
@@ -591,7 +591,9 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   return (
     // No frame of its own — the host supplies height and padding.
     <div className={cn('flex min-h-0 flex-col', className)} data-testid="connections-manager">
-      <div className="mb-4 flex items-center gap-3">
+      {/* Same cap as the table, so Add connection lines up with the table's
+          right edge instead of floating at the far side of the dock. */}
+      <div className="mb-4 flex max-w-5xl items-center gap-3">
         {header && (
           <h2 className="text-xl font-semibold">
             <Trans>Connections</Trans>
@@ -720,13 +722,10 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
                   <TableCell data-testid={`connection-kind-${connection.id}`}>
                     {connection.kind ? (
-                      <Badge
-                        variant="outline"
-                        className="cursor-default rounded-full px-2 text-[11px] font-medium text-muted-foreground"
-                        title={grantHint(connection.kind)}
-                      >
-                        {grantLabel(connection.kind)}
-                      </Badge>
+                      <SignInMethodIcon
+                        method={methodForOAuthFlow(connection.kind)}
+                        lines={[grantHint(connection.kind)]}
+                      />
                     ) : (
                       <span className="text-xs text-muted-foreground/60">—</span>
                     )}
@@ -756,14 +755,19 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                               connecting ? 'animate-pulse bg-primary' : meta.dot,
                             )}
                           />
-                          <span className={connecting ? 'text-muted-foreground' : meta.text}>
+                          {/* The connect time is this BROWSER's memory, not a backend
+                              fact, so it is a hover detail rather than a bare date
+                              beside one row's status and not the next one's. */}
+                          <span
+                            className={cn('whitespace-nowrap', connecting ? 'text-muted-foreground' : meta.text)}
+                            title={
+                              !connecting && connection.connectedAt
+                                ? t`Connected in this browser ${formatTimeAgo(connection.connectedAt.toISOString())}`
+                                : undefined
+                            }
+                          >
                             {connecting ? t`Waiting for approval…` : statusLabel(grant)}
                           </span>
-                          {!connecting && connection.connectedAt && (
-                            <span className="truncate text-xs text-muted-foreground/70">
-                              {formatTimeAgo(connection.connectedAt.toISOString())}
-                            </span>
-                          )}
                         </div>
                       );
                     })()}

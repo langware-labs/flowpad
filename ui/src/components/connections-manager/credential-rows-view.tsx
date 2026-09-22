@@ -8,6 +8,7 @@ import { Button } from '../ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { TableCell, TableRow } from '../ui/table';
 import { MoreOnHover } from './more-on-hover';
+import { SignInMethodIcon } from './sign-in-method';
 import { credentialEnvFileName } from '@sdk';
 import type { CredentialRow } from '@src/components/credentials-view/credential-rows';
 
@@ -62,20 +63,17 @@ export function CredentialConnectionRows({
             </TableCell>
 
             <TableCell>
-              <Badge
-                variant="outline"
-                className="rounded-full px-2 text-[11px] font-medium text-muted-foreground"
-                title={
+              <SignInMethodIcon
+                method="api_key"
+                lines={[
                   row.store === 'vault'
                     ? t`Values are kept in this machine's encrypted vault`
                     : row.scope === 'user'
                       ? t`Values are kept in ${credentialEnvFileName(row.source.environment)} in your home folder`
-                      : t`Values are kept in this project's ${credentialEnvFileName(row.source.environment)}`
-                }
-                data-testid={`connection-store-${testKey}`}
-              >
-                {row.store === 'vault' ? <Trans>Vault</Trans> : <Trans>Env file</Trans>}
-              </Badge>
+                      : t`Values are kept in this project's ${credentialEnvFileName(row.source.environment)}`,
+                ]}
+                testId={`connection-store-${testKey}`}
+              />
             </TableCell>
 
             <TableCell data-testid={`connection-vars-${testKey}`}>
@@ -113,7 +111,7 @@ export function CredentialConnectionRows({
                   className={cn('h-2 w-2 shrink-0 rounded-full', connected ? 'bg-emerald-500' : 'bg-amber-500')}
                 />
                 <span
-                  className={cn('whitespace-nowrap', connected ? 'text-emerald-600' : 'text-amber-600')}
+                  className={cn('whitespace-nowrap', !connected && 'text-amber-600')}
                   title={row.missing.length ? t`Missing: ${row.missing.join(', ')}` : undefined}
                   data-testid={`connection-status-${testKey}`}
                 >
