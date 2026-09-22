@@ -9,8 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import flow_sdk.stream_inbox.agent_runner as runner
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+import flow_sdk.builtin.agent_serve as agent_serve
+from flow_sdk.builtin.agent_serve import TurnEngine, answer
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]  # do not increase timeout without approval
 
@@ -18,46 +19,55 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]  # do not increase t
 class _Worker:
     """A headless process: refuses a prompt while one is in flight; a turn's reply echoes its prompt."""
 
+    typeid = "agentic_process-w1"
+
     def __init__(self) -> None:
         self.in_flight = False
         self.last = ""
+        self.context_data: dict = {}
 
-    async def prompt(self, body: str):
+    async def send_turn(self, body: str) -> PromptResult:
         if self.in_flight:
-            return ApiFailResponse(message="another prompt turn is already in flight for this process")
+            return PromptResult.not_yet("another prompt turn is already in flight for this process", ran=False)
         self.in_flight, self.last = True, body
-        return ApiSuccessResponse(data={"status": "started"})
+        return PromptResult.satisfied("The turn was accepted.")
 
     async def finish(self) -> str:
         await asyncio.sleep(0.05)  # the turn runs long enough for the next message to arrive
         self.in_flight = False
         return f"reply to {self.last}"
 
+    async def save(self) -> None:
+        pass
+
+
+class _Message:
+    """A delivered channel message: its reply goes back on the channel it came from."""
+
+    def __init__(self, n: int, sent: list):
+        self.data_source_id, self.external_id = "ds-1", f"<m{n}>"
+        self.author_external_id, self.author_display, self.body = "972500000000", "Dana", f"burst {n}"
+        self._sent = sent
+
+    async def reply_spec(self, *, body):
+        return body
+
+    async def reply(self, spec):
+        self._sent.append(f"{spec} (quoting {self.body})")
+
 
 async def test_messages_arriving_together_each_get_their_own_turn(monkeypatch):
     worker, sent = _Worker(), []
     source = SimpleNamespace(id="ds-1", channel="whatsapp", provider="waha")
+    engine = TurnEngine(SimpleNamespace(name="a", id="1"), None)
 
-    async def dispatch(conversation_id, *, text, source_id, item, source=None):
-        sent.append(f"{text} (quoting {item.body})")
-        return ApiSuccessResponse(data={})
-
-    async def conversation_id_for(*_):
-        return "conv-1"
-
-    monkeypatch.setattr("flow_sdk.builtin.data_source.DataSource.get_one", classmethod(lambda cls, _q: _async(source)))
-    monkeypatch.setattr(runner, "_is_own_outgoing", lambda *_: False)
-    monkeypatch.setattr("flow_sdk.stream_inbox.projection.owner_of", lambda _s: _async("agent-1"))
-    monkeypatch.setattr(runner, "_agent_for", lambda _o: _async(SimpleNamespace(name="a", id="1")))
-    monkeypatch.setattr(runner, "_admits", lambda *_: True)
-    monkeypatch.setattr(runner, "_conversation_id_for", conversation_id_for)
-    monkeypatch.setattr(runner, "_workdir_for", lambda _a: _async("/tmp"))
-    monkeypatch.setattr(runner, "_reuse_or_spawn_agent_process", lambda *_, **__: _async(worker))
+    monkeypatch.setattr(agent_serve, "is_own_outgoing", lambda *_: False)
+    monkeypatch.setattr(agent_serve, "admits", lambda *_: True)
+    monkeypatch.setattr(agent_serve, "conversation_of", lambda *_: _async("conv-1"))
+    monkeypatch.setattr(engine, "process_for", lambda *_, **__: _async(worker))
     monkeypatch.setattr("flow_sdk.app.actions.execute_prompt._capture_assistant_reply", lambda _ap: worker.finish())
-    monkeypatch.setattr("flow_sdk.stream_inbox.outbound.dispatch_channel_reply", dispatch)
 
-    items = [SimpleNamespace(id=str(n), data_source_id="ds-1", author_external_id="972500000000", author_display="Dana", body=f"burst {n}") for n in range(1, 4)]
-    results = await asyncio.gather(*(runner.handle_inbound(item) for item in items))
+    results = await asyncio.gather(*(answer(engine, source, _Message(n, sent)) for n in range(1, 4)))
 
     assert results == [True, True, True]
     assert sent == [f"reply to burst {n} (quoting burst {n})" for n in range(1, 4)]

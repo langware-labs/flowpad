@@ -1,4 +1,5 @@
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, toplog } from '@sdk';
+import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatActivityLine';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
@@ -38,10 +39,27 @@ interface SimpleChatPaneProps {
  */
 export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   // Idempotent — the tab's trace-gutter hook usually got here first.
+  // Its settling is also the chat's cold `tab_switch` ready point: the history
+  // is in the stream, and the next frame paints it. (A warm return to a mounted
+  // pane is logged by InteractiveTerminal, which owns the activation; a failed
+  // load resolves too, and is logged by useHistoryLoadAlert.)
   useEffect(() => {
-    void process.loadHistory().catch((err) => {
-      console.error('[SimpleChatPane] loadHistory failed', err);
-    });
+    const started = performance.now();
+    void process
+      .loadHistory()
+      .then(() => {
+        if (!process.historyLoaded || !toplog.isOn('tab_switch')) return;
+        requestAnimationFrame(() => {
+          if (!claimTabSwitchReady()) return;
+          toplog.log(
+            'tab_switch',
+            `ready ${sinceTabSwitch()} kind=chat mode=cold proc=${process.id.slice(0, 8)} history_ms=${Math.round(performance.now() - started)}`,
+          );
+        });
+      })
+      .catch((err) => {
+        console.error('[SimpleChatPane] loadHistory failed', err);
+      });
   }, [process.id]);
 
   // Render a turn this pane did not start — typed into the xterm, or already

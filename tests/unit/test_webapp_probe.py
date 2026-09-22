@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.webapp_probe import probe_webapp
+from flow_sdk.core.webapp_probe import probe_webapp
 
 # --- fault fixture server ---------------------------------------------------
 

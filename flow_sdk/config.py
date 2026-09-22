@@ -7,7 +7,6 @@ for API wire compatibility. Cloud-only logic (GCP secret loading, init_env) is s
 
 import logging
 import os
-import re
 import string
 import sys
 import tempfile
@@ -16,11 +15,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.utils.validation import UUID_PATTERN
 
 # ---------------------------------------------------------------------------
 # URL constants
@@ -652,44 +650,6 @@ class ServiceUrlsConfig(BaseSettings):
 
 
 # ---------------------------------------------------------------------------
-# Micro app domain configuration
-# ---------------------------------------------------------------------------
-
-
-class MicroAppDomainConfig(BaseModel):
-    pattern: re.Pattern | None = None
-    view_action: str = "view"
-    app_domain: str = "flowpad.app"
-    port: int | None = None
-
-    def __init__(self, **data):
-        super().__init__(**data)
-        # Build the pattern after the model is initialized
-        self._build_subdomain_regex()
-
-    def _build_subdomain_regex(self):
-        """
-        Builds a regex pattern to match subdomains of the given domain.
-        """
-        escaped_domain = re.escape(self.app_domain)  # safely escape dots, etc.
-        pattern_string = f"^({UUID_PATTERN})\\.{escaped_domain}(?::\\d+)?$"
-        self.pattern = re.compile(pattern_string)
-
-    @property
-    def _verified_pattern(self):
-        if self.pattern is None:
-            raise ValueError("Pattern is not built")
-        return self.pattern
-
-    def get_micro_app_id_from_host(self, host: str) -> str | None:
-        _micro_app_host = self._verified_pattern.match(host)
-        return _micro_app_host.group(1) if _micro_app_host else None
-
-    def is_micro_app_host(self, host: str):
-        return bool(self._verified_pattern.match(host))
-
-
-# ---------------------------------------------------------------------------
 # Main service configuration
 # ---------------------------------------------------------------------------
 
@@ -712,7 +672,6 @@ class ServiceConfig(BaseSettings):
     version: str = "0.0.0"
 
     # Sub-configs
-    micro_app_domain_config: MicroAppDomainConfig = MicroAppDomainConfig()
     service_urls_config: ServiceUrlsConfig = ServiceUrlsConfig()
 
     # Deployment
@@ -839,6 +798,11 @@ class ServiceConfig(BaseSettings):
     deep_testing: bool = False
     manual_testing: bool = False
     load_flowpad_assistant: bool = True
+    #: Whether each agent placement on this machine runs its channel serve loop
+    #: (``builtin/agent_serve``). On for every real app; the test tier turns it off,
+    #: since a lifespan there would poll every agent-owned source in the shared DB —
+    #: a test that exercises the loop starts ``serve()`` itself.
+    agent_serve_channels: bool = True
 
     @field_validator("deep_testing", "manual_testing", mode="before")
     @classmethod

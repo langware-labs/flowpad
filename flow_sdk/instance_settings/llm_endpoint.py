@@ -50,6 +50,14 @@ class HubLLMEndpoint:
     invoke_path: str
     provider: str = ""
     name: str = ""
+    #: The hub opened this budget to whoever holds its id, so spending it needs NO hub login:
+    #: the id is the bearer. Set by ``flow llm user use <id>`` on a box that never signed in.
+    public: bool = False
+    #: Where a PUBLIC binding's hub lives, when the box was told (``--hub``). A pushed binding
+    #: never carries one -- the hub that pushed it is the hub this box is logged in to, read
+    #: from ``FLOWPAD_HUB_URL`` at call time. A loginless box has no such relationship to read,
+    #: so the origin it was given travels with the binding it belongs to.
+    hub_origin: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -59,7 +67,7 @@ class HubLLMEndpoint:
 _cache: dict[str, HubLLMEndpoint | None] = {}
 
 
-def _validated(endpoint_typeid, invoke_path, provider="", name="") -> HubLLMEndpoint:
+def _validated(endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="") -> HubLLMEndpoint:
     """The ONE rule for a usable binding: a non-empty id and a hub-relative path.
     Raises ``ValueError`` -- callers decide whether that is a 400 or "unbound"."""
     endpoint_typeid = str(endpoint_typeid or "").strip()
@@ -68,11 +76,16 @@ def _validated(endpoint_typeid, invoke_path, provider="", name="") -> HubLLMEndp
         raise ValueError("endpoint_typeid is required")
     if not invoke_path.startswith("/") or "://" in invoke_path:
         raise ValueError("invoke_path must be a hub-relative path")
+    hub_origin = str(hub_origin or "").strip().rstrip("/")
+    if hub_origin and not hub_origin.startswith(("http://", "https://")):
+        raise ValueError("hub origin must be an http(s) URL")
     return HubLLMEndpoint(
         endpoint_typeid=endpoint_typeid,
         invoke_path=invoke_path.rstrip("/"),
         provider=str(provider or ""),
         name=str(name or ""),
+        public=bool(public),
+        hub_origin=hub_origin if public else "",
     )
 
 
@@ -80,7 +93,14 @@ def _parse(raw) -> HubLLMEndpoint | None:
     if not isinstance(raw, dict):
         return None
     try:
-        return _validated(raw.get("endpoint_typeid"), raw.get("invoke_path"), raw.get("provider"), raw.get("name"))
+        return _validated(
+            raw.get("endpoint_typeid"),
+            raw.get("invoke_path"),
+            raw.get("provider"),
+            raw.get("name"),
+            raw.get("public") is True,
+            raw.get("hub_origin"),
+        )
     except ValueError:
         # A record written by a newer/older build must not brick spawn: unbound.
         return None
@@ -97,14 +117,20 @@ def get_hub_llm_endpoint() -> HubLLMEndpoint | None:
 
 
 def set_hub_llm_endpoint(
-    endpoint_typeid: str, invoke_path: str, *, provider: str = "", name: str = ""
+    endpoint_typeid: str,
+    invoke_path: str,
+    *,
+    provider: str = "",
+    name: str = "",
+    public: bool = False,
+    hub_origin: str = "",
 ) -> HubLLMEndpoint:
     """Persist the hub's binding for this instance and return it.
 
     Raises ``ValueError`` on an empty id or a path that is not hub-relative. The
     sole writer is the ``llm-endpoint`` box action, which only the hub calls.
     """
-    bound = _validated(endpoint_typeid, invoke_path, provider, name)
+    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin)
     app_config.set_config(_CONFIG_KEY, bound.to_dict())
     instance = get_instance_settings().instance_name
     _cache[instance] = bound
@@ -130,12 +156,32 @@ def reset_cache() -> None:
     _bound_at.clear()
 
 
-def hub_origin() -> str:
+def hub_origin(endpoint_typeid: str = "") -> str:
     """The hub ORIGIN (``FLOWPAD_HUB_URL`` without the ``/api/v1`` prefix), read at
-    call time so a re-pointed hub is honoured without re-binding."""
+    call time so a re-pointed hub is honoured without re-binding.
+
+    Asked about a specific endpoint, a PUBLIC binding to it answers first: a loginless box
+    has no hub of its own, only the one it was told that budget lives on.
+    """
     from flow_sdk.cloud_client.client import ApiConfig  # noqa: PLC0415
 
+    bound = get_hub_llm_endpoint() if endpoint_typeid else None
+    if bound is not None and bound.hub_origin and bound.endpoint_typeid == endpoint_typeid:
+        return bound.hub_origin
     return ApiConfig.from_env().app_base_url or ""
+
+
+def public_binding(endpoint_typeid: str = "") -> HubLLMEndpoint | None:
+    """This box's binding when it is a PUBLIC one (and, if asked, to that endpoint), else ``None``.
+
+    The one predicate behind "may this box spend a hub endpoint without a hub login".
+    """
+    bound = get_hub_llm_endpoint()
+    if bound is None or not bound.public:
+        return None
+    if endpoint_typeid and bound.endpoint_typeid != endpoint_typeid:
+        return None
+    return bound
 
 
 def hub_llm_endpoint_invoke_url() -> str | None:
@@ -144,7 +190,7 @@ def hub_llm_endpoint_invoke_url() -> str | None:
     bound = get_hub_llm_endpoint()
     if bound is None:
         return None
-    return f"{hub_origin()}{bound.invoke_path}"
+    return f"{hub_origin(bound.endpoint_typeid)}{bound.invoke_path}"
 
 
 # ── what this user may spend ──────────────────────────────────────────────────

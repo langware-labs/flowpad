@@ -92,6 +92,19 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
                 source_file=None,
             ), "opencode"
 
+    if hint in (None, "deepagents"):
+        # Deep Agents sessions are LangGraph checkpoint DBs FlowPad's own runner writes, one
+        # file per session id — a store like opencode's, so the record is synthesized the same
+        # way. A checkpoint carries no cwd; the process row that owns the session does.
+        from types import SimpleNamespace
+
+        from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.session_history import (
+            find_deepagents_session,
+        )
+
+        if find_deepagents_session(session_id) is not None:
+            return SimpleNamespace(cwd=None, name=session_id, jsonl_path=None, source_file=None), "deepagents"
+
     return None, None
 
 

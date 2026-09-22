@@ -8,6 +8,7 @@ from tests.unit._stream_inbox_matrix import (
     CHANNELS,
     OWNERS,
     adopts_the_owners_source,
+    agent_serving,
     assert_owned_and_attributed,
     deliver,
     double_for,
@@ -29,12 +30,13 @@ async def test_a_message_lands_in_its_owners_stream_inbox_and_is_answered_on_its
     with double_for(provider) as double:
         cell = await make_cell(owner_kind, provider, double, monkeypatch)
         try:
-            item = await deliver(cell)
-            _, conversation = await assert_owned_and_attributed(cell, item)
-            if owner_kind == "user":
-                await reply_as_human(cell, conversation)
-            else:
-                await reply_as_agent(cell, item, monkeypatch)
+            async with agent_serving(cell):
+                item = await deliver(cell)
+                _, conversation = await assert_owned_and_attributed(cell, item)
+                if owner_kind == "user":
+                    await reply_as_human(cell, conversation)
+                else:
+                    await reply_as_agent(cell, item)
             await adopts_the_owners_source(cell, monkeypatch)
         finally:
             await cell.source.delete()

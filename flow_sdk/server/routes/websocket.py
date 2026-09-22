@@ -580,10 +580,21 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
                     slow_since_log += 1
                     if time.monotonic() - slow_logged_at >= 1.0:
                         slow_logged_at = time.monotonic()
+                        # ``sub_path`` + the body's ``shell_id``, never the body
+                        # itself: a ``terminal-command`` body carries the user's
+                        # keystrokes. Without these two the line could not say
+                        # which terminal stalled, or whether it was input or a
+                        # resize — ``api_path`` was never a field on a
+                        # ``rest_api_msg`` and always logged as None.
+                        body = message_data.get("body")
+                        shell_id = body.get("shell_id") if isinstance(body, dict) else None
                         toplog.log(
-                            "pty", "ws_slow_message connection=%s type=%s path=%s action=%s ms=%.0f slow_in_window=%s",
-                            connection_id, message_data.get("message_type"), message_data.get("api_path"),
-                            message_data.get("action"), handle_ms, slow_since_log,
+                            "pty",
+                            "ws_slow_message connection=%s type=%s action=%s sub_path=%s shell=%s "
+                            "ms=%.0f slow_in_window=%s",
+                            connection_id, message_data.get("message_type"),
+                            message_data.get("action"), message_data.get("sub_path"), shell_id,
+                            handle_ms, slow_since_log,
                         )
                         slow_since_log = 0
             if not continue_loop:

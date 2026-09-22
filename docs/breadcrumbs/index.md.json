@@ -5,69 +5,173 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "breadcrumbs",
   "folder_name": "breadcrumbs",
-  "inputs_hash": "8242b1e65095f95fd949084344ead78876282e9c4235ed68e521233ee87f5369",
+  "inputs_hash": "0aa55e335e6e6101e0aa68bee704eede7a7f8cbf621f2c62be518f4b80835014",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "Breadcrumb rules bound to failing tests: each page states the expected behaviour, internals, invariants and failure modes for one proven bug \u2014 chat activity readout, bootstrap's default project, dev port picking, SQLite NULL ordering, served HTML encoding, terminal bidi, and worker interpreter resolution.",
+  "self_summary": "Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it — personas, composer readiness, live frames, port picking, login state.",
   "files": [
     {
       "name": "agent_activity_readout.md",
       "rel_path": "agent_activity_readout.md",
       "title": "Agent activity readout rules",
-      "summary": "Breadcrumb rules for the chat activity line: naming the current operation, coarse worker-phase fallback, the 500ms floor, and refinement pass-through invariants.",
-      "content_hash": "afc410d5bf3a90ba333a879ccdf53808026bcdfe05e0b79aabfe56b8974cfa9d",
-      "size_bytes": 10755
+      "summary": "Rules for the chat activity line naming what an agent is doing now: frames come only from the process, with a 500ms floor.",
+      "content_hash": "17fc7c516526a58189288611238bd27b3ba9298b869f6343013f14dd6a300381",
+      "size_bytes": 15610
+    },
+    {
+      "name": "agent_session_persona.md",
+      "rel_path": "agent_session_persona.md",
+      "title": "An agent session keeps the agent as its identity",
+      "summary": "Why an agent-launched session must answer as that agent, not vibe: prepareAgentSession embeds vibe as a layer with asPersona false.",
+      "content_hash": "a40afb9d73fd71bc55ac8e493841712a498041e0f9069946168dc74f13449fa6",
+      "size_bytes": 6293
     },
     {
       "name": "bootstrap_default_project.md",
       "rel_path": "bootstrap_default_project.md",
-      "title": "Bootstrap's default_project \u2014 which project a machine opens",
-      "summary": "Breadcrumb rules for which project a machine opens: browser memory outranks the server, then bootstrap's strict per-caller source order, never cached.",
-      "content_hash": "f3e5a3d36e81cdb647fc2d2637e134250491272e60ec7571739b6d79ff745928",
-      "size_bytes": 12288
+      "title": "Bootstrap's default_project — which project a machine opens",
+      "summary": "Which project a machine opens at bootstrap: browser memory outranks all, then hub default_project one-shot, last active project, @local; resolved per caller, never cached.",
+      "content_hash": "6a61bad72c2dfa14a3949b13635b58917f51c43e261068b7d4d58cb9df981dc8",
+      "size_bytes": 12212
+    },
+    {
+      "name": "composer_readiness.md",
+      "rel_path": "composer_readiness.md",
+      "title": "Composer readiness is a generation property, not a recent-bytes property",
+      "summary": "Why the PTY composer-ready gate blocked forever: the vendor paints its marker only on a full redraw, so a 64KB scan window goes blind.",
+      "content_hash": "b4b5119380be157af91560ec590b57dc4099ef422cdc32d100fe9d5a18de3db6",
+      "size_bytes": 6108
+    },
+    {
+      "name": "declared_persona.md",
+      "rel_path": "declared_persona.md",
+      "title": "A process declares its persona; the renderer never infers one",
+      "summary": "Why a session's persona must be declared by the caller via set_ap_persona rather than inferred from how many sub-agents are embedded.",
+      "content_hash": "e096f0f841e7eee6172720cc5cb3976a12bb5b4b037006d2b77dc2ccf5908b85",
+      "size_bytes": 8850
     },
     {
       "name": "dev_port_picking.md",
       "rel_path": "dev_port_picking.md",
       "title": "Dev port picking for agent-started servers",
-      "summary": "Breadcrumb rules for agent-started dev servers: request a port via flow app free-dev-port, one probe per invocation, and no lease against concurrent pickers.",
-      "content_hash": "08730b8ef1101025c5cc7843c45a87b241819f562493ffc4e8e81f62ed600eef",
-      "size_bytes": 3449
+      "summary": "Agent-started dev servers must ask for a port via flow app free-dev-port rather than typing one; the probe, the band, and why no lease exists.",
+      "content_hash": "56512264e13928825a3676b1d04507dc7de25e3d6366ec839c20316e2f82b09f",
+      "size_bytes": 3494
+    },
+    {
+      "name": "harness_login_state.md",
+      "rel_path": "harness_login_state.md",
+      "title": "What evidence may write a harness login state",
+      "summary": "What evidence may write a harness login state: why an undetermined probe must not read as signed out, and presence-only must not overturn a refusal.",
+      "content_hash": "1facfea1aaadb28c927b150f1e8f8451081eefcd26dced9aec14e8d0317101e9",
+      "size_bytes": 11504
+    },
+    {
+      "name": "live_frame_identity.md",
+      "rel_path": "live_frame_identity.md",
+      "title": "Live frames must name their transcript entry",
+      "summary": "Why live frames must carry transcript-entry-id: to_xml drops process_entry, so an observing client's resume position freezes and observe-turn replays every turn.",
+      "content_hash": "6e32c0fd558a2472e11271b5af7ce337b3dda303069389980255da7a896e9c3b",
+      "size_bytes": 11172
+    },
+    {
+      "name": "live_plan_detection.md",
+      "rel_path": "live_plan_detection.md",
+      "title": "Live plan detection — the plan path lives on the attachment",
+      "summary": "Where a live plan's file path actually lives: on the earlier plan_mode attachment, not on ExitPlanMode, resolved through plan_path_from_attachments.",
+      "content_hash": "c259d73dfe848dd13765401b8d51b81a47fd5424baf84bef43d9c390c4376beb",
+      "size_bytes": 5342
+    },
+    {
+      "name": "migration_slot.md",
+      "rel_path": "migration_slot.md",
+      "title": "Migration open-slot must be advanced by the release",
+      "summary": "Migration recipe directories must always leave one unreleased open slot; a release bump that consumes it strands new migrations unreachably.",
+      "content_hash": "5159d3828e9955ec18d3a3ace81dd99f394b238f997fa0828dc32a63e08b6176",
+      "size_bytes": 3592
     },
     {
       "name": "null_sort_order.md",
       "rel_path": "null_sort_order.md",
       "title": "NULL sort order in the SQLite driver",
-      "summary": "Breadcrumb rules for SQLite ordering on a field some entities lack: bucket tuples place missing values first, and never coerce them to empty string.",
-      "content_hash": "c2975af9a345bc04ed7a7d1812944f1297f82c960f83d9ced06010567bc17022",
-      "size_bytes": 2564
+      "summary": "NULL sort order in the SQLite driver: missing sort values bucket first, never compared against real ones, and never coerced to empty string.",
+      "content_hash": "656d582fdb183ce3004849be4480e17b13eac401b0f3a00f32ea01d9255eb07f",
+      "size_bytes": 2482
+    },
+    {
+      "name": "pty_queue_drain.md",
+      "rel_path": "pty_queue_drain.md",
+      "title": "Prompt queue didn't drain in PTY mode",
+      "summary": "Why a queued prompt never drained in PTY mode: the turn-end edge read _last_broadcast_key off an AgenticProcess re-hydrated fresh per event.",
+      "content_hash": "9b13a71305e9854d08db9be9e97976cc2da755e9b736828b523e0db6fea95c01",
+      "size_bytes": 8604
+    },
+    {
+      "name": "pty_turn_liveness.md",
+      "rel_path": "pty_turn_liveness.md",
+      "title": "PTY turn cut off mid-generation",
+      "summary": "Why a long PTY turn was truncated mid-generation: transcript silence is a working agent, so the inactivity fallback misread a busy worker as idle.",
+      "content_hash": "ff261049839331ce6d722da2916b0c09c2f875951a1a1877128a1268669d02ac",
+      "size_bytes": 5884
+    },
+    {
+      "name": "sandbox_browser_url.md",
+      "rel_path": "sandbox_browser_url.md",
+      "title": "Sandbox preview urls: browser vs server",
+      "summary": "A dev-server port has two correct URLs in a cloud box: loopback for the server, the public per-port host for the browser.",
+      "content_hash": "f498244f792f29b0743a63a63b5e4e6594ef9f0f0f8ad5ced5603e5f7c1244c7",
+      "size_bytes": 5740
     },
     {
       "name": "served_html_encoding.md",
       "rel_path": "served_html_encoding.md",
       "title": "Served app HTML must be read as UTF-8",
-      "summary": "Breadcrumb rules for serving a micro-app index.html byte-faithfully as UTF-8 whatever the host codepage, asserting the served text matches disk.",
-      "content_hash": "02d9a10c659ef69fa534b24818a819997cd75ba6a4a19a8b1346bb63028b685a",
-      "size_bytes": 5057
+      "summary": "Served app HTML must be read as UTF-8: without an encoding it decodes as cp1252 on Windows, giving mojibake and 500s.",
+      "content_hash": "4923a4b2119aeb5c1b3397915c4105dbf9893655a5e09fa48735835f9ea47309",
+      "size_bytes": 5000
+    },
+    {
+      "name": "surface_transcript_reconcile.md",
+      "rel_path": "surface_transcript_reconcile.md",
+      "title": "Surface change must reconcile the transcript",
+      "summary": "A surface change owes both transport and transcript: leaving the terminal must unlatch pty_mode, and history must be force-reloaded, gate mirroring the server per route.",
+      "content_hash": "e85b3e438186e5d2eb11ec63d359d430b2c5a130165b451de24d05d1cbc927da",
+      "size_bytes": 14763
     },
     {
       "name": "terminal_bidi.md",
       "rel_path": "terminal_bidi.md",
       "title": "Terminal RTL/bidi rendering contract",
-      "summary": "Breadcrumb rules for terminal RTL and bidi: a right-to-left sweep must yield PTY emission order, and why !important and avoiding inline-block are load-bearing.",
-      "content_hash": "fff49f7edf6fae077da1f8c6352ab2e40f881e879cda0e449f6acb1837f12af7",
-      "size_bytes": 9242
+      "summary": "The terminal RTL/bidi contract: one bidi paragraph per row, buffer order chosen per CLI not per platform, stamped on both mount and vendor resolution.",
+      "content_hash": "aae040bb60087a6c53275a1a6928014b30acc7b4e4d4a21949d9d87e784be5d3",
+      "size_bytes": 14561
     },
     {
       "name": "worker_interpreter.md",
       "rel_path": "worker_interpreter.md",
       "title": "Worker interpreter resolution",
-      "summary": "Breadcrumb rules for worker interpreter resolution: FLOWPAD_PYTHON is handed to the worker as an absolute path and used verbatim from any working directory.",
-      "content_hash": "c611afeeb60609228879e75f4a475fdd1337669e37ae15502fe2a7f075c1f787",
-      "size_bytes": 6916
+      "summary": "Workers are handed an absolute interpreter path as FLOWPAD_PYTHON, because uv run and bare python resolve from CWD or PATH and cannot import flow_sdk.",
+      "content_hash": "4c21e9164d53d968c16772c3e4c8811a334b623ae5cc87935ced242a03819f95",
+      "size_bytes": 6834
+    },
+    {
+      "name": "worker_terminal_theme.md",
+      "rel_path": "worker_terminal_theme.md",
+      "title": "Worker terminal theme is pinned at launch",
+      "summary": "Worker terminal theme is pinned at launch: the CLI theme must ride createProcess, not a later open, because truecolor output ignores the host xterm palette.",
+      "content_hash": "27e8c1f9eb06acd615fe5e388dfe2778c2a35b38ec95bee4a25bf90d31f6305a",
+      "size_bytes": 4897
+    },
+    {
+      "name": "xml_entity_decode.md",
+      "rel_path": "xml_entity_decode.md",
+      "title": "XML entity decode belongs to the XML transport, not to FlowData",
+      "summary": "Entity decoding belongs to the XML transport alone: the client must decode exactly amp, lt, gt, or get-history replays get rewritten and dropped.",
+      "content_hash": "47662427d7d1dccf1e1080ae09ae43fd96337f7ad0e31aaff2c41243e5f22722",
+      "size_bytes": 6831
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-08-23T22:11:28.823621+00:00",
+  "generated_at": "2026-09-22T10:22:30.916793+00:00",
   "latest_process_ref": ""
 }

@@ -5,15 +5,15 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent",
   "folder_name": "agent",
-  "inputs_hash": "d5539e4f7d1e71d4de3e207759b38ad59c99c3f9016fb8f6fc73025087d5be7e",
+  "inputs_hash": "d90778a96791c8e20f903b77b1306119483085bdd6324970585eda08c3f8c38e",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "Reference material for the agent runtime's status contract and API surface: the canonical four-axis AgenticProcess status model, and a rendered interface tour of the entity's fields, methods, backend actions and TypeScript SDK.",
+  "self_summary": "The AgenticProcess entity up close: the four-axis status model that says what a worker is doing and on what evidence, and a tour of its persisted fields, actions and public TypeScript surface.",
   "files": [
     {
       "name": "agentic_process_statuses.md",
       "rel_path": "agentic_process_statuses.md",
-      "title": "AgenticProcess statuses \u2014 the canonical model",
+      "title": "AgenticProcess statuses — the canonical model",
       "summary": "Canonical four-axis AgenticProcess status model: worker_status evidence, process status meaning, the busy boolean, os_status liveness, broadcast seams, and read-only frontend rules.",
       "content_hash": "eb20dcdb5f6d3be952fce1d3318663c7520c94a9ce0e766544dc7b9ffa22ab5e",
       "size_bytes": 11167
@@ -21,13 +21,13 @@
     {
       "name": "interface.md",
       "rel_path": "interface.md",
-      "title": "AgenticProcess interface \u2014 rendered demo",
-      "summary": "Rendered contract tour of AgenticProcess: the Python entity, its backend action surface, and the public TypeScript SDK API, demoed through interface fences.",
-      "content_hash": "4e1bcc41b9fdad0932b6d25b80c80ca5e8f4b9c0caecb0cdb07d75f77bda409d",
-      "size_bytes": 28866
+      "title": "AgenticProcess interface — rendered demo",
+      "summary": "Rendered interface-card tour of AgenticProcess: persisted fields, state rules, helper types, every entity action and the TypeScript SDK.",
+      "content_hash": "76f69f7107deb6d130d797b471f84e7b30dddc4bac88548ad28066016a2b0719",
+      "size_bytes": 28878
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-08-23T22:11:28.823621+00:00",
+  "generated_at": "2026-09-22T11:53:02.515204+00:00",
   "latest_process_ref": ""
 }

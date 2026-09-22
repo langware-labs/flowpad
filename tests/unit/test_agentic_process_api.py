@@ -9,7 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessError, RunResult
+from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, PromptResult
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
@@ -398,55 +400,47 @@ async def test_set_session_id_updates_field():
 
 
 # ---------------------------------------------------------------------------
-# RunResult.ok
+# The one-shot answer: a PromptResult, never a raise
 # ---------------------------------------------------------------------------
 
-def test_run_result_ok_when_complete():
-    """RunResult.ok is True for COMPLETE status."""
-    result = RunResult(
-        text="done",
-        session_id="abc",
-        status=WorkerStatus.COMPLETE,
-        ok=True,
-    )
-    assert result.ok is True
+def _answer_when(status: WorkerStatus) -> "tuple[AgenticProcess, PromptResult]":
+    proc = _proc()
+    with patch.object(AgenticProcess, "fetch_worker_status", return_value=status):
+        return proc, _build_run_result(proc)
 
 
-def test_run_result_not_ok_when_error():
-    """RunResult.ok is False for ERROR status."""
-    result = RunResult(
-        text="",
-        session_id="abc",
-        status=WorkerStatus.ERROR,
-        ok=False,
-    )
-    assert result.ok is False
+def test_a_finished_turn_is_ok_and_names_its_process():
+    proc, answer = _answer_when(WorkerStatus.COMPLETE)
+    assert isinstance(answer, PromptResult)
+    assert answer.exit_code is ExitCode.OK
+    assert answer.executor == str(proc.typeid)
 
 
-def test_run_result_not_ok_when_interrupted():
-    """RunResult.ok is False for INTERRUPTED status."""
-    result = RunResult(
-        text="",
-        session_id="abc",
-        status=WorkerStatus.INTERRUPTED,
-        ok=False,
-    )
-    assert result.ok is False
+@pytest.mark.parametrize("status", [WorkerStatus.ERROR, WorkerStatus.INTERRUPTED])
+def test_an_error_or_interrupted_end_is_not_yet_not_a_raise(status):
+    _, answer = _answer_when(status)
+    assert answer.exit_code is ExitCode.NOT_YET and not answer.ok
+    assert status.value in answer.detail
 
 
-# ---------------------------------------------------------------------------
-# ProcessError
-# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_run_returns_the_failed_turn_instead_of_raising():
+    """``AgenticProcess.run`` used to raise ``ProcessError``; an error end is an
+    answer — the caller reads ``ok`` and ``executor``."""
+    from flow_sdk.responses.response import ApiSuccessResponse as _Ok
 
-def test_process_error_carries_status_and_session_id():
-    """ProcessError stores status and session_id for programmatic inspection."""
-    err = ProcessError(
-        status=WorkerStatus.ERROR,
-        session_id="err-session-123",
-    )
-    assert err.status == WorkerStatus.ERROR
-    assert err.session_id == "err-session-123"
-    assert isinstance(err, Exception)
+    async def _noop(*_a, **_k):
+        return _Ok(data={})
+
+    with patch.object(AgenticProcess, "start_pty", new_callable=AsyncMock, side_effect=_noop), \
+         patch.object(AgenticProcess, "exit", new_callable=AsyncMock, side_effect=_noop), \
+         patch.object(AgenticProcess, "send", new_callable=AsyncMock), \
+         patch.object(AgenticProcess, "wait", new_callable=AsyncMock), \
+         patch.object(AgenticProcess, "fetch_worker_status", return_value=WorkerStatus.ERROR):
+        answer = await AgenticProcess.run("do it", workdir="/tmp")
+    assert isinstance(answer, PromptResult)
+    assert answer.exit_code is ExitCode.NOT_YET
+    assert answer.executor and answer.executor.startswith("agentic_process-")
 
 
 # ---------------------------------------------------------------------------

@@ -86,13 +86,11 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 vi.mock('@src/hooks/flow-hooks', () => ({
   useViewerStore: (sel: (s: { setCurrentContext: () => void }) => unknown) => sel({ setCurrentContext: () => {} }),
-  useProcessWebApp: () => ({ host: null }),
   useAppDisplay: () => ({
     runtime: null,
     available: [],
     src: '',
-    port: null,
-    microApp: null,
+    endpoint: null,
     setRuntime: vi.fn(),
   }),
 }));

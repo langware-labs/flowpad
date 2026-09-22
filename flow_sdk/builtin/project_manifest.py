@@ -28,6 +28,13 @@ class ProjectManifest(Entity):
     # ── the ProjectManifestSpec fields, round-tripped through project_manifest.json ──
     manifest_schema: int = APIField(default=PROJECT_MANIFEST_SCHEMA)
     requires: dict[str, str] = APIField(default_factory=dict)
+    ns: str = APIField(
+        default="",
+        description=(
+            "The ontology namespace every asset in this project mints into. "
+            "Blank is OURS — the flow namespace is the default and it is silent."
+        ),
+    )
     entries: list[PublishedAssetSpec] = APIField(default_factory=list)
     asset_ref: str = APIField(default="")
 

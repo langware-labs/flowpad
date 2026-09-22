@@ -18,8 +18,12 @@ from flow_sdk.flowpad_types.vendors import VENDORS
 
 WORKDIR = "/tmp/a project"
 
+#: Only a vendor with a TUI has a line to offer (``Vendor.interactive``).
+INTERACTIVE = [v.worker_type for v in VENDORS if v.interactive]
+HEADLESS_ONLY = [v.worker_type for v in VENDORS if not v.interactive]
 
-@pytest.mark.parametrize("worker_type", [v.worker_type for v in VENDORS])
+
+@pytest.mark.parametrize("worker_type", INTERACTIVE)
 def test_is_the_vendors_own_render_not_a_second_opinion(worker_type: str) -> None:
     """Byte-identical to the options object's own ``to_shell_string()``.
 
@@ -32,13 +36,13 @@ def test_is_the_vendors_own_render_not_a_second_opinion(worker_type: str) -> Non
     assert interactive_launch_command(worker_type, WORKDIR) == expected
 
 
-@pytest.mark.parametrize("worker_type", [v.worker_type for v in VENDORS])
+@pytest.mark.parametrize("worker_type", INTERACTIVE)
 def test_starts_in_the_folder_it_was_asked_about(worker_type: str) -> None:
     """Every vendor line `cd`s first, quoted — the workdir has a space on purpose."""
     assert interactive_launch_command(worker_type, WORKDIR).startswith(f"cd '{WORKDIR}' && ")
 
 
-@pytest.mark.parametrize("worker_type", [v.worker_type for v in VENDORS])
+@pytest.mark.parametrize("worker_type", INTERACTIVE)
 def test_is_the_interactive_shape_not_the_headless_one(worker_type: str) -> None:
     """Three vendors default to HEADLESS and the spawn path flips them on
     ``process.pty_mode``; there is no process here, so the flag is stated.
@@ -52,7 +56,7 @@ def test_is_the_interactive_shape_not_the_headless_one(worker_type: str) -> None
     assert not any(marker in f"{command} " for marker in headless_markers), command
 
 
-@pytest.mark.parametrize("worker_type", [v.worker_type for v in VENDORS])
+@pytest.mark.parametrize("worker_type", INTERACTIVE)
 def test_carries_nothing_that_needs_a_process(worker_type: str) -> None:
     """No session id, no per-process assets. A terminal opened from this line is
     a FRESH session in that folder — it cannot rehydrate a Flowpad worker,
@@ -73,3 +77,11 @@ def test_no_workdir_still_renders() -> None:
     """The renderer's own ``.`` fallback — a bucket with no resolved mount path
     never reaches here (the UI omits the bar), but the function must not raise."""
     assert interactive_launch_command("claude_code", None).startswith("cd . && ")
+
+
+@pytest.mark.parametrize("worker_type", HEADLESS_ONLY)
+def test_a_headless_only_vendor_has_no_line_to_offer(worker_type: str) -> None:
+    """There is no TUI to open, so the honest answer is an error — not a command that would
+    sit in the user's terminal waiting for a prompt on stdin."""
+    with pytest.raises(ValueError, match="headless"):
+        interactive_launch_command(worker_type, WORKDIR)

@@ -18,6 +18,12 @@ local and a remote executor would otherwise diverge silently:
   a shell string. Quoting belongs to the implementation, which is the only thing
   that knows whether the far end is POSIX or ``cmd.exe``.
 
+Every ``run`` answers with a ``CliResult`` built by ``CliResult.of_process`` —
+the raw ``returncode`` for a caller that branches on it (``git diff --quiet``
+answers 1 for "there is a change"), and ``exit_code`` / ``.ok`` derived from it
+in that one place. ``returncode is None`` means the command never finished:
+it could not start, or it ran out of time (``timed_out``).
+
 **There is exactly one way to obtain an executor: ``ComputeNode.get_command_executor()``.**
 Nothing else constructs one. That is what keeps "where does this command run"
 answerable from the call site instead of defaulting silently to this machine —
@@ -33,24 +39,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 import shutil
 import subprocess
-from dataclasses import dataclass
+import time
 from pathlib import Path
 from typing import Mapping, Protocol, Sequence, runtime_checkable
 
-
-@dataclass(frozen=True)
-class CommandResult:
-    """The whole result of one command: what it wrote and how it exited."""
-
-    returncode: int
-    stdout: str
-    stderr: str
-
-    @property
-    def ok(self) -> bool:
-        return self.returncode == 0
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
 
 @runtime_checkable
@@ -69,7 +65,7 @@ class CommandExecutor(Protocol):
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
         timeout: int | None = None,
-    ) -> CommandResult: ...
+    ) -> CliResult: ...
 
     async def exists(self, path: str) -> bool: ...
 
@@ -107,7 +103,7 @@ class _LocalCommandExecutor:
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
         timeout: int | None = None,
-    ) -> CommandResult:
+    ) -> CliResult:
         """The blocking body of :meth:`run`; ``run`` is this, moved off the loop.
 
         Not part of the :class:`CommandExecutor` protocol — a remote target has
@@ -115,6 +111,8 @@ class _LocalCommandExecutor:
         ``utils/git.py`` rather than reaching for an executor.
         """
         child_env = {**os.environ, **env} if env else None
+        command = shlex.join(argv)
+        started = time.monotonic()
         try:
             completed = subprocess.run(
                 list(argv),
@@ -126,13 +124,15 @@ class _LocalCommandExecutor:
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired as exc:
-            return CommandResult(returncode=124, stdout=_as_text(exc.stdout), stderr=_as_text(exc.stderr))
+            return CliResult.of_process(
+                command, None, _as_text(exc.stdout), _as_text(exc.stderr),
+                timed_out=True, duration_s=time.monotonic() - started,
+            )
         except (OSError, ValueError) as exc:
-            return CommandResult(returncode=127, stdout="", stderr=f"{type(exc).__name__}")
-        return CommandResult(
-            returncode=completed.returncode,
-            stdout=completed.stdout or "",
-            stderr=completed.stderr or "",
+            return CliResult.of_process(command, None, "", f"{type(exc).__name__}: {exc}")
+        return CliResult.of_process(
+            command, completed.returncode, completed.stdout or "", completed.stderr or "",
+            duration_s=time.monotonic() - started,
         )
 
     async def run(
@@ -142,7 +142,7 @@ class _LocalCommandExecutor:
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
         timeout: int | None = None,
-    ) -> CommandResult:
+    ) -> CliResult:
         return await asyncio.to_thread(self.run_sync, argv, cwd=cwd, env=env, timeout=timeout)
 
     async def exists(self, path: str) -> bool:

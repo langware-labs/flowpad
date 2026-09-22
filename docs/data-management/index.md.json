@@ -5,189 +5,221 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "c716915ace556c20f56e0b929e936002acdc9fac9afbda0ab0b4a8092561ba68",
+  "inputs_hash": "b621bf7deb54b28ea98a5c8b25527b80482076ca304a22eba8ee66c94b58bdc6",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "The data layer: filesystem records as the source of truth, with Entity and FTS rows as rebuildable indexes. Covers origins, data sources and their manifests, the record model and on-disk layout, DataSpec and the serializer, dataset authoring, scan and discovery, the gitignore walk, invalidation, search, the schema registry, and the LLM folder index.",
+  "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the single shape system with its kind registry, data sources and datasets, records, search and the SQLite layer underneath.",
   "files": [
     {
       "name": "asset-capsules.md",
       "rel_path": "asset-capsules.md",
       "title": "Asset capsules",
-      "summary": "Asset capsules: named JSON metadata carried inside folders and Markdown files, the flowpad:capsule format, and their role in entity identity resolution.",
-      "content_hash": "be933efe0a480e77ac5f653cf97a980e16706115e7539d409a6b88fdbba2d8b9",
-      "size_bytes": 6523
+      "summary": "Storing named JSON metadata inside filesystem assets: folder, markdown-comment and source-comment capsule carriers, their shared CapsuleData shape, and the read/write API.",
+      "content_hash": "81df6e52a5fe8841cc3041f079af82d6e1e77b772ff606632bbecd5ff62a784f",
+      "size_bytes": 7546
+    },
+    {
+      "name": "asset-management.md",
+      "rel_path": "asset-management.md",
+      "title": "Asset management",
+      "summary": "flow_sdk.assets — filesystem asset discovery, identity resolution, install, removal, projection and inventory, built on frozen Asset and AssetFolder values.",
+      "content_hash": "158342912007daa71149c524bd2b1a9a4d131b821b4a162dba022eecbb591e5d",
+      "size_bytes": 8808
     },
     {
       "name": "compute-node-fs-records.md",
       "rel_path": "compute-node-fs-records.md",
       "title": "ComputeNode `fs-records` Action",
-      "summary": "The ComputeNode fs-records action: full routing table, type-based CRUD over on-disk records, type-registry lookup on entry, and read-only record handling.",
-      "content_hash": "567d065dca58545402ce73edc58d582f11d89a99aa072900b01fb3773e159b3f",
-      "size_bytes": 35707
+      "summary": "The fs-records CRUD action on ComputeNode over disk-backed typed records: type and path routing, the write path, and when to prefer the Entity API.",
+      "content_hash": "4661d12294851518ae0f161dbb638b53509d66cde506e4ac3a60eabd4d4b23f4",
+      "size_bytes": 38425
     },
     {
       "name": "data-source-asset.md",
       "rel_path": "data-source-asset.md",
       "title": "Data source assets",
-      "summary": "The data_driver.json manifest a source ships as a folder asset: schema, name, auth, reflect modes, config form fields, traits, and runtime discovered from file presence.",
-      "content_hash": "3c83de4fe346c95f88ce0e810f584ea57ce5ed5d36c1903ee5f5d83796592302",
-      "size_bytes": 11003
+      "summary": "Data sources as folder assets: data_driver.json manifest plus source.py discovered by convention, and the separate DataSource asset holding config, owner and cadence.",
+      "content_hash": "11a17c027d19198b8ad7763d60ba36269d1c6a5e9334190962b47f8b29c0e98b",
+      "size_bytes": 16065
+    },
+    {
+      "name": "data-sources-ui.md",
+      "rel_path": "data-sources-ui.md",
+      "title": "Data Sources UI (Frontend)",
+      "summary": "The Data Sources screen frontend: the grid, source cards with lifecycle and health, the driver-driven add/edit dialog, replay, pause and delete flows.",
+      "content_hash": "d1cc6bb937b8987fb44e65e3ecb8aafed9d8bbdd7c55d11853ef8467fe1f065a",
+      "size_bytes": 6142
     },
     {
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources",
-      "summary": "Data-source ingestion: one stream per source, the cursor, the poller/sync/ingestor pipeline, driver contract and traits, status versus health, record-or-asset destinations, origin identity, change envelope.",
-      "content_hash": "c4db5941ebfadcfb0431f95ef70661ad76202d0d05f12a1151323d132679eb93",
-      "size_bytes": 13937
+      "summary": "Data sources: one DataSource reads one stream via a driver, owning query, cursor and origin, and the fetch-to-SourceItem ingestion pipeline.",
+      "content_hash": "be29ac55e7e6e2a308567f28f192a2500f12fd05f9c9abffffddb721dadcc231",
+      "size_bytes": 30245
     },
     {
       "name": "data-spec.md",
       "rel_path": "data-spec.md",
       "title": "DataSpec — shape as Pydantic, the spec as the layout",
-      "summary": "DataSpec as the one Pydantic shape system: authoring form compiled to classes, kinds, SpecType, dataset layouts, and TypeInfo.asset_spec whose field types are an asset's on-disk layout.",
-      "content_hash": "4f31c3b80afb06758fc139f753a291cb04ce8c1b7d7fef2c9d65354a37ac24bc",
-      "size_bytes": 13478
+      "summary": "DataSpec design: every shape is Pydantic, runtime shapes compile via DataSpec.parse, spec_kind links shapes to the registry, and an asset's disk layout is its class.",
+      "content_hash": "14e7238d9b8545872f9b029fd92ad6e553076b896c065036fa84baf91532e7e3",
+      "size_bytes": 18881
     },
     {
       "name": "database.md",
       "rel_path": "database.md",
       "title": "Database Architecture",
-      "summary": "SQLite architecture: NullPool rationale, each pragma, BEGIN IMMEDIATE, driver session resolution, what stays synchronous, and the scaffolded per-request transaction.",
-      "content_hash": "a54464a30c9326cf41cb7778a6772857efcf215683ce4586fe2bd93229a1a8c0",
-      "size_bytes": 13099
+      "summary": "SQLite layer architecture: one async engine, pooling, pragmas, BEGIN IMMEDIATE on writers, batched indexer commits with writer-lock hand-over, and driver session resolution.",
+      "content_hash": "31745ea3febe727bde390b4034e7dff5d31dca1933cbe05d4096116f38fba23d",
+      "size_bytes": 15907
     },
     {
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Dataset Layout (Authoring Guide)",
-      "summary": "Authoring guide for dataset folders: the dataset.json manifest and spec, csv versus io_folder layouts, slots, sidecars, example metadata, and what the parser produces.",
-      "content_hash": "06164c6a88cf462a71bcc56668bd1750c33cfc542d23c8fbe32756b91eae9cac",
-      "size_bytes": 15086
+      "summary": "Authoring a dataset on disk: the dataset.json manifest, csv versus io_folder layouts, example and slot sidecars, and the metadata/data convention.",
+      "content_hash": "7c0fa0c57531a66f2570b2a7f7f3a89d318c36263338974f6316dd9f943538ea",
+      "size_bytes": 18397
     },
     {
       "name": "entity-index-sync.md",
       "rel_path": "entity-index-sync.md",
       "title": "Entity Index Sync",
-      "summary": "The Entity index and FTS5 tables as rebuildable mirrors of records: sync_to_db pipeline, record linkage, occurrence projection, removal, and indexer orchestration.",
-      "content_hash": "7ca1c3c468ea7311f699aee53e5adecfaf2de142167087437a6dc2d24103c5fa",
-      "size_bytes": 19974
+      "summary": "How filesystem Records and the SQLite Entity index stay linked by a shared (type, id), what sync_to_db does, and when to query which layer.",
+      "content_hash": "0fa91d04130647452337742517d0e3603c4569abb99512806b1565e7dac2aae8",
+      "size_bytes": 22596
     },
     {
       "name": "folder-layout.md",
       "rel_path": "folder-layout.md",
       "title": "On-Disk Folder Layout",
-      "summary": "On-disk layout of the per-instance FlowPad home and records root: folder naming, the flat metadata file, asset_ref, hash sentinel, and Claude directories.",
-      "content_hash": "f471311ced16209880cdddf7a86f5d8a1fffd466d10afa818509767f93595be3",
-      "size_bytes": 27936
+      "summary": "The on-disk layout of flow-cli: the per-instance ~/.flow home, records and records_data roots, shadow folder naming, RecordType constants and the source-file check.",
+      "content_hash": "d29f3075eeda0ec419dd9d5bc054764c5cdf34cc8ca9d1b13881cc7ab0197c11",
+      "size_bytes": 30913
     },
     {
       "name": "fs_find.md",
       "rel_path": "fs_find.md",
       "title": "Filesystem Discovery Benchmark",
-      "summary": "Benchmark of OS filesystem-discovery indexers (plocate, mdfind, Everything) against synthetic and real trees, with results and conclusions.",
-      "content_hash": "8c1500a871dc64022aa4ac92fdace25d8a739bb4cf866d7a9dfc67716e627a61",
-      "size_bytes": 10367
+      "summary": "Cross-platform benchmark of four recursive file-discovery methods, answering whether an OS-native index beats a Python walker and where the crossover lies.",
+      "content_hash": "fcd821d861bf42a8ad6fc1f8aaa5a59afcf2706f2177c57c8bcf26ecd2577640",
+      "size_bytes": 10536
     },
     {
       "name": "gitignore-walk.md",
       "rel_path": "gitignore-walk.md",
       "title": "Gitignore-Aware Filesystem Walk",
-      "summary": "The gitignore-aware walk: a hardcoded denylist stage, the nested .gitignore stack, the force-include of .claude, and the gitignore option flag.",
-      "content_hash": "3f11f2b6c58141079a63435d3793fe1defb002b9d471a9ff5afb682f89749694",
-      "size_bytes": 8822
+      "summary": "gitignore_walk(), the one pre-order scandir DFS every tree walker shares, and the single skip policy deciding which directories are descended into.",
+      "content_hash": "7d7954dffc68028b6302adb2ee1d2e448bc622004b0d6a628f146329cfc4da8c",
+      "size_bytes": 9476
     },
     {
       "name": "invalidation.md",
       "rel_path": "invalidation.md",
       "title": "Content Invalidation (file change → reindex → refresh)",
-      "summary": "The file-change to reindex to refresh loop: lazy GET-time refresh, explicit invalidate, turn-end push, updated_date as change token, and frontend body re-read.",
-      "content_hash": "aaf791756e0dc7eb912eaf6b25f04427c13bdb2741a52d66c75ad3f9c6cb91fc",
-      "size_bytes": 9624
+      "summary": "The invalidation loop that turns an out-of-band file write into fresh UI content: the re-index trigger and the file-body re-read at the two outer edges.",
+      "content_hash": "71de6e8fa1a36f132fd4e2fd036ea8134bf6a116060a98e280f65840959de8a8",
+      "size_bytes": 10885
     },
     {
       "name": "items_origins.md",
       "rel_path": "items_origins.md",
       "title": "Items & origins",
-      "summary": "FSOrigin, the locator saying where an asset's bytes live: the git and local union, driver registry, key() as dedup handle, wire contract, and bundle files.",
-      "content_hash": "35a79c45042e2164035415049febe9af04cbf5ee2bfa816a7af908b42ee9b01b",
-      "size_bytes": 9205
+      "summary": "Origins as value objects saying where a thing really lives: the FSOrigin git/local union, its tolerant discriminator, rel_path placement, and how CloudOrigin differs.",
+      "content_hash": "4d05674bebaea1afcd9cc6c72dfdca6cfa8b35c8b65d8312a7027aa1380c4c47",
+      "size_bytes": 10978
     },
     {
       "name": "listen-action.md",
       "rel_path": "listen-action.md",
       "title": "Listen Action and CRUD Event Pipeline",
-      "summary": "The listen webhook and CRUD event pipeline: envelope shape, the hook_op and agent_hook types, sync operations, and dispatch to entity reflection.",
-      "content_hash": "9ea300a8540b821447b338dc2031ee0f19a3864dcb971b48eb011cfc7a0179a1",
-      "size_bytes": 37852
+      "summary": "Webhook POST to frontend cache update: listen_action, the two webhook types, _reflect_entity, DataOpMessage broadcast, recipient resolution, and the TypeScript subscription layer.",
+      "content_hash": "dcc06c4a9c427e9a148261bf261cb1d83dfac7d11959e18615bdebb7fef9df5b",
+      "size_bytes": 45615
     },
     {
       "name": "llm-index.md",
       "rel_path": "llm-index.md",
       "title": "The LLM Folder-Index Pipeline",
-      "summary": "The index.md Merkle folder-index pipeline: the standalone llm_index library, content hashing, the LLMIndexer engine, summary cache, on-disk artifacts, and rebuild.",
-      "content_hash": "36c01746912d38dc0d4e2710947b7db911bca73cb26a2839ea6a151f5995a96d",
-      "size_bytes": 15706
+      "summary": "The index.md folder-index pipeline: LLMIndexer's hash-cache-assemble Merkle build, the on-disk artifacts, and the MarkdownIndex entity that indexes them.",
+      "content_hash": "97bd4b21ab49a42f964a981d4d63a2ae6c0e1b166442552cdee8a97fd2a972b0",
+      "size_bytes": 17385
     },
     {
       "name": "mcp-operations.md",
       "rel_path": "mcp-operations.md",
       "title": "MCP Server Operations",
-      "summary": "The MCP server: launch paths and transport, the tool-registration pattern, and the registered tools including entity CRUD, tag, context, and session analysis.",
-      "content_hash": "4e8c1fa0130902c14d34248107be6cbe2c2e9d19800a254de483cab6a1ea5fe0",
-      "size_bytes": 19394
+      "summary": "The flow_sdk MCP server Claude Code spawns over stdio: how it launches, its FastMCP and raw-debug modes, and the entity, tag, context and session tools.",
+      "content_hash": "d7fb3d0b62e1e3b24d921a6ae7a45a352170576856effc9dfea82d10d048c553",
+      "size_bytes": 21937
     },
     {
       "name": "record-model.md",
       "rel_path": "record-model.md",
       "title": "Record Model",
-      "summary": "FSRecord, the single record class: shadow-folder storage, identity and fingerprint minting, on-disk layout, save/load/discover, FSRefs, index sentinels, and serializer-written assets.",
-      "content_hash": "5ac6313420d7dd361839c7aa2b6c8d64dc719f3e985c94b9da4ac80c5962ea60",
-      "size_bytes": 23598
+      "summary": "The FSRecord class and flow_sdk/fs_store: disk as source of truth, per-type behaviour on TypeInfo, meta models, and what the lean rewrite deliberately dropped.",
+      "content_hash": "1c8762db2ff914ebf0bf35dbdf1a23d3159bb790bbc2ccbf01770c9d73a18836",
+      "size_bytes": 27262
     },
     {
       "name": "record-search.md",
       "rel_path": "record-search.md",
       "title": "Record Search (FTS5/SQLite)",
-      "summary": "Full-text record search on SQLite FTS5: the virtual table, what gets indexed via index_fields, sync and delete operations, the HTTP API, and performance.",
-      "content_hash": "a1d9d6e4cdcbacede3c9cada19d4fd9fc3e48139c260dd76aac922e453cbb439",
-      "size_bytes": 14823
+      "summary": "Record search on SQLite FTS5: how FSRecord.sync_to_db indexes entries, how Entity.search and the search route query them, and how bulk reindexing runs.",
+      "content_hash": "a2e8fe32c170486c68d1653e275b53a9b65059218cf8437b924ff63a6d9782e0",
+      "size_bytes": 18105
     },
     {
       "name": "scan-and-discovery.md",
       "rel_path": "scan-and-discovery.md",
       "title": "Scan and Discovery",
-      "summary": "FSIndexer's depth-first walk over FSRef roots: walker registration graph, type-gated dispatch, chunked and subprocess scanning, per-type parsing/identity/freshness slots, and when indexing runs.",
-      "content_hash": "04930ad94a13c52ba20cd108c2bd6d8813c7b7d3205599ed0a08b36b2439fb03",
-      "size_bytes": 32123
+      "summary": "How FSIndexer walks roots through waypoints and per-type parsers, commits in batches handing the writer lock to queued writers, plus session lookup and index actions.",
+      "content_hash": "e3aa0d88c194f976ada9b70d2458fc9002afb1ef3e2a67882c72c12b314832fb",
+      "size_bytes": 39443
     },
     {
       "name": "schema-registry.md",
       "rel_path": "schema-registry.md",
       "title": "Schema Registry",
-      "summary": "SchemaRegistry and TypeInfo as the single type-metadata source: declarative TypeMetadata authoring, entity registration, merge semantics, serialization slots, kinds, and scan orchestration.",
-      "content_hash": "bb7a4150ceb91364ae12e99d70f7cd136da3d16f9d7da9e86e3c99f349c2b113",
-      "size_bytes": 16714
+      "summary": "SchemaRegistry as the single source of type metadata: declarative TypeInfo modules, entity self-registration, merge semantics, kind resolution and persistence.",
+      "content_hash": "0c8dae40242e2933852b660b4ad401a341d56ed27adb4ef085b30f1d7a7a796b",
+      "size_bytes": 25165
+    },
+    {
+      "name": "source-contract-boundary.md",
+      "rel_path": "source-contract-boundary.md",
+      "title": "The source contract and the sync runtime",
+      "summary": "The boundary between the flow_sdk/sources contract (async sources, pages, ack) and the ingest sync runtime, with its one dependency direction.",
+      "content_hash": "89723df1cbed6e0cadcdf94e5d6037646470a650bcc4cf0b7b090a82a9b9326a",
+      "size_bytes": 5293
+    },
+    {
+      "name": "stream-inbox-projection.md",
+      "rel_path": "stream-inbox-projection.md",
+      "title": "Stream inbox projection — ingested messages become conversations",
+      "summary": "One-way projection of ingested records into stream-inbox conversations: reference rows, the timestamp law, self-healing reindex, the two lanes and purge semantics.",
+      "content_hash": "2a53857d4600db4bfca6063e6f9e896ade229ce932fa4f80cbb429b748c2c45e",
+      "size_bytes": 12898
     },
     {
       "name": "system-tools.md",
       "rel_path": "system-tools.md",
       "title": "System Tools Service (Frontend)",
-      "summary": "The frontend system-tools service: the activity model, progress_report WebSocket events, conflict detection, the useSystemTools hook, and shared UI components.",
-      "content_hash": "56d0998add65e3c49c775b869e5b85e2a860d79c139deb5ae82a35012a900777",
-      "size_bytes": 7350
+      "summary": "SystemToolsService, the frontend service for backup, archive, restore, clear, scan and index, and the compute-node action paths it calls through apiClient.",
+      "content_hash": "1896e06a598ac613043af926bdaca4000fff8264d9e0315954acf0a9482d3a37",
+      "size_bytes": 12727
     },
     {
       "name": "transcript-indexing.md",
       "rel_path": "transcript-indexing.md",
       "title": "Transcript Indexing",
-      "summary": "The opt-in side-effect pass over parsed transcript entries: freshness versus hash sentinels, the handler contract, shipped handlers, and the 404 self-heal path.",
-      "content_hash": "cbfcbde2c8f08ce4c243969507de2d1e27a3a035c0d7ccea19590bc0eedd95b1",
-      "size_bytes": 15050
+      "summary": "The opt-in transcript indexer that parses a session JSONL and runs handlers for side effects only, versus the FSIndexer that walks the filesystem.",
+      "content_hash": "24ab5b6ca62dd7b365faa73f4387b2706b236c5dda15c32d4bb3220c921876ec",
+      "size_bytes": 15513
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-08-29T19:09:43.812793+00:00",
+  "generated_at": "2026-09-22T11:53:02.619684+00:00",
   "latest_process_ref": ""
 }

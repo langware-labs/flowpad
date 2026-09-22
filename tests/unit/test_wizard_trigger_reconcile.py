@@ -155,13 +155,13 @@ async def test_a_trigger_fired_run_reports_at_instance_scope_not_entity_scope(tm
     """
     from flow_sdk.config import system_projects_root
     from flow_sdk.core.wizard import execute as wizard_execute
-    from flow_sdk.core.wizard.runner import WizardRunResult
+    from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
     seen: dict = {}
 
     async def _capture(spec, **kwargs):
         seen.update(kwargs)
-        return WizardRunResult(outcomes=[], message="stubbed")
+        return WizardResult.satisfied("stubbed")
 
     monkeypatch.setattr(wizard_execute, "run_wizard", _capture)
 
@@ -194,13 +194,13 @@ async def test_an_unattended_run_of_a_non_system_wizard_is_refused(tmp_path, mon
     """There is no client to approve it, so the only safe answer is not to run.
     The user can still run it from the app, which is where the prompt lives."""
     from flow_sdk.core.wizard import execute as wizard_execute
-    from flow_sdk.core.wizard.runner import WizardRunResult
+    from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
     called: list = []
 
     async def _capture(spec, **kwargs):
         called.append(kwargs)
-        return WizardRunResult(outcomes=[], message="stubbed")
+        return WizardResult.satisfied("stubbed")
 
     monkeypatch.setattr(wizard_execute, "run_wizard", _capture)
 

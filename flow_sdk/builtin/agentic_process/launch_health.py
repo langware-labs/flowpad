@@ -4,7 +4,7 @@ Spawning a worker fails in many distinguishable ways: the harness is not
 installed, the user is not logged in, no API key is stored, the model is
 overloaded, the process died a second after launch. Today every one of those
 collapses into ``WorkerStatus.ERROR`` plus a free-text ``start_failure``
-string, and ``ProcessError`` carries neither a code nor a retryability. The
+string, and a returned ``NOT_YET`` carries neither a code nor a retryability. The
 frontend loader is reduced to regex-matching the English message
 (``load-process.ts``, whose own comment admits those are "the only signals
 available"), and every new caller invents its own guess.

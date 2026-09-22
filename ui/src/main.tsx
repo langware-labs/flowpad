@@ -13,6 +13,8 @@ import { LocaleProviders } from '@src/contexts/LocaleProviders';
 import { DiagnoseErrorModal } from '@src/notifications';
 import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
+import { NavigationActions } from '@src/navigation/NavigationActions';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import './styles/highlightjs.css';
 
 function defineGlobals() {
@@ -42,6 +44,22 @@ function bindNavigationTrace() {
       state: e.state,
       historyLen: window.history.length,
     });
+    // A real history step — the nav bar's Back/Forward, the browser, the
+    // Electron gesture — starts a tab switch. Our own synthetic popstate
+    // (commitDetached) is untrusted and already logged its start.
+    if (e.isTrusted) NavigationActions.logTabSwitchStart('popstate', null);
+  });
+}
+
+// Anything thrown outside a React boundary or a loader — a rejected promise in a
+// mount effect, a throw in a timer — shows up only here. Attributed to the switch
+// in flight so a broken tab's error lands in its own trail.
+function bindUncaughtErrorTrace() {
+  window.addEventListener('error', (e) => {
+    if (toplog.isOn('tab_switch')) toplog.log('tab_switch', `uncaught ${sinceTabSwitch()} kind=error err:`, e.error ?? e.message);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    if (toplog.isOn('tab_switch')) toplog.log('tab_switch', `uncaught ${sinceTabSwitch()} kind=rejection err:`, e.reason);
   });
 }
 
@@ -52,6 +70,7 @@ function bindNavigationTrace() {
 async function init() {
   defineGlobals();
   bindNavigationTrace();
+  bindUncaughtErrorTrace();
   await initDesktopBackend(sdkConfig);
   // Seed toplog state + subscribe to live tag toggles. Without this the
   // frontend `toplog.log(...)` calls (incl. the `navigation` tag) are no-ops
@@ -70,6 +89,7 @@ async function init() {
             router={router}
             onError={(error) => {
               console.error('Error loading session:', error);
+              toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=router_on_error err:`, error);
             }}
           />
           {/* Outside the router on purpose: the root `errorElement`

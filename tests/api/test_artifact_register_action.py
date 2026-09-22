@@ -107,6 +107,39 @@ async def test_artifacts_action_returns_this_processes_artifacts(bootstrapped_cl
     assert {r["generated_by"] for r in rows} == {f"agentic_process-{pid}"}
 
 
+async def test_re_registering_the_same_deliverable_converges(bootstrapped_client):
+    """One run, one deliverable, one row — however many times it registers.
+
+    An agent re-running `flow artifact` on the same target (a retry, or a
+    per-turn habit) used to mint a fresh row each call, so `artifacts` filled
+    with duplicates of one thing. Convergence is a LOOKUP on the natural key,
+    never a derived id.
+    """
+    pid = await create_agentic_process(bootstrapped_client)
+    spec = await _a_spec("same")
+
+    first = await _register(bootstrapped_client, pid, typeid=f"spec-{spec.id}")
+    again = await _register(bootstrapped_client, pid, typeid=f"spec-{spec.id}")
+
+    assert again.json()["data"]["artifact"]["id"] == first.json()["data"]["artifact"]["id"]
+    rows = (await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{pid}/artifacts")).json()["data"]["artifacts"]
+    assert len(rows) == 1
+
+
+async def test_another_run_registering_the_same_target_gets_its_own_artifact(bootstrapped_client):
+    """Provenance is per-run, so convergence stops at the run boundary — an
+    artifact may itself be an event, and two runs are two events."""
+    pid_a = await create_agentic_process(bootstrapped_client)
+    pid_b = await create_agentic_process(bootstrapped_client)
+    spec = await _a_spec("shared")
+
+    made_a = await _register(bootstrapped_client, pid_a, typeid=f"spec-{spec.id}")
+    made_b = await _register(bootstrapped_client, pid_b, typeid=f"spec-{spec.id}")
+
+    assert made_a.json()["data"]["artifact"]["id"] != made_b.json()["data"]["artifact"]["id"]
+    assert made_b.json()["data"]["artifact"]["generated_by"] == f"agentic_process-{pid_b}"
+
+
 async def test_two_processes_do_not_see_each_others_artifacts(bootstrapped_client):
     pid_a = await create_agentic_process(bootstrapped_client)
     pid_b = await create_agentic_process(bootstrapped_client)

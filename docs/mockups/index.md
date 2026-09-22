@@ -1,0 +1,18 @@
+---
+type: markdown_index
+id: markdown_index-5b9f0a97-5a77-5c30-908d-c988dddc394f
+inputs_hash: 37ccad137bb783214c9e2d92540a123aa77a8c55ae5e95653ee87a095da7e7ee
+template_version: 1
+prompt_version: 1
+parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
+vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
+generated_at: '2026-09-19T23:43:15.154759+00:00'
+latest_process_ref: ''
+file_count: 0
+subfolder_count: 0
+---
+
+# mockups
+
+## Self-Summary
+> Interface mockups. Empty for now.

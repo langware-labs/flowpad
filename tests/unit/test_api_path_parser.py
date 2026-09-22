@@ -5,7 +5,7 @@ Only the APIRequest parsing tests that don't require cloud fixtures
 are included.
 
 Skipped tests (require cloud infra / circular import workaround):
-- test_api_request_parse (needs MicroApp entity, not available in flow-cli)
+- test_api_request_parse (needs WebApp entity, not available in flow-cli)
 - test_empty through test_action_with_subpath (need RequestInfo + urls_service + action registry)
 - test_convert_namespace_to_typeid (needs Workspace.save())
 - test_convert_propid_to_typeid (needs Workspace.save())

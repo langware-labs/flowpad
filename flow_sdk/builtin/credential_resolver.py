@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from pydantic import SecretStr
@@ -68,11 +69,51 @@ async def credentials_in_scope(project: Optional["Project"]) -> CredentialPairs:
     projects: CredentialPairs = []
     for spec in await SecretPack.get_all(QueryFilter(match=match)):
         name = spec_scope_name(spec)
-        if name == SCOPE_USER:
+        if name == SCOPE_USER and _declared_under(spec, user):
             users.append((spec, user))
-        elif name == SCOPE_PROJECT and proj is not None and str(spec.project_id or "") == proj.project_id:
+        elif (name == SCOPE_PROJECT and proj is not None
+              and str(spec.project_id or "") == proj.project_id and _declared_under(spec, proj)):
             projects.append((spec, proj))
     return users + projects
+
+
+def _declared_under(spec: "SecretPack", scope: CredentialScope) -> bool:
+    """Whether this row still has a document, in the scope it claims.
+
+    Two orthogonal ways a row stops being a declaration, and it takes both to
+    catch them:
+
+    *It is somewhere else.* A user-scope query matches on the STRING
+    ``scope == "user"`` alone, which assumes there has only ever been one user
+    home. A row written under a different one — another instance's
+    ``user_home``, a relocated ``FLOW_HOME``, a test's temporary home — keeps
+    answering as this home's declaration. (``SCOPE_PROJECT`` carries a
+    ``project_id``, a real key; ``"user"`` identifies nothing, so containment
+    stands in for the key user scope does not have. Giving it one is the deeper
+    fix, and it needs a column and a backfill for a condition that only arises
+    across homes.)
+
+    *It is gone.* The folder was deleted and the row outlived it. Nothing prunes
+    a fileless ``secret_pack`` — ``prune_fileless_data_sources`` covers a NULL
+    ``asset_ref`` on a data source, not a path that stopped existing.
+
+    Either way the variables get injected into a process and snapshotted into a
+    node's attachment list although nothing here declares them.
+
+    A row with no ``asset_ref``, or a scope with no root, is left alone: those
+    are shapes this predicate does not model, and dropping them silently would
+    trade one wrong answer for another.
+    """
+    ref = getattr(spec, "asset_ref", "") or ""
+    if not ref or scope.root is None:
+        return True
+    path, root = Path(ref), Path(scope.root)
+    if not path.exists():
+        return False
+    # Both are normally written from the same root, so the plain comparison
+    # answers with no filesystem access. Resolving is the fallback for the case
+    # that needs it — a symlinked home, or macOS `/tmp` against `/private/tmp`.
+    return path.is_relative_to(root) or path.resolve().is_relative_to(root.resolve())
 
 
 def declare(pairs: CredentialPairs) -> dict[str, DeclaredVar]:

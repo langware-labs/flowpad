@@ -53,6 +53,11 @@ async def deploy_entity_to_cloud(entity: "Entity", environment: str | None = Non
         data = await client.post(path, {"environment": environment})
     data = data if isinstance(data, dict) else {}
     await Deployment.adopt_from_hub(data.get("deployment"), element=entity)
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+    # What the placement serves (its chat, its apps), held here at the hub's ids.
+    for row in data.get("endpoints") or []:
+        await ServiceEndpoint.adopt_from_hub(row)
     return data
 
 

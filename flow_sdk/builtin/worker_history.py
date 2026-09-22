@@ -100,6 +100,7 @@ class WorkerType(str, Enum):
     CODEX = "codex"
     COPILOT = "copilot"
     OPENCODE = "opencode"
+    DEEPAGENTS = "deepagents"
 
 
 class WorkerHistoryEntry(BaseModel):

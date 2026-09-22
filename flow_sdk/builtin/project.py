@@ -516,6 +516,30 @@ class Project(Entity):
 
     @computed_field
     @property
+    def hidden(self) -> bool:
+        """App-managed project: infrastructure the user visits, never works in.
+
+        The ONE answer to "is this one of ours", published so no client holds a
+        second copy of the rule — the same reason ``context_roots`` is
+        serialized. ``is_hidden_project`` decides it (SDK-shipped path, the
+        agent mount root, a helpdesk portal checkout, or the ``system`` flag),
+        and it has to be COMPUTED rather than stored: the portal is recognised
+        by where it lives, which is why ``helpdesk-ensure`` deliberately does
+        not stamp ``system`` on it (that flag means "SDK-shipped", and would be
+        a lie), and why rows minted by the per-cwd project walk carry no flag
+        at all.
+
+        The frontend needs it for more than list filtering: a hidden project
+        must never become the CURRENT project, or opening the help desk
+        silently switches the footer, the workdir and every project-scoped
+        action out of the project the user was actually in.
+        """
+        from flow_sdk.config import is_hidden_project  # noqa: PLC0415
+
+        return is_hidden_project(self.fs_storage_mount_path or "", self.system)
+
+    @computed_field
+    @property
     def context_dir_infos(self) -> list[dict[str, str]]:
         """Per-context-folder info the UI needs beyond the bare path.
 
@@ -1052,11 +1076,18 @@ class Project(Entity):
             self.hub_published_at = _now_iso()
             if not recipients:
                 return self
+            # A grant is idempotent in intent, but inviting someone who already
+            # holds a role is a 400 on the hub ("User has already accepted; use
+            # change_role…"). Left alone, re-sharing a project — or sending the
+            # note after the grant already landed — fails the whole share with
+            # hub_publish_failed. Read the roster once and invite only who is
+            # missing: an existing member already HAS what this call grants.
+            already = await self._hub_member_emails(client)
             for email in recipients:
                 if not email or not isinstance(email, str):
                     continue
                 email = normalize_email(email)
-                if not email:
+                if not email or email in already:
                     continue
                 await client.post(
                     f"/graph/project/{self.id}/members",
@@ -1068,6 +1099,30 @@ class Project(Entity):
                     },
                 )
         return self
+
+    async def _hub_member_emails(self, client) -> set[str]:
+        """Emails already on this project's hub roster (any status).
+
+        An unreadable roster returns an empty set, which falls through to
+        inviting everyone — the behaviour before this read existed — so a roster
+        outage can only cost a redundant invite, never a missing one.
+        """
+        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+
+        try:
+            rows = await client.get(f"/graph/project/{self.id}/members")
+        except Exception:  # noqa: BLE001 — degrade to the old invite-everyone path
+            logging.warning("[project.share] roster read failed for %s; inviting all", self.id)
+            return set()
+        emails: set[str] = set()
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            for key in ("user_email", "email", "recipient_email"):
+                email = normalize_email(row.get(key) or "")
+                if email:
+                    emails.add(email)
+        return emails
 
     async def setup_from_git_origin(self) -> "Project":
         """Materialize this shared project into a local Git worktree.
@@ -1616,6 +1671,35 @@ class Project(Entity):
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"project_id": self.id, **data})
+
+    @action.post(action_name="expose-endpoints")
+    async def expose_endpoints_action(self) -> "ApiResponse":
+        """`POST /project/<id>/expose-endpoints {deployment_typeid}` — bring this project's apps up.
+
+        Asked by the hub right after it placed this project on a machine, and again
+        whenever the box says it registered something (``refresh-endpoints``): the
+        project's placement here takes the HUB's id, every webapp asset exposes
+        what its ``webapp.json`` declares (or its build folder), started here on
+        loopback ports, and the answer is every endpoint of that placement — so
+        the ids the hub adopts are these, and its ``service`` hop lands on these rows.
+        """
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+        from flow_sdk.builtin.webapp_placement import expose_project_endpoints  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data()) if request_info else {}
+        deployment_typeid = str((body or {}).get("deployment_typeid") or "").strip()
+        prefix, _, deployment_id = deployment_typeid.partition("-")
+        if prefix != "deployment" or not is_valid_entity_id(deployment_id):
+            return ApiFailResponse(message="deployment_typeid must be deployment-<uuid>", status_code=400)
+        try:
+            endpoints = await expose_project_endpoints(self, deployment_typeid)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=409)
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=f"expose-endpoints failed: {exc}")
+        return ApiSuccessResponse(data={"endpoints": [endpoint.model_dump(mode="json") for endpoint in endpoints]})
 
     @action.post(action_name="activate")
     async def activate(self) -> "ApiResponse":

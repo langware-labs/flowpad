@@ -6,7 +6,7 @@ What a cell proves (the same four things on every surface):
 2. the projected message is attributed to its source (``origin_local.data_source_id``) and its
    channel (``origin.kind == source.channel``), and never to us;
 3. the reply leaves through the channel — the double records it — and on an agent cell the agent's
-   runner answers it as the agent;
+   serve loop answers it as the agent;
 4. ``StreamInbox(..., owner=…)`` adopts the owner's source rather than minting a twin.
 
 Providers are data here, never branches: every channel goes through the same body, and what differs
@@ -15,6 +15,7 @@ per channel (who writes in, whose address it is) the driver's ``Double`` says.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 from dataclasses import dataclass
@@ -96,21 +97,79 @@ async def make_cell(owner_kind: str, provider: str, double, monkeypatch) -> Cell
     # One empty pass: stamps kind/channel and takes the double's first position, so the delivery
     # below is "new since" and not a backfill.
     await sync_source(source)
-    return Cell(owner_kind, provider, double, user, agent, source, uuid.uuid4().hex[:8])
+    cell = Cell(owner_kind, provider, double, user, agent, source, uuid.uuid4().hex[:8])
+    _stub_the_turn(cell, monkeypatch)
+    return cell
+
+
+def _stub_the_turn(cell: Cell, monkeypatch) -> None:
+    """The worker is a stub that answers with the cell's nonce: the turn engine's
+    process for any session is this one, and its reply is read from nowhere but here."""
+    from flow_sdk.builtin.agent_serve import TurnEngine  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+    class _Process:
+        id = "p-matrix"
+        typeid = "agentic_process-p-matrix"
+
+        def __init__(self):
+            self.context_data: dict = {}
+
+        async def send_turn(self, _body):
+            return PromptResult.satisfied("The turn was accepted.", executor=self.typeid)
+
+        async def save(self):
+            pass
+
+    process = _Process()
+
+    async def process_for(self, *_a, **_k):
+        return process
+
+    async def capture(_ap):
+        return f"agent reply {cell.nonce}"
+
+    monkeypatch.setattr(TurnEngine, "process_for", process_for)
+    monkeypatch.setattr("flow_sdk.app.actions.execute_prompt._capture_assistant_reply", capture)
+
+
+@contextlib.asynccontextmanager
+async def agent_serving(cell: Cell):
+    """On an agent cell, the agent's placement serves the source for the duration — the real
+    loop (drain → gate → turn → reply → ack), on a fast cadence, its position held first as the
+    agent server holds it."""
+    if cell.owner_kind != "agent":
+        yield
+        return
+    from flow_sdk.builtin.agent_serve import hold_positions, serve  # noqa: PLC0415
+
+    deployment = await cell.agent.local_deployment()
+    await hold_positions(deployment, [cell.source])
+    loop = asyncio.get_running_loop().create_task(serve(cell.agent, deployment, sources=[cell.source], poll_every=0.02))
+    try:
+        yield
+    finally:
+        loop.cancel()
+        await asyncio.gather(loop, return_exceptions=True)
 
 
 async def deliver(cell: Cell) -> SourceItem:
     """An inbound on the channel, ingested the way the backend does it: a webhook push through the
     driver's chokepoint, or a poll."""
-    delivered = cell.double.deliver(f"hello {cell.nonce}", sender=cell.double.sender)
+    inbound = f"hello {cell.nonce}"
+    delivered = cell.double.deliver(inbound, sender=cell.double.sender)
     if delivered.get("path"):
         raw = delivered["body"]
         await DataDriver.loaded(cell.provider).ingest_pushed(cell.source, json.loads(raw), headers=delivered["headers"], raw=raw)
     else:
         await sync_source(cell.source)
     await reconcile_source(str(cell.source.id))
-    rows = [r for r in await SourceItem.get_all({"data_source_id": str(cell.source.id)}) if cell.nonce in (r.body or "")]
-    assert len(rows) == 1, f"{cell.provider}: the delivery was not ingested ({len(rows)} rows carry the nonce)"
+    # Match the delivered TEXT, not the bare nonce: the agent's answer carries the
+    # nonce too ("agent reply <nonce>"), and on a channel that echoes a sent message
+    # back into the same mailbox it is ingested as its own row. Counting that as a
+    # second delivery is how this read "not ingested" when it had been ingested once.
+    rows = [r for r in await SourceItem.get_all({"data_source_id": str(cell.source.id)}) if inbound in (r.body or "")]
+    assert len(rows) == 1, f"{cell.provider}: the delivery was not ingested ({len(rows)} rows carry it)"
     return rows[0]
 
 
@@ -147,32 +206,18 @@ async def reply_as_human(cell: Cell, conversation: Conversation) -> dict:
     return sent[-1]
 
 
-async def reply_as_agent(cell: Cell, item: SourceItem, monkeypatch) -> dict:
-    """The runner's path: the projected message becomes a turn; the worker is a stub that answers
-    with the nonce; the answer leaves through the channel as the agent."""
-    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
-    from flow_sdk.stream_inbox import agent_runner  # noqa: PLC0415
-
-    class _Process:
-        id = "p-matrix"
-
-        async def prompt(self, _body):
-            return ApiSuccessResponse(data={"status": "started"})
-
-    async def spawn(*_a, **_k):
-        return _Process()
-
-    async def capture(_ap):
-        return f"agent reply {cell.nonce}"
-
-    monkeypatch.setattr(agent_runner, "_reuse_or_spawn_agent_process", spawn)
-    monkeypatch.setattr("flow_sdk.app.actions.execute_prompt._capture_assistant_reply", capture)
-    before = len(cell.double.sent())
-    assert await agent_runner.handle_inbound(item) is True, f"{cell.provider}: the runner refused the turn"
-    await asyncio.gather(*list(outbound._INFLIGHT))
-    sent = cell.double.sent()
-    assert len(sent) == before + 1 and f"agent reply {cell.nonce}" in (sent[-1]["text"] or "")
-    return sent[-1]
+async def reply_as_agent(cell: Cell, item: SourceItem) -> dict:
+    """The serve loop's path: the delivered message becomes a turn; the worker is a stub that
+    answers with the nonce; the answer leaves through the channel as the agent. The loop is
+    already running (`agent_serving`) — this waits for its answer to reach the double."""
+    reply = f"agent reply {cell.nonce}"
+    for _ in range(200):  # the loop's cadence is 20 ms; this is ~4 s of them
+        sent = [m for m in cell.double.sent() if reply in (m["text"] or "")]
+        if sent:
+            assert len(sent) == 1, f"{cell.provider}: answered {len(sent)} times"
+            return sent[0]
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"{cell.provider}: the agent's serve loop never answered ({cell.double.sent()})")
 
 
 async def adopts_the_owners_source(cell: Cell, monkeypatch) -> None:

@@ -47,6 +47,7 @@ from .routes import (
     activity_router,
     agent_records_router,
     agents_router,
+    ask_router,
     asset_share_router,
     assets_router,
     auth_router,
@@ -59,6 +60,7 @@ from .routes import (
     detection_router,
     directory_router,
     display_router,
+    snippet_router,
     docs_graph_router,
     favorites_router,
     git_router,
@@ -246,6 +248,8 @@ async def _on_server_startup():
     await _prune_fileless_data_sources()
     await _migrate_list_configs()
     await _prune_retired_type_rows()
+    await _prune_web_delivery_rows()
+    await _start_agent_server()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
     await _start_system_content_index()
@@ -392,6 +396,35 @@ async def _prune_retired_type_rows() -> None:
                 await remove_orphan_row(str(record.id), type_name)
     except Exception:
         logging.getLogger(__name__).exception("Retired entity types: prune failed")
+
+
+#: The one supervisor of agent placements on this machine (``builtin/agent_serve``).
+_AGENT_SERVER = None
+
+
+async def _start_agent_server() -> None:
+    """Every agent placement here serves: its ``chat`` endpoint, and its channels' serve loop."""
+    global _AGENT_SERVER
+    try:
+        from flow_sdk.builtin.agent_serve import AgentServer
+        from flow_sdk.config import default_service_config
+
+        _AGENT_SERVER = AgentServer(serve_channels=default_service_config.agent_serve_channels)
+        await _AGENT_SERVER.start()
+    except Exception:
+        logging.getLogger(__name__).exception("Agent server: start failed")
+
+
+async def _prune_web_delivery_rows() -> None:
+    """A ``micro_app`` row is a webapp definition now; the old DB-only delivery rows go."""
+    try:
+        from flow_sdk.builtin.webapp_placement import prune_delivery_rows
+
+        pruned = await prune_delivery_rows()
+        if pruned:
+            print(f"  Web apps: dropped {pruned} delivery row(s) — builds are served by their endpoints")
+    except Exception:
+        logging.getLogger(__name__).exception("Web apps: pruning delivery rows failed")
 
 
 async def _prune_fileless_data_sources() -> None:
@@ -625,6 +658,12 @@ async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
 
+    if _AGENT_SERVER is not None:
+        try:
+            await _AGENT_SERVER.stop()
+        except Exception:
+            logging.getLogger(__name__).debug("Agent server: stop failed", exc_info=True)
+
     try:
         from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 
@@ -700,6 +739,11 @@ server.add_router(testing_router)
 server.add_router(ui_router)
 server.add_router(watch_router)
 server.add_router(websocket_router)
+# Ahead of the graph catch-all (added by FlowServer after every app router): the
+# endpoint proxy needs the raw body and a WebSocket route, which the graph has neither of.
+from .routes.service_endpoint import router as service_endpoint_router  # noqa: E402
+
+server.add_router(service_endpoint_router)
 server.add_router(webhook_api_router)
 server.add_router(data_source_webhook_router)
 server.add_router(assets_router)
@@ -709,8 +753,10 @@ server.add_router(ingest_router)
 server.add_router(runs_router)
 server.add_router(tags_router)
 server.add_router(display_router)
+server.add_router(snippet_router)
 server.add_router(asset_share_router)
 server.add_router(subgraph_router)
+server.add_router(ask_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)
 server.add_router(transcripts_router)

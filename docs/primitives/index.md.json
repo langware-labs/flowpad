@@ -5,10 +5,10 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "primitives",
   "folder_name": "primitives",
-  "inputs_hash": "4ae2860641cd33430553960c15a7fd48deb517fa58408c7dd4bc3aab42544c5b",
+  "inputs_hash": "ccca09d768b25ba5170403aeff3d17c3f0cedeb8b198fe426c2cb2bdd2bd2751",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "The two cross-cutting identifier and reference primitives: FSRef, the declarative no-I/O path manifest with its VFSPath translation and backend dispatch; and TypeId, the universal type-id address with its four identifier formats and resolution priority.",
+  "self_summary": "The small identifier and reference types everything else is built from: FSRef, the path-only declarative file reference, and TypeId, the type-plus-id format entities are addressed by.",
   "files": [
     {
       "name": "fs-ref.md",
@@ -22,12 +22,12 @@
       "name": "typeid.md",
       "rel_path": "typeid.md",
       "title": "TypeId Specification",
-      "summary": "TypeId spec: type-id first-dash split, four identifier formats (UUID, @uname, namespace key, prop.value), resolution priority, and the Python and TypeScript classes.",
-      "content_hash": "dcf6444b1db0326f78cf4c02dca853d08eafaaab8ef39a1af3817bbbe259058d",
-      "size_bytes": 15891
+      "summary": "TypeId specification: the {type}-{id} format with its first-dash split, the UUID, @uname, namespace-key and property-id forms, and parsing rules.",
+      "content_hash": "ecc3696e75ac846cd68500e828ab8164fb891fcec3500ad9f29714aa40067677",
+      "size_bytes": 15783
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-08-23T22:11:28.823621+00:00",
+  "generated_at": "2026-09-22T10:22:31.277705+00:00",
   "latest_process_ref": ""
 }

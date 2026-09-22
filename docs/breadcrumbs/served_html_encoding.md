@@ -20,15 +20,15 @@ sites:
   - rel_path: "tests/unit/test_serve_static_encoding.py"
     line: 88
     note: "FAILING? read this tag's rules before editing — a UTF-8 CI cannot see this bug, do not relax the assertion"
-  - rel_path: "tests/api/test_micro_app_view.py"
-    line: 61
+  - rel_path: "tests/api/test_static_endpoint_serving.py"
+    line: 66
     note: "FAILING? read this tag's rules before editing — a 200 is not a pass, assert the served text matches disk"
 ```
 
 ## Expected behavior
 
-`GET /api/v1/graph/micro_app/<id>/view` returns the app's `index.html` **byte-
-faithfully**, whatever codepage the host happens to have. A UTF-8 document with
+`GET /api/v1/graph/service_endpoint/<id>/service/` (a `static` endpoint) returns
+the app's `index.html` **byte-faithfully**, whatever codepage the host happens to have. A UTF-8 document with
 Hebrew, CJK, emoji or accented Latin arrives at the browser intact.
 
 "Intact" is the only definition used here, and it is stronger than "no error":
@@ -53,9 +53,8 @@ UTF-8 — the file's encoding is not consulted, and neither is its `<meta charse
   branch, reads `"rb"`. Bytes are never decoded, so assets were never affected.
   This asymmetry is why "images work, the page is broken" is the expected
   presentation of the bug, not a clue pointing elsewhere.
-* `flow_sdk/builtin/faas/micro_app.py:164` — `MicroApp.view`, the only caller on
-  the console API path; `view_external_domain` (`:171`) is the custom-domain
-  twin. Both reach the same read.
+* `flow_sdk/server/routes/service_endpoint.py` — `_serve_static`, the caller for
+  every `static` endpoint (and `fs/serve` for a single file). Both reach the same read.
 * `flow_sdk/utils/concurrency.py:89` — the correct shape to copy: `encoding` is a
   parameter threaded through to `anyio.open_file`.
 

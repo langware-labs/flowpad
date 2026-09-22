@@ -19,13 +19,9 @@ import asyncio
 import pytest
 
 from flow_sdk.core.wizard import execute as wizard_execute
-from flow_sdk.core.wizard.execute import WizardAlreadyRunning, execute_wizard
-from flow_sdk.core.wizard.runner import WizardRunResult
-from flow_sdk.schema.data_spec.wizard_spec import (
-    WizardCommandActionSpec,
-    WizardSpec,
-    WizardStepSpec,
-)
+from flow_sdk.core.wizard.execute import execute_wizard
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, WizardResult
+from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
@@ -35,7 +31,7 @@ WIZARD_ID = "11111111-1111-4111-8111-111111111111"
 # is stubbed in every test here — it just makes the document legal.
 SPEC = WizardSpec(
     name="Slot probe",
-    steps=[WizardStepSpec(id="probe", command=WizardCommandActionSpec(commands={"linux": "true"}))],
+    steps=[WizardStepSpec(id="probe", kind="compute", ref="probe-op")],
 )
 
 
@@ -49,7 +45,7 @@ async def test_a_second_run_is_refused_even_from_the_other_door(monkeypatch, tmp
     async def _slow(spec, **kwargs):
         started.set()
         await release.wait()
-        return WizardRunResult(outcomes=[], message="held")
+        return WizardResult.satisfied("held")
 
     monkeypatch.setattr(wizard_execute, "run_wizard", _slow)
 
@@ -62,13 +58,16 @@ async def test_a_second_run_is_refused_even_from_the_other_door(monkeypatch, tmp
 
     # The trigger door: names NOTHING, so it lands on a different activity
     # address. Before the slot moved onto the wizard itself, this ran happily
-    # alongside the first against the same run directory.
-    with pytest.raises(WizardAlreadyRunning):
-        await execute_wizard(WIZARD_ID, SPEC, "/a/wizard/slot-probe",
-                             trusted=True, subject_entity=None)
+    # alongside the first against the same run directory. Busy is an ANSWER —
+    # `NOT_YET` with `ran=False`: it did not run, and trying later is right.
+    second = await execute_wizard(WIZARD_ID, SPEC, "/a/wizard/slot-probe",
+                                  trusted=True, subject_entity=None)
+    assert type(second) is WizardResult
+    assert second.exit_code is ExitCode.NOT_YET and second.ran is False
+    assert "already running" in second.detail
 
     release.set()
-    assert (await first).message == "held"
+    assert (await first).detail == "held"
 
 
 @pytest.mark.asyncio
@@ -76,14 +75,14 @@ async def test_the_slot_is_released_so_the_next_run_can_take_it(monkeypatch, tmp
     monkeypatch.setattr(wizard_execute, "run_dir", lambda _id: tmp_path / _id)
 
     async def _quick(spec, **kwargs):
-        return WizardRunResult(outcomes=[], message="done")
+        return WizardResult.satisfied("done")
 
     monkeypatch.setattr(wizard_execute, "run_wizard", _quick)
 
     for _ in range(3):
         result = await execute_wizard(WIZARD_ID, SPEC, "/a/wizard/slot-probe",
                                       trusted=True, subject_entity=None)
-        assert result.message == "done"
+        assert result.detail == "done"
 
 
 @pytest.mark.asyncio
@@ -100,9 +99,9 @@ async def test_a_failing_run_still_releases_the_slot(monkeypatch, tmp_path):
                              trusted=True, subject_entity=None)
 
     async def _ok(spec, **kwargs):
-        return WizardRunResult(outcomes=[], message="recovered")
+        return WizardResult.satisfied("recovered")
 
     monkeypatch.setattr(wizard_execute, "run_wizard", _ok)
     result = await execute_wizard(WIZARD_ID, SPEC, "/a/wizard/slot-probe",
                                   trusted=True, subject_entity=None)
-    assert result.message == "recovered"
+    assert result.detail == "recovered"

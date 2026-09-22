@@ -10,13 +10,8 @@ from pydantic import BaseModel
 
 from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, RuntimeEnvironment, SendFileEntry
 
-#: Hostnames that mean "the machine asking". Right for a server-side caller on
-#: the box; meaningless to a browser sitting on someone else's machine.
-LOOPBACK_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "::1"})
-
-
 #: The domain E2B publishes sandbox ports on. Every url under it is https and
-#: only https, which is why ``_base_url_for`` can read a browser-facing scheme
+#: only https, which is why ``serve_static._browser_scheme`` can read a browser-facing scheme
 #: off nothing but the Host header — E2B's proxy terminates TLS and forwards
 #: plain http WITHOUT an ``X-Forwarded-Proto``, so the host is the only
 #: evidence left that the browser is on https.

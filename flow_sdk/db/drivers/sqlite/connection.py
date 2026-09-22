@@ -2,6 +2,7 @@
 
 import asyncio
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Literal
@@ -147,6 +148,75 @@ def get_database_url(path: str | None = None) -> str:
 FLOW_WRITER_OPT = "flow_writer"
 
 
+# Writers of THIS process currently blocked in BEGIN IMMEDIATE. SQLite's busy
+# handler is not a queue: a blocked writer sleeps up to 100ms between retries,
+# so a long-running writer that commits and immediately begins again (the
+# indexer, one batch after another) re-takes the lock inside every release
+# window and the waiter misses release after release until busy_timeout
+# expires — "database is locked" on a user's save while an index runs. The
+# count lets such a writer see that someone is queued and hand the lock over
+# (``yield_to_waiting_writers``) instead of racing them for it.
+_writers_waiting = 0
+_handoff_parked: list[asyncio.Future] = []
+#: Writers arrive from more than one thread — a request on the server loop, and
+#: work that runs its own loop in a thread — so the count and the parked list
+#: change under one lock, and a parked task is woken through ITS loop.
+_handoff_lock = threading.Lock()
+
+
+def writers_waiting() -> int:
+    """How many writers of this process are blocked acquiring the writer lock."""
+    return _writers_waiting
+
+
+async def yield_to_waiting_writers() -> None:
+    """Park until the NEXT blocked writer has been served — acquired the lock or
+    given up — then return.
+
+    Once per call, never "until nobody waits": a steady stream of writers would
+    otherwise park the caller forever. A caller that checks before each unit of
+    work (the indexer, per record) therefore lets each queued writer in at most
+    one unit late. Call it only while holding NO write transaction — commit
+    first — or the writers it waits for are waiting on the caller.
+    """
+    with _handoff_lock:
+        if not _writers_waiting:
+            return
+        parked = asyncio.get_running_loop().create_future()
+        _handoff_parked.append(parked)
+    await parked
+
+
+def _writer_served() -> None:
+    """One blocked writer is done waiting: wake whoever handed the lock over."""
+    global _writers_waiting
+    with _handoff_lock:
+        _writers_waiting -= 1
+        parked = _handoff_parked[:]
+        _handoff_parked.clear()
+    for fut in parked:
+        loop = fut.get_loop()
+        # Woken through its own loop: this may be another thread. A loop torn
+        # down (a test's) has no one left to wake.
+        if not loop.is_closed():
+            loop.call_soon_threadsafe(_release_parked, fut)
+
+
+def _release_parked(fut: asyncio.Future) -> None:
+    if not fut.done():
+        fut.set_result(None)
+
+
+def _begin_immediate(conn) -> None:
+    global _writers_waiting
+    with _handoff_lock:
+        _writers_waiting += 1
+    try:
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
+    finally:
+        _writer_served()
+
+
 def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
     """Register the SQLite production pragmas + BEGIN IMMEDIATE on an engine.
 
@@ -201,12 +271,11 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
         # run in DBAPI autocommit against a WAL snapshot, never touching the
         # writer lock. Everything else keeps the up-front BEGIN IMMEDIATE.
         if conn.get_execution_options().get(FLOW_WRITER_OPT, True):
+            t_begin = time.monotonic()
+            _begin_immediate(conn)
             # Timed only while the tag is on: every write in the app passes here.
             if not toplog.is_on("agentic_process.load"):
-                conn.exec_driver_sql("BEGIN IMMEDIATE")
                 return
-            t_begin = time.monotonic()
-            conn.exec_driver_sql("BEGIN IMMEDIATE")
             locked_at = conn.info["flow_writer_locked_at"] = time.monotonic()
             wait_ms = (locked_at - t_begin) * 1000
             if wait_ms > 200:
