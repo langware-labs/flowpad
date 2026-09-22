@@ -25,6 +25,8 @@ const h = vi.hoisted(() => ({
   team: vi.fn(),
   setCap: vi.fn(),
   removeAllowance: vi.fn(),
+  removeMember: vi.fn(),
+  entities: vi.fn(() => ({ data: [], isLoading: false })),
   save: vi.fn(),
   del: vi.fn(),
   getByTypeId: vi.fn(),
@@ -37,9 +39,13 @@ vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useTeamBudgets: (...args: unknown[]) => h.team(...args),
   useSetLifetimeCap: () => ({ mutate: h.setCap, isPending: false }),
   useRemoveAllowance: () => ({ mutate: h.removeAllowance, isPending: false }),
+  useRemoveTeamMember: () => ({ mutate: h.removeMember, isPending: false }),
   useAddPeople: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSetPayingProvider: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useInvalidateBudgets: () => vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@src/hooks/entity-hooks/useEntitiesQuery', () => ({
+  useEntitiesQuery: (...args: unknown[]) => h.entities(...args),
 }));
 vi.mock('@src/components/token-plan/use-token-plan', () => ({
   useSetupScope: () => ({ mutate: vi.fn(), isPending: false }),
@@ -125,7 +131,6 @@ const person = (over: Record<string, unknown> = {}) => ({
   limit_usd: 50,
   spent_usd: 0,
   spent_tokens: 0,
-  system_default: false,
   can_configure: true,
   ...over,
 });
@@ -398,10 +403,14 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
     await waitFor(() => expect(h.del).toHaveBeenCalledWith(expect.objectContaining({ id: UUID(4), type: 'team' })));
   });
 
-  it('offers no Remove on the hub-made per-user default', () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
+  it('offers "Remove from team" on a person row only to someone who may run the team', () => {
+    h.org.mockReturnValue({
+      data: { org: orgScope(), teams: [teamScope({ can_manage: false })] },
+      isLoading: false,
+      error: null,
+    });
     h.team.mockReturnValue({
-      data: { team: teamScope(), members: [person({ system_default: true })] },
+      data: { team: teamScope({ can_manage: false }), members: [person()] },
       isLoading: false,
       error: null,
     });
@@ -409,13 +418,38 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
 
     fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
     expect(screen.queryByTestId(`member-remove-${EP(2)}`)).toBeNull();
+    expect(screen.queryByTestId(`member-delete-${EP(2)}`)).toBeNull();
+  });
+
+  it('removes a PERSON from the team, never their allowance, and keeps Delete for an anonymous allowance', async () => {
+    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
+    h.team.mockReturnValue({
+      data: { team: teamScope(), members: [person(), person({ endpoint_id: EP(5), name: 'Pending', user_id: null })] },
+      isLoading: false,
+      error: null,
+    });
+    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
+
+    // The person's row: Remove from team, confirmed, is the members DELETE on the TEAM -- never
+    // the allowance's own delete, which the hub would undo on the person's next read.
+    fireEvent.click(screen.getByTestId(`member-remove-${EP(2)}`));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() =>
+      expect(h.removeMember).toHaveBeenCalledWith({ teamId: UUID(4), userId: UUID(3) }, expect.anything()),
+    );
+    expect(h.removeAllowance).not.toHaveBeenCalled();
+
+    // The holderless row: Delete the allowance itself.
+    expect(screen.queryByTestId(`member-remove-${EP(5)}`)).toBeNull();
+    expect(screen.getByTestId(`member-delete-${EP(5)}`)).toBeTruthy();
   });
 
   /**
-   * Order matters and is asserted, not assumed: Advanced, Edit, Delete — left to right, in order of
-   * consequence, with Delete keeping the isolated rightmost slot.
+   * Order matters and is asserted, not assumed: Advanced, Edit, Remove — left to right, in order of
+   * consequence, with Remove keeping the isolated rightmost slot.
    */
-  it('gives a person row Advanced, Edit and Delete, in that order', () => {
+  it('gives a person row Advanced, Edit and Remove, in that order', () => {
     h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
     h.team.mockReturnValue({ data: { team: teamScope(), members: [person()] }, isLoading: false, error: null });
     draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
@@ -445,10 +479,14 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
     expect(h.save.mock.calls[0][2]).toEqual({ name: 'Ada — research' });
   });
 
-  it('still offers Advanced and Edit on the hub-made default, which only refuses DELETE', () => {
-    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
+  it('still offers Advanced and Edit on a person row when the caller may not run the team', () => {
+    h.org.mockReturnValue({
+      data: { org: orgScope(), teams: [teamScope({ can_manage: false })] },
+      isLoading: false,
+      error: null,
+    });
     h.team.mockReturnValue({
-      data: { team: teamScope(), members: [person({ system_default: true })] },
+      data: { team: teamScope({ can_manage: false }), members: [person()] },
       isLoading: false,
       error: null,
     });
@@ -458,6 +496,17 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
     expect(screen.queryByTestId(`member-remove-${EP(2)}`)).toBeNull();
     expect(screen.getByTestId(`member-advanced-${EP(2)}`)).toBeTruthy();
     expect(screen.getByTestId(`member-edit-${EP(2)}`)).toBeTruthy();
+  });
+
+  it('shows a plain member the org name and their own teams when budgets are refused', () => {
+    h.org.mockReturnValue({ data: undefined, isLoading: false, error: { response: { status: 401 } } });
+    h.entities.mockReturnValue({ data: [{ id: UUID(4), name: 'Platform' }], isLoading: false });
+    draw(<OrgUnit orgId={UUID(1)} name="Acme" onDeleted={vi.fn()} />);
+
+    expect(screen.getByTestId('org-name').textContent).toBe('Acme');
+    expect(screen.getByTestId(`org-member-team-${UUID(4)}`).textContent).toContain('Platform');
+    expect(screen.queryByTestId(`team-people-toggle-${UUID(4)}`)).toBeNull();
+    expect(screen.queryByTestId('org-cap')).toBeNull();
   });
 
   it('shows a team-level over-promise', () => {

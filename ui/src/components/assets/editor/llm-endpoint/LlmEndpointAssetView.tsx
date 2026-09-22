@@ -240,11 +240,6 @@ export function LlmEndpointAssetView({ value }: LlmEndpointAssetViewProps) {
                 </span>
               </Field>
             )}
-            {endpoint.system_default && (
-              <Field label={t`Origin`}>
-                <Trans>Given to you by the hub</Trans>
-              </Field>
-            )}
           </dl>
         </Section>
       </div>
