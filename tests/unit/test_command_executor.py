@@ -18,7 +18,7 @@ that are easy to get subtly different:
 
 The remote leg is exercised through a stub node that records the command string.
 That is deliberate: this module's job is argv -> shell string and CLICommand ->
-CommandResult. Real remote IO belongs to the provider's own tests.
+CliResult. Real remote IO belongs to the provider's own tests.
 """
 
 from __future__ import annotations
@@ -28,10 +28,13 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import asyncio
+
 import pytest
 
 from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor
-from flow_sdk.utils.command_executor import CommandResult, _LocalCommandExecutor
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode
+from flow_sdk.utils.command_executor import _LocalCommandExecutor
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -87,14 +90,19 @@ async def test_env_is_an_additive_overlay():
 
 async def test_missing_binary_returns_a_result_not_an_exception():
     result = await _LocalCommandExecutor().run(["flowpad-definitely-not-a-real-binary"])
-    assert result.returncode == 127
+    # Never started: no exit status at all, and the reason is on stderr.
+    assert result.returncode is None
+    assert result.ran is False
     assert result.ok is False
+    assert "FileNotFoundError" in result.stderr
 
 
 @pytest.mark.long  # 1.01s
 async def test_timeout_returns_a_result_not_an_exception():
     result = await _LocalCommandExecutor().run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=1)
-    assert result.returncode == 124
+    assert result.timed_out is True
+    assert result.returncode is None
+    assert result.exit_code is ExitCode.NOT_YET
     assert result.ok is False
 
 
@@ -143,16 +151,21 @@ async def test_make_dirs_is_idempotent(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# ComputeNodeCommandExecutor — argv -> shell string, CLICommand -> CommandResult
+# ComputeNodeCommandExecutor — argv -> shell string, CLICommand -> CliResult
 # ---------------------------------------------------------------------------
 
 
-def _stub_node(path_sep: str = "/", *, stdout: str = "", stderr: str = "", exit_code: int = 0):
+def _stub_node(path_sep: str = "/", *, stdout: str = "", stderr: str = "", exit_code: "int | None" = 0,
+               hang: bool = False, error: "Exception | None" = None):
     """Records the exact command string the executor would send."""
     sent: list[str] = []
 
     async def run_command(command, session_id=None, background=True, env=None):
         sent.append(command)
+        if error is not None:
+            raise error
+        if hang:
+            await asyncio.Event().wait()
         return SimpleNamespace(all_stdout=stdout, all_stderr=stderr, exit_code=exit_code)
 
     node = SimpleNamespace(
@@ -188,7 +201,37 @@ async def test_remote_maps_the_cli_command_to_a_result():
     node, _ = _stub_node(stdout="out", stderr="err", exit_code=2)
     result = await ComputeNodeCommandExecutor(node).run(["git", "status"])
 
-    assert result == CommandResult(returncode=2, stdout="out", stderr="err")
+    assert isinstance(result, CliResult)
+    assert (result.returncode, result.stdout, result.stderr) == (2, "out", "err")
+    assert result.exit_code is ExitCode.NOT_YET
+    assert result.command == "git status"
+
+
+async def test_remote_missing_exit_status_is_not_success():
+    # The provider did not report an exit: that is "did not finish", never 0.
+    node, _ = _stub_node(exit_code=None)
+    result = await ComputeNodeCommandExecutor(node).run(["git", "status"])
+
+    assert result.returncode is None
+    assert result.ok is False
+
+
+async def test_remote_given_timeout_bounds_the_wait():
+    node, _ = _stub_node(hang=True)
+    result = await ComputeNodeCommandExecutor(node).run(["git", "fetch"], timeout=0.05)
+
+    assert result.timed_out is True
+    assert result.returncode is None
+    assert result.ok is False
+
+
+async def test_remote_provider_failure_is_returned_not_raised():
+    node, _ = _stub_node(error=RuntimeError("sandbox gone"))
+    result = await ComputeNodeCommandExecutor(node).run(["git", "status"])
+
+    assert result.returncode is None
+    assert result.ok is False
+    assert "sandbox gone" in result.stderr
 
 
 async def test_remote_windows_uses_cmd_quoting_and_cd_slash_d():

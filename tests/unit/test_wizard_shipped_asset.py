@@ -1,7 +1,9 @@
 """The shipped ``dev-toolchain`` wizard, and the two ops its steps call.
 
-It is now a THIN sequencer: two steps, each naming a goal. Everything about how
-a toolchain gets installed lives in the ops, which is what makes them reusable —
+It is a THIN sequencer: per tool, a cheap `cli` op and then an `agent` op that
+share one completion check — so when the cheap one reaches the goal, the agent
+op finds it already holding and does nothing. Everything about how a toolchain
+gets installed lives in the ops, which is what makes them reusable —
 `flow op run git-on-path` reaches the same goal with no wizard involved.
 
 What this file pins is that the document and the ops it references stay in
@@ -16,7 +18,7 @@ import pytest
 
 from flow_sdk.assets.types.wizard import read_wizard
 from flow_sdk.config import system_projects_root
-from flow_sdk.schema.data_spec.compute_op_spec import AttemptKind, ComputeOpSpec
+from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec, OpSubkind
 from flow_sdk.schema.data_spec.wizard_spec import StepKind, WizardSpec
 
 pytestmark = pytest.mark.timeout(5)
@@ -44,20 +46,22 @@ def _op(name: str) -> ComputeOpSpec:
     })
 
 
-def test_it_declares_the_two_steps_the_container_test_asserts(spec):
-    assert [step.id for step in spec.steps] == ["python3", "git"]
+TOOLS = ["python3-on-path", "git-on-path"]
+ALL_OPS = [op for tool in TOOLS for op in (tool, f"{tool}-agent")]
 
 
-def test_every_step_is_a_call_and_nothing_else(spec):
-    """The wizard asks nobody anything: it is pure sequencing.
+def test_it_declares_a_cheap_step_then_an_agent_step_per_tool(spec):
+    assert [step.id for step in spec.steps] == ["python3", "python3-agent", "git", "git-agent"]
+    assert [step.ref for step in spec.steps] == ALL_OPS
 
-    Worth seeing plainly — a document like this is close to not needing to be a
-    wizard at all, since ops joined by `requires` already express an ordering.
-    """
+
+def test_every_step_is_a_call_that_does_not_stop_the_run(spec):
+    """The wizard asks nobody anything: it is pure sequencing. A cheap step that
+    fails must not stop the run — the agent step after it is the fallback."""
     for step in spec.steps:
         assert step.kind is StepKind.COMPUTE
         assert step.ref, f"step {step.id!r} names nothing to call"
-    assert spec.inputs == {}
+        assert step.on_fail == "continue"
 
 
 def test_the_ops_its_steps_name_actually_ship(spec):
@@ -67,48 +71,48 @@ def test_the_ops_its_steps_name_actually_ship(spec):
         assert _op(step.ref).name == step.ref
 
 
-@pytest.mark.parametrize("name", ["python3-on-path", "git-on-path"])
-def test_every_op_can_be_asked_and_acted_on_linux(name):
+@pytest.mark.parametrize("name", ALL_OPS)
+def test_every_op_can_be_asked_on_linux(name):
     """The container that proves this works is headless Linux."""
     op = _op(name)
     assert op.completion_check is not None, "a toolchain goal must be convergent — it may already hold"
     assert op.completion_check.command_for("linux"), f"{name} cannot be asked on linux"
-    for attempt in op.attempts:
-        if attempt.kind is AttemptKind.COMMAND:
-            assert attempt.command_for("linux"), f"{name}'s command rung is silent on linux"
 
 
-@pytest.mark.parametrize("name", ["python3-on-path", "git-on-path"])
+@pytest.mark.parametrize("name", TOOLS)
+def test_the_cheap_op_is_a_cli_call_that_acts_on_linux(name):
+    op = _op(name)
+    assert op.subkind is OpSubkind.CLI
+    assert op.exe_data.command_for("linux"), f"{name}'s command is silent on linux"
+
+
+@pytest.mark.parametrize("name", TOOLS)
+def test_the_agent_op_shares_the_cheap_ops_check(name):
+    """One goal, two ways to reach it. If the checks differed, the agent op
+    could redo — or skip — work the cheap one judged by a different bar."""
+    cheap, agent = _op(name), _op(f"{name}-agent")
+    assert agent.subkind is OpSubkind.AGENT
+    assert agent.completion_check == cheap.completion_check
+
+
+@pytest.mark.parametrize("name", TOOLS)
 def test_the_check_proves_the_tool_RUNS_not_merely_that_it_exists(name):
-    """`command -v git` passes on a dangling symlink; `git --version` does not.
-
-    The old wizard asked the weak question as its precondition and the strong one
-    as its verify — two spellings of one question, which is exactly the
-    duplication ComputeOp collapsed. The stronger question won.
-    """
+    """`command -v git` passes on a dangling symlink; `git --version` does not."""
     assert "--version" in _op(name).completion_check.command_for("linux")
 
 
-@pytest.mark.parametrize("name", ["python3-on-path", "git-on-path"])
-def test_every_op_escalates_from_a_cheap_rung_to_an_agent(name):
-    """The wizard version had NO cheap rung: it spawned an agent to do what
-    `apt-get install -y git` does. Both rungs, cheapest first, is the point."""
-    kinds = [str(attempt.kind) for attempt in _op(name).attempts]
-    assert kinds == ["command", "agent"], kinds
-
-
-@pytest.mark.parametrize("name", ["python3-on-path", "git-on-path"])
+@pytest.mark.parametrize("name", TOOLS)
 def test_the_installer_agent_it_names_actually_ships(name):
     """A missing agent is a run-time failure on a user's machine, at the moment
     they are least able to do anything about it."""
-    agent = next(a.agent for a in _op(name).attempts if a.kind is AttemptKind.AGENT)
-    assert (ASSETS / "agent" / agent).is_dir(), f"{name} names missing agent {agent!r}"
+    agent = _op(f"{name}-agent").exe_data.agent
+    assert (ASSETS / "agent" / agent).is_dir(), f"{name}-agent names missing agent {agent!r}"
 
 
-@pytest.mark.parametrize("name", ["python3-on-path", "git-on-path"])
+@pytest.mark.parametrize("name", ALL_OPS)
 def test_every_op_says_how_a_person_would_do_it(name):
-    """`setup.md` is what the agent rung is handed. Without it a model is asked
-    to invent a procedure for someone else's machine."""
+    """`setup.md` is what an agent op is handed. Without it a model is asked to
+    invent a procedure for someone else's machine."""
     assert _op(name).setup.strip()
 
 

@@ -181,11 +181,12 @@ Exit 0 = done. (`2` bad args, `4` no terminal open yet — run `flow terminal op
 
 - `open` is idempotent — it re-shows the terminal you already opened. Call it once, then
   `run` as many times as you like; don't open one per command.
-- `run` returns JSON with `output`, `exit_code` and `completed`. You SEE the result —
-  read it and act on it (a failing `exit_code` means fix it, don't report success). The
-  user watches the same command run in their terminal.
-- A long command returns `completed: false` with the output so far; it is still running
-  in the user's terminal. Say so rather than guessing at the result.
+- `run` returns JSON with `stdout`, `returncode` (the command's own exit) and
+  `exit_code` (`0` only when it exited 0). You SEE the result — read it and act on it
+  (a non-zero `returncode` means fix it, don't report success). The user watches the
+  same command run in their terminal.
+- A long command returns `timed_out: true` and no `returncode`, with the output so far;
+  it is still running in the user's terminal. Say so rather than guessing at the result.
 - Don't re-run the command with your own `Bash` to "check" it — `run` already told you
   what happened, and doing it twice runs it twice.
 - Use your own `Bash` for YOUR work (reading files, checking things, building). Use

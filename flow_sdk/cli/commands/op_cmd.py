@@ -2,7 +2,7 @@
 
     flow op list                 — every op and what it is for
     flow op check <name>         — ask the question; change nothing
-    flow op run <name>           — ask, act cheapest-first, prove
+    flow op run <name>           — ask, make the one call, prove
 
 A thin HTTP caller over the same entity actions the UI calls; no logic here.
 
@@ -11,9 +11,11 @@ and what a shell script tests, so both verbs answer in exit codes and not only
 in prose:
 
     0  the goal holds  (check: satisfied · run: proven by the re-check)
-    1  it does not     (check: work to do · run: attempts exhausted)
+    1  it does not     (check: work to do · run: the call did not reach it)
+    2  the request itself failed (a bad document, a server error)
     3  not applicable on this machine — a silent skip, never a failure
     4  no op by that name
+    7  refused — not approved to run here
 
 Keeping "not applicable" distinct from "satisfied" is deliberate: an op skipped
 on a machine it does not apply to must never report as one that succeeded, or a
@@ -40,7 +42,7 @@ from flow_sdk.cli.commands._common import (
 
 op_app = typer.Typer(
     name="op",
-    help="Check and run compute ops — a goal, its check, and the attempts that reach it.",
+    help="Check and run compute ops — a goal, its check, and the one call that reaches it.",
     add_completion=False,
     no_args_is_help=True,
 )
@@ -49,14 +51,15 @@ op_app = typer.Typer(
 #: so a shell pipeline and Python agree by construction. (2 is absent on
 #: purpose: the CLI spends it on "invalid argument".)
 EXIT_NOT_YET = int(ExitCode.NOT_YET)
-EXIT_NOT_APPLICABLE = int(ExitCode.NOT_APPLICABLE)
 EXIT_NOT_FOUND = int(ExitCode.NOT_FOUND)
-EXIT_ACTION_FAILED = int(ExitCode.REFUSED)
+#: The request failed before any op answered — the CLI's "invalid", never an
+#: ExitCode: a bad document or a 500 is not a refusal.
+EXIT_REQUEST_FAILED = 2
 
-#: The budget the DOCUMENT already declares for its slowest rung, taken from the
+#: The longest a single op may legitimately take (an agent call), taken from the
 #: one place that defines it rather than re-spelled here. The client waits as
-#: long as the server may legitimately take, so a run still in progress is never
-#: reported as a failure.
+#: long as the server may, so a run still in progress is never reported as a
+#: failure.
 RUN_TIMEOUT_SECONDS = int(AGENT_TIMEOUT)
 
 
@@ -65,7 +68,7 @@ def _on_error(not_found: str = ""):
         if status == 404 and not_found:
             fail(EXIT_NOT_FOUND, "NOT_FOUND", not_found)
         fail(
-            EXIT_ACTION_FAILED,
+            EXIT_REQUEST_FAILED,
             str(body.get("error_code") or "ACTION_FAILED"),
             str(body.get("message") or body.get("detail") or f"HTTP {status}"),
         )
@@ -107,18 +110,15 @@ def list_ops() -> None:
     ]})
 
 
-@op_app.command("check", help="Ask whether the goal already holds. Runs no attempt.")
+@op_app.command("check", help="Ask whether the goal already holds. Makes no call.")
 def check(name: Annotated[str, typer.Argument(help="The op's name.")]) -> None:
     row = _find(name)
-    data = get_graph_json(_url(f"compute_op/{row['id']}/check"), on_error=_on_error()) or {}
-    outcome = str(data.get("outcome") or "")
-    ok({"op": name, "outcome": outcome})
-    if outcome == "satisfied":
-        raise typer.Exit(0)
-    raise typer.Exit(EXIT_NOT_APPLICABLE if outcome == "not_applicable" else EXIT_NOT_YET)
+    returned = get_graph_json(_url(f"compute_op/{row['id']}/check"), on_error=_on_error()) or {}
+    ok({"op": name, "returned": returned})
+    raise typer.Exit(int(returned.get("exit_code", EXIT_NOT_YET)))
 
 
-@op_app.command("run", help="Make the goal hold: check, then attempts cheapest-first, then prove.")
+@op_app.command("run", help="Make the goal hold: check, make the one call, then prove.")
 def run(
     name: Annotated[str, typer.Argument(help="The op's name.")],
     approved: Annotated[bool, typer.Option("--approved", help="Authorize an op this instance does not ship.")] = False,

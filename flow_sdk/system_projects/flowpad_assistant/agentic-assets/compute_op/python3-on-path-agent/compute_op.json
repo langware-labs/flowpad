@@ -1,0 +1,21 @@
+{
+  "type": "compute_op",
+  "id": "80aefd5f-9c43-411c-a9a9-26266b70e5f9",
+  "name": "python3-on-path-agent",
+  "label": "Python 3 (agent)",
+  "description": "python3 is on the PATH and runnable.",
+  "subkind": "agent",
+  "exe_data": {
+    "agent": "capability-installer",
+    "prompt": "Capability to install: Python 3. Official page with install instructions: https://www.python.org/downloads/\n\nInstall Python 3 on this machine so that `python3 --version` succeeds from a fresh non-login shell. Assume a bare machine: there may be no package manager configured. Prefer the platform's official package manager (apt-get/dnf/apk on Linux, Homebrew on macOS, winget on Windows). Do NOT create virtualenvs, do NOT install any Python packages, and do NOT touch an existing Python installation. Report the version you installed and stop.",
+    "timeout_seconds": 1800
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "python3 --version >/dev/null 2>&1",
+      "linux": "python3 --version >/dev/null 2>&1",
+      "win32": "python3 --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  }
+}

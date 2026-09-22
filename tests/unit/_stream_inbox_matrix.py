@@ -116,14 +116,14 @@ def _stub_the_turn(cell: Cell, monkeypatch) -> None:
     longer patched and the source resolves live credentials. Patching here means
     whichever call wins the lock runs the same stub and finishes immediately.
     """
-    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
     from flow_sdk.stream_inbox import agent_runner  # noqa: PLC0415
 
     class _Process:
         id = "p-matrix"
 
-        async def prompt(self, _body):
-            return ApiSuccessResponse(data={"status": "started"})
+        async def send_turn(self, _body):
+            return PromptResult.satisfied("The turn was accepted.", executor=f"agentic_process-{self.id}")
 
     async def spawn(*_a, **_k):
         return _Process()

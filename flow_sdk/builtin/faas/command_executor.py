@@ -10,13 +10,15 @@ one — with the quoting rule chosen by the node's own path separator, exactly a
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shlex
 import subprocess
+import time
 from typing import TYPE_CHECKING, Mapping, NamedTuple, Sequence
 
 from flow_sdk.compute.providers.env_prefix import build_env_prefix
-from flow_sdk.utils.command_executor import CommandResult
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -55,10 +57,14 @@ class ComputeNodeCommandExecutor:
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
         timeout: int | None = None,
-    ) -> CommandResult:
-        """``timeout`` is accepted for protocol parity and not enforced — the node
-        API has no per-command deadline. Do not add one here to paper over a slow
-        command; fix the command."""
+    ) -> CliResult:
+        """``timeout`` bounds the WAIT, when a caller gives one: past it the
+        answer is ``timed_out`` — the node API cannot kill a command, so it may
+        still be running. No caller's budget is widened here; none is invented.
+
+        An exit status the provider did not report stays ``None`` ("did not
+        finish"), never 0 — reading a missing status as success was the bug.
+        """
         command = " ".join(self._quote(arg) for arg in argv)
         prefix = build_env_prefix(
             [_EnvPair(name, value) for name, value in (env or {}).items()],
@@ -70,11 +76,20 @@ class ComputeNodeCommandExecutor:
         else:
             command = f"{prefix}{command}"
 
-        cli_command = await self._node.run_command(command, background=False)
-        return CommandResult(
-            returncode=cli_command.exit_code or 0,
-            stdout=(cli_command.all_stdout or ""),
-            stderr=(cli_command.all_stderr or ""),
+        started = time.monotonic()
+        running = self._node.run_command(command, background=False)
+        try:
+            cli_command = await (asyncio.wait_for(running, timeout) if timeout else running)
+        except TimeoutError:
+            return CliResult.of_process(command, None, timed_out=True, duration_s=time.monotonic() - started)
+        except Exception as exc:  # noqa: BLE001 — a provider failure is an answer, not a crash
+            return CliResult.of_process(command, None, "", f"{type(exc).__name__}: {exc}")
+        return CliResult.of_process(
+            command,
+            cli_command.exit_code,
+            cli_command.all_stdout or "",
+            cli_command.all_stderr or "",
+            duration_s=time.monotonic() - started,
         )
 
     async def exists(self, path: str) -> bool:

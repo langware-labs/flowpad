@@ -2,7 +2,7 @@
 
 In-process (no server): the same ``run_snippet`` the route calls, so what an
 agent sees here is what the user sees under the editor. Prints the
-``ShellResult`` as JSON; the exit code is the snippet's own, 124 on a timeout,
+``CliResult`` as JSON; the exit code is the snippet's own, 124 on a timeout,
 and 2 when it could not run at all (missing file, unknown language).
 """
 

@@ -1,6 +1,6 @@
 import { Trans } from '@lingui/react/macro';
 import { ExternalLink } from 'lucide-react';
-import { AgenticProcess, TypeId, type WizardStepOutcome, type WizardStepProbe } from '@sdk';
+import { AgenticProcess, TypeId, type CliResult } from '@sdk';
 import type { ActivityProgressSpec } from '@sdk/activity';
 
 import { Button } from '@src/components/ui/button';
@@ -8,18 +8,13 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useEntity } from '@src/hooks/entity-hooks';
 
 import { LIVE_STATE, type WizardStepDoc } from './wizard-doc';
+import type { WizardStepAnswer } from './useWizardRun';
 
-function Stream({ label, text, truncated }: { label: string; text: string; truncated?: boolean }) {
+function Stream({ label, text }: { label: string; text: string }) {
   if (!text) return null;
   return (
     <div className="mt-1">
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      {truncated && (
-        <div className="text-[11px] text-muted-foreground/70">
-          {/* Says which END survived, because that changes how the text reads. */}
-          <Trans>earlier output dropped — this is the tail</Trans>
-        </div>
-      )}
       <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 font-mono text-[11px]">
         {text}
       </pre>
@@ -27,35 +22,35 @@ function Stream({ label, text, truncated }: { label: string; text: string; trunc
   );
 }
 
-/** One command the step's op ran, with both streams. The phase is printed as
- *  the backend recorded it — this panel does not own that vocabulary. */
-function ProbeRow({ probe }: { probe: WizardStepProbe }) {
-  const failed = probe.timed_out || (probe.returncode != null && probe.returncode !== 0);
+/** One command, with both streams: the step's own call, or the completion
+ *  check that decided its verdict. */
+function CommandRow({ role, run }: { role: 'call' | 'check'; run: CliResult }) {
+  const failed = run.timed_out || (run.returncode != null && run.returncode !== 0);
   return (
-    <li className="border-t border-border/60 py-2 first:border-t-0" data-testid={`wizard-probe-${probe.phase}`}>
+    <li className="border-t border-border/60 py-2 first:border-t-0" data-testid={`wizard-probe-${role}`}>
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-          {probe.phase}
+          {role === 'check' ? <Trans>check</Trans> : <Trans>call</Trans>}
         </span>
         {/* The RESOLVED command — what actually ran on this machine. */}
-        <code className="flex-1 break-all font-mono text-xs">{probe.command}</code>
-        {probe.timed_out ? (
+        <code className="flex-1 break-all font-mono text-xs">{run.command}</code>
+        {run.timed_out ? (
           <span className="font-mono text-xs text-destructive">
             <Trans>timed out</Trans>
           </span>
         ) : (
           <span className={`font-mono text-xs ${failed ? 'text-destructive' : 'text-muted-foreground'}`}>
-            {probe.returncode ?? '—'}
+            {run.returncode ?? '—'}
           </span>
         )}
-        {probe.duration_s != null && (
+        {run.duration_s ? (
           <span className="font-mono text-[11px] text-muted-foreground/70">
-            {probe.duration_s.toFixed(2)}s
+            {run.duration_s.toFixed(2)}s
           </span>
-        )}
+        ) : null}
       </div>
-      <Stream label="stdout" text={probe.stdout ?? ''} truncated={probe.truncated} />
-      <Stream label="stderr" text={probe.stderr ?? ''} truncated={probe.truncated} />
+      <Stream label="stdout" text={run.stdout ?? ''} />
+      <Stream label="stderr" text={run.stderr ?? ''} />
     </li>
   );
 }
@@ -65,9 +60,10 @@ function ProbeRow({ probe }: { probe: WizardStepProbe }) {
  *
  * A step is now a single invocation — `kind` · `ref` · `args` — so one panel
  * serves all three kinds rather than the previous split between a command step
- * and an agentic one. What differs between them is what the run RECORDED, and
- * each part renders only when it is there: the commands an op ran, the value it
- * returned, the transcript of an agent it spawned. That is why a `compute` step
+ * and an agentic one. What differs between them is what the answer CARRIES, and
+ * each part renders only when it is there: the command an op ran and the check
+ * that judged it, the value it returned, the transcript of the process that ran
+ * it (its `executor`). That is why a `compute` step
  * that ran no shell no longer reads as "this step ran no commands" — the header
  * says what it invoked, which is the thing the old panel could not say.
  */
@@ -76,20 +72,19 @@ export function WizardStepInspector({
   step,
   live,
 }: {
-  outcome: WizardStepOutcome | null;
+  outcome: WizardStepAnswer | null;
   step?: WizardStepDoc;
   live?: ActivityProgressSpec | null;
 }) {
   const { navigation } = useDockNavigation();
-  const processId = outcome?.process_id ?? '';
-  // The process entity exists only once the step settled and recorded its id;
+  // The process exists only once the step settled and named its executor;
   // while it runs, the live activity child is the only channel there is.
-  // `null` until there is an id — the hook takes a TypeId, and a step that has
-  // not run has no process to look up.
+  const executor = outcome?.executor ?? '';
   const { data: process } = useEntity<AgenticProcess>(
-    processId ? new TypeId(AgenticProcess.type, processId) : null,
+    executor.startsWith(`${AgenticProcess.type}${TypeId.DELIMITER}`) ? new TypeId(executor) : null,
   );
-  const probes = outcome?.probes ?? [];
+  const call = outcome?.command ? (outcome as CliResult) : null;
+  const check = outcome?.check ?? null;
   const args = Object.entries(step?.args ?? {});
 
   if (!step && !outcome) {
@@ -128,28 +123,29 @@ export function WizardStepInspector({
         </ul>
       ) : null}
 
-      {probes.length > 0 ? (
+      {call || check ? (
         <ul className="rounded border border-border/60 px-2" data-testid="wizard-probes">
-          {probes.map((probe, i) => (
-            <ProbeRow key={i} probe={probe} />
-          ))}
+          {call ? <CommandRow role="call" run={call} /> : null}
+          {check ? <CommandRow role="check" run={check} /> : null}
         </ul>
       ) : null}
 
       {/* The RETURNED VALUE. Served only by `run-detail`, so it lands when the
           panel fetches. */}
-      {outcome?.result != null ? (
+      {outcome?.value != null ? (
         <div data-testid="wizard-step-result">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
             <Trans>Returned</Trans>
           </div>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 font-mono text-[11px]">
-            {typeof outcome.result === 'string' ? outcome.result : JSON.stringify(outcome.result, null, 2)}
+            {typeof outcome.value === 'string' ? outcome.value : JSON.stringify(outcome.value, null, 2)}
           </pre>
         </div>
       ) : null}
 
-      {outcome?.message ? <p className="text-xs text-muted-foreground">{outcome.message}</p> : null}
+      {outcome?.text ? <Stream label="reply" text={outcome.text} /> : null}
+
+      {outcome?.detail ? <p className="text-xs text-muted-foreground">{outcome.detail}</p> : null}
 
       {!outcome ? (
         <p className="text-xs text-muted-foreground" data-testid="wizard-step-not-run">

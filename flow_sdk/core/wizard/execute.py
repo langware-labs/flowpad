@@ -1,13 +1,13 @@
-"""Run ONE wizard entity: workdir, inputs, single-flight, record.
+"""Run ONE wizard entity: workdir, single-flight, record.
 
 `run_wizard` is deliberately entity-free — it takes a spec and injected seams,
 which is why it tests in milliseconds. This module is the layer between it and
 the two callers that have an entity in hand: the UI action (`Wizard.run_action`)
 and the trigger callback (`_run_wizard_trigger`).
 
-**Why a seam and not a copy.** The sequence is five steps — resolve the run
-directory, read the user's inputs, take the wizard's slot, run, stamp the
-result — and both callers need all five. Written twice they drifted immediately:
+**Why a seam and not a copy.** The sequence is four steps — resolve the run
+directory, take the wizard's slot, run, stamp the result — and both callers
+need all four. Written twice they drifted immediately:
 one passed `wizard-{name or id}` and the other `wizard-{name}`, and only one of
 them recorded the outcome at all.
 
@@ -28,17 +28,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.core.wizard.runner import run_wizard
-from flow_sdk.core.wizard.state import read_inputs, read_outputs, record_outputs, record_result, run_dir
+from flow_sdk.core.wizard.state import record_result, run_dir
+from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
 if TYPE_CHECKING:  # pragma: no cover
     from pathlib import Path
 
-    from flow_sdk.core.wizard.runner import WizardRunResult
     from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
-
-class WizardAlreadyRunning(RuntimeError):
-    """This wizard is already running on this machine."""
+#: The one sentence a busy wizard answers with. The HTTP edge maps a
+#: ``ran=False`` NOT_YET to 409; this is what a person reads.
+ALREADY_RUNNING = "is already running on this machine."
 
 
 async def execute_wizard(
@@ -49,13 +49,11 @@ async def execute_wizard(
     trusted: bool,
     approved: bool = False,
     subject_entity: Optional[str],
-    #: Carry the stored answers into this run. Defaults ON because the
-    #: UNATTENDED caller (a trigger fire) has nobody to ask — stored answers are
-    #: the only way it can get past an input step. The UI passes False for a
-    #: fresh run, so "run it again" asks.
-    resume: bool = True,
-) -> "WizardRunResult":
-    """Run `spec` as the wizard `wizard_id`, and stamp what it did.
+) -> WizardResult:
+    """Run `spec` as the wizard `wizard_id`, and stamp what it answered.
+
+    A wizard already running answers ``NOT_YET`` with ``ran=False`` — it did
+    not run, and trying later is right — never a raise.
 
     `subject_entity` is the ONLY thing the two callers differ on, and it is
     routing alone: the wizard's id decides who may run, `subject_entity` decides
@@ -66,20 +64,17 @@ async def execute_wizard(
 
     # TRY-acquire, never wait. `instances.atomic.locked` blocks indefinitely,
     # which is right for a few-filesystem-ops critical section and wrong here: a
-    # wizard run lasts as long as an agent takes, and a run can rest PARKED on a
-    # person for as long as they like. A second caller must be told "already
-    # running" immediately — the UI has a 409 to show, and a trigger wants a log
-    # line rather than a coroutine queued behind a run nobody is going to finish.
+    # wizard run lasts as long as an agent takes. A second caller must be told
+    # "already running" immediately — the UI has a 409 to show, and a trigger
+    # wants a log line rather than a coroutine queued behind a long run.
     # `blocking=False` is not a timeout budget; there is no wait to widen.
     from filelock import FileLock, Timeout  # noqa: PLC0415
 
     lock = FileLock(str(workdir / "run.lock"))
     try:
         lock.acquire(blocking=False)
-    except Timeout as exc:
-        raise WizardAlreadyRunning(
-            f"{spec.name or wizard_id} is already running on this machine."
-        ) from exc
+    except Timeout:
+        return WizardResult.not_yet(f"{spec.name or wizard_id} {ALREADY_RUNNING}", ran=False)
 
     try:
         result = await run_wizard(
@@ -92,20 +87,6 @@ async def execute_wizard(
             activity_path=activity_path_for(wizard_id, asset_ref),
             trusted=trusted,
             workdir=workdir,
-            # `resume=True` carries the answers forward: that is what lets a
-            # PARKED run continue without re-asking, and it is the only reason
-            # they are persisted.
-            #
-            # A FRESH run passes none. Reusing them there made "run it again"
-            # re-execute silently with the answer from last time and produce a
-            # result identical to the last one — the button read as dead, and
-            # there was no way to answer differently. The values stay on disk so
-            # the form can offer them back; they are simply not assumed.
-            # Stored OUTPUTS ride alongside the answers on a resume, for the
-            # same reason: a resumed run skips a satisfied step, so a value the
-            # agent returned last time is never re-derived. A fresh run drops
-            # both — "run it again" must not silently reuse either.
-            inputs={**read_inputs(wizard_id), **read_outputs(wizard_id)} if resume else {},
             # A step's `ref` is a NAME; only the entity layer knows what is
             # indexed, and only it can say whether a callee is trusted HERE.
             approved=approved,
@@ -115,19 +96,11 @@ async def execute_wizard(
     finally:
         lock.release()
 
-    # Persisted so a restart does not lose a parked run — and so an UNATTENDED
-    # run leaves any trace at all. The activity tree is live-only (a finished
-    # root is dropped), so without this the whole outcome of a first-launch
-    # setup survives as one log line and the wizard reports "has not run on this
-    # machine yet", which is false.
-    record_result(
-        wizard_id,
-        status=result.status,
-        awaiting=[item.to_payload() for item in result.awaiting],
-        outcomes=[outcome.to_payload() for outcome in result.outcomes],
-        message=result.message,
-    )
-    record_outputs(wizard_id, result.outputs)
+    # Persisted so an UNATTENDED run leaves any trace at all. The activity tree
+    # is live-only (a finished root is dropped), so without this the whole
+    # outcome of a first-launch setup survives as one log line and the wizard
+    # reports "has not run on this machine yet", which is false.
+    record_result(wizard_id, result)
     return result
 
 

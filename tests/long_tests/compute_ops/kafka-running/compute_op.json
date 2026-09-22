@@ -3,19 +3,16 @@
   "name": "kafka-running",
   "label": "kafka",
   "description": "A single-node Apache Kafka broker, installed under /opt/kafka, is running on localhost:9092 and stays running after the agent stops.",
+  "subkind": "agent",
+  "exe_data": {
+    "agent": "provisioner",
+    "prompt": "Reach this goal on this machine.",
+    "timeout_seconds": 600
+  },
   "completion_check": {
     "commands": {
       "linux": "t=op$(date +%s%N) && K=/opt/kafka/bin && B=localhost:9092 && timeout 30 $K/kafka-topics.sh --bootstrap-server $B --create --topic $t --partitions 1 --replication-factor 1 >/dev/null && echo $t | timeout 30 $K/kafka-console-producer.sh --bootstrap-server $B --topic $t && timeout 40 $K/kafka-console-consumer.sh --bootstrap-server $B --topic $t --from-beginning --max-messages 1 --timeout-ms 30000 2>/dev/null | grep -qx $t"
     },
     "timeout_seconds": 120
-  },
-  "attempts": [
-    {
-      "kind": "agent",
-      "agent": "provisioner",
-      "prompt": "Reach this goal on this machine.",
-      "retries": 1,
-      "timeout_seconds": 600
-    }
-  ]
+  }
 }

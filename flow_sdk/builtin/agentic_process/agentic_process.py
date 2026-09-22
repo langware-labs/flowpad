@@ -103,8 +103,8 @@ from flow_sdk.transcript_analyzer.worker_status import StatusDetail, WorkerStatu
 from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.agentic_process._shared import RunResult
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
     from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
     from flow_sdk.builtin.shell import Shell
@@ -479,22 +479,26 @@ async def _index_session_on_close(session_id: str, display_name: str | None = No
         logger.debug("[AgenticProcess] failed to index session %s on close", session_id, exc_info=True)
 
 
-def _build_run_result(proc: "AgenticProcess") -> "RunResult":
-    """Build a RunResult from the process state after wait() completes."""
-    from flow_sdk.builtin.agentic_process._shared import RunResult
+def _build_run_result(proc: "AgenticProcess") -> "PromptResult":
+    """The process's last turn as an answer, read after ``wait()`` settles.
 
+    ``executor`` names the process; the session, the models and the token use
+    live on it, not copied onto the answer. An error or interrupted end is a
+    ``NOT_YET`` — returned, never raised.
+    """
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+    # The reply of the turn that just ended, off the transcript — the streamer's
+    # copy when there is one. (The session record's ``last_assistant_text`` is
+    # never filled on the headless path, so reading it answered "".)
     text = ""
-    models_used: list[str] = []
-    token_usage: dict | None = None
-    if proc.session_id:
-        try:
-            record = get_claude_session(proc.session_id)
-            if record:
-                text = getattr(record, "last_assistant_text", None) or ""
-                models_used = list(getattr(record, "models_used", []) or [])
-                token_usage = getattr(record, "token_usage", None)
-        except Exception:
-            pass
+    try:
+        from flow_sdk.app.actions.execute_prompt import _last_turn_assistant_text  # noqa: PLC0415
+
+        transcript = proc._current_transcript()
+        text = _last_turn_assistant_text(transcript.entries if transcript is not None else [])
+    except Exception:  # noqa: BLE001 — the reply is a courtesy; the verdict does not depend on it
+        logger.debug("could not read the agent's reply", exc_info=True)
 
     status_enum = proc.fetch_worker_status()
     if status_enum is None:
@@ -504,16 +508,10 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
             lifecycle = ProcessStatus.STOPPED
         status_enum = WorkerStatus.ERROR if lifecycle == ProcessStatus.FAILED else WorkerStatus.IDLE
 
-    ok = status_enum not in (WorkerStatus.ERROR, WorkerStatus.INTERRUPTED)
-    return RunResult(
-        text=text,
-        session_id=proc.session_id or "",
-        status=status_enum,
-        ok=ok,
-        duration_ms=None,
-        models_used=models_used,
-        token_usage=token_usage,
-    )
+    executor = str(proc.typeid)
+    if status_enum in (WorkerStatus.ERROR, WorkerStatus.INTERRUPTED):
+        return PromptResult.not_yet(f"The agent ended {status_enum.value}.", text=text, executor=executor)
+    return PromptResult.satisfied("The agent finished.", text=text, executor=executor)
 
 
 # ── Display stack (the `flow show` history) ──────────────────────────────────
@@ -936,21 +934,17 @@ class AgenticProcess(Entity):
         instruction: str,
         workdir: str | None = None,
         **kwargs,
-    ) -> "RunResult":
-        """One-shot: create → start → send → wait → return RunResult → stop.
+    ) -> "PromptResult":
+        """One-shot: create → start → send → wait → answer → stop.
 
-        Raises ProcessError if status is error or interrupted.
+        Answers with a ``PromptResult`` — ``text`` is the reply, ``executor``
+        the process. An error or interrupted end is ``NOT_YET``, never a raise.
         """
-        from flow_sdk.builtin.agentic_process._shared import ProcessError
-
         proc = cls(workdir=workdir, **kwargs)
         async with proc:
             await proc.send(instruction)
             await proc.wait()
-            result = _build_run_result(proc)
-        if not result.ok:
-            raise ProcessError(status=result.status, session_id=result.session_id)
-        return result
+            return _build_run_result(proc)
 
     @classmethod
     async def is_installed(cls, worker_type: "WorkerType | str | None" = None) -> bool:
@@ -2079,7 +2073,14 @@ class AgenticProcess(Entity):
         *,
         on_status: "Callable[[Any], None] | None" = None,
     ) -> None:
-        """Block until worker_status reaches a terminal state (complete / error / interrupted).
+        """Block until the TURN has ended: the worker is terminal (complete / error /
+        interrupted) AND it no longer holds this process's turn slot (``is_turn_busy``).
+
+        Terminal alone is not enough. On a process that already took a turn the
+        status IS terminal before the next turn starts, so a continued turn was
+        "waited for" before it ran — and read the previous turn's reply as its
+        own. Holding out for the slot also means the NEXT turn is admitted
+        rather than refused as in flight.
 
         Polling interval: 2s. Raises TimeoutError if timeout elapses first.
 
@@ -2098,7 +2099,7 @@ class AgenticProcess(Entity):
                     on_status(worker_status)
                 except Exception:  # noqa: BLE001
                     logger.debug("wait() status observer failed", exc_info=True)
-            if worker_status and is_worker_terminal(worker_status):
+            if worker_status and is_worker_terminal(worker_status) and not is_turn_busy(self, worker_status):
                 return
             if self.status == ProcessStatus.FAILED.value:
                 return
@@ -2303,16 +2304,15 @@ class AgenticProcess(Entity):
         # Release the lock BEFORE prompt() — it may run start_pty (long) and is
         # itself serialized by _PROMPT_LOCKS / _OPEN_LOCKS.
         try:
-            result = await self.prompt(head["prompt"])
-            # ``prompt()`` REFUSES BY RETURN, not by raising — a turn already in
-            # flight comes back as a 409 ``ApiFailResponse``, and so does a
-            # relaunch that could not start. The head is already popped, so an
-            # unchecked refusal destroyed the user's prompt AND logged it as
-            # delivered. Put it back and say what happened.
-            if isinstance(result, ApiFailResponse):
+            result = await self.send_turn(head["prompt"])
+            # A turn that was not taken — one already in flight, or a relaunch
+            # that could not start — is a returned ``NOT_YET``. The head is
+            # already popped, so an unchecked refusal destroyed the user's prompt
+            # AND logged it as delivered. Put it back and say what happened.
+            if not result.ok:
                 self._requeue_undelivered(
                     head,
-                    reason=f"refused: {result.message}",
+                    reason=f"refused: {result.detail}",
                     source="drain-requeue",
                 )
             else:
@@ -2961,8 +2961,9 @@ class AgenticProcess(Entity):
         except (TypeError, ValueError):
             return ApiFailResponse(message="timeout must be a number", status_code=400)
 
+        # The CliResult itself: `executor` names the shell, `command` what ran.
         result = await shell.run_and_capture(command, timeout=timeout)
-        return ApiSuccessResponse(data={"shell_id": str(shell.id), "command": command, **result})
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     # ── Wizard completion ───────────────────────────────────────────────────
 
@@ -3046,6 +3047,25 @@ class AgenticProcess(Entity):
         if typed and not isinstance(res, ApiFailResponse):
             self._schedule_gated_pty_delivery(instruction)
         return res
+
+    async def send_turn(self, instruction: str) -> "PromptResult":
+        """``prompt``, answered as a ``PromptResult`` instead of an HTTP envelope.
+
+        What a Python caller holds. Taking a turn is ADMISSION, not completion —
+        the turn runs in the background, so ``OK`` means "accepted". A turn that
+        was not taken — another is in flight, or the worker could not start —
+        is ``NOT_YET`` with ``ran=False``: nothing ran, and trying later is
+        right. ``detail`` keeps the process's own sentence (the UI matches on
+        "already in flight"). The HTTP actions keep ``prompt``'s envelope; the
+        409 is theirs.
+        """
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+        executor = str(self.typeid)
+        taken = await self.prompt(instruction)
+        if isinstance(taken, ApiFailResponse):
+            return PromptResult.not_yet(taken.message or "The turn was not taken.", ran=False, executor=executor)
+        return PromptResult.satisfied("The turn was accepted.", executor=executor)
 
     async def _is_live_pty(self) -> bool:
         """True iff this is a PTY transport with a worker currently alive — the

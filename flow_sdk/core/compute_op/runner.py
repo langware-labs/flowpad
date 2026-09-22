@@ -1,151 +1,73 @@
-"""Run a ``ComputeOpSpec``: ask, act cheapest-first, prove.
+"""Run a ``ComputeOpSpec``: ask, make ONE call, prove.
 
 PURE — no entity, no DB, no server, no Activity. It takes a spec and injectable
 callables, which is what lets the whole block be exercised in a REPL and inside a
 container with nothing indexed. The entity layer (``builtin/compute_op.py``) owns
 lookup, the Activity node and the trust decision; it calls in here, and receives
-progress through ``on_status`` / ``on_probe`` rather than by handing down a node.
+progress through ``on_status`` rather than by handing down a node.
 
-The loop, in full:
+The whole of it:
 
-    check   SATISFIED       ⇒ return, nothing ran
+    check   OK              ⇒ return, nothing ran
             NOT_APPLICABLE  ⇒ return, nothing ran
-            absent          ⇒ EXECUTE: this op is a call, not a goal
-    → for each attempt, cheapest first:
-          act  →  check again
-          satisfied (or no check) ⇒ return, naming the rung that did it
-    → attempts exhausted ⇒ NOT_YET
+            absent          ⇒ this op is a call, not a goal: make the call
+    → the ONE call its subkind names (cli | prompt | agent | ask)
+    → check again — the verdict (an ask is the exception: a person verified it)
 
-Four properties follow from that shape and are what the tests pin:
+Every answer is the subkind's own ``ReturnedValue`` subclass (``ExeData.ANSWER``),
+and nothing here raises for an outcome: refused, busy, never started, timed out
+and failed are all returned. What differs by subkind lives on its ``ExeData``
+class; the one thing that lives here is the call itself (``_CALLS``).
 
-* **An attempt's exit code is never the verdict.** Only the re-check is. An
+Three properties the tests pin:
+
+* **The call's own exit code is never the verdict.** Only the re-check is. An
   installer that exits 0 and lands its binary somewhere the shell cannot find
-  is a failure here, which is the single most common way "it installed fine"
-  turns out to be false.
-* **Re-running a convergent op is free.** No cursor is persisted, so none can go
-  stale: a satisfied op costs one check and does nothing. An op with NO check has
-  no such claim — it always runs, which is what a call is.
-* **Escalation carries context.** Every rung that involves a model is handed what
-  the cheaper rungs ran and what they printed — otherwise it is just a slower
-  copy of the rung below it.
-* **An op never waits.** When only a person can move it forward it answers
-  ``pending``; parking belongs to a Wizard's ``ask`` step.
+  is a failure here, which is the most common way "it installed fine" is false.
+* **Re-running a convergent op is free.** A satisfied op costs one check and
+  does nothing. An op with NO check has no such claim — it always runs.
+* **There is no fallback in here.** "Try the command, then the agent" is two ops
+  and a caller; an op that sequenced its own attempts was a second sequencer.
 """
 
 from __future__ import annotations
 
-import asyncio
-from dataclasses import dataclass, field
+import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
-from flow_sdk.core.compute.ask import ASK_TIMEOUT_SECONDS
-from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared, value_from_stdout
-from flow_sdk.core.compute.exec import PROBE_OUTPUT_CAP, ShellResult, capped, run_shell
-from flow_sdk.core.compute.process_step import ProcessResult, launch_step_process
+from flow_sdk.core.compute.declared_value import (
+    DeclaredShapeError,
+    to_declared,
+    value_from_reply,
+    value_from_stdout,
+)
+from flow_sdk.core.compute.exec import run_shell
+from flow_sdk.core.compute.process_step import launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
 from flow_sdk.schema.data_spec.compute_op_spec import (
-    AttemptKind,
-    AttemptSpec,
-    CheckOutcome,
+    ASK_TIMEOUT_SECONDS,
+    CHECK_TIMEOUT,
+    AgentOp,
+    AskOp,
+    CliOp,
     ComputeOpSpec,
+    PromptOp,
+    fields_of_kind,
 )
-from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
-from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.returned_value_spec import (
+    AskResult,
+    CliResult,
+    ExitCode,
+    PromptResult,
+    ReturnedValue,
+)
 
-#: The name an op's returned value is written under, in a receipt and in scope.
+#: The name an op's returned value is written under, in an agent's receipt.
 VALUE_KEY = "value"
 
-
-class ComputeOpNotApproved(RuntimeError):
-    """This op runs on the machine and has not been approved.
-
-    Checked FIRST — before any subprocess — so an unapproved op cannot even ask
-    its question. It REFUSES; it never blocks. Modelling approval as something
-    to wait on is the shape that hangs a headless caller forever.
-    """
-
-
-class AttemptResult(DataSpec):
-    """What one rung did. Read by the next rung's prompt, and by ``on_probe``.
-
-    A ``DataSpec`` because it TRAVELS: ``StepProbe.of_attempt`` copies it into a
-    wizard run's record, so it is a value that outlives the call that made it.
-    """
-
-    kind: str
-    command: str = ""
-    returncode: Optional[int] = None
-    timed_out: bool = False
-    process_id: str = ""
-    message: str = ""
-    #: The useful half of a failure, for the NEXT rung's prompt.
-    output: str = ""
-    #: Both streams, kept apart, for the record a person debugs from.
-    stdout: str = ""
-    stderr: str = ""
-    value: Any = None
-    duration_s: float = 0.0
-    ok: bool = False
-    #: Either stream was cut to fit the probe cap. ``capped()`` already answers
-    #: this; carrying its answer is what keeps a reader from re-deriving it from
-    #: a length — which measured only stdout and was off by one at the boundary.
-    truncated: bool = False
-
-    def describe(self) -> str:
-        """One paragraph a model can read: what was tried, and what came back."""
-        head = f"`{self.command}`" if self.command else f"the {self.kind} attempt"
-        if self.timed_out:
-            # A rung that carries its own account of the timeout says it: an
-            # ask knows how long it waited, where a killed command only knows
-            # that it was killed.
-            return f"{head}: {self.message.strip()}." if self.message.strip() else f"{head} timed out."
-        code = "" if self.returncode is None else f" (exit {self.returncode})"
-        body = self.output.strip() or self.message.strip() or "no output"
-        return f"{head} did not reach the goal{code}:\n{body}"
-
-
-@dataclass
-class _Report:
-    """Where progress goes. Both callbacks are optional and never fatal.
-
-    Kept as callbacks rather than an Activity node so this module stays free of
-    the entity layer — the same seam the wizard already uses for agent ticks.
-    """
-
-    on_status: Optional[Callable[[str], None]] = None
-    on_probe: Optional[Callable[[str, "AttemptResult"], None]] = None
-
-    def say(self, text: str) -> None:
-        if self.on_status is None or not text:
-            return
-        try:
-            self.on_status(text)
-        except Exception:  # reporting must never fail a producer
-            pass
-
-    def probe(self, phase: str, result: "AttemptResult") -> None:
-        if self.on_probe is None:
-            return
-        try:
-            self.on_probe(phase, result)
-        except Exception:
-            pass
-
-
-@dataclass
-class _Seams:
-    """The injectable I/O, carried as one object rather than five parameters."""
-
-    shell: Callable[..., Awaitable[ShellResult]] = run_shell
-    launch: Callable[..., Awaitable[ProcessResult]] = launch_step_process
-    #: Values a caller put in scope. They reach a command as ENVIRONMENT, never
-    #: spliced into it — an argument of ``; rm -rf /`` must not be executable.
-    env: dict = field(default_factory=dict)
-    #: How long an ``ask`` rung waits for a person. Carried so a caller can give
-    #: a SHORTER span than the product default; nothing here ever lengthens it.
-    ask_timeout: float = ASK_TIMEOUT_SECONDS
-    report: _Report = field(default_factory=_Report)
+Shell = Callable[..., Awaitable[CliResult]]
+Launch = Callable[..., Awaitable[PromptResult]]
 
 
 async def check_op(
@@ -154,49 +76,52 @@ async def check_op(
     workdir: Optional[Path] = None,
     platform: str = "",
     env: Optional[dict] = None,
-    shell: Callable[..., Awaitable[ShellResult]] = run_shell,
-) -> CheckOutcome:
+    shell: Shell = run_shell,
+) -> CliResult:
     """Ask the one question. Cheap and side-effect free — safe on a schedule.
 
+    Answers with the check's own ``CliResult``, its ``exit_code`` the verdict:
+    ``OK`` holds, ``NOT_APPLICABLE`` not this machine, ``NOT_YET`` work to do.
     Two absences that must not be confused:
 
-    * **No check at all** ⇒ ``EXECUTE``. The op is a call; there is nothing to
-      skip and nothing to prove.
+    * **No check at all** ⇒ ``NOT_YET``, ``ran=False``. The op is a call; there
+      is nothing to skip and nothing to prove.
     * **A check with no command for this platform** ⇒ ``NOT_APPLICABLE``. It
       could be asked elsewhere, just not here. Silence is not failure.
     """
-    outcome, _said = await _ask_the_question(spec, workdir=workdir, platform=platform, env=env, shell=shell)
-    return outcome
+    said = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
+    if said is None:
+        return CliResult.not_yet(f"{spec.display_label}: has no completion check, so it always runs.", ran=False)
+    return said
 
 
-async def _ask_the_question(
+async def _check(
     spec: ComputeOpSpec,
     *,
     workdir: Optional[Path],
     platform: str,
     env: Optional[dict],
-    shell: Callable[..., Awaitable[ShellResult]],
-) -> "tuple[CheckOutcome, Optional[ShellResult]]":
-    """The check's verdict AND what it printed.
+    shell: Shell,
+) -> Optional[CliResult]:
+    """The check's run, its ``exit_code`` already the verdict — or ``None`` when
+    the op has no check.
 
-    A check that proves a goal usually also knows the answer — `flow secret get`
-    exits 0 and prints the secret. Keeping only the exit code made a satisfied
-    op answer "yes, it holds" with no value, so a caller arriving after the fact
-    got success and nothing in it.
+    What it printed is kept, not just the code: a check that proves a goal
+    usually also knows the answer (`flow secret get` exits 0 and prints the secret).
     """
     if spec.completion_check is None:
-        return CheckOutcome.EXECUTE, None
+        return None
     command = spec.completion_check.command_for(platform)
     if not command:
-        return CheckOutcome.NOT_APPLICABLE, None
-    result = await shell(
+        return CliResult.not_applicable(f"{spec.display_label}: no check for this platform.")
+    said = await shell(
         command,
-        timeout_seconds=spec.completion_check.timeout_seconds,
+        timeout_seconds=spec.completion_check.timeout(CHECK_TIMEOUT),
         workdir=workdir or Path.cwd(),
         extra_env=env or {},
         platform=platform,
     )
-    return spec.outcome_for(result.returncode, timed_out=result.timed_out), result
+    return said.model_copy(update={"exit_code": spec.verdict_of(said)})
 
 
 async def run_op(
@@ -207,306 +132,247 @@ async def run_op(
     workdir: Optional[Path] = None,
     platform: str = "",
     env: Optional[dict] = None,
-    shell: Callable[..., Awaitable[ShellResult]] = run_shell,
-    launch: Callable[..., Awaitable[ProcessResult]] = launch_step_process,
-    on_status: Optional[Callable[[str], None]] = None,
-    on_probe: Optional[Callable[[str, AttemptResult], None]] = None,
-    #: How long an ``ask`` rung waits. A caller may give a person LESS time than
-    #: the product default; there is no way to give them more from here.
+    #: Run IN this process instead of spawning one — ``answer.executor`` from
+    #: an earlier agent op. The op says WHAT; this says WHERE.
+    executor: Optional[str] = None,
+    #: How long a person is given. A caller may give LESS than the product
+    #: default; there is no way to give more from here.
     ask_timeout: float = ASK_TIMEOUT_SECONDS,
+    shell: Shell = run_shell,
+    launch: Launch = launch_step_process,
+    on_status: Optional[Callable[[str], None]] = None,
 ) -> ReturnedValue:
-    """Reach the goal or produce the value, or say precisely what is missing."""
-    seams = _Seams(
-        shell=shell, launch=launch,
-        env=dict(env or {}),
-        ask_timeout=ask_timeout,
-        report=_Report(on_status=on_status, on_probe=on_probe),
-    )
-    return await _run(spec, subject=subject, trusted=trusted, workdir=workdir,
-                      platform=platform, seams=seams)
-
-
-async def _run(
-    spec: ComputeOpSpec,
-    *,
-    subject: str,
-    trusted: bool,
-    workdir: Optional[Path],
-    platform: str,
-    seams: _Seams,
-) -> ReturnedValue:
+    """Reach the goal or produce the value, or say precisely why not. Never raises."""
+    exe = spec.exe_data
     if not trusted:
-        raise ComputeOpNotApproved(
-            f"{spec.display_label or 'This op'} runs on this machine and has not been approved."
-        )
+        # Refused before anything runs — an unapproved op cannot even ask its question.
+        return exe.ANSWER.refused(f"{spec.display_label} runs on this machine and has not been approved.")
     workdir = Path(workdir) if workdir else Path.cwd()
+    say = _say(on_status)
 
-    seams.report.say(f"checking {spec.display_label}")
-    outcome, asked = await _ask_the_question(
-        spec, workdir=workdir, platform=platform, env=seams.env, shell=seams.shell,
+    say(f"checking {spec.display_label}")
+    before = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
+    if before is not None and before.exit_code is ExitCode.OK:
+        return _already(spec, before)
+    if before is not None and before.exit_code is ExitCode.NOT_APPLICABLE:
+        return exe.ANSWER.not_applicable(f"{spec.display_label}: not applicable here.", check=before)
+
+    say(f"{spec.display_label}: {spec.subkind}")
+    started = time.monotonic()
+    call = await _CALLS[type(exe)](
+        spec, workdir=workdir, platform=platform, env=env, executor=executor,
+        subject=subject, ask_timeout=ask_timeout, shell=shell, launch=launch, say=say,
     )
-    if outcome is CheckOutcome.SATISFIED:
-        return _already(spec, asked.stdout)
-    if outcome is CheckOutcome.NOT_APPLICABLE:
-        return ReturnedValue.not_applicable(f"{spec.display_label}: not applicable here.")
+    if not call.duration_s:
+        call = call.model_copy(update={"duration_s": time.monotonic() - started})
 
-    tried: list[AttemptResult] = []
-    for attempt in spec.attempts:
-        seams.report.say(f"{spec.display_label}: {attempt.kind}")
-        result = await _attempt(attempt, spec, tried=tried, subject=subject,
-                                workdir=workdir, platform=platform, seams=seams)
-        if result is None:  # this rung is silent on this platform
-            continue
-        tried.append(result)
-        seams.report.probe(attempt.kind, result)
+    if spec.completion_check is None or not exe.RECHECKED:
+        # No re-check: an op with no check has only the call's own word, and a
+        # person's valid answer IS the verdict of an ask.
+        return _with_value(spec, call) if call.ok else call
 
-        # The attempt's own success is not the answer. The re-check is — unless
-        # there is no check, in which case the rung's own report is all there is.
-        # An agent rung then gets its retries: the SAME process, told why.
-        for turn in range(attempt.retries + 1):
-            if turn:
-                seams.report.say(f"{spec.display_label}: agent retry {turn} of {attempt.retries}")
-                result = await _agent_attempt(attempt, spec, tried=tried, subject=subject, workdir=workdir,
-                                              platform=platform, seams=seams, retry_of=result.process_id, why=why)
-                tried.append(result)
-                seams.report.probe(f"{attempt.kind} retry {turn}", result)
-            done, why = await _verdict(spec, result, workdir=workdir, platform=platform, seams=seams)
-            if done:
-                if spec.completion_check is None:
-                    return _value_of(spec, result)
-                again = f" on retry {turn}" if turn else ""
-                return _value_of(spec, result, detail=f"{spec.display_label}: the {result.kind} attempt did it{again}.")
-            if not result.process_id or result.timed_out:
-                break  # nothing settled to prompt again: no process, or one still busy
-
-    detail = (
-        f"{spec.display_label}: {tried[-1].describe()}" if tried
-        else f"{spec.display_label}: nothing here can reach this goal."
-    )
-    return ReturnedValue.not_yet(detail)
+    after = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
+    if after.exit_code is ExitCode.OK:
+        done = call.model_copy(update={
+            "exit_code": ExitCode.OK, "check": after, "detail": f"{spec.display_label}: done.",
+        })
+        return _with_value(spec, done, said=after)
+    return call.model_copy(update={
+        "exit_code": ExitCode.NOT_YET, "value": None, "check": after,
+        "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.",
+    })
 
 
-async def _verdict(
-    spec: ComputeOpSpec, result: AttemptResult, *, workdir: Path, platform: str, seams: _Seams,
-) -> "tuple[bool, str]":
-    """Did the rung reach the goal — and if not, what a retry should be told."""
-    if spec.completion_check is None:
-        return result.ok, result.describe()
-    outcome, asked = await _ask_the_question(
-        spec, workdir=workdir, platform=platform, env=seams.env, shell=seams.shell,
-    )
-    check = _shell_attempt("check", spec.completion_check.command_for(platform), asked)
-    return outcome is CheckOutcome.SATISFIED, check.describe()
+def _say(on_status: Optional[Callable[[str], None]]) -> Callable[[str], None]:
+    """Progress reporting is never fatal."""
+    def say(text: str) -> None:
+        if on_status is None or not text:
+            return
+        try:
+            on_status(text)
+        except Exception:  # noqa: BLE001 — reporting must never fail a producer
+            pass
+    return say
 
 
-def _already(spec: ComputeOpSpec, said: Optional[str]) -> ReturnedValue:
+def _already(spec: ComputeOpSpec, said: CliResult) -> ReturnedValue:
     """A satisfied op's answer — including its VALUE, read off what the check printed."""
-    done = f"{spec.display_label}: already satisfied."
-    if spec.output is None:
-        return ReturnedValue.satisfied(done, ran=False)
+    answer = spec.exe_data.ANSWER
+    done = answer.satisfied(f"{spec.display_label}: already satisfied.", ran=False, check=said)
+    if spec.output_spec_kind is None:
+        return done
     try:
-        value = to_declared(value_from_stdout(said), spec.output)
+        value = to_declared(value_from_stdout(said.stdout), spec.output_spec_kind)
     except DeclaredShapeError as error:
         # The goal holds but the check did not print what the op promises to
-        # return. That is the document disagreeing with itself — say so, rather
-        # than answer OK with a value that is not the declared shape.
-        return ReturnedValue.not_yet(
-            f"{spec.display_label}: the completion check holds, but what it printed does "
-            f"not match this op's declared output — {error}",
+        # return — the document disagreeing with itself. Say so.
+        return answer.not_yet(
+            f"{spec.display_label}: the check holds, but what it printed is not a {spec.output_spec_kind} — {error}",
+            ran=False, check=said,
         )
-    return ReturnedValue.satisfied(done, value, ran=False)
+    return done.model_copy(update={"value": value})
 
 
-def _value_of(spec: ComputeOpSpec, result: AttemptResult, *, detail: str = "") -> ReturnedValue:
-    """The op's answer, with its value validated against the declared ``output``.
+def _with_value(spec: ComputeOpSpec, answer: ReturnedValue, *, said: Optional[CliResult] = None) -> ReturnedValue:
+    """The answer, its value held to ``output_spec_kind``.
 
-    A declared shape the value does not satisfy is a FAILURE, not a warning: a
-    caller binding that value into a later step would otherwise carry the
-    breakage forward to somewhere it cannot be explained.
+    A value that does not satisfy the declared kind is a FAILURE, not a warning:
+    a caller binding it into a later step would carry the breakage forward to
+    somewhere it cannot be explained. What was produced stays on the result
+    (``text``, ``stdout``) so a person can still read it.
     """
-    said = detail or (result.message.strip() or f"{spec.display_label}: done.")
-    if spec.output is None:
-        return ReturnedValue.satisfied(said)
+    if spec.output_spec_kind is None:
+        return answer.model_copy(update={"value": None})
+    raw = answer.value
+    if said is not None and spec.exe_data.VALUE_FROM_CHECK:
+        # The same value a later run reads off the check when nothing has to be done.
+        raw = value_from_stdout(said.stdout)
     try:
-        value = to_declared(result.value, spec.output)
+        value = to_declared(raw, spec.output_spec_kind)
     except DeclaredShapeError as error:
-        return ReturnedValue.not_yet(
-            f"{spec.display_label}: the {result.kind} attempt returned a value that does not "
-            f"match this op's declared output — {error}",
-        )
-    return ReturnedValue.satisfied(said, value=value)
+        return answer.model_copy(update={
+            "exit_code": ExitCode.NOT_YET, "value": None,
+            "detail": f"{spec.display_label}: returned a value that is not a {spec.output_spec_kind} — {error}",
+        })
+    return answer.model_copy(update={"value": value})
 
 
-async def _attempt(
-    attempt: AttemptSpec,
-    spec: ComputeOpSpec,
-    *,
-    tried: list[AttemptResult],
-    subject: str,
-    workdir: Path,
-    platform: str,
-    seams: _Seams,
-) -> Optional[AttemptResult]:
-    """Run one rung. Returns ``None`` when this rung is silent on this platform."""
-    if attempt.kind is AttemptKind.COMMAND:
-        command = attempt.command_for(platform)
-        if not command:
-            return None
-        result = await seams.shell(
-            command,
-            timeout_seconds=attempt.timeout,
-            workdir=workdir,
-            extra_env=seams.env,
-            platform=platform,
-        )
-        return _shell_attempt(
-            str(attempt.kind), command, result,
-            value=value_from_stdout(result.stdout) if spec.output is not None else None,
-        )
-
-    if attempt.kind is AttemptKind.ASK:
-        return await _ask_attempt(attempt, spec, seams=seams)
-
-    return await _agent_attempt(attempt, spec, tried=tried, subject=subject,
-                                workdir=workdir, platform=platform, seams=seams)
+# ── The calls, one per subkind. Each takes the same context and ignores what it
+# does not need, so the dispatch is a table and not a branch. ─────────────────
 
 
-def _shell_attempt(kind: str, command: str, result: ShellResult, *, value: Any = None) -> AttemptResult:
-    """One subprocess's result, as a rung reports it — a command rung, or the check."""
-    out, out_cut = capped(result.stdout or "")
-    err, err_cut = capped(result.stderr or "")
-    return AttemptResult(
-        kind=kind, command=command, returncode=result.returncode,
-        timed_out=result.timed_out,
-        # ``tail`` already caps and prefers stderr — the useful half of a failure.
-        output=result.tail(PROBE_OUTPUT_CAP),
-        stdout=out, stderr=err, truncated=out_cut or err_cut,
-        duration_s=getattr(result, "duration_s", 0.0),
-        value=value, ok=bool(result.ok),
+async def _cli(spec: ComputeOpSpec, *, platform: str, workdir: Path, env: Optional[dict],
+               shell: Shell, **_: Any) -> CliResult:
+    command = spec.exe_data.command_for(platform)
+    if not command:
+        return CliResult.not_applicable(f"{spec.display_label}: no command for this platform.")
+    said = await shell(
+        command, timeout_seconds=spec.exe_data.timeout(),
+        workdir=workdir, extra_env=env or {}, platform=platform,
     )
+    return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 
 
-async def _ask_attempt(
-    attempt: AttemptSpec, spec: ComputeOpSpec, *, seams: _Seams,
-) -> AttemptResult:
-    """Put the op's declared ``output`` to a person and wait a bounded time.
+async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], None], **_: Any) -> AskResult:
+    """Put the op's declared output to a person and wait a bounded time.
 
-    The rung answers like any other: it either produced a value or it did not,
-    and the completion check still decides whether the goal holds. A cancel and
-    a timeout are both "no value" — they differ in what they tell a person, not
-    in what they tell the caller.
+    A cancel and a timeout are both "no value" — ``NOT_YET`` — and differ in
+    ``cancelled`` / ``timed_out``, which is what a caller branches on.
     """
     from flow_sdk.core.compute.ask import Cancelled, open_question, wait_for  # noqa: PLC0415
     from flow_sdk.core.compute.ask_window import raise_question  # noqa: PLC0415
 
-    question = open_question(
-        spec.name or "op", attempt.prompt or spec.display_label, spec.output,
-    )
-    seams.report.say(f"{spec.display_label}: waiting for you…")
+    # The person gets the SHORTEST of: what the op asks for, what the caller
+    # allows, and the product default. Nothing here lengthens it.
+    timeout = min(spec.exe_data.timeout(), ask_timeout, ASK_TIMEOUT_SECONDS)
+    question = open_question(spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind)
+    say(f"{spec.display_label}: waiting for you…")
     await raise_question(question)
-    kind = str(attempt.kind)
     try:
-        value = await wait_for(question, timeout=seams.ask_timeout)
+        value = await wait_for(question, timeout=timeout)
     except Cancelled:
-        return AttemptResult(kind=kind, message="cancelled", ok=False)
-    except (TimeoutError, asyncio.TimeoutError):
-        return AttemptResult(
-            kind=kind, timed_out=True,
-            message=f"no answer within {seams.ask_timeout:g}s", ok=False,
+        return AskResult.not_yet(f"{spec.display_label}: cancelled.", cancelled=True)
+    except TimeoutError:
+        return AskResult.not_yet(f"{spec.display_label}: no answer within {timeout:g}s.", timed_out=True)
+    return AskResult.satisfied(f"{spec.display_label}: answered.", value=value)
+
+
+async def _prompt(spec: ComputeOpSpec, **_: Any) -> PromptResult:
+    """One model call with no tools, through the box's default LLM source."""
+    endpoint = await _box_llm()
+    if endpoint is None:
+        return PromptResult.not_yet(
+            f"{spec.display_label}: this box has no LLM source that can answer a prompt.", ran=False,
         )
-    return AttemptResult(kind=kind, message="answered", value=value, ok=True)
+    system = "\n\n".join(p.strip() for p in (spec.description, spec.setup) if p and p.strip())
+    user = spec.exe_data.prompt
+    if spec.output_spec_kind is not None:
+        user += f"\n\nAnswer with JSON shaped like: {fields_of_kind(spec.output_spec_kind)}"
+    try:
+        text = await endpoint.create_completion(system, user, timeout=spec.exe_data.timeout())
+    except TimeoutError:
+        return PromptResult.not_yet(f"{spec.display_label}: the model did not answer in time.", timed_out=True)
+    except Exception as error:  # noqa: BLE001 — an upstream failure is an answer, not a crash
+        return PromptResult.not_yet(f"{spec.display_label}: the model call failed — {error}")
+    text = text if isinstance(text, str) else str(text)
+    return PromptResult.satisfied(f"{spec.display_label}: answered.", value=value_from_reply(text), text=text)
 
 
+async def _box_llm() -> Any:
+    """The box's default LLM source, when it can answer an API call — else None.
 
-async def _agent_attempt(
-    attempt: AttemptSpec, spec: ComputeOpSpec, *, tried: list[AttemptResult],
-    subject: str, workdir: Path, platform: str, seams: _Seams,
-    retry_of: Optional[str] = None, why: str = "",
-) -> AttemptResult:
-    """A spawned harness with tools. It reports through a receipt it writes.
+    The box's own ranking (``pick_llm_candidate``) over the sources that can: a
+    device login (a vendor CLI signed in) funds a harness, not an API call, and
+    must not shadow a stored key here.
+    """
+    try:
+        from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
+            list_llm_candidates,
+            pick_llm_candidate,
+        )
+        from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+        from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
 
-    ``retry_of`` names a process to prompt again: the SAME process gets a further
-    turn, told ``why`` it is not done — never re-told the whole task, which is
-    already in its session.
+        candidates = await list_llm_candidates(str(await resolve_default_worker_type()))
+    except Exception:  # noqa: BLE001 — no source is an answer, not a crash
+        return None
+    chosen = pick_llm_candidate([c for c in candidates if c.endpoint.kind != LLMEndpointKind.DEVICE])
+    return chosen.endpoint if chosen is not None else None
+
+
+async def _agent(spec: ComputeOpSpec, *, workdir: Path, platform: str, executor: Optional[str],
+                 subject: str, launch: Launch, say: Callable[[str], None], **_: Any) -> PromptResult:
+    """A spawned harness with tools. Its value comes through a receipt it writes.
+
+    With ``executor``, the SAME process gets a further turn in its session —
+    the caller's prompt is all it is told; the task is already in the session.
     """
     path = receipt_path(workdir, spec.name or "op")
     # BEFORE the launch, always: a previous run's receipt read as this run's
-    # result reports the last run's success for a rung that did nothing. A
-    # retry clears it too: the first turn's receipt is not the second's.
+    # result reports the last run's success for a call that did nothing.
     clear_receipt(path)
-    prompt = (
-        _retry_prompt(spec, why, platform=platform) if retry_of
-        else _prompt_for(spec, attempt.prompt, tried, platform=platform)
-    )
-    if spec.output is not None:
-        # The field HOLDS the authoring form, so it goes into the prompt as-is.
-        # It used to hold a compiled `type`, which `json.dumps` cannot render —
-        # so the contract silently dropped its shape line and `_value_of` then
-        # failed the agent for not matching a shape nobody had shown it.
-        prompt += result_contract(path, VALUE_KEY, spec.output)
-    outcome = await seams.launch(
-        agent=attempt.agent,
+    prompt = spec.exe_data.prompt if executor else _prompt_for(spec, platform=platform)
+    if spec.output_spec_kind is not None:
+        prompt += result_contract(path, VALUE_KEY, fields_of_kind(spec.output_spec_kind))
+    said = await launch(
+        agent=spec.exe_data.agent,
         prompt=prompt,
-        name=attempt.name or spec.display_label,
+        name=spec.display_label,
         workdir=workdir,
         context_data={"compute_op": spec.name},
         target_typeid_str=subject,
-        timeout_seconds=attempt.timeout,
-        on_status=lambda progress: seams.report.say(getattr(progress, "text", "") or ""),
-        process_id=retry_of,
+        timeout_seconds=spec.exe_data.timeout(),
+        on_status=lambda progress: say(getattr(progress, "text", "") or ""),
+        executor=executor,
     )
-    if spec.output is None:
-        return AttemptResult(kind=str(attempt.kind), process_id=outcome.process_id or "",
-                             message=outcome.message, ok=bool(outcome.ok), timed_out=outcome.timed_out)
-    said = read_step_result(path, output=VALUE_KEY)
-    return AttemptResult(
-        kind=str(attempt.kind), process_id=outcome.process_id or "",
-        message=said.summary or outcome.message, output=said.error,
-        value=said.value, ok=bool(outcome.ok and said.ok), timed_out=outcome.timed_out,
-    )
+    if spec.output_spec_kind is None or not said.ok:
+        return said
+    receipt = read_step_result(path, output=VALUE_KEY)
+    if not receipt.ok:
+        return said.model_copy(update={
+            "exit_code": ExitCode.NOT_YET,
+            "detail": f"{spec.display_label}: {receipt.error or 'the agent reported a failure'}",
+        })
+    return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary})
 
 
-
-def _done_when(spec: ComputeOpSpec, platform: str) -> str:
-    """The bar, as every prompt states it.
-
-    The RUN's platform, not this process's: the prompt must name the command
-    that will actually be re-asked, or the rung is told how to prove a
-    different machine's goal.
-    """
+def _prompt_for(spec: ComputeOpSpec, *, platform: str) -> str:
+    """The goal, how a person does it by hand, what is asked, and the bar."""
     check = spec.completion_check.command_for(platform) if spec.completion_check is not None else None
-    return f"You are done only when this exits 0:\n\n    {check}" if check else ""
-
-
-def _retry_prompt(spec: ComputeOpSpec, why: str, *, platform: str) -> str:
-    """A further turn in the same session: why it is not done, and the bar again.
-
-    The task itself is already in the session. Restating it would read as a
-    new task; what the agent lacks is only the verdict it could not see.
-    """
     parts = [
-        f"Your last turn ended, but the goal ({spec.display_label}) does not hold yet."
-        if spec.display_label else "Your last turn ended, but the goal does not hold yet.",
-        why,
-        "Find out why, fix it, and verify it yourself before you stop.",
-        _done_when(spec, platform),
+        f"Goal: {spec.display_label}." if spec.display_label else "",
+        spec.description,
+        spec.exe_data.prompt,
+        f"How this is done by hand:\n\n{spec.setup}" if spec.setup else "",
+        f"You are done only when this exits 0:\n\n    {check}" if check else "",
     ]
-    return "\n\n".join(part for part in parts if part)
-
-
-def _prompt_for(
-    spec: ComputeOpSpec, extra: str, tried: list[AttemptResult], *, platform: str = "",
-) -> str:
-    """The goal, how a person does it by hand, and what the cheap rungs tried.
-
-    The last part is why escalating is worth anything: without it the next rung
-    rediscovers the same failure at a much higher price.
-    """
-    parts = [f"Goal: {spec.display_label}." if spec.display_label else "", spec.description, extra]
-    if spec.setup:
-        parts.append(f"How this is done by hand:\n\n{spec.setup}")
-    if tried:
-        already = "\n\n".join(f"- {result.describe()}" for result in tried)
-        parts.append(f"Already tried, and the goal still does not hold:\n\n{already}")
-    parts.append(_done_when(spec, platform))
     return "\n\n".join(part.strip() for part in parts if part and part.strip())
+
+
+#: The one call each subkind makes — keyed by its ``exe_data`` class.
+_CALLS: "dict[type, Callable[..., Awaitable[ReturnedValue]]]" = {
+    CliOp: _cli,
+    AskOp: _ask,
+    PromptOp: _prompt,
+    AgentOp: _agent,
+}

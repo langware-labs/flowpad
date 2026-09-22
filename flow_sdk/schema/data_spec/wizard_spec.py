@@ -35,13 +35,14 @@ Stdlib + pydantic only, like the rest of ``data_spec``.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Optional, Union
+from typing import ClassVar, Optional, Union
 
 from pydantic import ConfigDict, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec._types import NonBlank
+from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: What a step does when its action fails.
@@ -53,52 +54,17 @@ ON_FAIL_VALUES = (ON_FAIL_ABORT, ON_FAIL_CONTINUE)
 class StepKind(StrEnum):
     """What a step CALLS. Every one of them answers a ``ReturnedValue``.
 
-    The three differ in who does the work, not in how the answer is read:
+    * ``compute`` — a ComputeOp: one call — a command, a prompt, an agent, or a
+      person (an ``ask`` op).
+    * ``wizard`` — another Wizard: a sequence.
 
-    * ``compute`` — a ComputeOp: reach a goal on this machine, or produce a value.
-    * ``wizard`` — another Wizard: a sequence, which may itself ask.
-    * ``ask`` — the person. The ONLY waiting a Wizard does.
-
-    An agent is not a kind. An agent run IS a ComputeOp (an op whose attempt is
-    an agent), so a step that wants one references that op — which also means
-    the agent's work is checkable, reusable and runnable on its own.
+    Neither an agent nor a person is a step kind. Each IS a ComputeOp subkind,
+    so a step that wants one names that op — which also means the work is
+    checkable, reusable and runnable on its own.
     """
 
     COMPUTE = "compute"
     WIZARD = "wizard"
-    ASK = "ask"
-
-
-class InputSpec(DataSpec):
-    """One PARAMETER of a wizard: a value it needs before it can finish.
-
-    Declared once on the wizard rather than inside a step, which is what makes a
-    caller able to SUPPLY it: a step calling this wizard binds its `args` to
-    these names, and an `ask` step for a parameter already supplied does nothing.
-
-    Parking does not block. The run RETURNS ``pending`` and the caller is
-    released; ``Wizard.set_input`` stores the value and runs the wizard again.
-    Resume is just a re-run, because every step asks its own question first and
-    the ones already done skip — there is no cursor to persist and none to go
-    stale.
-
-    The value reaches a command as an ENVIRONMENT VARIABLE
-    (``FLOWPAD_WIZARD_INPUT_<NAME>``), never by substitution into the command
-    string. Interpolating would make a value of ``; rm -rf /`` executable,
-    straight through the trust gate that decides whether this may run shell at
-    all.
-    """
-
-    spec_kind: ClassVar[str] = "wizard.input"
-
-    #: The value's shape, in the authoring form — ``"string"``, an object, or a
-    #: one-element list. The same ``ShapeForm`` an agent declares its contract with.
-    shape: Optional[ShapeForm] = None
-    #: What the form asks. Falls back to the parameter's name.
-    label: str = ""
-    description: str = ""
-    #: An absent optional value SKIPS the ask instead of parking.
-    optional: bool = False
 
 
 class WizardStepSpec(DataSpec):
@@ -116,7 +82,7 @@ class WizardStepSpec(DataSpec):
     label: str = ""
     description: str = ""
     kind: StepKind = StepKind.COMPUTE
-    #: A ComputeOp name, a Wizard name, or one of this wizard's own ``inputs`` keys.
+    #: A ComputeOp name or a Wizard name.
     ref: NonBlank
     #: The callee's parameter -> a value in this wizard's scope, or a literal.
     #:
@@ -138,11 +104,6 @@ class WizardStepSpec(DataSpec):
             raise ValueError(
                 f"step {self.id!r}: on_fail must be one of {ON_FAIL_VALUES}, got {self.on_fail!r}"
             )
-        if self.kind is StepKind.ASK and self.args:
-            raise ValueError(
-                f"step {self.id!r}: an `ask` step takes no args — it names one of the "
-                "wizard's own inputs and the person supplies the value"
-            )
         return self
 
     @property
@@ -153,9 +114,8 @@ class WizardStepSpec(DataSpec):
 class WizardSpec(DataSpec):
     """``wizard.json`` — the whole document.
 
-    A Wizard SEQUENCES calls and can ask a person; a ComputeOp does the work.
-    If a document never asks anything, it does not need to be a wizard at all —
-    ops joined by ``requires`` already express an ordering.
+    A Wizard SEQUENCES calls; a ComputeOp does the work. A person is asked by
+    an ``ask`` op, like any other step.
     """
 
     spec_kind: ClassVar[str] = "wizard"
@@ -175,9 +135,6 @@ class WizardSpec(DataSpec):
     #: viewer's Run button would happily execute the placeholder against no
     #: payload at all, ungated, because a shipped wizard needs no approval.
     agent: str = ""
-    #: This wizard's PARAMETERS, by name. A caller supplies them through a step's
-    #: ``args``; an ``ask`` step obtains one from the person.
-    inputs: dict[str, InputSpec] = {}
     #: The shape this wizard RETURNS, in the authoring form.
     output: Optional[ShapeForm] = None
     steps: list[WizardStepSpec] = []
@@ -200,12 +157,6 @@ class WizardSpec(DataSpec):
             raise ValueError(
                 f"wizard {self.name!r} declares neither an agent nor any steps, so nothing can run it"
             )
-        for step in self.steps:
-            if step.kind is StepKind.ASK and step.ref not in self.inputs:
-                raise ValueError(
-                    f"step {step.id!r} asks for {step.ref!r}, which this wizard does not declare "
-                    f"in `inputs` — a question nobody can answer parks the run forever"
-                )
         return self
 
 
@@ -215,38 +166,6 @@ class WizardSpec(DataSpec):
 # not dataclasses, per the repo's one-type-system rule. `frozen=True`: a value
 # is a value.
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-class WizardStepProbeSpec(DataSpec):
-    """One command a step ran, and what it did.
-
-    A step runs up to THREE commands — precondition, action, verify — so the
-    record is a list, not a set of flat fields. A flat `command` would have to
-    pick one, which is the lie the outcome's `returncode` already tells: it is
-    the action's, unless verify failed, in which case verify's silently replaces
-    it. Naming the phase makes the verdict attributable to the command that
-    produced it.
-
-    Served ONLY by `Wizard.run-detail`, never on `run_state` — see the strip in
-    `flow_sdk/builtin/wizard.py`.
-    """
-
-    spec_kind: ClassVar[str] = "wizard.probe"
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    #: ``precondition`` | ``action`` | ``verify``.
-    phase: str
-    #: The command as RESOLVED for this machine's platform. Never recorded
-    #: before; without it a failing step cannot be reproduced by hand.
-    command: str = ""
-    returncode: Optional[int] = None
-    timed_out: bool = False
-    duration_s: float = 0.0
-    stdout: str = ""
-    stderr: str = ""
-    #: The streams are tail-capped at `PROBE_OUTPUT_CAP`; this says so, so the
-    #: UI can show that it is not the whole output rather than implying it is.
-    truncated: bool = False
 
 
 class WizardIssueSpec(DataSpec):
@@ -282,65 +201,18 @@ class WizardValidationSpec(DataSpec):
     read_only_reason: str = ""
 
 
-class WizardStepOutcomeSpec(DataSpec):
-    """What ONE step did."""
-
-    spec_kind: ClassVar[str] = "wizard.outcome"
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    step_id: str
-    status: str
-    message: str = ""
-    process_id: Optional[str] = None
-    duration_s: float = 0.0
-    #: Every command this step ran. Additive with a default, so a `run.json`
-    #: written before probes existed still validates under `extra="forbid"`.
-    probes: list[WizardStepProbeSpec] = []
-    #: What the call RETURNED. Served only by ``run-detail``, never on
-    #: ``run_state`` — the same rule as `probes`, and for the same reason: that
-    #: payload rides every row of a list and every WS push.
-    result: Optional[Any] = None
-
-
-class WizardAwaitingInputSpec(DataSpec):
-    """One value the run is blocked on, and enough for a UI to draw a field.
-
-    ``shape`` is stored in AUTHORING form (``"string"``, an object, a
-    one-element list) because that is what a form renderer can read; the typed
-    shape lives on the step's `WizardInputActionSpec`.
-    """
-
-    spec_kind: ClassVar[str] = "wizard.awaiting"
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    name: str
-    shape: Any = "string"
-    label: str = ""
-    description: str = ""
-
-
-
 class WizardRunDetailSpec(DataSpec):
-    """The whole run record for ONE wizard, probes included.
+    """The whole last run of ONE wizard: its ``WizardResult``, every step's
+    output included, and the runs its resets archived.
 
-    The counterpart of `Wizard.run_state`, which is deliberately probe-less
-    because it rides every row of a list and every WS push. This is fetched for
-    one wizard a person is actively looking at, so it can afford the output.
+    The counterpart of `Wizard.run_state`, which strips step output because it
+    rides every row of a list and every WS push.
     """
 
     spec_kind: ClassVar[str] = "wizard.run_detail"
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    status: str = ""
-    message: str = ""
-    inputs: dict[str, Any] = {}
-    awaiting: list[WizardAwaitingInputSpec] = []
-    outcomes: list[WizardStepOutcomeSpec] = []
+    #: The last run's answer, or ``None`` when it has never run.
+    result: Optional[WizardResult] = None
     #: Filenames of previous runs this wizard's resets archived, newest first.
-    #: Their presence is what tells a reader the current record is not the whole
-    #: history — the files themselves are read from disk, not served here.
     archived: list[str] = []
-    #: What this run's agentic steps returned, by declared output name. Whole
-    #: here, stripped from `run_state` — this action is the one place they are
-    #: served, because it is fetched for ONE wizard a person is looking at.
-    outputs: dict[str, Any] = {}

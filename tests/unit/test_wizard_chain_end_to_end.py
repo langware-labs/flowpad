@@ -9,8 +9,8 @@ seeding, or if the callback stops resolving the wizard from the action that
 names it — three wiring bugs that every per-link test would still pass.
 
 The wizard used is the REAL shipped one, and its steps run for real. On a
-developer machine python3 and git are already present, so both preconditions
-report `satisfied` and no installer is spawned — which is exactly the shape the
+developer machine python3 and git are already present, so every step's check
+holds, nothing runs and no installer is spawned — which is exactly the shape the
 "already provisioned" half of the container proof takes.
 """
 import asyncio
@@ -35,7 +35,7 @@ SHIPPED = (
 #: resolver to find it, exactly as it is on a real machine.
 OPS = [
     system_projects_root() / "flowpad_assistant" / "agentic-assets" / "compute_op" / name
-    for name in ("python3-on-path", "git-on-path")
+    for name in ("python3-on-path", "python3-on-path-agent", "git-on-path", "git-on-path-agent")
 ]
 #: The shipped wizard's trigger, as a child asset — the standard shape.
 SHIPPED_TRIGGER = SHIPPED / "agentic-assets" / "trigger" / "on-app-ready"
@@ -149,15 +149,15 @@ async def test_the_run_reports_through_the_activity_tree():
             trusted=True, workdir=SHIPPED.parent,
             resolve_op=_resolve_op, resolve_wizard=_resolve_wizard,
         )
-        assert [o.step_id for o in result.outcomes] == ["python3", "git"]
+        assert list(result.steps) == ["python3", "python3-agent", "git", "git-agent"]
         # This machine is a developer machine, so both are already there.
-        assert result.ok, f"the shipped wizard failed here: {result.message}"
-        assert all(o.skipped for o in result.outcomes), (
-            "python3 and git are present on this machine, so both steps must "
-            f"report satisfied; got {[(o.step_id, o.status) for o in result.outcomes]}"
+        assert result.ok, f"the shipped wizard failed here: {result.detail}"
+        assert not any(step.ran for step in result.steps.values()), (
+            "python3 and git are present on this machine, so every step's check "
+            f"must hold and nothing run; got {[(k, v.exit_code, v.ran) for k, v in result.steps.items()]}"
         )
         root = Activity.get("wizard/chain-check", subject_entity=str(wizard.typeid)).spec()
-        assert root.total == 2 and root.skipped == 2 and root.errors_count == 0
+        assert root.total == 4 and root.skipped == 4 and root.errors_count == 0
     finally:
         await _cleanup(wizard)
 
@@ -170,10 +170,8 @@ async def test_an_unattended_run_leaves_a_durable_record():
     root is dropped — so without this stamp the entire outcome of the machine's
     first-launch setup survives as one log line: the wizard then reports "has not
     run on this machine yet", which is false, and nothing says which step failed.
-    Worse for a parked run: its trigger is `fire_once` and will never fire again,
-    so `set-input` is the only way back and it reads `awaiting` from this file.
     """
-    from flow_sdk.core.wizard.state import read_state, reset_run
+    from flow_sdk.core.wizard.state import read_result, reset_run
     from flow_sdk.server.builtin_triggers import _run_wizard_trigger
 
     record = await index_path("wizard", SHIPPED, write=False)
@@ -181,16 +179,16 @@ async def test_an_unattended_run_leaves_a_durable_record():
     try:
         trigger = await _index_trigger(wizard)
 
-        assert read_state(str(wizard.id)).get("status", "") == "", "precondition: no run yet"
+        assert read_result(str(wizard.id)) is None, "precondition: no run yet"
 
         await _run_wizard_trigger(trigger, [])
 
-        state = read_state(str(wizard.id))
-        assert state.get("status"), (
+        recorded = read_result(str(wizard.id))
+        assert recorded is not None, (
             "the unattended run recorded nothing — `run_state` is what the viewer "
             "reads, and an empty one claims the wizard never ran"
         )
-        assert state.get("outcomes"), "a run with steps must record what each step did"
+        assert recorded.steps, "a run with steps must record what each step answered"
     finally:
         reset_run(str(wizard.id))
         await _cleanup(wizard)

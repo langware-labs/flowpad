@@ -15,11 +15,10 @@ import pytest
 
 from flow_sdk.activity import Activity, ActivityState
 from flow_sdk.core.wizard import run_wizard
-from flow_sdk.core.compute.exec import ShellResult
-from flow_sdk.core.compute.process_step import ProcessResult
 from flow_sdk.schema.data_spec.activity_spec import MAX_DEPTH
 from flow_sdk.core.wizard.runner import Resolved
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, CliResult, PromptResult
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 pytestmark = pytest.mark.timeout(5)
@@ -36,12 +35,13 @@ SPEC = WizardSpec.model_validate({
 })
 
 #: The ops the steps call. The Activity tree is what is under test, so each is
-#: the smallest legal op: one question, one rung.
+#: the smallest legal op: one question, one call.
 OPS = {
     name: ComputeOpSpec.model_validate({
         "name": name,
+        "subkind": "agent",
+        "exe_data": {"agent": "provisioner", "prompt": f"install {name}"},
         "completion_check": {"commands": {"linux": f"have {name}"}},
-        "attempts": [{"kind": "agent", "agent": "provisioner", "prompt": f"install {name}"}],
     })
     for name in ("python3-on-path", "git-on-path")
 }
@@ -66,10 +66,10 @@ def _child(root_spec, name):
 @pytest.mark.asyncio
 async def test_root_carries_the_wizard_identity_and_a_real_total(tmp_path):
     async def shell(_c, **_kw):
-        return ShellResult(returncode=0)
+        return CliResult.of_process(_c, 0)
 
     async def launch(**_kw):
-        return ProcessResult(process_id="p", ok=True)
+        return PromptResult.satisfied("The agent finished.", executor="agentic_process-p")
 
     root = await _run(shell, launch, path="wzact/ident", subject_entity="wizard-a", tmp_path=tmp_path)
     assert root.label == "Developer toolchain"
@@ -80,10 +80,10 @@ async def test_root_carries_the_wizard_identity_and_a_real_total(tmp_path):
 @pytest.mark.asyncio
 async def test_a_skipped_step_is_completed_plus_skipped_not_a_missing_state(tmp_path):
     async def shell(_c, **_kw):
-        return ShellResult(returncode=0)
+        return CliResult.of_process(_c, 0)
 
     async def launch(**_kw):
-        raise AssertionError("must not act on a satisfied precondition")
+        raise AssertionError("must not act on a satisfied check")
 
     root = await _run(shell, launch, path="wzact/skip", subject_entity="wizard-b", tmp_path=tmp_path)
     assert root.skipped == 2
@@ -97,10 +97,10 @@ async def test_a_skipped_step_is_completed_plus_skipped_not_a_missing_state(tmp_
 @pytest.mark.asyncio
 async def test_a_failed_step_marks_the_child_and_counts_an_error(tmp_path):
     async def shell(_c, **_kw):
-        return ShellResult(returncode=1)
+        return CliResult.of_process(_c, 1)
 
     async def launch(**_kw):
-        return ProcessResult(process_id="p", ok=False, message="install failed")
+        return PromptResult.not_yet("install failed", executor="agentic_process-p")
 
     root = await _run(shell, launch, path="wzact/fail", subject_entity="wizard-c", tmp_path=tmp_path)
     assert root.errors_count == 2
@@ -117,10 +117,10 @@ async def test_a_never_reached_step_has_no_child_rather_than_a_failed_one(tmp_pa
     body["steps"][0]["on_fail"] = "abort"
 
     async def shell(_c, **_kw):
-        return ShellResult(returncode=1)
+        return CliResult.of_process(_c, 1)
 
     async def launch(**_kw):
-        return ProcessResult(process_id=None, ok=False, message="boom")
+        return PromptResult.not_yet("boom", ran=False)
 
     await run_wizard(WizardSpec.model_validate(body), subject_entity="wizard-d",
                      activity_path="wzact/abort", trusted=True, workdir=Path(tmp_path),
@@ -133,10 +133,10 @@ async def test_a_never_reached_step_has_no_child_rather_than_a_failed_one(tmp_pa
 @pytest.mark.asyncio
 async def test_the_tree_stays_within_the_wire_depth_budget(tmp_path):
     async def shell(_c, **_kw):
-        return ShellResult(returncode=0)
+        return CliResult.of_process(_c, 0)
 
     async def launch(**_kw):
-        return ProcessResult(process_id="p", ok=True)
+        return PromptResult.satisfied("The agent finished.", executor="agentic_process-p")
 
     root = await _run(shell, launch, path="wzact/depth", subject_entity="wizard-e", tmp_path=tmp_path)
     depths = {len(node.path.split("/")) - len(root.path.split("/")) for node in root.walk()}
@@ -149,11 +149,13 @@ async def test_a_second_concurrent_run_of_the_same_wizard_is_refused(tmp_path):
     Activity.try_claim("wzact/busy", subject_entity="wizard-f")
 
     async def shell(_c, **_kw):
-        return ShellResult(returncode=0)
+        return CliResult.of_process(_c, 0)
 
     async def launch(**_kw):
-        return ProcessResult(process_id="p", ok=True)
+        return PromptResult.satisfied("The agent finished.", executor="agentic_process-p")
 
-    with pytest.raises(RuntimeError):
-        await run_wizard(SPEC, subject_entity="wizard-f", activity_path="wzact/busy", trusted=True,
-                         workdir=Path(tmp_path), shell=shell, launch=launch, platform="linux")
+    # Busy is an answer, not a raise: nothing ran, and trying later is right.
+    result = await run_wizard(SPEC, subject_entity="wizard-f", activity_path="wzact/busy", trusted=True,
+                              workdir=Path(tmp_path), shell=shell, launch=launch, platform="linux")
+    assert result.exit_code is ExitCode.NOT_YET and result.ran is False
+    assert result.steps == {}

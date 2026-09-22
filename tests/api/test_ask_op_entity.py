@@ -3,8 +3,8 @@
 This is the API the snippets in `docs/snippets/compute-ops.md` teach, and until
 this file nothing in the repo exercised it: every other test calls the pure
 `run_op(spec, …)`. The two are not the same call — the entity reads the
-document from disk, resolves `requires`, claims an Activity address, and
-REFUSES an unapproved op instead of asking anyone.
+document from disk, claims an Activity address, and answers REFUSED for an
+unapproved op instead of asking anyone.
 
 No mocks: a real document on disk, a real row, a real run, an answer delivered
 through the same route the window posts to.
@@ -12,22 +12,32 @@ through the same route the window posts to.
 from __future__ import annotations
 
 import asyncio
+from typing import ClassVar
 
 import pytest
 
 from flow_sdk.builtin.compute_op import ComputeOp
 from flow_sdk.core.compute.ask import _PENDING, open_questions
-from flow_sdk.core.compute_op import ComputeOpNotApproved
-from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+from flow_sdk.schema.data_spec.returned_value_spec import AskResult, ExitCode
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 pytestmark = pytest.mark.timeout(60)  # do not increase timeout without approval
 
-#: Exactly the document the snippets page shows.
+
+class ApiToken(DataSpec):
+    """The shape the op asks for — a registered kind, as `output_spec_kind` requires."""
+
+    spec_kind: ClassVar[str] = "service_x.api_token"
+    token: str
+
+
+#: The document the snippets page shows.
 DOCUMENT = {
     "type": "compute_op",
     "name": "get-api-key",
-    "attempts": [{"kind": "ask", "prompt": "Service X API token"}],
-    "output": {"token": "string"},
+    "subkind": "ask",
+    "exe_data": {"prompt": "Service X API token"},
+    "output_spec_kind": "service_x.api_token",
 }
 
 
@@ -51,7 +61,10 @@ async def key(client):
     if found is None:
         # The api tier shares one scope across tests, and the document outlives
         # the test that wrote it — so write it once, then find it by name.
+        from flow_sdk.schema.data_spec.compute_op_spec import AskOp  # noqa: PLC0415
+
         fields = {k: v for k, v in DOCUMENT.items() if k != "type"}
+        fields["exe_data"] = AskOp(**fields["exe_data"])
         await ComputeOp(**fields).save()
         found = await ComputeOp.by_name("get-api-key")
     assert found is not None, "by_name did not find the op the snippet asks for"
@@ -71,12 +84,10 @@ async def _person(client, *, answer=None, cancel=False) -> None:
 
 
 async def test_an_unapproved_op_refuses_rather_than_asking(key):
-    """`key.run()` with no approval raises — it never puts a question to anyone.
-
-    The snippets originally wrote `await key.run()`, which is this case.
-    """
-    with pytest.raises(ComputeOpNotApproved):
-        await key.run()
+    """`key.run()` with no approval answers REFUSED — returned, never raised —
+    and never puts a question to anyone."""
+    answer = await key.run()
+    assert answer.exit_code is ExitCode.REFUSED and answer.ran is False
     assert open_questions() == [], "a refused op must not have asked anybody"
 
 
@@ -85,8 +96,9 @@ async def test_ask_and_get_what_they_typed(client, key):
     await _person(client, answer={"token": "fghfg"})
     answer = await run
 
+    assert isinstance(answer, AskResult)
     assert answer.exit_code is ExitCode.OK
-    assert answer.value.token == "fghfg"
+    assert isinstance(answer.value, ApiToken) and answer.value.token == "fghfg"
 
 
 async def test_they_cancel(client, key):
@@ -94,7 +106,7 @@ async def test_they_cancel(client, key):
     await _person(client, cancel=True)
     answer = await run
 
-    assert answer.exit_code is ExitCode.NOT_YET
+    assert answer.exit_code is ExitCode.NOT_YET and answer.cancelled is True
     assert answer.value is None
 
 
@@ -106,7 +118,7 @@ async def test_a_wrong_shape_is_refused_and_the_question_stays_open(client, key)
         await asyncio.sleep(0.05)
     qid = open_questions()[0].id
 
-    bad = await client.post(f"/api/v1/ask/{qid}/answer", json={"value": {"token": 7}})
+    bad = await client.post(f"/api/v1/ask/{qid}/answer", json={"value": {"token": ["not", "text"]}})
     assert bad.status_code == 422
     assert (await client.get(f"/api/v1/ask/{qid}")).status_code == 200, "still open to correct"
 

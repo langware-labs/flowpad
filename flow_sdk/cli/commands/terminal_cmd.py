@@ -14,10 +14,12 @@ commands are indistinguishable on screen.
 ``open`` is idempotent: it re-shows the terminal this process already opened
 rather than stacking up new ones, so ``run`` needs no ``--shell``.
 
-``run`` returns the command's own ``output`` and ``exit_code`` alongside
-running it visibly — one call serves both the user and the caller. When the
-command outlives ``--timeout`` it keeps running in the user's terminal and the
-result comes back with ``completed: false`` and the output so far.
+``run`` answers with the command's ``CliResult`` alongside running it visibly —
+one call serves both the user and the caller: ``stdout`` is what it printed,
+``returncode`` its own exit, ``exit_code`` the verdict (0 only for a 0), and
+``executor`` the shell it ran in. When the command outlives ``--timeout`` it
+keeps running in the user's terminal and the answer comes back with
+``timed_out: true``, no ``returncode``, and the output so far.
 
 The target process is the calling AgenticProcess (``FLOWPAD_EXECUTION_SCOPE``,
 injected into every worker) or an explicit ``--process``.
