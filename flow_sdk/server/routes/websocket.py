@@ -617,6 +617,12 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
 
         cleanup_connection(connection_id)
 
+        # Stop the snippet runs this connection started: a closed or reloaded tab
+        # never runs its unmount cleanup, so they would go on until their timeout.
+        from flow_sdk.core.snippet import stop_runs_of
+
+        stop_runs_of(connection_id)
+
         # Release this connection's hub context-watches (unwatch any entity no
         # other connection still holds in context).
         from flow_sdk.cloud_client.context_watch import browser_context_watch

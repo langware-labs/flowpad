@@ -5401,6 +5401,10 @@ msgstr "Could not stop"
 msgid "Could not stop covering {path}"
 msgstr "Could not stop covering {path}"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not stop the snippet"
+msgstr "Could not stop the snippet"
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Could not switch source"
 msgstr "Could not switch source"
@@ -19335,6 +19339,11 @@ msgstr "stop hooks"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "stopped"
 msgstr "stopped"
+
+#. placeholder {0}: result.duration_s.toFixed(2)
+#: src/components/code-editor/SnippetView.tsx
+msgid "stopped — killed after {0}s"
+msgstr "stopped — killed after {0}s"
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Storage"

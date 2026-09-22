@@ -5401,6 +5401,10 @@ msgstr "تعذر الإيقاف"
 msgid "Could not stop covering {path}"
 msgstr ""
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not stop the snippet"
+msgstr ""
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Could not switch source"
 msgstr "تعذّر تبديل المصدر"
@@ -19335,6 +19339,11 @@ msgstr "خطافات التوقف"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "stopped"
 msgstr "متوقف"
+
+#. placeholder {0}: result.duration_s.toFixed(2)
+#: src/components/code-editor/SnippetView.tsx
+msgid "stopped — killed after {0}s"
+msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Storage"

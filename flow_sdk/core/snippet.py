@@ -2,7 +2,7 @@
 
 ::
 
-    import sys                 # preamble — before the first marker, kept, not shown
+    import sys                 # before the first marker: part of the hidden (imports) region
     # %% flowpad:hidden
     import json
     # %% flowpad:init
@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import logging
 import re
 import secrets
 import shlex
@@ -37,6 +38,8 @@ from flow_sdk.capsules.atomic import atomic_write, capsule_lock
 from flow_sdk.core.compute.exec import run_shell
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from flow_sdk.schema.data_spec.spec import DataSpec
+
+logger = logging.getLogger(__name__)
 
 RegionKind = Literal["hidden", "init", "snippet"]
 
@@ -80,16 +83,21 @@ class SnippetRegion(DataSpec):
 
     @property
     def eol(self) -> str:
-        """The line ending this region is written in (its marker line decides)."""
-        return "\r\n" if self.marker.endswith("\r\n") else "\n"
+        """The line ending this region is written in: its marker line decides, or
+        its body for the leading region, which has no marker."""
+        return "\r\n" if (self.marker or self.body).split("\n", 1)[0].endswith("\r") else "\n"
 
 
 class SnippetDoc(DataSpec):
-    """A snippet file split into regions. ``SnippetDoc.parse(t).text() == t``, byte for byte."""
+    """A snippet file split into regions. ``SnippetDoc.parse(t).text() == t``, byte for byte.
+
+    Text before the first marker is a leading ``hidden`` region with no marker
+    line: imports put there (a shebang, a `use`) show and edit with the rest of
+    the imports instead of being a part of the file no view can reveal.
+    """
 
     model_config = ConfigDict(frozen=True)
 
-    preamble: str = ""
     regions: list[SnippetRegion]
 
     @classmethod
@@ -104,15 +112,18 @@ class SnippetDoc(DataSpec):
         if not starts:
             return None
         ends = [*starts[1:], len(pieces)]
+        leading = "".join(pieces[: starts[0]])
         return cls(
-            preamble="".join(pieces[: starts[0]]),
             regions=[
-                SnippetRegion(
-                    kind=_MARKER.match(pieces[s]).group(1),  # type: ignore[union-attr]
-                    marker=pieces[s],
-                    body="".join(pieces[s + 1 : e]),
-                )
-                for s, e in zip(starts, ends)
+                *([SnippetRegion(kind="hidden", marker="", body=leading)] if leading else []),
+                *(
+                    SnippetRegion(
+                        kind=_MARKER.match(pieces[s]).group(1),  # type: ignore[union-attr]
+                        marker=pieces[s],
+                        body="".join(pieces[s + 1 : e]),
+                    )
+                    for s, e in zip(starts, ends)
+                ),
             ],
         )
 
@@ -120,7 +131,7 @@ class SnippetDoc(DataSpec):
         """The file. Every part but the last is closed with a newline: a marker on
         the file's last line has none, and once a body is added after it the two
         would glue into one line and the marker would stop being one."""
-        parts = [p for p in [self.preamble, *(x for r in self.regions for x in (r.marker, r.body))] if p]
+        parts = [p for p in (x for r in self.regions for x in (r.marker, r.body)) if p]
         return "".join(p if p.endswith("\n") or i == len(parts) - 1 else p + "\n" for i, p in enumerate(parts))
 
     def with_body(self, index: int, kind: RegionKind, shown: str) -> "SnippetDoc":
@@ -167,10 +178,19 @@ class SnippetSaveRequest(DataSpec):
 
 
 class SnippetRunRequest(DataSpec):
-    """``POST /api/v1/snippet/run``."""
+    """``POST /api/v1/snippet/run``. ``run_id`` (the caller's) is what a stop names;
+    ``connection_id`` ties the run to a WebSocket, so it ends when the socket does."""
 
     path: str
     timeout_seconds: float = Field(default=30.0, gt=0, le=600)
+    run_id: Optional[str] = None
+    connection_id: Optional[str] = None
+
+
+class SnippetStopRequest(DataSpec):
+    """``POST /api/v1/snippet/stop``."""
+
+    run_id: str
 
 
 def read_snippet(path: Path) -> Optional[SnippetDoc]:
@@ -231,11 +251,49 @@ def _terminal_path() -> str:
     return capture_terminal_path()
 
 
-async def run_snippet(path: Path, *, timeout_seconds: float, env_path: Optional[str] = None) -> CliResult:
-    """Run the file as written. Never raises: a missing file, an unknown language,
-    a compile error, an exception and a hang are all a ``CliResult``.
+#: Runs in flight by the caller's run id: the event ``stop_snippet`` sets, and
+#: the connection that started it.
+_RUNNING: dict[str, tuple[asyncio.Event, Optional[str]]] = {}
 
-    ``env_path`` overrides the PATH the language toolchain is looked up on.
+
+def stop_snippet(run_id: str) -> bool:
+    """Stop a run in flight: its process group is killed and the run answers with
+    what it printed. False when nothing by that id is running (already done)."""
+    running = _RUNNING.get(run_id)
+    if running is None:
+        return False
+    running[0].set()
+    return True
+
+
+def stop_runs_of(connection_id: str) -> int:
+    """Stop every run a WebSocket connection started — called when it drops. A
+    closed or reloaded tab never runs its unmount cleanup, and its run would
+    otherwise go on until its timeout."""
+    stopped = 0
+    for stop, owner in list(_RUNNING.values()):
+        if owner == connection_id and not stop.is_set():
+            stop.set()
+            stopped += 1
+    if stopped:
+        logger.info("snippet: stopped %d run(s) of dropped connection %s", stopped, connection_id)
+    return stopped
+
+
+async def run_snippet(
+    path: Path,
+    *,
+    timeout_seconds: float,
+    env_path: Optional[str] = None,
+    run_id: Optional[str] = None,
+    connection_id: Optional[str] = None,
+) -> CliResult:
+    """Run the file as written. Never raises: a missing file, an unknown language,
+    a compile error, an exception, a hang and a stop are all a ``CliResult``.
+
+    ``env_path`` overrides the PATH the language toolchain is looked up on;
+    ``run_id`` makes the run stoppable by ``stop_snippet``, and ``connection_id``
+    by ``stop_runs_of``.
     """
     if env_path is None:
         # Off the event loop: the first capture runs a login shell (~1s).
@@ -247,14 +305,23 @@ async def run_snippet(path: Path, *, timeout_seconds: float, env_path: Optional[
     if template is None:
         known = ", ".join(sorted(RUNNERS))
         return CliResult.of_process(str(path), None, stderr=f"no runner for '{path.suffix}' files (runnable: {known})")
-    with tempfile.TemporaryDirectory(prefix="flowpad-snippet-build-") as build:
-        command = template.format(file=shlex.quote(str(path)), out=shlex.quote(str(Path(build) / "snippet")))
-        return await run_shell(
-            command,
-            timeout_seconds=timeout_seconds,
-            workdir=path.parent,
-            extra_env={"PATH": env_path},
-        )
+    stop = asyncio.Event()
+    key = run_id or (f"connection:{connection_id}:{id(stop)}" if connection_id else None)
+    if key is not None:
+        _RUNNING[key] = (stop, connection_id)
+    try:
+        with tempfile.TemporaryDirectory(prefix="flowpad-snippet-build-") as build:
+            command = template.format(file=shlex.quote(str(path)), out=shlex.quote(str(Path(build) / "snippet")))
+            return await run_shell(
+                command,
+                timeout_seconds=timeout_seconds,
+                workdir=path.parent,
+                extra_env={"PATH": env_path},
+                stop=stop,
+            )
+    finally:
+        if key is not None:
+            _RUNNING.pop(key, None)
 
 
 __all__ = [
@@ -263,9 +330,12 @@ __all__ = [
     "SnippetReadRequest",
     "SnippetRunRequest",
     "SnippetSaveRequest",
+    "SnippetStopRequest",
     "SnippetRegion",
     "read_snippet",
     "run_snippet",
+    "stop_runs_of",
+    "stop_snippet",
     "edit_region",
     "write_temp_snippet",
 ]

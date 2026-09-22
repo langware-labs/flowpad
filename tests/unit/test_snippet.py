@@ -23,6 +23,8 @@ from flow_sdk.core.snippet import (
     edit_region,
     read_snippet,
     run_snippet,
+    stop_runs_of,
+    stop_snippet,
     write_temp_snippet,
 )
 from flow_sdk.core.capabilities.env_probe import capture_terminal_path
@@ -81,8 +83,8 @@ def test_a_marker_without_spaces_still_counts():
 
 def test_regions_hold_what_the_viewer_shows():
     doc = SnippetDoc.parse("import sys\n# %% flowpad:hidden\nimport json\n# %% flowpad:init\nd = 1\n# %% flowpad:snippet\nprint(d)\n")
-    assert doc.preamble == "import sys\n"
     assert [(r.kind, r.body) for r in doc.regions] == [
+        ("hidden", "import sys\n"),  # before the first marker: revealable with the imports
         ("hidden", "import json\n"),
         ("init", "d = 1\n"),
         ("snippet", "print(d)\n"),
@@ -133,6 +135,19 @@ def test_stress_edit_one_region_changes_only_that_region():
         assert edited.regions[i].shown.replace("\r\n", "\n") == expected.replace("\r\n", "\n"), (text, i, new_body)
         if doc.regions[i].eol == "\r\n":
             assert "\n" not in edited.regions[i].body.replace("\r\n", "")
+
+
+def test_code_before_the_first_marker_edits_like_any_region(tmp_path):
+    """The agent put `use ...;` above the first marker: it must be revealable and
+    editable, and the file must stay byte-exact around it (CRLF too)."""
+    for nl in ("\n", "\r\n"):
+        path = tmp_path / "lead.rs"
+        text = f"use std::collections::HashMap;{nl}// %% flowpad:snippet{nl}fn main() {{}}{nl}"
+        path.write_bytes(text.encode())
+        doc = read_snippet(path)
+        assert [(r.kind, r.marker) for r in doc.regions] == [("hidden", ""), ("snippet", f"// %% flowpad:snippet{nl}")]
+        edit_region(path, 0, "hidden", "use std::collections::HashMap;\nuse std::fmt;")
+        assert path.read_bytes().decode() == f"use std::collections::HashMap;{nl}use std::fmt;{nl}// %% flowpad:snippet{nl}fn main() {{}}{nl}"
 
 
 def test_an_edit_that_drops_the_newline_does_not_eat_the_next_marker():
@@ -324,6 +339,84 @@ def test_hang_kills_the_whole_process_group(tmp_path, py_path):
             return
         time.sleep(0.02)
     pytest.fail(f"grandchild {pid} survived the timeout")
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _hang_with_grandchild(tmp_path: Path) -> Path:
+    body = "import subprocess, time\np = subprocess.Popen(['sleep', '60'])\nprint('started', p.pid)\ntime.sleep(60)"
+    return _snip(tmp_path, "py", body)
+
+
+def test_stop_kills_the_run_and_keeps_what_it_printed(tmp_path, py_path):
+    async def scenario():
+        run = asyncio.create_task(run_snippet(_hang_with_grandchild(tmp_path), timeout_seconds=30, env_path=py_path, run_id="r1"))
+        await asyncio.sleep(0.4)
+        assert stop_snippet("r1") is True
+        return await run
+
+    t0 = time.monotonic()
+    r = asyncio.run(scenario())
+    assert time.monotonic() - t0 < 1.5, "stop must not wait for the 30s timeout"
+    assert not r.timed_out and r.detail == "The run was stopped." and not r.ok
+    assert r.stdout.startswith("started")
+    grandchild = int(r.stdout.split()[1])
+    deadline = time.monotonic() + 0.5
+    while _alive(grandchild) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert not _alive(grandchild), "stop left the snippet's child process running"
+    assert stop_snippet("r1") is False, "a finished run is no longer stoppable"
+
+
+def test_a_dropped_connection_stops_its_runs_and_only_its_runs(tmp_path, py_path):
+    """A closed tab runs no unmount cleanup: its socket dropping is what ends its run."""
+    hang = _snip(tmp_path, "py", "print('up', flush=True)\nwhile True:\n    pass")
+
+    async def scenario():
+        mine = asyncio.create_task(run_snippet(hang, timeout_seconds=30, env_path=py_path, run_id="m", connection_id="tab-1"))
+        other = asyncio.create_task(run_snippet(hang, timeout_seconds=30, env_path=py_path, run_id="o", connection_id="tab-2"))
+        await asyncio.sleep(0.4)
+        assert stop_runs_of("tab-1") == 1
+        first = await mine
+        assert not other.done(), "another tab's run must keep going"
+        stop_snippet("o")
+        return first, await other
+
+    t0 = time.monotonic()
+    mine, other = asyncio.run(scenario())
+    assert time.monotonic() - t0 < 2
+    assert mine.detail == "The run was stopped." and mine.stdout == "up\n"
+    assert other.detail == "The run was stopped."
+
+
+def test_stopping_an_unknown_run_is_a_no(tmp_path):
+    assert stop_snippet("never-started") is False
+
+
+def test_a_cancelled_run_does_not_leave_its_process_running(tmp_path, py_path):
+    pid_file = tmp_path / "pid"
+    body = f"import os, time\nopen({str(pid_file)!r}, 'w').write(str(os.getpid()))\ntime.sleep(60)"
+
+    async def scenario():
+        run = asyncio.create_task(run_snippet(_snip(tmp_path, "py", body), timeout_seconds=30, env_path=py_path))
+        while not pid_file.exists():
+            await asyncio.sleep(0.02)
+        run.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await run
+
+    asyncio.run(scenario())
+    pid = int(pid_file.read_text())
+    deadline = time.monotonic() + 0.5
+    while _alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert not _alive(pid), "cancelling the run left the snippet process running"
 
 
 def test_reading_stdin_fails_instead_of_hanging(tmp_path, py_path):

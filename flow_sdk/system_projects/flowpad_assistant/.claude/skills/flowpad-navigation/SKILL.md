@@ -80,8 +80,7 @@ SNIP
   `flowpad:snippet` marker the command refuses (exit 2).
 - `--lang` is the file extension: `py`, `js`, `rs`, `sh`. With no PATH the code is
   read from stdin into the OS temp dir; the JSON answer's `path` is that file. To
-  change it on a later turn, edit that file, then run `flow show snippet <path>` again
-  so the view reloads it — the view does not watch the file. An existing file:
+  change it on a later turn, edit that file. An existing file:
   `flow show snippet <path>` (on an explicit "take me there", `flow navigate file <path>`
   opens the same snippet view).
 - The file runs top to bottom **as written** — the markers are only comments, so the
@@ -89,15 +88,19 @@ SNIP
   point: in rust, `fn main() { ... }` goes inside the snippet region (bare statements
   do not compile).
 - Run it yourself exactly as the Run button does, and read the result before you
-  claim it works:
+  claim it works. Show first, then run THAT file by the `path` the show answered —
+  never a copy of the code (`python3 -c ...`, a scratch file): the user runs the
+  file on screen, and a copy that passes proves nothing about it:
 
 ```bash
 flow snippet run <path> --timeout 30   # JSON stdout/stderr; exit = the snippet's own, 124 on timeout
 ```
 
 - A run that never ends is killed at its timeout (the Run button's is a preference,
-  30s by default), keeping whatever it printed. Nobody has to stop it by hand; stdin
-  is closed, so `input()` fails instead of waiting.
+  30s by default), keeping whatever it printed; the view also has a Stop button that
+  kills it at once. stdin is closed, so `input()` fails instead of waiting.
+- The view watches the file: when you edit it on a later turn the open view
+  updates by itself — no need to show it again.
 
 ## You already have a TypeId
 

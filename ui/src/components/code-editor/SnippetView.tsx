@@ -1,5 +1,6 @@
 import apiClient from '@sdk/client';
-import { PrefKey } from '@sdk';
+import { ConnectionManager, PrefKey, type TypeId } from '@sdk';
+import { useFileWatch } from '@sdk/react/hooks';
 import { usePreference } from '@src/hooks/use-preference';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
@@ -7,7 +8,7 @@ import Editor, { loader } from '@monaco-editor/react';
 import type { editor as monacoEditor } from 'monaco-editor';
 import { ensureShikiMonaco, monacoTheme } from './shikiMonaco';
 import { useLingui } from '@lingui/react/macro';
-import { Import, ListStart, Play } from 'lucide-react';
+import { Import, ListStart, Play, Square } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -50,6 +51,8 @@ const SAVE_DEBOUNCE_MS = 500;
 interface SnippetViewProps {
   /** Absolute machine path of the snippet file. */
   path: string;
+  /** The same file as the editor addresses it — what the file watch names. */
+  watch?: { typeid: TypeId; path: string };
   /** Monaco language id. */
   language: string;
   /** The file's current text (fs cache); a change that isn't ours reloads the regions. */
@@ -61,7 +64,7 @@ interface SnippetViewProps {
   onSynced: (text: string) => void;
 }
 
-export function SnippetView({ path, language, revision, readOnly, onNotSnippet, onSynced }: SnippetViewProps) {
+export function SnippetView({ path, watch, language, revision, readOnly, onNotSnippet, onSynced }: SnippetViewProps) {
   const { t } = useLingui();
   const { resolvedTheme } = useTheme();
   const [showInit, setShowInit] = usePreference<boolean>(PrefKey.SNIPPET_SHOW_INIT);
@@ -80,6 +83,9 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
   const error = readError || notice;
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<SnippetRunResult | null>(null);
+  // The run in flight, by the id the backend knows it by — what Stop names.
+  const runIdRef = useRef<string | null>(null);
+  const [stopped, setStopped] = useState(false);
   // Editors mount only once the shared shiki themes exist (see shikiMonaco.ts).
   const [themed, setThemed] = useState(false);
 
@@ -150,6 +156,10 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
     if (revision !== syncedRef.current) void load();
   }, [load, revision]);
 
+  // Someone else (the agent) wrote the file: re-read it. Our own saves come
+  // back here too, and read as unchanged.
+  useFileWatch(watch?.typeid, watch?.path, () => void load());
+
   const save = useCallback(
     (region: SnippetRegionView) => {
       // Clear, not just forget: a Run flushes a region early, and its debounce
@@ -210,6 +220,12 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
   );
 
   const run = useCallback(async () => {
+    // One run at a time: clicks landing before the button turns into Stop would
+    // each start a process, and Stop only knows the last.
+    if (runIdRef.current) return;
+    const runId = crypto.randomUUID();
+    runIdRef.current = runId;
+    setStopped(false);
     setRunning(true);
     try {
       // Run what is on screen: flush unsaved edits first.
@@ -218,17 +234,41 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
         return region ? save(region) : null;
       });
       await Promise.all([...flushing, ...inflightRef.current]);
-      setResult(await apiClient.post<SnippetRunResult>('/api/v1/snippet/run', { path, timeout_seconds: timeoutSeconds }));
+      setResult(
+        // The connection id ends the run if this tab closes mid-run (no unmount runs then).
+        await apiClient.post<SnippetRunResult>('/api/v1/snippet/run', {
+          path,
+          timeout_seconds: timeoutSeconds,
+          run_id: runId,
+          connection_id: ConnectionManager.getInstance().id,
+        }),
+      );
     } catch (reason) {
       setNotice(errorMessage(reason, t`Could not run the snippet`));
     } finally {
+      runIdRef.current = null;
       setRunning(false);
     }
   }, [path, regions, save, timeoutSeconds, t]);
 
+  /** Kill the run in flight; it then answers with what it printed so far. */
+  const stop = useCallback(async () => {
+    const runId = runIdRef.current;
+    if (!runId) return;
+    try {
+      const res = await apiClient.post<{ stopped?: boolean }>('/api/v1/snippet/stop', { run_id: runId });
+      if (res?.stopped) setStopped(true);
+    } catch (reason) {
+      setNotice(errorMessage(reason, t`Could not stop the snippet`));
+    }
+  }, [t]);
+
   useEffect(
     () => () => {
       pendingRef.current.forEach((handle) => clearTimeout(handle));
+      // Leaving the view must not leave its run going.
+      const runId = runIdRef.current;
+      if (runId) apiClient.post('/api/v1/snippet/stop', { run_id: runId }).catch(() => undefined);
     },
     [],
   );
@@ -248,10 +288,17 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="snippet-view">
       <div className="flex items-center gap-1 border-b px-2 py-1">
-        <Button size="sm" onClick={() => void run()} disabled={running} data-testid="snippet-run">
-          <Play className="mr-1 h-3.5 w-3.5" />
-          {running ? t`Running…` : t`Run`}
-        </Button>
+        {running ? (
+          <Button size="sm" variant="destructive" onClick={() => void stop()} data-testid="snippet-stop">
+            <Square className="mr-1 h-3.5 w-3.5" />
+            {t`Stop`}
+          </Button>
+        ) : (
+          <Button size="sm" onClick={() => void run()} data-testid="snippet-run">
+            <Play className="mr-1 h-3.5 w-3.5" />
+            {t`Run`}
+          </Button>
+        )}
         {has('init') && (
           <Button variant={showInit ? 'secondary' : 'ghost'} size="sm" onClick={() => setShowInit(!showInit)} data-testid="snippet-toggle-init">
             <ListStart className="mr-1 h-3.5 w-3.5" />
@@ -288,7 +335,9 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
             <div className="mt-1 text-muted-foreground" data-testid="snippet-status">
               {result.timed_out
                 ? t`timed out after ${timeoutSeconds}s — killed`
-                : result.returncode === null
+                : stopped
+                  ? t`stopped — killed after ${result.duration_s.toFixed(2)}s`
+                  : result.returncode === null
                   ? t`did not run`
                   : t`exit ${result.returncode} · ${result.duration_s.toFixed(2)}s`}
             </div>
