@@ -103,6 +103,13 @@ export default defineConfig(({ mode }) => {
       //
       // So: always proxy, and let VITE_API_URL choose the TARGET. One knob
       // ("which hub am I talking to?") instead of two that could disagree.
+      //
+      // The same holds for where that login lands: the hub answers
+      // `/api/v1/login` with `<app_url>/login.html` (custom_jwt_provider), and
+      // login.html / signup.html are the HUB's pages (its public dir), with
+      // their hashed bundles under `/assets` and the SDK they load from `/sdk` --
+      // this dev server has none of those and serves neither path itself. Unproxied, `/login.html` fell through to
+      // the SPA and looped exactly as above; so they go to the hub too.
       proxy: (() => {
         const target = env.VITE_API_URL || `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`;
         return {
@@ -119,6 +126,9 @@ export default defineConfig(({ mode }) => {
             target,
             changeOrigin: true,
           },
+          ...Object.fromEntries(
+            ['/login.html', '/signup.html', '/assets', '/sdk'].map((path) => [path, { target, changeOrigin: true }]),
+          ),
         };
       })(),
     },
