@@ -126,9 +126,10 @@ export default defineConfig(({ mode }) => {
             target,
             changeOrigin: true,
           },
-          ...Object.fromEntries(
-            ['/login.html', '/signup.html', '/assets', '/sdk'].map((path) => [path, { target, changeOrigin: true }]),
-          ),
+          '/login.html': { target, changeOrigin: true },
+          '/signup.html': { target, changeOrigin: true },
+          '/assets': { target, changeOrigin: true },
+          '/sdk': { target, changeOrigin: true },
         };
       })(),
     },

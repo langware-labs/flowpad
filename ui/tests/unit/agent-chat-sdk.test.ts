@@ -53,7 +53,7 @@ describe('AgentChat', () => {
       { type: 'conversation', conversationId: 'c-1' },
       { type: 'tool', name: 'Read' },
       { type: 'text', text: 'hello' },
-      { type: 'done', conversationId: 'c-1' },
+      { type: 'done' },
     ]);
     const action = spy.mock.calls[0][0] as { subpath: string; bodyParameters: Record<string, unknown> };
     expect(action.subpath).toBe('v1/chat/completions');
