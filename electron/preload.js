@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onStartupError: (callback) => ipcRenderer.on('startup-error', (_event, data) => callback(data)),
   copyToClipboard: (text) => ipcRenderer.invoke('copy-to-clipboard', text),
   quitApp: () => ipcRenderer.send('quit-app'),
+  // Re-run the install/start in-app after a failed first install (no relaunch).
+  retryStartup: () => ipcRenderer.send('retry-startup'),
 
   // Provision the per-instance Fernet sod-key in the OS keychain via the
   // bundled signed flow-rs binary, and return the value so the renderer
