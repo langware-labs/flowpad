@@ -409,10 +409,13 @@ async def answered_sources(agent, deployment) -> list:
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
 
+    from flow_sdk.builtin.agent_calls import answers_live  # noqa: PLC0415
+
+    # A channel people talk to live is answered by the call (``agent_calls``), never by the drain.
     return [
         s
         for s in await DataSource.find_owned(agent.typeid)
-        if is_message_source(s) and await answers_here(s, deployment)
+        if is_message_source(s) and not answers_live(s) and await answers_here(s, deployment)
     ]
 
 
@@ -682,12 +685,13 @@ class AgentServer:
         return wanted
 
     async def _converge(self, wanted: dict[str, tuple], owned: dict[str, list]) -> None:
+        from flow_sdk.builtin.agent_calls import answers_live  # noqa: PLC0415
         from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
 
         for key in [k for k in self._loops if k not in wanted]:
             await _ended(self._loops.pop(key)[1])
         for key, (agent, deployment) in wanted.items():
-            sources = [s for s in owned.get(agent.id, []) if await answers_here(s, deployment)]
+            sources = [s for s in owned.get(agent.id, []) if not answers_live(s) and await answers_here(s, deployment)]
             keys = frozenset(_serving_key(s) for s in sources)
             current = self._loops.get(key)
             if current is not None and current[0] == keys and not current[1].done():
