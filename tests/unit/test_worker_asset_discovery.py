@@ -28,6 +28,8 @@ def skill(root: Path, name: str) -> Path:
     (WorkerType.CODEX, {".agents"}),
     (WorkerType.COPILOT, {".github", ".agents", ".claude"}),
     (WorkerType.OPENCODE, {".opencode", ".agents", ".claude"}),
+    # The runner is handed `<dir>/.claude/skills` and nothing else: what it loads is what is listed.
+    (WorkerType.DEEPAGENTS, {".claude"}),
 ])
 def test_project_skills_follow_worker_discovery(tmp_path, pty_mode, mode, worker, expected):
     candidates = {prefix: skill(tmp_path / prefix / "skills", "probe")
@@ -43,6 +45,7 @@ def test_project_skills_follow_worker_discovery(tmp_path, pty_mode, mode, worker
     (WorkerType.CODEX, set()),
     (WorkerType.COPILOT, {".github"}),
     (WorkerType.OPENCODE, {".claude", ".agents", ".github", ".opencode"}),
+    (WorkerType.DEEPAGENTS, {".claude"}),
 ])
 def test_mount_skills_follow_launch_projection(tmp_path, worker, expected):
     cwd = tmp_path / "work"

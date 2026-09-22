@@ -16,16 +16,22 @@ schedules a fire-and-forget re-discovery. A wizard step wants none of that.
 Nothing here raises. A machine with no harness capability resolved is the
 NORMAL state of the bare box a wizard exists to fix, so "no harness" has to be
 a legible failed step, not a traceback that takes the whole run with it.
+
+It answers with a ``PromptResult``: ``text`` is what the agent said, and
+``executor`` names the process whenever one exists — even on failure — so a
+caller can link to it, or prompt that same process again.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from pydantic import Field
 
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 logger = logging.getLogger(__name__)
@@ -80,15 +86,6 @@ def _progress_for(process_id: str, worker_status: Any) -> ProcessProgress:
     return ProcessProgress(text=text, counters=counters, blocked=blocked)
 
 
-class ProcessResult(DataSpec):
-    """What the agent step did. ``process_id`` is set even when ``ok`` is False,
-    so a caller can always link to the run that failed."""
-
-    process_id: Optional[str]
-    ok: bool
-    message: str = ""
-
-
 async def launch_step_process(
     *,
     agent: str,
@@ -99,27 +96,44 @@ async def launch_step_process(
     target_typeid_str: str = "",
     timeout_seconds: float = 1800.0,
     on_status: Optional[Callable[[ProcessProgress], None]] = None,
-) -> ProcessResult:
+    executor: Optional[str] = None,
+) -> PromptResult:
     """Spawn a headless agent process for one step and wait for it to settle.
+
+    With ``executor`` — an earlier answer's ``agentic_process-<id>`` — prompt
+    THAT process instead: a further turn in the same session. Nothing is
+    spawned, so the agent, name and context of the first turn stand.
 
     ``on_status`` is called with a `ProcessProgress` as the agent works, so the
     step's row says what is happening rather than sitting still for the whole
     timeout. It rides `wait()`'s existing 2s poll — no new budget.
     """
+    if executor:
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+        if not TypeId.is_typeid(executor) or TypeId(executor).type != EntityType.AGENTIC_PROCESS.value:
+            return PromptResult.not_yet(f"{executor!r} is not an agent process — it cannot take a turn.", ran=False)
+        process = await AgenticProcess.get_by_typeid(executor)
+        if process is None:
+            return PromptResult.not_yet(f"The agent process {executor} no longer exists.", ran=False)
+        return await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status)
+
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
-    from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
-    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+    from flow_sdk.core.capabilities.registry import resolve_builtin_worker_type  # noqa: PLC0415
 
     try:
-        worker_type = await resolve_default_worker_type()
+        # The bare box a wizard is meant to fix often has no harness yet: the selected harness
+        # when it is installed, else the bootstrap worker that needs none.
+        worker_type = await resolve_builtin_worker_type()
     except Exception as exc:  # noqa: BLE001
-        # The bare box a wizard is meant to fix often has no harness yet. Say so.
-        return ProcessResult(process_id=None, ok=False, message=f"No coding-agent harness is available to run this step: {exc}")
+        return PromptResult.not_yet(f"No coding-agent harness is available to run this: {exc}", ran=False)
 
     try:
         deployment = await get_agent_local_deployment(agent)
     except LookupError as exc:
-        return ProcessResult(process_id=None, ok=False, message=str(exc))
+        return PromptResult.not_yet(str(exc), ran=False)
 
     try:
         process = await deployment.create_process(
@@ -132,19 +146,47 @@ async def launch_step_process(
         )
         await process.save(notify=True)
     except Exception as exc:  # noqa: BLE001
-        return ProcessResult(process_id=None, ok=False, message=f"Could not start the step's agent: {exc}")
+        return PromptResult.not_yet(f"Could not start the agent: {exc}", ran=False)
 
-    process_id = str(process.id)
     if on_status is not None:
         # Immediately: the row should move when the process exists, not two
         # seconds later when the first poll lands.
         on_status(ProcessProgress(text="starting the agent"))
+    return await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status)
+
+
+def _last_reply(process: Any) -> str:
+    """What the agent said in the turn that just ended. Never raises, never waits:
+    the turn is already over, so the transcript is read, not streamed."""
     try:
-        start = await process.prompt(prompt)
+        from flow_sdk.app.actions.execute_prompt import _last_turn_assistant_text  # noqa: PLC0415
+
+        # The streamer's copy, not a fresh parse: an eager parse of a long
+        # session is ~1s on the event loop.
+        transcript = process._current_transcript()
+        return _last_turn_assistant_text(transcript.entries if transcript is not None else [])
+    except Exception:  # noqa: BLE001 — the reply is a courtesy; the verdict does not depend on it
+        logger.debug("could not read the agent's reply", exc_info=True)
+        return ""
+
+
+async def _prompt_and_wait(
+    process: Any,
+    prompt: str,
+    *,
+    timeout_seconds: float,
+    on_status: Optional[Callable[[ProcessProgress], None]],
+) -> PromptResult:
+    """One turn: prompt, then wait for the process to settle."""
+    process_id = str(process.id)
+    executor = str(process.typeid)
+    started = time.monotonic()
+    try:
+        taken = await process.send_turn(prompt)
     except Exception as exc:  # noqa: BLE001
-        return ProcessResult(process_id=process_id, ok=False, message=f"Agent failed to start: {exc}")
-    if isinstance(start, ApiFailResponse):
-        return ProcessResult(process_id=process_id, ok=False, message=getattr(start, "message", "Agent failed to start"))
+        return PromptResult.not_yet(f"The agent could not take the prompt: {exc}", ran=False, executor=executor)
+    if not taken.ok:
+        return taken
 
     try:
         await process.wait(
@@ -155,10 +197,18 @@ async def launch_step_process(
             ),
         )
     except TimeoutError:
-        return ProcessResult(process_id=process_id, ok=False, message=f"Agent did not finish within {timeout_seconds:.0f}s")
+        return PromptResult.not_yet(
+            f"The agent did not finish within {timeout_seconds:.0f}s.",
+            timed_out=True, executor=executor, duration_s=time.monotonic() - started,
+        )
     except Exception as exc:  # noqa: BLE001
-        return ProcessResult(process_id=process_id, ok=False, message=f"Agent run failed: {exc}")
+        return PromptResult.not_yet(
+            f"The agent run failed: {exc}", executor=executor, duration_s=time.monotonic() - started,
+        )
 
     # Reaching a terminal state is NOT proof the work landed — that is what the
-    # step's `verify` is for. All this reports is that the agent stopped.
-    return ProcessResult(process_id=process_id, ok=True, message="agent finished")
+    # completion check is for. All this reports is that the agent stopped.
+    return PromptResult.satisfied(
+        "The agent finished.", text=_last_reply(process), executor=executor,
+        duration_s=time.monotonic() - started,
+    )

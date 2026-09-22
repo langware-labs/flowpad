@@ -401,7 +401,12 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     # device login, which is the state a fresh desktop install with a hub budget is in.
     spendable_wallet = any(c.source.eligible for c in endpoint_candidates)
 
-    candidates = [_device_source(worker_type, getattr(cap, "login_state", None), spendable_wallet)]
+    # A harness with no account of its own has no device rung to rank (``has_device_login``).
+    candidates = (
+        [_device_source(worker_type, getattr(cap, "login_state", None), spendable_wallet)]
+        if spec.has_device_login
+        else []
+    )
     candidates += _key_sources(spec, rows, stored)
     candidates += endpoint_candidates
     return candidates, cap
@@ -423,7 +428,8 @@ async def device_candidate(worker_type: str, cap=None) -> Candidate | None:
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
 
-    if driver_api_auth_spec(worker_type) is None:
+    spec = driver_api_auth_spec(worker_type)
+    if spec is None or not spec.has_device_login:
         return None
     if cap is None:
         cap = await Capability.get_by_kind(worker_capability_kind(worker_type))

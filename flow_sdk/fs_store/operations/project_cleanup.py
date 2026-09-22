@@ -41,10 +41,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-try:
-    import tomllib as _tomllib  # type: ignore[import-not-found]
-except ImportError:  # Python 3.10 — the repo's floor
-    import tomli as _tomllib  # type: ignore[import-not-found,no-redef]
+import tomllib as _tomllib
 
 from flow_sdk.config import agent_workspace_root
 from flow_sdk.fs_store.gitignore import is_denylisted

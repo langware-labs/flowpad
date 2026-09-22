@@ -62,6 +62,7 @@ _FLOW_VERBS = frozenset(
         "schema",
         "setup",
         "show",
+        "snippet",
         "source",
         "start",
         "status",

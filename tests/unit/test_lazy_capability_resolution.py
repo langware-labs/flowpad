@@ -31,10 +31,14 @@ from flow_sdk.core.capabilities.discovery import (
     set_capability_value,
 )
 from flow_sdk.core.capabilities.models import CapabilityKind, CapabilityValue
-from flow_sdk.flowpad_types.vendors import VENDORS
+from flow_sdk.flowpad_types.vendors import VENDORS as _ALL_VENDORS
 from flow_sdk.schema.data_spec import DataSpec
 from tests.utils.fake_cli import write_fake_cli_stub as _install
 
+#: This file is about a BINARY found on PATH. A ``python -m`` harness (``Vendor.python_module``)
+#: is located in this interpreter's environment instead, never on PATH — the same five
+#: guarantees are pinned for it in ``test_python_module_capability_runner.py``.
+VENDORS = tuple(v for v in _ALL_VENDORS if not v.python_module)
 VENDOR_IDS = [v.key for v in VENDORS]
 
 

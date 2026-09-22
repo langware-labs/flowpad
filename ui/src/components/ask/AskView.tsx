@@ -12,8 +12,9 @@ import { Input } from '@src/components/ui/input';
  *
  * Drawn in `win/`, where the routed view IS the window — so this renders the
  * whole surface and nothing around it. The fields come from the op's declared
- * `output`, not from a hand-written list, so an op that declares a new field
- * grows one here with no change to this component.
+ * `output_spec_kind`, opened one level by the backend into `fields` — never from
+ * a hand-written list — so a kind that grows a field grows one here with no
+ * change to this component.
  *
  * The op on the other end is waiting with a deadline. That shapes two things:
  * Cancel is a first-class answer rather than a way to close the window, and a
@@ -27,7 +28,8 @@ interface Question {
   id: string;
   op: string;
   prompt: string;
-  shape: Shape;
+  /** The declared kind opened one level: `{field: form}`, or the kind itself for a scalar. */
+  fields: Shape;
 }
 
 /** The field names to draw. An object shape is its keys; anything else is one
@@ -85,7 +87,7 @@ export default function AskView() {
   );
 
   const submit = useCallback(() => {
-    const names = fieldsOf(question?.shape ?? null);
+    const names = fieldsOf(question?.fields ?? null);
     const value =
       names.length === 1 && names[0] === ''
         ? values['']
@@ -119,7 +121,7 @@ export default function AskView() {
         <p className="text-xs text-muted-foreground">{question.op}</p>
       </div>
 
-      {fieldsOf(question.shape).map((name) => (
+      {fieldsOf(question.fields).map((name) => (
         <div key={name} className="flex flex-col gap-1">
           {name ? (
             <label className="text-sm" htmlFor={`ask-${name}`}>

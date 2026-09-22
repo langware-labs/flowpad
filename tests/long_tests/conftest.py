@@ -11,7 +11,6 @@ worker-specific symbol.
 """
 
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -213,6 +212,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_asset_cleanup_agent",
         "test_context_folder_worker",
         "test_artifact_real_worker",
+        "test_call_returns_live",
         # Not a CLI test: reads the real ``~/.flow/instances/*`` rig (ports,
         # pids) of two running instances, which the sandbox HOME hides.
         "test_ws_reconnect_message_catchup",
@@ -455,8 +455,13 @@ def _await_backend_health(proc: subprocess.Popen, port: int, log: Path) -> None:
 # branch in the test.
 
 
+# The product's own install gate — a binary on PATH, or (for a ``python -m`` harness) its
+# distributions in this environment. ``shutil.which(name)`` only knows the first kind.
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_is_installed  # noqa: E402
+
+
 def _worker_param(name: str) -> "pytest.param":
-    """One worker row, skipped when its CLI is not installed on this host.
+    """One worker row, skipped when its harness is not installed on this host.
 
     An absent optional worker must SKIP, never fail: with no binary the driver
     spawns nothing, so the test burns its whole budget and dies on the timeout
@@ -465,11 +470,57 @@ def _worker_param(name: str) -> "pytest.param":
     return pytest.param(
         name,
         id=name,
-        marks=pytest.mark.skipif(shutil.which(name) is None, reason=f"{name} CLI not installed"),
+        marks=pytest.mark.skipif(not worker_is_installed(name), reason=f"{name} harness not installed"),
     )
 
 
-_WORKER_PARAMS = [_worker_param(n) for n in ("claude", "codex", "copilot")]
+_WORKER_PARAMS = [_worker_param(n) for n in ("claude", "codex", "copilot", "deepagents")]
+
+
+def _openrouter_key() -> str:
+    import re
+
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    for env_file in (Path(__file__).resolve().parents[2] / ".env.local", Path(os.environ.get("FLOWPAD_MAIN_CHECKOUT", "")) / ".env.local"):
+        if not key and env_file.is_file():
+            match = re.search(r"^OPENROUTER_API_KEY=(.+)$", env_file.read_text(), re.M)
+            key = match.group(1).strip().strip("'\"") if match else ""
+    return key
+
+
+async def fund_worker_without_a_login(worker: str) -> None:
+    """A harness with no account of its own (``ApiAuthSpec.has_device_login`` False) cannot ride
+    this machine's vendor logins like the others do: give it a stored provider key through the
+    product's own store, or SKIP — an unfunded worker is an environment gap, not a failure."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    spec = driver_api_auth_spec(worker)
+    if spec is None or spec.has_device_login:
+        return
+    key = _openrouter_key()
+    if not key:
+        pytest.skip(f"{worker}: needs OPENROUTER_API_KEY (env or .env.local) — it has no vendor login to ride")
+    try:
+        set_lm_api(key, LMApiProvider.OPENROUTER)
+    except Exception as exc:  # noqa: BLE001 — ANY store failure is an environment gap here: skip, never fail
+        # The test process holds an in-memory keyring, so it can only write a store IT created.
+        # An existing store (a real instance picked up from a parent ``.env.local``) is not ours
+        # to write — say so rather than fail, and never touch it.
+        from flow_sdk.instance_settings import get_instance_settings
+
+        pytest.skip(
+            f"{worker}: cannot store a provider key in instance {get_instance_settings().instance_name!r} "
+            f"({type(exc).__name__}) — run with a throwaway FLOW_HOME + FLOW_INSTANCE"
+        )
+    cap = await Capability.get_by_kind(worker_capability_kind(worker))
+    if cap is None:
+        pytest.skip(f"{worker}: no harness capability row seeded in this test DB")
+    cap.auth_mode = "api"
+    cap.api_provider = LMApiProvider.OPENROUTER.value
+    await cap.save(notify=False)
 
 
 @pytest.fixture(params=_WORKER_PARAMS)
@@ -504,10 +555,12 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
         "claude": WorkerType.CLAUDE_CODE,
         "codex": WorkerType.CODEX,
         "copilot": WorkerType.COPILOT,
+        "deepagents": WorkerType.DEEPAGENTS,
     }
     enum_value = _DRIVER_TO_ENUM[worker_id]
 
     async def _make(**kwargs):
+        await fund_worker_without_a_login(worker_id)
         # Default every agentic-process test to the portable small tier. Native
         # Copilot resolves it to vendor auto and omits --model. Tests that need
         # a specific model still win: their

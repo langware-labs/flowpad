@@ -20,7 +20,6 @@ from enum import Enum
 from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, NamedTuple
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
@@ -89,10 +88,6 @@ from flow_sdk.builtin.process_lifecycle import (
     backend_restart_requested,
     is_recoverable_worker_interruption,
 )
-from flow_sdk.compute.providers.compute_provider import (
-    LOOPBACK_HOSTNAMES,
-    sandbox_public_url,
-)
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
@@ -101,7 +96,6 @@ from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.instance_settings.runtime import own_sandbox_id
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
@@ -109,8 +103,8 @@ from flow_sdk.transcript_analyzer.worker_status import StatusDetail, WorkerStatu
 from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.agentic_process._shared import RunResult
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
     from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
     from flow_sdk.builtin.shell import Shell
@@ -485,22 +479,26 @@ async def _index_session_on_close(session_id: str, display_name: str | None = No
         logger.debug("[AgenticProcess] failed to index session %s on close", session_id, exc_info=True)
 
 
-def _build_run_result(proc: "AgenticProcess") -> "RunResult":
-    """Build a RunResult from the process state after wait() completes."""
-    from flow_sdk.builtin.agentic_process._shared import RunResult
+def _build_run_result(proc: "AgenticProcess") -> "PromptResult":
+    """The process's last turn as an answer, read after ``wait()`` settles.
 
+    ``executor`` names the process; the session, the models and the token use
+    live on it, not copied onto the answer. An error or interrupted end is a
+    ``NOT_YET`` — returned, never raised.
+    """
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+    # The reply of the turn that just ended, off the transcript — the streamer's
+    # copy when there is one. (The session record's ``last_assistant_text`` is
+    # never filled on the headless path, so reading it answered "".)
     text = ""
-    models_used: list[str] = []
-    token_usage: dict | None = None
-    if proc.session_id:
-        try:
-            record = get_claude_session(proc.session_id)
-            if record:
-                text = getattr(record, "last_assistant_text", None) or ""
-                models_used = list(getattr(record, "models_used", []) or [])
-                token_usage = getattr(record, "token_usage", None)
-        except Exception:
-            pass
+    try:
+        from flow_sdk.app.actions.execute_prompt import _last_turn_assistant_text  # noqa: PLC0415
+
+        transcript = proc._current_transcript()
+        text = _last_turn_assistant_text(transcript.entries if transcript is not None else [])
+    except Exception:  # noqa: BLE001 — the reply is a courtesy; the verdict does not depend on it
+        logger.debug("could not read the agent's reply", exc_info=True)
 
     status_enum = proc.fetch_worker_status()
     if status_enum is None:
@@ -510,16 +508,10 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
             lifecycle = ProcessStatus.STOPPED
         status_enum = WorkerStatus.ERROR if lifecycle == ProcessStatus.FAILED else WorkerStatus.IDLE
 
-    ok = status_enum not in (WorkerStatus.ERROR, WorkerStatus.INTERRUPTED)
-    return RunResult(
-        text=text,
-        session_id=proc.session_id or "",
-        status=status_enum,
-        ok=ok,
-        duration_ms=None,
-        models_used=models_used,
-        token_usage=token_usage,
-    )
+    executor = str(proc.typeid)
+    if status_enum in (WorkerStatus.ERROR, WorkerStatus.INTERRUPTED):
+        return PromptResult.not_yet(f"The agent ended {status_enum.value}.", text=text, executor=executor)
+    return PromptResult.satisfied("The agent finished.", text=text, executor=executor)
 
 
 # ── Display stack (the `flow show` history) ──────────────────────────────────
@@ -876,6 +868,23 @@ class AgenticProcess(Entity):
         return self
 
     @model_validator(mode="after")
+    def _a_headless_only_vendor_is_headless(self) -> "AgenticProcess":
+        """``pty_mode`` is the routing key EVERY client reads (the TS SDK routes a turn on the
+        persisted value), and it defaults to interactive. A vendor with no TUI
+        (``Vendor.interactive`` False) can only ever be headless, so the stored intent says so —
+        otherwise a caller that never thought about transports asks for a terminal that cannot
+        exist and its turn never starts."""
+        if self.pty_mode and not self._vendor().interactive:
+            self.pty_mode = False
+        return self
+
+    def _vendor(self):
+        """This process's vendor; an unset ``worker_type`` follows the default, like ``driver``."""
+        from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none  # noqa: PLC0415
+
+        return (vendor_or_none(self.worker_type) if self.worker_type else None) or default_vendor()
+
+    @model_validator(mode="after")
     def _migrate_legacy_process_assets_mount(self) -> "AgenticProcess":
         if self.id:
             self.additional_dirs = [
@@ -942,21 +951,17 @@ class AgenticProcess(Entity):
         instruction: str,
         workdir: str | None = None,
         **kwargs,
-    ) -> "RunResult":
-        """One-shot: create → start → send → wait → return RunResult → stop.
+    ) -> "PromptResult":
+        """One-shot: create → start → send → wait → answer → stop.
 
-        Raises ProcessError if status is error or interrupted.
+        Answers with a ``PromptResult`` — ``text`` is the reply, ``executor``
+        the process. An error or interrupted end is ``NOT_YET``, never a raise.
         """
-        from flow_sdk.builtin.agentic_process._shared import ProcessError
-
         proc = cls(workdir=workdir, **kwargs)
         async with proc:
             await proc.send(instruction)
             await proc.wait()
-            result = _build_run_result(proc)
-        if not result.ok:
-            raise ProcessError(status=result.status, session_id=result.session_id)
-        return result
+            return _build_run_result(proc)
 
     @classmethod
     async def is_installed(cls, worker_type: "WorkerType | str | None" = None) -> bool:
@@ -1341,6 +1346,13 @@ class AgenticProcess(Entity):
             # recovery), set in the stale-shell-drop branch below. Drives the
             # ``recovered`` event emission in the success tail.
             is_recovery = False
+            # A headless-only vendor has no TUI for a PTY to host: say so, rather than spawn a
+            # runner that would sit waiting for a prompt on a terminal's stdin. Checked before
+            # anything is mutated, so there is nothing to roll back.
+            if not self._vendor().interactive:
+                return ApiFailResponse(
+                    message=f"{self._vendor().label} is a headless worker: it has no terminal session to open. Prompt it instead."
+                )
             if visible is not None and self.visible != visible:
                 self.visible = visible
                 reattach_changed = True
@@ -2085,7 +2097,14 @@ class AgenticProcess(Entity):
         *,
         on_status: "Callable[[Any], None] | None" = None,
     ) -> None:
-        """Block until worker_status reaches a terminal state (complete / error / interrupted).
+        """Block until the TURN has ended: the worker is terminal (complete / error /
+        interrupted) AND it no longer holds this process's turn slot (``is_turn_busy``).
+
+        Terminal alone is not enough. On a process that already took a turn the
+        status IS terminal before the next turn starts, so a continued turn was
+        "waited for" before it ran — and read the previous turn's reply as its
+        own. Holding out for the slot also means the NEXT turn is admitted
+        rather than refused as in flight.
 
         Polling interval: 2s. Raises TimeoutError if timeout elapses first.
 
@@ -2104,7 +2123,7 @@ class AgenticProcess(Entity):
                     on_status(worker_status)
                 except Exception:  # noqa: BLE001
                     logger.debug("wait() status observer failed", exc_info=True)
-            if worker_status and is_worker_terminal(worker_status):
+            if worker_status and is_worker_terminal(worker_status) and not is_turn_busy(self, worker_status):
                 return
             if self.status == ProcessStatus.FAILED.value:
                 return
@@ -2309,16 +2328,15 @@ class AgenticProcess(Entity):
         # Release the lock BEFORE prompt() — it may run start_pty (long) and is
         # itself serialized by _PROMPT_LOCKS / _OPEN_LOCKS.
         try:
-            result = await self.prompt(head["prompt"])
-            # ``prompt()`` REFUSES BY RETURN, not by raising — a turn already in
-            # flight comes back as a 409 ``ApiFailResponse``, and so does a
-            # relaunch that could not start. The head is already popped, so an
-            # unchecked refusal destroyed the user's prompt AND logged it as
-            # delivered. Put it back and say what happened.
-            if isinstance(result, ApiFailResponse):
+            result = await self.send_turn(head["prompt"])
+            # A turn that was not taken — one already in flight, or a relaunch
+            # that could not start — is a returned ``NOT_YET``. The head is
+            # already popped, so an unchecked refusal destroyed the user's prompt
+            # AND logged it as delivered. Put it back and say what happened.
+            if not result.ok:
                 self._requeue_undelivered(
                     head,
-                    reason=f"refused: {result.message}",
+                    reason=f"refused: {result.detail}",
                     source="drain-requeue",
                 )
             else:
@@ -2449,6 +2467,31 @@ class AgenticProcess(Entity):
             await self.save()
         return project
 
+    async def _dev_server_typeid(self, port: object, name: object = None) -> str:
+        """The typeid of the endpoint for a dev server on *port* — registered on first show.
+
+        A port is how a server is reached, not what it is: showing one gives it a
+        ``proxy`` endpoint on the local placement of this run's project (or of the
+        machine, with no project), and the display holds that. Raises
+        ``InvalidDisplayTarget`` for a bad port.
+        """
+        from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
+        from flow_sdk.core.display_target import InvalidDisplayTarget  # noqa: PLC0415
+
+        try:
+            wanted = int(str(port))
+        except (TypeError, ValueError):
+            wanted = 0
+        if not 0 < wanted <= 65535:
+            raise InvalidDisplayTarget(f"Invalid port: {port!r}")
+        try:
+            endpoint = await webapp_placement.register_dev_endpoint(
+                await self._resolve_webapp_project(), port=wanted, name=str(name or "").strip() or None
+            )
+        except ValueError as e:
+            raise InvalidDisplayTarget(str(e)) from e
+        return str(endpoint.typeid)
+
 
     async def _artifact_reference(self, payload: dict) -> tuple[str, str]:
         """What a resolved display target points at: ``(asset_ref, entity_kind)``.
@@ -2521,16 +2564,18 @@ class AgenticProcess(Entity):
             )
 
         try:
+            if port:
+                typeid = await self._dev_server_typeid(port, body.get("name"))
             # `discover=True` — a display verb: showing a just-written file has
             # to recover it so the bespoke editor renders, not a raw file view.
-            payload = await resolve_display_target(typeid=typeid, path=path, port=port, discover=True)
+            payload = await resolve_display_target(typeid=typeid, path=path, discover=True)
         except InvalidDisplayTarget as e:
             return ApiFailResponse(message=str(e), status_code=400)
         except DisplayTargetNotFound as e:
             return ApiFailResponse(message=str(e), status_code=404)
 
         asset_ref, entity_kind = await self._artifact_reference(payload)
-        if payload.get("kind") in (DisplayTargetKind.WEBAPP, DisplayTargetKind.APP):
+        if payload.get("kind") == DisplayTargetKind.APP:
             kind = "application.web"
         else:
             # An entity that declares its own ontology kind is the authority:
@@ -2562,7 +2607,9 @@ class AgenticProcess(Entity):
             # the exact identity, where `asset_ref` is a path that has to be
             # resolved back through `get_by_asset_ref`.
             target_type_id=(
-                str(payload.get("typeid") or "") or None if payload.get("kind") == DisplayTargetKind.ENTITY else None
+                str(payload.get("typeid") or "") or None
+                if payload.get("kind") in (DisplayTargetKind.ENTITY, DisplayTargetKind.APP)
+                else None
             ),
             generated_by=str(self.typeid),
             project_id=await self.effective_project_id(),
@@ -2602,17 +2649,20 @@ class AgenticProcess(Entity):
             project = await self._resolve_webapp_project()
             # Independent scoped queries — run them together rather than
             # paying both latencies in series.
-            artifacts, deployments = await asyncio.gather(
+            artifacts, endpoints = await asyncio.gather(
                 webapp_placement.project_artifacts(project),
-                webapp_placement.project_deployments(project),
+                webapp_placement.project_endpoints(project),
             )
-            by_artifact = {deployment.artifact_id: deployment for deployment in deployments if deployment.artifact_id}
+            by_artifact: dict[str, list] = {}
+            for endpoint in endpoints:
+                if endpoint.artifact_id:
+                    by_artifact.setdefault(endpoint.artifact_id, []).append(endpoint.model_dump(mode="json"))
             rows = []
             for artifact in artifacts:
                 payload = artifact.model_dump(mode="json")
-                deployment = by_artifact.get(artifact.id)
-                if deployment is not None:
-                    payload["deployment"] = deployment.model_dump(mode="json")
+                # Where the app is served here: its dev server (`proxy`) and/or its
+                # built output (`static`). `flow app open` restarts from these.
+                payload["endpoints"] = by_artifact.get(artifact.id, [])
                 rows.append(payload)
             return ApiSuccessResponse(data={"artifacts": rows})
         except Exception as e:
@@ -2621,7 +2671,7 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="register-webapp-artifact")
     async def _http_register_webapp_artifact(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Create/update a web Artifact and its local Deployment."""
+        """Create/update a web Artifact, its project's local placement, and that placement's endpoints for it."""
 
         from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
         from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
@@ -2633,9 +2683,8 @@ class AgenticProcess(Entity):
             return body
 
         # Port is OPTIONAL: an app that we serve has no dev server to point at.
-        # Absent → no Deployment at all, and the display derives `served`. The
-        # continuum has always said both companions are independent; requiring a
-        # port here was the one thing making a served-only app unregistrable.
+        # Absent → no `proxy` endpoint, and the display derives `served`. Requiring
+        # a port here was once the one thing making a served-only app unregistrable.
         raw_port = str(body.get("port") or "").strip()
         port: int | None = None
         if raw_port:
@@ -2673,30 +2722,25 @@ class AgenticProcess(Entity):
             fallback_project_id=self.project_id,
         )
 
-        # No port → no runtime plane. A served-only app is complete without one,
-        # and inventing a Deployment for a dev server that does not exist would
-        # make `_app_payload` derive `dev` and point the display at nothing.
-        deployment = (
-            await webapp_placement.upsert_deployment(
-                artifact,
-                port=port,
-                name=name,
-                start_cmd=start_cmd,
-                health=health,
-                project=project,
+        # The project's local placement, and what it exposes for THIS app: a
+        # `proxy` endpoint for a dev server on a port, a `static` one for built
+        # output FlowPad serves itself. Either, both or neither may exist — a
+        # served-only app has no port, and inventing a dev endpoint for a server
+        # that does not exist would point the display at nothing.
+        deployment = await webapp_placement.local_web_deployment(project, artifact=artifact)
+        served = webapp_placement.served_dir(artifact_path, body.get("dist"))
+        backends: list[tuple[str, dict]] = []
+        if port is not None:
+            backends.append(
+                (f"{name}-dev", {"type": "proxy", "port": port, "start_cmd": start_cmd or None, "health": health})
             )
-            if port is not None
-            else None
-        )
-
-        micro_app = await webapp_placement.upsert_micro_app(
-            artifact,
-            artifact_path=artifact_path,
-            name=name,
-            dist=body.get("dist"),
-            project=project,
-            fallback_project_id=self.project_id,
-        )
+        if served is not None:
+            backends.append((name, {"type": "static", "root": str(served)}))
+        endpoints: list = []
+        if deployment is not None:
+            endpoints = await webapp_placement.upsert_artifact_endpoints(
+                deployment, artifact, backends, project_id=project.id if project is not None else None
+            )
 
         shown = None
         if bool(body.get("show", True)):
@@ -2714,7 +2758,7 @@ class AgenticProcess(Entity):
             data={
                 "artifact": artifact.model_dump(mode="json"),
                 "deployment": deployment.model_dump(mode="json") if deployment is not None else None,
-                "micro_app": micro_app.model_dump(mode="json") if micro_app is not None else None,
+                "endpoints": [endpoint.model_dump(mode="json") for endpoint in endpoints],
                 "shown": shown,
             }
         )
@@ -2798,9 +2842,9 @@ class AgenticProcess(Entity):
 
         Resolution is the shared ``resolve_display_target`` policy (same as
         ``flow navigate file``): indexed asset → its entity; unknown path →
-        raw vfs pointer; port → webapp preview; artifact_id → an app with its
-        runtime derived from its Deployment/MicroApp companions; view → a dock
-        address (a SCREEN, the one form that reaches a view with no entity
+        raw vfs pointer; port → the dev server's endpoint (registered on first
+        show); artifact_id → an app shown through its live endpoint; view → a
+        dock address (a SCREEN, the one form that reaches a view with no entity
         behind it).
 
         ``artifact_id`` closes a real gap rather than adding a synonym for
@@ -2821,10 +2865,12 @@ class AgenticProcess(Entity):
             return body
 
         try:
+            typeid = str(body.get("typeid") or "").strip() or None
+            if body.get("port") is not None:
+                typeid = await self._dev_server_typeid(body.get("port"), body.get("name"))
             payload = await resolve_display_target(
-                typeid=str(body.get("typeid") or "").strip() or None,
+                typeid=typeid,
                 path=str(body.get("path") or "").strip() or None,
-                port=body.get("port"),
                 artifact_id=str(body.get("artifact_id") or "").strip() or None,
                 dock=str(body.get("view") or "").strip() or None,
                 discover=True,  # a display verb — see `flow show file`
@@ -2939,8 +2985,9 @@ class AgenticProcess(Entity):
         except (TypeError, ValueError):
             return ApiFailResponse(message="timeout must be a number", status_code=400)
 
+        # The CliResult itself: `executor` names the shell, `command` what ran.
         result = await shell.run_and_capture(command, timeout=timeout)
-        return ApiSuccessResponse(data={"shell_id": str(shell.id), "command": command, **result})
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     # ── Wizard completion ───────────────────────────────────────────────────
 
@@ -3024,6 +3071,25 @@ class AgenticProcess(Entity):
         if typed and not isinstance(res, ApiFailResponse):
             self._schedule_gated_pty_delivery(instruction)
         return res
+
+    async def send_turn(self, instruction: str) -> "PromptResult":
+        """``prompt``, answered as a ``PromptResult`` instead of an HTTP envelope.
+
+        What a Python caller holds. Taking a turn is ADMISSION, not completion —
+        the turn runs in the background, so ``OK`` means "accepted". A turn that
+        was not taken — another is in flight, or the worker could not start —
+        is ``NOT_YET`` with ``ran=False``: nothing ran, and trying later is
+        right. ``detail`` keeps the process's own sentence (the UI matches on
+        "already in flight"). The HTTP actions keep ``prompt``'s envelope; the
+        409 is theirs.
+        """
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+        executor = str(self.typeid)
+        taken = await self.prompt(instruction)
+        if isinstance(taken, ApiFailResponse):
+            return PromptResult.not_yet(taken.message or "The turn was not taken.", ran=False, executor=executor)
+        return PromptResult.satisfied("The turn was accepted.", executor=executor)
 
     async def _is_live_pty(self) -> bool:
         """True iff this is a PTY transport with a worker currently alive — the
@@ -3177,7 +3243,8 @@ class AgenticProcess(Entity):
         # and reset the timer.
         _settle_seconds = 2.0
         _post_tool_settle_seconds = 8.0
-        _terminal_states = {_WS.COMPLETE, _WS.INTERRUPTED, _WS.INACTIVE}
+        # ERROR is an abnormal END (the CLI gave up — retries mid-turn are API_ERROR), so it ends a turn too.
+        _terminal_states = {_WS.COMPLETE, _WS.INTERRUPTED, _WS.INACTIVE, _WS.ERROR}
         # A driver whose interactive transcript never writes a terminal marker
         # (copilot) ends a turn on IDLE — but only once a user turn has landed since
         # the stream opened: a reused session's tail is the PRIOR turn's IDLE. Not
@@ -6327,85 +6394,6 @@ class AgenticProcess(Entity):
         """Return the linked shell's compute node, or None when no shell exists."""
         shell = await self.shell()
         return shell.compute_node if shell else None
-
-    async def _resolve_dev_host(self, port: int) -> str:
-        """Resolve the compute-node host URL for a dev-server ``port`` (shared by
-        get-host). Raises ``ValueError`` with a client-safe message on a bad
-        port or missing compute node."""
-        int_port = int(port)
-        if not 1024 <= int_port <= 65535:
-            raise ValueError("Invalid port")
-        compute_node = await self.get_compute_node()
-        if compute_node is None:
-            compute_node = await self._get_local_compute_node()
-        if not compute_node:
-            raise ValueError("No compute node found")
-        return compute_node.get_host(int_port)
-
-    async def _resolve_browser_dev_host(self, port: int) -> str:
-        """The url a BROWSER should load for a dev-server ``port``.
-
-        Differs from :meth:`_resolve_dev_host` in exactly one case: when THIS
-        app is itself running inside a sandbox. The provider answers for the
-        machine the app runs on, and a local node answers ``localhost`` -- right
-        on a desktop, where the viewer sits at that machine, and wrong in a cloud
-        box, where ``localhost`` is the viewer's own laptop and nothing is
-        listening on it.
-
-        Only a loopback answer is rewritten. A genuinely remote compute node
-        already returns a routable host and a box has no business second-guessing
-        it.
-
-        Deliberately NOT pushed into ``LocalComputeProvider.get_host``:
-        ``probe-webapp`` and the MCP client reach the same port from INSIDE the
-        box, where loopback is correct and free. This is the browser's question;
-        theirs is a different one with a different answer.
-        """
-        host = await self._resolve_dev_host(port)
-        sandbox_id = own_sandbox_id()
-        if not sandbox_id:
-            return host
-        if (urlparse(host).hostname or "").lower() not in LOOPBACK_HOSTNAMES:
-            return host
-        return sandbox_public_url(int(port), sandbox_id)
-
-    @action.all(action_name="get-host")
-    async def get_host(self, port: int, redirect: bool = True):
-        """Resolve the public host for a dev-server ``port`` running on this
-        process's compute node (e.g. the web-app-builder dev server). Mirrors the
-        legacy Flow ``get-host`` so the in-app web preview / Vibe display can load
-        the running app via the backend (works for @local and remote compute).
-        """
-        from fastapi.responses import RedirectResponse
-
-        try:
-            host = await self._resolve_browser_dev_host(port)
-        except ValueError as e:
-            return ApiFailResponse(message=f"get-host: {e}")
-
-        if not redirect:
-            return ApiSuccessResponse(data={"url": host, "port": int(port)})
-        return RedirectResponse(url=host)
-
-    @action.post(action_name="probe-webapp")
-    async def probe_webapp_action(self, port: int):
-        """Diagnose the dev server behind ``port`` and report what is wrong.
-
-        The counterpart to get-host: get-host redirects the display's iframe at
-        the app without ever checking it is there, so a dead port renders as a
-        blank pane. This answers the question the browser cannot -- the guest is
-        cross-origin, so the frontend can observe only "the fetch threw" and
-        never *why*. Always returns a result; a probe that failed says so in
-        ``probe_error`` rather than failing the request.
-        """
-        from flow_sdk.builtin.agentic_process.webapp_probe import probe_webapp
-
-        try:
-            host = await self._resolve_dev_host(port)
-        except ValueError as e:
-            return ApiFailResponse(message=f"probe-webapp: {e}")
-
-        return ApiSuccessResponse(data=await probe_webapp(host, int(port)))
 
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start_pty()."""

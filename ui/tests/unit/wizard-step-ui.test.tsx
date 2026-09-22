@@ -105,11 +105,6 @@ describe('editing a step', () => {
     expect(screen.queryByTestId('wizard-step-ref-container-unknown')).toBeNull();
   });
 
-  it('drops the args editor for an `ask` step, which passes nothing on', () => {
-    renderForm({ id: 'container', kind: 'ask', ref: 'REGION' });
-    expect(screen.queryByTestId('wizard-step-args-container-add')).toBeNull();
-  });
-
   it('warns when another step already uses this id', () => {
     render(
       <WizardStepForm
@@ -133,9 +128,9 @@ describe('editing a step', () => {
 
   it('clears the ref when the kind changes, because the string means something else', () => {
     const doc = { steps: [{ id: 'a', kind: 'compute' as const, ref: 'waha-container', args: {} }] };
-    const next = setStepKind(doc, 0, 'ask');
+    const next = setStepKind(doc, 0, 'wizard');
 
-    expect(next.steps![0].kind).toBe('ask');
+    expect(next.steps![0].kind).toBe('wizard');
     expect(next.steps![0].ref).toBe('');
   });
 });
@@ -156,9 +151,9 @@ describe('inspecting a step', () => {
         step={STEP}
         outcome={{
           step_id: 'container',
-          status: 'completed',
-          message: 'container is up',
-          result: 'http://localhost:3000',
+          exit_code: 0,
+          detail: 'container is up',
+          value: 'http://localhost:3000',
         }}
       />,
     );
@@ -179,19 +174,36 @@ describe('inspecting a step', () => {
     expect(screen.getByTestId('wizard-step-live').textContent).toBe('working · src/foo.py');
   });
 
-  it('still lists the commands an op ran', () => {
+  it('lists the command the step ran and the check that judged it', () => {
     render(
       <WizardStepInspector
         step={STEP}
         outcome={{
           step_id: 'container',
-          status: 'completed',
-          probes: [{ phase: 'action', command: 'docker run waha', returncode: 0 }],
+          exit_code: 0,
+          command: 'docker run waha',
+          returncode: 0,
+          stdout: 'started',
+          check: { exit_code: 0, command: 'curl -sf localhost:3000', returncode: 0 },
         }}
       />,
     );
 
     expect(screen.getByTestId('wizard-probes')).toBeTruthy();
-    expect(screen.getByText('docker run waha')).toBeTruthy();
+    expect(screen.getByTestId('wizard-probe-call').textContent).toContain('docker run waha');
+    expect(screen.getByTestId('wizard-probe-check').textContent).toContain('curl -sf localhost:3000');
+    expect(screen.getByText('started')).toBeTruthy();
+  });
+
+  it('shows no command rows for a step that ran none', () => {
+    render(
+      <WizardStepInspector
+        step={STEP}
+        outcome={{ step_id: 'container', exit_code: 0, text: 'the agent said so' }}
+      />,
+    );
+
+    expect(screen.queryByTestId('wizard-probes')).toBeNull();
+    expect(screen.getByText('the agent said so')).toBeTruthy();
   });
 });

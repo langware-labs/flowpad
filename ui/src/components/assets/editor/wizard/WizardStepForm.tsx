@@ -212,12 +212,11 @@ function ArgsField({
   );
 }
 
-/** What each kind's `ref` names, said in the field's own label. The three words
- *  are the difference between the kinds, so they are not left to be guessed. */
+/** What each kind's `ref` names, said in the field's own label. The words are
+ *  the difference between the kinds, so they are not left to be guessed. */
 const REF_LABEL: Record<StepKind, string> = {
   compute: 'Op',
   wizard: 'Wizard',
-  ask: 'Input',
 };
 
 /**
@@ -381,43 +380,29 @@ export function WizardStepForm({
               value={step.ref ?? ''}
               options={refOptions}
               testId={`wizard-step-ref-${step.id}`}
-              placeholder={
-                kind === 'compute'
-                  ? t`an op name`
-                  : kind === 'wizard'
-                    ? t`a wizard name`
-                    : t`one of this wizard's inputs`
-              }
-              unknownHint={
-                kind === 'ask'
-                  ? t`This wizard declares no input named "${step.ref ?? ''}".`
-                  : t`Nothing named "${step.ref ?? ''}" on this machine — the step will fail when it runs.`
-              }
+              placeholder={kind === 'compute' ? t`an op name` : t`a wizard name`}
+              unknownHint={t`Nothing named "${step.ref ?? ''}" on this machine — the step will fail when it runs.`}
               onCommit={(v) => v.trim() && onSet(at('ref'), v.trim())}
             />
             <IssueList issues={issuesAt(at('ref'))} />
           </Section>
 
-          {/* An `ask` step passes nothing on: it reads a value the wizard was
-              given, which is what its `ref` already names. */}
-          {kind === 'ask' ? null : (
-            <Section title={t`Arguments`}>
-              <ArgsField
-                readOnly={readOnly}
-                args={step.args}
-                scope={scope}
-                testIdPrefix={`wizard-step-args-${step.id}`}
-                onSet={(key, value) => onSet(at('args', key), value)}
-                onRemove={(key) => onRemove(at('args', key))}
-                onRename={(from, to) => {
-                  if (from === to) return;
-                  onSet(at('args', to), step.args?.[from] ?? '');
-                  onRemove(at('args', from));
-                }}
-              />
-              <IssueList issues={issuesAt(at('args'))} />
-            </Section>
-          )}
+          <Section title={t`Arguments`}>
+            <ArgsField
+              readOnly={readOnly}
+              args={step.args}
+              scope={scope}
+              testIdPrefix={`wizard-step-args-${step.id}`}
+              onSet={(key, value) => onSet(at('args', key), value)}
+              onRemove={(key) => onRemove(at('args', key))}
+              onRename={(from, to) => {
+                if (from === to) return;
+                onSet(at('args', to), step.args?.[from] ?? '');
+                onRemove(at('args', from));
+              }}
+            />
+            <IssueList issues={issuesAt(at('args'))} />
+          </Section>
 
           <label className="grid grid-cols-[5.5rem_1fr] items-center gap-2">
             <span className="text-xs uppercase tracking-wider text-muted-foreground">

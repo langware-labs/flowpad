@@ -22,7 +22,6 @@ executable name and the transcript-analyzer worker key).
 """
 from __future__ import annotations
 
-import shutil
 import uuid
 
 import pytest
@@ -38,6 +37,7 @@ from tests.long_tests._transcript_helpers import (
     fail_worker_timeout,
     safe_exit,
 )
+from tests.long_tests.conftest import worker_is_installed
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -80,8 +80,8 @@ async def test_worker_mounts_context_folder(
     initialize_test_db, local_compute_node,
     tmp_path, make_process, worker_id,
 ) -> None:
-    if shutil.which(worker_id) is None:
-        pytest.skip(f"{worker_id} CLI not installed")
+    if not worker_is_installed(worker_id):
+        pytest.skip(f"{worker_id} harness not installed")
 
     # A context folder OUTSIDE the workdir, holding a sentinel the worker can
     # only reach through the injected --add-dir mount.

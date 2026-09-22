@@ -17,10 +17,10 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Set up uv + Python 3.10
+    - name: Set up uv + Python 3.11
       uses: astral-sh/setup-uv@v10.0.1
       with:
-        python-version: '3.10'
+        python-version: '3.11'
         enable-cache: true
 
     # setup-uv registers GitHub's Python problem matcher, which promotes any

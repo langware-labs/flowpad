@@ -23,6 +23,9 @@ class TranscriptFormat(StrEnum):
     # vocabulary, so one parser serves both.
     OPENCODE_STREAM = "opencode_stream"
     OPENCODE_SESSION = "opencode_session"
+    # Deep Agents: the stdout tee of OUR runner — the only transcript there is
+    # (sessions are LangGraph checkpoints, never projected).
+    DEEPAGENTS_STREAM = "deepagents_stream"
 
 
 class TranscriptSource(StrEnum):

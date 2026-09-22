@@ -26,55 +26,10 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
 logger = logging.getLogger(__name__)
-
-#: Same cap as the trigger scripts. A step that prints a megabyte is reporting
-#: about its own noise, not its outcome.
-OUTPUT_CAP = 8192
-
-#: What a RECORDED probe keeps of each stream, per phase. Smaller than
-#: `OUTPUT_CAP` on purpose: capturing 8 KB is right for deciding an outcome, but
-#: a step records up to three phases × two streams, and `run.json` is rewritten
-#: whole under a lock on every result.
-PROBE_OUTPUT_CAP = 2000
-
-
-def capped(text: str, limit: int = PROBE_OUTPUT_CAP) -> "tuple[str, bool]":
-    """`(text, truncated)`, keeping the END.
-
-    The end is where the error is: a compiler's last line, a traceback's final
-    frame, the shell's complaint. Keeping the head would reliably record the
-    part nobody needs — which is also why `ShellResult.tail` is one of these.
-
-    A module function rather than a static method: it touches nothing on
-    `ShellResult`, and hanging it off the class implied it was part of what a
-    shell result IS.
-    """
-    if len(text) <= limit:
-        return text, False
-    return text[-limit:], True
-
-
-class ShellResult(DataSpec):
-    """What one command did. ``returncode is None`` only when it never ran."""
-
-    returncode: Optional[int]
-    stdout: str = ""
-    stderr: str = ""
-    timed_out: bool = False
-    duration_s: float = 0.0
-
-    @property
-    def ok(self) -> bool:
-        return self.returncode == 0 and not self.timed_out
-
-    def tail(self, limit: int = 300) -> str:
-        """The most useful line to show a human: stderr if there is any, else stdout."""
-        return capped((self.stderr or self.stdout or "").strip(), limit)[0]
-
 
 async def _spawn(command: str, *, cwd: str, env: dict, platform: str):
     if platform == "win32":
@@ -101,7 +56,7 @@ async def run_shell(
     workdir: Path,
     extra_env: Optional[dict] = None,
     platform: str = "",
-) -> ShellResult:
+) -> CliResult:
     """Run one shell one-liner. Never raises — a failure IS the result.
 
     ``stdin`` is DEVNULL on purpose. An installer that decides to ask a
@@ -109,29 +64,39 @@ async def run_shell(
     forever waiting for an answer nobody is there to give.
     """
     platform = platform or sys.platform
-    env = {**os.environ, **(extra_env or {})}
+    # Unbuffered Python: stdout is a pipe here, so Python block-buffers it, and
+    # the kill on a timeout drops the buffer — a step that printed and then hung
+    # would report nothing at all. The caller's env still wins.
+    env = {**os.environ, "PYTHONUNBUFFERED": "1", **(extra_env or {})}
     t0 = time.monotonic()
     try:
         proc = await _spawn(command, cwd=str(workdir), env=env, platform=platform)
     except (OSError, ValueError) as exc:
         # No shell, no powershell, unusable cwd. The step must see a verdict.
         logger.warning("wizard: could not spawn %r: %s", command, exc)
-        return ShellResult(returncode=None, stderr=str(exc), duration_s=time.monotonic() - t0)
+        return CliResult.of_process(command, None, stderr=str(exc), duration_s=time.monotonic() - t0)
 
     timed_out = False
+    # Not `wait_for(communicate())`: cancelling communicate on timeout throws
+    # away what it had already read, so a command that printed and then hung
+    # came back with no output at all — exactly the output that says where it
+    # hung. Reading to EOF under a shield keeps it; the kill closes the pipes.
+    finished = asyncio.ensure_future(asyncio.gather(proc.stdout.read(), proc.stderr.read(), proc.wait()))
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+        stdout, stderr, _ = await asyncio.wait_for(asyncio.shield(finished), timeout=timeout_seconds)
     except asyncio.TimeoutError:
         kill_process_tree(proc)
         timed_out = True
         try:
-            stdout, stderr = await proc.communicate()
+            stdout, stderr, _ = await finished
         except Exception:  # noqa: BLE001 — the kill already decided the outcome
             stdout, stderr = b"", b""
-    return ShellResult(
-        returncode=proc.returncode,
-        stdout=stdout.decode(errors="replace")[:OUTPUT_CAP] if stdout else "",
-        stderr=stderr.decode(errors="replace")[:OUTPUT_CAP] if stderr else "",
+    # ``of_process`` keeps the END of each stream: that is where the error is.
+    return CliResult.of_process(
+        command,
+        proc.returncode,
+        stdout.decode(errors="replace") if stdout else "",
+        stderr.decode(errors="replace") if stderr else "",
         timed_out=timed_out,
         duration_s=time.monotonic() - t0,
     )

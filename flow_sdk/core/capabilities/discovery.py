@@ -91,7 +91,8 @@ def resolve_capability_value(kind: str) -> CapabilityValue | None:
     if not isinstance(runner, CliCapabilityRunner):
         return None
 
-    resolved = shutil.which(runner.executable)
+    # The runner knows how it is located: a binary on PATH, or a package in this environment.
+    resolved = runner.locate_on_process_path()
     if not resolved:
         return None
     value = runner.value_from_executable_path(resolved, source="this process's PATH")

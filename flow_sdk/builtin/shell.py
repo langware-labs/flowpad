@@ -15,6 +15,7 @@ import collections
 import logging
 import os
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, ClassVar
@@ -32,6 +33,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.utils.serialization import now_epoch_ms
 
 if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
         AgentOptions,
         WorkerExecutionInfo,
@@ -754,8 +756,9 @@ class Shell(Entity):
         *,
         timeout: float = 120.0,
         poll_interval: float = 0.15,
-    ) -> dict:
-        """Type ``command`` into the PTY and return WHAT IT PRINTED.
+    ) -> "CliResult":
+        """Type ``command`` into the PTY and return WHAT IT PRINTED, as a ``CliResult``
+        whose ``executor`` is this shell.
 
         ``write`` alone is fire-and-forget: the user sees the command run, but
         the caller learns nothing — an agent that types ``ls`` and cannot read
@@ -770,35 +773,41 @@ class Shell(Entity):
 
         ``timeout`` bounds the WAIT, not the command: on expiry the command
         keeps running in the user's terminal and this returns what it printed
-        so far with ``completed: False``. It never kills anything and never
-        reports success it did not observe — a long-running command is a fact
-        to report, not an error to hide.
+        so far with ``timed_out`` set and no ``returncode``. It never kills
+        anything and never reports success it did not observe — a long-running
+        command is a fact to report, not an error to hide. A shell with no live
+        terminal answers the same way it would any command that never started.
         """
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
+        executor = str(self.typeid)
         marker = f"{self.SENTINEL_PREFIX}{uuid.uuid4().hex[:8]}"
         sentinel = re.compile(rf"{re.escape(marker)}_(\d+)")
         # Only read what THIS command adds; the stream file holds the whole
         # session, and a previous `ls` in scrollback must not be reported here.
         baseline = len(await self.read())
 
-        await self.write(self.sentinel_command(command, marker))
-
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
+        started = loop.time()
+        try:
+            await self.write(self.sentinel_command(command, marker))
+        except RuntimeError as exc:  # no PTY session: the command never started
+            return CliResult.of_process(command, None, "", str(exc), executor=executor)
+
+        deadline = started + timeout
         while True:
             tail = _strip_pty_keep_lines((await self.read())[baseline:])
             match = sentinel.search(tail)
             if match:
-                return {
-                    "output": _sentinel_body(tail, marker, match.start()),
-                    "exit_code": int(match.group(1)),
-                    "completed": True,
-                }
+                return CliResult.of_process(
+                    command, int(match.group(1)), _sentinel_body(tail, marker, match.start()),
+                    duration_s=loop.time() - started, executor=executor, cap=None,
+                )
             if loop.time() >= deadline:
-                return {
-                    "output": _sentinel_body(tail, marker, len(tail)),
-                    "exit_code": None,
-                    "completed": False,
-                }
+                return CliResult.of_process(
+                    command, None, _sentinel_body(tail, marker, len(tail)),
+                    timed_out=True, duration_s=loop.time() - started, executor=executor, cap=None,
+                )
             await asyncio.sleep(poll_interval)
 
     async def write(self, text: str) -> None:
@@ -1228,31 +1237,42 @@ class Shell(Entity):
 
     @action.post(action_name="run")
     async def run(self) -> ApiResponse:
-        """HTTP: Execute a command in a subprocess and return stdout/stderr/exit_code.
+        """HTTP: Execute a command in a subprocess and answer with its ``CliResult``.
 
-        POST body: {command: str}
+        POST body: {command: str}. ``returncode`` is the process's own exit;
+        ``exit_code`` is the verdict (``OK`` only for a 0).
         """
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         command = body.get("command")
         if not command:
             return ApiFailResponse(message="command is required")
         env = {**os.environ, **(self.env or {})}
-        proc = await asyncio.create_subprocess_shell(
-            command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=self.workdir or None,
-            env=env,
-        )
+        started = time.monotonic()
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.workdir or None,
+                env=env,
+            )
+        except (OSError, ValueError) as exc:
+            answer = CliResult.of_process(command, None, "", f"{type(exc).__name__}: {exc}", executor=str(self.typeid))
+            return ApiSuccessResponse(data=answer.model_dump(mode="json"))
         stdout, stderr = await proc.communicate()
-        return ApiSuccessResponse(
-            data={
-                "stdout": stdout.decode("utf-8", errors="replace"),
-                "stderr": stderr.decode("utf-8", errors="replace"),
-                "exit_code": proc.returncode,
-            }
+        answer = CliResult.of_process(
+            command,
+            proc.returncode,
+            stdout.decode("utf-8", errors="replace"),
+            stderr.decode("utf-8", errors="replace"),
+            duration_s=time.monotonic() - started,
+            executor=str(self.typeid),
+            cap=None,  # the caller asked for this command's output: all of it
         )
+        return ApiSuccessResponse(data=answer.model_dump(mode="json"))
 
     @action.post(action_name="set-env")
     async def _http_set_env(self) -> ApiResponse:

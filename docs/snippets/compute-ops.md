@@ -1,27 +1,21 @@
-# Compute ops — work that converges, composes, and can ask
+---
+id: 48fe7963-b589-4540-ae1d-6bf0b53fcb1c
+---
+# Compute ops — one call that converges, composes, and can ask
 
-A ComputeOp is one unit of work with a goal. It declares what it RETURNS, and
-it knows when it is already done — so running it twice does the work once.
+A ComputeOp is ONE call of one subkind — a shell one-liner (`cli`), a model
+(`prompt`), an agent with tools (`agent`), or a person (`ask`). It declares the
+kind it RETURNS, and it knows when it is already done — so running it twice does
+the work once. Every op answers with a `ReturnedValue`; the shapes, and every
+decision behind them, are on [call-returns](call-returns.md).
 
-Every fence on this page is pinned. The op documents are validated against the
-real spec by `tests/unit/test_compute_ops_snippets.py`; the behaviour they
-describe runs in `tests/unit/test_compute_op_ask.py`,
-`tests/unit/test_compute_op_composition.py`, and — with a real browser
-answering §1 — `tests/long_tests/test_ask_browser_matrix.py`.
+Every fence on this page is pinned. The `jsonc` documents are validated against
+the real spec by `tests/unit/test_compute_ops_snippets.py`; the Python is the
+entity API that `tests/api/test_ask_op_entity.py` runs — `by_name` then `run()`.
 
 A command is written per platform (`commands: {"darwin": …}`), because that is
-what the spec takes: one op, one goal, and whatever each machine needs to
-reach it.
-
-Two things follow from that, and they are what this page is about:
-
-* **A person's answer is just an op's output.** Asking someone for an API key is
-  a goal ("do we have the key?") whose attempt happens to be a question. It
-  needs no new result type and no form machinery of its own.
-* **Composition needs no wizard.** `requires` already sequences ops. Once a
-  satisfied dependency's value reaches its dependent, two ops chain with no run
-  directory, no lock and no person in the loop. A wizard then adds only what it
-  should: a form, resume, and a place for a human to stand.
+what the spec takes: one op, one goal, and whatever each machine needs to reach
+it.
 
 ---
 
@@ -29,103 +23,88 @@ Two things follow from that, and they are what this page is about:
 
 ```python
 key = await ComputeOp.by_name("get-api-key")
-answer = await key.run()
-answer.exit_code         # ExitCode.NOT_YET — it asked; nobody has answered yet
-answer.ran               # True — an attempt did happen
+answer = await key.run(approved=True)     # an AskResult
+answer.exit_code         # ExitCode.OK once a person answers
+answer.value             # 'sk-live-…' — what they typed, held to output_spec_kind
 ```
 
-Its manifest is an ordinary op. The completion check is "do we have it?", the
-attempt is the question, and `output` is what the person provides:
+The completion check is "do we already have it?", the call is the question,
+and `output_spec_kind` is what the person provides:
 
 ```jsonc
 { "name": "get-api-key",
+  "subkind": "ask",
+  "exe_data": {"prompt": "Service X API token"},
   "completion_check": {"commands": {"darwin": "flow secret get service-x/token"}},
-  "attempts": [{"kind": "ask", "prompt": "Service X API token"}],
-  "output": {"token": "string"} }
+  "output_spec_kind": "string" }
 ```
+
+`output_spec_kind` names a REGISTERED kind — a primitive, or a DataSpec with a
+`spec_kind` — and an unknown one is refused when the document is read.
 
 The op raises the question and waits a bounded time. A live tab is sent to
 `win/`, the chrome-less layout where the routed view IS the window; with no tab
-listening, a backend is borrowed or started and a window is opened at the same
-address. Neither is a new surface — `win/` and the `ui_command` push both
-already existed; the push simply could not name a layout until now.
+listening, a window is opened at the same address. `ASK_TIMEOUT_SECONDS` is 60;
+a caller may pass a shorter deadline, never a longer one.
 
-`ASK_TIMEOUT_SECONDS` is 60. A caller may pass a shorter deadline, never a
-longer one.
+`approved=True` is not optional. An op that is not a system op answers
+`REFUSED` unapproved — before it puts a question to anyone.
 
 ## 2. Asked once, never again
 
 ```python
-answer = await key.run()   # the completion check now finds the value
+answer = await key.run(approved=True)     # the completion check now passes
 answer.ok                  # True
 answer.ran                 # False — nobody was asked a second time
-answer.value.token         # 'sk-live-…'
+answer.value               # 'sk-live-…' — read off what the check printed
 ```
 
 `ran=False` is the whole point of a convergent op: it reports *skipped*, not
 *completed*, so a caller can tell "it was already true" from "I just did it".
 
-## 3. A consumer fails when the value was never given
+An ask op does not store the answer: storing it is the caller's `cli` op, with
+the value passed in `env` — never templated into a command line. After a valid
+answer an ask op is NOT re-checked: a person verified it.
 
-```python
-server = await ComputeOp.by_name("start-server")   # requires: ["get-api-key"]
-answer = await server.run()
-answer.ok                  # False — start-server never ran
-answer.exit_code           # ExitCode.NOT_YET, the blocker's own answer
-```
+## 3. A fallback is two ops, and a retry is the caller's
 
-The dependency's answer is forwarded verbatim rather than restated, so the
-reason a run stopped names the op that stopped it. A missing value cannot leak
-into the dependent op's command, because the dependent op is never attempted.
-
-## 4. The consumer names nothing
+There is no ladder inside an op. "Try the command, then the agent" is two ops
+with the same check — when the first reached the goal, the second's check holds
+and it does nothing:
 
 ```jsonc
-{ "name": "start-server", "requires": ["get-api-key"],
-  "attempts": [{"kind": "command", "commands": {"darwin": "serve --token $token"}}] }
+{ "name": "ripgrep-on-path",
+  "subkind": "cli",
+  "exe_data": {"commands": {"linux": "apt-get install -y ripgrep"}},
+  "completion_check": {"commands": {"linux": "command -v rg"}} }
 ```
 
-There is no `input` declaration, deliberately. The shape is already declared on
-the producer (`get-api-key.output`), and the graph already says who produces it
-(`requires`). A second declaration on the consumer would restate a fact the
-graph carries and could drift from it — and the value is validated against
-`output` when the producer returns, so re-validating on arrival checks the same
-thing twice.
+```jsonc
+{ "name": "ripgrep-on-path-agent",
+  "subkind": "agent",
+  "exe_data": {"agent": "provisioner", "timeout_seconds": 600},
+  "completion_check": {"commands": {"linux": "command -v rg"}} }
+```
 
-A dependency's output fields enter scope by their declared names. Two ops in one
-`requires` list declaring the same field is an authoring error, caught when the
-documents are read rather than resolved by whichever ran last.
+A wizard sequences them (`on_fail: continue` on the first), or Python does. An
+agent's answer names its process in `executor`; a caller that wants a second
+turn in the SAME session runs the next op with `executor=answer.executor`. A turn
+that ran out of time is `timed_out` — that process is busy, not done, so it is
+not prompted again on top of itself.
 
 ---
 
 ## What a cancel and a silence answer
 
-| what happened | exit code | `value` |
-| --- | --- | --- |
-| answered, and it satisfies the declared shape | `OK` | the value |
-| the person cancelled | `NOT_YET` | none |
-| nobody answered before the deadline | `NOT_YET` | none |
+| what happened | exit code | `value` | told apart by |
+| --- | --- | --- | --- |
+| answered, and it is the declared kind | `OK` | the value | — |
+| the person cancelled | `NOT_YET` | none | `cancelled` |
+| nobody answered before the deadline | `NOT_YET` | none | `timed_out` |
 
 Both refusals are `NOT_YET` — each means *the goal does not hold, and you may
-try again* — and they differ in `detail`, which is what a person reads.
-`REFUSED` stays what it is: "not approved to run here".
+try again*. `REFUSED` stays what it is: "not approved to run here".
 
-An answer that does NOT satisfy the shape never reaches the op. It is a 422 the
+An answer that is NOT the declared kind never reaches the op. It is a 422 the
 window shows, with the question still open, so the person corrects it rather
 than the op failing on their behalf.
-
-## What is real today, and what is not
-
-Real, and proven in a browser (`tests/long_tests/test_ask_browser_matrix.py`):
-the `ask` rung, the question raised into `win/`, a typed answer coming back as
-the op's value, cancel, the deadline, and the 422-then-correct path.
-
-**TARGET — a satisfied dependency's value is discarded.** `_requires` runs the
-dependency, checks it for failure, and returns `None` to proceed; the value goes
-nowhere. §1-§3 work; §4's `$token` does not arrive.
-(`tests/unit/test_compute_op_composition.py`, xfail.)
-
-**Open decision.** §2 shows a *satisfied* op still returning its value, which
-means the completion check has to yield the value and not merely exit 0. The
-alternative is that convergence answers `OK` with nothing, and only the first
-run ever carries the answer — which breaks any caller that arrives late.

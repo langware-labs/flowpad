@@ -3,17 +3,15 @@
   "name": "jq-on-path",
   "label": "jq",
   "description": "jq is on the PATH.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "linux": "apt-get update && apt-get install -y jq"
+    }
+  },
   "completion_check": {
     "commands": {
       "linux": "command -v jq"
     }
-  },
-  "attempts": [
-    {
-      "kind": "command",
-      "commands": {
-        "linux": "apt-get update && apt-get install -y jq"
-      }
-    }
-  ]
+  }
 }

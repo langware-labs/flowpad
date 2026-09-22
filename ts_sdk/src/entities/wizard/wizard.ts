@@ -1,35 +1,7 @@
 import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
 import { IEntity, EntityMerge } from '../../IEntity';
 import { ActionInfo } from '../../models/ActionInfo';
-
-/** One value a parked run is blocked on, with enough to draw a field. */
-export interface WizardAwaiting {
-  name: string;
-  /** The declared shape in authoring form — `"string"`, an object, a one-element list. */
-  shape?: unknown;
-  label?: string;
-  description?: string;
-}
-
-/** ONE attempt a step's call made, with what it printed.
- *
- *  `phase` names the RUNG that ran — a ComputeOp tries them cheapest-first, so a
- *  flat `command`/`stdout` pair on the outcome would have to pick one. (It used
- *  to be precondition/action/verify, the three commands a step ran itself;
- *  a step now makes one call and the rungs are inside it.) Streams are
- *  tail-capped by the backend (`truncated` says so); the END is kept, because
- *  that is where the error is. */
-export interface WizardStepProbe {
-  phase: 'command' | 'prompt' | 'agent';
-  /** The RESOLVED command for this platform, not the per-OS map. */
-  command: string;
-  returncode?: number | null;
-  timed_out?: boolean;
-  duration_s?: number;
-  stdout?: string;
-  stderr?: string;
-  truncated?: boolean;
-}
+import type { WizardResult } from '../../models/ReturnedValue';
 
 /** One problem with a wizard document.
  *
@@ -55,51 +27,28 @@ export interface WizardValidation {
   read_only_reason?: string;
 }
 
-export interface WizardStepOutcome {
-  step_id: string;
-  status: 'satisfied' | 'not_applicable' | 'completed' | 'failed' | 'not_reached' | 'awaiting_input';
-  message?: string;
-  process_id?: string | null;
-  duration_s?: number;
-  /** Every command this step ran. Present ONLY on `runDetail()` — `run_state`
-   *  strips them, because it rides every row of a list and every WS push. */
-  probes?: WizardStepProbe[];
-  /** What the call returned. Like `probes`, present ONLY on `runDetail()`. */
-  result?: unknown;
-}
-
-/** The whole run record for one wizard, probes included. */
+/** The last run of one wizard, WITH every step's output — `runDetail()`. */
 export interface WizardRunDetail {
-  status?: string;
-  message?: string;
-  inputs?: Record<string, unknown>;
-  awaiting?: WizardAwaiting[];
-  outcomes?: WizardStepOutcome[];
+  /** The last run's answer, or `null` when it has never run. */
+  result?: WizardResult | null;
   /** Filenames of runs previous resets archived, newest first. Their presence
    *  is what tells a reader the current record is not the whole history. */
   archived?: string[];
-  /** What this run's agentic steps returned, by declared output name. */
-  outputs?: Record<string, unknown>;
 }
 
 /**
- * What the last (or current) run did, read off disk by the backend and carried
- * on the ordinary entity payload — the `Project.customization` trick. That is
- * why the UI needs no route of its own for it.
+ * What the last run answered, read off disk by the backend and carried on the
+ * ordinary entity payload — the `Project.customization` trick. That is why the
+ * UI needs no route of its own for it.
+ *
+ * `result` is the run's `WizardResult` WITHOUT step output (stdout / stderr /
+ * text / value): this rides every row of a list and every WS push. A run in
+ * flight is visible through the Activity tree, not here — this is stamped
+ * only when a run SETTLES.
  */
 export interface WizardRunState {
-  /** No `running`: nothing writes it. A run in flight is visible through the
-   *  Activity tree, not here — this file is only stamped when a run SETTLES or
-   *  parks. Advertising a state the backend never mints sent readers looking
-   *  for a live signal that was never going to arrive. */
-  status?: '' | 'pending' | 'completed' | 'failed';
-  inputs?: Record<string, unknown>;
-  awaiting?: WizardAwaiting[];
-  outcomes?: WizardStepOutcome[];
-  message?: string;
-  /** A person approved this non-shipped wizard to run shell here. Recorded so a
-   *  run that PARKS for a value can be resumed without re-approving on every
-   *  answer. */
+  result?: WizardResult | null;
+  /** A person approved this non-shipped wizard to run shell here. */
   approved?: boolean;
 }
 
@@ -140,8 +89,8 @@ export interface Wizard extends EntityMerge<IWizard> {}
  *
  * The counterpart of Journey, and the line between them is the reason both
  * exist: a Journey PRESENTS a step and waits for a person; a Wizard DECIDES and
- * executes. A wizard parks only when it is missing a VALUE it needs, never
- * merely to be acknowledged.
+ * executes. When it needs a value from a person, one of its steps is an `ask`
+ * ComputeOp — asked and answered like any other call.
  */
 @registerEntity
 export class Wizard extends APIEntity<Wizard> implements IWizard {
@@ -184,10 +133,8 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
    * `DataManager.deepAssign` recurses into arrays and objects and merges them
    * by key/index, never shrinking the target — so a run record that gets
    * SMALLER is corrupted by a refresh. Reset is exactly that case: the backend
-   * clears `inputs`, `awaiting` and `outcomes`, and merging `[]` over the old
-   * arrays left every one of them on screen. Only `status`, a scalar, actually
-   * cleared, so the viewer showed the answers and steps of a run that no longer
-   * existed.
+   * clears `result`, and merging `null` over the old one left its steps on
+   * screen — the viewer showed a run that no longer existed.
    *
    * `onEntityUpdate` runs BEFORE `deepAssign` on the cached path, so the field
    * has to be stripped from the payload, not merely assigned. Same guard the
@@ -214,7 +161,7 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     return await dataManager.callAction<Record<string, unknown>, WizardValidation>(action);
   }
 
-  /** The run record WITH per-command probes — the only place they are served. */
+  /** The last run WITH every step's output — the only place it is served. */
   async runDetail(): Promise<WizardRunDetail> {
     const action = new ActionInfo('run-detail', Wizard.type, this.id, 'GET');
     return await dataManager.callAction<void, WizardRunDetail>(action);
@@ -225,7 +172,7 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
    *
    * Refuses (409) while a run holds the wizard's lock. Approval is PRESERVED:
    * it records that a person trusts this wizard to run shell on this machine,
-   * which is a fact about the wizard, not about one run's answers.
+   * which is a fact about the wizard, not about one run.
    */
   async resetRun(): Promise<WizardRunState> {
     const action = new ActionInfo('reset', Wizard.type, this.id, 'POST');

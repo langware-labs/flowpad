@@ -186,10 +186,9 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       const process = (await (await request.get(`${API}/api/v1/graph/agentic_process/${fixture.processId}`)).json())
         .data;
       expect(process.context_data.display_stack).toHaveLength(1);
-      expect(process.context_data.last_shown).toMatchObject({
-        kind: 'webapp',
-        port: address.port,
-      });
+      // The port was registered as an endpoint; the display holds THAT, not the port.
+      expect(process.context_data.last_shown).toMatchObject({ kind: 'app', runtime: 'dev' });
+      expect(String(process.context_data.last_shown.typeid)).toMatch(/^service_endpoint-/);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await destroyVibeFixture(request, fixture);

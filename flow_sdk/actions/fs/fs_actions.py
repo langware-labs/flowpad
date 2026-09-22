@@ -22,7 +22,6 @@ from starlette.responses import Response, StreamingResponse
 from flow_sdk.api.fs.fs_api import EntityFSReqInfo, VFSPath
 from flow_sdk.assets.layout import File
 from flow_sdk.builtin.faas.serve_static import AppNotBuilt, serve_app_bytes
-from flow_sdk.config import default_service_config
 from flow_sdk.models import FSEntry
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -398,11 +397,8 @@ async def serve(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Response
             target.parent,
             target.name,
             request_info.request,
-            # The url already mirrors the filesystem, so relative refs resolve
-            # correctly on their own; a <base> built from a url ending in a
-            # FILENAME would append "/" and turn that file into a directory.
-            inject_base=False,
-            api_url_scheme=default_service_config.service_urls_config.api_url_scheme,
+            # No base_url: the url already mirrors the filesystem, so relative
+            # refs resolve correctly on their own.
             fallback_index=False,
             cache_control="no-store",
             # The display passes the process it shows this page beside, so the

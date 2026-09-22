@@ -36,6 +36,9 @@ class EntityType(StrEnum):
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"
     DEPLOYMENT = "deployment"
+    # One service a Deployment exposes (builtin/service_endpoint.py). Same value
+    # on the hub, where the row is mirrored at the same id.
+    SERVICE_ENDPOINT = "service_endpoint"
     BOOKMARK = "bookmark"
     ANNOTATION = "annotation"
     COMMENT = "comment"
@@ -193,7 +196,6 @@ class EntityType(StrEnum):
     # holds it as a read-only projection of hub state (builtin/llm_endpoint.py);
     # the member exists so the type can carry TypeInfo (icon, browse tier).
     LLM_ENDPOINT = "llm_endpoint"
-    CODE_REF = "code_ref"
     AGENT_HOOK = "agent_hook"
     TRIGGER = "trigger"
     PROCESS_RESULT = "process_result"

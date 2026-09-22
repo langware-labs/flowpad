@@ -13,6 +13,7 @@ import pytest
 
 import flow_sdk.blocks as blocks
 from flow_sdk.blocks import _AgentRunner
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, PromptResult
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -22,14 +23,19 @@ class _Process:
 
     def __init__(self, transcript_text: str = ""):
         self.id = "p1"
+        self.typeid = "agentic_process-p1"
         self.context_data: dict = {}
         self.prompts: list[str] = []
         self.saves = 0
         self.transcript_text = transcript_text
+        #: When set, the next turn is not taken — the way a busy process answers.
+        self.busy = ""
 
-    async def prompt(self, text: str):
+    async def send_turn(self, text: str) -> PromptResult:
+        if self.busy:
+            return PromptResult.not_yet(self.busy, ran=False, executor=self.typeid)
         self.prompts.append(text)
-        return SimpleNamespace(status="SUCCESS")
+        return PromptResult.satisfied("The turn was accepted.", executor=self.typeid)
 
     async def save(self):
         self.saves += 1
@@ -116,3 +122,21 @@ async def test_the_record_is_bounded(runner):
         await r.run(_message(external_id=f"<m{i}>", body=str(i)))
     assert len(process.context_data["turns"]) == 200
     assert "<m0>" not in "".join(process.context_data["turns"])
+
+
+async def test_a_turn_the_process_refuses_is_returned_not_raised(runner):
+    """A busy process answers ``NOT_YET`` with ``ran=False`` — returned, and never
+    followed by a transcript read that would hand back the previous turn's text."""
+    r, process = runner
+    process.busy = "another prompt turn is already in flight for this process"
+    out = await r.run(_message())
+    assert out.exit_code is ExitCode.NOT_YET and out.ran is False
+    assert out.detail == process.busy and out.text == ""
+    assert out.executor == "agentic_process-p1"
+    assert process.prompts == []
+
+
+async def test_a_taken_turn_names_the_process_that_answered(runner):
+    r, process = runner
+    out = await r.run(_message())
+    assert out.ok and out.executor == "agentic_process-p1"

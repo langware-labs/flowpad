@@ -25,10 +25,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-#: How long a person gets to answer. A PRODUCT decision — the span someone is
-#: given before an op stops waiting — not a budget widened to ride out a flake.
-#: Callers take it as a default and may pass a shorter one; nothing raises it.
-ASK_TIMEOUT_SECONDS = 60.0
+#: Defined beside the op's other timeouts; re-exported here where the waiter lives.
+from flow_sdk.schema.data_spec.compute_op_spec import ASK_TIMEOUT_SECONDS  # noqa: E402
 
 
 class Cancelled(Exception):
@@ -42,14 +40,17 @@ class Question:
     id: str
     op_name: str
     prompt: str
-    #: The op's declared ``output`` — the form a UI draws, and the shape the
-    #: answer is held to. There is exactly one declaration; this is it.
+    #: The op's ``output_spec_kind`` — the kind the answer is held to. There is
+    #: exactly one declaration; this is it.
     shape: Any = None
+    #: That kind opened one level — what a form draws. Computed once, when the
+    #: question is raised: it cannot change while the question is open.
+    fields: Any = None
     _future: "asyncio.Future" = field(repr=False, default=None)  # type: ignore[assignment]
 
     def to_payload(self) -> dict:
         """What a UI needs to draw the field. Never the future."""
-        return {"id": self.id, "op": self.op_name, "prompt": self.prompt, "shape": self.shape}
+        return {"id": self.id, "op": self.op_name, "prompt": self.prompt, "fields": self.fields}
 
 
 #: Questions waiting for an answer, by id. Empty between asks: a question is
@@ -60,8 +61,12 @@ _PENDING: "dict[str, Question]" = {}
 
 def open_question(op_name: str, prompt: str, shape: Any) -> Question:
     """Register a question and return it. The caller then awaits ``wait_for``."""
+    from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
+
     question = Question(
         id=str(uuid.uuid4()), op_name=op_name, prompt=prompt, shape=shape,
+        # A kind string alone would render as one unnamed box.
+        fields=fields_of_kind(shape) if isinstance(shape, str) else shape,
         _future=asyncio.get_event_loop().create_future(),
     )
     _PENDING[question.id] = question
@@ -78,27 +83,34 @@ def open_questions() -> "list[Question]":
     return list(_PENDING.values())
 
 
+def _settle(question_id: str, resolve) -> bool:
+    """Hand one question its ending. False when nothing is waiting under that id.
+
+    Both endings are the same three steps — take it out of the registry, refuse
+    a second ending, resolve the future — and differ only in what they resolve
+    it WITH. Keeping that in one place is why a settled question can never be
+    settled twice by one path and not the other.
+    """
+    question = _PENDING.pop(question_id, None)
+    if question is None or question._future.done():
+        return False
+    resolve(question._future)
+    return True
+
+
 def answer(question_id: str, value: Any) -> bool:
-    """Deliver an answer. False when nothing is waiting under that id.
+    """Deliver an answer.
 
     The value is NOT validated here: validation belongs to the action, so a
     person who typed the wrong thing gets a correctable error instead of an op
     that failed on their behalf.
     """
-    question = _PENDING.pop(question_id, None)
-    if question is None or question._future.done():
-        return False
-    question._future.set_result(value)
-    return True
+    return _settle(question_id, lambda future: future.set_result(value))
 
 
 def cancel(question_id: str) -> bool:
-    """Decline to answer. False when nothing is waiting under that id."""
-    question = _PENDING.pop(question_id, None)
-    if question is None or question._future.done():
-        return False
-    question._future.set_exception(Cancelled())
-    return True
+    """Decline to answer. The op hears "no value", not "something broke"."""
+    return _settle(question_id, lambda future: future.set_exception(Cancelled()))
 
 
 async def wait_for(question: Question, *, timeout: float = ASK_TIMEOUT_SECONDS) -> Any:

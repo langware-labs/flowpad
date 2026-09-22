@@ -80,6 +80,17 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
 
         return LocalOrigin(base=f"/{name}-base", rel_path=f"{name}-rel")
+    if "ProtocolSpec" in str(annotation):
+        # A tagged protocol (``webapp.json`` endpoints): restored by its kind, so
+        # the sampler names one shipped shape with a non-default field.
+        from flow_sdk.schema.data_spec.service_endpoint_spec import ChatOpenAIProtocol  # noqa: PLC0415
+
+        return ChatOpenAIProtocol(base_path=f"/{name}-v", models=[f"{name}-m"])
+    if "WebappStaticServing" in str(annotation):
+        # How a webapp endpoint is served — the non-default arm of the union.
+        from flow_sdk.schema.data_spec.webapp_spec import WebappProxyServing  # noqa: PLC0415
+
+        return WebappProxyServing(type="proxy", start_cmd=f"{name}-v --port {{port}}", health=f"/{name}-h", port=4321)
     if getattr(ann, "__name__", "") == "TypeId":
         return ann(f"skill-{mint_uuid()}")
     if ann is datetime:

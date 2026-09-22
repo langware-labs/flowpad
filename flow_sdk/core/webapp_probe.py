@@ -2,9 +2,9 @@
 
 Why this exists: the display embeds the app in a **cross-origin** iframe, and a
 browser tells the host page almost nothing about a guest it cannot reach. A
-navigation to a refused port still fires ``onload``; a ``redirect: 'manual'``
-preflight of the ``get-host`` redirect resolves as an opaque redirect with
-``status == 0`` whether the server is alive or dead. Both are measured facts,
+navigation to a refused port still fires ``onload``, and a ``no-cors`` fetch of
+another origin resolves as an opaque response with ``status == 0`` whether the
+server is alive or dead. Both are measured facts,
 pinned by tests. So the only honest place to ask "is this app actually working"
 is here, from the machine that can talk to the port directly.
 

@@ -7,35 +7,25 @@
  * is the validator: `extra="forbid"` there means every key IS known to the
  * schema, so the risk this module guards is different — keys unknown to the
  * FORM. A step is now flat (`kind` / `ref` / `args`), but the document around it
- * still nests (`inputs`, `args`, `output`), and a shallow spread of one step or
- * one input would silently delete its siblings.
+ * still nests (`steps`, `args`, `output`), and a shallow spread of one step
+ * would silently delete its siblings.
  */
 import type { WizardIssue } from '@sdk';
 
-/** What a step invokes. `ref` is read against this: an op name, a wizard name,
- *  or — for `ask` — one of this wizard's own `inputs` keys. */
-export const STEP_KINDS = ['compute', 'wizard', 'ask'] as const;
+/** What a step invokes. `ref` is read against this: an op name or a wizard
+ *  name. A person is asked by an `ask` COMPUTE OP, like any other call. */
+export const STEP_KINDS = ['compute', 'wizard'] as const;
 export type StepKind = (typeof STEP_KINDS)[number];
 
 /** What a step does when it fails. */
 export const ON_FAIL = ['abort', 'continue'] as const;
-
-/** One declared PARAMETER of the wizard. The map key is its name — the same
- *  name an `ask` step refs and an `args` value may pass along. */
-export interface WizardInputDoc {
-  /** Authoring form: `"string"`, `{field: shape}`, or `[shape]`. */
-  shape?: unknown;
-  label?: string;
-  description?: string;
-  optional?: boolean;
-}
 
 export interface WizardStepDoc {
   id: string;
   label?: string;
   description?: string;
   kind?: StepKind;
-  /** An op name · a wizard name · an input name, per `kind`. */
+  /** An op name or a wizard name, per `kind`. */
   ref?: string;
   /** Callee param -> a name in scope, or a literal. A FLAT string map: this is
    *  not a template language, so there is nothing nested to render. */
@@ -51,8 +41,6 @@ export interface WizardDoc {
   icon?: string;
   /** Non-empty ⇒ a CONVERSATIONAL wizard: one agent, no steps. */
   agent?: string;
-  /** The wizard's parameters, declared once for the whole document. */
-  inputs?: Record<string, WizardInputDoc>;
   /** What the wizard returns, in authoring form. */
   output?: unknown;
   steps?: WizardStepDoc[];
@@ -108,24 +96,21 @@ export function removeIn<T>(root: T, path: (string | number)[]): T {
  * Switch a step to a different `kind`, ATOMICALLY.
  *
  * `ref` is cleared with it, because its MEANING changed: the same string reads
- * as an op name under `compute` and as an input name under `ask`, so carrying it
+ * as an op name under `compute` and a wizard name under `wizard`, so carrying it
  * across would leave a step pointing at something that does not exist while
- * looking deliberate. `args` goes the same way — an `ask` step passes none.
+ * looking deliberate. `args` is reset with it.
  */
 export function setStepKind(doc: WizardDoc, index: number, kind: StepKind): WizardDoc {
   const step = doc.steps?.[index];
   if (!step) return doc;
-  const next: WizardStepDoc = { ...step, kind, ref: '' };
-  if (kind === 'ask') delete next.args;
-  else next.args = {};
-  return setIn(doc, ['steps', index], next);
+  return setIn(doc, ['steps', index], { ...step, kind, ref: '', args: {} });
 }
 
 /**
  * The first `${prefix}${n}` nobody has taken.
  *
- * One home for what was three copies — steps, parameters and a step's args all
- * mint a name this way, and the copies had already drifted on where `n` starts.
+ * One home for what were copies — steps and a step's args both mint a name
+ * this way, and the copies had already drifted on where `n` starts.
  */
 export function nextFreeName(taken: Iterable<string>, prefix: string): string {
   const used = new Set(taken);
@@ -138,26 +123,6 @@ export function nextFreeName(taken: Iterable<string>, prefix: string): string {
 export function blankStep(existing: WizardStepDoc[]): WizardStepDoc {
   const id = nextFreeName(existing.map((step) => step.id), 'step-');
   return { id, kind: 'compute', ref: '', args: {} };
-}
-
-/** A name for a new parameter that does not collide with a declared one. */
-export function blankInputName(inputs: Record<string, WizardInputDoc> | undefined): string {
-  return nextFreeName(Object.keys(inputs ?? {}), 'INPUT_');
-}
-
-/**
- * Rename one `inputs` key IN PLACE in the map's order.
- *
- * Delete-then-add would move the parameter to the end of the form on every
- * rename, which reads as the row jumping away from the caret. Order is also the
- * order the run asks for values, so it is not merely cosmetic.
- */
-export function renameInput(doc: WizardDoc, from: string, to: string): WizardDoc {
-  const inputs = doc.inputs;
-  if (!inputs || !(from in inputs) || to === from || !to || to in inputs) return doc;
-  const next: Record<string, WizardInputDoc> = {};
-  for (const [key, value] of Object.entries(inputs)) next[key === from ? to : key] = value;
-  return setIn(doc, ['inputs'], next);
 }
 
 /**
@@ -180,16 +145,14 @@ export function duplicateStepIds(steps: WizardStepDoc[] | undefined): Set<string
 
 /**
  * The names an `args` value may refer to, in the order they come into scope:
- * the wizard's own parameters, then every step BEFORE this one.
+ * every step BEFORE this one.
  *
  * Offered, never enforced — a value is a name in scope or a literal, and the
  * form cannot tell which was meant.
  */
 export function namesInScope(doc: WizardDoc, index: number): string[] {
   const steps = doc.steps ?? [];
-  return [...Object.keys(doc.inputs ?? {}), ...steps.slice(0, index).map((step) => step.id)].filter(
-    Boolean,
-  );
+  return steps.slice(0, index).map((step) => step.id).filter(Boolean);
 }
 
 /**
@@ -255,8 +218,8 @@ export function orphanIssues(
  */
 export const LIVE_STATE: Record<string, { status: string; label: string }> = {
   pending: { status: 'not_reached', label: 'waiting' },
-  running: { status: 'awaiting_input', label: 'running' },
-  blocked: { status: 'awaiting_input', label: 'needs an answer' },
+  running: { status: 'running', label: 'running' },
+  blocked: { status: 'running', label: 'waiting for you' },
   completed: { status: 'completed', label: 'done' },
   failed: { status: 'failed', label: 'failed' },
   cancelled: { status: 'not_reached', label: 'cancelled' },

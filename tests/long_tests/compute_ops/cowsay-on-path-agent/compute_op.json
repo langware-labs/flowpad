@@ -1,0 +1,16 @@
+{
+  "type": "compute_op",
+  "name": "cowsay-on-path-agent",
+  "label": "cowsay (agent)",
+  "description": "The cowsay command runs from a plain shell.",
+  "subkind": "agent",
+  "exe_data": {
+    "agent": "provisioner",
+    "prompt": "Reach this goal on this machine."
+  },
+  "completion_check": {
+    "commands": {
+      "linux": "command -v cowsay"
+    }
+  }
+}

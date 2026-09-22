@@ -1,26 +1,22 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { AgenticProcess } from '@sdk';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
-import { useEntity } from '@src/hooks/entity-hooks';
-import { TypeId } from '@sdk';
-import { useMemo } from 'react';
 
 /**
- * An app, rendered from its ADDRESS.
+ * An app, rendered from its ADDRESS, through the endpoints that serve it.
  *
- * `/dock/app/artifact-<id>` names an app built from source; which runtime serves it —
- * a dev server's port or the built output we host — is derived here from the
- * artifact's companions, never read out of the URL. That is the whole point of
- * addressing the artifact: a dev server that dies, or a build that lands, changes
- * what you see without changing where you are.
+ * `/dock/app/artifact-<id>` names an app built from source; which endpoint serves it —
+ * its dev server or the build we host — is derived here, never read out of the URL.
+ * That is the whole point of addressing the artifact: a dev server that dies, or a
+ * build that lands, changes what you see without changing where you are.
  *
- * `/dock/app/micro_app-<id>` names a webapp ASSET on disk, which has no artifact and
- * no dev server. Same viewer, same toolbar; the address just resolves in one hop.
+ * `/dock/app/micro_app-<id>` names a webapp ASSET (served by the endpoint indexing
+ * gave it) and `/dock/app/service_endpoint-<id>` names an endpoint directly (a bare
+ * dev server). Same viewer, same toolbar.
  *
  * `?runtime=` is the one runtime fact the URL does carry, and only as the user's
  * PREFERENCE. `useAppDisplay` still validates it against what is actually available,
@@ -31,39 +27,56 @@ import { useMemo } from 'react';
 export interface AppDisplayViewerProps {
   /** Bare artifact uuid, for an app addressed by its source plane. */
   artifactId: string | null;
-  /** Bare micro_app uuid, for a webapp asset addressed by its own row. */
+  /** Bare micro_app uuid, for a webapp asset addressed by its definition. */
   microAppId?: string | null;
-  /**
-   * The workspace host, as `agentic_process-<uuid>`. Required for the `dev`
-   * runtime only: that URL is resolved through the owning process's compute node
-   * (`get-host`), so an app shown outside a workspace can still render its built
-   * output but has no dev server to point at.
-   */
-  host?: string | null;
+  /** Bare service_endpoint uuid, for an app addressed by what serves it. */
+  endpointId?: string | null;
   /** The user's runtime preference from the URL, if it pins one. */
   runtime?: AppRuntime | null;
   /** Dock options handed to the app as its query string (e.g. `source`). */
   options?: Record<string, string>;
+  /** The host's content epoch — a re-show of the same app, or the agent's turn
+   *  end. A change reloads the frame; see `reloadOnNewEpoch`. */
+  reloadKey?: number;
 }
 
-export function AppDisplayViewer({ artifactId, microAppId = null, host, runtime, options }: AppDisplayViewerProps) {
+/**
+ * The epoch each frame was last shown at, by `src`.
+ *
+ * The host re-keys its body to signal "something changed behind the same
+ * address", which REMOUNTS this viewer — but the iframe registry parks frames by
+ * `src` and hands the same document back, so a remount alone reloads nothing, and
+ * component state cannot tell a new epoch from a tab coming back into view. Held
+ * per `src` here: a new epoch reloads, the same epoch does not.
+ */
+const shownAtEpoch = new Map<string, number>();
+
+function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => void): void {
+  if (!src || epoch === undefined) return;
+  const seen = shownAtEpoch.get(src);
+  shownAtEpoch.set(src, epoch);
+  if (seen !== undefined && seen !== epoch) reload();
+}
+
+export function AppDisplayViewer({
+  artifactId,
+  microAppId = null,
+  endpointId = null,
+  runtime,
+  options,
+  reloadKey,
+}: AppDisplayViewerProps) {
   const { currentDock, navigation } = useDockNavigation();
   const frameRef = useRef<PersistentIframeHandle>(null);
-
-  const processTypeId = useMemo(
-    () => (host ? new TypeId(host) : null),
-    [host],
-  );
-  const { data: process } = useEntity<AgenticProcess>(processTypeId, { enabled: !!processTypeId });
 
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
   // (keyed on `src`) does not remount.
-  const appDisplay = useAppDisplay(
-    process ?? null,
-    { artifactId, microAppId, options: options ?? {} },
-    runtime ?? null,
-  );
+  const appDisplay = useAppDisplay({ artifactId, microAppId, endpointId, options: options ?? {} }, runtime ?? null);
+
+  useEffect(() => {
+    reloadOnNewEpoch(appDisplay.src, reloadKey, () => frameRef.current?.refresh());
+  }, [appDisplay.src, reloadKey]);
 
   // The theme is baked into the guest URL for its first paint, so a later change
   // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
@@ -112,7 +125,9 @@ export function AppDisplayViewer({ artifactId, microAppId = null, host, runtime,
     <div className="flex h-full flex-col">
       <WebappDisplayToolbar
         host={appDisplay.src}
-        port={appDisplay.port ?? ''}
+        // A dev server is loaded at its own address, which is worth showing; a
+        // served build's address is this backend's own path.
+        address={appDisplay.runtime === 'dev' ? directHost(appDisplay.src) : ''}
         runtime={appDisplay.runtime}
         runtimes={appDisplay.available}
         onRuntimeChange={setRuntime}
@@ -126,13 +141,22 @@ export function AppDisplayViewer({ artifactId, microAppId = null, host, runtime,
           // change retires the old one without ever activating the new one.
           key={appDisplay.src}
           ref={frameRef}
-          processId={process?.id}
+          endpoint={appDisplay.endpoint}
           testId="vibe-app-frame"
           src={appDisplay.src}
-          port={appDisplay.port}
-          targetTypeId={appDisplay.microApp?.typeId?.toString() ?? null}
+          // The repair run attaches to the webapp definition when there is one.
+          targetTypeId={microAppId ? `micro_app-${microAppId}` : null}
         />
       </div>
     </div>
   );
+}
+
+/** `host:port` of a direct address, for the toolbar label. */
+function directHost(src: string): string {
+  try {
+    return new URL(src).host;
+  } catch {
+    return '';
+  }
 }

@@ -331,11 +331,13 @@ function ContentPanelBody({
       case ViewType.WEB_APP:
         return <WebappViewer />;
       case ViewType.APP: {
-        // An artifact-addressed app. Distinct from WEB_APP (a bare port): the
-        // artifact is stable identity and its runtime is derived, which is what
-        // makes a shown app bookmarkable and restorable at all.
+        // An app addressed by its artifact, its webapp definition or its endpoint.
+        // Distinct from WEB_APP (a raw external URL): the address is stable
+        // identity and the endpoint that serves it is derived, which is what makes
+        // a shown app bookmarkable and restorable at all. The epoch rides along
+        // because a remount alone does not reload a frame the registry parked.
         const app = appDockAddress(currentDock);
-        return app ? <AppDisplayViewer {...app} /> : null;
+        return app ? <AppDisplayViewer {...app} reloadKey={contentEpoch} /> : null;
       }
       case ViewType.DIFF:
         if (currentDock?.pointer?.startsWith('asset-compare/')) {

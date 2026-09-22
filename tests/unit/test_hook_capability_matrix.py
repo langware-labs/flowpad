@@ -18,7 +18,7 @@ import pytest
 from flow_sdk.builtin.hooks import HookEventType, HookScope, get_hook_manager
 from flow_sdk.builtin.hooks.capabilities import PROCESS_EVENTS
 
-HARNESSES = ("claude", "codex", "copilot", "opencode")
+HARNESSES = ("claude", "codex", "copilot", "opencode", "deepagents")
 
 #: Driver name -> the ``WorkerType`` value an AgenticProcess row carries. They
 #: differ for claude ("claude" vs "claude_code"), which is why ``get_driver``
@@ -29,6 +29,7 @@ WORKER_TYPE = {
     "codex": "codex",
     "copilot": "copilot",
     "opencode": "opencode",
+    "deepagents": "deepagents",
 }
 GLOBAL_SCOPES = (HookScope.USER, HookScope.PROJECT, HookScope.LOCAL_PROJECT)
 
@@ -38,7 +39,8 @@ REPRESENTATIVE = HookEventType.USER_PROMPT_SUBMIT
 #: The declared truth, mirrored here so a silent capability change fails loudly.
 #: global scope -> harnesses that support it.
 EXPECTED_GLOBAL = {"claude"}
-#: process scope -> harnesses that support it.
+#: process scope -> harnesses that support it. deepagents is absent ON PURPOSE: it declares
+#: ``supports_process_hooks = False`` (no hook channel), so its cell must say why not.
 EXPECTED_PROCESS = {"claude", "codex", "copilot", "opencode"}
 
 

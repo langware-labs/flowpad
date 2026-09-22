@@ -47,7 +47,8 @@ from flow_sdk.schema.data_spec._form import ShapeForm
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Sequence
 
-    from flow_sdk.blocks import MessageBlock, RunOutput
+    from flow_sdk.blocks import MessageBlock
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
     from flow_sdk.builtin.data_source import DataSource
@@ -521,7 +522,7 @@ class Agent(Entity):
 
         return _process_messages(self)
 
-    async def process_message(self, message) -> "RunOutput":
+    async def process_message(self, message) -> "PromptResult":
         """Answer one inbound message through this Agent's launch bundle.
 
         Inside :meth:`process_messages`, repeated thread keys reuse their

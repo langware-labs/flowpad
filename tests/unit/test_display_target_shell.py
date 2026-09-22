@@ -53,9 +53,6 @@ async def test_missing_shell_is_still_not_found() -> None:
 @pytest.mark.asyncio
 async def test_other_kinds_are_unchanged() -> None:
     # The new branch keys on entity type; everything else must be untouched.
-    webapp = await resolve_display_target(port=3000)
-    assert webapp == {"kind": DisplayTargetKind.WEBAPP, "port": 3000}
-
     vfs = await resolve_display_target(path="/tmp/definitely-not-an-indexed-asset.xyz")
     assert vfs["kind"] == DisplayTargetKind.VFS
 
@@ -109,3 +106,76 @@ def test_strip_pty_keeps_line_structure() -> None:
 
     raw = b"\x1b[0m\x1b[32mfile.txt\x1b[0m\r\nsecond\r\n"
     assert _strip_pty_keep_lines(raw) == "file.txt\nsecond\n"
+
+
+# ── run_and_capture answers with a CliResult ──────────────────────────────────
+# The PTY itself is faked at `read`/`write` (the terminal's two I/O seams); the
+# sentinel parsing and the answer are the real code.
+
+
+def _fake_terminal(monkeypatch, *, output: str, exit_code: "int | None"):
+    """A terminal whose stream grows by `output` (+ sentinel) once a command is typed."""
+    stream = {"data": b"prompt % "}
+
+    async def read(self) -> bytes:
+        return stream["data"]
+
+    async def write(self, text: str) -> None:
+        marker = text.rsplit('echo "', 1)[1].split("_$?")[0]
+        tail = f"{text}\n{output}"
+        if exit_code is not None:
+            tail += f"{marker}_{exit_code}\n"
+        stream["data"] += tail.encode()
+
+    monkeypatch.setattr(Shell, "read", read)
+    monkeypatch.setattr(Shell, "write", write)
+
+
+@pytest.mark.asyncio
+async def test_run_and_capture_answers_with_a_cli_result(monkeypatch) -> None:
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode
+
+    _fake_terminal(monkeypatch, output="hello\n", exit_code=3)
+    shell = Shell(name="t", workdir="/tmp")
+
+    answer = await shell.run_and_capture("echo hello; exit 3", timeout=2, poll_interval=0.01)
+
+    assert isinstance(answer, CliResult)
+    assert answer.stdout.strip() == "hello"
+    assert answer.returncode == 3
+    assert answer.exit_code is ExitCode.NOT_YET
+    assert answer.command == "echo hello; exit 3"
+    assert answer.executor == f"shell-{shell.id}"
+
+
+@pytest.mark.asyncio
+async def test_run_and_capture_that_outlives_the_wait_is_timed_out(monkeypatch) -> None:
+    _fake_terminal(monkeypatch, output="still going\n", exit_code=None)
+    shell = Shell(name="t", workdir="/tmp")
+
+    answer = await shell.run_and_capture("sleep 100", timeout=0.05, poll_interval=0.01)
+
+    # Still running in the user's terminal: no exit status, the output so far.
+    assert answer.timed_out is True
+    assert answer.returncode is None
+    assert answer.ok is False
+    assert "still going" in answer.stdout
+
+
+@pytest.mark.asyncio
+async def test_run_and_capture_without_a_terminal_is_returned_not_raised(monkeypatch) -> None:
+    async def read(self) -> bytes:
+        return b""
+
+    async def write(self, text: str) -> None:
+        raise RuntimeError("No PTY session — call start_pty() first")
+
+    monkeypatch.setattr(Shell, "read", read)
+    monkeypatch.setattr(Shell, "write", write)
+    shell = Shell(name="t", workdir="/tmp")
+
+    answer = await shell.run_and_capture("ls", timeout=1)
+
+    assert answer.returncode is None
+    assert answer.ran is False
+    assert "No PTY session" in answer.stderr

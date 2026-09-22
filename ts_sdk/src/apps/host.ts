@@ -2,40 +2,45 @@
  * What a served app is FOR — resolved from the page's own URL, never from a
  * value written into the app.
  *
- * A webapp asset is served at `/api/v1/graph/micro_app/<id>/view/…`, so the
- * page's path already names its own delivery row. That row is an ordinary
- * asset, which means it has a parent: the asset it is nested inside. An editor
- * therefore learns what it edits by asking who contains it — the same
- * containment the address bar renders as `Project / rss / editor`.
+ * Every served app is served by a `ServiceEndpoint`, at
+ * `/api/v1/graph/service_endpoint/<id>/service/…`, so the page's path already names
+ * the endpoint. An endpoint serving a webapp ASSET names its definition
+ * (`webapp_id`); that definition is an ordinary asset, which means it has a
+ * parent: the asset it is nested inside. An editor therefore learns what it edits
+ * by asking who contains its app — the same containment the address bar renders
+ * as `Project / rss / editor`.
  *
  * Nothing here is specific to editors. Any app that wants to act on the thing
  * it ships with reads its subject the same way.
  */
-import { APIEntity, dataManager, type AnyEntity } from '../APIEntity';
+import { dataManager, type AnyEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 
-/** The `micro_app` this page is being served as, from `location.pathname`. */
+/** The endpoint this page is being served by, from `location.pathname`. */
 export function appTypeId(pathname: string = location.pathname): TypeId | null {
-  const m = pathname.match(/graph\/(micro_app)\/([^/]+)\/view/i);
+  const m = pathname.match(/graph\/(service_endpoint)\/([^/]+)\/service/i);
   return m ? new TypeId(m[1], m[2]) : null;
 }
 
 export interface AppHost {
-  /** The app's own delivery row. */
+  /** The app: the webapp definition the endpoint serves, else the endpoint itself. */
   app: AnyEntity;
   /** The asset the app is nested inside — what it edits. Null at top level. */
   subject: AnyEntity | null;
 }
 
 /**
- * Resolve `{app, subject}` for the page. Throws when the page was not served as
- * a webapp asset — a wrong answer here would silently edit the wrong entity.
+ * Resolve `{app, subject}` for the page. Throws when the page was not served by an
+ * endpoint — a wrong answer here would silently edit the wrong entity.
  */
 export async function resolveAppHost(): Promise<AppHost> {
   const typeId = appTypeId();
-  if (!typeId) throw new Error('not served as a webapp asset');
-  const app = await dataManager.getByTypeId(typeId);
-  if (!app) throw new Error(`no ${typeId}`);
+  if (!typeId) throw new Error('not served by a service endpoint');
+  const endpoint = await dataManager.getByTypeId(typeId);
+  if (!endpoint) throw new Error(`no ${typeId}`);
+  const webappId = (endpoint as { webapp_id?: string | null }).webapp_id;
+  const app = webappId ? await dataManager.getByTypeId(new TypeId('micro_app', webappId)) : endpoint;
+  if (!app) throw new Error(`no micro_app-${webappId}`);
   const parent = (app as any).parent_type_id;
   const subject = parent ? await dataManager.getByTypeId(new TypeId(parent)) : null;
   return { app, subject };

@@ -64,7 +64,7 @@ async def test_external_path_stdout_captured(tmp_path):
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
     result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
 
-    assert result is not None, "handler must return a RunResult"
+    assert result is not None, "handler must return a CliResult"
     assert "hello-stdout" in result.stdout
 
 
@@ -94,6 +94,21 @@ async def test_external_path_returncode_nonzero(tmp_path):
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
     result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
     assert result.returncode == 7
+    assert result.ok is False  # the verdict is derived from the raw exit, in one place
+
+
+async def test_external_path_that_cannot_start_is_returned_not_raised(tmp_path):
+    """A script whose interpreter does not exist never starts — that is an
+    answer (``returncode is None``), not an exception out of the trigger."""
+    script = _make_script(tmp_path, "s.sh", "#!/definitely/not/an/interpreter\nexit 0\n")
+
+    handler = RunScriptActionHandler()
+    action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
+    result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
+    assert result.returncode is None
+    assert result.ran is False
+    assert result.ok is False
+    assert result.stderr
 
 
 async def test_external_path_env_vars_set(tmp_path):
@@ -159,9 +174,11 @@ async def test_external_path_short_timeout_killed(tmp_path):
 
 
 async def test_external_path_duration_recorded(tmp_path):
-    """RunResult includes a duration_ms field."""
+    """The CliResult records how long the script ran, and which script it was."""
     script = _make_script(tmp_path, "s.sh", '#!/usr/bin/env bash\nexit 0\n')
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
     result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/x", "modified"))
-    assert result.duration_ms >= 0
+    assert result.duration_s >= 0
+    assert result.command == str(script)
+    assert result.ok is True
