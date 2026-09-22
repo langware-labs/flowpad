@@ -461,9 +461,15 @@ class StreamInbox:
         *,
         size: int = 50,
         poll_every: "float | timedelta | None" = None,
+        poll: bool = True,
     ) -> AsyncIterator["DeliveredPage"]:
         """Async-iterate inbound messages as they arrive, ``size`` at a time, each page with an
         ``ack()`` that commits it whole.
+
+        ``poll=False`` drains only: the loop never asks the provider, it reads what the
+        app's own ingest lands (the heartbeat, a push, the attention lane) — woken by
+        each arrival, the cadence only a DB re-read. That is the app's agent serve loop:
+        a consumer, not a poller; it says it is waiting through ``note_attention``.
 
         THE drain — ``listen()`` is this, flattened. Each cycle polls the source through the
         poller's slot (a poll already in flight is skipped, not stacked), then drains what landed
@@ -502,7 +508,8 @@ class StreamInbox:
         async with arrivals(str(source.id)) as arrived:
             while True:
                 arrived.clear()
-                await poll_source(source, datetime.now(timezone.utc))
+                if poll:
+                    await poll_source(source, datetime.now(timezone.utc))
                 while True:
                     rows = await SourceItem.page_after(str(source.id), last_seen, limit=max(1, int(size)))
                     if not rows:

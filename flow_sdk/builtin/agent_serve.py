@@ -439,6 +439,11 @@ async def hold_positions(deployment, sources) -> None:
         await ConsumerPosition.ensure_for(consumer_of(deployment), str(source.id), baseline=newest)
 
 
+#: How often a serving loop renews its sources' attention lease — the UI's own rate
+#: (``useAttentionPolling``), inside ``poller.ATTENTION_LEASE_SECONDS``.
+ATTENTION_RENEW_SECONDS = 25.0
+
+
 async def serve(agent, deployment, *, sources=None, poll_every: "float | None" = None) -> None:
     """Answer every message on the agent's channels that answer on *deployment*, until cancelled.
 
@@ -446,8 +451,14 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
     the last answer) over all of them; each message passes the loop guard and the
     source's gate, runs through the turn engine in its conversation, and is
     replied to on its own channel (send → record → ack). *sources* defaults to
-    :func:`answered_sources`; ``poll_every`` is the drain's cadence (the driver's
-    own, else 3 s).
+    :func:`answered_sources`.
+
+    A consumer, never a poller: the loop reads what the app's ingest lands — a
+    push at once, a pull at the source's own pace — and says it is waiting the way
+    a viewer does (:meth:`DataSource.note_attention`), so a driver that allows it
+    is polled on its fast lane while an agent serves it, and no other is polled
+    any faster than its interval. ``poll_every`` is only how often the drain
+    re-reads the database when no arrival woke it.
     """
     from flow_sdk.blocks import StreamInbox, workflow  # noqa: PLC0415
     from flow_sdk.blocks.merge import pages  # noqa: PLC0415
@@ -457,12 +468,24 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
         return
     by_id = {str(s.id): s for s in sources}
     engine = TurnEngine(agent, deployment)
-    async with workflow(consumer_of(deployment)):
-        async for page in pages(*(StreamInbox.of(s) for s in sources), poll_every=poll_every):
-            source = by_id[page.source_id]
-            for message in page:
-                await answer(engine, source, message)
-            await page.ack()
+    waiting = asyncio.get_running_loop().create_task(_keep_attention(sources))
+    try:
+        async with workflow(consumer_of(deployment)):
+            async for page in pages(*(StreamInbox.of(s) for s in sources), poll_every=poll_every, poll=False):
+                source = by_id[page.source_id]
+                for message in page:
+                    await answer(engine, source, message)
+                await page.ack()
+    finally:
+        await _ended(waiting)
+
+
+async def _keep_attention(sources) -> None:
+    """Renew each source's attention lease for as long as the loop serves it."""
+    while True:
+        for source in sources:
+            source.note_attention()
+        await asyncio.sleep(ATTENTION_RENEW_SECONDS)
 
 
 async def answer(engine: TurnEngine, source, message) -> bool:
@@ -717,6 +740,7 @@ async def _serving(agent, deployment, sources) -> None:
 
 
 __all__ = [
+    "ATTENTION_RENEW_SECONDS",
     "AgentServer",
     "answer",
     "answered_sources",

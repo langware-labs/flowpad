@@ -211,7 +211,9 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   agent ANSWERS on a placement. The `TurnEngine` runs one message as a turn: one headless process
   per (placement, conversation), one turn at a time, a redelivery answered from the turn's record.
   The serve loop is one durable drain over the channels a placement answers (a source's
-  `answer_place`); the placement's `chat` endpoint drives the same engine directly. The
+  `answer_place`) — a consumer, never a poller: it reads what ingest lands and holds the sources'
+  fast-lane lease (`DataSource.note_attention`); the placement's `chat` endpoint drives the same
+  engine directly. The
   `AgentServer` keeps every local placement serving. Not Claude Code's `Workflow`, and not the
   bus: nothing answers a channel by reacting to the projection's tags.
 * **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, agent-mailbox, serializer, ingest-provider and reflect-mode registries.

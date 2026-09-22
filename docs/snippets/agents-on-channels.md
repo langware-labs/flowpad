@@ -39,6 +39,13 @@ it answers — one durable position per source, so a restart resumes after the l
 each message from an allowed sender into a turn in that conversation's process, and sends the
 answer back on the channel. Nothing of yours keeps running.
 
+The loop never asks the provider itself — it reads what the app's ingest lands, so an agent answers
+at its channel's pace: a webhook channel (WhatsApp) at once; a pull channel whose driver declares a
+fast lane (Telegram, the agent mailbox, the help desk: every 5 s) on that lane, which the loop holds
+while it serves, as a person viewing the conversation does; any other pull channel (Gmail, Slack,
+RSS) when its interval next polls it (`poll_interval_seconds`, 5 minutes unless set). A parked or
+disabled source is not polled at all.
+
 ```python
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_driver import DataDriver
