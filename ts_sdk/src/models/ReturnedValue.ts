@@ -18,6 +18,15 @@ export const ExitCode = {
 } as const;
 export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
 
+/**
+ * Did the call reach its goal? The mirror of `ReturnedValue.ok` in Python:
+ * OK and NOT_APPLICABLE are both "nothing to do here", and everything else is
+ * not. Read this rather than re-deriving a verdict from `returncode` — that is
+ * the process's own exit, not the answer's.
+ */
+export const isOk = (answer: Pick<ReturnedValue, 'exit_code'> | null | undefined): boolean =>
+  answer?.exit_code === ExitCode.OK || answer?.exit_code === ExitCode.NOT_APPLICABLE;
+
 export interface ReturnedValue {
   /** On a NESTED answer: `compute.returned`, `compute.returned.cli`, `.prompt`, `.ask`, `.wizard`. */
   spec_kind?: string;

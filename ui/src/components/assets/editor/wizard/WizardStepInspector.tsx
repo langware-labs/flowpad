@@ -1,6 +1,6 @@
 import { Trans } from '@lingui/react/macro';
 import { ExternalLink } from 'lucide-react';
-import { AgenticProcess, ExitCode, TypeId, type CliResult } from '@sdk';
+import { AgenticProcess, TypeId, isOk, type CliResult } from '@sdk';
 import type { ActivityProgressSpec } from '@sdk/activity';
 
 import { Button } from '@src/components/ui/button';
@@ -25,9 +25,8 @@ function Stream({ label, text }: { label: string; text: string }) {
 /** One command, with both streams: the step's own call, or the completion
  *  check that decided its verdict. */
 function CommandRow({ role, run }: { role: 'call' | 'check'; run: CliResult }) {
-  // The verdict is ON the answer — re-deriving it from `returncode` here spelled
-  // the backend's rule a second time, and the two readers of one answer drifted.
-  const failed = run.exit_code !== ExitCode.OK && run.exit_code !== ExitCode.NOT_APPLICABLE;
+  // The verdict is ON the answer; `isOk` is the one reader of it.
+  const failed = !isOk(run);
   return (
     <li className="border-t border-border/60 py-2 first:border-t-0" data-testid={`wizard-probe-${role}`}>
       <div className="flex flex-wrap items-baseline gap-2">
