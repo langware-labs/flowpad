@@ -181,7 +181,6 @@ async def handle_inbound(item) -> bool:
     """
     from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply, conversation_turn_lock  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
     from flow_sdk.stream_inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
     from flow_sdk.stream_inbox.projection import display_name_of, owner_of  # noqa: PLC0415
 
@@ -221,13 +220,9 @@ async def handle_inbound(item) -> bool:
         who = display_name_of(item.author_display or "", item.author_external_id or "")
         run_name = " · ".join(part for part in (agent.name, source.channel or source.provider, who) if part) or None
         ap = await _reuse_or_spawn_agent_process(agent, conversation_id, workdir, name=run_name)
-        prompt_result = await ap.prompt(body)
-        if isinstance(prompt_result, ApiFailResponse):
-            logger.warning(
-                "[agent-mail] prompt for %s was refused: %s",
-                conversation_id,
-                prompt_result.message or "unknown reason",
-            )
+        taken = await ap.send_turn(body)
+        if not taken.ok:
+            logger.warning("[agent-mail] prompt for %s was refused: %s", conversation_id, taken.detail)
             return False
         reply = await _capture_assistant_reply(ap)
         if not reply:

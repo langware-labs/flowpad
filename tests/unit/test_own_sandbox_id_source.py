@@ -2,7 +2,7 @@
 
 This pins a fix that was already made once and did nothing. E2B populates
 ``E2B_SANDBOX_ID`` only in the interactive shells it spawns; in the server
-process started at boot -- the one that serves ``get-host`` -- the variable is
+process started at boot -- the one that answers ``direct-url`` -- the variable is
 present and EMPTY. Measured on a live box: ``flow_sdk.server.run`` reported
 ``E2B_SANDBOX_ID=`` while a terminal in the same sandbox reported
 ``ivshr0pshcpupip2m0pqk``.

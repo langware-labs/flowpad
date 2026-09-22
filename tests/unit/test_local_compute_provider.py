@@ -260,3 +260,92 @@ async def test_pty_close(local_provider):
     assert (node_id, "test-session") not in local_provider._pty_processes
 
     await local_provider.shutdown(node_id)
+
+
+def _fake_tool_venv(monkeypatch, tmp_path):
+    import sys
+
+    venv_bin = tmp_path / ("Scripts" if sys.platform == "win32" else "bin")
+    venv_bin.mkdir()
+    (venv_bin / ("flow.exe" if sys.platform == "win32" else "flow")).write_text("")
+    monkeypatch.setattr(sys, "executable", str(venv_bin / "python"))
+    return venv_bin
+
+
+def _fake_python_dir(tmp_path, name="realpy"):
+    import os
+    import sys
+
+    d = tmp_path / name
+    d.mkdir()
+    exe = d / ("python.exe" if sys.platform == "win32" else "python")
+    exe.write_text("")
+    os.chmod(exe, 0o755)
+    return d
+
+
+def test_interactive_pty_env_adds_venv_python_as_fallback_when_none_installed(monkeypatch, tmp_path):
+    """No real python on PATH → the backend venv's bin dir is appended (after the
+    real entries), so `python`/`pip`/`flow` in the in-app terminal resolve to the
+    uv-managed interpreter instead of failing or, on Windows, opening the Store."""
+    import os
+
+    venv_bin = _fake_tool_venv(monkeypatch, tmp_path)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+
+    env = _build_interactive_pty_env("test-session")
+
+    assert env["PATH"].split(os.pathsep) == [str(empty), str(venv_bin)]
+
+    # Idempotent: already present → unchanged.
+    monkeypatch.setenv("PATH", env["PATH"])
+    assert _build_interactive_pty_env("test-session")["PATH"] == env["PATH"]
+
+
+def test_interactive_pty_env_keeps_an_installed_python_in_charge(monkeypatch, tmp_path):
+    """A real python on PATH wins: PATH is left exactly as inherited."""
+    import os
+
+    _fake_tool_venv(monkeypatch, tmp_path)
+    real = _fake_python_dir(tmp_path)
+    inherited = os.pathsep.join([str(real), "/usr/bin"])
+    monkeypatch.setenv("PATH", inherited)
+
+    assert _build_interactive_pty_env("test-session")["PATH"] == inherited
+
+
+def test_interactive_pty_env_sorts_windows_store_alias_after_the_venv(monkeypatch, tmp_path):
+    """The Store alias stub is not an installed Python: it must end up AFTER the venv."""
+    import os
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    venv_bin = tmp_path / "Scripts"
+    venv_bin.mkdir()
+    (venv_bin / "flow.exe").write_text("")
+    monkeypatch.setattr(sys, "executable", str(venv_bin / "python.exe"))
+    store = tmp_path / "Microsoft" / "WindowsApps"
+    store.mkdir(parents=True)
+    (store / "python.exe").write_text("")
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", os.pathsep.join([str(empty), str(store)]))
+
+    env = _build_interactive_pty_env("test-session")
+
+    assert env["PATH"].split(os.pathsep) == [str(empty), str(venv_bin), str(store)]
+
+
+def test_interactive_pty_env_leaves_path_alone_outside_the_tool_venv(monkeypatch, tmp_path):
+    """A system python (no `flow` next to the interpreter) must not rewrite PATH."""
+    import os
+    import sys
+
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "python"))
+    monkeypatch.setenv("PATH", os.pathsep.join(["/usr/local/bin", "/usr/bin"]))
+
+    env = _build_interactive_pty_env("test-session")
+
+    assert env["PATH"] == os.pathsep.join(["/usr/local/bin", "/usr/bin"])

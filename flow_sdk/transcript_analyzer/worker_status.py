@@ -207,6 +207,7 @@ _IGNORED_TYPES: frozenset[str] = frozenset(
         "agent-name",
         "bridge-session",
         "atis-latch",
+        "cost-state",
     }
 )
 

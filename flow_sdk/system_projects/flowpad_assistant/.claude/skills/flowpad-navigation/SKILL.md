@@ -5,7 +5,8 @@ description: Shows a file, entity or screen to the user in Flowpad with `flow sh
   or moves their browser tab with `flow navigate` when they explicitly ask to be taken
   somewhere. Use whenever the user asks to open, show, display, preview or jump to a
   file path, TypeId or screen — including bare follow-ups such as "open it" or "show
-  it" after creating or discussing a file. Never use the operating system's `open`
+  it" after creating or discussing a file — and to show a code snippet the user can
+  run (`flow show snippet`). Never use the operating system's `open`
   command for this; Flowpad has its own surface. NOT for building the deliverable
   itself (building-deliverables), or creating and indexing records
   (flowpad-assistance).
@@ -56,6 +57,46 @@ flow navigate entity <data.typeid>
 
 `flow record index` is path-scoped and fast; its JSON carries `data.typeid`
 (e.g. `markdown-<uuid>`). Pass it straight through — no search, no guessing.
+
+## A code snippet to see and run
+
+When you and the user are working on a piece of code they should see **and run**,
+show it as a snippet: one code file split by comment markers into regions. Imports
+and setup stay folded away; the snippet view has a Run button with the output below.
+
+```bash
+flow show snippet --lang py --name load-data <<'SNIP'
+# %% flowpad:hidden
+import json
+# %% flowpad:init
+data = {"a": 1}
+# %% flowpad:snippet
+print(json.dumps(data))
+SNIP
+```
+
+- Markers: `# %% flowpad:hidden` (imports), `# %% flowpad:init` (setup),
+  `# %% flowpad:snippet` (what the user sees). Use `//` for js and rs. Without a
+  `flowpad:snippet` marker the command refuses (exit 2).
+- `--lang` is the file extension: `py`, `js`, `rs`, `sh`. With no PATH the code is
+  read from stdin into the OS temp dir; the JSON answer's `path` is that file. To
+  change it on a later turn, edit that file, then run `flow show snippet <path>` again
+  so the view reloads it — the view does not watch the file. An existing file:
+  `flow show snippet <path>`.
+- The file runs top to bottom **as written** — the markers are only comments, so the
+  whole file must be a complete, valid program. A compiled language needs its entry
+  point: in rust, `fn main() { ... }` goes inside the snippet region (bare statements
+  do not compile).
+- Run it yourself exactly as the Run button does, and read the result before you
+  claim it works:
+
+```bash
+flow snippet run <path> --timeout 30   # JSON stdout/stderr; exit = the snippet's own, 124 on timeout
+```
+
+- A run that never ends is killed at its timeout (the Run button's is a preference,
+  30s by default), keeping whatever it printed. Nobody has to stop it by hand; stdin
+  is closed, so `input()` fails instead of waiting.
 
 ## You already have a TypeId
 
@@ -156,6 +197,7 @@ These take a pointer; without one they are an error, not a landing. Get the id f
 | Process | `agentic_process/<id>` | — |
 | Records  *(hub)* | `records/<id>` | hub records |
 | Show | `show/<id>` | — |
+| Ask | `ask/<id>` | — |
 | Skill apps | `apps/<id>` | — |
 | Spec | `spec/<id>` | — |
 | Subgraph | `subgraph/<id>` | — |

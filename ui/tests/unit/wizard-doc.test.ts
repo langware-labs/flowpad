@@ -8,13 +8,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  actionKindOf,
   blankStep,
+  duplicateStepIds,
   issuesByLoc,
+  namesInScope,
   orphanIssues,
   removeIn,
   setIn,
-  setStepAction,
+  setStepKind,
+  shapeFromText,
+  shapeToText,
   type WizardDoc,
 } from '@src/components/assets/editor/wizard/wizard-doc';
 
@@ -23,38 +26,37 @@ const FULL: WizardDoc = {
   name: 'full',
   description: 'has everything',
   enabled: true,
-  version: '2',
-  triggers: [{ on: 'app.ready', fire_once: true }],
+  version: 1,
+  icon: 'Wand2',
+  output: { url: 'string' },
   steps: [
     {
       id: 'one',
       label: 'One',
       description: 'the first',
-      precondition: { commands: { darwin: 'test -f a' }, satisfied_codes: [0, 2], timeout_seconds: 5 },
-      command: { commands: { darwin: 'make a', linux: 'make a' }, timeout_seconds: 30 },
-      verify: { commands: { darwin: 'test -f b' }, timeout_seconds: 7 },
+      kind: 'compute',
+      ref: 'waha-container',
+      args: { API_KEY: 'WAHA_API_KEY', PORT: '3000' },
       on_fail: 'continue',
     },
-    { id: 'two', input: { name: 'token', shape: 'string', label: 'Token' } },
+    { id: 'two', kind: 'wizard', ref: 'region-setup' },
   ],
 };
 
 describe('setIn', () => {
   it('preserves every sibling key at every level', () => {
-    const next = setIn(FULL, ['steps', 0, 'command', 'commands', 'darwin'], 'make it differently');
+    const next = setIn(FULL, ['steps', 0, 'args', 'API_KEY'], 'REGION');
 
     const step = next.steps![0];
-    expect(step.command!.commands!.darwin).toBe('make it differently');
-    // The sibling platform, the sibling timeout, the sibling BLOCKS, and every
+    expect(step.args!.API_KEY).toBe('REGION');
+    // The sibling arg, the sibling fields, the sibling STEP, and every
     // top-level key. A shallow spread of the step drops all but the first.
-    expect(step.command!.commands!.linux).toBe('make a');
-    expect(step.command!.timeout_seconds).toBe(30);
-    expect(step.precondition).toEqual(FULL.steps![0].precondition);
-    expect(step.verify).toEqual(FULL.steps![0].verify);
+    expect(step.args!.PORT).toBe('3000');
+    expect(step.ref).toBe('waha-container');
     expect(step.on_fail).toBe('continue');
     expect(next.steps![1]).toEqual(FULL.steps![1]);
-    expect(next.triggers).toEqual(FULL.triggers);
-    expect(next.version).toBe('2');
+    expect(next.output).toEqual(FULL.output);
+    expect(next.version).toBe(1);
   });
 
   it('does not mutate the document it was given', () => {
@@ -64,20 +66,20 @@ describe('setIn', () => {
   });
 
   it('creates missing intermediate objects', () => {
-    const next = setIn({ steps: [{ id: 'a' }] } as WizardDoc, ['steps', 0, 'verify', 'commands', 'linux'], 'true');
-    expect(next.steps![0].verify!.commands!.linux).toBe('true');
+    const next = setIn({ steps: [{ id: 'a' }] } as WizardDoc, ['steps', 0, 'args', 'X'], 'y');
+    expect(next.steps![0].args!.X).toBe('y');
   });
 });
 
 describe('removeIn', () => {
   it('deletes the key rather than writing undefined', () => {
-    const next = removeIn(FULL, ['steps', 0, 'command', 'commands', 'darwin']);
-    const commands = next.steps![0].command!.commands!;
+    const next = removeIn(FULL, ['steps', 0, 'args', 'API_KEY']);
+    const args = next.steps![0].args!;
     // `in`, not a truthiness check: an `undefined` VALUE would survive
     // JSON.stringify as a dropped key here but as `null` inside an array, and
     // `null` fails the backend's optional-field validation.
-    expect('darwin' in commands).toBe(false);
-    expect(commands.linux).toBe('make a');
+    expect('API_KEY' in args).toBe(false);
+    expect(args.PORT).toBe('3000');
   });
 
   it('splices an array element out instead of leaving a hole', () => {
@@ -88,34 +90,28 @@ describe('removeIn', () => {
   });
 });
 
-describe('setStepAction', () => {
-  it('never yields a step with zero or two actions', () => {
-    for (const kind of ['command', 'process', 'input'] as const) {
-      const next = setStepAction(FULL, 0, kind);
-      const step = next.steps![0];
-      const present = (['command', 'process', 'input'] as const).filter((k) => step[k] != null);
-      expect(present).toEqual([kind]);
+describe('setStepKind', () => {
+  it('clears the ref it invalidates, because the same string means something else', () => {
+    const step = setStepKind(FULL, 0, 'wizard').steps![0];
+    expect(step.kind).toBe('wizard');
+    expect(step.ref).toBe('');
+    // The args belonged to the old callee.
+    expect(step.args).toEqual({});
+  });
+
+  it('seeds an args map for the kinds that take one', () => {
+    for (const kind of ['compute', 'wizard'] as const) {
+      const step = setStepKind(FULL, 1, kind).steps![1];
+      expect(step.kind).toBe(kind);
+      expect(step.args).toEqual({});
     }
   });
 
-  it('keeps the parts of the step that are not the action', () => {
-    const step = setStepAction(FULL, 0, 'input').steps![0];
-    expect(step.precondition).toEqual(FULL.steps![0].precondition);
-    expect(step.verify).toEqual(FULL.steps![0].verify);
+  it('keeps the parts of the step that are not the invocation', () => {
+    const step = setStepKind(FULL, 0, 'wizard').steps![0];
     expect(step.label).toBe('One');
-  });
-
-  it('seeds the new action so the step is valid on arrival', () => {
-    expect(setStepAction(FULL, 1, 'command').steps![1].command).toEqual({ commands: {} });
-    expect(setStepAction(FULL, 0, 'input').steps![0].input).toEqual({ name: '', shape: 'string' });
-  });
-});
-
-describe('actionKindOf', () => {
-  it('names the action a step carries', () => {
-    expect(actionKindOf(FULL.steps![0])).toBe('command');
-    expect(actionKindOf(FULL.steps![1])).toBe('input');
-    expect(actionKindOf({ id: 'broken' })).toBeUndefined();
+    expect(step.description).toBe('the first');
+    expect(step.on_fail).toBe('continue');
   });
 });
 
@@ -123,27 +119,61 @@ describe('blankStep', () => {
   it('does not collide with an id already in the document', () => {
     const step = blankStep([{ id: 'step-1' }, { id: 'step-2' }, { id: 'x' }]);
     expect(['step-1', 'step-2', 'x']).not.toContain(step.id);
-    expect(actionKindOf(step)).toBe('command');
+    expect(step.kind).toBe('compute');
+  });
+});
+
+describe('duplicateStepIds', () => {
+  it('names the ids two steps share, because their outcomes collide on it', () => {
+    const twice = duplicateStepIds([{ id: 'a' }, { id: 'b' }, { id: 'a' }]);
+    expect([...twice]).toEqual(['a']);
+    expect(duplicateStepIds(FULL.steps).size).toBe(0);
+  });
+});
+
+describe('namesInScope', () => {
+  it('offers the steps BEFORE this one, never after', () => {
+    expect(namesInScope(FULL, 0)).toEqual([]);
+    expect(namesInScope(FULL, 1)).toEqual(['one']);
+  });
+});
+
+describe('the authoring-form shape, as one line', () => {
+  it('keeps "string" typeable as three plain words', () => {
+    expect(shapeToText('string')).toBe('string');
+    expect(shapeFromText('string')).toBe('string');
+    expect(shapeFromText('  ')).toBeUndefined();
+  });
+
+  it('round-trips a structured shape through JSON', () => {
+    expect(shapeFromText(shapeToText({ url: 'string' }))).toEqual({ url: 'string' });
+    expect(shapeFromText('["string"]')).toEqual(['string']);
+  });
+
+  it('keeps unparseable text rather than losing what was typed', () => {
+    // The backend is the validator; refusing to record the keystrokes would
+    // throw them away with no error anywhere.
+    expect(shapeFromText('{not json')).toBe('{not json');
   });
 });
 
 describe('issuesByLoc', () => {
   it('indexes by the joined loc so a field finds its own problems', () => {
     const map = issuesByLoc([
-      { loc: ['steps', 0, 'command', 'commands'], msg: 'no command for this platform' },
-      { loc: ['steps', 0, 'command', 'commands'], msg: 'second problem, same field' },
+      { loc: ['steps', 0, 'args'], msg: 'no such parameter' },
+      { loc: ['steps', 0, 'args'], msg: 'second problem, same field' },
       { loc: [], msg: 'about the document' },
     ]);
-    expect(map.get('steps.0.command.commands')).toHaveLength(2);
+    expect(map.get('steps.0.args')).toHaveLength(2);
     expect(map.get('')).toHaveLength(1);
   });
 
   it('reports issues no field rendered, rather than dropping them', () => {
     const issues = [
-      { loc: ['steps', 0, 'command', 'commands'], msg: 'rendered' },
-      { loc: ['steps', 9, 'process', 'agent'], msg: 'nothing draws this' },
+      { loc: ['steps', 0, 'args'], msg: 'rendered' },
+      { loc: ['steps', 9, 'ref'], msg: 'nothing draws this' },
     ];
-    const orphans = orphanIssues(issues, new Set(['steps.0.command.commands']));
+    const orphans = orphanIssues(issues, new Set(['steps.0.args']));
     expect(orphans.map((i) => i.msg)).toEqual(['nothing draws this']);
   });
 });

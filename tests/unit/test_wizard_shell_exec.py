@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.core.wizard.exec import run_shell
+from flow_sdk.core.compute.exec import run_shell
 
 pytestmark = [
     pytest.mark.timeout(5),

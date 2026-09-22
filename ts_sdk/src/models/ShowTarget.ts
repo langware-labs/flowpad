@@ -16,7 +16,7 @@
  */
 export interface ShowTarget {
   /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
-  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell' | string;
+  kind?: 'entity' | 'vfs' | 'app' | 'shell' | string;
   /** entity: canonical `<type>-<id>` string. */
   typeid?: string;
   type?: string;
@@ -28,16 +28,16 @@ export interface ShowTarget {
   /** Source location carried through to the existing file/asset editors. */
   line?: number;
   column?: number;
-  /** webapp: the dev-server port. */
-  port?: number | string;
-  /** app: the Artifact IS the address — the runtime below is derived from its
-   *  companions, never pinned into the target (`_app_payload`). */
+  /** app: the ServiceEndpoint the display loads — its dev server (`dev`) or the
+   *  folder we serve (`served`). Absent only while nothing serves the app. */
+  endpoint_id?: string;
+  /** app: the Artifact, when the app was shown by it — the endpoint above is
+   *  derived from its live endpoints, never pinned into the target (`_app_payload`). */
   artifact_id?: string;
-  /** app: the delivery row. Sent whenever a MicroApp exists, and the only id a
-   *  webapp ASSET has — it has no Artifact (`_asset_app_payload`). */
+  /** app: the webapp DEFINITION, when the app was shown by its asset (`_asset_app_payload`). */
   micro_app_id?: string;
-  /** app: which plane is live right now. `dev` = a Deployment's port is up,
-   *  `served` = we serve the built MicroApp, `unbuilt` = neither. */
+  /** app: how the endpoint serves. `dev` = a server on a port (loaded at its own
+   *  origin), `served` = a folder we serve, `unbuilt` = nothing serves it yet. */
   runtime?: 'dev' | 'served' | 'unbuilt';
   /** Display label the backend resolved for the target (artifact/app/entity
    *  name, falling back to its title). */

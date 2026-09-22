@@ -21,6 +21,8 @@ Error contract (agents parse these):
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -190,3 +192,39 @@ def show_app_cmd(
     if value.startswith("artifact-"):
         value = value[len("artifact-") :]
     _post_show(process, {"artifact_id": value})
+
+
+@show_app.command(
+    "snippet",
+    help=(
+        "Show a code snippet: regions marked '# %% flowpad:hidden|init|snippet' "
+        "('//' for js/rs), init/imports folded away, Run with output below. "
+        "PATH shows an existing file; without PATH the code is read from stdin "
+        "into the OS temp dir. The answer's 'path' is the file to edit later."
+    ),
+)
+def show_snippet(
+    path: Annotated[Optional[str], typer.Argument(help="Existing snippet file. Omit to read the code from stdin.")] = None,
+    lang: Annotated[str, typer.Option("--lang", help="File extension for stdin code: py, js, rs, sh.")] = "py",
+    name: Annotated[Optional[str], typer.Option("--name", help="Temp file name without extension (default: a timestamp).")] = None,
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
+) -> None:
+    from flow_sdk.core.snippet import SnippetDoc, write_temp_snippet  # noqa: PLC0415
+
+    if path is None:
+        code = sys.stdin.read()
+        if not code.strip():
+            _fail(EXIT_INVALID_ARG, "EMPTY_SNIPPET", "No PATH and nothing on stdin")
+    else:
+        target = Path(_caller_abs_path(path))
+        if not target.is_file():
+            _fail(EXIT_ENTITY_NOT_FOUND, "NOT_FOUND", f"No such file: {target}")
+        code = target.read_bytes().decode("utf-8", errors="replace")
+    # Refused HERE rather than shown as a plain file: an agent that forgot the
+    # markers must hear it, not have the user find an ordinary editor.
+    if SnippetDoc.parse(code) is None:
+        _fail(EXIT_INVALID_ARG, "NOT_A_SNIPPET", "No '%% flowpad:snippet' marker line (e.g. '# %% flowpad:snippet', '//' for js/rs)")
+    if path is None:
+        path = str(write_temp_snippet(code, lang, name))
+    _post_show(process, {"path": _caller_abs_path(path)})
+

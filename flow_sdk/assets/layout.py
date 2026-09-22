@@ -128,6 +128,27 @@ class Folder:
 Shape = File | Folder
 
 
+def shape_from_spec(spec: type) -> Shape | None:
+    """Project an asset spec's filesystem contract into path-classification helpers."""
+    main = getattr(spec, "main_file", None)
+    ext = getattr(spec, "file_ext", None)
+    names = getattr(spec, "file_names", ())
+    also = getattr(spec, "file_extensions", ())
+    if main is not None:
+        if not main or PurePath(main).name != main or main in (".", "..") or "\\" in main:
+            raise ValueError(f"{spec.__name__}: main_file must be one filename")
+        if ext is not None or names or also:
+            raise ValueError(f"{spec.__name__}: main_file conflicts with standalone-file declarations")
+        return Folder(main=main)
+    if ext is not None:
+        if not ext:
+            raise ValueError(f"{spec.__name__}: file_ext must be nonempty")
+        return File(ext=ext, names=names, also=also)
+    if names or also:
+        raise ValueError(f"{spec.__name__}: standalone-file names/extensions require file_ext")
+    return None
+
+
 def shape_from_dict(data: dict | None) -> Shape | None:
     """Inverse of ``File.to_dict`` / ``Folder.to_dict``; None for no data."""
     if not data:

@@ -68,6 +68,14 @@ export interface ShareSource {
    *  pushed Git worktree with a usable origin; the toggle enables only when it
    *  does, and packing revalidates (never silently falls back to copy). */
   gitPreflightRef?: TypeId;
+  /** The entity whose MEMBERSHIP the recipients must be granted for this share
+   *  to mean anything. A Project is the case: the conversation is only the
+   *  delivery channel, and without a project role edge the hub never pushes the
+   *  row, so the recipient gets a message and no project to install. The dialog
+   *  grants this BEFORE sending, through the entity's own `share(recipients)` —
+   *  the same call the team Share panel makes — so the recipient receives a
+   *  project invitation whose accept materializes and clones it. */
+  accessGrantRef?: TypeId;
   prepare(opts: SharePrepOptions): Promise<SharePrepPayload>;
 }
 
@@ -103,6 +111,38 @@ export function genericEntityShareSource(
     prepare: resolveOnce(() =>
       Promise.resolve({
         assetReferences: [ref],
+        sharedContextEntities: [ref],
+      }),
+    ),
+  };
+}
+
+/**
+ * Project share. Two things have to happen and only one of them is a message:
+ * the recipient needs a ROLE on the project (that is what makes the hub push
+ * the row to them), and the thread carries the note that it happened.
+ *
+ * Unlike an asset, a project is NOT carried as a TYPE_ID attachment: the bundle
+ * has no family that can pack one (`_pack_attachment_entry` has no project
+ * case), so an asset reference would ride as a permanently-missing attachment
+ * and render as a chip that resolves to nothing. It travels as shared context,
+ * and the files travel by Git origin as they always have.
+ */
+export function projectShareSource(
+  typeId: TypeId,
+  opts: { label?: string } = {},
+): ShareSource {
+  const ref = typeId.toString();
+  return {
+    label: opts.label ?? ref,
+    typeLabel: typeId.type,
+    defaultTitle: opts.label,
+    bookmarkable: true,
+    gitPreflightRef: typeId,
+    accessGrantRef: typeId,
+    prepare: resolveOnce(() =>
+      Promise.resolve({
+        assetReferences: [],
         sharedContextEntities: [ref],
       }),
     ),

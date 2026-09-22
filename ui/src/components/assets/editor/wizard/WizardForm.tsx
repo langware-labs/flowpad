@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ExternalLink, Loader2, Plus, Zap } from 'lucide-react';
-import { Agent, QueryRequest, Wizard, type WizardIssue, type WizardValidation } from '@sdk';
+import { QueryRequest, Wizard, type WizardIssue, type WizardValidation } from '@sdk';
 
 import { Button } from '@src/components/ui/button';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -9,15 +9,19 @@ import { useAssetTriggers } from '@src/hooks/flow-hooks/useAssetTriggers';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 
-import { WizardStepForm, CommitField } from './WizardStepForm';
+import { CommitField, IssueList, WizardStepForm } from './WizardStepForm';
 import {
   blankStep,
+  duplicateStepIds,
   issuesByLoc,
+  namesInScope,
   orphanIssues,
   removeIn,
   setIn,
-  setStepAction,
-  type ActionKind,
+  setStepKind,
+  shapeFromText,
+  shapeToText,
+  type StepKind,
   type WizardDoc,
 } from './wizard-doc';
 
@@ -51,15 +55,22 @@ export function WizardForm({
   const [expanded, setExpanded] = useState<string | null>(null);
   const steps = doc.steps ?? [];
 
-  // Installed agents, to OFFER in the agentic step's picker. A failure here
+  // Installed wizards, to OFFER as the `ref` of a `wizard` step. A failure here
   // costs the datalist and nothing else — the field still accepts any name.
-  const { data: agentRows } = useEntitiesQuery<Agent>(
-    useMemo(() => new QueryRequest({ type: Agent.type, name: 'wizard editor agents' }), []),
+  // There is no such roster for an op: `compute` refs are typed, and an empty
+  // list is exactly how `SuggestField` says "I cannot check this".
+  const { data: wizardRows } = useEntitiesQuery<Wizard>(
+    useMemo(() => new QueryRequest({ type: Wizard.type, name: 'wizard editor wizards' }), []),
   );
-  const agents = useMemo(
-    () => (agentRows ?? []).map((a: Agent) => a.name ?? '').filter(Boolean).sort(),
-    [agentRows],
+  const wizardNames = useMemo(
+    () =>
+      (wizardRows ?? [])
+        .map((row: Wizard) => row.name ?? '')
+        .filter((name: string) => Boolean(name) && name !== wizard.name)
+        .sort(),
+    [wizardRows, wizard.name],
   );
+  const duplicates = useMemo(() => duplicateStepIds(steps), [steps]);
 
   const byLoc = issuesByLoc(validation?.issues);
   const rendered = new Set<string>();
@@ -108,6 +119,27 @@ export function WizardForm({
         />
       </label>
 
+      <label className="grid grid-cols-[5.5rem_1fr] items-center gap-2">
+        <span className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Trans>Returns</Trans>
+        </span>
+        <CommitField
+          mono
+          readOnly={readOnly}
+          value={shapeToText(doc.output)}
+          testId="wizard-doc-output"
+          placeholder={t`string, or a JSON shape — empty if it returns nothing`}
+          onCommit={(v) => {
+            const shape = shapeFromText(v);
+            // `null`, not a removal: `output` is declared optional with a null
+            // default, and dropping the key entirely would read as "never had
+            // one" to a document that deliberately says it returns nothing.
+            set(['output'], shape ?? null);
+          }}
+        />
+      </label>
+      <IssueList issues={issuesAt(['output'])} />
+
       <ul className="flex flex-col gap-2">
         {steps.map((step, index) => (
           <WizardStepForm
@@ -119,9 +151,11 @@ export function WizardForm({
             onToggle={() => setExpanded(expanded === step.id ? null : step.id)}
             onSet={set}
             onRemove={remove}
-            agents={agents}
-            onSetAction={(kind: ActionKind) =>
-              void commit((previous) => setStepAction(previous, index, kind))
+            refOptions={step.kind === 'wizard' ? wizardNames : []}
+            scope={namesInScope(doc, index)}
+            duplicateId={duplicates.has(step.id)}
+            onSetKind={(kind: StepKind) =>
+              void commit((previous) => setStepKind(previous, index, kind))
             }
             onDelete={() => remove(['steps', index])}
             issuesAt={issuesAt}

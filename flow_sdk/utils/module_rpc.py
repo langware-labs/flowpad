@@ -51,7 +51,7 @@ class ModuleFailure(Exception):
     a subprocess that failed silently is the worst thing to debug.
     """
 
-    def __init__(self, kind: str, message: str, *, logs: str = "", returncode: int = 0):
+    def __init__(self, kind: str, message: str, *, logs: str = "", returncode: Optional[int] = 0):
         super().__init__(message)
         self.kind = kind
         self.logs = logs
@@ -66,7 +66,7 @@ class ModuleResult:
     logs: str = ""
 
 
-def _classify(returncode: int) -> str:
+def _classify(returncode: Optional[int]) -> str:
     return "config" if returncode == EXIT_CONFIG else "transient"
 
 

@@ -4,7 +4,7 @@
  * A data-source definition ships this as a webapp asset nested inside itself
  * (`<definition>/agentic-assets/webapp/editor/`), so the definition's editor is
  * an ordinary child asset: discovered by the indexer, addressed at
- * `/dock/app/micro_app-<id>`, served by `MicroApp.view`, and shown in the
+ * `/dock/app/micro_app-<id>`, served by `WebApp.view`, and shown in the
  * address bar under its parent.
  *
  * The markup, the styles and the behaviour all live here so that each

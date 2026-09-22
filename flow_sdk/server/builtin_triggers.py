@@ -327,33 +327,30 @@ async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> N
 
     from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
 
-    try:
-        result = await execute_wizard(
-            str(wizard.id) if wizard else "unknown", spec, asset_ref,
-            trusted=True,
-            # INSTANCE scope (None), deliberately — not the wizard entity.
-            #
-            # `_send` routes by subject entity: one naming an entity reaches only
-            # that entity's WATCHERS, while an unscoped one belongs to the box and
-            # is broadcast to every connection. A trigger-fired run is unattended
-            # by definition — it fires at boot, before anyone has opened the wizard
-            # and usually before a browser exists at all — so entity scope
-            # addressed a complete, correct progress tree to an audience of zero.
-            # Verified on a clean container: the tree was right at its scoped
-            # address and the footer chip's unscoped replay returned zero rows.
-            #
-            # Setting up the machine at startup IS box-level work, the same shape
-            # as an index walk, so it belongs in the same chip. The UI path keeps
-            # entity scope, because there the viewer IS watching. Which of the two
-            # is used changes only WHO SEES the run — never who may start one:
-            # `execute_wizard` holds the wizard's own slot for that.
-            subject_entity=None,
-        )
-    except RuntimeError as exc:
-        _log.info("wizard trigger %r: %s", trigger.uname, exc)
-        return
+    result = await execute_wizard(
+        str(wizard.id) if wizard else "unknown", spec, asset_ref,
+        trusted=True,
+        # INSTANCE scope (None), deliberately — not the wizard entity.
+        #
+        # `_send` routes by subject entity: one naming an entity reaches only
+        # that entity's WATCHERS, while an unscoped one belongs to the box and
+        # is broadcast to every connection. A trigger-fired run is unattended
+        # by definition — it fires at boot, before anyone has opened the wizard
+        # and usually before a browser exists at all — so entity scope
+        # addressed a complete, correct progress tree to an audience of zero.
+        # Verified on a clean container: the tree was right at its scoped
+        # address and the footer chip's unscoped replay returned zero rows.
+        #
+        # Setting up the machine at startup IS box-level work, the same shape
+        # as an index walk, so it belongs in the same chip. The UI path keeps
+        # entity scope, because there the viewer IS watching. Which of the two
+        # is used changes only WHO SEES the run — never who may start one:
+        # `execute_wizard` holds the wizard's own slot for that.
+        subject_entity=None,
+    )
+    # An answer, never a raise — a wizard already running is `NOT_YET`, ran=False.
     _log.info("wizard trigger %r: %s — %s", trigger.uname,
-              "ok" if result.ok else "failed", result.message)
+              "ok" if result.ok else "not done", result.detail)
 
 
 async def reconcile_wizard_triggers() -> None:

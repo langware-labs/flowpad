@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "name": "git-on-path",
+  "label": "git",
+  "description": "git is on the PATH.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "linux": "apt-get update && apt-get install -y git"
+    }
+  },
+  "completion_check": {
+    "commands": {
+      "linux": "command -v git"
+    }
+  }
+}

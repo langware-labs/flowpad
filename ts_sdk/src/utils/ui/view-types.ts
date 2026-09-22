@@ -75,6 +75,9 @@ export enum ViewType {
   SKILLS = 'skills', // Claude Code skills editor
   AI_CONFIG = 'ai-config', // AI Configuration (LLM APIs, CLIs)
   SHOW = 'show', // MCP UI display dock pointer
+  // A question a ComputeOp put to a person. Drawn on its own in `win/`,
+  // where the routed view IS the window — the pointer is the question id.
+  ASK = 'ask',
   APPS = 'apps', // Skill UI apps - /dock/apps/<uname>/<router> mounts AppHost
   GRAPH = 'graph', // Built-in dep-graph viewer - /dock/graph/<type>/<id>
   WORLDVIEW = 'worldview', // Shared projections - /dock[/hub]/worldview/<world|organization|deployment>

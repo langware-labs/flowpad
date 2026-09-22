@@ -1,6 +1,5 @@
 """Type metadata for CLAUDE_MD."""
 from flow_sdk.assets.identity import frontmatter_identity
-from flow_sdk.assets.layout import File
 from flow_sdk.assets.types.markdown import derive_claude_md
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.markdown_spec import ClaudeMdSpec
@@ -16,7 +15,6 @@ CLAUDE_MD = TypeInfo(
     # (``claude_md.py``): the names sit at two depths and which spellings each
     # root reads is not a mount list (``<project>/.claude/CLAUDE.local.md`` is
     # deliberately not one).
-    shape=File(ext=".md", names=("CLAUDE.md", "CLAUDE.local.md")),
     editor="markdown",
     icon="BookOpen",
     api_visible=True,

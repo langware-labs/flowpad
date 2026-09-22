@@ -11,7 +11,6 @@ The metadata model is derived from the type's ``asset_spec`` (``DataDriverSpec``
 ∪ the ``Persist.TRUE`` ``runtime`` the extractor derives from the folder.
 """
 from flow_sdk.assets.identity import derived_identity
-from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.types.data_driver import data_driver_identity_key, derive_data_driver
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.data_driver_spec import (
@@ -30,7 +29,6 @@ DATA_DRIVER = TypeInfo(
     creatable=False,
     asset_class="repo",
     family="data_driver",
-    shape=Folder(main="data_driver.json"),
     retired_files=tuple((name, RETIRED_RUNTIME_UPGRADE) for name in RETIRED_RUNTIME_FILES),
     asset_spec=DataDriverSpec,
     fts_content=("name", "description"),

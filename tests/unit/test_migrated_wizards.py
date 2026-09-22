@@ -72,7 +72,7 @@ def test_a_document_cannot_be_both_a_conversation_and_a_sequence():
         WizardSpec.model_validate({
             "name": "both",
             "agent": "someone",
-            "steps": [{"id": "s", "command": {"commands": {"linux": "true"}}}],
+            "steps": [{"id": "s", "kind": "compute", "ref": "an-op"}],
         })
     with pytest.raises(Exception, match="neither an agent nor any steps"):
         WizardSpec.model_validate({"name": "empty"})

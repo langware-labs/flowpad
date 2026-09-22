@@ -72,7 +72,7 @@ def _catalogue(monkeypatch, *, connected: bool, scopes: tuple[str, ...]) -> list
     async def connect(provider, presenter, *, reauthorize=False):
         reauthorized.append(reauthorize)
         rows[provider] = ConnectionSpec(provider=provider, display_name="Google", connected=True, scopes=(DRIVE_SCOPE,))
-        return ConnectionResult(rows[provider], ConnectionTestResult(ok=True, identity="me@example.com"))
+        return ConnectionResult(spec=rows[provider], test=ConnectionTestResult(ok=True, identity="me@example.com"))
 
     async def token_for(provider, name=None):
         return f"token-for-{provider}"

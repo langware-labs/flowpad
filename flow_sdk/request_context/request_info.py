@@ -154,43 +154,6 @@ class RequestInfo:
     def someone_typeid(self) -> TypeId | None:
         return self.user.typeid if self.user else self.visitor_typeid
 
-    def parse_external_domain_micro_app_request(self, micro_app_id: str):
-        self._lock = True
-        self.target_entity_typeid = TypeId(type=BuiltinEntityType.MICRO_APP.value, id=micro_app_id)
-        self.action = (
-            default_service_config.micro_app_domain_config.view_action
-            if default_service_config.micro_app_domain_config
-            else None
-        )
-        self.sub_path = (self.request.url.path if self.request.url.path != "/" else None) if self.request else None
-
-    def is_micro_app_request(self) -> bool:
-        if not self.request:
-            return False
-        if not default_service_config.micro_app_domain_config:
-            return False
-        host = self.request.headers.get("x-forwarded-host") or self.request.headers.get("host") or ""
-        if not host:
-            return False
-        is_api_prefix: bool = self.request.url.path.startswith(urls_service.api.api_prefix)
-        is_app_host: bool = self.request.url.hostname == urls_service.app.app_hostname
-        is_micro_app_host: bool = default_service_config.micro_app_domain_config.is_micro_app_host(host)
-
-        return bool(not (is_api_prefix or is_app_host) or is_micro_app_host)
-
-    def parse_micro_app_request(self):
-        if not self.request:
-            return
-        if not default_service_config.micro_app_domain_config:
-            return
-        _micro_app_id = default_service_config.micro_app_domain_config.get_micro_app_id_from_host(
-            self.request.headers.get("host")
-        )
-        if not _micro_app_id:
-            return
-        self.target_entity_typeid = TypeId(type=BuiltinEntityType.MICRO_APP.value, id=_micro_app_id)
-        self.action = default_service_config.micro_app_domain_config.view_action
-
     async def parse_from_request(self, request: Request):
         if self._lock:
             raise ValueError("RequestInfo is locked and cannot be modified")
@@ -203,9 +166,6 @@ class RequestInfo:
             default_service_config.visitor_session_cookie_name
         )
         self.visitor_typeid = TypeId(type=BuiltinEntityType.VISITOR.value, id=visitor_id) if visitor_id else None
-        if self.is_micro_app_request():
-            self.parse_micro_app_request()
-            return
         await self._parse_request_parameters(request)
         await self.parse_api_path(request.url.path)
         if not self.action:

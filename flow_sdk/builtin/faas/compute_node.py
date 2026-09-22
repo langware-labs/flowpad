@@ -1646,10 +1646,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     # -- ops actions -------------------------------------------------------------
 
-    @action.all(action_name="get-host")
-    def get_host_action(self, port: int, redirect: bool = True):
-        return self._desktop_get_host(port, redirect)
-
     @action.get(action_name="connections")
     async def connections_action(self, project_id: str = "", include_unconnected: bool = False) -> "ApiResponse":
         """Every connection this box has, in one read.

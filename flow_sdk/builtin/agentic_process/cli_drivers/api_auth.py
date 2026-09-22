@@ -394,7 +394,7 @@ def endpoint_invoke_url(typeid) -> str | None:
         # A well-formed typeid of the wrong type would otherwise build a plausible-looking
         # invoke URL for something that is not a budget at all.
         return None
-    return f"{hub_origin()}{hub_invoke_path(parsed)}"
+    return f"{hub_origin(str(parsed))}{hub_invoke_path(parsed)}"
 
 
 async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
@@ -471,15 +471,16 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     if provider not in spec.supported_providers:
         raise WorkerSpawnError(worker_type, f"{worker_type} cannot use provider {provider.value!r}")
 
-    # For FLOWPAD the endpoint and the key are one question: the "key" IS the hub login,
-    # and what makes it usable is having an endpoint to point it at.
+    # For FLOWPAD the endpoint and the key are one question: the "key" IS the hub login (or,
+    # for a PUBLIC endpoint on a box with no login, the placeholder the hub ignores), and what
+    # makes it usable is having an endpoint to point it at. Asked of the endpoint itself so a
+    # spawn and an in-process ``endpoint.client()`` can never disagree about what signs a call.
     hub_invoke_url = None
     if is_hub:
-        from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
         from flow_sdk.instance_settings.llm_endpoint import hub_llm_endpoint_invoke_url  # noqa: PLC0415
 
         hub_invoke_url = endpoint_invoke_url(source.endpoint_typeid) or hub_llm_endpoint_invoke_url()
-        key = resolve_hub_api_key() if hub_invoke_url else None
+        key = endpoint.resolve_api_key() if hub_invoke_url else None
         # ``tier_models`` are OpenRouter slugs, and the wire quirks around them (claude's
         # blank ANTHROPIC_API_KEY, codex's ``wire_api = responses``) were proven against
         # OpenRouter's protocol endpoints. A hub endpoint whose ROOT is a direct vendor is

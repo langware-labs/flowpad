@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from flow_sdk.fs_store.serializer.fields import FieldKind, field_kinds
-from flow_sdk.schema.data_spec import Body, FrontMatter
+from flow_sdk.schema.data_spec import FrontMatter
+from flow_sdk.schema.data_spec.io.native import Text
 
 
 class SubAgentSpec(FrontMatter):
@@ -17,6 +18,8 @@ class SubAgentSpec(FrontMatter):
     ``kind`` is flowpad's, not Claude's (excluded from the ``--agents`` CLI
     JSON by ``subagent_to_cli_json``); it still rides the frontmatter.
     """
+
+    file_ext: ClassVar[str | None] = ".md"
 
     name: str | None = None
     description: str | None = None
@@ -33,7 +36,7 @@ class SubAgentSpec(FrontMatter):
     memory: Any = None
     background: Any = None
     isolation: Any = None
-    prompt: Body = ""
+    prompt: Text = ""
 
 
 #: The Claude ``--agents`` spec keys — every header scalar except ``name``

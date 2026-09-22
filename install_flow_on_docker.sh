@@ -7,11 +7,11 @@
 #   docker exec <container> bash /tmp/install_flow_on_docker.sh
 # (`flow connect --docker <container>` does all three for you.)
 #
-# Requirements: python3 >= 3.10, pip.
+# Requirements: python3 >= 3.11, pip.
 set -euo pipefail
 
 MIN_PYTHON_MAJOR=3
-MIN_PYTHON_MINOR=10
+MIN_PYTHON_MINOR=11
 
 # --- Verify Python -----------------------------------------------------------
 

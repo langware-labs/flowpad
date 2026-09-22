@@ -35,6 +35,7 @@
     "skills",
     "ai-config",
     "show",
+    "ask",
     "apps",
     "graph",
     "worldview",
@@ -669,6 +670,14 @@
       "scope_keyed": false,
       "folds_sub_pointer": false,
       "chrome": "workspace"
+    },
+    "ask": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "fullbleed"
     }
   },
   "tab_identity_cases": [

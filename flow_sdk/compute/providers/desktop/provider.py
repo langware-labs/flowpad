@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -15,6 +16,7 @@ import threading
 import time
 import uuid
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
 
 if TYPE_CHECKING:
@@ -109,9 +111,49 @@ def _build_interactive_pty_env(
         env["COLORTERM"] = "truecolor"
     env["FLOWPAD_PTY_SESSION_ID"] = session_id
 
+    # Fallback Python for the in-app terminal: when the machine has no real
+    # `python` on PATH, resolve it to THIS backend's venv (the uv-managed
+    # interpreter). An installed Python is left in charge. On Windows the Store
+    # "App Execution Alias" stub (…\Microsoft\WindowsApps\python.exe, which just
+    # opens the Microsoft Store) does not count as installed and is sorted last.
+    fallback = _python_fallback_path(env.get("PATH"))
+    if fallback is not None:
+        env["PATH"] = fallback
+
     if extra_env:
         env.update(extra_env)
     return env
+
+
+def _is_store_alias_dir(entry: str) -> bool:
+    """Windows "App Execution Alias" dir — its python.exe opens the Microsoft Store."""
+    return sys.platform == "win32" and bool(re.search(r"[\\/]Microsoft[\\/]WindowsApps[\\/]?$", entry, re.I))
+
+
+def _python_fallback_path(existing_path: str | None) -> str | None:
+    """``existing_path`` with this venv's bin dir added as the Python FALLBACK.
+
+    Returns None (leave PATH alone) when we are not running from the flowpad
+    tool venv (no ``flow`` next to ``sys.executable``) or when a real
+    ``python``/``python3`` already resolves on ``existing_path``. Otherwise the
+    venv dir is placed after every real entry and before any Windows Store
+    alias dirs, so an installed Python keeps winning, ours fills the gap, and
+    the Store stub never does. Idempotent.
+    """
+    bin_dir = Path(sys.executable).parent
+    exe = "flow.exe" if sys.platform == "win32" else "flow"
+    if not (bin_dir / exe).exists():
+        return None
+    entries = [e for e in (existing_path or "").split(os.pathsep) if e]
+    if str(bin_dir) in entries:
+        return existing_path
+    for name in ("python", "python3"):
+        found = shutil.which(name, path=existing_path)
+        if found and not _is_store_alias_dir(str(Path(found).parent)):
+            return existing_path  # a real Python is installed — leave it in charge
+    real = [e for e in entries if not _is_store_alias_dir(e)]
+    store = [e for e in entries if _is_store_alias_dir(e)]
+    return os.pathsep.join([*real, str(bin_dir), *store])
 
 
 def find_command(command: str, path: str | None = None) -> str | None:

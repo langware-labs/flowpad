@@ -16,7 +16,6 @@ read-only sources we cannot write into, which is the sibling MCP_SERVER scan.
 from flow_sdk.assets.identity import (
     folder_json_identity,
 )
-from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.process_projection import _mcp as project_process_asset
 from flow_sdk.assets.types.scaffolds import scaffold_mcp
 from flow_sdk.fs_store.schema_registry import TypeInfo
@@ -38,7 +37,6 @@ MCP = TypeInfo(
     index_fields=["command", "url", "transport"],
     asset_class="repo",
     family="mcp",
-    shape=Folder(main="mcp.json"),
     editor="mcp",
     asset_spec=McpSpec,
     identity_carrier=folder_json_identity(),
