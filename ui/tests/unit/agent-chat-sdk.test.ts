@@ -50,6 +50,7 @@ describe('AgentChat', () => {
     for await (const event of new AgentChat(ENDPOINT).send('hi', { conversationId: 'c-0' })) events.push(event);
 
     expect(events).toEqual([
+      { type: 'conversation', conversationId: 'c-1' },
       { type: 'tool', name: 'Read' },
       { type: 'text', text: 'hello' },
       { type: 'done', conversationId: 'c-1' },
