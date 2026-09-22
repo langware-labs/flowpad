@@ -1,0 +1,61 @@
+/**
+ * What any call in the compute system answers — the TS mirror of
+ * `flow_sdk/schema/data_spec/returned_value_spec.py`.
+ *
+ * One shape for a ComputeOp, a wizard, a command and an agent turn. A NESTED
+ * answer (a wizard step's, a check's) carries `spec_kind` on the wire, so a
+ * reader can tell a `CliResult` from a `PromptResult` without knowing what the
+ * step called.
+ */
+
+/** Why a call ended. The values ARE `flow op`'s exit codes (2 is absent on purpose). */
+export const ExitCode = {
+  OK: 0,
+  NOT_YET: 1,
+  NOT_APPLICABLE: 3,
+  NOT_FOUND: 4,
+  REFUSED: 7,
+} as const;
+export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
+
+export interface ReturnedValue {
+  /** On a NESTED answer: `compute.returned`, `compute.returned.cli`, `.prompt`, `.ask`, `.wizard`. */
+  spec_kind?: string;
+  exit_code: ExitCode;
+  value?: unknown;
+  /** One sentence for a person. */
+  detail?: string;
+  /** False when nothing executed: the goal already held, or it never started,
+   *  was busy, or was refused. */
+  ran?: boolean;
+  /** The wait ended before the work did — it may still be running. */
+  timed_out?: boolean;
+  duration_s?: number;
+  /** Typed id of what ran it: `agentic_process-<id>` or `shell-<id>`. */
+  executor?: string | null;
+  /** The last completion-check run — the verdict's evidence. */
+  check?: CliResult | null;
+}
+
+export interface CliResult extends ReturnedValue {
+  /** As resolved for this platform. */
+  command?: string;
+  /** The raw process exit; `null` = it never started. `exit_code` is the verdict. */
+  returncode?: number | null;
+  stdout?: string;
+  stderr?: string;
+}
+
+export interface PromptResult extends ReturnedValue {
+  /** The full reply, beside the declared `value`. */
+  text?: string;
+}
+
+export interface AskResult extends ReturnedValue {
+  cancelled?: boolean;
+}
+
+export interface WizardResult extends ReturnedValue {
+  /** Each step's own answer, by step id. A step never reached is absent. */
+  steps?: Record<string, ReturnedValue & Partial<CliResult & PromptResult & AskResult & WizardResult>>;
+}

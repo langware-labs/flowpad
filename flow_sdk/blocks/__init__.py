@@ -18,7 +18,7 @@ The canonical program::
 
         async with agent.process_messages():
             async for m in stream_inbox.listen():         # m: SourceItemSpec
-                out   = await agent.process_message(m)    # out: RunOutput
+                out   = await agent.process_message(m)    # out: PromptResult
                 await stream_inbox.send(await stream_inbox.reply_spec(m, body=out.text))
 
 Verbs live on their owners (``listen``, ``process_message``, ``send``);
@@ -33,14 +33,12 @@ import contextlib
 import contextvars
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Sequence
-
-from pydantic import ConfigDict
+from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
 
 from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SlackMessageSpec, TelegramMessageSpec
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
-from flow_sdk.schema.data_spec.spec import DataSpec
 
 from .delivery import Delivered, DeliveredPage
 from .folder_changes import FolderChange, FolderChanges
@@ -61,7 +59,7 @@ __all__ = [
     "MessageRequest",
     "MessageBlock",
     "StreamInbox",
-    "RunOutput",
+    "PromptResult",
     "listen",
     "pages",
     "SlackMessageSpec",
@@ -95,35 +93,6 @@ async def workflow(name: str):
         yield
     finally:
         current_workflow.reset(token)
-
-
-class RunOutput(DataSpec):
-    """One agent turn's result, as a value — frozen; a value is a value.
-
-    ``text`` is always what the agent said. ``value`` is that reply read as the
-    shape the persona DECLARED (``Agent.output``), and it is ``None`` for a
-    persona that declares nothing — which is every persona in this tree today,
-    so a caller that only ever wanted the prose is unaffected.
-
-    The two are not redundant. A caller binding a later step to ``value``
-    binds to a field; one rendering the answer to a person still wants
-    ``text``. Before this, a node's output WAS the prose, so a downstream
-    binding had nothing to bind to but a sentence.
-
-    A declared shape the reply does not satisfy leaves ``value`` unset and puts
-    the reason in ``detail``: a turn that answered the wrong shape still
-    happened, and hiding the prose would lose the only account of it.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    text: str = ""
-    files: list[FileRef] = []
-    #: The reply as the persona's declared shape, or ``None`` when it declares
-    #: none — or when the reply did not satisfy it (see ``detail``).
-    value: Any = None
-    #: Why ``value`` is unset despite a declared shape. Empty otherwise.
-    detail: str = ""
 
 
 #: ``context_data`` key holding a session's turn records: ``{turn key: {status, text}}``.
@@ -224,9 +193,11 @@ class _AgentRunner:
         self.processes[key] = ap
         return ap
 
-    async def run(self, m: _AgentInput) -> RunOutput:
-        """One turn: route by session, prompt with the message body, return
-        the assistant's reply as a value.
+    async def run(self, m: _AgentInput) -> PromptResult:
+        """One turn: route by session, prompt with the message body, and answer
+        with a ``PromptResult`` — ``text`` the reply, ``value`` that reply read as
+        the persona's declared shape, ``executor`` the process. Never raises for
+        an outcome: a prompt the process refuses is ``NOT_YET`` with ``ran=False``.
 
         **Safe to call twice with the same message.** A listener redelivers an
         item after a crash, and a session is a thread — so a second turn on
@@ -239,27 +210,31 @@ class _AgentRunner:
         from flow_sdk.app.actions.execute_prompt import _capture_assistant_reply  # noqa: PLC0415
 
         ap = await self.process_for(m)
+        executor = str(ap.typeid)
         key = _turn_key(m)
         prior = _turns(ap).get(key)
         if prior and prior.get("status") == _DONE:
-            return self._output(prior.get("text", ""))
+            return self._output(prior.get("text", ""), executor)
         if prior and prior.get("status") == _STARTED:
             # We died mid-turn. Did the agent finish? The transcript knows.
             text = await _capture_assistant_reply(ap)
             if text:
                 await self._record_turn(ap, key, text)
-                return self._output(text)
+                return self._output(text, executor)
         await self._stamp_turn(ap, key, {"status": _STARTED})
-        outcome = await ap.prompt(m.body or m.name or "")
-        # prompt() reports failure in its envelope, not by raising — a FAIL
-        # left unchecked turns into an infinite transcript wait downstream.
-        if getattr(outcome, "status", "SUCCESS") == "FAIL":
-            raise RuntimeError(f"prompt failed: {getattr(outcome, 'message', outcome)}")
+        taken = await ap.send_turn(m.body or m.name or "")
+        # A turn not taken, left unchecked, turns into an infinite transcript
+        # wait downstream — so it is answered here, as it is. Its STARTED stamp
+        # goes too: left behind, the redelivery would read the transcript's
+        # latest reply — another turn's — as this message's answer.
+        if not taken.ok:
+            await self._forget_turn(ap, key)
+            return taken
         text = await _capture_assistant_reply(ap)
         await self._record_turn(ap, key, text or "")
-        return self._output(text or "")
+        return self._output(text or "", executor)
 
-    def _output(self, text: str) -> RunOutput:
+    def _output(self, text: str, executor: str) -> PromptResult:
         """The turn's reply as a value, held to the persona's declared shape.
 
         Every return path in ``run`` goes through here — including the two that
@@ -274,20 +249,27 @@ class _AgentRunner:
 
         shape = getattr(self.agent, "output", None)
         if shape is None:
-            return RunOutput(text=text, files=[])
+            return PromptResult.satisfied("The agent replied.", text=text, executor=executor)
         try:
             value = to_declared(value_from_reply(text), shape)
         except DeclaredShapeError as error:
+            # The turn happened; the reply is kept so a person can still read it.
             name = getattr(self.agent, "name", None) or "agent"
-            return RunOutput(
-                text=text,
-                files=[],
-                detail=f"{name}: the reply does not match this agent's declared output — {error}",
+            return PromptResult.not_yet(
+                f"{name}: the reply does not match this agent's declared output — {error}",
+                text=text, executor=executor,
             )
-        return RunOutput(text=text, files=[], value=value)
+        return PromptResult.satisfied("The agent replied.", value=value, text=text, executor=executor)
 
     async def _record_turn(self, ap, key: str, text: str) -> None:
         await self._stamp_turn(ap, key, {"status": _DONE, "text": text})
+
+    @staticmethod
+    async def _forget_turn(ap, key: str) -> None:
+        """Drop one turn's record — a turn that was never taken has none."""
+        turns = dict(_turns(ap))
+        if turns.pop(key, None) is not None:
+            await _AgentRunner._write_turns(ap, turns)
 
     @staticmethod
     async def _stamp_turn(ap, key: str, entry: dict) -> None:
@@ -297,6 +279,11 @@ class _AgentRunner:
         if len(turns) > _TURNS_KEPT:
             for stale in list(turns)[: len(turns) - _TURNS_KEPT]:
                 turns.pop(stale, None)
+        await _AgentRunner._write_turns(ap, turns)
+
+    @staticmethod
+    async def _write_turns(ap, turns: dict) -> None:
+        """The ONE writer of a session's turn records."""
         data = dict(getattr(ap, "context_data", None) or {})
         data[_TURNS] = turns
         ap.context_data = data
@@ -346,7 +333,7 @@ async def _process_messages(agent: "AgentRef"):
             _active_agent_runners.reset(token)
 
 
-async def _process_message(agent: "AgentRef", message: _AgentInput) -> RunOutput:
+async def _process_message(agent: "AgentRef", message: _AgentInput) -> PromptResult:
     """Run one message, reusing the active scope or closing a one-shot runner."""
     runner = (_active_agent_runners.get() or {}).get(_agent_runner_key(agent))
     if runner is not None:

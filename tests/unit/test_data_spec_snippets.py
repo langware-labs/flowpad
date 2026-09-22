@@ -258,18 +258,24 @@ async def test_snippet_3_a_declared_output_is_enforced_not_suggested(tmp_path):
     """§3's declaration lines: the shape a callee declares is checked, and a
     mismatch FAILS. Seam-injected, so no process and no DB are involved."""
     import json
+    from typing import ClassVar
 
-    from flow_sdk.core.compute.exec import ShellResult
-    from flow_sdk.core.compute.process_step import ProcessResult
     from flow_sdk.core.compute.receipt import receipt_path
     from flow_sdk.core.compute_op import run_op
     from flow_sdk.core.compute_op.runner import VALUE_KEY
     from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, PromptResult
+
+    class Endpoint(DataSpec):
+        spec_kind: ClassVar[str] = "test.snippet3.endpoint"
+        host: str
+        port: int
 
     op = ComputeOpSpec.model_validate({
         "name": "pick-port",
-        "output": {"host": "string", "port": "int"},
-        "attempts": [{"kind": "agent", "agent": "capability-installer", "prompt": "p"}],
+        "subkind": "agent",
+        "exe_data": {"agent": "capability-installer", "prompt": "p"},
+        "output_spec_kind": "test.snippet3.endpoint",
     })
 
     def returning(value):
@@ -277,20 +283,20 @@ async def test_snippet_3_a_declared_output_is_enforced_not_suggested(tmp_path):
             path = receipt_path(workdir, "pick-port")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({"status": "done", "data": {VALUE_KEY: value}}))
-            return ProcessResult(process_id="p1", ok=True, message="agent finished")
+            return PromptResult.satisfied("The agent finished.", executor="agentic_process-p1")
         return launch
 
-    async def shell(_command, **_kw):
-        return ShellResult(returncode=0)
+    async def shell(command, **_kw):
+        return CliResult.of_process(command, 0)
 
     good = await run_op(op, trusted=True, workdir=tmp_path, platform="linux",
                         shell=shell, launch=returning({"host": "localhost", "port": 8099}))
-    assert good.exit_code is ExitCode.OK and good.value.port == 8099
+    assert good.exit_code is ExitCode.OK and isinstance(good.value, Endpoint) and good.value.port == 8099
 
     bad = await run_op(op, trusted=True, workdir=tmp_path, platform="linux",
                        shell=shell, launch=returning({"host": "h", "port": "nope"}))
     assert bad.exit_code is ExitCode.NOT_YET and not bad.ok
-    assert "declared output" in bad.detail
+    assert "test.snippet3.endpoint" in bad.detail
 
 
 # ── §6. Identity ──────────────────────────────────────────────────────────────

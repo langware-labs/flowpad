@@ -6,8 +6,9 @@
  *    driving the app deadlocks on it) and cannot show what is about to run,
  *    which is the entire point of the gate. This test asserts `window.confirm`
  *    is never called — that is the regression, not the wording.
- * 2. A parked run renders its form FROM `awaiting[]`, so a wizard that declares
- *    a new input grows a field with no change to this component.
+ * 2. The last run is read from `run_state.result` — a `WizardResult` whose
+ *    steps are each step's own answer. There is no parked state and no answer
+ *    form: a wizard asks a person through an `ask` op, like any other step.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -74,7 +75,7 @@ const wizard = (runState: Record<string, unknown>, shipped = false) =>
     activity_path: 'wizard-ui-probe',
     typeId: { toString: () => 'wizard-550e8400-e29b-41d4-a716-446655440000' },
     validateDocument: async () => ({ ok: true, issues: [] }),
-    runDetail: async () => ({ outcomes: runState.outcomes ?? [] }),
+    runDetail: async () => ({ result: runState.result ?? null }),
     resetRun: async () => ({}),
   }) as never;
 
@@ -98,7 +99,7 @@ beforeEach(() => {
   view.advanced = false;
   side.windows = [];
   vi.clearAllMocks();
-  h.callAction.mockResolvedValue({ status: 'pending' });
+  h.callAction.mockResolvedValue({ exit_code: 0, steps: {} });
   h.refreshByTypeId.mockResolvedValue(null);
 });
 afterEach(cleanup);
@@ -128,84 +129,48 @@ describe('WizardViewer', () => {
     expect(h.callAction.mock.calls[0][0].bodyParameters).toEqual({});
   });
 
-  it('renders the form from awaiting[] and submits the value by name', async () => {
-    render(
-      <WizardViewer fsRef={fsRef()} wizard={wizard({
-          status: 'pending',
-          awaiting: [{ name: 'marker', label: 'Marker file name', description: 'Under /tmp' }],
-          outcomes: [{ step_id: 'ask', status: 'awaiting_input', message: 'needs marker' }],
-        })}
-      />,
-    );
-
-    expect(screen.getByText('Marker file name')).toBeTruthy();
-    fireEvent.change(screen.getByTestId('wizard-input-marker'), {
-      target: { value: 'proof.txt' },
-    });
-    fireEvent.click(screen.getByTestId('wizard-submit-marker'));
-
-    await waitFor(() => expect(h.callAction).toHaveBeenCalledTimes(1));
-    const info = h.callAction.mock.calls[0][0];
-    expect(info.name ?? info.actionName).toBe('set-input');
-    expect(info.bodyParameters).toEqual({ name: 'marker', value: 'proof.txt' });
-  });
 });
 
 describe('a settled run', () => {
   const settled = {
-    status: 'completed',
-    inputs: { release: '0.2.136' },
-    outcomes: [{ step_id: 'version', status: 'satisfied', message: 'provided' }],
+    result: {
+      exit_code: 1,
+      detail: 'version: the cli call ran, but the check still fails.',
+      steps: {
+        version: { exit_code: 0, ran: false, detail: 'already satisfied' },
+        build: { exit_code: 1, ran: true, detail: 'the check still fails' },
+      },
+    },
   };
+  const DOC_TWO = JSON.stringify({
+    name: 'UI probe',
+    steps: [
+      { id: 'version', kind: 'compute', ref: 'a', args: {} },
+      { id: 'build', kind: 'compute', ref: 'b', args: {} },
+      { id: 'deploy', kind: 'compute', ref: 'c', args: {} },
+    ],
+  });
 
-  it('shows what the last run was answered with', () => {
+  it('says what the run answered, in its own sentence', () => {
     render(<WizardViewer fsRef={fsRef()} wizard={wizard(settled)} />);
-    expect(screen.getByTestId('wizard-answer-release').textContent).toContain('0.2.136');
+    expect(screen.getByText(settled.result.detail)).toBeTruthy();
   });
 
-  it('shows nothing when the run was never given an answer', () => {
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({ ...settled, inputs: {} })} />);
+  it('lists each step with what its own answer said', async () => {
+    render(<WizardViewer fsRef={refWith(async () => DOC_TWO)} wizard={wizard(settled)} />);
+    await waitFor(() => expect(screen.getByTestId('wizard-step-build')).toBeTruthy());
+    expect(screen.getByTestId('wizard-step-version').textContent).toContain('already satisfied');
+    expect(screen.getByTestId('wizard-step-build').textContent).toContain('the check still fails');
+    // A step no run reached has no answer, so nothing is said about it.
+    expect(screen.getByTestId('wizard-step-deploy').textContent).not.toContain('—');
+  });
+
+  it('never offers an answer form — a person is asked by an ask op, not by the viewer', () => {
+    render(<WizardViewer fsRef={fsRef()} wizard={wizard(settled)} />);
+    expect(screen.queryByTestId('wizard-awaiting')).toBeNull();
     expect(screen.queryByTestId('wizard-answers')).toBeNull();
-  });
-});
-
-describe('re-asking', () => {
-  const parked = {
-    status: 'pending',
-    inputs: { release: '0.2.136' },
-    awaiting: [{ name: 'release', label: 'Release tag' }],
-    outcomes: [{ step_id: 'version', status: 'awaiting_input' }],
-  };
-
-  it('offers the previous answer back in the field', () => {
-    // A fresh run ASKS, but it should not pretend the wizard has never been
-    // told anything — that would mean retyping an unchanged value every time.
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard(parked)} />);
-    expect((screen.getByTestId('wizard-input-release') as HTMLInputElement).value).toBe('0.2.136');
-  });
-
-  it('accepts the offered value untouched', async () => {
-    // Reading only local state would make Continue a no-op on a form that
-    // already looks filled in.
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard(parked)} />);
-    fireEvent.click(screen.getByTestId('wizard-submit-release'));
-
-    await waitFor(() => expect(h.callAction).toHaveBeenCalledTimes(1));
-    expect(h.callAction.mock.calls[0][0].bodyParameters).toEqual({
-      name: 'release',
-      value: '0.2.136',
-    });
-  });
-
-  it('takes an edit over the offered value', async () => {
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard(parked)} />);
-    fireEvent.change(screen.getByTestId('wizard-input-release'), {
-      target: { value: 'v0.3.0-rc1' },
-    });
-    fireEvent.click(screen.getByTestId('wizard-submit-release'));
-
-    await waitFor(() => expect(h.callAction).toHaveBeenCalledTimes(1));
-    expect(h.callAction.mock.calls[0][0].bodyParameters.value).toBe('v0.3.0-rc1');
+    // Run is always Run; there is no parked run to Continue.
+    expect(screen.getByTestId('wizard-run').textContent).toContain('Run');
   });
 });
 
@@ -329,26 +294,6 @@ describe('starting a run reveals what it is doing', () => {
     fireEvent.click(screen.getByTestId('wizard-run'));
     fireEvent.click(await screen.findByTestId('wizard-approve'));
 
-    await waitFor(() => expect(side.open).toHaveBeenCalledWith('wizard-run'));
-  });
-
-  it('opens it when an answer resumes a parked run', async () => {
-    view.advanced = true;
-    render(
-      <WizardViewer
-        fsRef={fsRef()}
-        wizard={wizard({
-          status: 'pending',
-          approved: true,
-          awaiting: [{ name: 'marker' }],
-          inputs: { marker: 'proof.txt' },
-        })}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId('wizard-submit-marker'));
-
-    // `set-input` runs the wizard again, so it is a run start as well.
     await waitFor(() => expect(side.open).toHaveBeenCalledWith('wizard-run'));
   });
 

@@ -3,17 +3,15 @@
   "name": "repo-cloned",
   "label": "the demo repo",
   "description": "The demo repository is checked out at /work/demo-repo.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "linux": "git clone --quiet file:///work/origin.git /work/demo-repo"
+    }
+  },
   "completion_check": {
     "commands": {
       "linux": "test -d /work/demo-repo/.git"
     }
-  },
-  "attempts": [
-    {
-      "kind": "command",
-      "commands": {
-        "linux": "git clone --quiet file:///work/origin.git /work/demo-repo"
-      }
-    }
-  ]
+  }
 }

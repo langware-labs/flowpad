@@ -703,7 +703,11 @@ async def run_session_turn(
             await session.save()
 
             try:
-                await ap.prompt(prompt_text)
+                taken = await ap.send_turn(prompt_text)
+                if not taken.ok:
+                    # A turn that was not taken has no reply of its own: capturing
+                    # now would hand back the PREVIOUS turn's text as this one's.
+                    raise RuntimeError(taken.detail)
                 reply = await _capture_assistant_reply(ap)
             except Exception as run_err:  # noqa: BLE001
                 session.mark_activity(RemoteWorkerSessionStatus.ERROR)

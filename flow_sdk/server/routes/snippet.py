@@ -89,6 +89,6 @@ def snippet_save(req: SnippetSaveRequest):
 @router.post("/api/v1/snippet/run")
 async def snippet_run(req: SnippetRunRequest):
     """Run the file as written. Always succeeds at the HTTP level: a crash, a
-    compile error and a timeout are all a ``ShellResult`` to show, not a failure."""
+    compile error and a timeout are all a ``CliResult`` to show, not a failure."""
     result = await run_snippet(Path(req.path), timeout_seconds=req.timeout_seconds)
     return ApiSuccessResponse(data=result.model_dump())

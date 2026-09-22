@@ -33,7 +33,8 @@ from typing import Literal, Optional
 from pydantic import ConfigDict, Field
 
 from flow_sdk.capsules.atomic import atomic_write, capsule_lock
-from flow_sdk.core.compute.exec import ShellResult, run_shell
+from flow_sdk.core.compute.exec import run_shell
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 RegionKind = Literal["hidden", "init", "snippet"]
@@ -223,9 +224,9 @@ def _terminal_path() -> str:
     return capture_terminal_path()
 
 
-async def run_snippet(path: Path, *, timeout_seconds: float, env_path: Optional[str] = None) -> ShellResult:
+async def run_snippet(path: Path, *, timeout_seconds: float, env_path: Optional[str] = None) -> CliResult:
     """Run the file as written. Never raises: a missing file, an unknown language,
-    a compile error, an exception and a hang are all a ``ShellResult``.
+    a compile error, an exception and a hang are all a ``CliResult``.
 
     ``env_path`` overrides the PATH the language toolchain is looked up on.
     """
@@ -234,11 +235,11 @@ async def run_snippet(path: Path, *, timeout_seconds: float, env_path: Optional[
         env_path = await asyncio.to_thread(_terminal_path)
     path = Path(path).expanduser().resolve()
     if not path.is_file():
-        return ShellResult(returncode=None, stderr=f"snippet file not found: {path}")
+        return CliResult.of_process(str(path), None, stderr=f"snippet file not found: {path}")
     template = RUNNERS.get(path.suffix.lower())
     if template is None:
         known = ", ".join(sorted(RUNNERS))
-        return ShellResult(returncode=None, stderr=f"no runner for '{path.suffix}' files (runnable: {known})")
+        return CliResult.of_process(str(path), None, stderr=f"no runner for '{path.suffix}' files (runnable: {known})")
     with tempfile.TemporaryDirectory(prefix="flowpad-snippet-build-") as build:
         command = template.format(file=shlex.quote(str(path)), out=shlex.quote(str(Path(build) / "snippet")))
         return await run_shell(

@@ -44,12 +44,9 @@ export * from './types/index';
 export * from './schema/index';
 // Resolve names defined more than once under this barrel explicitly.
 // Name the winner explicitly; the losers stay reachable via their own module.
-//   - `ShellResult`— `Shell.run`'s result, not the `shell-output` FlowData
-//                    payload (whose `exitCode` is optional).
 //   - `WorkerType` — the `AgentConfig` enum, the only one of the two that is a
 //                    runtime value; the vendor union lives in `process/index`.
 export { Skill } from './entities/skill';
-export type { ShellResult } from './entities/shell';
 export { WorkerType } from './entities/subagent';
 export { FSEntry } from './fs/FSEntry';
 export { FSRef, type FSRefJson } from './fs/FSRef';

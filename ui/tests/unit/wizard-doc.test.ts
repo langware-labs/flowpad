@@ -8,14 +8,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  blankInputName,
   blankStep,
   duplicateStepIds,
   issuesByLoc,
   namesInScope,
   orphanIssues,
   removeIn,
-  renameInput,
   setIn,
   setStepKind,
   shapeFromText,
@@ -30,10 +28,6 @@ const FULL: WizardDoc = {
   enabled: true,
   version: 1,
   icon: 'Wand2',
-  inputs: {
-    WAHA_API_KEY: { shape: 'string', label: 'WAHA API key', description: '', optional: false },
-    REGION: { shape: 'string' },
-  },
   output: { url: 'string' },
   steps: [
     {
@@ -45,7 +39,7 @@ const FULL: WizardDoc = {
       args: { API_KEY: 'WAHA_API_KEY', PORT: '3000' },
       on_fail: 'continue',
     },
-    { id: 'two', kind: 'ask', ref: 'REGION' },
+    { id: 'two', kind: 'wizard', ref: 'region-setup' },
   ],
 };
 
@@ -61,7 +55,6 @@ describe('setIn', () => {
     expect(step.ref).toBe('waha-container');
     expect(step.on_fail).toBe('continue');
     expect(next.steps![1]).toEqual(FULL.steps![1]);
-    expect(next.inputs).toEqual(FULL.inputs);
     expect(next.output).toEqual(FULL.output);
     expect(next.version).toBe(1);
   });
@@ -99,11 +92,11 @@ describe('removeIn', () => {
 
 describe('setStepKind', () => {
   it('clears the ref it invalidates, because the same string means something else', () => {
-    const step = setStepKind(FULL, 0, 'ask').steps![0];
-    expect(step.kind).toBe('ask');
+    const step = setStepKind(FULL, 0, 'wizard').steps![0];
+    expect(step.kind).toBe('wizard');
     expect(step.ref).toBe('');
-    // An `ask` step passes nothing on.
-    expect('args' in step).toBe(false);
+    // The args belonged to the old callee.
+    expect(step.args).toEqual({});
   });
 
   it('seeds an args map for the kinds that take one', () => {
@@ -130,24 +123,6 @@ describe('blankStep', () => {
   });
 });
 
-describe('the wizard-level inputs map', () => {
-  it('renames a key IN PLACE, so the row does not jump to the end', () => {
-    const next = renameInput(FULL, 'WAHA_API_KEY', 'API_KEY');
-    expect(Object.keys(next.inputs!)).toEqual(['API_KEY', 'REGION']);
-    expect(next.inputs!.API_KEY.label).toBe('WAHA API key');
-  });
-
-  it('refuses a rename onto a name already declared', () => {
-    expect(renameInput(FULL, 'REGION', 'WAHA_API_KEY')).toBe(FULL);
-    expect(renameInput(FULL, 'REGION', '')).toBe(FULL);
-  });
-
-  it('names a new input without colliding', () => {
-    expect(Object.keys(FULL.inputs!)).not.toContain(blankInputName(FULL.inputs));
-    expect(blankInputName(undefined)).toBe('INPUT_1');
-  });
-});
-
 describe('duplicateStepIds', () => {
   it('names the ids two steps share, because their outcomes collide on it', () => {
     const twice = duplicateStepIds([{ id: 'a' }, { id: 'b' }, { id: 'a' }]);
@@ -157,9 +132,9 @@ describe('duplicateStepIds', () => {
 });
 
 describe('namesInScope', () => {
-  it('offers the parameters and the steps BEFORE this one, never after', () => {
-    expect(namesInScope(FULL, 0)).toEqual(['WAHA_API_KEY', 'REGION']);
-    expect(namesInScope(FULL, 1)).toEqual(['WAHA_API_KEY', 'REGION', 'one']);
+  it('offers the steps BEFORE this one, never after', () => {
+    expect(namesInScope(FULL, 0)).toEqual([]);
+    expect(namesInScope(FULL, 1)).toEqual(['one']);
   });
 });
 

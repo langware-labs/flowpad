@@ -674,7 +674,6 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.builtin.capability import capability_id_for_kind
     from flow_sdk.instance_settings import get_instance_settings
-    from flow_sdk.responses.response import ApiFailResponse
 
     prompt = install_prompt_for_spec(spec)
     workdir = Path(get_instance_settings().flow_home) / "capability-installs"
@@ -713,7 +712,7 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     )
     await process.save(notify=True)
     try:
-        start_result = await process.prompt(prompt)
+        start_result = await process.send_turn(prompt)
     except Exception as exc:
         return CapabilityResult(
             ok=False,
@@ -722,11 +721,11 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
             details={"prompt": prompt},
             process_id=process.id,
         )
-    if isinstance(start_result, ApiFailResponse):
+    if not start_result.ok:
         return CapabilityResult(
             ok=False,
             available=False,
-            message=f"Install process failed to start: {start_result.message}",
+            message=f"Install process failed to start: {start_result.detail}",
             details={"prompt": prompt, "harness_kind": harness_kind, "worker_type": worker_type},
             process_id=process.id,
         )
@@ -740,7 +739,7 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
             "prompt": prompt,
             "harness_kind": harness_kind,
             "worker_type": worker_type,
-            "start": start_result.data or {},
+            "executor": start_result.executor,
         },
         process_id=process.id,
     )
@@ -787,6 +786,16 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
         target_typeid_str=target_typeid_str,
     )
     await process.save(notify=True)
+
+    def _failed(why: object) -> CapabilityResult:
+        return CapabilityResult(
+            ok=False,
+            available=False,
+            message=f"Authenticated Chrome browsing probe failed: {why}",
+            details={"expected": nonce, "probe_url": probe_file.as_uri()},
+            process_id=process.id,
+        )
+
     try:
         result = await AgenticProcess.run(
             prompt,
@@ -799,15 +808,13 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
             visible=False,
         )
     except Exception as exc:
-        return CapabilityResult(
-            ok=False,
-            available=False,
-            message=f"Authenticated Chrome browsing probe failed: {exc}",
-            details={"expected": nonce, "probe_url": probe_file.as_uri()},
-            process_id=process.id,
-        )
+        return _failed(exc)
+    if not result.ok:
+        return _failed(result.detail)
     text = (result.text or "").strip()
     ok = nonce in text
+    # The session lives on the process that ran it — the answer names it, never copies it.
+    ran = await AgenticProcess.get_by_id(process.id)
     return CapabilityResult(
         ok=ok,
         available=ok,
@@ -818,7 +825,7 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
             "expected": nonce,
             "actual": text[:1000],
             "probe_url": probe_file.as_uri(),
-            "session_id": result.session_id,
+            "session_id": getattr(ran, "session_id", "") or "",
         },
         process_id=process.id,
     )

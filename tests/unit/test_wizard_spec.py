@@ -17,8 +17,8 @@ from pydantic import ValidationError
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec._kinds import register_builtin_kinds
 from flow_sdk.schema.data_spec.wizard_spec import (
-    InputSpec,
     StepKind,
+    WizardRunDetailSpec,
     WizardSpec,
     WizardStepSpec,
 )
@@ -37,7 +37,7 @@ def _step(**over) -> dict:
     [
         ("wizard", WizardSpec),
         ("wizard.step", WizardStepSpec),
-        ("wizard.input", InputSpec),
+        ("wizard.run_detail", WizardRunDetailSpec),
     ],
 )
 def test_every_kind_is_reachable_from_register_builtin_kinds(kind, cls):
@@ -96,36 +96,6 @@ def test_display_label_falls_back_to_the_id():
     assert WizardStepSpec.model_validate(_step(label="")).display_label == "s1"
 
 
-def test_an_ask_step_must_name_a_declared_input():
-    """A question nobody can answer parks the run forever, so it is a parse error.
-
-    The value a person gives is stored under the wizard's parameter name; a step
-    asking for a name the wizard never declared would park, be answered, and
-    park again on the next run.
-    """
-    with pytest.raises(ValidationError, match="inputs"):
-        WizardSpec.model_validate({"name": "w", "steps": [
-            {"id": "ask", "kind": "ask", "ref": "TOKEN"},
-        ]})
-
-    ok = WizardSpec.model_validate({
-        "name": "w",
-        "inputs": {"TOKEN": {"shape": "string", "label": "Token"}},
-        "steps": [{"id": "ask", "kind": "ask", "ref": "TOKEN"}],
-    })
-    assert ok.inputs["TOKEN"].label == "Token"
-
-
-def test_an_ask_step_takes_no_args():
-    """`args` binds a CALLEE's parameters. A person is not a callee with a
-    signature — the value goes to this wizard's own input, by name."""
-    with pytest.raises(ValidationError, match="no args"):
-        WizardSpec.model_validate({
-            "name": "w", "inputs": {"TOKEN": {}},
-            "steps": [{"id": "ask", "kind": "ask", "ref": "TOKEN", "args": {"x": "y"}}],
-        })
-
-
 def test_a_wizard_is_either_a_conversation_or_a_sequence():
     with pytest.raises(ValidationError, match="either"):
         WizardSpec.model_validate({"name": "w", "agent": "someone", "steps": [_step()]})
@@ -144,36 +114,39 @@ def test_an_inline_triggers_array_is_refused():
         )
 
 
-def test_the_run_payloads_are_registered_data_specs():
+def test_the_run_record_is_a_registered_data_spec_holding_a_wizard_result():
     """A shape that travels is a `DataSpec`, per the repo's one-type-system rule.
 
-    These do travel: into `run.json`, onto the entity payload as
-    `Wizard.run_state`, and out to the TS mirror. Registration is import-time and
-    fails SILENTLY (an unreachable kind resolves to `Any`), so the reachability
-    is asserted too.
+    The run record travels (`run-detail`, the TS mirror), and what it holds is
+    the run's `WizardResult` — the one answer shape, not a wizard-only copy.
+    Registration is import-time and fails SILENTLY (an unreachable kind resolves
+    to `Any`), so the reachability is asserted too.
     """
     from flow_sdk.schema.data_spec._kinds import resolve_kind
-    from flow_sdk.schema.data_spec.wizard_spec import (
-        WizardAwaitingInputSpec,
-        WizardStepOutcomeSpec,
-    )
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
 
-    for kind in ("wizard.outcome", "wizard.awaiting"):
-        assert resolve_kind(kind) is not None, (
-            f"{kind} is not reachable from register_builtin_kinds() — an "
-            "unregistered kind is legal, opaque and never minted, with no error "
-            "anywhere to say so"
-        )
+    register_builtin_kinds()
+    for kind in ("wizard.run_detail", "compute.returned.wizard"):
+        assert resolve_kind(kind) is not None, f"{kind} is not reachable from register_builtin_kinds()"
+
+    detail = WizardRunDetailSpec(result=WizardResult.satisfied("", steps={"a": CliResult.of_process("true", 0)}))
+    again = WizardRunDetailSpec.model_validate(detail.model_dump(mode="json"))
+    assert type(again.result.steps["a"]) is CliResult
 
     # `extra="forbid"` is the point of the rule: a misspelled key must be an
     # error, not a row with an empty field.
     with pytest.raises(Exception):
-        WizardStepOutcomeSpec(step_id="a", status="completed", mesage="typo")
-    with pytest.raises(Exception):
-        WizardAwaitingInputSpec(name="marker", labl="typo")
+        WizardRunDetailSpec(archivd=["x"])
 
 
-def test_the_step_kinds_are_the_three_things_a_wizard_can_call():
-    # An agent is NOT a kind: an agent run is a ComputeOp, so a step that wants
-    # one references that op — which makes the agent's work checkable and reusable.
-    assert {k.value for k in StepKind} == {"compute", "wizard", "ask"}
+def test_the_step_kinds_are_the_two_things_a_wizard_can_call():
+    # Neither an agent nor a person is a kind: each is a ComputeOp subkind, so a
+    # step that wants one references that op.
+    assert {k.value for k in StepKind} == {"compute", "wizard"}
+
+
+def test_an_ask_step_is_no_longer_a_kind_and_inputs_are_not_declared():
+    with pytest.raises(ValidationError):
+        WizardStepSpec.model_validate(_step(kind="ask"))
+    with pytest.raises(ValidationError):
+        WizardSpec.model_validate({"name": "w", "inputs": {"TOKEN": {}}, "steps": [_step()]})

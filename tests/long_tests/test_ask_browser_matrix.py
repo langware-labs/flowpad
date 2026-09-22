@@ -195,15 +195,27 @@ def _record_browser_opens(monkeypatch, tmp_path_factory):
 
 
 def _spec():
+    from typing import ClassVar
+
     from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+    from flow_sdk.schema.data_spec.spec import DataSpec
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    if SchemaRegistry.kind_type("test.e2e.api_token") is None:
+        # The kind the op asks for — registered in THIS process, which is the
+        # one serving the window (the backend runs in-process).
+        class ApiToken(DataSpec):
+            spec_kind: ClassVar[str] = "test.e2e.api_token"
+            token: str
 
     # No completion check: a call, not a goal — what the person types IS the
     # answer, with nothing on this machine to re-prove it against.
     return ComputeOpSpec.model_validate({
         "name": "e2e-ask-token",
         "label": "E2E API token",
-        "attempts": [{"kind": "ask", "prompt": "E2E: type a token"}],
-        "output": {"token": "string"},
+        "subkind": "ask",
+        "exe_data": {"prompt": "E2E: type a token"},
+        "output_spec_kind": "test.e2e.api_token",
     })
 
 
@@ -298,8 +310,8 @@ async def test_cancel_the_person_declines(frontend):
 
     assert said.ok is False
     assert said.exit_code is ExitCode.NOT_YET
+    assert said.cancelled is True
     assert said.value is None
-    assert "cancel" in said.detail.lower()
 
 
 async def test_fail_a_value_of_the_wrong_shape_is_refused_in_the_window(backend_port):
@@ -337,4 +349,5 @@ async def test_fail_nobody_answers_before_the_deadline(frontend):
 
     assert said.ok is False
     assert said.exit_code is ExitCode.NOT_YET
+    assert said.timed_out is True
     assert "no answer within" in said.detail
