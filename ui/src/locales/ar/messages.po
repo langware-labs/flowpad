@@ -573,6 +573,12 @@ msgstr ""
 #. placeholder {0}: removingMember?.name ?? ''
 #. placeholder {1}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
+msgid "{0} will leave {1} and lose the budget it gave them. Money already spent is not affected."
+msgstr ""
+
+#. placeholder {0}: removingMember?.name ?? ''
+#. placeholder {1}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
 msgid "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 msgstr ""
 
@@ -782,6 +788,10 @@ msgstr "{remaining} مشكلة{0} تحتاج إلى تحقيق"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "{removed} assets removed."
 msgstr "تمت إزالة {removed} أصل."
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "{repeats} of these already have a budget in {teamName}; their caps will be updated."
+msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
 msgid "{replyCount, plural, one {# reply} other {# replies}}"
@@ -1697,6 +1707,10 @@ msgstr "تمويل الوكيل"
 msgid "Agent Hook"
 msgstr "خطاف الوكيل"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Agent is public"
+msgstr ""
+
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Agent mailbox"
 msgstr "صندوق بريد الوكيل"
@@ -2215,6 +2229,14 @@ msgstr "يمكن لأي شخص لديه حق الوصول فتح {entityType} م
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
 msgstr "يمكن لأي شخص لديه الرابط الانضمام كعضو. تم نسخه إلى حافظتك — لا يمكن عرضه مرة أخرى."
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone with the link can view this agent — remove to make it private again"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone with the link can view this agent."
+msgstr ""
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Anyone you share with can open, use and delete this sandbox."
@@ -5097,6 +5119,10 @@ msgstr ""
 msgid "Could not load your token plan."
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Could not make the agent public"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "Could not move email here"
 #~ msgstr ""
@@ -5180,6 +5206,10 @@ msgstr "تعذر إزالة الوصول"
 
 #: src/components/organization/org-node-management.tsx
 msgid "Could not remove member"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Could not remove public access"
 msgstr ""
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
@@ -9132,8 +9162,8 @@ msgid "Given out to teams"
 msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
-msgid "Given to you by the hub"
-msgstr ""
+#~ msgid "Given to you by the hub"
+#~ msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "glob"
@@ -10686,6 +10716,10 @@ msgstr "نوع العدسة \"{0}/{1}\" غير مدعوم."
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Let an agent assess progress and fill in missing fields"
 msgstr "يمكن لوكيل تقييم التقدم وملء الحقول الناقصة"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Let anyone with the link view this agent — its files stay private"
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Let other participants see when messages are delivered or read."
@@ -13785,6 +13819,10 @@ msgstr "يمكن لمالك الرمل فقط تشغيله. عند مشاركت�
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "توجد هنا إدخالات Harness فقط — يمكن تفعيل \"عرض الكل\" لعرضها."
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Only people you share with can view this agent."
+msgstr ""
+
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -14399,6 +14437,7 @@ msgstr ""
 
 #: src/components/account/account-info.tsx
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/token-plan/token-plan-math.ts
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
@@ -14440,8 +14479,8 @@ msgid "Organizations, the teams inside them, and who has a budget in each."
 msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
-msgid "Origin"
-msgstr ""
+#~ msgid "Origin"
+#~ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Orphan"
@@ -15556,6 +15595,10 @@ msgstr "وقت PTY"
 msgid "PTY Viewer"
 msgstr "عارض PTY"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Public access removed"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Publish"
@@ -16139,6 +16182,11 @@ msgstr "إزالة"
 msgid "Remove {0}"
 msgstr "إزالة {0}"
 
+#. placeholder {0}: member.name
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove {0} from {teamName}"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
 msgstr "إزالة {label}"
@@ -16184,6 +16232,11 @@ msgstr "إزالة الملف"
 msgid "Remove folder"
 msgstr ""
 
+#. placeholder {0}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove from {0}?"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "إزالة من المجلد"
@@ -16196,6 +16249,10 @@ msgstr "إزالة من المشروع"
 #: src/components/entity-execution-panel/QueueChip.tsx
 msgid "Remove from queue"
 msgstr "إزالة من قائمة الانتظار"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove from team"
+msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Remove from vibe agents"
@@ -16212,6 +16269,10 @@ msgstr ""
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Remove option"
 msgstr "إزالة الخيار"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Remove public access"
+msgstr ""
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
@@ -18047,6 +18108,10 @@ msgstr "تعيين مشروع المحادثة"
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set project"
 msgstr "تعيين المشروع"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Set public"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
@@ -20018,6 +20083,10 @@ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "The hub makes this call itself, down this endpoint's chain. A vendor OAuth login or an API key stored on this machine is never used for it — with no key-holding root the test fails rather than falling back."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "The hub refused the change."
 msgstr ""
 
 #: src/components/account/user-info.tsx
@@ -22490,6 +22559,10 @@ msgstr "أنت"
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "You are not in any team in this organization yet."
 #~ msgstr ""
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "You are not on any team yet."
+msgstr ""
 
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."

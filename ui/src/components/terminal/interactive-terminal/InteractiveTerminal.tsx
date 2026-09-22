@@ -19,6 +19,7 @@ import {
   type AgenticProcess,
 } from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
+import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
@@ -233,6 +234,18 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const { preferences } = useInstancePreferences();
   const { shell } = useShell(sessionId);
   const [shellReady, setShellReady] = useState(false);
+  // `tab_switch` needs both facts inside callbacks that outlive the render:
+  // whether this panel is the shown one, and whether it already holds history
+  // (a warm activation) or is still attaching (the cold `ready` comes from
+  // `on_connected done`).
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const shellReadyRef = useRef(false);
+  shellReadyRef.current = shellReady;
+  // With the chat pane over the xterm, the chat is what the user sees — its
+  // `ready` comes from SimpleChatPane, not from the terminal underneath.
+  const showSimpleChatRef = useRef(showSimpleChat);
+  showSimpleChatRef.current = showSimpleChat;
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
   const processIsActive = process?.status ? isProcessRunning(process.status) : false;
@@ -1157,6 +1170,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           }
         } catch (e) {
           console.warn('[InteractiveTerminal] history replay failed, live-only:', e);
+          toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=pty_replay shell=${sessionId} err:`, e);
           toplog.log('pty', `on_connected replay_failed shell=${sessionId} source=${source} error=${String(e)}`);
         }
         if (gen !== connectGen) return superseded('replay');
@@ -1208,6 +1222,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         unsubOutput = shell.onOutput(handlePtyData);
 
         setShellReady(true);
+        if (activeRef.current && !showSimpleChatRef.current && toplog.isOn('tab_switch') && claimTabSwitchReady()) {
+          toplog.log(
+            'tab_switch',
+            `ready ${sinceTabSwitch()} kind=terminal mode=cold source=${source} shell=${sessionId} attach_ms=${(performance.now() - tConnect).toFixed(0)} history_kb=${historySerialized ? (historySerialized.length / 1024).toFixed(0) : 0}`,
+          );
+        }
         toplog.log(
           'pty',
           `on_connected done shell=${sessionId} source=${source} gen=${gen} ms=${(performance.now() - tConnect).toFixed(0)} history_kb=${historySerialized ? (historySerialized.length / 1024).toFixed(0) : 0} chunks=${chunks.length}`,
@@ -1522,6 +1542,29 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     };
   }, [active, handlePtyResize, sessionId, canUseDOM, terminalReady]);
 
+  // `tab_switch` warm chat: a return to a panel whose chat pane is already
+  // mounted is a visibility flip — nothing reloads, so no other point fires.
+  // Warm = shown, hidden, shown again. Keyed on having been HIDDEN, not on
+  // having run before: StrictMode runs the mount effect twice, and a "ran
+  // before" ref calls every fresh mount warm.
+  const wasHiddenRef = useRef(false);
+  useEffect(() => {
+    if (!active) {
+      wasHiddenRef.current = true;
+      return;
+    }
+    if (!wasHiddenRef.current) return; // first showing — SimpleChatPane logs the cold ready
+    wasHiddenRef.current = false;
+    if (!showSimpleChat || !toplog.isOn('tab_switch')) return;
+    const frame = requestAnimationFrame(() => {
+      if (claimTabSwitchReady()) {
+        toplog.log('tab_switch', `ready ${sinceTabSwitch()} kind=chat mode=warm proc=${process?.id.slice(0, 8) ?? '-'}`);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per activation
+  }, [active]);
+
   // Active tab focus/refresh — skip scrollToBottom when navigating to a bookmark
   // so the bookmark scroll (pendingScrollLine) can land without being overridden.
   useEffect(() => {
@@ -1539,6 +1582,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         term.refresh(0, Math.max(0, term.rows - 1));
         focusTerminalUnlessEditingElsewhere(term, xtermContainerRef.current);
         handlePtyResize(term.cols, term.rows);
+        // Warm = this panel already replayed its history; the refresh above is
+        // the whole switch. A panel still attaching logs its cold `ready` later.
+        if (shellReadyRef.current && !showSimpleChatRef.current && toplog.isOn('tab_switch') && claimTabSwitchReady()) {
+          toplog.log('tab_switch', `ready ${sinceTabSwitch()} kind=terminal mode=warm shell=${sessionId}`);
+        }
       } catch (e) {
         console.warn('[InteractiveTerminal] activate refresh failed:', e);
       }

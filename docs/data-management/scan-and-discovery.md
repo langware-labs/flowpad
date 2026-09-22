@@ -197,6 +197,8 @@ For each visited ref of a type that has a `from_disk_fn`:
 
 The whole loop runs inside **one DB session** but commits in **bounded batches** (`_INDEX_COMMIT_BATCH = 50`). The engine issues `BEGIN IMMEDIATE` per transaction; a single session spanning the whole scan would hold the SQLite writer lock for seconds/minutes and starve concurrent requests (`database is locked`). Per-batch commits release the lock between batches. This is a contention fix, not a `busy_timeout`/retry change. (See `project_indexer_db_lock_contention.md`.)
 
+Before each record (and each collision reflection) the loop also hands the writer lock to a writer queued in `BEGIN IMMEDIATE`, so a queued save waits for at most the record in hand (`tests/unit/test_fs_store/test_indexer_yields_writer_lock.py`; mechanism in [database.md](database.md#begin-immediate--live)).
+
 ### Filesystem occurrence projection
 
 Collision state describes what is live on the filesystem, not an alternate
@@ -448,7 +450,7 @@ Error records (`record_error`, `claude_error`) are registered via `flow_sdk/fs_s
 
 ### Long index pass vs SQLite writer lock (mitigated)
 
-`index()` holds one DB session but commits in bounded batches of 50 (`_INDEX_COMMIT_BATCH`) precisely because the engine's per-transaction `BEGIN IMMEDIATE` would otherwise hold the writer lock for the whole scan and starve concurrent requests with `database is locked`. The write path is fixed; the read-path `BEGIN IMMEDIATE` contention noted in `project_indexer_db_lock_contention.md` (issue #2) is deferred — concurrent reads still funnel through `BEGIN IMMEDIATE` and can contend during a heavy index.
+Mitigated for the indexer: `index()` commits in batches of 50 (`_INDEX_COMMIT_BATCH`) and hands the lock to a queued writer before each record — see [database.md](database.md#begin-immediate--live), which also tracks the other back-to-back writers that do not hand over yet. The read-path `BEGIN IMMEDIATE` contention noted in `project_indexer_db_lock_contention.md` (issue #2) is deferred — concurrent reads still funnel through `BEGIN IMMEDIATE` and can contend during a heavy index.
 
 ### Destructive orphan action on a narrowed walk
 

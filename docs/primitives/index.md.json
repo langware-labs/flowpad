@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "primitives",
   "folder_name": "primitives",
-  "inputs_hash": "2f91d0573e9574c1569178fa5ac2e45644fa709bf48c5003e0d8ee10738246fc",
+  "inputs_hash": "ccca09d768b25ba5170403aeff3d17c3f0cedeb8b198fe426c2cb2bdd2bd2751",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The small identifier and reference types everything else is built from: FSRef, the path-only declarative file reference, and TypeId, the type-plus-id format entities are addressed by.",
@@ -22,12 +22,12 @@
       "name": "typeid.md",
       "rel_path": "typeid.md",
       "title": "TypeId Specification",
-      "summary": "The TypeId identifier format: type plus id split on the first dash, and the four identifier flavours including UUID and the @uname singleton form.",
-      "content_hash": "a0b81e98db7c3d921de2ba43c65e1e4d3aa58200921373a4929f9f2adb2942cc",
-      "size_bytes": 15793
+      "summary": "TypeId specification: the {type}-{id} format with its first-dash split, the UUID, @uname, namespace-key and property-id forms, and parsing rules.",
+      "content_hash": "ecc3696e75ac846cd68500e828ab8164fb891fcec3500ad9f29714aa40067677",
+      "size_bytes": 15783
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-19T23:43:15.446584+00:00",
+  "generated_at": "2026-09-22T10:22:31.277705+00:00",
   "latest_process_ref": ""
 }

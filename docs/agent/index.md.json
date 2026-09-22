@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent",
   "folder_name": "agent",
-  "inputs_hash": "1884ffd36f073deeb07cdc302535b2c17fac858e710f79b6427a872391f7c54a",
+  "inputs_hash": "d90778a96791c8e20f903b77b1306119483085bdd6324970585eda08c3f8c38e",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The AgenticProcess entity up close: the four-axis status model that says what a worker is doing and on what evidence, and a tour of its persisted fields, actions and public TypeScript surface.",
@@ -13,7 +13,7 @@
     {
       "name": "agentic_process_statuses.md",
       "rel_path": "agentic_process_statuses.md",
-      "title": "AgenticProcess statuses \u2014 the canonical model",
+      "title": "AgenticProcess statuses — the canonical model",
       "summary": "Canonical four-axis AgenticProcess status model: worker_status evidence, process status meaning, the busy boolean, os_status liveness, broadcast seams, and read-only frontend rules.",
       "content_hash": "eb20dcdb5f6d3be952fce1d3318663c7520c94a9ce0e766544dc7b9ffa22ab5e",
       "size_bytes": 11167
@@ -21,13 +21,13 @@
     {
       "name": "interface.md",
       "rel_path": "interface.md",
-      "title": "AgenticProcess interface \u2014 rendered demo",
-      "summary": "Visual contract tour of the AgenticProcess entity: persisted fields, all 42 actions, and the public TypeScript SDK surface, rendered through interface fences.",
-      "content_hash": "104569cfd9f431918683588f13879c8b2ba6d49901f6cb1f0a4f0ebca7b94696",
-      "size_bytes": 28863
+      "title": "AgenticProcess interface — rendered demo",
+      "summary": "Rendered interface-card tour of AgenticProcess: persisted fields, state rules, helper types, every entity action and the TypeScript SDK.",
+      "content_hash": "76f69f7107deb6d130d797b471f84e7b30dddc4bac88548ad28066016a2b0719",
+      "size_bytes": 28878
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-19T23:43:14.228355+00:00",
+  "generated_at": "2026-09-22T11:53:02.515204+00:00",
   "latest_process_ref": ""
 }

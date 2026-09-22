@@ -272,6 +272,18 @@ export function AddPeopleDialog({ open, onOpenChange, poolId, teamId, teamName, 
           <Trans>Add another</Trans>
         </Button>
 
+        {(() => {
+          // Typed addresses that already have a budget on this pool -- the person's, or a share
+          // still waiting to be accepted -- are re-budgeted, not added twice. Said before the
+          // button is pressed, so "Add" never reads as "make another one".
+          const known = new Set(existing.map((m) => m.email?.trim().toLowerCase()).filter(Boolean));
+          const repeats = drafts().filter((d) => known.has(d.email)).length;
+          return repeats > 0 ? (
+            <p className="text-xs text-muted-foreground" data-testid="add-people-repeats">
+              {t`${repeats} of these already have a budget in ${teamName}; their caps will be updated.`}
+            </p>
+          ) : null;
+        })()}
         {problems.length > 0 && (
           <ul className="max-h-32 overflow-y-auto text-xs text-destructive" data-testid="add-people-problems">
             {problems.map((problem) => (

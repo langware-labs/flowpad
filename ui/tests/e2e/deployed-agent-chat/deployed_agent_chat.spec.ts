@@ -1,102 +1,103 @@
 /**
- * Browser scenario — chat on an agent's REMOTE deployment from the DESKTOP app.
+ * Browser scenario — chat with an agent's CLOUD placement through its `chat` endpoint.
  *
- *   1. Precondition (seeded outside): the agent is deployed on the hub and the
- *      placement row is adopted on this backend (`DAC_DEPLOYMENT_ID`).
- *   2. Open the agent profile → Deployments → the remote row's chat button →
- *      the ordinary chat panel opens, bound to that placement.
- *   3. Send a token prompt: the reply streams into the panel (relayed by the
- *      local backend through the hub to the box), and the status settles.
- *   4. The backend holds a same-id route row (`remote: true`) for that
- *      deployment; reloading the page lists the session under past chats.
+ * Precondition (seeded outside — a deploy is a real box, never a test's job): the
+ * agent is deployed on a hub, and this desktop instance holds the placement
+ * (`DAC_DEPLOYMENT_ID`) and its endpoints. Two surfaces, one endpoint:
  *
- * The desktop runtime is the point: `supported_pages` must be the desk, not
- * the hub — the opposite of the hub-UI validation rule.
+ *   1. DESKTOP (`DAC_FE_PORT`/`DAC_BE_PORT`): the agent profile, the cloud place's
+ *      chat panel — the turn goes desktop → hub → box and its reply streams back;
+ *      a reload shows the conversation as it stands.
+ *   2. HUB UI (`DAC_HUB_FE_PORT`, a hub-mode dev UI proxying to its hub): the
+ *      owner, signed in by the test through the hub's login API
+ *      (`DAC_HUB_EMAIL`/`DAC_HUB_PASSWORD`, a seeded test user), selects the agent
+ *      in the WorldView and chats with the same placement from the hub itself.
+ *
+ * The token in each prompt is what proves a model read it: an echo of the
+ * question would carry it too, so the assistant's own message is matched.
  */
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 const BE = `http://localhost:${process.env.DAC_BE_PORT || '6009'}`;
-const GRAPH = `${BE}/api/v1/graph`;
+const HUB_FE = `http://localhost:${process.env.DAC_HUB_FE_PORT || '4098'}`;
 const AGENT_ID = process.env.DAC_AGENT_ID?.trim() ?? '';
 const DEPLOYMENT_ID = process.env.DAC_DEPLOYMENT_ID?.trim() ?? '';
+const HUB_EMAIL = process.env.DAC_HUB_EMAIL?.trim() ?? '';
+const HUB_PASSWORD = process.env.DAC_HUB_PASSWORD ?? '';
 
 async function getJson(url: string): Promise<any> {
   const r = await fetch(url, { signal: AbortSignal.timeout(20_000) });
   return r.json();
 }
 
-test.beforeAll(async () => {
-  if (!AGENT_ID || !DEPLOYMENT_ID) {
-    test.skip(true, 'DAC_AGENT_ID and DAC_DEPLOYMENT_ID name an already-deployed agent — seed one first');
-  }
-  try {
-    const h = await fetch(`${BE}/api/v1/health/status`, { signal: AbortSignal.timeout(2000) });
-    if (!h.ok) throw new Error('unhealthy');
-  } catch {
-    test.skip(true, `backend not up on ${BE} — launch a disposable instance first`);
-  }
-  const bootstrap = await getJson(`${GRAPH}/bootstrap`);
-  expect(bootstrap?.data?.supported_pages, 'this must be the DESKTOP runtime').toContain('desk');
-  const deployment = await getJson(`${GRAPH}/deployment/${DEPLOYMENT_ID}`);
-  expect(deployment?.data?.parent_type_id, 'the placement belongs to the agent').toBe(`agent-${AGENT_ID}`);
-  expect(deployment?.data?.target?.provider, 'the placement is not on this machine').not.toBe('local');
-  // A sandbox idles to sleep between runs; waking it is part of the seeded
-  // precondition, not of the chat the tests time. One `use` through the hub
-  // readies the box (and leaves a route row the past-sessions test can see).
-  const warm = await fetch(`${GRAPH}/agent/${AGENT_ID}/use`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deployment_id: DEPLOYMENT_ID }),
-    signal: AbortSignal.timeout(180_000),
-  });
-  expect(warm.ok, 'the placement can be used from this backend').toBe(true);
-});
+/** The agent profile with the cloud place's chat open — a URL, like every dock state (the desktop is `baseURL`). */
+const CHAT_PATH = `/dock/assets/editor/agent/typeid/agent-${AGENT_ID}?place=${DEPLOYMENT_ID}&chat=${DEPLOYMENT_ID}`;
 
-/** The agent PROFILE (asset editor), not `/dock/agent/<id>/stream_inbox` — that route is the agent's stream inbox. */
-async function openDeployments(page: import('@playwright/test').Page) {
-  await page.goto(`/dock/assets/editor/agent/typeid/agent-${AGENT_ID}`);
-  await page.getByRole('tab', { name: 'Deploy' }).or(page.getByText('Deploy', { exact: true })).first().click();
-}
-
-test('the desktop opens a chat on the remote placement and streams its reply', async ({ page }) => {
-  await openDeployments(page);
-
-  await page.getByTestId(`deployment-chat-${DEPLOYMENT_ID}`).click();
+/** Send one token prompt in the open panel; the assistant's reply carries the token. */
+async function chatOnce(page: Page): Promise<string> {
   const panel = page.getByTestId('deployed-agent-chat');
   await expect(panel).toBeVisible();
-
   const token = `PONG${Date.now().toString(36).toUpperCase()}`;
-  const composer = panel.getByPlaceholder(/Message this deployed agent/);
+  const composer = panel.getByTestId('deployed-agent-chat-input');
+  await expect(composer).toBeEnabled();
   await composer.fill(`Reply with exactly the word ${token} and nothing else.`);
   await composer.press('Enter');
+  await expect(panel.getByTestId('deployed-agent-chat-user').filter({ hasText: token })).toBeVisible();
+  await expect(panel.getByTestId('deployed-agent-chat-assistant').filter({ hasText: token })).toBeVisible();
+  await expect(panel.getByTestId('deployed-agent-chat-error')).toHaveCount(0);
+  return token;
+}
 
-  const userTurn = panel.locator('[data-testid="execution-message"][data-role="user"]').filter({ hasText: token });
-  await expect(userTurn.first()).toBeVisible();
-  const reply = panel.locator('[data-testid="execution-message"][data-role="assistant"]').filter({ hasText: token });
-  await expect(reply.first()).toBeVisible();
+test.describe('desktop', () => {
+  test.beforeAll(async () => {
+    if (!AGENT_ID || !DEPLOYMENT_ID) {
+      test.skip(true, 'DAC_AGENT_ID and DAC_DEPLOYMENT_ID name an already-deployed agent — seed one first');
+    }
+    try {
+      const h = await fetch(`${BE}/api/v1/health/status`, { signal: AbortSignal.timeout(2000) });
+      if (!h.ok) throw new Error('unhealthy');
+    } catch {
+      test.skip(true, `backend not up on ${BE} — launch a disposable instance first`);
+    }
+    const bootstrap = await getJson(`${BE}/api/v1/graph/bootstrap`);
+    expect(bootstrap?.data?.supported_pages, 'this must be the DESKTOP runtime').toContain('desk');
+    const deployment = await getJson(`${BE}/api/v1/graph/deployment/${DEPLOYMENT_ID}`);
+    expect(deployment?.data?.parent_type_id, 'the placement belongs to the agent').toBe(`agent-${AGENT_ID}`);
+    expect(deployment?.data?.target?.provider, 'the placement is not on this machine').not.toBe('local');
+  });
 
-  // The backend holds the hub's process at the hub's id, as a route row.
-  const rows = (await getJson(`${GRAPH}/agentic_process`))?.data ?? [];
-  const routes = rows.filter((r: any) => r.deployment_id === DEPLOYMENT_ID);
-  expect(routes.length, 'a session row for this placement').toBeGreaterThan(0);
-  expect(routes.every((r: any) => r.hub_route === true), 'every session of a remote placement is a route row').toBe(true);
-  expect(routes.every((r: any) => r.pty_mode === false)).toBe(true);
+  test('the cloud place chat streams the agent reply through the hub, and a reload keeps it', async ({ page }) => {
+    await page.goto(CHAT_PATH);
+    const token = await chatOnce(page);
+    await page.reload();
+    const panel = page.getByTestId('deployed-agent-chat');
+    await expect(panel.getByTestId('deployed-agent-chat-assistant').filter({ hasText: token })).toBeVisible();
+  });
 });
 
-test('a reload lists the session again as a route row of that placement', async ({ page }) => {
-  await openDeployments(page);
-  await page.getByTestId(`deployment-chat-${DEPLOYMENT_ID}`).click();
-  await expect(page.getByTestId('deployed-agent-chat')).toBeVisible();
+test.describe('hub UI', () => {
+  test.beforeAll(async () => {
+    if (!AGENT_ID || !DEPLOYMENT_ID || !HUB_EMAIL || !HUB_PASSWORD) {
+      test.skip(true, 'DAC_HUB_EMAIL / DAC_HUB_PASSWORD name the seeded owner on the hub');
+    }
+    // Through the dev UI's own proxy: the runtime the browser will actually talk to.
+    const bootstrap = await getJson(`${HUB_FE}/api/v1/graph/bootstrap`);
+    expect(bootstrap?.data?.supported_pages, 'this must be the HUB runtime').toEqual(['hub']);
+  });
 
-  await page.reload();
-  await page.getByRole('tab', { name: 'Deploy' }).or(page.getByText('Deploy', { exact: true })).first().click();
-  await page.getByTestId(`deployment-chat-${DEPLOYMENT_ID}`).click();
-  await expect(page.getByTestId('deployed-agent-chat')).toBeVisible();
-
-  // The past-sessions picker is scoped by `deploymentId`; the rows it lists are
-  // the route rows the backend holds for this placement.
-  const rows = (await getJson(`${GRAPH}/agentic_process`))?.data ?? [];
-  const routes = rows.filter((r: any) => r.deployment_id === DEPLOYMENT_ID);
-  expect(routes.length).toBeGreaterThan(0);
-  expect(routes.every((r: any) => r.hub_route === true)).toBe(true);
+  test('the owner chats with the placement from the hub itself', async ({ page }) => {
+    // Signed in through the hub's login API — through the dev UI's proxy, so the
+    // session cookie is the browser's for this origin.
+    const login = await page.request.post(`${HUB_FE}/api/v1/login`, {
+      data: { email: HUB_EMAIL, password: HUB_PASSWORD },
+    });
+    expect(login.ok(), 'the seeded owner signs in').toBe(true);
+    // The hub's surface for an agent is the WorldView: the agent node, selected, lists its
+    // placements with a chat control each (the desktop's agent editor is not a hub page).
+    const agent = `agent-${AGENT_ID}`;
+    await page.goto(`${HUB_FE}/dock/hub/worldview/world?focus=${agent}&selected=${agent}`);
+    await expect(page, 'the hub UI, not its login page').not.toHaveURL(/login\.html/);
+    await page.getByTestId('worldview-agent-deployments').getByTestId(`deployment-chat-${DEPLOYMENT_ID}`).click();
+    await chatOnce(page);
+  });
 });

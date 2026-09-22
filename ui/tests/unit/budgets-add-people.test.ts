@@ -56,7 +56,6 @@ const member = (over: Partial<Record<string, unknown>> = {}) => ({
   user_id: UUID(8),
   limit_usd: 10,
   spent_usd: 0,
-  system_default: false,
   ...over,
 });
 
@@ -115,12 +114,14 @@ describe('addPeopleToTeam', () => {
     expect(h.allocate).not.toHaveBeenCalled();
   });
 
-  it('also updates the hub-made per-user default rather than shadowing it', async () => {
+  it('also re-budgets a PENDING allowance, matched on the invitee address the hub reports', async () => {
+    // Shared but not yet accepted: no account behind it (`user_id` null), only the address the
+    // invitation went to. A second press must set its cap, not mint a second blank allowance.
     const outcome = await addPeopleToTeam(
       POOL,
       TEAM,
       [{ name: 'Ada', email: 'ada@example.com', budget: 5 }],
-      [member({ system_default: true })],
+      [member({ user_id: null })],
     );
     expect(outcome.updated).toEqual(['ada@example.com']);
     expect(h.allocate).not.toHaveBeenCalled();

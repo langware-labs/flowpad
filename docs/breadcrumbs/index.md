@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267
-inputs_hash: 0a2f7fb8dc7953e1f301a14b13cbde998ebdc864a4ab82bf1d309e71826ce951
+inputs_hash: 0aa55e335e6e6101e0aa68bee704eede7a7f8cbf621f2c62be518f4b80835014
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-19T23:43:14.540041+00:00'
+generated_at: '2026-09-22T10:22:30.916793+00:00'
 latest_process_ref: ''
 file_count: 20
 subfolder_count: 0
@@ -31,8 +31,8 @@ subfolder_count: 0
 - [NULL sort order in the SQLite driver](null_sort_order.md) — NULL sort order in the SQLite driver: missing sort values bucket first, never compared against real ones, and never coerced to empty string.
 - [Prompt queue didn't drain in PTY mode](pty_queue_drain.md) — Why a queued prompt never drained in PTY mode: the turn-end edge read _last_broadcast_key off an AgenticProcess re-hydrated fresh per event.
 - [PTY turn cut off mid-generation](pty_turn_liveness.md) — Why a long PTY turn was truncated mid-generation: transcript silence is a working agent, so the inactivity fallback misread a busy worker as idle.
-- [Sandbox preview urls: browser vs server](sandbox_browser_url.md) — A dev-server port has two correct URLs in a cloud box: loopback for the server, the public per-port host for the browser, plus sandbox-id resolution.
-- [Served app HTML must be read as UTF-8](served_html_encoding.md) — Served app HTML must be read as UTF-8: a text read without encoding decodes as cp1252 on Windows, giving mojibake and occasional 500s.
+- [Sandbox preview urls: browser vs server](sandbox_browser_url.md) — A dev-server port has two correct URLs in a cloud box: loopback for the server, the public per-port host for the browser.
+- [Served app HTML must be read as UTF-8](served_html_encoding.md) — Served app HTML must be read as UTF-8: without an encoding it decodes as cp1252 on Windows, giving mojibake and 500s.
 - [Surface change must reconcile the transcript](surface_transcript_reconcile.md) — A surface change owes both transport and transcript: leaving the terminal must unlatch pty_mode, and history must be force-reloaded, gate mirroring the server per route.
 - [Terminal RTL/bidi rendering contract](terminal_bidi.md) — The terminal RTL/bidi contract: one bidi paragraph per row, buffer order chosen per CLI not per platform, stamped on both mount and vendor resolution.
 - [Worker interpreter resolution](worker_interpreter.md) — Workers are handed an absolute interpreter path as FLOWPAD_PYTHON, because uv run and bare python resolve from CWD or PATH and cannot import flow_sdk.

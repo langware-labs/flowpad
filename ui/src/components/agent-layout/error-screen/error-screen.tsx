@@ -2,9 +2,11 @@ import { NotFoundError } from '@src/errors/NotFoundError';
 import NotFound from '@src/pages/NotFound';
 import { Button } from '@src/components/ui/button';
 import { ChevronDown, ChevronUp, Home } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouteError } from 'react-router';
-import { isBackendUnreachable } from '@sdk';
+import { isBackendUnreachable, toplog } from '@sdk';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
+import { errorStatus } from '@src/lib/error-message';
 import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -27,6 +29,16 @@ const ErrorScreen = () => {
   // instead of this screen. Found by the dock sweep, which navigates to docks
   // whose target does not exist.
   const errorAny = (error ?? null) as ErrorLike | null;
+
+  // The route's errorElement replaced the whole page — the loudest way a tab
+  // switch can fail. One `tab_switch` line per error shown.
+  useEffect(() => {
+    toplog.log(
+      'tab_switch',
+      `error ${sinceTabSwitch()} sink=error_screen path=${window.location.pathname} status=${errorStatus(error) || '-'} err:`,
+      error,
+    );
+  }, [error]);
 
   // ERROR HIERARCHY (check in this exact order):
 
