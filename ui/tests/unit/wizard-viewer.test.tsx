@@ -215,7 +215,7 @@ describe('the advanced gate is a skin', () => {
   const countingRef = (reads: { n: number }) =>
     refWith(async () => {
       reads.n += 1;
-      return JSON.stringify({ name: 'UI probe', steps: [{ id: 'a', command: { commands: {} } }] });
+      return JSON.stringify({ name: 'UI probe', steps: [{ id: 'a', kind: 'compute', ref: 'noop', args: {} }] });
     });
 
   it('hides the editor and debugger in Standard, without skipping the work', async () => {
@@ -293,7 +293,7 @@ describe('the document arrives asynchronously', () => {
       await new Promise((r) => setTimeout(r, 0));
       return JSON.stringify({
         name: 'UI probe',
-        steps: [{ id: 'alpha', command: { commands: { darwin: 'true' } } }],
+        steps: [{ id: 'alpha', kind: 'compute', ref: 'noop', args: {} }],
       });
     });
 

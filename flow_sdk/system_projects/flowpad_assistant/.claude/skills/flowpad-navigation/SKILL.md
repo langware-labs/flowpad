@@ -114,7 +114,7 @@ opens a different screen and reports success.
 | Graph Workflows | `graph-workflows` | workflows |
 | Home | `home` | landing, start |
 | Hooks | `hooks` | claude hooks |
-| Inbox | `inbox` | messages |
+| Stream Inbox | `stream_inbox` | messages |
 | LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
 | LLM sources | `llm-sources` | harness funding |
 | Set up LLM | `llm-setup` | llm setup, choose llm, connect llm |
@@ -156,6 +156,7 @@ These take a pointer; without one they are an error, not a landing. Get the id f
 | Process | `agentic_process/<id>` | — |
 | Records  *(hub)* | `records/<id>` | hub records |
 | Show | `show/<id>` | — |
+| Ask | `ask/<id>` | — |
 | Skill apps | `apps/<id>` | — |
 | Spec | `spec/<id>` | — |
 | Subgraph | `subgraph/<id>` | — |

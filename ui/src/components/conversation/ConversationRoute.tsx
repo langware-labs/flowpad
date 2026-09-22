@@ -122,7 +122,7 @@ function ConversationSetProjectButton({
  *
  * Loads the Conversation + parent Task and embeds the same `ConversationPanel`
  * that task views use, with a thin header (back arrow + subject). Drop-in
- * landing target for inbox clicks and the email "view task" deep-link.
+ * landing target for stream inbox clicks and the email "view task" deep-link.
  *
  * Self-contained pointer resolution — matches the convention used by every
  * other dock tab (TasksViewer, LensViewer, …): read
@@ -171,7 +171,7 @@ export function ConversationRoute() {
       return;
     }
     void scopedAgent
-      .inboxScope()
+      .streamInboxScope()
       .then((scope) => {
         if (live) setScopeDecision({ key: scopeKey, allowed: scope.conversation_ids.includes(conversationId) });
       })
@@ -214,7 +214,7 @@ export function ConversationRoute() {
     [navigation, conversationId, agentId],
   );
 
-  const goBack = () => navigation.openDock(agentId ? DockPointer.forAgentInbox(agentId) : DockPointer.forInbox());
+  const goBack = () => navigation.openDock(agentId ? DockPointer.forAgentStreamInbox(agentId) : DockPointer.forStreamInbox());
 
   if (!conversationId) {
     return (
@@ -235,10 +235,10 @@ export function ConversationRoute() {
   if (agentId && !scopeAllowed) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-        <Trans>This conversation is not in this Agent inbox.</Trans>
+        <Trans>This conversation is not in this Agent stream inbox.</Trans>
         <Button variant="outline" size="sm" onClick={goBack}>
           <ArrowLeft className="me-1.5 h-3.5 w-3.5" />
-          <Trans>Back to inbox</Trans>
+          <Trans>Back to stream inbox</Trans>
         </Button>
       </div>
     );
@@ -256,7 +256,7 @@ export function ConversationRoute() {
           type="button"
           onClick={goBack}
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          title={t`Back to inbox`}
+          title={t`Back to stream inbox`}
         >
           <ArrowLeft className="h-4 w-4" />
         </button>

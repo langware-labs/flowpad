@@ -31,6 +31,7 @@ WHY THE FIXTURES POPULATE EVERY FIELD
 
 from __future__ import annotations
 
+
 import datetime
 from typing import Any
 
@@ -277,8 +278,10 @@ def test_the_two_egress_seams_now_agree():
             # `sent_at` is the projection-owned EVENT time: locally re-derived
             # from the item, and a hub LWW refresh must never blank it. `envelope`
             # is its projection-owned sibling (sender, recipients, subject).
-            ["origin_local", "source_item_id", "sent_at", "envelope"],
-            # Per-device inbox state: travels outward, but a hub refresh must not reset it.
+            # `sender` is the typed author, local only: the hub keeps the `sender_id` wire
+            # string, so a hub refresh must never turn an agent's reply back into a person.
+            ["origin_local", "source_item_id", "sent_at", "envelope", "sender"],
+            # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
                 "asset_ref",
@@ -309,6 +312,7 @@ def test_the_two_egress_seams_now_agree():
                 "origin",
                 "origin_local",
                 "private_context_entities_",
+                "sender",
                 "shared_context_entities",
             ],
         ),
@@ -355,11 +359,13 @@ def test_the_two_egress_seams_now_agree():
             {},
             # `message_ids` joined `message_count` as PRIVATE: both are projections
             # of the pointer log, rebuilt locally and never accepted from the hub.
-            # `owner`: whose inbox lists it — a fact about this machine's partition,
+            # `owner`: whose stream inbox lists it — a fact about this machine's partition,
             # never the hub's (that is the roster's `owner` role).
             # `channel_source_id`: the local DataSource behind a source-backed
             # conversation — a row id in OUR database.
-            ["hub_updated_date", "message_ids", "owner", "channel_source_id"],
+            # `is_unread`: this viewer's unread, projected by `stream_inbox.recompute_unread`.
+            # `channel_spec`: the channel's traits, derived locally from `channel` — never travels.
+            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "channel_spec"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
@@ -378,6 +384,8 @@ def test_the_two_egress_seams_now_agree():
                 "last_edited_at",
                 "message_count",
                 "message_ids",
+                # A projection like `message_count`: only `recompute_unread` may write it.
+                "is_unread",
                 "private_context_entities_",
                 "shared_context_entities",
             ],

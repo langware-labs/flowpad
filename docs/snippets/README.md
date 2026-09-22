@@ -12,16 +12,17 @@ pinned by a test so it cannot drift silently.
 | [Simple message block](message-block.md) | send a prompt through a process-local channel and let an Agent reply | `tests/unit/test_message_block.py`, `tests/unit/test_message_block_snippet.py` |
 | [Data sources](data-sources.md) | connect a source, sync it, read the rows, subscribe to events, write items in, watch a folder, operate it | `tests/unit/test_data_sources_snippets.py` (runs every fence), `tests/unit/test_ingest_write_route.py` |
 | [Gmail source](gmail-source.md) | create an app-password Gmail source without persisting its password | `tests/unit/test_gmail_snippet.py` |
-| [Agent email](agent-email.md) | allocate an Agent inbox, listen for mail, run the Agent and send a threaded reply | `tests/hub_tests/test_agent_email_conversation.py`, `tests/long_tests/test_blocks_email_workflow.py` |
-| [Workflows](workflows.md) | the plain-Python `blocks` surface: an inbox, an agent runner, a typed reply that acks, on email, Telegram and Slack | `tests/unit/test_workflows_snippets.py` (runs every loop), `tests/unit/test_blocks_email.py`, live `tests/long_tests/test_blocks_email_workflow.py` |
+| [Agent email](agent-email.md) | allocate an Agent mailbox, listen for mail, run the Agent and send a threaded reply | `tests/hub_tests/test_agent_email_conversation.py`, `tests/long_tests/test_blocks_email_workflow.py` |
+| [Workflows](workflows.md) | the plain-Python `blocks` surface: a stream inbox, an agent runner, a typed reply that acks, on email, Telegram and Slack; the same loop on every channel for a user or an agent | `tests/unit/test_workflows_snippets.py` (runs every loop), `tests/unit/test_blocks_email.py`, live `tests/long_tests/test_blocks_email_workflow.py` |
 | [Connections](connections.md) | list, connect and verify providers from a Python REPL or `flow connections` | `tests/unit/test_connections.py`, `tests/unit/test_connections_cli.py` |
 | [Secret stores](secret-stores.md) | load, save and validate named secrets; a credential's store per environment; bind a store and an account to a data source instance | `tests/unit/test_secrets/test_secret_stores_snippets.py` (runs every fence), `tests/unit/test_secrets/`, `tests/unit/test_connection_access.py` |
 | [Processes and agents](processes.md) | give a process or an agent an MCP server, launch it, read the answer | `tests/long_tests/test_process_mcp_multi_vendor.py` |
 | [Agent deployment](agent-deployment.md) | place an agent, start a session on a placement, read its runs, pause the machine, and the same verbs from TypeScript and HTTP | `tests/unit/agent/test_agent_deployment_contract.py`, `tests/unit/agent/test_agent_run_dispatch.py`, `tests/unit/test_deployed_agent_chat_demo.py` |
-| [LLM endpoints](llm-endpoints.md) | fund a call: a provider key, a hub budget or a device login; complete, embed, list, probe | `tests/unit/test_llm_endpoint_rows.py`, `tests/unit/test_llm_client.py`, `tests/long_tests/test_llm_endpoint_live.py` |
+| [LLM endpoints](llm-endpoints.md) | fund a call: a provider key, a hub budget or a device login; complete, embed, list, probe; run on a machine that never logged in (public endpoint) | `tests/unit/test_llm_endpoint_rows.py`, `tests/unit/test_llm_client.py`, `tests/long_tests/test_llm_endpoint_live.py`, `tests/long_tests/test_loginless_in_docker.py` |
 | [RAG](rag.md) | make a folder searchable, run a pass, ask it something, chunk and store on their own | `tests/unit/test_rag_snippets.py` (runs every snippet), `tests/unit/test_rag_indexing.py` |
 | [Activity](activity.md) | report progress on anything — count, nest, end it, read what is live, and the same verbs from TypeScript, the CLI and HTTP | `tests/unit/test_activity_snippets.py` (runs every fence), `tests/unit/test_activity_handle.py`, `tests/unit/test_activity_monitor.py` |
-| [Pipes](pipes.md) | run a source cycle, mirror and follow a folder, react to a change, set cadence, one agent over several sources, keep a search index level | `tests/unit/test_pipes_snippets.py` (runs every fence) |
+| [An agent on a channel](agents-on-channels.md) | declare a channel's credential, put an agent on WhatsApp so the app answers, or run the answering loop yourself; proven in Docker | `tests/unit/test_agents_on_channels_snippets.py` (runs every fence), `tests/long_tests/test_whatsapp_agent_in_docker.py` |
+| [Pipes](pipes.md) | run a source cycle, mirror and follow a folder, react to a change, set cadence, one agent over several sources, keep a search index level, pages of N with one ack each | `tests/unit/test_pipes_snippets.py` (runs every fence) |
 
 ## Conventions
 
@@ -29,9 +30,9 @@ pinned by a test so it cannot drift silently.
   connection operations lease the selected standard service for their normal
   HTTP actions and restore its initial up/down state. Long tests that pin live
   legs run under the standard 30s cap and skip without credentials.
-* **The shipped sources load on first ask.** The first `source_type(provider)`
+* **The shipped sources load on first ask.** The first `DataDriver.loaded(provider)`
   loads every shipped data source asset folder
-  (`agentic-assets/data_source/<name>/source.py`), so a snippet imports nothing to
+  (`agentic-assets/data_driver/<name>/source.py`), so a snippet imports nothing to
   make `rss` or `slack` resolve, and an override it registers before or after that
   first lookup is kept.
 * **Values travel as `DataSpec`.** What a driver emits is a

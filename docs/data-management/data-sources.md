@@ -18,26 +18,21 @@ id: 44d26316-873d-49f6-95c2-e61d74dee7e6
 
 The filesystem indexer walks local roots. A **data source** walks something
 else — a feed, a mailbox, a channel, a repository — and lands what it finds in
-the same graph. One `DataSource` owns the relationship with one remote account
-or tree: which driver, what it needs to run, how often, and where its payload
-becomes locally present.
+the same graph. One `DataSource` reads **one stream** — one feed, one channel, one mailbox, one
+drive or prefix — and owns the relationship with it: which driver, what it needs
+to run, how often, and where its payload becomes locally present. Watching three
+feeds is three sources; there is no second unit under a source.
 
-A **segment** is the unit of sync: one bucket with its own bookmark — a feed
-URL, a Slack channel, a git branch, a Drive shared drive. It is the noun the
-whole subsystem is keyed on, and it is deliberately not called a scope or a
-stream, both of which already mean something else here.
-
-Two entities carry the state. A `DataSourceCursor` is "since last pull", **one
-row per segment** — a dict on the source would make every segment's advance a
-read-modify-write of the same row, and leave nowhere to record per-segment
-health. A `SourceItem` is one ingested record.
+The source owns its **query** (built by the driver from its config,
+`Source.query()`) and its **position** (`DataSource.cursor`, row-only). A
+`SourceItem` is one ingested record.
 
 ```
-DataSource ──(one per segment)──> DataSourceCursor
+DataSource  (config → query; cursor, manifest, high_water on the row)
      │  origin: FSOrigin  (WHERE the bytes come from — stamped by driver.origin_for)
      │
-     └─ driver.fetch() ──> SourceItemSpec ──> ingest_items() ──> SourceItem   (record: DbSerializer resolves by natural key, gates on digest)
-                       └─> refs          ──> reflect_refs()  ──> files        (asset: placed, then reindex_paths)
+     └─ source.fetch(cursor) ──> SourceItemSpec ──> ingest_items() ──> SourceItem   (record: DbSerializer resolves by natural key, gates on digest)
+                             └─> refs          ──> reflect_refs()  ──> files        (asset: placed, then reindex_paths)
 ```
 
 ## The pipeline
@@ -45,7 +40,7 @@ DataSource ──(one per segment)──> DataSourceCursor
 | Stage | File | Contract |
 |---|---|---|
 | dispatch | `ingest/poller.py` | One heartbeat task, never a job per source |
-| one cycle | `ingest/sync.py` | Per-segment isolation, records before cursor, a budget not a backoff |
+| one cycle | `ingest/sync.py` | One traversal from the stored position, records before cursor, failure as health |
 | the write | `ingest/ingestor.py` | **The single chokepoint** for `SourceItem` — record, index, emit, in that order |
 
 **Why a heartbeat and not a scheduled job per source.** Per-entity jobstore rows
@@ -72,37 +67,32 @@ goes away the requests stop, the lease lapses within seconds, and the standing
 source: an auto-firing viewer must not resurrect what a human or a broken
 credential stopped.
 
-**Three properties `sync_source` exists to guarantee.** A segment that fails
-leaves its cursor *unadvanced* and its siblings running — re-delivery is a
-digest-gate no-op, so re-fetching is free and losing a window is not. The cursor
-advances only after the write returns, so a crash costs a partial re-fetch and
-can never open a gap. And where a provider caps us, a run spends a fixed number
-of requests on the segments that waited longest (`_round_robin` by
-`last_attempted_at`, never-attempted first); the cadence *is* the retry rate.
+**Two properties `sync_source` exists to guarantee.** The cursor advances only
+after the write returns, so a crash costs a partial re-fetch and can never open a
+gap. And a failed pass leaves the cursor *unadvanced* and records why on the row
+(`health`, `error_code`, `consecutive_failures`) — re-delivery is a digest-gate
+no-op, so re-fetching is free and losing a window is not. The cadence *is* the
+retry rate; there is no backoff.
 
-Two things the cycle also does that are easy to miss. `sync_source` stamps
-`DataSource.kind` and `DataSource.channel` from the driver on every run, so a
-row written before either field existed self-heals on its next poll. And a
-segment enumeration failure (`driver.segments()` raising) is classified and
-recorded as health exactly like a fetch failure — `_fail_source` defaults to
-`config_error` but takes the classified health, so a network blip while
-listing channels does not park the source.
+`sync_source` also stamps `DataSource.kind` and `DataSource.channel` from the
+driver on every run, so a row written before either field existed self-heals on
+its next poll.
 
 **The digest gate is the performance story.** An unchanged item costs one indexed
 read and nothing else — no save, no metadata write, no FTS write, no broadcast,
 no event. In steady state `IngestReport.unchanged` should dominate; if it is near
 zero on a repeat poll the gate is not working and every cycle is rewriting rows
-and re-firing triggers. The cursor row honours the same rule: a segment that
-was already healthy and came back `unchanged` with identical `state` and
-`high_water` is **not saved** (`last_attempted_at` stays in memory), so the
-steady state is one request and zero writes per feed per tick.
+and re-firing triggers. The source row honours the same rule: a source that was
+already healthy and came back `unchanged` at the same position is **not saved**
+(`last_attempted_at` stays in memory), so the steady state is one request and
+zero writes per source per tick.
 
 **Run modes and the events a cycle emits.** `IngestMode.for_run` picks
-`BACKFILL` on a segment's first run or whenever a page carries more than
+`BACKFILL` on a large first run or whenever a page carries more than
 `STORM_CAP_PER_MINUTE` (30) items; `INCREMENTAL` otherwise. A backfill saves
 with `notify=False` and emits no per-item events — the GraphWorkflow storm caps
 silently drop the excess, so announcing 40 items into a 30/min cap delivers
-30. The tags (`ingest/ingest_on_tag.py`, four fixed segments so the globs
+30. The tags (`ingest/ingest_on_tag.py`, four fixed dot-parts so the globs
 behave):
 
 | Tag | Target | When |
@@ -125,58 +115,70 @@ field is an error, not a row with an empty name.
 ## The source contract
 
 Every data source is a **self-contained asset folder**,
-`agentic-assets/data_source/<name>/` (the shipped ones under
-`flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source/`): the manifest,
+`agentic-assets/data_driver/<name>/` (the shipped ones under
+`flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/`): the manifest,
 a `source.py` holding one `Source` class, any helper modules beside it (`transport.py`),
 its `tests/` and its editor. The class implements the access protocols it can honour
-(`Listable`, `Readable`, `Messaging`, `Segmented`, `Verifiable`, `Choosing`,
+(`Listable`, `Readable`, `Messaging`, `Verifiable`, `Choosing`,
 `Identified`, `StableHandle`) — a capability is discovered by `isinstance`, never
 declared. A source answers *what is there* and *what changed since a cursor*; it never
 writes an entity, emits an event, or advances a cursor. It imports the public SDK, never
 another asset.
 
 The loader (`flow_sdk/ingest/source_registry.py`) builds each folder into a **source
-type** (`flow_sdk/ingest/sources.py`, `SourceType`) from the manifest and the class. What
+type** (`flow_sdk/ingest/sources.py`, `DataDriver`) from the manifest and the class. What
 differs between sources, the source says itself: the credential shape is the manifest's
 `auth` (one resolver, `flow_sdk/ingest/credentials.py`); `build` constructs it over an
-application transport; `message_for` reads a send's arguments; `lift_cursor` adopts an
-older cursor; `local_tree_key` / `origin_id_for` place and name reflected files;
+application transport; `message_for` reads a send's arguments; `query` names the one stream it reads; `local_tree_key` / `origin_id_for` place and name reflected files;
 `permalink` addresses its channel's UI; `webhook_challenge` / `webhook_account` /
 `events_from_webhook` take push delivery through the one generic route,
 `/api/v1/data_source/webhook/<name>`, and `webhook_authentic` — when a class declares it —
 must accept the delivery's raw body and headers before anything is ingested. The check is
-`SourceType.ingest_pushed`'s, so no caller can skip it, and the route answers a refusal
+`DataDriver.ingest_pushed`'s, so no caller can skip it, and the route answers a refusal
 with 401 (the URL is public; WhatsApp checks Meta's `X-Hub-Signature-256` against the app
 secret). The shipped folders load on the first
-`source_type(provider)` call; an authored folder loads on first use
-(`resolve_source_type`). `tests/unit/test_data_sources_are_self_contained.py` fails on
+`DataDriver.loaded(provider)` call; an authored folder loads on first use
+(`DataDriver.get`). `tests/unit/test_data_sources_are_self_contained.py` fails on
 any provider knowledge outside an asset folder.
 
-**The cursor is the source's own.** `DataSourceCursor.cursor` is an opaque string the
-loop carries and never reads, persisted only for a class that declares
-`durable_cursor` (a change log, a commit, a watermark). `DataSourceCursor.manifest` is
-the traversal's own diff bookkeeping for a reflecting source. `state` is what an older
-build kept on the row: the type's `lift_cursor` reads it once and a good pass clears it.
-`test_cursor_state_is_opaque_to_the_subsystem` (`tests/unit/test_ingest_sync.py`) greps
-the engine for provider keys. `DataSourceCursor.high_water` is recorded for operators,
-never read back as a floor.
+**The cursor is the source's own.** `DataSource.cursor` is an opaque string the
+loop carries and never reads, persisted across passes only for a class that
+declares `durable_cursor` (a change log, a commit, a watermark).
+`DataSource.manifest` is the traversal's own diff bookkeeping for a reflecting
+source. `test_cursor_state_is_opaque_to_the_subsystem` (`tests/unit/test_ingest_sync.py`)
+greps the engine for provider keys. `DataSource.high_water` is recorded for
+operators, never read back as a floor. A cursor is bound to the query that
+produced it (`_paging.query_token`); `fetch(cursor, narrow={...})` reads a
+narrowed query (`Source.effective_query`) and a field the query lacks is a
+`ValueError`.
+
+**Reading a source by hand.** `async with await source.open() as live:` gives
+`live.pages()` (from the stored position; `await page.ack()` moves the cursor
+past a page, an un-acked page is read again) and `live.items(**narrow)` (the
+query narrowed, the position untouched). `sync()` is the same loop with
+`ingest_items` between the page and the ack. `pages(page_size=50)` sizes the page.
+`merge(*sources)` (`ingest/session.py`) reads several sources as one session with the same
+verbs: a page is always one source's and acks that source's cursor, `items(**narrow)`
+interleaves by event time, `reply(item, body=…)` goes back through the source whose scope owns
+the item's origin; nothing is stored and there is no `send`. On the ingested side the same
+shape is `StreamInbox.pages(size=…)` and `blocks.pages(*stream_inboxes)` over `ConsumerPosition`s.
 
 ### Traits
 
-Traits are class variables on the `Source`; `SourceType` exposes the ones the
+Traits are class variables on the `Source`; `DataDriver` exposes the ones the
 application reads, so the engine asks the type rather than probing.
 
 | Trait | Default | Meaning |
 |---|---|---|
 | `provider` | — | Registry key. Distinct from `channel`, the user-facing name (`origin_kind_for`) |
 | `kind` (on the type) | — | Ontology kind of the **source** row (`datasource.feed.rss`); stamped by `sync_source` |
+| `ns` | `""` (ours) | Whose ontology the shapes this driver registers belong to. A driver OUTSIDE the shipped tree must name one — its own, or its project's — or `load_driver` refuses it, because otherwise a kind it declares lands in ours and can take a shipped one's name. Every kind it mints is prefixed `--<ns>--`; ours is the default and is never written. See [`ontology.md`](../ontology.md) |
 | `durable_cursor` | `False` | Whether `ChangePage.resume_cursor` is persisted and resumed |
 | `reflects` | `False` | The payload is files for reflection, never records |
-| `segment_budget` | `None` → the loop's `DEFAULT_SEGMENT_BUDGET` (5) | Segments per run; the engine takes `min(caller, class)`. Slack declares 1 |
 | `pages_per_pass` | `None` | Page chain cap per traversal |
 | `attention_poll_seconds` | `None` | Sub-tick cadence while watched (see *Attention*). Telegram declares 5 |
 | `stamps_identity` | `True` | Whether this source's bytes are ours to write to |
-| `identity_config_key` | `inbox` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.Inbox`) matches on to reuse a source |
+| `identity_config_key` | `address` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.StreamInbox`) matches on to reuse a source |
 | `connection` | `None` | The machine connection it reads with (`google`, `slack`), checked before a row exists |
 | `open_inbound` | `False` | Strangers are the point (a help desk): an empty allowlist admits everyone |
 | `echoes_sends` | `False` | The provider returns our own sends on the next read, so a send is not recorded twice |
@@ -196,8 +198,8 @@ deadline.
 
 **What a driver is, and what it is not.** The driver is Python and ships with the
 SDK. Everything a *person* sees about a source — its title, its glyph, the fields
-the create form renders — comes from a `data_source_spec` **asset**, one folder
-per source under `agentic-assets/data_source/`. That split is what lets a source
+the create form renders — comes from a `data_driver` **asset**, one folder
+per source under `agentic-assets/data_driver/`. That split is what lets a source
 be added without a frontend release; see [the data-source asset](data-source-asset.md).
 
 ## Status, health, and what stops a poll
@@ -214,16 +216,9 @@ read as permanent would park a source forever over a rate limit. Anything a
 driver raises that is not a `SourceError` classifies as transient: guessing
 "permanent" on an error never seen before would silently stop a working source.
 
-Where that rule actually bites is the **source**, not the segment. A failing
-segment records its own health on its cursor, but `_round_robin` does not
-consult cursor health — the next cycle fetches it again. What stops polling is
-the roll-up: `_roll_up` sets `DataSource.health` to the `worst_of` its cursors
-(`config_error` > `transient_error` > `never_synced` > `ok`), copies the
-offender's `error_code`/`error_detail` onto the source, and `may_poll()` then
-refuses the whole source while its health is `config_error`. So one segment
-with a dead credential parks every sibling on the next tick, even though the
-cycle that discovered it finished them. `segment_count` is stamped in the same
-roll-up, which is why a source that fails before enumerating reads 0.
+A source reads one stream, so its health IS that stream's: a `config_error`
+pass parks the source (`may_poll()` refuses it) until `poll_now` or `replay`
+un-latches it, and a `transient_error` pass is simply tried again next tick.
 
 `poll_refusal()` is the ONE gate — an empty reason means the source is active
 and not in `config_error`; otherwise the returned sentence says exactly why it
@@ -248,15 +243,22 @@ make the source due, the heartbeat does the work within a minute):
 |---|---|---|
 | `poll_now` | make due | **the only un-latch** for `config_error` besides `replay` (`_make_due`) |
 | `request_poll` | make due, arm the fast lane | never un-latches, never wakes `disabled`/`setup` — see *Attention* |
-| `reset_cursors` | clear `cursor`, `manifest`, legacy `state` and `high_water`, keep the rows | alone it is invisible: the digest gate suppresses re-delivery. Rows are kept so `last_synced_at` survives and the next run is not a silent `BACKFILL` |
-| `purge_items` | destroy the source's `SourceItem`s and their inbox projection | rebuilt rows are **new** entities; `read`/`starred` are lost |
-| `replay` | `purge_items` (optionally `since=`) + `reset_cursors` + make due | widens `window_days` to cover `since`, never shrinks it; undated rows survive a bounded replay |
+| `reset` | clear `cursor`, `manifest` and `high_water`, keep the records | alone it is invisible: the digest gate suppresses re-delivery. `last_synced_at` survives |
+| `purge_items` | destroy the source's `SourceItem`s and their stream inbox projection | rebuilt rows are **new** entities; `read`/`starred` are lost |
+| `replay` | `purge_items` (optionally `since=`) + `reset` + make due | widens `window_days` to cover `since`, never shrinks it; undated rows survive a bounded replay |
 | `verify` | the two-layer setup check above | |
 
-Deleting a source cascades to its cursors and items on all three paths
-(`delete_by_id` — the HTTP route, `delete`, `destroy`), because nothing else
-would: cursors and records are separate rows keyed to an id that would no
-longer resolve.
+Deleting a source cascades to its items, consumer positions and change log on
+all three paths (`delete_by_id` — the HTTP route, `delete`, `destroy`), because
+nothing else would: they are separate rows keyed to an id that would no longer
+resolve.
+
+**One-time cleanup at boot.** Rows of the retired `data_source_cursor` type are
+removed (`RETIRED_TYPES`, `server/app.py`); each source re-reads its window. A
+`data_source.json` whose config still lists N containers under a key its driver
+retired (`Config.retired_list`, e.g. rss `feed_urls` → `feed_url`) is split into
+one source per entry by `migrate_list_configs()`; a list that cannot split stays
+and parks with `config.<field> is required`.
 
 ## The two destinations
 
@@ -370,7 +372,7 @@ it, or the producer stops being interchangeable and the single envelope has no
 point.
 
 Handlers are driven directly by tests and wired to the bus by `subscribe()`,
-which `server/app.py` calls at startup right after arming the inbox lanes. The
+which `server/app.py` calls at startup right after arming the stream inbox lanes. The
 bus does not await consumers, so an emitted event reaches a detached task —
 asserting an outcome straight after an emit races it. Note that
 `handle_change` calls `sync_source` directly, outside the poller's
@@ -379,13 +381,14 @@ can overlap (see *Known gaps*).
 
 ## Adding a source
 
-1. Make the folder `agentic-assets/data_source/<name>/` and write the class in its
+1. Make the folder `agentic-assets/data_driver/<name>/` and write the class in its
    `source.py` — one `Source` subclass whose `provider` is the manifest's `name`. It
    imports the SDK; implement the protocols the provider can honour —
    `fetch`/`iterate` for a listing, `send`/`reply` (and `message_for`) for a channel,
    `open` for bytes, `verify` for a setup step.
-2. Choose the segment unit. **Never key it on a mutable grouping**: a folder or a space
-   that items move between produces duplicates nothing cleans up.
+2. Choose the stream one source reads (`query()` from its config). **Never key it on a
+   mutable grouping**: a folder or a space that items move between produces duplicates
+   nothing cleans up. A person watching several containers adds several sources.
 3. Put resumption in the cursor string, and declare `durable_cursor` only when the
    provider can resume from it. Nothing outside the source reads it.
 4. Declare only what the source can promise. A class that claims a capability it does
@@ -394,17 +397,25 @@ can overlap (see *Known gaps*).
    source yields `FileItem`s and never produces a `SourceItem`.
 6. If the bytes are not yours to write, set `stamps_identity = False` and give the class
    an `origin_id_for` classmethod.
-7. Write the manifest beside it, `data_source.json` — `kind`, `auth`, `config`,
-   `reflect`. The create form is generated from its `config` block; nothing in `ui/` is
-   edited, and nothing is registered anywhere else.
+7. Write the manifest beside it, `data_driver.json` — `kind`, `auth`, `config`,
+   `reflect`, and `ns` if the driver is not shipped by us. The create form is generated
+   from its `config` block; nothing in `ui/` is edited, and nothing is registered
+   anywhere else.
 8. Add `tests/test_<name>_source.py` in the folder: the conformance kit
    (`flow_sdk.sources.testing.checks_for`) over the class, plus its wire cases against a
    loopback server (`flow_sdk.ingest.testing.local_http_server`); import the class with
    `asset_module("<name>")`.
-9. Add `tests/matrix.py`: a `case(monkeypatch, tmp_path)` context manager yielding the
-   config, the provider doubles and the expectations. The data source matrix
-   (`tests/api/test_source_matrix.py`, `tests/api/test_source_cli_matrix.py`) drives it
-   through create, verify, sync, items, send, reply, disable and delete.
+9. Add `tests/matrix.py`: a `Double` — the provider over a loopback socket, `config` (with a
+   `base_url`/host seam the driver reads, empty = the real host), `secrets` keyed as the
+   manifest's `auth` names them, `deliver(text, sender=…)` for an inbound arriving now and
+   `sent()` for what went out — and a `case(monkeypatch, tmp_path)` context manager over it
+   yielding the config, the expectations and the double. The data source matrix
+   (`tests/api/test_source_matrix.py`, `tests/api/test_source_cli_matrix.py`) drives `case`
+   through create, verify, sync, items, send, reply, disable and delete; a message driver's
+   `Double` is also what the stream inbox channel matrix reads through, in-process
+   (`tests/unit/test_stream_inbox_channel_matrix.py`) and against a running backend
+   (`tests/e2e/channel_doubles.py` hosting every driver's double for the browser runbook
+   `ui/tests/manual_regression/stream-inbox/channel_matrix.md`).
 
 A shipped source and an authored one (the same folder in a project) load the same way;
 see [the data-source asset](data-source-asset.md).
@@ -417,8 +428,9 @@ value: `origin`, the resource's `CloudOrigin(kind, namespace, key)`, and `data`,
 its typed payload tagged with a `spec_kind` (`ingest.message`,
 `ingest.message.email`, `ingest.feed.item`). Drivers still emit the flat
 envelope; `ingest/legacy_lift.py` is the one rule that lifts it — `kind` is the
-source's channel, `namespace` is `<account_key>/<segment_key>` (the segment
-alone for a source with no account), `key` is the external id — and the
+source's channel, `namespace` is the account the source reads as (the kind
+itself for a source with no account; a driver that builds its own origin joins
+its container, `<account>/<channel>`), `key` is the external id — and the
 ingestor, the projection and the cutover migration all lift through it. Its
 identity is the natural key declared once on the type —
 `natural_key=("data_source_id", "origin_kind", "origin_namespace",
@@ -429,7 +441,7 @@ normalized fields, never `raw`). `upsert` copies only the spec's fields onto
 the row, plus the natural key it resolved by, so `read` and `starred` survive
 re-delivery by not being named. A
 blank key component is refused by the spec (`NonBlank`), because a blank
-collapses every item of a segment onto one row. Two edge normalizations live
+collapses every item of a source onto one row. Two edge normalizations live
 on the spec, not in drivers: `occurred_at` is coerced to aware-UTC ISO, and an
 `external_id` shaped like a Slack `ts` overrides `occurred_at` outright.
 
@@ -444,8 +456,6 @@ on the spec, not in drivers: `occurred_at` is coerced to aware-UTC ISO, and an
   its cursor sha is authoritative, so a hint could only be less accurate. It also
   bypasses `_inflight`, so it can run concurrently with a heartbeat poll of the
   same source.
-* One segment's `config_error` parks the whole source (roll-up above); the
-  per-segment isolation holds only within the cycle that discovers it.
 * A source's code runs in the backend process; the sandboxed source host is a later step
   (no asset changes when it lands).
 * The outbound message specs are still named per channel in
@@ -453,10 +463,10 @@ on the spec, not in drivers: `occurred_at` is coerced to aware-UTC ISO, and an
   replace them.
 
 **Key source files:** `flow_sdk/builtin/data_source.py` (the `send`, `reply`, `items`,
-`sync`, `set_enabled`, `remove` actions), `data_source_cursor.py`, `source_item.py`
-(`SourceItemSpec` = the row's header), `data_source_spec.py` (`ManifestSpec` = the
+`sync`, `set_enabled`, `remove` actions), `source_item.py`
+(`SourceItemSpec` = the row's header), `data_driver.py` (`DataDriverSpec` = the
 manifest's header), `flow_sdk/ingest/` (`source_registry.py`, `sources.py`,
-`credentials.py`, `testing.py`, `poller.py`, `sync.py`, `ingestor.py`, `models.py`,
+`credentials.py`, `testing.py`, `poller.py`, `sync.py`, `session.py`, `ingestor.py`, `models.py`,
 `reflect.py`, `change_event.py`, `health.py`, `digest.py`, `ingest_on_tag.py`,
 `legacy_lift.py`), `flow_sdk/sources/` (the contract), each data source's asset folder,
 `flow_sdk/cli/commands/source_cmd.py` (`flow source`),

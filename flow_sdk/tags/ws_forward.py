@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # ingest driver's worker, an agent started from its profile) produces no
 # `graph_workflow.*` at all.
 #
-# `inbox.*.message.projected` is the post-commit lane for message placement.
+# `stream_inbox.*.message.projected` is the post-commit lane for message placement.
 # Unlike `ingest.*.item.*`, projection already suppresses this event when a
 # batch exceeds the ingest storm cap. The UI needs this exact boundary: a sync
 # completion races the detached projection handler, while this event fires only
@@ -62,7 +62,7 @@ FORWARDED_TAG_PATTERNS: list[str] = [
     "app.ready",
     "graph_workflow.*",
     "ingest.*.sync.*",
-    "inbox.*.message.projected",
+    "stream_inbox.*.message.projected",
     "agent.status",
 ]
 

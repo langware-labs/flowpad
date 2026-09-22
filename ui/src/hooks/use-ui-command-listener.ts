@@ -3,6 +3,7 @@ import {
   ConnectionManager,
   DockPointerData,
   dataManager,
+  Layout,
   PageId,
   TypeId,
   ViewType,
@@ -119,7 +120,11 @@ export function useUiCommandListener(): void {
           msg.view_type as ViewType,
           msg.pointer ?? undefined,
           msg.options ?? undefined,
-          undefined,
+          // The layout the backend asked for. This argument used to be
+          // hardcoded `undefined`, so a pushed command could only ever land in
+          // the dock — there was no way to raise a chrome-less `win/` window
+          // from the backend at all.
+          (msg.layout as Layout | undefined) ?? undefined,
           msg.page as PageId | undefined,
         ),
       );
@@ -158,7 +163,7 @@ export function useUiCommandListener(): void {
 
     // Banner click (from main process) → navigate to the payload's generic
     // click target (URL-first, works for any notify_type — the OS badge is
-    // handled separately by useSyncOsBadge, driven by InboxManager.unread).
+    // handled separately by useSyncOsBadge, driven by StreamInboxManager.unread).
     const bridge = (window as unknown as { electronAPI?: NotifyBridge }).electronAPI;
     const disposeNotificationClick = bridge?.onNotificationClick?.(({ clickTarget }) => {
       const pointer = dockPointerForClickTarget(clickTarget);

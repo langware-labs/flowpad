@@ -48,18 +48,16 @@ async def test_binding_makes_the_source_the_agents(connected):
 
 
 async def test_the_channel_id_is_shaped_by_the_providers_declared_field(connected):
-    """`channels` is declared `lines`, so a bare id must land as a list.
-
-    `bind_channel` writes the bare value on purpose and lets `_coerce_config`
+    """`bind_channel` writes the bare value on purpose and lets the driver's `Config`
     apply the provider's own field type on save — otherwise this method would
-    need to know which providers take lists.
+    need to know each provider's shape.
     """
     agent = await _agent("binder-shape")
 
     source = await agent.bind_channel(provider="slack", channel=CHANNEL)
 
-    stored = (source.config or {}).get("channels")
-    assert stored in (CHANNEL, [CHANNEL]), f"unexpected shape {stored!r}"
+    stored = (source.config or {}).get("channel")
+    assert (stored.get("id") if isinstance(stored, dict) else stored) == CHANNEL, f"unexpected shape {stored!r}"
 
 
 async def test_binding_twice_adopts_the_same_source(connected):
@@ -89,7 +87,7 @@ async def test_the_allowlist_defaults_to_nobody(connected):
 async def test_a_one_way_provider_is_refused(monkeypatch):
     """Reading it is fine; an agent bound to it could never answer."""
     monkeypatch.setattr(
-        "flow_sdk.ingest.sources.source_type",
+        "flow_sdk.builtin.data_driver.DataDriver.loaded",
         lambda _p: SimpleNamespace(sends=False, identity_config_key="feeds", kind="datasource.api.rss"),
     )
     agent = await _agent("binder-oneway")
@@ -102,7 +100,7 @@ async def test_a_bound_channel_names_its_agent_to_every_reader(connected):
     """`agent_id_of` is what the turn, the attribution and the outbound persona
     all ask. A binding writes only `owner`, so if that reader did not honour it
     the channel would ingest and then answer as nobody."""
-    from flow_sdk.inbox.projection import agent_id_of
+    from flow_sdk.stream_inbox.projection import agent_id_of
 
     agent = await _agent("binder-named")
 
@@ -112,7 +110,7 @@ async def test_a_bound_channel_names_its_agent_to_every_reader(connected):
 
 
 async def test_an_unconnected_provider_is_refused_before_a_row_exists(monkeypatch):
-    """The precheck `Inbox.ensure_source` carries: a source minted without a
+    """The precheck `StreamInbox.ensure_source` carries: a source minted without a
     connection looks bound and then parks on its first poll, so the honest
     failure is at the binding, naming the fix."""
     from flow_sdk.connections import NotConnected

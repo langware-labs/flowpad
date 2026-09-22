@@ -46,7 +46,22 @@ async def test_project_publish_requires_current_users_github_oauth(
     )
     github_token = AsyncMock(return_value=None)
     monkeypatch.setattr("flow_sdk.core.oauth.github_credentials.get_github_token", github_token)
-    preflight = AsyncMock()
+    # A GitHub token is required only for a GITHUB origin, so the preflight runs
+    # FIRST — its verdict is what names the provider. Hand it a ready GitHub repo
+    # so the gate under test is the missing token and nothing else.
+    preflight = AsyncMock(
+        return_value={
+            "available": True,
+            "git_origin": {
+                "kind": "git",
+                "provider": "github",
+                "owner": "acme",
+                "name": "repo",
+                "branch": "main",
+                "rel_path": ".",
+            },
+        }
+    )
     monkeypatch.setattr(
         "flow_sdk.app.actions.git_share_preflight_action.git_share_preflight",
         preflight,
@@ -62,7 +77,7 @@ async def test_project_publish_requires_current_users_github_oauth(
     assert response.status_code == 409
     assert response.json()["data"]["code"] == "github_not_connected"
     github_token.assert_awaited_once()
-    preflight.assert_not_awaited()
+    preflight.assert_awaited_once()
     publish.assert_not_awaited()
 
 

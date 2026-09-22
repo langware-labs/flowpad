@@ -4,7 +4,7 @@ even when the bundle body can't be downloaded yet.
 RCA #14 (2026-07-08 QA cycle): a shared conversation whose latest message carried
 a git/asset ARTIFACT (``attachment_filename`` + ``asset_references``) never
 materialised its FlowMessage entity on the recipient PRE-ACCEPT, while a plain
-TEXT message did. The inbox's latest-pointer visibility gate then hid the whole
+TEXT message did. The stream inbox's latest-pointer visibility gate then hid the whole
 invitation row. Root cause in ``_process_single_hub_message``: when the message
 advertised a bundle but the download failed (body still uploading, or — pre-accept
 — the recipient can't pull the bundle yet) AND no row existed, the function

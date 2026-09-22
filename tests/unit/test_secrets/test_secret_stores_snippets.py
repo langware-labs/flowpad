@@ -12,9 +12,9 @@ import pytest
 
 from flow_sdk import connections
 from flow_sdk.builtin.credential_service import save_credential
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.cli.auth.secrets import read_secret
-from flow_sdk.ingest.source_registry import resolve_source_type
 from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.connection_spec import ConnectionResult, ConnectionSpec, ConnectionTestResult
 from flow_sdk.secrets import SecretStore
@@ -49,7 +49,7 @@ async def database(in_project):
 
 async def _session_free(provider: str, monkeypatch) -> None:
     """The page opens real source classes; their network session is the one thing not run."""
-    cls = (await resolve_source_type(provider)).cls
+    cls = (await DataDriver.get(provider)).cls
 
     async def nothing(self):
         return None
@@ -72,7 +72,7 @@ def _catalogue(monkeypatch, *, connected: bool, scopes: tuple[str, ...]) -> list
     async def connect(provider, presenter, *, reauthorize=False):
         reauthorized.append(reauthorize)
         rows[provider] = ConnectionSpec(provider=provider, display_name="Google", connected=True, scopes=(DRIVE_SCOPE,))
-        return ConnectionResult(rows[provider], ConnectionTestResult(ok=True, identity="me@example.com"))
+        return ConnectionResult(spec=rows[provider], test=ConnectionTestResult(ok=True, identity="me@example.com"))
 
     async def token_for(provider, name=None):
         return f"token-for-{provider}"
@@ -154,7 +154,7 @@ async def test_5_a_data_source_binds_the_default_store(in_project, monkeypatch):
 
     assert ns["names"] == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
     assert (await DataSource.get("work gmail")).secret_store == ns["store"].ref
-    assert ns["live"].credentials.values["GMAIL_APP_PASSWORD"].get_secret_value() == "app-pass"
+    assert ns["live"].source.credentials.values["GMAIL_APP_PASSWORD"].get_secret_value() == "app-pass"
 
 
 async def test_5_two_instances_keep_their_own_bindings(in_project):
@@ -190,14 +190,14 @@ async def test_6_a_data_source_binds_a_connection(in_project, monkeypatch, conne
     assert asked == reauthorized
     assert ns["providers"] == ["google"]
     assert (await DataSource.get("work drive")).connection == "google"
-    assert ns["live"].credentials.token.get_secret_value() == "token-for-google"
+    assert ns["live"].source.credentials.token.get_secret_value() == "token-for-google"
 
 
 async def test_6_an_external_store_is_a_consumer_of_both_kinds(in_project, monkeypatch):
     """The real ``gcp_secret_manager`` store, against a loopback Secret Manager v1."""
     await _session_free("agentmail", monkeypatch)
     _catalogue(monkeypatch, connected=True, scopes=("https://www.googleapis.com/auth/cloud-platform",))
-    await _saved("agentmail", "agent inbox")
+    await _saved("agentmail", "agent mailbox", config={"inbox": "agent@agentmail.to"})
 
     with serving_gcp_store(monkeypatch, tokens={"token-for-google"}) as gcp:
         gcp.put("acme-prod", "agentmail-production-api_key", "am-key")
@@ -205,7 +205,7 @@ async def test_6_an_external_store_is_a_consumer_of_both_kinds(in_project, monke
         ns = await _run("6. Connections", nth=1)
 
         assert ns["remote"].connection == "google"
-        bound = (await DataSource.get("agent inbox")).secret_store
+        bound = (await DataSource.get("agent mailbox")).secret_store
         assert (bound.type, bound.config["gcp_project"], bound.connection) == ("gcp_secret_manager", "acme-prod", "google")
-        live = await (await DataSource.get("agent inbox")).open()  # the row alone: what the heartbeat's sync has
+        live = (await (await DataSource.get("agent mailbox")).open()).source  # the row alone: what the heartbeat's sync has
         assert live.credentials.values["api_key"].get_secret_value() == "am-key"

@@ -29,7 +29,7 @@ const pointerIds = (raw: unknown): string[] =>
 
 const until = <T>(fn: () => Promise<T | null>, label: string): Promise<T> => pollUntil(fn, 15_000, label);
 
-test('binding criterion: a guest ticket answered from the staff inbox through the desk source', async () => {
+test('binding criterion: a guest ticket answered from the staff stream inbox through the desk source', async () => {
   test.skip(!STAFF_API, 'set QA_STAFF_API_URL to the staff instance backend (e.g. http://localhost:6002) to run.');
   if (!HUB) throw new Error('QA_HUB_URL is not set — no localhost fallback.');
   test.setTimeout(60_000);
@@ -45,7 +45,7 @@ test('binding criterion: a guest ticket answered from the staff inbox through th
   expect((await staffRq.post(`${HUB}/api/v1/graph/project/${desk}/enable_helpdesk`, { ...auth(staff.token), data: { enabled: true, display_name: DISPLAY_NAME, mode: 'human' } })).status()).toBe(200);
   let sourceId = '';
   try {
-    // Step 1 (API form): staff attach the desk — what the "+" on the inbox line creates.
+    // Step 1 (API form): staff attach the desk — what the "+" on the stream inbox line creates.
     const created = await (await staffRq.post(`${STAFF_API}/api/v1/graph/data_source`, { data: { name: 'desk-manual', provider: 'helpdesk', config: { desk_project_id: desk }, status: 'new', owner: `user-${staff.id}` } })).json();
     sourceId = created.data.id;
 

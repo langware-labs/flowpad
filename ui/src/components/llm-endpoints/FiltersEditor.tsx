@@ -58,6 +58,19 @@ export function FiltersEditor({ value, onChange, disabled, omitModelsAllow }: Fi
     </div>
   );
 
+  const lines = (key: 'models_deny' | 'providers_ignore', label: string, rows: number) => (
+    <div className="space-y-1">
+      <Label htmlFor={`llm-f-${key}`}>{label}</Label>
+      <Textarea
+        id={`llm-f-${key}`}
+        rows={rows}
+        value={value[key]}
+        disabled={disabled}
+        onChange={(e) => set(key, e.target.value)}
+      />
+    </div>
+  );
+
   return (
     <div className="space-y-3" data-testid="filters-editor">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -90,18 +103,8 @@ export function FiltersEditor({ value, onChange, disabled, omitModelsAllow }: Fi
             </p>
           </div>
         )}
-        <div className="space-y-1">
-          <Label htmlFor="llm-f-models_deny">
-            <Trans>Models denied (globs)</Trans>
-          </Label>
-          <Textarea
-            id="llm-f-models_deny"
-            rows={3}
-            value={value.models_deny}
-            disabled={disabled}
-            onChange={(e) => set('models_deny', e.target.value)}
-          />
-        </div>
+        {lines('models_deny', t`Models denied (globs)`, 3)}
+        {lines('providers_ignore', t`OpenRouter hosts to avoid (one per line)`, 2)}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

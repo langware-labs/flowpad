@@ -20,7 +20,7 @@ async def logout() -> None:
     """Clear this FlowPad instance's Hub login.
 
     Credentials only — deliberately narrower than the app's Logout button,
-    which also drops the hub's local copy of the inbox via ``clear_user_data``.
+    which also drops the hub's local copy of the stream inbox via ``clear_user_data``.
     A script ending its session is not a user asking for their data to be
     removed from the machine; callers that want that ask for it by name.
     """

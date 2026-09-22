@@ -606,7 +606,7 @@ async def test_empty_conversation_does_not_fake_recency(hub_base_url, hub_login_
     with no messages there is no max, and the honest answer is ``created_date``.
 
     Regression guard: falling back to ``datetime.now()`` invented a timestamp the
-    conversation never earned, and since ``updated_date`` is the Inbox sort key
+    conversation never earned, and since ``updated_date`` is the Stream Inbox sort key
     (``compareConversationsByRecency``), every catch-up that touched an empty
     conversation promoted it above genuinely recent mail — 33 such rows buried a
     real message in the reported incident.
@@ -658,7 +658,7 @@ async def test_empty_conversation_does_not_fake_recency(hub_base_url, hub_login_
         f"a message-less conversation outranks one with a real message: "
         f"empty(msgs=0).updated_date={empty_ts} > real(msgs=1).updated_date={real_ts}. "
         f"The empty row has no message clock to derive recency from, so the projection "
-        f"stamped it with the current time and it sorts to the top of the Inbox."
+        f"stamped it with the current time and it sorts to the top of the Stream Inbox."
     )
 
 
@@ -675,7 +675,7 @@ async def test_settled_conversation_is_not_redispatched(hub_base_url, hub_login_
     messages' own clocks, which are by construction earlier than the hub's parent
     stamp. Every catch-up then re-ran the full per-conversation + per-message hub
     fan-out for conversations with nothing to fetch — on the user's critical path,
-    since ``inbox.catchup`` calls this same handler on every login and startup.
+    since ``stream_inbox.catchup`` calls this same handler on every login and startup.
     """
     api_key = _stash_credentials(hub_login_payload)
     from flow_sdk.app.actions.flow_message_action import handle_conversation_list

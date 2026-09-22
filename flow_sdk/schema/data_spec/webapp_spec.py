@@ -1,4 +1,6 @@
 """Filesystem contracts independent of application entities."""
+from typing import ClassVar
+
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 WEBAPP_KIND = "application.web"
@@ -7,10 +9,12 @@ WEBAPP_KIND = "application.web"
 class WebappManifestSpec(DataSpec):
     """``webapp.json`` — the shape of a webapp asset's main doc.
 
-    Flat, like ``data_source.json``: the spec declares no ``FreeSection``, so
+    Flat, like ``data_driver.json``: the spec declares no ``FreeSection``, so
     ``_manifest_layout`` resolves to ``flat`` and the file reads as the plain
     object an author would write by hand.
     """
+
+    main_file: ClassVar[str | None] = "webapp.json"
 
     #: The app's name AND its folder name. One noun.
     name: str = ""

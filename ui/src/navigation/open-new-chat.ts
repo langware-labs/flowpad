@@ -1,4 +1,4 @@
-import { AgenticProcess, dataContext, ProcessKind, type ComputeNode } from '@sdk';
+import { AgenticProcess, dataContext, ProcessKind, toplog, type ComputeNode } from '@sdk';
 import { getViewMode, surfaceForViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
 import { chatTargetForProject } from '@src/lib/chat-target';
 import { embedStandardAgent } from './embed-standard-agent';
@@ -51,7 +51,12 @@ export async function openNewChat(
   const ptyMode = viewModePtyMode(mode);
   const project = dataContext.project;
   const projectId = options.projectId ?? project?.id;
+  toplog.log(
+    'agentic_process.load',
+    `openNewChat click worker=${options.workerType ?? 'default'} mode=${mode} pty=${ptyMode} visibility=${document.visibilityState}`,
+  );
 
+  const tCreate = performance.now();
   const process = await computeNode.createProcess(
     {
       // `?? undefined`: a project with no mount path has `null` there, and `workdir`
@@ -74,7 +79,17 @@ export async function openNewChat(
     },
   );
 
+  toplog.log(
+    'agentic_process.load',
+    `openNewChat createProcess took ${(performance.now() - tCreate).toFixed(0)}ms proc=${process.id.slice(0, 8)}`,
+  );
+
+  const tNav = performance.now();
   await navigation.openShellProcess(process.id, { viewMode: mode });
+  toplog.log(
+    'agentic_process.load',
+    `openNewChat openShellProcess took ${(performance.now() - tNav).toFixed(0)}ms proc=${process.id.slice(0, 8)}`,
+  );
   // Chat surface only: terminal is a raw PTY passthrough where the user drives
   // the CLI directly, and vibe embeds its own persona via
   // createVibeProcessForProject. Awaited before returning so a caller that

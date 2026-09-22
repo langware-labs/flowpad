@@ -13,7 +13,7 @@ export const DATASET_FIELD_KINDS = ['string', 'int', 'float', 'bool'] as const;
 export type DatasetFieldKind = (typeof DATASET_FIELD_KINDS)[number] | [(typeof DATASET_FIELD_KINDS)[number]];
 
 /** A typed value from what a person typed, by the shape's kind — the inverse of
- *  the authoring form. Same job the backend's `ConfigFieldSpec.coerce` does for
+ *  the authoring form. Same job the backend's `FieldHints.coerce` does for
  *  a source's config; this one is for a dataset's output shape. */
 export function coerceToKind(kind: unknown, text: string): unknown {
   if (Array.isArray(kind)) return text.split(',').map((s) => s.trim()).filter(Boolean);

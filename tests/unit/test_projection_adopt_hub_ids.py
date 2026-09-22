@@ -19,15 +19,12 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.inbox.projection import project_source_item
+from flow_sdk.stream_inbox.projection import project_source_item
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
-DESK = "4f9f1fd1-39b6-5465-9c20-cb4c59b08318"
-
-
 async def _desk_source() -> DataSource:
-    src = DataSource(name="desk", provider="helpdesk", channel="helpdesk", config={"desk_project_id": DESK})
+    src = DataSource(name=f"desk {uuid.uuid4().hex[:8]}", provider="helpdesk", channel="helpdesk", config={"desk_project_id": str(uuid.uuid4())})  # one source per desk
     await src.save()
     return src
 
@@ -35,7 +32,7 @@ async def _desk_source() -> DataSource:
 async def _ticket_item(src: DataSource, ticket: str, fm_id: str, *, text="my printer is broken") -> SourceItem:
     item = SourceItem(
         kind="content.message.chat", provider="helpdesk", data_source_id=str(src.id),
-        segment_key=ticket, external_id=fm_id, thread_key=f"{DESK}:{ticket}",
+        external_id=fm_id, thread_key=f"{src.config['desk_project_id']}:{ticket}",
         body=text, occurred_at="2026-09-06T10:00:00+00:00",
         author_external_id="guest-1", author_display="Guest",
         conversation_id=ticket, message_id=fm_id,
@@ -105,11 +102,11 @@ async def test_a_hub_refresh_never_strips_the_projections_fields():
 
 async def test_a_record_without_hints_still_mints_as_before():
     """Every other channel is untouched: no hints, ordinary uuid4 births."""
-    src = DataSource(name="tg", provider="telegram", channel="telegram", account_key="@b")
+    src = DataSource(name=f"tg {uuid.uuid4().hex[:8]}", provider="telegram", channel="telegram", account_key="@b")
     await src.save()
     item = SourceItem(
         kind="content.message.chat", provider="telegram", data_source_id=str(src.id),
-        segment_key="updates", external_id="1/abc", thread_key="1", body="hi",
+        external_id="1/abc", thread_key="1", body="hi",
         occurred_at="2026-09-06T10:00:00+00:00", author_external_id="7",
     )
     await item.save()

@@ -12,14 +12,13 @@
  * explicit "parked" state and a setup panel with the verb that ends it.
  *
  * Status plus ONE verb on the row. Everything else is delegated: the rest of
- * the actions to `SourceMenu`, the stream rows to `SourceStreams`, and every
- * dialog to the view (so N rows don't mount 2N of them).
+ * the actions to `SourceMenu`, and every dialog to the view (so N rows don't
+ * mount 2N of them).
  */
-import { useCallback, useMemo, useState } from 'react';
-import { DataSource, DataSourceCursor, type DataSourceSpec, QueryRequest } from '@sdk';
+import { useCallback, useState } from 'react';
+import { DataSource, type DataDriver } from '@sdk';
 import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
-import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { timeSince, timeUntil } from '@src/utils/duration';
 import { Button } from '@src/components/ui/button';
 import { notify } from '@src/notifications';
@@ -30,8 +29,8 @@ import { healthStyle } from './health-style';
 import { statusStyle } from './status-style';
 import { sourceIcon } from './source-icon';
 import { SourceMenu } from './SourceMenu';
-import { SourceStreams } from './SourceStreams';
 import { useSourceToggle } from './use-source-toggle';
+import { useSourceVerify } from './use-source-verify';
 
 interface Props {
   source: DataSource;
@@ -40,7 +39,7 @@ interface Props {
    *  subscriptions to the same rows. The view already owns the grid — and it
    *  hands over the WHOLE spec, so a third field the card wants is not a third
    *  prop and a third lookup. */
-  spec?: DataSourceSpec | null;
+  spec?: DataDriver | null;
   onEdit: (source: DataSource) => void;
   onReplay: (source: DataSource) => void;
   onDelete: (source: DataSource) => void;
@@ -57,22 +56,6 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
   // multi-channel transport (agent), the CHANNEL's own glyph. A screen of
   // sources is scanned by what they reach, not by 'these are all data sources'.
   const Icon = sourceIcon(spec, source.channel);
-
-  // Gated on `open`: a collapsed card issues no request at all (the hook
-  // returns before `watchQuery` when disabled), and the filter means one
-  // source's poll only ever repaints one card. The COUNT does not come from
-  // here — it rides on the source, so a collapsed grid watches nothing.
-  const cursorQuery = useMemo(
-    () =>
-      new QueryRequest({
-        type: DataSourceCursor.type,
-        scope: [],
-        query: { data_source_id: source.id },
-        name: `data-sources:cursors:${source.id}`,
-      }),
-    [source.id],
-  );
-  const { data: cursors = [] } = useEntitiesQuery<DataSourceCursor>(cursorQuery, { enabled: open });
 
   /**
    * Every verb on this screen reports through `notify`, including the two that
@@ -96,32 +79,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
     }
   }, [source, t]);
 
-  /**
-   * Re-run the setup check. Idempotent, so it is safe to press after every
-   * attempt — which is the actual interaction: invite the bot, press, repeat
-   * for whatever is still listed.
-   */
-  const verify = useCallback(async () => {
-    setBusy(true);
-    try {
-      const result = await source.verify();
-      if (result.ready) {
-        notify.success({ title: source.name || source.provider, message: result.detail });
-      } else {
-        // Not an error — nothing failed, the user simply has one more step. A
-        // red toast here would send them looking for a broken thing.
-        notify.info({ title: t`Not ready yet`, message: result.detail });
-      }
-    } catch (error) {
-      notify.error({
-        title: t`Could not verify ${source.name || source.provider}`,
-        message: errorMessage(error, t`The check did not run.`),
-      });
-    } finally {
-      setBusy(false);
-    }
-  }, [source, t]);
-
+  const { verify, busy: verifying } = useSourceVerify(source);
   const { toggle: toggleEnabled } = useSourceToggle(source);
 
   // Active, but `is_due` will still refuse it. Without calling this out the
@@ -188,10 +146,6 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
 
         <span className={cn('w-fit rounded-full px-2 py-0.5 text-[10px] font-medium', chip.chip)}>{chip.label}</span>
 
-        <span className="text-xs text-muted-foreground tabular-nums">
-          <Plural value={source.segment_count} one="# stream" other="# streams" />
-        </span>
-
         <span className="text-xs text-muted-foreground" title={t`Last successful sync`}>
           {timeSince(source.last_synced_at)}
         </span>
@@ -206,7 +160,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
               size="sm"
               variant="secondary"
               className="h-7 gap-1.5"
-              disabled={busy}
+              disabled={busy || verifying}
               data-testid={`source-verify-${source.id}`}
               onClick={() => void verify()}
             >
@@ -248,7 +202,6 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
             </p>
           )}
 
-          <SourceStreams cursors={cursors} />
         </div>
       )}
     </div>
@@ -257,4 +210,4 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
 
 /** The one column template the header and every row share. */
 export const ROW_GRID =
-  'grid grid-cols-[minmax(0,1fr)_7rem_6rem_6rem_6rem_auto] items-center gap-3 px-4 py-1.5';
+  'grid grid-cols-[minmax(0,1fr)_7rem_6rem_6rem_auto] items-center gap-3 px-4 py-1.5';

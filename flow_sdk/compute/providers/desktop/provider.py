@@ -8,12 +8,15 @@ import asyncio
 import logging
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
 
 if TYPE_CHECKING:
@@ -22,6 +25,7 @@ if TYPE_CHECKING:
 import anyio
 import psutil
 
+from flow_sdk import toplog
 from flow_sdk.config import PLATFORM_DARWIN, PLATFORM_WIN32
 from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, RuntimeEnvironment, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import ComputeNodeInfo
@@ -107,9 +111,49 @@ def _build_interactive_pty_env(
         env["COLORTERM"] = "truecolor"
     env["FLOWPAD_PTY_SESSION_ID"] = session_id
 
+    # Fallback Python for the in-app terminal: when the machine has no real
+    # `python` on PATH, resolve it to THIS backend's venv (the uv-managed
+    # interpreter). An installed Python is left in charge. On Windows the Store
+    # "App Execution Alias" stub (…\Microsoft\WindowsApps\python.exe, which just
+    # opens the Microsoft Store) does not count as installed and is sorted last.
+    fallback = _python_fallback_path(env.get("PATH"))
+    if fallback is not None:
+        env["PATH"] = fallback
+
     if extra_env:
         env.update(extra_env)
     return env
+
+
+def _is_store_alias_dir(entry: str) -> bool:
+    """Windows "App Execution Alias" dir — its python.exe opens the Microsoft Store."""
+    return sys.platform == "win32" and bool(re.search(r"[\\/]Microsoft[\\/]WindowsApps[\\/]?$", entry, re.I))
+
+
+def _python_fallback_path(existing_path: str | None) -> str | None:
+    """``existing_path`` with this venv's bin dir added as the Python FALLBACK.
+
+    Returns None (leave PATH alone) when we are not running from the flowpad
+    tool venv (no ``flow`` next to ``sys.executable``) or when a real
+    ``python``/``python3`` already resolves on ``existing_path``. Otherwise the
+    venv dir is placed after every real entry and before any Windows Store
+    alias dirs, so an installed Python keeps winning, ours fills the gap, and
+    the Store stub never does. Idempotent.
+    """
+    bin_dir = Path(sys.executable).parent
+    exe = "flow.exe" if sys.platform == "win32" else "flow"
+    if not (bin_dir / exe).exists():
+        return None
+    entries = [e for e in (existing_path or "").split(os.pathsep) if e]
+    if str(bin_dir) in entries:
+        return existing_path
+    for name in ("python", "python3"):
+        found = shutil.which(name, path=existing_path)
+        if found and not _is_store_alias_dir(str(Path(found).parent)):
+            return existing_path  # a real Python is installed — leave it in charge
+    real = [e for e in entries if not _is_store_alias_dir(e)]
+    store = [e for e in entries if _is_store_alias_dir(e)]
+    return os.pathsep.join([*real, str(bin_dir), *store])
 
 
 def find_command(command: str, path: str | None = None) -> str | None:
@@ -851,7 +895,14 @@ class LocalComputeProvider(ComputeProvider):
                     raise
 
             try:
+                spawn_t0 = time.monotonic()
                 pty_process = await asyncio.to_thread(_resolve_and_spawn)
+                toplog.log(
+                    "pty",
+                    "spawn session=%s pid=%s backend_pid=%s argv0=%s size=%sx%s cwd=%s spawn_ms=%.0f",
+                    session_id, pty_process.pid, os.getpid(), final_spawn_args[0] if final_spawn_args else None,
+                    cols, rows, pty_working_dir, (time.monotonic() - spawn_t0) * 1000,
+                )
 
                 pty_session_running = {"value": True}
 
@@ -907,6 +958,10 @@ class LocalComputeProvider(ComputeProvider):
                                 exit_code = _pty_return_code(pty_process)
                         except Exception:
                             pass
+                        toplog.log(
+                            "pty", "reader_exit session=%s pid=%s exit_code=%s stopped=%s",
+                            session_id, pty_process.pid, exit_code, not pty_session_running["value"],
+                        )
                         if on_exit is not None:
                             try:
                                 on_exit(exit_code)

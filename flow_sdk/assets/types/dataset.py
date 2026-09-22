@@ -6,10 +6,11 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec
 from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum, ExampleSpec
-from flow_sdk.schema.data_spec.layout import CSV_FILE, EXAMPLES_DIR, is_binary, layout_for
+from flow_sdk.schema.data_spec.layout import CSV_FILE, EXAMPLES_DIR, dataset_layout_for, is_binary
 
-MANIFEST = "dataset.json"
+MANIFEST = DatasetManifestSpec.main_file
 
 
 def dataset_counts(kinds: Iterable[str]) -> dict:
@@ -25,7 +26,7 @@ def derive_dataset(data: dict, root: Path, header_raw: dict) -> None:
     data["name"] = data.get("title") or root.name
     examples = data.get("examples") or []
     data.update(dataset_counts(str(example.kind) for example in examples))
-    data["num_annotated"] = layout_for(data.get("data_layout")).count_annotated(root, examples)
+    data["num_annotated"] = dataset_layout_for(data.get("data_layout")).count_annotated(root, examples)
     data["num_multi_output"] = sum(1 for ex in examples if isinstance(ex.output, list) and len(ex.output) > 1)
     data["num_binary_inputs"] = sum(
         1 for ex in examples if is_binary(ex.input[0] if isinstance(ex.input, list) else ex.input)
@@ -73,7 +74,7 @@ def iter_examples(
 ) -> list[ExampleSpec]:
     """The UNTYPED read: every row as ``DEFAULT_DATASET_SPEC``'s example type.
     The on-disk grammar lives in ``flow_sdk/schema/data_spec/layout.py``."""
-    return layout_for(layout).read(
+    return dataset_layout_for(layout).read(
         Path(base), DEFAULT_DATASET_SPEC.example_type(),
         dataset_id=dataset_id, field_spec=field_spec, delimiter=delimiter,
     )

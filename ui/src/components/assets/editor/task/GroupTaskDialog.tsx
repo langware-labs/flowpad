@@ -137,7 +137,7 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
         <div className="flex max-h-56 flex-col gap-1 overflow-y-auto py-1" data-testid="group-task-group-list">
           {groups.length === 0 && (
             <div className="px-1 py-4 text-center text-sm text-muted-foreground">
-              No contacts groups yet — create one from the Inbox first.
+              No contacts groups yet — create one from the Stream Inbox first.
             </div>
           )}
           {groups.map((g: ContactsGroup) => (

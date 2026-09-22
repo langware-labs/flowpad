@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Test harness for the desktop notification service (banner + attention +
-toast; the OS badge is separate state driven by ``InboxManager.unread``).
+toast; the OS badge is separate state driven by ``StreamInboxManager.unread``).
 
 The payload is GENERIC (``{title, body, icon?, click_target?, attention?}``) —
 any feature can notify; ``--type`` is a tag, never a rendering dispatch.
@@ -165,8 +165,8 @@ def cmd_inject(args: argparse.Namespace) -> int:
             time.sleep(args.delay)
     if exit_code == 0:
         print("\nInjected. Watch the connected app: banner (if backgrounded), dock bounce /\n"
-              "taskbar flash, and the in-app toast. The dock badge follows InboxManager.unread\n"
-              "(real inbox state) — a synthetic inject does NOT move it.")
+              "taskbar flash, and the in-app toast. The dock badge follows StreamInboxManager.unread\n"
+              "(real stream inbox state) — a synthetic inject does NOT move it.")
     return exit_code
 
 
@@ -195,9 +195,9 @@ Setup: run the updated app so its renderer connects to a backend on a known port
    - python scripts/test_desktop_notify.py inject --type process_complete \\
          --title "Task finished" --body "build ok" --click-view shell --click-pointer <ID>
    - OBSERVE: same banner/attention/toast pipeline; click navigates to the shell
-     view; NO inbox recount fires (badge/pip unchanged).
+     view; NO stream inbox recount fires (badge/pip unchanged).
 
-4) Badge = InboxManager.unread (state, not events)
+4) Badge = StreamInboxManager.unread (state, not events)
    - Send a REAL message from a second user (scripts/instance_ctl.sh launch dev-1).
    - OBSERVE: sidebar pip AND OS dock badge move together (one reflected value),
      *before* accepting a new-contact conversation too (invitations count).
@@ -209,7 +209,7 @@ Setup: run the updated app so its renderer connects to a backend on a known port
      (focus-guarded); in-app toast still shows.
 
 6) Browser fallback (no Electron)
-   - Plain browser tab: in-app toast fires, pip reflects InboxManager, nothing throws.
+   - Plain browser tab: in-app toast fires, pip reflects StreamInboxManager, nothing throws.
 
 7) No-coalesce: inject --count 3 --delay 1 → three distinct banners.
 

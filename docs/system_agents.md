@@ -4,55 +4,60 @@ id: "10c7d57b-09db-5a20-9ffd-b5475f2edff4"
 
 # System Agents
 
-> **Note (current shape):** this page describes an older `AgentRecord`/`AgentExecution`
-> design. The current shape is Agent → Deployment → AgenticProcess (see
-> `flow_sdk/builtin/agent.py`), and the "system agents" described here are **SubAgent**
-> personas (`.claude/agents/*.md`), not launchable `Agent` entities.
+> **Naming:** the "system agents" on this page are **SubAgent** assets — Claude Code's
+> `.claude/agents/<name>.md` prompt files (entity type `subagent`). They are not the
+> launchable `Agent` entity (`flow_sdk/builtin/agent.py`, Agent → Deployment →
+> AgenticProcess); an Agent may *reference* SubAgents.
 
-System agents are pre-built Claude Code sub-agents bundled with the SDK. They execute specialized tasks (session analysis, skill creation, error fixing) through an isolated project environment and produce typed artifacts.
+System agents are pre-built Claude Code sub-agents shipped inside the package. A SubAgent is a
+file, not a runner: it is loaded as an `FSRecord`, serialized into Claude's `--agents` JSON, and
+embedded into an `AgenticProcess`, whose worker passes it to the CLI.
 
 ## Architecture
 
 ### Overview
 
 ```
-AgentRecord.load_system_agent("session-analyzer")
+load_system_subagent("task-analyze") / load_subagent(name, project_dir)
         |
         v
-  AgentRecord                     # Agent definition (prompt + config)
+  FSRecord(type="subagent")       # frontmatter (SubAgentSpec) + prompt body
         |
-        |  agent.run(env, instruction)
+        |  process.load_embedded_subagent(name_or_record)
         v
-  AgentExecution                  # Lifecycle: task, process, relationships
+  AgenticProcess                  # embedded_subagent_ids; get_agents_json()
         |
-        |  await execution.wait_for_completion()
+        |  driver build: cmd.agents_json = process.get_agents_json()
         v
-  ClaudeCLIWorker                 # Subprocess: claude -p ... --agents ...
-        |
-        v
-  execution.artifacts             # Scans output_dir for SkillRecords, files
+  claude CLI                      # claude ... --agents '{"task-analyze": {...}}'
 ```
 
 ### Components
 
-#### AgentRecord
+#### SubAgent
 
-Stores the agent definition: system prompt, model, permissions, and tool configuration.
+Stores the sub-agent definition: system prompt, model, permissions, and tool configuration.
 
-**File:** `flow_sdk/fs_records/agent_record.py`
+**Files:** `flow_sdk/assets/types/subagent.py` (parse + `--agents` serialization),
+`flow_sdk/assets/types/subagent_spec.py` (`SubAgentSpec`, the frontmatter field list),
+`flow_sdk/builtin/subagent_loading.py` (the loader priority chain),
+`flow_sdk/builtin/subagent.py` (the `SubAgent` entity / HTTP surface).
 
-Each agent is a directory with a markdown file containing YAML frontmatter:
+Each sub-agent is one markdown file with YAML frontmatter (a folder is also accepted; its first
+`*.md` is used). The shipped ones live in the Flowpad Assistant system project:
 
 ```
-flow_sdk/system_assets/agents/session-analyzer/
-    session-analyzer.md           # YAML frontmatter + system prompt
-    .flow_record/record.json      # Optional metadata (auto-bootstraps from .md)
+flow_sdk/system_projects/flowpad_assistant/.claude/agents/
+    task-analyze.md               # YAML frontmatter + system prompt
+    vibe.md
+    ...
 ```
 
 The markdown file defines everything:
 
 ```markdown
 ---
+name: agent-name
 description: What this agent does (shown in agent listings)
 model: sonnet
 permission_mode: bypassPermissions
@@ -64,45 +69,68 @@ max_turns: 30
 System prompt body goes here...
 ```
 
-**Frontmatter fields** (all optional except `description`):
+**Frontmatter fields** (`SubAgentSpec`; all optional). Every key except `name` and `kind` is
+copied into the sub-agent's `--agents` JSON entry, under its camelCase name where Claude's
+schema uses one (`KEY_TO_JSON`); the body becomes `prompt`:
 
-| Field              | Type | Default             | Maps to CLI                          |
-| ------------------ | ---- | ------------------- | ------------------------------------ |
-| `description`      | str  | —                   | `--agents` JSON                      |
-| `model`            | str  | —                   | `--model`                            |
-| `permission_mode`  | str  | `bypassPermissions` | `--dangerously-skip-permissions`     |
-| `max_turns`        | int  | —                   | `maxTurns` in `--agents` JSON        |
-| `tools`            | list | —                   | `tools` in `--agents` JSON           |
-| `disallowed_tools` | list | —                   | `disallowedTools` in `--agents` JSON |
-| `skills`           | list | —                   | `skills` in `--agents` JSON          |
-| `mcp_servers`      | dict | —                   | `mcpServers` in `--agents` JSON      |
-| `hooks`            | dict | —                   | `hooks` in `--agents` JSON           |
-| `memory`           | dict | —                   | `memory` in `--agents` JSON          |
+| Field              | Type | In `--agents` JSON |
+| ------------------ | ---- | ------------------ |
+| `name`             | str  | the entry's key (falls back to the record id) |
+| `description`      | str  | `description`      |
+| `model`            | str  | `model`            |
+| `permission_mode`  | str  | `permissionMode`   |
+| `max_turns`        | int  | `maxTurns`         |
+| `tools`            | list | `tools`            |
+| `disallowed_tools` | list | `disallowedTools`  |
+| `skills`           | list | `skills`           |
+| `mcp_servers`      | dict | `mcpServers`       |
+| `hooks`            | dict | `hooks`            |
+| `memory`           | dict | `memory`           |
+| `color`, `background`, `isolation` | — | same name |
+| `kind`             | str  | not emitted — Flowpad routing (`harness` / `vibe`) |
 
-**Loading priority** (`load_subagent(name, project_dir)` — `flow_sdk/fs_store/operations/subagent.py`):
+The CLI-level permission flag (`--dangerously-skip-permissions`) comes from the process's
+`AgenticContext.permission_mode`, not from a sub-agent's frontmatter.
 
-1. **Project agents:** `{project_dir}/.claude/agents/{name}/`
-2. **User agents:** `~/.claude/agents/{name}/`
-3. **System agents:** `flow_sdk/system_assets/agents/{name}/`
+**Loading priority** (`load_subagent(name, project_dir)` — `flow_sdk/builtin/subagent_loading.py`).
+Each root is probed for `<name>/` (first `*.md`) then `<name>.md`:
 
-**Key methods:**
+1. **Project agents:** `{project_dir}/.claude/agents/`
+2. **User agents:** `get_instance_settings().claude_agents_dir` (`~/.claude/agents/`)
+3. **System agents** (`load_system_subagent`): `flow_sdk/system_projects/flowpad_assistant/.claude/agents/`,
+   then `~/Flowpad workspace/.flow/system_assets/agents/`
+
+**Key functions:**
 
 ```python
-# Load from system assets
-agent = AgentRecord.load_system_agent("session-analyzer")
+from flow_sdk.schema.type_info import register_all
+from flow_sdk.builtin.subagent_loading import load_system_subagent, load_subagent
+from flow_sdk.assets.types.subagent import (
+    extract_subagent_from_path,
+    render_subagent_markdown,
+    subagent_to_cli_json,
+)
+
+register_all()  # the server does this at startup; a bare script must (unregistered → loaders return None)
+
+# Load from the shipped system agents
+agent = load_system_subagent("task-analyze")
 
 # Load with priority resolution (project > user > system)
-agent = load_subagent("session-analyzer", project_dir="/my/project")
+agent = load_subagent("task-analyze", project_dir="/my/project")
 
 # Load from a standalone .md file
-agent = AgentRecord.from_file("/path/to/my-agent.md")
+agent = extract_subagent_from_path(agent.asset_ref.path)
 
-# Load from a markdown string
-agent = AgentRecord.from_markdown(text, name="my-agent")
+# The record: an FSRecord; frontmatter + body live on .data
+agent.name, agent.data["description"], agent.data["prompt"]
 
 # Serialize for Claude CLI --agents flag
-agents_json = agent.to_agents_cli_json()
-# → {"session-analyzer": {"description": "...", "prompt": "...", "model": "sonnet"}}
+agents_json = subagent_to_cli_json(agent)
+# → {"task-analyze": {"prompt": "...", "description": "...", "tools": "Bash, Read, Glob, Grep"}}
+
+# Render back to markdown (frontmatter + body)
+text = render_subagent_markdown(agent)
 ```
 
 #### ClaudeProjectEnvManager
@@ -142,52 +170,30 @@ env.cleanup()                            # Remove the root directory
 
 `build_env()` strips all `CLAUDECODE*` variables from the environment, sets `CLAUDE_PROJECT_DIR`, and overlays any custom env vars.
 
-#### AgentExecution
+#### Embedding a SubAgent into an AgenticProcess
 
-Manages the full execution lifecycle: creates tracking records, runs the agent, and collects artifacts.
-
-**File:** `flow_sdk/fs_records/agent_execution.py`
-
-Created by `agent.run()`:
-
-```python
-agent = AgentRecord.load_system_agent("session-analyzer")
-env = ClaudeProjectEnvManager(root=workdir)
-
-execution = agent.run(env, "Analyze session abc-123")
-```
-
-`agent.run(env, instruction)` does three things:
-
-1. Appends the output directory path to `CLAUDE.md`
-2. Copies the agent `.md` into the env's `.claude/agents/`
-3. Calls `execution.prepare()` which creates `TaskResource`, `AgenticProcess`, and `RelationshipRecord`
-
-Then execute:
+There is no per-agent execution object. A sub-agent reaches a run by being embedded into an
+`AgenticProcess` (`flow_sdk/builtin/agentic_process/process_assets.py`,
+`load_embedded_subagent` / `get_agents_json`). A name string is resolved through
+`load_subagent` (user > system); a record is taken as-is. The process records the name in
+`embedded_subagent_ids`, and at launch the worker driver sets
+`cmd.agents_json = process.get_agents_json()` (e.g. `cli_drivers/claude/driver.py:156`), which
+becomes the CLI's `--agents` flag.
 
 ```python
-await execution.wait_for_completion()   # Runs ClaudeCLIWorker subprocess
+from flow_sdk.schema.type_info import register_all
+from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+
+register_all()
+
+proc = AgenticProcess(workdir="/tmp")          # unsaved, never started
+proc.load_embedded_subagent("task-analyze")
+proc.embedded_subagent_ids                     # → ["task-analyze"]
+agents_json = proc.get_agents_json()           # → {"task-analyze": {"prompt": ..., ...}}
 ```
 
-And collect results:
-
-```python
-execution.output_dir    # Path where agent wrote its output
-execution.artifacts     # List of SkillRecords found in output_dir
-execution.process       # The AgenticProcess record (tracks state)
-execution.task          # The TaskResource record
-```
-
-**Artifact scanning:** `execution.artifacts` iterates over `output_dir` and loads any subdirectory containing `SKILL.md` as a `SkillRecord`.
-
-**Lifecycle methods:**
-
-```python
-execution.mark_complete()        # Task → DONE, Process → COMPLETE
-execution.mark_error("reason")   # Process → ERROR
-execution.sync_to_flowpad()      # Notify FlowPad of record changes
-execution.install_output_skills(output_dir, scope="project", project_dir=dir)
-```
+Process lifecycle (status, turns, completion) is the `AgenticProcess`'s own — see
+`docs/agentic-process.md` rather than anything sub-agent specific.
 
 #### ClaudeCLIWorker
 
@@ -223,73 +229,58 @@ The `execute()` method launches `claude` via `asyncio.create_subprocess_exec` an
 
 There is also `ClaudeCodeAgenticWorker` (`flow_sdk/builtin/agentic_process/cli_drivers/claude/code_agentic_worker.py`) which uses the `claude_agent_sdk` Python package directly instead of subprocess. It supports multi-turn sessions, pause/resume, and streaming input injection. It requires `claude_agent_sdk` as an optional dependency.
 
-### Artifacts
+### Results
 
-After execution, agents write output to `execution.output_dir`. Currently the `artifacts` property recognizes:
-
-* **SkillRecords** — subdirectories containing `SKILL.md` with YAML frontmatter
-
-```
-output/
-    greeting-skill/
-        SKILL.md          # ← detected as SkillRecord artifact
-        greeting.py
-    analysis.md           # ← plain file (not currently collected by artifacts)
-```
-
-Skills can be installed after collection:
+There is no artifact collector. A caller that needs a sub-agent's output reads the finished
+process. The shipped example is the asset-cleanup scan, which launches through the named
+`asset-cleanup` Agent's local deployment, uses the `asset_cleanup` SubAgent's body as its task
+instructions, and reads the reply off the process (excerpts of `flow_sdk/asset_cleanup/run.py:124-125`
+and `:186-192`):
 
 ```python
-execution.install_output_skills(
-    execution.output_dir,
-    scope="project",           # "project" or "user"
-    project_dir="/my/project"
-)
-# Copies skill dirs to <project>/.claude/skills/ or ~/.claude/skills/
+    deployment = await get_agent_local_deployment("asset-cleanup")
+    task = load_subagent("asset_cleanup")
+```
+
+```python
+    proc = await deployment.launch(
+        instruction,
+        wait=True,
+        name="Asset cleanup scan",
+        workdir=workdir or root_strs[0],
+    )
+    result = _build_run_result(proc)
 ```
 
 ***
 
 ## Existing System Agents
 
-### session-analyzer
+The shipped sub-agents are the `.md` files in the system project's agents dir:
 
-**Location:** `flow_sdk/system_assets/agents/session-analyzer/`
+```bash
+ls flow_sdk/system_projects/flowpad_assistant/.claude/agents/
+```
 
-**Purpose:** Reviews agentic session transcripts for quality improvement.
-
-**Configuration:**
-
-* Model: `sonnet`
-
-* Permission mode: `bypassPermissions`
-
-* Max turns: 30
-
-**What it does:**
-
-1. Identifies automation opportunities (repeatable tasks that could be scripted)
-2. Finds preventable errors (mistakes and how to prevent recurrence)
-3. Flags behavior corrections (inefficiencies and suggested guardrails)
-
-**Output:** Writes `analysis.md` — a structured markdown report with Summary, Automation Opportunities, Preventable Errors, and Behavior Corrections sections.
+Their frontmatter `description` states each one's purpose (e.g. `task-analyze.md`: analyzes a
+task's status and progress and fills in missing fields).
 
 ***
 
 ## Adding a New System Agent
 
-### Step 1: Create the agent directory
+### Step 1: Pick the location
 
-```bash
-mkdir -p flow_sdk/system_assets/agents/my-agent
-```
+Shipped sub-agents are single files in `flow_sdk/system_projects/flowpad_assistant/.claude/agents/`
+(no per-agent directory needed).
 
 ### Step 2: Write the markdown file
 
-Create `flow_sdk/system_assets/agents/my-agent/my-agent.md`:
+Create `flow_sdk/system_projects/flowpad_assistant/.claude/agents/my-agent.md`:
 
 ```markdown
 ---
+name: my-agent
 description: One-line description of what this agent does.
 model: sonnet
 permission_mode: bypassPermissions
@@ -305,107 +296,73 @@ System prompt body. Describe:
 
 ## Output
 
-Describe the expected output format and where to write it.
-Write results to the output directory specified in CLAUDE.md.
+Describe the expected output format.
 ```
 
-The filename must match the directory name (e.g., `my-agent/my-agent.md`).
+The file stem is the lookup name (`load_system_subagent("my-agent")` probes `my-agent/` then
+`my-agent.md`); keep `name:` equal to it, since `name` is the `--agents` key. Identity is the
+frontmatter `id:` (UUID) — the shipped files carry it as the first key, as in `task-analyze.md`.
 
-### Step 3 (optional): Add record.json
+### Step 3: Test the agent loads
 
-Create `flow_sdk/system_assets/agents/my-agent/.flow_record/record.json`:
-
-```json
-{
-  "id": "my-agent",
-  "name": "my-agent",
-  "status": "active",
-  "description": "One-line description of what this agent does.",
-  "model": "sonnet",
-  "permission_mode": "bypassPermissions",
-  "max_turns": 20
-}
-```
-
-This is optional. If omitted, `AgentRecord` auto-bootstraps all fields from the `.md` frontmatter.
-
-### Step 4: Test the agent loads
-
-Add to `tests/unit/test_agent_record.py`:
+Add to `tests/unit/test_subagent_loaders.py`:
 
 ```python
-def test_load_my_agent_from_package(self):
+from flow_sdk.builtin.subagent_loading import load_system_subagent
+
+
+def test_load_my_agent_from_package():
     agent = load_system_subagent("my-agent")
     assert agent is not None
     assert agent.name == "my-agent"
     assert agent.data.get("model") == "sonnet"
-    assert "My Agent" in agent.prompt
+    assert "My Agent" in agent.data["prompt"]
 ```
 
-### Step 5: Test the full execution pipeline
+### Step 4: Test it reaches the CLI
 
-Add to `tests/unit/test_agent_run.py`:
+Embed it into an unsaved process and build the CLI args — no worker is spawned:
 
 ```python
-@pytest.mark.asyncio
-async def test_my_agent_run(tmp_path):
-    agent = load_system_subagent("my-agent")
-    env = ClaudeProjectEnvManager(root=tmp_path / "project")
+from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli_worker import ClaudeCLIWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
 
-    execution = agent.run(env, "Do the task")
 
-    # Verify setup
-    assert (env.agents_dir / "my-agent.md").exists()
-    assert str(env.output_dir) in env.claude_md_path.read_text()
+def test_my_agent_reaches_agents_flag():
+    proc = AgenticProcess(workdir="/tmp")
+    proc.load_embedded_subagent("my-agent")
+    assert proc.embedded_subagent_ids == ["my-agent"]
 
-    # Simulate agent output (in production, wait_for_completion does this)
-    (execution.output_dir / "result.md").write_text("# Result\n\nDone.")
+    agents_json = proc.get_agents_json()
+    assert agents_json["my-agent"]["model"] == "sonnet"
+    assert agents_json["my-agent"]["maxTurns"] == 20
 
-    # If your agent produces skills:
-    skill_dir = execution.output_dir / "my-skill"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: my-skill\ndescription: Created by my-agent\n---\n\nSkill body."
+    args = ClaudeCLIWorker.build_args(
+        claude_bin="claude",
+        prompt="Do the task",
+        session_id="sess-1",
+        context=AgenticContext(workdir="/tmp"),
+        agents_json=agents_json,
     )
-    artifacts = execution.artifacts
-    skill_records = [a for a in artifacts if a.type == RecordType.SKILL]
-    assert len(skill_records) == 1
+    assert args[args.index("--agents") + 1].startswith('{"my-agent"')
 ```
 
-### Step 6: Use the agent from application code
+### Step 5: Use the agent from application code
 
-```python
-from flow_sdk.fs_records import AgentRecord
-from flow_sdk.claude_env import ClaudeProjectEnvManager
-
-agent = load_system_subagent("my-agent")
-env = ClaudeProjectEnvManager(root=workdir)
-
-execution = agent.run(env, "Fix this error: ...")
-await execution.wait_for_completion()
-
-# Check artifacts
-for artifact in execution.artifacts:
-    print(f"Found: {artifact.name} (type={artifact.type})")
-
-# Or install skills
-execution.install_output_skills(execution.output_dir, scope="user")
-
-# Cleanup
-env.cleanup()
-```
+Embed it into the process you launch (`proc.load_embedded_subagent("my-agent")` before the first
+turn), or — as the asset-cleanup scan does — load it with `load_subagent("my-agent")` and use
+`agent.data["prompt"]` as the instruction for a named Agent's deployment (see **Results** above).
 
 ### Checklist
 
-* [ ] Agent `.md` file with YAML frontmatter in `flow_sdk/system_assets/agents/<name>/`
+* [ ] `my-agent.md` with YAML frontmatter in `flow_sdk/system_projects/flowpad_assistant/.claude/agents/`
 
-* [ ] Filename matches directory name
+* [ ] `name:` matches the file stem
 
-* [ ] `description` field in frontmatter (required for agent listings)
+* [ ] `description` field in frontmatter (shown in agent listings)
 
-* [ ] Unit test: agent loads via `load_system_agent()`
+* [ ] Unit test: agent loads via `load_system_subagent()`
 
-* [ ] Pipeline test: `agent.run()` sets up env correctly
-
-* [ ] Output section in prompt tells agent where to write results
+* [ ] Unit test: `load_embedded_subagent()` puts it into `--agents`
 

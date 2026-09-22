@@ -12,11 +12,10 @@ and omitted by those that cannot — so it must always be read defensively.
 
 from __future__ import annotations
 
-import inspect
+import uuid
 
 import pytest
 
-from flow_sdk.builtin.agentic_process import agentic_process
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import get_driver
 
 
@@ -41,22 +40,41 @@ def test_the_trait_is_always_readable(worker_type):
     getattr(get_driver(worker_type), "preassign_interactive_session_id", False)
 
 
-def test_open_path_consults_the_trait():
-    source = inspect.getsource(agentic_process.AgenticProcess._perform_open)
-    assert "preassign_interactive_session_id" in source, (
-        "the open path stamps a uuid unconditionally again — that hands codex "
-        "and opencode a session id their own store will never match"
-    )
-    assert "self.session_id = self.session_id or str(uuid4())" not in source
+@pytest.mark.parametrize(
+    ("worker_type", "expected"),
+    [("claude_code", True), ("copilot", True), ("codex", False), ("opencode", False)],
+)
+def test_the_gate_itself_decides_per_vendor(worker_type, expected):
+    """Drive the real gate, not the text of its callers.
+
+    Both the open path and the prompt path route through
+    ``_should_preassign_session_id``. This replaces three
+    ``inspect.getsource`` assertions: the policy now lives in exactly ONE
+    expression, so the drift those tests watched for is structurally
+    impossible, and what remains worth testing is the decision itself.
+    """
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    ap = AgenticProcess(id=str(uuid.uuid4()), worker_type=worker_type)
+    assert ap._should_preassign_session_id() is expected
 
 
-def test_open_path_reads_the_trait_defensively():
-    """A bare attribute access would raise for codex/opencode."""
-    source = inspect.getsource(agentic_process.AgenticProcess._perform_open)
-    assert 'getattr(self.driver, "preassign_interactive_session_id", False)' in source
+def test_an_existing_session_id_is_never_replaced():
+    """The gate is "mint if absent" — re-stamping would orphan the live session."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    ap = AgenticProcess(id=str(uuid.uuid4()), worker_type="claude_code")
+    ap.session_id = "already-here"
+    assert ap._should_preassign_session_id() is False
 
 
-def test_prompt_path_still_honours_it():
-    """The two paths must not drift apart again."""
-    source = inspect.getsource(agentic_process.AgenticProcess._http_prompt)
-    assert "preassign_interactive_session_id" in source
+def test_a_driver_that_omits_the_trait_does_not_preassign():
+    """Codex and opencode omit the attribute entirely — a bare read would raise."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    class BareDriver:
+        name = "bare"
+
+    ap = AgenticProcess(id=str(uuid.uuid4()), worker_type="claude_code")
+    ap.__dict__["driver"] = BareDriver()
+    assert ap._should_preassign_session_id() is False

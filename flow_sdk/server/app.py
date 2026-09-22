@@ -47,6 +47,7 @@ from .routes import (
     activity_router,
     agent_records_router,
     agents_router,
+    ask_router,
     asset_share_router,
     assets_router,
     auth_router,
@@ -240,14 +241,14 @@ async def _on_server_startup():
 
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
-    await _start_inbox_catchup()
+    await _start_stream_inbox_catchup()
     await _seed_service_triggers()
     await _prune_orphan_scheduler_jobs()
+    await _prune_fileless_data_sources()
+    await _migrate_list_configs()
+    await _prune_retired_type_rows()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
-    from flow_sdk.builtin.agentic_process.naming.runtime import restore_name_observation
-
-    await restore_name_observation()
     await _start_system_content_index()
     # Startup imports (notably the trigger callbacks) bind additional entity
     # types and invalidate schema memos. Warming earlier made the first cache
@@ -375,6 +376,49 @@ async def _prune_orphan_scheduler_jobs() -> None:
         logging.getLogger(__name__).exception("Scheduler jobstore: orphan prune failed")
 
 
+#: Entity types renamed without a migration (0.2.170: data_driver, secret_pack; later: stream_inbox_manager):
+#: their folders re-index (or the singleton self-heals) under the new type, so a row still carrying the
+#: old string is dead weight no index sweep reaches.
+RETIRED_TYPES = ("data_source_spec", "credential_spec", "inbox_manager", "data_source_cursor")
+
+
+async def _prune_retired_type_rows() -> None:
+    try:
+        from flow_sdk.db import get_db_driver
+        from flow_sdk.db.drivers.query import QueryFilter
+        from flow_sdk.fs_store.orphan_removal import remove_orphan_row
+
+        for type_name in RETIRED_TYPES:
+            for record in await get_db_driver().get_all(QueryFilter(type=type_name)):
+                await remove_orphan_row(str(record.id), type_name)
+    except Exception:
+        logging.getLogger(__name__).exception("Retired entity types: prune failed")
+
+
+async def _prune_fileless_data_sources() -> None:
+    """A configured data source is an asset now; rows with no ``data_source.json`` go, with their records."""
+    try:
+        from flow_sdk.builtin.data_source import prune_fileless_data_sources
+
+        pruned = await prune_fileless_data_sources()
+        if pruned:
+            print(f"  Data sources: removed {pruned} source(s) with no data_source.json")
+    except Exception:
+        logging.getLogger(__name__).exception("Data sources: file-less prune failed")
+
+
+async def _migrate_list_configs() -> None:
+    """One source reads one stream: a stored config listing N containers becomes N sources."""
+    try:
+        from flow_sdk.builtin.data_source import migrate_list_configs
+
+        split = await migrate_list_configs()
+        if split:
+            print(f"  Data sources: split {split} list config(s) into one source per entry")
+    except Exception:
+        logging.getLogger(__name__).exception("Data sources: list-config split failed")
+
+
 async def _seed_service_triggers() -> None:
     """Upsert built-in system triggers (toplog filter watcher, etc.). Must run
     before `_start_fsop_watcher()` so the watcher's startup walk finds them."""
@@ -401,13 +445,13 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
         await get_graph_workflow_manager().arm_all_flow_subscriptions()
-        # Arm every inbox lane (ingested cloud records → conversations, and mail
+        # Arm every stream inbox lane (ingested cloud records → conversations, and mail
         # to an agent's own mailbox → that agent). Backend subscribers rather
         # than GraphWorkflows on purpose: it must not be possible to break your
-        # inbox by editing a graph. `start_inbox` owns the order they depend on.
-        from flow_sdk.inbox import start_inbox
+        # stream inbox by editing a graph. `start_stream_inbox` owns the order they depend on.
+        from flow_sdk.stream_inbox import start_stream_inbox
 
-        start_inbox()
+        start_stream_inbox()
         # Arm the data-source change lane. Any producer — a webhook relay, a
         # CLI, a scheduler — announces a change with the same envelope, and this
         # is what makes the bus the way in rather than each producer needing a
@@ -528,19 +572,19 @@ async def _start_notification_scanner() -> None:
         print(f"  Notification scanner: failed to start ({e})")
 
 
-async def _start_inbox_catchup() -> None:
+async def _start_stream_inbox_catchup() -> None:
     """Pull any FlowMessages that landed on the hub while the app was offline.
 
     Startup is only ONE of the two catch-up transitions — logging in is the
     other, and it runs the same sweep from ``cloud_login._finalize_login``
     (this one bails on ``hub_auth_available()`` when the app boots logged out).
-    See ``flow_sdk.inbox.catchup`` for why the sweep exists at all.
+    See ``flow_sdk.stream_inbox.catchup`` for why the sweep exists at all.
     """
     import asyncio
 
     async def _run():
-        from flow_sdk.inbox.catchup import start_hub_catchup
         from flow_sdk.server.routes.bootstrap import ensure_secret_recovery
+        from flow_sdk.stream_inbox.catchup import start_hub_catchup
 
         await ensure_secret_recovery()
         start_hub_catchup("startup")
@@ -553,7 +597,7 @@ async def _start_inbox_catchup() -> None:
         except Exception as e:  # noqa: BLE001 — never block startup
             logging.warning("[session] startup recovery sweep failed: %s", e)
 
-    asyncio.create_task(_run(), name="inbox-catchup-startup")
+    asyncio.create_task(_run(), name="stream-inbox-catchup-startup")
 
 
 async def _start_cloud_ws_listener() -> None:
@@ -580,10 +624,7 @@ async def _start_cloud_ws_listener() -> None:
 
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
-    from flow_sdk.builtin.agentic_process.naming.runtime import shutdown_name_observation
     from flow_sdk.config import clear_server_info
-
-    await shutdown_name_observation()
 
     try:
         from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
@@ -671,6 +712,7 @@ server.add_router(tags_router)
 server.add_router(display_router)
 server.add_router(asset_share_router)
 server.add_router(subgraph_router)
+server.add_router(ask_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)
 server.add_router(transcripts_router)

@@ -29,13 +29,13 @@ type Row = { id?: string; displayName?: string };
  * These deliberately differ from the registry's `display_name`, which is the word
  * for the *type* ("Documents" for markdown, "Task" for task) and is mirrored from
  * flow_sdk so desk and hub agree. A rail slot is free to be called something else
- * — "Inbox" is not what a `conversation` is — so this cannot be sourced from
+ * — "Stream Inbox" is not what a `conversation` is — so this cannot be sourced from
  * `labelForType`. It can't be sourced from the rail either: those titles come from
  * a lingui macro tag, which returns an empty string once passed across a module
  * boundary. Anything not listed falls back to the registry word.
  */
 const RAIL_HEADING: Record<string, string> = {
-  conversation: 'Inbox',
+  conversation: 'Stream Inbox',
   task: 'Tasks',
   markdown: 'Docs',
 };

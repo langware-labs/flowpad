@@ -130,6 +130,12 @@ class ClaudeDriver:
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def pty_turn_complete(entry: "Any", *, active_turn_id: str | None) -> bool:  # noqa: ARG004
+        """Claude records a ``turn_duration`` system row after its
+        assistant/stop hooks — that row IS the end of the PTY turn."""
+        return getattr(entry, "subtype", "") == "turn_duration"
+
     def cli_options(self, process: "AgenticProcess") -> ClaudeAgentOptions:
         """Build a Claude CLI command for ``process``.
 
@@ -500,6 +506,10 @@ class ClaudeDriver:
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
+
+    def transcript_is_final(self, process: "AgenticProcess", path: Path) -> bool:
+        """``<session_id>.jsonl`` is the session's only record; a live turn only appends to it."""
+        return bool(process.session_id) and path.name == f"{process.session_id}.jsonl"
 
     async def available_assets(self, process: "AgenticProcess"):
         from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs

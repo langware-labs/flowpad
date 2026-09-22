@@ -29,14 +29,14 @@ INDEXED_TYPES = {
     "agent_trace", "subagent", "agent", "graph_workflow", "asset_cleanup_report",
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
-    "credential_spec", "data_source_spec",
+    "secret_pack", "compute_op", "data_source", "data_driver",
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
     "task", "todo_file", "trigger", "usage_report", "whiteboard", "wizard", "workflow_run",
 }
 
-FRONTMATTER_PORTABLE = ("subagent", "agent", "claude_md", "markdown")
+FRONTMATTER_PORTABLE = ("subagent", "claude_md", "markdown")
 FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (
@@ -46,12 +46,15 @@ FOLDER_PORTABLE = (
 #: Folder-capsule types introduced after the json capsule; they mint +
 #: persist + adopt like the rest. ``project_manifest`` is the per-project
 #: published-asset ledger: a singleton folder whose main is JSON.
-FOLDER_NO_LEGACY = ("credential_spec", "mcp", "project_manifest", "trigger")
+FOLDER_NO_LEGACY = ("secret_pack", "mcp", "project_manifest", "trigger")
 #: Folder types whose main document is markdown: the id lives in that
 #: document's frontmatter (``Frontmatter``).
 FOLDER_MARKDOWN = ("skill", "task", "whiteboard")
 FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
+#: Entity documents (``<type>.json``): the id is the document root's ``"id"``
+#: (``JsonRoot``), and an authored asset mints a portable v4 like any capsule.
+JSON_PORTABLE = ("agent", "compute_op", "data_source")
 
 
 def _info(type_name: str):
@@ -64,7 +67,7 @@ def _info(type_name: str):
 
 def _own_document(tmp_path: Path, type_name: str, default: str) -> Path:
     """A file the type CLAIMS: its declared main document for a folder type
-    (``agent.md``, ``trace.json``), its fixed filename for a named file type
+    (``agent.json``, ``trace.json``), its fixed filename for a named file type
     (``CLAUDE.md``), else ``default``. The seam writes an id only into a path
     of the type's own shape (FLOWPAD-2083) — the same gate every walker
     applies — so a mint-and-persist case must present one."""
@@ -98,16 +101,18 @@ def test_every_registered_extractor_has_one_identity_backend() -> None:
 
 def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_CAPSULE)
-    native_types = set(JSON_STABLE)
+    native_types = set(JSON_STABLE) | set(JSON_PORTABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    # Capsule: base's 17 + `agent` + `mcp` + `wizard` + `project_manifest` +
-    # `credential_spec` (an asset we AUTHOR carries its own v4; the shipped
+    # Capsule: base's 17 + `mcp` + `wizard` + `project_manifest` +
+    # `secret_pack` (an asset we AUTHOR carries its own v4; the shipped
     # credential templates commit theirs, so every install indexes one row).
     # The sibling `mcp_server` SCAN is derived, because its source is a vendor
     # config file we cannot write an id into. 15 derived, including `micro_app`,
     # whose webapp.json carries no id — so it still owes an install-independent
     # key. See `test_shipped_asset_declares_an_install_independent_key`.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (23, 3, 15)
+    # Native JSON: the three reports + the entity documents `agent`, `compute_op` and
+    # `data_source`, which carry their ids.
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (22, 6, 15)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
@@ -215,6 +220,33 @@ def test_json_canonical_id_is_adopted_unchanged(
     assert path.read_bytes() == before
 
 
+@pytest.mark.parametrize("type_name", JSON_PORTABLE)
+@pytest.mark.parametrize("existing", (V4, V5))
+def test_entity_document_canonical_id_is_adopted_unchanged_without_write(
+    tmp_path: Path, type_name: str, existing: str,
+) -> None:
+    path = _own_document(tmp_path, type_name, "entity.json")
+    path.write_text(json.dumps({"type": type_name, "id": existing, "name": "Matrix"}) + "\n", encoding="utf-8")
+    before = path.read_bytes()
+    info = _info(type_name)
+    assert resolve_id(info, path) == existing
+    assert resolve_id(info, path) == existing
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("type_name", JSON_PORTABLE)
+def test_missing_entity_document_id_mints_persists_and_is_idempotent(
+    tmp_path: Path, type_name: str,
+) -> None:
+    path = _own_document(tmp_path, type_name, "entity.json")
+    path.write_text(json.dumps({"type": type_name, "name": "Matrix"}) + "\n", encoding="utf-8")
+    info = _info(type_name)
+    first = resolve_id(info, path)
+    assert uuid.UUID(first).version == 4
+    assert json.loads(path.read_text(encoding="utf-8"))["id"] == first
+    assert resolve_id(info, path) == first
+
+
 @pytest.mark.parametrize("type_name", JSON_STABLE)
 def test_missing_json_id_mints_exact_path_v5_and_persists(
     tmp_path: Path, type_name: str,
@@ -243,11 +275,11 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
         folder = root / "raw-copilot"
         folder.mkdir()
         return FSRef(folder / "events.jsonl"), "copilot_session:raw-copilot", uuid.NAMESPACE_DNS
-    if type_name == "data_source_spec":
+    if type_name == "data_driver":
         folder = root / "rss"
         folder.mkdir()
-        (folder / "data_source.json").write_text(json.dumps({"schema": 1, "name": "rss"}), encoding="utf-8")
-        return FSRef(folder), "data_source_spec:rss", namespace
+        (folder / "data_driver.json").write_text(json.dumps({"schema": 1, "name": "rss"}), encoding="utf-8")
+        return FSRef(folder), "data_driver:rss", namespace
     if type_name == "dynamic_workflow":
         path.write_text("export const meta = {name: 'W'};", encoding="utf-8")
         return FSRef(path), f"dynamic_workflow:{path.resolve()}", namespace
@@ -273,7 +305,7 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
 
 DETERMINISTIC_TYPES = (
     "claude_hook", "claude_session", "codex_session", "copilot_session",
-    "data_source_spec", "dynamic_workflow", "markdown_index", "mcp_server",
+    "data_driver", "dynamic_workflow", "markdown_index", "mcp_server",
     "plugin", "project", "spreadsheet", "todo_file",
     "workflow_run",
 )
@@ -331,12 +363,12 @@ def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -
 #: needs a key that carries its owner (e.g. `<owner>/<app>`), which is a separate
 #: change from FLOWPAD-2070; xfail keeps the defect visible until then.
 SHIPPED_RELOCATABLE_TYPES = (
-    "data_source_spec",
+    "data_driver",
     pytest.param("micro_app", marks=pytest.mark.xfail(strict=True, reason="needs an owner-scoped key; nine assets are named 'editor'")),
 )
 
 _SHIPPED_MANIFEST = {
-    "data_source_spec": ("data_source", "data_source.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
+    "data_driver": ("data_driver", "data_driver.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
     "micro_app": ("webapp", "webapp.json", {"schema": 1, "name": "editor", "title": "Editor"}),
 }
 

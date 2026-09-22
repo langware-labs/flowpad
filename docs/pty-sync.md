@@ -205,18 +205,43 @@ adapter.setEvictionOffset(vt.getTotalScrolledOff());      // keep adapter in syn
 absRow = annotation.data.line
 ```
 
-**prompt / plan** — text search in xterm buffer (`findTextRow`):
+**prompt / plan** — text search in xterm buffer. The hook builds needles from the content's first line (`buildNeedles`: first line trimmed to 60 chars, plus a variant with leading `#` heading markers stripped) and resolves them through a cached `AnnotationRowResolver` (`ts_sdk/src/pty-sync/AnnotationRowResolver.ts`), which re-validates the cached row and only on a miss calls the shared scan `findRowByText` (verbatim excerpt, `ts_sdk/src/pty-sync/adapter/findRowByText.ts:30`):
 ```ts
-function findTextRow(adapter, searchText): number | null {
-  const needle = searchText.trim().slice(0, 60);
+export function findRowByText(
+  adapter: IXtermAdapter,
+  needles: readonly string[],
+  opts: FindRowOpts = {},
+): number | null {
+  if (needles.length === 0) return null;
+
+  const bufLen = adapter.getBufferLength();
   const eviction = adapter.getEvictionOffset();
-  for (let absRow = eviction; absRow < eviction + adapter.getBufferLength(); absRow++) {
+  const startRow = Math.max(eviction, opts.scanFrom ?? 0);
+  const endRow = eviction + bufLen;
+  if (startRow >= endRow) return null;
+
+  const withPrefix = opts.withPromptPrefix ?? true;
+  const candidates: string[] = [];
+  for (const n of needles) {
+    if (!n) continue;
+    if (withPrefix) candidates.push(PROMPT_PREFIX + n);
+    candidates.push(n);
+  }
+  if (candidates.length === 0) return null;
+
+  for (let absRow = startRow; absRow < endRow; absRow++) {
     const lineText = adapter.getLineText(absRow);
-    if (lineText?.includes(needle)) return absRow;
+    if (!lineText) continue;
+    const trimmed = lineText.trimStart();
+    for (let i = 0; i < candidates.length; i++) {
+      if (trimmed.startsWith(candidates[i])) return absRow;
+    }
   }
   return null;
 }
 ```
+
+Matching is a **prefix** match on the `trimStart()`-ed row (trying `"❯ " + needle` before the bare needle), not a substring `includes`. The gutter passes `scanFrom = previous resolved row + 1` so repeated prompt text resolves to successive rows. (A `plan` annotation with a `ptySyncSession` is bucketed by timestamp via `ptySyncSession.bucketTimestamp()` instead.)
 
 This is the same scan used by `buildSegmentsFromAnchors()` — it finds the exact row where the prompt text appears in the live xterm buffer, not where the cursor was *after* processing the response. The `seqCursorMap` approach (cursor row after chunk) was incorrect because it placed annotations at the bottom of Claude's response rather than at the user's prompt line.
 
@@ -226,7 +251,7 @@ This is the same scan used by `buildSegmentsFromAnchors()` — it finds the exac
 |----------|-------|--------|
 | **Place memo/comment** | `absoluteLine` (from click row) | save `{ line: absoluteLine }` |
 | **Render memo/comment** | `data.line` | `absRow = data.line`; then `adapter.bufferIndexToPixelY(absRow)` |
-| **Render prompt/plan** | `annotation.content` | `absRow = findTextRow(adapter, content)`; same pixel conversion |
+| **Render prompt/plan** | `annotation.content` | `absRow = resolver.resolve(annotation.id, buildNeedles(content), adapter, scanFrom)` (→ `findRowByText` on a miss); same pixel conversion |
 | **Scroll** | `absRow`, adapter scroll state | `pixelY = adapter.bufferIndexToPixelY(absRow)` — subtracts eviction offset and firstVisibleRow, multiplies by cellHeight |
 | **Terminal resize** | ResizeObserver fires | `rebuild(allChunks)` — fresh VT with new dimensions, eviction offset re-synced |
 | **Index click / home nav** | `data.line` | `adapter.scrollToRow(absRow)` — centers the row in the viewport |
@@ -342,7 +367,7 @@ left: 0; right: 0;
 The annotation gutter positions elements via `absRow` computed by `useAnnotationGutter`. No xterm markers are involved.
 
 - `memo` / `comment`: `absRow = data.line` — exact row stored at creation
-- `prompt` / `plan`: `absRow = findTextRow(adapter, content)` — text scan of xterm buffer
+- `prompt` / `plan`: `absRow = resolver.resolve(annotation.id, buildNeedles(content), adapter, scanFrom)` — cached `findRowByText` prefix scan of xterm buffer
 
 **Rendering:** Each visible memo's `absRow` maps directly to a buffer row. Visibility check:
 ```

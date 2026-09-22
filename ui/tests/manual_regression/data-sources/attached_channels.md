@@ -14,14 +14,14 @@ as the local user's either way, but the disjointness check below assumes the
 agent's rows carry `owner`.
 
 What is being proved: the header line is one component over `DataSource.owner`
-and the spec's `sends` flag. The user's inbox and each agent's inbox show
+and the spec's `sends` flag. The user's stream inbox and each agent's stream inbox show
 DISJOINT rows; a mark filters the list, the details popover carries the one
 pause/resume verb the Data Sources card uses, and + creates a source born with
 that owner.
 
 test 1: the header line shows the user's channels as round marks
-- [browser] navigate to {APP_URL}/dock/inbox
-- [browser] validate data-testid="inbox-select-all-row" holds data-testid="attached-channels" with data-owner starting with `user-`
+- [browser] navigate to {APP_URL}/dock/stream_inbox
+- [browser] validate data-testid="stream-inbox-select-all-row" holds data-testid="attached-channels" with data-owner starting with `user-`
 - [browser] validate exactly one data-testid="attached-channel" with data-provider="slack" and data-state="on" (green dot, coloured Slack mark), plus data-testid="attached-channels-add" and data-testid="attached-channels-details"
 - [browser] validate every conversation row's source chip (data-chip-type="source") shows the same coloured mark
 
@@ -33,12 +33,12 @@ test 3: the details popover is where on/off and delete live
 - [browser] click data-testid="attached-channels-details": one data-testid="attached-channel-row" per channel with its switch and trash
 - [browser] flip the switch off: the mark's ring turns dashed; [api] GET /api/v1/graph/data_source/<id> — `status` is `disabled`
 - [browser] flip it on: a toast says "Resumed — it polls on the next tick."; [api] `status` is `setup` (Slack owes a Verify) and the mark wears the "!" badge with "Finish setup, then press Verify." under its name
-- [browser] "Manage in Data Sources…" opens that screen; press Verify; back on the inbox the mark has its green dot
+- [browser] "Manage in Data Sources…" opens that screen; press Verify; back on the stream inbox the mark has its green dot
 - [browser] the trash asks "Remove this source?" — cancel
 
 test 4: an agent's bar is its own
-- [browser] navigate to {APP_URL}/dock/agent/<agent-id>/inbox; the line shows no mark of the user's
+- [browser] navigate to {APP_URL}/dock/agent/<agent-id>/stream_inbox; the line shows no mark of the user's
 - [browser] click +, pick Slack, name it, paste a channel id, Add source
-- [browser] validate data-testid="attached-channels" (in the inbox header line) has data-owner `agent-<agent-id>` and exactly one data-testid="attached-channel" (the agent's), with the "!" badge
-- [browser] the agent's inbox list renders (not the "no channel" empty state)
-- [browser] back on {APP_URL}/dock/inbox the user's bar shows only the user's source
+- [browser] validate data-testid="attached-channels" (in the stream inbox header line) has data-owner `agent-<agent-id>` and exactly one data-testid="attached-channel" (the agent's), with the "!" badge
+- [browser] the agent's stream inbox list renders (not the "no channel" empty state)
+- [browser] back on {APP_URL}/dock/stream_inbox the user's bar shows only the user's source

@@ -35,7 +35,7 @@ class ProjectInfo:
     is_new: bool = False                                  # entity was created by THIS call
     modified_at: str | None = None                        # entity updated_date, when known
     last_active_at: int | None = None                     # entity last_active_at (epoch-ms), when known
-    system: bool = False                                  # SDK-shipped system project (any install)
+    hidden: bool = False                                  # app-managed: SDK-shipped, mount root, or helpdesk portal
 
 
 # ── GET vs FETCH ──────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ def _entity_to_project_info(proj, cwd: str) -> ProjectInfo:
         worker_types=[],
         modified_at=getattr(proj, "updated_date", None),
         last_active_at=getattr(proj, "last_active_at", None),
-        system=is_hidden_project(cwd, bool(getattr(proj, "system", False))),
+        hidden=is_hidden_project(cwd, bool(getattr(proj, "system", False))),
     )
 
 
@@ -208,17 +208,14 @@ def iter_copilot_project_paths(include_temp: bool = False) -> Iterator[Path]:
         yield path
 
 
-async def get_all_projects(
-    *,
-    include_temp: bool = False,
-    create_missing: bool = True,
-) -> list[ProjectInfo]:
-    """Return every known project — FS scan + entity table, deduped by cwd,
-    sorted by modified_at desc (None last).
-    """
-    from flow_sdk.builtin.project import Project  # local: avoid circular import
+def scan_project_cwds(*, include_temp: bool = False) -> dict[str, tuple[str, ...]]:
+    """Blocking FS half of ``get_all_projects``: ``{canonical cwd: worker tags}``.
 
-    fs_by_cwd: dict[str, ProjectInfo] = {}
+    Four filesystem walks (every historical worker cwd + the workspace) —
+    seconds on a busy machine. Pure disk, no entity table, so a caller may hold
+    the result and re-join it against ``Project.get_all()`` via ``join_projects``.
+    """
+    found: dict[str, list[str]] = {}
 
     def _scan(paths: Iterator[Path], worker: str | None) -> None:
         for path in paths:
@@ -228,31 +225,54 @@ async def get_all_projects(
                 include_temp=include_temp,
             ):
                 continue
-            info = fs_by_cwd.get(canonical)
-            if info is None:
-                info = ProjectInfo(
-                    cwd=canonical,
-                    name=Path(canonical).name or canonical,
-                    project_id="",
-                    record_project_id=Project.derive_id_for_path(canonical) or "",
-                )
-                fs_by_cwd[canonical] = info
+            workers = found.setdefault(canonical, [])
             # Workspace folders (worker=None) register as projects without a
             # worker tag; they still flow through the same reconcile → mint →
-            # materialize path below as Claude/Codex-discovered cwds.
-            if worker and worker not in info.worker_types:
-                info.worker_types.append(worker)
+            # materialize path (``join_projects``) as Claude/Codex-discovered cwds.
+            if worker and worker not in workers:
+                workers.append(worker)
 
-    def _scan_all() -> None:
-        # Four filesystem walks (every historical worker cwd + the workspace).
-        # Seconds on a busy machine; kept OFF the event loop so a project
-        # picker cannot stall every other request behind it.
-        _scan(iter_claude_project_paths(include_temp=include_temp), "claude")
-        _scan(iter_codex_project_paths(include_temp=include_temp), "codex")
-        _scan(iter_copilot_project_paths(include_temp=include_temp), "copilot")
-        _scan(iter_workspace_project_paths(include_temp=include_temp), None)
+    _scan(iter_claude_project_paths(include_temp=include_temp), "claude")
+    _scan(iter_codex_project_paths(include_temp=include_temp), "codex")
+    _scan(iter_copilot_project_paths(include_temp=include_temp), "copilot")
+    _scan(iter_workspace_project_paths(include_temp=include_temp), None)
+    return {cwd: tuple(workers) for cwd, workers in found.items()}
 
-    await asyncio.to_thread(_scan_all)
+
+async def get_all_projects(
+    *,
+    include_temp: bool = False,
+    create_missing: bool = True,
+) -> list[ProjectInfo]:
+    """Return every known project — FS scan + entity table, deduped by cwd,
+    sorted by modified_at desc (None last).
+    """
+    # Kept OFF the event loop so a project picker cannot stall every other
+    # request behind the scan.
+    scanned = await asyncio.to_thread(scan_project_cwds, include_temp=include_temp)
+    return await join_projects(scanned, include_temp=include_temp, create_missing=create_missing)
+
+
+async def join_projects(
+    scanned: dict[str, tuple[str, ...]],
+    *,
+    include_temp: bool = False,
+    create_missing: bool = True,
+) -> list[ProjectInfo]:
+    """Entity half of ``get_all_projects``: join a ``scan_project_cwds`` result
+    with ``Project.get_all()``. Reads the table fresh on every call."""
+    from flow_sdk.builtin.project import Project  # local: avoid circular import
+
+    fs_by_cwd: dict[str, ProjectInfo] = {
+        cwd: ProjectInfo(
+            cwd=cwd,
+            name=Path(cwd).name or cwd,
+            project_id="",
+            record_project_id=Project.derive_id_for_path(cwd) or "",
+            worker_types=list(workers),
+        )
+        for cwd, workers in scanned.items()
+    }
 
     existing = await Project.get_all()
     by_cwd: dict[str, "Project"] = {}
@@ -276,7 +296,7 @@ async def get_all_projects(
             info.record_project_id = Project.derive_id_for_path(cwd) or info.record_project_id
             info.modified_at = getattr(proj, "updated_date", None)
             info.last_active_at = getattr(proj, "last_active_at", None)
-            info.system = is_hidden_project(cwd, bool(getattr(proj, "system", False)))
+            info.hidden = is_hidden_project(cwd, bool(getattr(proj, "system", False)))
             # Prefer entity name when set (user may have renamed)
             if getattr(proj, "name", None):
                 info.name = proj.name  # type: ignore[assignment]
@@ -284,7 +304,7 @@ async def get_all_projects(
             info.project_id = Project.derive_id_for_path(cwd) or ""
             info.record_project_id = info.project_id
             info.is_new = True
-            info.system = is_hidden_project(cwd)
+            info.hidden = is_hidden_project(cwd)
             to_create.append(info)
 
     # Sequential saves: SQLite serializes writes anyway and asyncio.gather hits

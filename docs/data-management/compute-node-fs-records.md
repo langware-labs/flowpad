@@ -182,8 +182,8 @@ If no uid is present in the URL, all records of the type are returned (with opti
       "type": "agentic_process",
       "name": "my-process",
       "status": "active",
-      "created_at": "2026-03-01T10:00:00",
-      "modified_at": "2026-03-04T12:30:00"
+      "created_date": "2026-03-01T10:00:00",
+      "updated_date": "2026-03-04T12:30:00"
     }
   ]
 }
@@ -403,7 +403,7 @@ The `RecordQuery.apply(records)` method:
 ### Example
 
 ```
-GET /api/v1/graph/compute_node/local/fs-records/agentic_process
+GET /api/v1/graph/compute_node/@local/fs-records/agentic_process
     ?status=active
     &modified_after=2026-02-01T00:00:00
     &sort_by=modified_at
@@ -524,16 +524,18 @@ Records are then produced by `extract_records(expanded_path)`, which reads + par
 
 When `json_path` is absent, the handler returns the list of records produced by `extract_records(expanded_path)`. Each dict already carries `source_file` and `json_path`:
 
+Source-file records carry no `id`; the extracted content fields sit beside the three framework keys:
+
 ```json
 {
   "status": "SUCCESS",
   "message": "success",
   "data": [
     {
-      "id": "abc",
       "type": "claude_settings_json",
       "source_file": "/Users/alice/.claude/settings.json",
-      "json_path": ""
+      "json_path": "",
+      "theme": "dark"
     }
   ]
 }
@@ -557,10 +559,10 @@ match = next(
   "status": "SUCCESS",
   "message": "success",
   "data": {
-    "id": "abc",
     "type": "claude_settings_json",
     "source_file": "/Users/alice/.claude/settings.json",
-    "json_path": ""
+    "json_path": "",
+    "theme": "dark"
   }
 }
 ```
@@ -594,10 +596,10 @@ match = next(
   "status": "SUCCESS",
   "message": "success",
   "data": {
-    "id": "abc",
     "type": "claude_settings_json",
     "source_file": "/Users/alice/.claude/settings.json",
-    "json_path": ""
+    "json_path": "",
+    "theme": "dark"
   }
 }
 ```
@@ -772,8 +774,10 @@ The HTTP status code is carried in `ApiFailResponse.status_code` and applied as 
 ### List All Registered Types
 
 ```
-GET /api/v1/graph/compute_node/local/fs-records
+GET /api/v1/graph/compute_node/@local/fs-records
 ```
+
+Excerpt — the live list names every registered type (about a hundred, including relationship and row-only types):
 
 ```json
 {
@@ -783,12 +787,12 @@ GET /api/v1/graph/compute_node/local/fs-records
     "types": [
       "agentic_process",
       "agent",
+      "subagent",
       "skill",
       "task",
-      "memo",
-      "claude_session",
-      "claude_settings",
-      "claude_settings_json"
+      "markdown",
+      "command",
+      "claude_session"
     ]
   }
 }
@@ -797,7 +801,7 @@ GET /api/v1/graph/compute_node/local/fs-records
 ### List Records with Query
 
 ```
-GET /api/v1/graph/compute_node/local/fs-records/agentic_process
+GET /api/v1/graph/compute_node/@local/fs-records/agentic_process
     ?status=active&sort_by=modified_at&sort_desc=true&limit=5
 ```
 
@@ -811,7 +815,7 @@ GET /api/v1/graph/compute_node/local/fs-records/agentic_process
       "type": "agentic_process",
       "name": "Fix login bug",
       "status": "active",
-      "modified_at": "2026-03-04T14:22:00"
+      "updated_date": "2026-03-04T14:22:00"
     }
   ]
 }
@@ -820,7 +824,7 @@ GET /api/v1/graph/compute_node/local/fs-records/agentic_process
 ### Get Single Record
 
 ```
-GET /api/v1/graph/compute_node/local/fs-records/agentic_process/proc-001
+GET /api/v1/graph/compute_node/@local/fs-records/agentic_process/proc-001
 ```
 
 ```json
@@ -832,8 +836,8 @@ GET /api/v1/graph/compute_node/local/fs-records/agentic_process/proc-001
     "type": "agentic_process",
     "name": "Fix login bug",
     "status": "active",
-    "created_at": "2026-03-01T09:00:00",
-    "modified_at": "2026-03-04T14:22:00"
+    "created_date": "2026-03-01T09:00:00",
+    "updated_date": "2026-03-04T14:22:00"
   }
 }
 ```
@@ -841,7 +845,7 @@ GET /api/v1/graph/compute_node/local/fs-records/agentic_process/proc-001
 ### Create a Record
 
 ```
-POST /api/v1/graph/compute_node/local/fs-records/task
+POST /api/v1/graph/compute_node/@local/fs-records/task
 Content-Type: application/json
 
 {
@@ -869,7 +873,7 @@ Content-Type: application/json
 ### Update a Record
 
 ```
-PUT /api/v1/graph/compute_node/local/fs-records/task/task-xyz
+PUT /api/v1/graph/compute_node/@local/fs-records/task/task-xyz
 Content-Type: application/json
 
 {
@@ -894,7 +898,7 @@ Content-Type: application/json
 ### Delete a Record
 
 ```
-DELETE /api/v1/graph/compute_node/local/fs-records/task/task-xyz
+DELETE /api/v1/graph/compute_node/@local/fs-records/task/task-xyz
 ```
 
 ```json
@@ -910,7 +914,7 @@ DELETE /api/v1/graph/compute_node/local/fs-records/task/task-xyz
 ### Path-Based: List All Records from a Source File
 
 ```
-GET /api/v1/graph/compute_node/local/fs-records/file
+GET /api/v1/graph/compute_node/@local/fs-records/file
     ?path=~/.claude/settings.json
 ```
 
@@ -920,16 +924,16 @@ GET /api/v1/graph/compute_node/local/fs-records/file
   "message": "success",
   "data": [
     {
-      "id": "a1b2c3",
       "type": "claude_settings_json",
       "source_file": "/Users/alice/.claude/settings.json",
-      "json_path": ""
+      "json_path": "",
+      "theme": "dark"
     },
     {
-      "id": "d4e5f6",
       "type": "claude_settings_json:permissions",
       "source_file": "/Users/alice/.claude/settings.json",
-      "json_path": "/permissions"
+      "json_path": "/permissions",
+      "default_mode": "auto"
     }
   ]
 }
@@ -938,7 +942,7 @@ GET /api/v1/graph/compute_node/local/fs-records/file
 ### Path-Based: Get a Record by JSON Pointer
 
 ```
-GET /api/v1/graph/compute_node/local/fs-records/file
+GET /api/v1/graph/compute_node/@local/fs-records/file
     ?path=~/.claude/settings.json&json_path=/permissions
 ```
 
@@ -947,10 +951,10 @@ GET /api/v1/graph/compute_node/local/fs-records/file
   "status": "SUCCESS",
   "message": "success",
   "data": {
-    "id": "d4e5f6",
     "type": "claude_settings_json:permissions",
     "source_file": "/Users/alice/.claude/settings.json",
-    "json_path": "/permissions"
+    "json_path": "/permissions",
+    "default_mode": "auto"
   }
 }
 ```
@@ -958,7 +962,7 @@ GET /api/v1/graph/compute_node/local/fs-records/file
 ### Path-Based: Update a Record in a Source File
 
 ```
-PUT /api/v1/graph/compute_node/local/fs-records/file
+PUT /api/v1/graph/compute_node/@local/fs-records/file
     ?path=~/.claude/settings.json&json_path=
 Content-Type: application/json
 
@@ -973,10 +977,11 @@ Content-Type: application/json
   "status": "SUCCESS",
   "message": "success",
   "data": {
-    "id": "a1b2c3",
     "type": "claude_settings_json",
     "source_file": "/Users/alice/.claude/settings.json",
-    "json_path": ""
+    "json_path": "",
+    "theme": "dark",
+    "autoUpdaterStatus": "enabled"
   }
 }
 ```
@@ -984,7 +989,7 @@ Content-Type: application/json
 ### Path-Based: Delete a Sub-Record
 
 ```
-DELETE /api/v1/graph/compute_node/local/fs-records/file
+DELETE /api/v1/graph/compute_node/@local/fs-records/file
     ?path=~/.claude/.mcp.json&json_path=/mcpServers/old-server
 ```
 

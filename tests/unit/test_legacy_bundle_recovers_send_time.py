@@ -5,7 +5,7 @@ fixed what NEW senders ship. Bundles packed by older builds carry no send-time a
 are frozen that way on the hub forever — 81 of the 116 bundles on a real machine,
 spanning 2026-05-19 to 2026-07-09. When one is downloaded, ``unpack_bundle`` falls
 back to ``now()`` and the message lands stamped with the sync instant, which is
-what throws the inbox order out.
+what throws the stream inbox order out.
 
 Two independent routes recover the true time. These tests enter through a
 different one each, so each pins its own fix:

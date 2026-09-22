@@ -12,7 +12,6 @@ from __future__ import annotations
 from flow_sdk.assets.identity import (
     frontmatter_identity,
 )
-from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.types.task import derive_task, task_asset_hash
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.task_spec import TaskSpec
@@ -29,7 +28,6 @@ TASK = TypeInfo(
     index_fields=["description", "objective"],
     asset_class="repo",
     family="task",
-    shape=Folder(main="task.md"),
     editor="task",
     fts_content=("title", "description"),
     identity_carrier=frontmatter_identity(),

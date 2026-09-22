@@ -1,14 +1,15 @@
-import { VFSPath } from '@sdk';
+import { PrefKey, VFSPath } from '@sdk';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { FolderOpen } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { usePreference } from '@src/hooks/use-preference';
 import { allScope, type ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { fsFolderNodeId, fsRootNodeId } from '@src/components/browseable-tree/adapters/fsFolderRoot';
-import { FilterDefinition, FilterName, SimpleFileManager } from '../simple-file-manager';
+import { FilterName, getAllFilterDefinitions, SimpleFileManager } from '../simple-file-manager';
 import { useExplorerComputeNode } from './useExplorerComputeNode';
 import './explorer-view.css';
 
@@ -25,13 +26,9 @@ function joinRelativePath(base: string | null | undefined, sub: string | null | 
   return `${normalizedBase}/${normalizedSub}`;
 }
 
+const FILTER_DEFINITIONS = getAllFilterDefinitions();
+
 export interface ExplorerViewProps {
-  /** Filter definitions for file filters component */
-  filterDefinitions?: FilterDefinition[];
-  /** Currently enabled filter names */
-  enabledFilters?: FilterName[];
-  /** Callback when enabled filters change */
-  onEnabledFiltersChange?: (enabledFilters: FilterName[]) => void;
   /** File selection handler - called when user double-clicks a file */
   onFileSelect: (path: string) => void;
   /** Compact mode - hides size/modified columns and table header */
@@ -44,16 +41,18 @@ export interface ExplorerViewProps {
  * URL-driven and table-only. The compute_node typeId + per-scope anchor come
  * from the shared `useExplorerComputeNode` hook so tree and table stay in sync.
  */
-export function ExplorerView({
-  filterDefinitions,
-  enabledFilters,
-  onEnabledFiltersChange,
-  onFileSelect,
-  compact = false,
-}: ExplorerViewProps) {
+export function ExplorerView({ onFileSelect, compact = false }: ExplorerViewProps) {
   const { currentContext } = useViewerStore();
   const { currentDock, navigation } = useDockNavigation();
   const { typeId, anchorForScope, projectRootPath } = useExplorerComputeNode();
+
+  // Dotfiles stay hidden unless the remembered FILES_SHOW_HIDDEN preference says otherwise.
+  const [showHidden, setShowHidden] = usePreference<boolean>(PrefKey.FILES_SHOW_HIDDEN);
+  const enabledFilters = useMemo(() => (showHidden ? [] : [FilterName.HIDDEN]), [showHidden]);
+  const handleEnabledFiltersChange = useCallback(
+    (filters: FilterName[]) => setShowHidden(!filters.includes(FilterName.HIDDEN)),
+    [setShowHidden],
+  );
 
   const scope = useMemo<ScopeFilter>(() => currentDock?.scopeFilter ?? allScope(), [currentDock]);
   const anchorRel = useMemo(() => anchorForScope(scope), [anchorForScope, scope]);
@@ -138,9 +137,9 @@ export function ExplorerView({
         onPathChange={handlePathChange}
         onFileSelect={onFileSelect}
         onFsMutated={handleFsMutated}
-        filterDefinitions={filterDefinitions}
+        filterDefinitions={FILTER_DEFINITIONS}
         enabledFilters={enabledFilters}
-        onEnabledFiltersChange={onEnabledFiltersChange}
+        onEnabledFiltersChange={handleEnabledFiltersChange}
         compact={compact}
         className="h-full"
       />

@@ -30,7 +30,7 @@ Survivor ranking, first non-tie wins:
 
 Nothing user-owned pins a spec id, which is what makes the re-key safe: a
 configured `DataSource` resolves its definition by NAME
-(`DataSourceSpec.get_one({"name": provider})`), the driver registry is a flat
+(`DataDriverSpec.get_one({"name": provider})`), the driver registry is a flat
 dict keyed by name, and a nested editor webapp's parent typeid is re-derived
 from the folder chain on the next index. Content is re-read from disk anyway.
 

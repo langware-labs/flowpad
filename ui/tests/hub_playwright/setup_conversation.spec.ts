@@ -62,7 +62,7 @@ test('setup: alice creates → bob accepts via UI → realtime round-trip < 500 
     console.log(`[setup] alice created conv ${convId.slice(0, 8)} via UI  (${tCreated - t0} ms)`);
 
     // 2. Bob clicks Refresh so ``conversation-sync`` pulls pending invitations.
-    //    The invitation pull happens before the inbox fetch in the handler,
+    //    The invitation pull happens before the stream inbox fetch in the handler,
     //    and ``_materialize_remote_invitation`` saves with ``notify=True`` so
     //    the strip's reactive query updates as soon as the row hits the local
     //    DB — well within 2s of the click.

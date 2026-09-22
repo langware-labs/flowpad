@@ -2,8 +2,8 @@
 
 These two markdown files are prompts, so nothing executes them and nothing
 caught it when they drifted: they asked the model for `source_id`, `stream_key`
-and `title` long after ``SourceItemSpec`` had renamed those to
-``data_source_id``, ``segment_key`` and ``name``. The spec is ``extra="forbid"``,
+and `title` long after ``SourceItemSpec`` had renamed or
+dropped them (``data_source_id``, ``name``). The spec is ``extra="forbid"``,
 so every such batch was refused with five validation errors — while the
 contract went on saying otherwise and the model improvised around it, landing
 records with an empty subject.
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.ingest.source_registry import asset_module
+from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 accepted_fields = asset_module("agent", "transport").accepted_fields

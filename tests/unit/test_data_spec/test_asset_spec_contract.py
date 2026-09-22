@@ -1,5 +1,6 @@
 """``TypeInfo.asset_spec`` — the shape and the row must agree, and the spec's
-field TYPES are the layout: ``Body``/``FreeSection`` markers, sub-assets by registry."""
+field TYPES are the layout: ``Text`` is a body, ``FreeForm`` a free section,
+and a nested ENTITY or DOCUMENT shape is a sub-asset — read off the type, not a marker."""
 from __future__ import annotations
 
 from typing import Optional
@@ -13,7 +14,8 @@ from flow_sdk.builtin.dataset import Dataset
 from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo, check_asset_spec
 from flow_sdk.fs_store.serializer.fields import FieldKind, asset_class, field_kinds, field_persistence, spec_layout
-from flow_sdk.schema.data_spec import Body, DataSpec, FreeSection, FrontMatter
+from flow_sdk.schema.data_spec import DataSpec, FrontMatter
+from flow_sdk.schema.data_spec.io.native import FreeForm, Text
 from flow_sdk.schema.data_spec.agent_spec import AgentSpec
 from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec
 from flow_sdk.schema.types import EntityType
@@ -22,9 +24,9 @@ pytestmark = pytest.mark.timeout(5)
 
 
 def test_every_spec_bearing_type_passes_the_contract():
-    import flow_sdk.builtin.data_source_spec  # noqa: F401 — bind the Entity under test
+    import flow_sdk.builtin.data_driver  # noqa: F401 — bind the Entity under test
     import flow_sdk.builtin.source_item  # noqa: F401
-    for t in (EntityType.AGENT, EntityType.SUBAGENT, EntityType.DATASET, EntityType.DATA_SOURCE_SPEC, EntityType.SOURCE_ITEM):
+    for t in (EntityType.AGENT, EntityType.SUBAGENT, EntityType.DATASET, EntityType.DATA_DRIVER, EntityType.SOURCE_ITEM):
         info = SchemaRegistry.get(t)
         assert info.asset_spec is not None, t
         check_asset_spec(str(t), info.entity_cls, info.asset_spec)   # raises on drift
@@ -37,7 +39,7 @@ def test_the_entity_may_narrow_but_never_lack_a_spec_field():
     class _Spec(DataSpec):
         skills: list[str] = []
         layout: str = "csv"
-        data: Optional[FreeSection] = None
+        data: Optional[FreeForm] = None
 
     from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.schema.data_spec.dataset_spec import DataLayoutEnum
@@ -46,7 +48,7 @@ def test_the_entity_may_narrow_but_never_lack_a_spec_field():
         type: str = "probe_contract"
         skills: list[TypeId] = []
         layout: DataLayoutEnum = DataLayoutEnum.CSV
-        data: Optional[dict] = None
+        data: Optional[FreeForm] = None
 
     check_asset_spec("probe_contract", _Row, _Spec)          # str → TypeId / StrEnum narrow; dict aliases agree
 
@@ -59,16 +61,16 @@ def test_the_entity_may_narrow_but_never_lack_a_spec_field():
 
 
 def test_markers_are_field_kinds_and_a_spec_has_at_most_one_of_each():
-    assert field_persistence(Body) is FieldKind.BODY
-    assert field_persistence(Optional[FreeSection]) is FieldKind.FREE_SECTION
+    assert field_persistence(Text) is FieldKind.BODY
+    assert field_persistence(Optional[FreeForm]) is FieldKind.FREE_SECTION
     assert dict(field_kinds(AgentSpec))["system_prompt"] is FieldKind.BODY
     assert dict(field_kinds(DatasetManifestSpec))["data"] is FieldKind.FREE_SECTION
     assert spec_layout(AgentSpec).body == "system_prompt" and spec_layout(AgentSpec).free is None
     assert spec_layout(DatasetManifestSpec).free == "data"
 
     class _Two(FrontMatter):
-        a: Body = ""
-        b: Body = ""
+        a: Text = ""
+        b: Text = ""
 
     with pytest.raises(TypeError, match="at most one Body"):
         spec_layout(_Two)

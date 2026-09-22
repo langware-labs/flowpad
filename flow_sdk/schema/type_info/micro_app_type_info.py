@@ -6,7 +6,7 @@ new discovery code — including one nested INSIDE another asset's
 walker recurses, and the enclosure rule makes the containing asset its parent.
 
 ``family="webapp"`` rather than the type name, for the reason
-``data_source_spec_type_info`` gives for ``family="data_source"``: the folder a
+``data_driver_type_info`` gives for ``family="data_driver"``: the folder a
 human reads should be named for the thing, not for the internal distinction
 between the delivery row and the app.
 
@@ -15,7 +15,6 @@ somewhere in the user's checkout, which has no ``webapp.json`` and no
 ``asset_ref``; such a row is DB-only and the orphan sweep never considers it.
 """
 from flow_sdk.assets.identity import derived_identity
-from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.types.webapp import derive_webapp
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.webapp_spec import WebappManifestSpec
@@ -36,7 +35,6 @@ MICRO_APP = TypeInfo(
     indexed_by_default=True,
     asset_class="repo",
     family="webapp",
-    shape=Folder(main="webapp.json"),
     asset_spec=WebappManifestSpec,
     derive_fields_fn=derive_webapp,
     fts_content=("name", "title", "description"),

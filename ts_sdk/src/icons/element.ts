@@ -206,7 +206,7 @@ export interface IconChipOptions extends IconElementOptions {
 }
 
 /**
- * A glyph with its name, as a chip — the treatment an inbox row is recognised
+ * A glyph with its name, as a chip — the treatment a stream inbox row is recognised
  * by (`SourceChip` in `channel-attribution.tsx`).
  *
  * It is here rather than in a component because the chip is where the icon

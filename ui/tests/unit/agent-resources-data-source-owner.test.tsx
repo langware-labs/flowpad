@@ -1,7 +1,7 @@
 /**
  * FLOWPAD-2092: a data source created from an agent's own "Agent resources"
  * panel must be OWNED by that agent, the same way `AttachedChannelsBar`
- * stamps `owner` when a channel is added from the agent's Inbox view.
+ * stamps `owner` when a channel is added from the agent's Stream Inbox view.
  *
  * Before the fix, `AgentResourcesBody` opened `DataSourceDialog` with no
  * `owner` prop at all — a source created from an agent's editor page came

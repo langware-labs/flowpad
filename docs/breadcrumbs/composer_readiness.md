@@ -16,8 +16,8 @@ description: The PTY composer-ready gate scanned only the last 64 KB of output, 
 ```breadcrumb
 tag: breadcrumb.test.composer_readiness.rules
 sites:
-  - rel_path: "tests/unit/test_pty_composer_gate_scan_window.py"
-    line: 60
+  - rel_path: "tests/long_tests/test_pty_composer_gate_scan_window.py"
+    line: 64
     note: "FAILING? the composer-ready gate went blind because the vendor's marker fell outside the scanned slice - read this tag's rules before touching pump_composer_ready or _COMPOSER_SCAN_WINDOW"
 ```
 

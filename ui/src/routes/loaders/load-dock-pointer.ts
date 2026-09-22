@@ -27,7 +27,7 @@ import { loadProcess, ProcessLoadError } from './load-process';
 import { loadShellRoute } from './load-shell';
 import { loadTasksRoute } from './load-tasks';
 import { processLoadErrorToDockError } from './process-load-error-resolution';
-import { loadAgentInboxRoute } from './load-agent-inbox';
+import { loadAgentStreamInboxRoute } from './load-agent-stream-inbox';
 
 export interface DockLoaderContext {
   requestPath: string;
@@ -267,7 +267,7 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         await loadConversationRoute(dock.pointer);
         break;
       case ViewType.AGENT:
-        await loadAgentInboxRoute(dock.pointer);
+        await loadAgentStreamInboxRoute(dock.pointer);
         break;
       case ViewType.ASSETS:
         // A concrete asset resolves its owner; only a browse landing needs a

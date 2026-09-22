@@ -208,7 +208,7 @@ export function AgentResourcesBody() {
   // navigation, see this repo's own doctrine) already writes it there before
   // this pane renders. A source created here is that agent's, the same way
   // `AttachedChannelsBar` stamps `owner` for a channel added from the agent's
-  // Inbox view; before this, `owner` was never set at all and every source
+  // Stream Inbox view; before this, `owner` was never set at all and every source
   // created from this panel came back unowned regardless of which agent's
   // editor it was opened from.
   const { activeEntityTypeId } = useContext();
@@ -309,7 +309,7 @@ export function AgentResourcesBody() {
   return (
     <div className="flex flex-col py-1">
       {/* The CONNECTED sources — what an agent here can actually read from —
-          and never again the installed `DataSourceSpec` catalog this section
+          and never again the installed `DataDriver` catalog this section
           used to list. That catalog was the nine provider types the machine
           *can* connect: neither viewable nor selectable, so every row was
           decoration. Same shape as the three sections below it: rows are what

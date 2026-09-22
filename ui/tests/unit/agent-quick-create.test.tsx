@@ -193,10 +193,10 @@ describe('Agent Quick Create', () => {
     expect(save).toHaveBeenCalledWith([project.typeId], undefined);
   });
 
-  it('resolves only the canonical sibling avatar inside an agent.md bundle', () => {
+  it('resolves only the canonical sibling avatar inside an agent.json bundle', () => {
     const agent = new Agent({
       id: AGENT_ID,
-      asset_ref: '/workspace/agentic-assets/agent/q/agent.md',
+      asset_ref: '/workspace/agentic-assets/agent/q/agent.json',
       avatar: './avatar.png',
     });
     expect(agent.bundleDirectory).toBe('/workspace/agentic-assets/agent/q');

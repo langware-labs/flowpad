@@ -2,7 +2,7 @@
  * The Add-a-data-source dialog, checked against the manifests the backend indexed.
  *
  * The point of every assertion here is that nothing in `ui/` decides what a provider is.
- * So the expected values are FETCHED from `/api/v1/graph/data_source_spec` and compared to
+ * So the expected values are FETCHED from `/api/v1/graph/data_driver` and compared to
  * what rendered — writing them out as literals would just recreate `provider-catalog.ts`,
  * which this work deleted.
  */
@@ -42,10 +42,10 @@ function specNamed(name: string): Spec {
 
 test.beforeAll(async () => {
   const api = await apiContext();
-  const res = await api.get('/api/v1/graph/data_source_spec');
-  expect(res.ok(), 'the backend did not serve data_source_spec').toBeTruthy();
+  const res = await api.get('/api/v1/graph/data_driver');
+  expect(res.ok(), 'the backend did not serve data_driver').toBeTruthy();
   specs = ((await res.json()).data ?? []) as Spec[];
-  expect(specs.length, 'no data_source_spec assets indexed').toBeGreaterThan(0);
+  expect(specs.length, 'no data_driver assets indexed').toBeGreaterThan(0);
   await api.dispose();
 });
 
@@ -154,7 +154,7 @@ test.describe('Data sources are served by the backend', () => {
     await openScreen(page);
     const dialog = await openDialog(page, 'rss');
     await dialog.locator('#ds-name').fill(`rejected-${stamp()}`);
-    await dialog.locator('#ds-feed_urls').fill('not-a-url');
+    await dialog.locator('#ds-feed_url').fill('not-a-url');
 
     // The manifest's `pattern` is doing this. No RSS-specific validator survives in ui/.
     await expect(dialog.getByRole('button', { name: 'Add source' })).toBeDisabled();
@@ -164,7 +164,7 @@ test.describe('Data sources are served by the backend', () => {
   test('an rss source can be created', async ({ page }) => {
     await openScreen(page);
     await createSource(page, 'rss', `rss-${stamp()}`, {
-      feed_urls: 'https://hnrss.org/frontpage',
+      feed_url: 'https://hnrss.org/frontpage',
     });
   });
 

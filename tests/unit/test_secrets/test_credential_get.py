@@ -1,4 +1,4 @@
-"""``CredentialSpec.get(name, project=None)`` and the store a credential names, as is."""
+"""``SecretPack.get(name, project=None)`` and the store a credential names, as is."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,7 +7,7 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.credential_service import save_credential
-from flow_sdk.builtin.credential_spec import CredentialAmbiguous, CredentialNotFound, CredentialSpec
+from flow_sdk.builtin.secret_pack import CredentialAmbiguous, CredentialNotFound, SecretPack
 from flow_sdk.builtin.credential_store import user_scope
 from flow_sdk.cli.auth.secrets import read_secret
 
@@ -24,7 +24,7 @@ async def test_the_current_projects_credential_wins_over_the_user_one(home, in_p
         scope="project", project_id=str(in_project.id), manifest=_manifest("database", "DATABASE_URL")
     )
 
-    found = await CredentialSpec.get("database")
+    found = await SecretPack.get("database")
 
     assert found.id == declared.id and found.scope == "project"
 
@@ -36,17 +36,17 @@ async def test_outside_a_project_the_user_credential_answers_unless_a_project_is
     )
     monkeypatch.chdir(home)
 
-    assert (await CredentialSpec.get("database")).id == user.id
-    assert (await CredentialSpec.get("database", project=project)).id == declared.id
+    assert (await SecretPack.get("database")).id == user.id
+    assert (await SecretPack.get("database", project=project)).id == declared.id
 
 
 async def test_an_undeclared_name_is_not_found(home, in_project):
     with pytest.raises(CredentialNotFound, match="stripe"):
-        await CredentialSpec.get("stripe")
+        await SecretPack.get("stripe")
 
 
 async def test_two_credentials_of_one_name_in_the_answering_scope_are_ambiguous(home, in_project, monkeypatch):
-    twins = [CredentialSpec(id=mint_uuid(), name="stripe", scope="user") for _ in range(2)]
+    twins = [SecretPack(id=mint_uuid(), name="stripe", scope="user") for _ in range(2)]
 
     async def in_scope(_project):
         return [(spec, user_scope()) for spec in twins]
@@ -54,7 +54,7 @@ async def test_two_credentials_of_one_name_in_the_answering_scope_are_ambiguous(
     monkeypatch.setattr("flow_sdk.builtin.credential_resolver.credentials_in_scope", in_scope)
 
     with pytest.raises(CredentialAmbiguous) as ambiguous:
-        await CredentialSpec.get("stripe")
+        await SecretPack.get("stripe")
 
     assert ambiguous.value.candidates == [str(spec.typeid) for spec in twins]
 
@@ -91,7 +91,7 @@ async def test_env_file_is_accepted_as_the_env_store_spelling(home, in_project):
 
 
 async def test_a_template_has_no_store(home):
-    template = CredentialSpec(id=mint_uuid(), name="openai", scope="system")
+    template = SecretPack(id=mint_uuid(), name="openai", scope="system")
 
     with pytest.raises(LookupError, match="template"):
         await template.secret_store()

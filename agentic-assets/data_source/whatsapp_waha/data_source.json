@@ -1,0 +1,14 @@
+{
+  "type": "data_source",
+  "id": "6a865ecc-eaa9-45f1-87a3-15fa7153d468",
+  "name": "WhatsApp WAHA",
+  "data_driver_name": "waha",
+  "data_driver_config": {
+    "base_url": "http://localhost:3010",
+    "session": "default",
+    "webhook_url": "http://host.docker.internal:6001/api/v1/data_source/webhook/waha"
+  },
+  "owner": "agent-ceae4f10-5eb6-4a99-a0ef-61343f6ed30f",
+  "poll_interval_seconds": 300,
+  "window_days": 7
+}

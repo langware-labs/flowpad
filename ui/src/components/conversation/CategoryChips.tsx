@@ -7,7 +7,7 @@ import { chipsFor, type ConversationFacets } from './conversation-category';
 const COMPACT = 'gap-0.5 rounded border px-1 py-0 align-middle text-[9px] font-medium leading-tight';
 
 /** Per-row category chips (Support / Archived). Renders nothing for plain rows.
- *  Shared by InboxView and RecentConversationsStrip. */
+ *  Shared by StreamInboxView and RecentConversationsStrip. */
 export function CategoryChips({ facets, className }: { facets: ConversationFacets; className?: string }) {
   const chips = chipsFor(facets);
   if (chips.length === 0) return null;

@@ -34,7 +34,7 @@ interface StatusBarProps {
 
 export function StatusBar({ className = '' }: StatusBarProps) {
   const { t } = useLingui();
-  const { project, computeNode, projectPath, openProjectFolder } = useProjectLocation();
+  const { project, computeNode, projectPath, gitWorkdir, openProjectFolder } = useProjectLocation();
   const { refetch: refetchProjects } = useProjects();
   const { navigation } = useDockNavigation();
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
@@ -130,7 +130,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
             <TooltipContent>{openFolderLabel}</TooltipContent>
           </Tooltip>
         )}
-        <GitStatusProvider computeNodeId={computeNode?.id ?? null} workdir={projectPath}>
+        <GitStatusProvider computeNodeId={computeNode?.id ?? null} workdir={gitWorkdir}>
           <GitStatusPill />
           <GitPushButton />
         </GitStatusProvider>

@@ -46,7 +46,6 @@ def emit_item_tag(item: "SourceItemSpec", entity_id: str, status: str) -> None:
                 "source_id": item.data_source_id,
                 "provider": item.provider,
                 "kind": item.kind,
-                "segment_key": item.segment_key,
                 "external_id": item.external_id,
                 "occurred_at": item.occurred_at,
                 "entity_id": entity_id,
@@ -62,7 +61,6 @@ def emit_sync_tag(
     source_id: str,
     verb: str,
     *,
-    segment_key: Optional[str] = None,
     report: Optional["IngestReport"] = None,
     error_code: Optional[str] = None,
     error_detail: Optional[str] = None,
@@ -78,8 +76,6 @@ def emit_sync_tag(
         from flow_sdk.tags import emit_tag, target_of
 
         data: dict = {"provider": provider, "source_id": source_id}
-        if segment_key is not None:
-            data["segment_key"] = segment_key
         if report is not None:
             data.update(report.as_counts())
             data["changed_ids"] = report.changed_ids

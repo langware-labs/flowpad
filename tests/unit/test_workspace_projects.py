@@ -6,11 +6,13 @@ entity — the exact same reconcile → mint → materialize path Claude/Codex
 cwds take. Drives the real SQLite persistence layer (no mocks of save/query).
 """
 
+import asyncio
 import uuid
 
 import pytest
 import pytest_asyncio
 
+import flow_sdk.builtin.faas.project_list as project_list
 import flow_sdk.db.drivers.db_driver as db_driver_mod
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
@@ -124,6 +126,68 @@ async def test_workspace_folders_materialize_as_projects(project_db, tmp_path, m
         assert again_by_name[name].project_id == by_name[name].project_id
 
 
+@pytest.fixture(autouse=True)
+def _fresh_project_list_cache():
+    """The picker's disk snapshot is module state; no test may inherit one."""
+    project_list.invalidate_project_list_cache()
+    yield
+    project_list.invalidate_project_list_cache()
+
+
+class _PickerDisk:
+    """Stub disk behind ``list_projects_from_indexer``: the workspace iterator
+    yields the folders under ``root`` that still exist, and every call to it is
+    one scan. ``now`` is the listing cache's monotonic clock."""
+
+    def __init__(self, monkeypatch, root, *names):
+        import flow_sdk.fs_store.operations.all_projects as ap
+
+        self.root = root
+        self.folders = []
+        self.scans = 0
+        self.now = 1000.0
+        for name in names:
+            self.add(name)
+        monkeypatch.setattr(ap, "iter_claude_project_paths", lambda **kwargs: iter(()))
+        monkeypatch.setattr(ap, "iter_codex_project_paths", lambda **kwargs: iter(()))
+        monkeypatch.setattr(ap, "iter_copilot_project_paths", lambda **kwargs: iter(()))
+        monkeypatch.setattr(ap, "iter_workspace_project_paths", self._workspace)
+
+        # tmp_path is under the system temp dir: keep it past the temp filter.
+        real_scan = ap.scan_project_cwds
+        real_join = ap.join_projects
+
+        async def read_only_join(scanned, *, create_missing):
+            assert create_missing is False
+            return await real_join(scanned, include_temp=True, create_missing=create_missing)
+
+        monkeypatch.setattr(ap, "scan_project_cwds", lambda: real_scan(include_temp=True))
+        monkeypatch.setattr(ap, "join_projects", read_only_join)
+        monkeypatch.setattr(project_list, "is_valid_project_cwd", lambda _cwd: True)
+        monkeypatch.setattr(project_list, "_codex_activity_by_cwd", lambda: {})
+        monkeypatch.setattr(project_list, "_copilot_activity_by_cwd", lambda: {})
+        monkeypatch.setattr(project_list, "_index_claude_dirs_by_cwd", lambda _root: {})
+        monkeypatch.setattr(project_list, "_now", lambda: self.now)
+
+    def add(self, name):
+        """Create ``root/name`` on disk and list it; returns the folder."""
+        folder = self.root / name
+        folder.mkdir()
+        self.folders.append(folder)
+        return folder
+
+    def cwd(self, name):
+        return str((self.root / name).resolve())
+
+    def _workspace(self, **kwargs):
+        self.scans += 1
+        return iter([folder for folder in self.folders if folder.is_dir()])
+
+
+def _cwds(result):
+    return [row["cwd"] for row in result["projects"]]
+
+
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
 async def test_project_picker_listing_discovers_paths_without_materializing_them(
@@ -132,36 +196,185 @@ async def test_project_picker_listing_discovers_paths_without_materializing_them
     monkeypatch,
 ):
     """The picker returns discovered cwds but never bulk-creates Project rows."""
-    import flow_sdk.builtin.faas.project_list as project_list
-    import flow_sdk.fs_store.operations.all_projects as ap
     from flow_sdk.builtin.project import Project
 
-    discovered = tmp_path / "historical-worker-project"
-    discovered.mkdir()
-    monkeypatch.setattr(ap, "iter_claude_project_paths", lambda **kwargs: iter(()))
-    monkeypatch.setattr(ap, "iter_codex_project_paths", lambda **kwargs: iter(()))
-    monkeypatch.setattr(ap, "iter_copilot_project_paths", lambda **kwargs: iter(()))
-    monkeypatch.setattr(ap, "iter_workspace_project_paths", lambda **kwargs: iter((discovered,)))
-
-    real_get_all_projects = ap.get_all_projects
-
-    async def read_only_projects(*, create_missing):
-        assert create_missing is False
-        return await real_get_all_projects(include_temp=True, create_missing=create_missing)
-
-    monkeypatch.setattr(ap, "get_all_projects", read_only_projects)
-    monkeypatch.setattr(project_list, "is_valid_project_cwd", lambda _cwd: True)
-    monkeypatch.setattr(project_list, "_codex_activity_by_cwd", lambda: {})
-    monkeypatch.setattr(project_list, "_copilot_activity_by_cwd", lambda: {})
-    monkeypatch.setattr(project_list, "_index_claude_dirs_by_cwd", lambda _root: {})
+    disk = _PickerDisk(monkeypatch, tmp_path, "historical-worker-project")
 
     before = await Project.get_all()
     result = await project_list.list_projects_from_indexer()
     after = await Project.get_all()
 
-    assert [row["cwd"] for row in result["projects"]] == [str(discovered.resolve())]
+    assert _cwds(result) == [disk.cwd("historical-worker-project")]
     assert after == before == []
-    assert await Project.find_by_cwd(str(discovered.resolve())) is None
+    assert await Project.find_by_cwd(disk.cwd("historical-worker-project")) is None
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_picker_listing_reuses_the_disk_scan(project_db, tmp_path, monkeypatch):
+    """A second listing inside the TTL reads nothing off disk."""
+    disk = _PickerDisk(monkeypatch, tmp_path, "first")
+
+    await project_list.list_projects_from_indexer()
+    disk.add("later")
+    disk.now += 59
+    again = await project_list.list_projects_from_indexer()
+
+    assert disk.scans == 1
+    assert _cwds(again) == [disk.cwd("first")]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_picker_concurrent_listings_share_one_scan(project_db, tmp_path, monkeypatch):
+    disk = _PickerDisk(monkeypatch, tmp_path, "folder")
+
+    results = await asyncio.gather(*(project_list.list_projects_from_indexer() for _ in range(4)))
+
+    assert disk.scans == 1
+    assert all(_cwds(result) == [disk.cwd("folder")] for result in results)
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_picker_serves_stale_snapshot_while_it_refreshes(project_db, tmp_path, monkeypatch):
+    """Past the TTL the old list answers at once; one background scan replaces it."""
+    disk = _PickerDisk(monkeypatch, tmp_path, "first")
+    await project_list.list_projects_from_indexer()
+
+    disk.add("later")
+    disk.now += 120
+    stale = await project_list.list_projects_from_indexer()
+    assert _cwds(stale) == [disk.cwd("first")]
+
+    refresh = project_list._inflight
+    if refresh is not None:  # else the refresh already landed during the join
+        await refresh
+    # A task that finished before the await returns at once, with its done-callback
+    # (the one storing the snapshot) still queued for the loop's next turn.
+    await asyncio.sleep(0)
+    fresh = await project_list.list_projects_from_indexer()
+
+    assert disk.scans == 2
+    assert sorted(_cwds(fresh)) == sorted([disk.cwd("first"), disk.cwd("later")])
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_picker_blocks_on_a_snapshot_older_than_ten_minutes(project_db, tmp_path, monkeypatch):
+    disk = _PickerDisk(monkeypatch, tmp_path, "first")
+    await project_list.list_projects_from_indexer()
+
+    disk.add("later")
+    disk.now += 601
+    result = await project_list.list_projects_from_indexer()
+
+    assert disk.scans == 2
+    assert sorted(_cwds(result)) == sorted([disk.cwd("first"), disk.cwd("later")])
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_picker_invalidate_forces_a_rescan(project_db, tmp_path, monkeypatch):
+    disk = _PickerDisk(monkeypatch, tmp_path, "folder")
+    await project_list.list_projects_from_indexer()
+
+    disk.folders[0].rmdir()
+    project_list.invalidate_project_list_cache()
+    result = await project_list.list_projects_from_indexer()
+
+    assert disk.scans == 2
+    assert _cwds(result) == []
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_picker_shows_a_rename_without_rescanning(project_db, tmp_path, monkeypatch):
+    """Only the disk is cached: the Project table is joined fresh every listing."""
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    disk = _PickerDisk(monkeypatch, tmp_path, "folder")
+    project = Project.model_validate({"fs_storage_mount_path": canonical_posix_path(disk.folders[0]), "name": "before"})
+    project.id = Project.allocate_id(project.model_dump())
+    await project.save()
+
+    assert [row["name"] for row in (await project_list.list_projects_from_indexer())["projects"]] == ["before"]
+    project.name = "after"
+    await project.save()
+    renamed = await project_list.list_projects_from_indexer()
+
+    assert disk.scans == 1
+    assert [(row["id"], row["name"]) for row in renamed["projects"]] == [(project.id, "after")]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_picker_rows_are_not_shared_between_listings(project_db, tmp_path, monkeypatch):
+    disk = _PickerDisk(monkeypatch, tmp_path, "folder")
+
+    first = await project_list.list_projects_from_indexer()
+    row = first["projects"][0]
+    row["name"] = "scribbled"
+    row["worker_types"].append("scribbled")
+    first["projects"].append({"cwd": "/scribbled"})
+    second = await project_list.list_projects_from_indexer()
+
+    assert disk.scans == 1
+    assert [(r["name"], r["worker_types"]) for r in second["projects"]] == [("folder", [])]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_delete_with_children_drops_the_picker_snapshot(tmp_path, monkeypatch):
+    """Deleting a project removes its folder; the next listing must not serve
+    the snapshot that still contains it."""
+    from flow_sdk.builtin.project import Project
+
+    disk = _PickerDisk(monkeypatch, tmp_path, "doomed")
+    folder = disk.folders[0]
+    project = await Project(name=str(folder)).save()
+    assert disk.cwd("doomed") in _cwds(await project_list.list_projects_from_indexer())
+
+    await project._delete_with_children(folder="rmtree", delete_chats=False)
+    result = await project_list.list_projects_from_indexer()
+
+    assert not folder.exists()
+    assert disk.scans == 2
+    assert disk.cwd("doomed") not in _cwds(result)
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_cleanup_apply_drops_the_picker_snapshot(project_db, tmp_path, monkeypatch):
+    """Clearing a project's harness state changes what the scan finds; the next
+    listing must rescan rather than serve the snapshot taken before it."""
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.faas import scan_actions
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.operations import project_cleanup
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    disk = _PickerDisk(monkeypatch, tmp_path, "folder")
+    project = Project.model_validate({"fs_storage_mount_path": canonical_posix_path(disk.folders[0]), "name": "folder"})
+    project.id = Project.allocate_id(project.model_dump())
+    await project.save()
+    await project_list.list_projects_from_indexer()
+
+    async def body():
+        return {"project_ids": [project.id]}
+
+    request_info = SimpleNamespace(request=SimpleNamespace(json=body))
+    monkeypatch.setattr(scan_actions, "get_current_request_info", lambda: request_info)
+    monkeypatch.setattr(project_cleanup.HarnessIndex, "build", classmethod(lambda cls: None))
+    monkeypatch.setattr(project_cleanup, "remove_from_harness", lambda row, index: {"cwd": row["cwd"]})
+
+    response = await scan_actions.ScanActionsMixin._scan_project_cleanup_apply(None, permanent=False)
+    assert response.data["succeeded"] == 1
+    await project_list.list_projects_from_indexer()
+
+    assert disk.scans == 2
 
 
 def test_copilot_project_iterator_rejects_home_but_keeps_subdir(
@@ -283,7 +496,7 @@ async def test_agent_mount_root_entity_is_not_returned(project_db, tmp_path, mon
 
     assert "Flowpad workspace" not in by_name, by_name
     assert "real-project" in by_name, by_name
-    assert by_name["real-project"].system is False, "subfolder project must stay non-hidden"
+    assert by_name["real-project"].hidden is False, "subfolder project must stay non-hidden"
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

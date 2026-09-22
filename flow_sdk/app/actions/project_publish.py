@@ -12,10 +12,13 @@ The gates, in order, all of them fail-closed:
 
 1. an authenticated actor,
 2. cloud credentials,
-3. a GitHub token — the hub clones from GitHub, so a project with no token is
-   a declaration nobody can act on,
-4. the authoritative git preflight (clean tree, named branch, pushed, supported
+3. the authoritative git preflight (clean tree, named branch, pushed, supported
    origin). The frontend never shells git; this is the only verdict.
+4. a GitHub token — but only when the origin that passed the preflight is
+   actually on GitHub. The token exists so the recipient's clone can reach a
+   private GitHub repo; demanding it for a ``file://`` or self-hosted remote
+   refused a share that needs no GitHub account at all, which is why this gate
+   runs AFTER the preflight that resolves the provider.
 
 The origin that passed the preflight is the one carried forward — re-deriving
 it afterwards would open a window where the advertised commit is not the one
@@ -94,12 +97,6 @@ async def assert_project_publishable(project, actor) -> "object":
             message="Cloud login required before linking a Project to the cloud",
             status_code=401,
         )
-    if not await get_github_token(actor):
-        raise ProjectPublishBlocked(
-            code="github_not_connected",
-            message="Connect GitHub before linking a Project to the cloud",
-        )
-
     try:
         preflight = await git_share_preflight(Project.get_type(), str(project.id))
     except Exception:  # noqa: BLE001 — publication eligibility fails closed
@@ -115,9 +112,20 @@ async def assert_project_publishable(project, actor) -> "object":
         )
 
     try:
-        return GitOrigin.model_validate(preflight.get("git_origin"))
+        origin = GitOrigin.model_validate(preflight.get("git_origin"))
     except Exception as exc:  # noqa: BLE001 — a malformed success must fail closed
         raise ProjectPublishBlocked(
             code="status-failure",
             message="Couldn't determine a valid Git origin for this Project",
         ) from exc
+
+    # Only a GitHub origin needs a GitHub token: it is what lets the recipient
+    # clone a private repo. A file:// or self-hosted remote clones without one.
+    if origin.provider.strip().lower() == "github" and not await get_github_token(actor):
+        raise ProjectPublishBlocked(
+            code="github_not_connected",
+            message="Connect GitHub before linking a Project to the cloud",
+            git_origin=preflight.get("git_origin"),
+        )
+
+    return origin

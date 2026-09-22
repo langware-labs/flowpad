@@ -384,9 +384,9 @@ actionInfo.bodyParameters = { command: 'pause' };
 await dataManager.callAction(actionInfo);
 
 // Label actions — use subpath
-const actionInfo = new ActionInfo('label', this.typeId.type, this.typeId.id, 'POST');
-actionInfo.subpath = 'my-label';               // → /label/my-label
-await dataManager.callAction(actionInfo);
+const labelInfo = new ActionInfo('label', this.typeId.type, this.typeId.id, 'POST');
+labelInfo.subpath = 'my-label';                // → /label/my-label
+await dataManager.callAction(labelInfo);
 ```
 
 ### React Hooks

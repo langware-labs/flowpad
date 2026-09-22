@@ -16,7 +16,7 @@ export function useStagedAssets(type: string): UseProcessAssetsResult {
 
   // Destructured, NOT kept as one object: `useProcessAssets` returns a fresh
   // literal every render, so memoizing on it would hand back a new descriptors
-  // array each time — and `AgentMcpField` derives `agent.md`'s `mcp_servers`
+  // array each time — and `AgentMcpField` derives `agent.json`'s `mcp_servers`
   // from this list, so churn there is a re-commit, not just a re-render.
   const { descriptors, isLoading, refresh, error, scanIssues, truncated } = useProcessAssets(null, options);
 

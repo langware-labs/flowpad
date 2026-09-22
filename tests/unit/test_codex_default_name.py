@@ -8,10 +8,13 @@ from flow_sdk.builtin.tab import Tab
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
 
+from .conftest import settle_transcript_flushes
+
 
 @pytest.fixture(autouse=True)
 def codex_home(tmp_path, monkeypatch):
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    # ``.codex`` in the path is how a delivered transcript is attributed to its vendor.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex"))
     reset_instance_settings()
     yield
     reset_instance_settings()
@@ -66,39 +69,55 @@ async def test_codex_session_stamps_initial_name_and_tab(entry_point):
     assert proc.auto_rename is False
 
 
-async def test_late_codex_index_name_reaches_tab_without_transcript_change(monkeypatch):
-    """The native title sidecar changes after the answer, with no browser mounted."""
-    import asyncio
+def _rollout(sid: str, *, cwd: str = "/repo"):
+    path = get_instance_settings().codex_sessions_dir / "2026" / "09" / "16" / f"rollout-2026-09-16T10-00-00-{sid}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"type": "session_meta", "payload": {"id": sid, "cwd": cwd}},
+        {"type": "response_item", "payload": {"type": "message", "role": "user",
+                                              "content": [{"type": "input_text", "text": "Explain blue oceans"}]}},
+    ]
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    return path
 
-    from flow_sdk.builtin.agentic_process.naming.runtime import shutdown_name_observation
+
+@pytest.mark.long  # ~1.1s: the transcript flush debounce is a real 1s window
+async def test_codex_index_title_applies_on_the_next_transcript_event():
+    """The native title sidecar is read when the session's transcript next moves."""
     from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
+    from flow_sdk.transcript_streamer.registry import transcript_streamer_registry
 
     sid = mint_uuid()
-    proc = AgenticProcess(id=mint_uuid(), worker_type=WorkerType.CODEX,
-                          status=ProcessStatus.RUNNING, session_id=sid,
-                          naming_state=SessionNameState())
+    proc = AgenticProcess(id=mint_uuid(), worker_type=WorkerType.CODEX, status=ProcessStatus.RUNNING,
+                          session_id=sid, workdir="/repo", naming_state=SessionNameState())
     await proc.save()
     tab = Tab(id=mint_uuid(), target_type=proc.type, target_id=proc.id)
     await tab.save()
-    path = get_instance_settings().codex_session_index_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text('')
-    await proc.reconcile_name(first_prompt="Explain blue oceans")
-    published = asyncio.Event()
-    original_notify = AgenticProcess.notify_updated
+    index = get_instance_settings().codex_session_index_path
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.write_text(json.dumps({
+        "id": sid, "thread_name": "Why oceans look blue", "updated_at": "2026-09-16T10:00:00Z",
+    }) + "\n")
 
-    async def notify(self, *args, **kwargs):
-        if self.id == proc.id and self.name == "Why oceans look blue":
-            published.set()
-        await original_notify(self, *args, **kwargs)
+    await transcript_streamer_registry.notify_change(_rollout(sid))
+    await settle_transcript_flushes()
 
-    monkeypatch.setattr(AgenticProcess, 'notify_updated', notify)
-    try:
-        await asyncio.to_thread(path.write_text, json.dumps({
-            "id": sid, "thread_name": "Why oceans look blue", "updated_at": "2026-09-13T09:00:00Z",
-        }) + '\n')
-        await published.wait()
-        assert (await Tab.get_by_id(tab.id)).name == "Why oceans look blue"
-        assert (await AgenticProcess.get_by_id(proc.id)).naming_state.phase == "protected_unknown"
-    finally:
-        await shutdown_name_observation()
+    assert (await AgenticProcess.get_by_id(proc.id)).name == "Why oceans look blue"
+    assert (await Tab.get_by_id(tab.id)).name == "Why oceans look blue"
+
+
+@pytest.mark.long  # ~1.1s: the transcript flush debounce is a real 1s window
+async def test_terminal_typed_codex_session_is_adopted_from_its_first_transcript_event():
+    """Codex mints its id after launch; the first transcript event pairs it with its process."""
+    from flow_sdk.transcript_streamer.registry import transcript_streamer_registry
+
+    sid = mint_uuid()
+    proc = AgenticProcess(id=mint_uuid(), worker_type=WorkerType.CODEX, status=ProcessStatus.RUNNING,
+                          workdir="/repo")
+    await proc.save()
+    assert not (await AgenticProcess.get_by_id(proc.id)).session_id
+
+    await transcript_streamer_registry.notify_change(_rollout(sid))
+    await settle_transcript_flushes()
+
+    assert (await AgenticProcess.get_by_id(proc.id)).session_id == sid
