@@ -289,7 +289,14 @@ def _plain_yaml(value: Any) -> Any:
 
 
 def _render_frontmatter(fields: dict[str, Any]) -> str:
-    """Serialize a dict to a ``---\\n...\\n---`` YAML frontmatter block."""
+    """Serialize a dict to a ``---\\n...\\n---`` YAML frontmatter block.
+
+    Ends AT the closing ``---``, with no trailing newline — every caller adds
+    its own separator, because what follows differs (a blank line before a
+    body, a heading, nothing before EOF). A reader's ``_extract_frontmatter``
+    needs that newline, so a caller that forgets it writes a file whose
+    frontmatter is silently read as part of the body.
+    """
     import yaml
 
     yaml_text = yaml.safe_dump(

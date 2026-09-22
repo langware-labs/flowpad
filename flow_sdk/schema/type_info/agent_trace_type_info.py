@@ -9,5 +9,4 @@ AGENT_TRACE = report_type_info(
     asset_spec=AgentTraceSpec,
     index_fields=["name", "session_id", "verdict"],
     fts_content=("name", "verdict", "verdict_reason"),
-    main_file="trace.json",
 )

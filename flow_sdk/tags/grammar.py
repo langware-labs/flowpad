@@ -91,6 +91,23 @@ def split_namespace(tag: str) -> tuple[Optional[str], str]:
     return None, tag
 
 
+def join_namespace(ns: "Optional[str]", tag: str) -> str:
+    """Inverse of ``split_namespace``: ``("acme", "orders.created")`` →
+    ``--acme--.orders.created``.
+
+    A blank namespace returns the tag unchanged — the system namespace is the
+    DEFAULT and it is never written as a marker. Raises on a namespace name the
+    marker cannot hold, so a bad name fails here rather than producing a tag
+    ``normalize_tag`` will reject later.
+    """
+    if not ns:
+        return tag
+    marker = f"--{ns}--"
+    if not NAMESPACE_SEGMENT_PATTERN.fullmatch(marker):
+        raise ValueError(f"{ns!r} is not a usable namespace name")
+    return f"{marker}.{tag}" if tag else marker
+
+
 def tag_ancestors(tag: str, *, include_self: bool = False) -> list[str]:
     """Dot ancestors from broadest to narrowest (strict — normalizes first)."""
     normalized = normalize_tag(tag)

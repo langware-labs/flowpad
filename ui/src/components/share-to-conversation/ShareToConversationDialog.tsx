@@ -5,9 +5,16 @@ import {
   Conversation,
   hasRemoteParticipant,
   normalizeEmail,
+  oauthService,
+  OAUTH_PROVIDERS,
+  OAuthStatus,
+  type Project,
   type ConversationParticipant,
   type ConversationSendPayload,
 } from '@sdk';
+import { useOAuthFlowComplete } from '@sdk/react/hooks';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { errorMessage } from '@src/lib/error-message';
 import { useAuth } from '@sdk/react/hooks';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useSendToConversation, type SendTarget } from '@src/hooks/use-send-to-conversation';
@@ -19,6 +26,7 @@ import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
 import type { ShareSource } from '@src/hooks/share-sources';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
+import { useGitAnonymousAccess } from '@src/hooks/use-git-anonymous-access';
 import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
@@ -100,6 +108,19 @@ const rowClasses = (isSelected: boolean, dashed = false) =>
  * conversation + one invite; later shares thread into the existing conversation
  * with no new invite (the duplicate-conversation/email fix).
  */
+/**
+ * The backend's machine code for a refused share.
+ *
+ * Graph actions put theirs at `data.data.code` (`ProjectPublishBlocked.data()`),
+ * NOT at `data.error_code` where `describeApiError` looks. Only one code is
+ * branched on — everything else is shown in the backend's own words.
+ */
+function shareFailureCode(error: unknown): string {
+  const e = error as { response?: { data?: { data?: { code?: unknown } } } } | null;
+  const code = e?.response?.data?.data?.code;
+  return typeof code === 'string' ? code : '';
+}
+
 export function ShareToConversationDialog({
   open,
   onClose,
@@ -212,6 +233,17 @@ export function ShareToConversationDialog({
   // initial value follows the selected conversation's remembered default.
   const gitCapable = source.gitPreflightRef != null;
   const preflight = useGitSharePreflight(source.gitPreflightRef, open && gitCapable);
+  // Can a stranger clone it? Preflight says the SENDER may publish; this says
+  // whether the people they publish to will be able to read it.
+  const anonAccess = useGitAnonymousAccess(source.gitPreflightRef, open && gitCapable);
+  // A share that must also grant access (a Project). The entity is loaded in
+  // full because `APIEntity.share` POSTs `this.toJSON()` — a husk instance
+  // would send a husk body.
+  const grantRef = source.accessGrantRef;
+  const { data: grantEntity } = useEntity<Project>(grantRef ?? null);
+  const [needsGitHub, setNeedsGitHub] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const retryAfterConnect = useRef<(() => void) | null>(null);
   // Re-init the toggle ONLY when the selection changes (a ref keeps the effect
   // off the conversation list's identity, so a background refetch can't clobber
   // a manual toggle within one selection).
@@ -229,6 +261,36 @@ export function ShareToConversationDialog({
   const gitBlocked = gitCapable && gitSharing && (preflight.loading || !preflight.available);
   const canShareSelected = !gitBlocked && (isNewSelected ? canStartNew : conversations.some((c) => c.id === selected));
 
+  // Subscribed only while THIS dialog's connect is pending, so an abandoned
+  // flow leaves no listener behind.
+  useOAuthFlowComplete(
+    OAUTH_PROVIDERS.GITHUB,
+    (message) => {
+      setConnecting(false);
+      if (message.status !== OAuthStatus.SUCCESS) {
+        setLocalError(t`GitHub authorization did not complete.`);
+        return;
+      }
+      setNeedsGitHub(false);
+      const retry = retryAfterConnect.current;
+      retryAfterConnect.current = null;
+      retry?.();
+    },
+    connecting,
+  );
+
+  const connectGitHub = async () => {
+    if (connecting) return;
+    setConnecting(true);
+    setLocalError(null);
+    try {
+      await oauthService.connect(OAUTH_PROVIDERS.GITHUB);
+    } catch (e) {
+      setConnecting(false);
+      setLocalError(errorMessage(e, t`GitHub authorization did not complete.`));
+    }
+  };
+
   const doShare = async (existingId: string | null) => {
     if (busy) return;
     setLocalError(null);
@@ -243,6 +305,37 @@ export function ShareToConversationDialog({
       if (!gate.ok) {
         setLocalError(gate.error);
         return;
+      }
+    }
+    // Grant BEFORE sending. The message is only the channel: without a role on
+    // the project the hub never pushes the row, and the recipient gets a note
+    // about files they cannot install. Failing here aborts the send rather than
+    // promising something that will not arrive.
+    if (grantRef) {
+      if (!grantEntity) {
+        setLocalError(t`Still loading this project — try again in a moment.`);
+        return;
+      }
+      if (!recipientEmails.length) {
+        setLocalError(t`Add someone with an email address to share this project with.`);
+        return;
+      }
+      try {
+        setCommitBusy(true);
+        await grantEntity.share(recipientEmails);
+        setNeedsGitHub(false);
+      } catch (e) {
+        // The one refusal with a one-click fix; everything else the backend
+        // explains better than a guess here.
+        if (shareFailureCode(e) === 'github_not_connected') {
+          retryAfterConnect.current = () => void doShare(existingId);
+          setNeedsGitHub(true);
+          return;
+        }
+        setLocalError(errorMessage(e, t`This project could not be shared.`));
+        return;
+      } finally {
+        setCommitBusy(false);
       }
     }
     let payload: ConversationSendPayload;
@@ -500,6 +593,31 @@ export function ShareToConversationDialog({
                     </span>
                   </button>
                 </WikiTip>
+                {anonAccess.public === false && !gitBlocked && (
+                  <div
+                    className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+                    data-testid="share-private-repo"
+                  >
+                    <Trans>
+                      The repository {anonAccess.repo ?? 'this project uses'} is private. They will see the project, but
+                      only someone who connects GitHub and already has access to that repository can open its files —
+                      Flowpad grants Flowpad membership, never GitHub access.
+                    </Trans>
+                  </div>
+                )}
+                {needsGitHub && (
+                  <div
+                    className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs"
+                    data-testid="share-connect-github"
+                  >
+                    <span className="text-muted-foreground">
+                      <Trans>Connect GitHub to share a project whose files live in a GitHub repository.</Trans>
+                    </span>
+                    <Button size="sm" onClick={() => void connectGitHub()} disabled={connecting}>
+                      {connecting ? <Trans>Connecting…</Trans> : <Trans>Connect GitHub</Trans>}
+                    </Button>
+                  </div>
+                )}
                 {gitBlocked && (
                   <div
                     className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"

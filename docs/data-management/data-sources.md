@@ -172,6 +172,7 @@ application reads, so the engine asks the type rather than probing.
 |---|---|---|
 | `provider` | — | Registry key. Distinct from `channel`, the user-facing name (`origin_kind_for`) |
 | `kind` (on the type) | — | Ontology kind of the **source** row (`datasource.feed.rss`); stamped by `sync_source` |
+| `ns` | `""` (ours) | Whose ontology the shapes this driver registers belong to. A driver OUTSIDE the shipped tree must name one — its own, or its project's — or `load_driver` refuses it, because otherwise a kind it declares lands in ours and can take a shipped one's name. Every kind it mints is prefixed `--<ns>--`; ours is the default and is never written. See [`ontology.md`](../ontology.md) |
 | `durable_cursor` | `False` | Whether `ChangePage.resume_cursor` is persisted and resumed |
 | `reflects` | `False` | The payload is files for reflection, never records |
 | `pages_per_pass` | `None` | Page chain cap per traversal |
@@ -397,8 +398,9 @@ can overlap (see *Known gaps*).
 6. If the bytes are not yours to write, set `stamps_identity = False` and give the class
    an `origin_id_for` classmethod.
 7. Write the manifest beside it, `data_driver.json` — `kind`, `auth`, `config`,
-   `reflect`. The create form is generated from its `config` block; nothing in `ui/` is
-   edited, and nothing is registered anywhere else.
+   `reflect`, and `ns` if the driver is not shipped by us. The create form is generated
+   from its `config` block; nothing in `ui/` is edited, and nothing is registered
+   anywhere else.
 8. Add `tests/test_<name>_source.py` in the folder: the conformance kit
    (`flow_sdk.sources.testing.checks_for`) over the class, plus its wire cases against a
    loopback server (`flow_sdk.ingest.testing.local_http_server`); import the class with

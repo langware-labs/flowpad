@@ -1,12 +1,13 @@
 """Filesystem contracts independent of application entities."""
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, ClassVar, List, Optional
 
 from pydantic import Field
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.fs_store.origin.field import OriginField
-from flow_sdk.schema.data_spec import Body, FrontMatter
+from flow_sdk.schema.data_spec import FrontMatter
+from flow_sdk.schema.data_spec.io.native import Text
 
 
 class TaskEventType(StrEnum):
@@ -38,6 +39,8 @@ class TaskSpec(FrontMatter):
     are absent from this class, so a received task is runnable and maps its
     own local project. ``description`` is the markdown ``Body``; ``title``
     falls back to the folder (``derive_task``)."""
+
+    main_file: ClassVar[str | None] = "task.md"
 
     title: Optional[str] = None
     status: Optional[str] = None
@@ -79,4 +82,4 @@ class TaskSpec(FrontMatter):
     task_type_label: Optional[str] = None
     team_space_id: Optional[str] = None
     worker_session_id: Optional[str] = None
-    description: Body = ""
+    description: Text = ""

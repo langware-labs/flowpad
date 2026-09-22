@@ -34,7 +34,8 @@ export interface LLMEndpointOffer {
   provider: string;
   enabled: boolean;
   credential_hint: string;
-  system_default: boolean;
+  /** Spendable with no hub login: the endpoint's id is its bearer. */
+  public?: boolean;
   invoke_path: string;
   /** `LLMFundingKind` — which of the three funding kinds this is. */
   kind: string;
@@ -51,10 +52,10 @@ export interface LLMEndpointOffer {
   filters: LLMEndpointFilters;
   /** THE budget: the ceilings on this endpoint. `null` = unlimited, `0` = nothing. */
   limits: LLMEndpointLimits;
-  /** Whose pot this is — `organization-`/`team-`/`user-<uuid>`, or null for a root or an
-   *  allocation. Says whether a budget is a person's own or a pool they merely draw through —
-   *  but NOT whether an untagged one was handed to them; `can_administer` answers that. */
-  principal_typeid: string | null;
+  /** The hub user this allowance belongs to (`user-<uuid>`, the spelling `hub_user_typeid`
+   *  uses) — the hub's `partof` edge to the person, read through `token_plan/allowances`. Null
+   *  for a pool, a root, a share, or when that read failed; then `can_administer` is the fallback. */
+  holder_typeid: string | null;
   /** May this person CHANGE this budget (the hub's own `update` permission)? Three states:
    *  `true` they administer it, `false` they hold it and may only spend it — which is what a
    *  beneficiary is, since `allocate` grants `reader` and stamps no principal — and `null` when
@@ -73,7 +74,7 @@ export interface LLMFundingStatus {
   provider: string | null;
   hub_logged_in: boolean;
   /** Who the hub thinks this box is (`user-<uuid>`), in the spelling an endpoint's
-   *  `principal_typeid` uses — null when signed out. The box's LOCAL user is a different
+   *  `holder_typeid` uses — null when signed out. The box's LOCAL user is a different
    *  id entirely, so this is the only way a screen can tell a budget allocated TO this
    *  person from one they merely administer. */
   hub_user_typeid: string | null;

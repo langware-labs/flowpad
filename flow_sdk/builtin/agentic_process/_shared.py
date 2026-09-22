@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
-if TYPE_CHECKING:
-    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 
 def _now_iso(timespec: str = "auto") -> str:
@@ -93,19 +91,6 @@ class CreateProcessRequest(BaseModel):
 # ── Result types ──────────────────────────────────────────────────────────────
 
 @dataclass
-class RunResult:
-    """Return value from AgenticProcess.run() / prompt()."""
-
-    text: str
-    session_id: str
-    status: "WorkerStatus"
-    ok: bool                        # False when status is error or interrupted
-    duration_ms: int | None = None
-    models_used: list[str] = field(default_factory=list)
-    token_usage: dict | None = None
-
-
-@dataclass
 class StreamEvent:
     """A single event yielded by AgenticProcess.stream()."""
 
@@ -116,11 +101,3 @@ class StreamEvent:
     result: str | None = None
     error: str | None = None
 
-
-class ProcessError(Exception):
-    """Raised by AgenticProcess.run() when status is error or interrupted."""
-
-    def __init__(self, status: "WorkerStatus", session_id: str):
-        self.status = status
-        self.session_id = session_id
-        super().__init__(f"Process ended with status={status} session_id={session_id}")

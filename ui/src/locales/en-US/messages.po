@@ -573,6 +573,12 @@ msgstr "{0} was upgraded and restarted."
 #. placeholder {0}: removingMember?.name ?? ''
 #. placeholder {1}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
+msgid "{0} will leave {1} and lose the budget it gave them. Money already spent is not affected."
+msgstr "{0} will leave {1} and lose the budget it gave them. Money already spent is not affected."
+
+#. placeholder {0}: removingMember?.name ?? ''
+#. placeholder {1}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
 msgid "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 msgstr "{0} will no longer be able to spend from {1}. Money already spent is not affected."
 
@@ -782,6 +788,10 @@ msgstr "{remaining} issue{0} need investigation"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "{removed} assets removed."
 msgstr "{removed} assets removed."
+
+#: src/components/organization/budgets/AddPeopleDialog.tsx
+msgid "{repeats} of these already have a budget in {teamName}; their caps will be updated."
+msgstr "{repeats} of these already have a budget in {teamName}; their caps will be updated."
 
 #: src/components/conversation/SessionCard.tsx
 msgid "{replyCount, plural, one {# reply} other {# replies}}"
@@ -1081,8 +1091,12 @@ msgid "a key the hub holds (the chain could not be read from here)"
 msgstr "a key the hub holds (the chain could not be read from here)"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "a name — leave empty and the step only reports that the agent stopped"
-msgstr "a name — leave empty and the step only reports that the agent stopped"
+#~ msgid "a name — leave empty and the step only reports that the agent stopped"
+#~ msgstr "a name — leave empty and the step only reports that the agent stopped"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "a name in scope, or a literal"
+msgstr "a name in scope, or a literal"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
@@ -1124,11 +1138,16 @@ msgstr "a server someone else hosts"
 msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
 msgstr "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "a wizard name"
+msgstr "a wizard name"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "about"
 msgstr "about"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "About"
 msgstr "About"
 
@@ -1210,8 +1229,8 @@ msgid "Act as the \"{name}\" agent and work on the current context."
 msgstr "Act as the \"{name}\" agent and work on the current context."
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Action"
-msgstr "Action"
+#~ msgid "Action"
+#~ msgstr "Action"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Action Type"
@@ -1255,7 +1274,6 @@ msgstr "active"
 msgid "Active"
 msgstr "Active"
 
-#: src/pages/flow-page/display-annotation.ts
 #: src/pages/flow-page/display-annotation.ts
 #: src/pages/flow-page/display-annotation.ts
 msgid "Active display"
@@ -1359,6 +1377,10 @@ msgstr "Add annotation"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Add another"
 msgstr "Add another"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Add argument"
+msgstr "Add argument"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifact-form.tsx
@@ -1464,6 +1486,10 @@ msgstr "Add help desk"
 msgid "Add Hook"
 msgstr "Add Hook"
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+#~ msgid "Add input"
+#~ msgstr "Add input"
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Add key"
 msgstr "Add key"
@@ -1505,6 +1531,10 @@ msgstr "Add secret"
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Add someone to share with."
 msgstr "Add someone to share with."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Add someone with an email address to share this project with."
+msgstr "Add someone with an email address to share this project with."
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Add source"
@@ -1651,8 +1681,6 @@ msgstr "Advanced: per-window limits, rate caps and filters (view only)"
 msgid "agent"
 msgstr "agent"
 
-#: src/components/assets/editor/wizard/WizardStepForm.tsx
-#: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/types/ViewType.ts
@@ -1678,6 +1706,10 @@ msgstr "Agent funding"
 #: src/i18n/type-labels.ts
 msgid "Agent Hook"
 msgstr "Agent Hook"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Agent is public"
+msgstr "Agent is public"
 
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Agent mailbox"
@@ -2019,6 +2051,10 @@ msgstr "Amount"
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 msgstr "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+#~ msgid "An absent optional value does not park the run"
+#~ msgstr "An absent optional value does not park the run"
+
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/artifacts/artifacts-list.tsx
 msgid "An error occurred"
@@ -2027,6 +2063,10 @@ msgstr "An error occurred"
 #: src/components/rag/RagView.tsx
 msgid "An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file tree, and a folder removed here loses it."
 msgstr "An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file tree, and a folder removed here loses it."
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "an op name"
+msgstr "an op name"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
@@ -2146,6 +2186,10 @@ msgstr "another hub budget — {label}"
 msgid "another project"
 msgstr "another project"
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Another step already uses this id — their results will overwrite each other."
+msgstr "Another step already uses this id — their results will overwrite each other."
+
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "Answer here instead"
 #~ msgstr "Answer here instead"
@@ -2159,8 +2203,8 @@ msgstr "another project"
 #~ msgstr "Answered here"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-msgid "Answered with"
-msgstr "Answered with"
+#~ msgid "Answered with"
+#~ msgstr "Answered with"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Anthropic"
@@ -2185,6 +2229,14 @@ msgstr "Anyone with access can open this {entityType} directly via the link belo
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
 msgstr "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone with the link can view this agent — remove to make it private again"
+msgstr "Anyone with the link can view this agent — remove to make it private again"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone with the link can view this agent."
+msgstr "Anyone with the link can view this agent."
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Anyone you share with can open, use and delete this sandbox."
@@ -2349,6 +2401,10 @@ msgstr "Are you sure?"
 msgid "Args"
 msgstr "Args"
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Arguments"
+msgstr "Arguments"
+
 #: src/components/artifacts/artifacts-view.tsx
 msgid "artifact"
 msgstr "artifact"
@@ -2375,6 +2431,7 @@ msgid "Artifacts created during flow execution will appear here"
 msgstr "Artifacts created during flow execution will appear here"
 
 #: src/components/settings-view/settings-utils.ts
+#: src/types/ViewType.ts
 msgid "Ask"
 msgstr "Ask"
 
@@ -2395,8 +2452,8 @@ msgid "Ask for help"
 msgstr "Ask for help"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Ask it to"
-msgstr "Ask it to"
+#~ msgid "Ask it to"
+#~ msgstr "Ask it to"
 
 #: src/pages/flow-page/VibeAssignTaskButton.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
@@ -2420,8 +2477,8 @@ msgid "Ask whoever shared it to start it, or to send a new link."
 msgstr "Ask whoever shared it to start it, or to send a new link."
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Asks for"
-msgstr "Asks for"
+#~ msgid "Asks for"
+#~ msgstr "Asks for"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "asset"
@@ -3127,6 +3184,10 @@ msgstr "Cache Write"
 msgid "Cache write: {0}"
 msgstr "Cache write: {0}"
 
+#: src/components/assets/editor/wizard/WizardStepInspector.tsx
+msgid "call"
+msgstr "call"
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "Call {0} with the stored token"
@@ -3176,6 +3237,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/ask/AskView.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
@@ -3256,6 +3318,10 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr "Cancel"
+
+#: src/components/ask/AskView.tsx
+msgid "Cancelled."
+msgstr "Cancelled."
 
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/useAssetsModel.tsx
@@ -3391,7 +3457,6 @@ msgstr "Channels"
 msgid "Chat"
 msgstr "Chat"
 
-#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
 msgstr "Chat history"
@@ -3420,6 +3485,10 @@ msgstr "Chat with this deployed agent"
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
 msgstr "Chats"
+
+#: src/components/assets/editor/wizard/WizardStepInspector.tsx
+msgid "check"
+msgstr "check"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -4105,10 +4174,6 @@ msgstr "Code expired. Close and click Connect again to get a fresh code."
 msgid "Code expires"
 msgstr "Code expires"
 
-#: src/i18n/type-labels.ts
-msgid "Code Ref"
-msgstr "Code Ref"
-
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Codex"
@@ -4372,6 +4437,7 @@ msgstr "Connect a data source to make it available here"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -4393,6 +4459,10 @@ msgstr "Connect GitHub to link this project to the cloud."
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect GitHub to pick from your repos, including private ones."
 msgstr "Connect GitHub to pick from your repos, including private ones."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Connect GitHub to share a project whose files live in a GitHub repository."
+msgstr "Connect GitHub to share a project whose files live in a GitHub repository."
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Connect to a URL"
@@ -4435,6 +4505,7 @@ msgstr "Connecting"
 #: src/components/account/user-info.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Connecting…"
 msgstr "Connecting…"
 
@@ -4531,8 +4602,6 @@ msgstr "Context process"
 msgid "context tokens"
 msgstr "context tokens"
 
-#: src/components/assets/editor/wizard/WizardViewer.tsx
-#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/survey/SurveyView.tsx
 msgid "Continue"
@@ -5050,6 +5119,10 @@ msgstr "Could not load usage."
 msgid "Could not load your token plan."
 msgstr "Could not load your token plan."
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Could not make the agent public"
+msgstr "Could not make the agent public"
+
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "Could not move email here"
 #~ msgstr "Could not move email here"
@@ -5101,6 +5174,10 @@ msgstr "Could not reach the backend. Try again in a moment."
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr "Could not reach this cloud machine. It may be paused."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not read the snippet"
+msgstr "Could not read the snippet"
+
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Could not read this budget's history."
 msgstr "Could not read this budget's history."
@@ -5130,6 +5207,10 @@ msgstr "Could not remove access"
 #: src/components/organization/org-node-management.tsx
 msgid "Could not remove member"
 msgstr "Could not remove member"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Could not remove public access"
+msgstr "Could not remove public access"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Could not remove the budget"
@@ -5205,6 +5286,10 @@ msgstr "Could not run schedule"
 msgid "Could not run the connection test."
 msgstr "Could not run the connection test."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not run the snippet"
+msgstr "Could not run the snippet"
+
 #: src/components/llm-sources/use-llm-sources.ts
 msgid "Could not run the test"
 msgstr "Could not run the test"
@@ -5252,6 +5337,10 @@ msgstr "Could not save the key"
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Could not save the override"
 msgstr "Could not save the override"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "Could not save the snippet"
+msgstr "Could not save the snippet"
 
 #: src/components/diagnose/use-diagnosis-report.ts
 msgid "Could not send report to the Flowpad team"
@@ -6621,6 +6710,10 @@ msgstr "Diagnosis was not recorded — try again."
 msgid "Diagnostic complete — no issue found."
 msgstr "Diagnostic complete — no issue found."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "did not run"
+msgstr "did not run"
+
 #: src/components/code-editor/CodeEditor.tsx
 #: src/pages/flow-page/display-annotation.ts
 msgid "Diff"
@@ -7092,8 +7185,8 @@ msgid "Each selected project's folder is added as a context folder."
 msgstr "Each selected project's folder is added as a context folder."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
-msgid "earlier output dropped — this is the tail"
-msgstr "earlier output dropped — this is the tail"
+#~ msgid "earlier output dropped — this is the tail"
+#~ msgstr "earlier output dropped — this is the tail"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "edges"
@@ -7760,6 +7853,12 @@ msgstr "Existing repo"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "exit {0}"
 msgstr "exit {0}"
+
+#. placeholder {0}: result.returncode
+#. placeholder {1}: result.duration_s.toFixed(2)
+#: src/components/code-editor/SnippetView.tsx
+msgid "exit {0} · {1}s"
+msgstr "exit {0} · {1}s"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Exit local"
@@ -8993,6 +9092,8 @@ msgstr "Git URL"
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "GitHub authorization did not complete."
 msgstr "GitHub authorization did not complete."
 
@@ -9061,8 +9162,8 @@ msgid "Given out to teams"
 msgstr "Given out to teams"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
-msgid "Given to you by the hub"
-msgstr "Given to you by the hub"
+#~ msgid "Given to you by the hub"
+#~ msgstr "Given to you by the hub"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "glob"
@@ -9379,6 +9480,14 @@ msgstr "Hide from Recent — still visible in Stream Inbox; reappears when a new
 msgid "Hide from Recent conversations"
 msgstr "Hide from Recent conversations"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Hide imports"
+msgstr "Hide imports"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "Hide init"
+msgstr "Hide init"
+
 #: src/components/navigator-panel/NavigatorPanel.tsx
 #: src/components/webapp-viewer.tsx
 msgid "Hide panel"
@@ -9686,6 +9795,10 @@ msgstr "IDE Connections (VS Code, Cursor, etc.)"
 msgid "Identity"
 msgstr "Identity"
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "If it fails"
+msgstr "If it fails"
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "ignore patterns"
 msgstr "ignore patterns"
@@ -9727,6 +9840,10 @@ msgstr "Important:"
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Imported"
 msgstr "Imported"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "imports"
+msgstr "imports"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
@@ -9899,6 +10016,10 @@ msgstr "Inherit"
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "inherits the budget above"
 msgstr "inherits the budget above"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "init"
+msgstr "init"
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Initial message"
@@ -10357,6 +10478,7 @@ msgid "kind"
 msgstr "kind"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Kind"
@@ -10594,6 +10716,10 @@ msgstr "Lens type \"{0}/{1}\" is not supported."
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Let an agent assess progress and fill in missing fields"
 msgstr "Let an agent assess progress and fill in missing fields"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Let anyone with the link view this agent — its files stay private"
+msgstr "Let anyone with the link view this agent — its files stay private"
 
 #: src/i18n/pref-labels.ts
 msgid "Let other participants see when messages are delivered or read."
@@ -11109,6 +11235,7 @@ msgstr "Loading..."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
+#: src/components/ask/AskView.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
@@ -11942,8 +12069,8 @@ msgstr "name@example.com"
 #~ msgstr "Named by the manifest but gone from disk"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
-msgstr "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
+#~ msgid "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
+#~ msgstr "Named, the agent must report its result — and the step fails if it reports a failure, or reports nothing. Later steps read it as an input."
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
@@ -12265,8 +12392,8 @@ msgid "No agent hooks configured"
 msgstr "No agent hooks configured"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "No agent named \"{value}\" on this machine — the step will fail when it runs."
-msgstr "No agent named \"{value}\" on this machine — the step will fail when it runs."
+#~ msgid "No agent named \"{value}\" on this machine — the step will fail when it runs."
+#~ msgstr "No agent named \"{value}\" on this machine — the step will fail when it runs."
 
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No alert logs found"
@@ -12807,7 +12934,6 @@ msgstr "No page exists with this name yet."
 msgid "No past builds"
 msgstr "No past builds"
 
-#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "No past chats"
 msgstr "No past chats"
@@ -13009,8 +13135,8 @@ msgid "No runs yet."
 msgstr "No runs yet."
 
 #: src/components/webapp-viewer.tsx
-msgid "No runtime port in this view"
-msgstr "No runtime port in this view"
+#~ msgid "No runtime port in this view"
+#~ msgstr "No runtime port in this view"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "No saved contexts yet."
@@ -13223,6 +13349,10 @@ msgstr "No value discovered"
 msgid "No web app available"
 msgstr "No web app available"
 
+#: src/components/webapp-viewer.tsx
+msgid "No web page in this view"
+msgstr "No web page in this view"
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr "Nobody has a budget in this team yet."
@@ -13410,6 +13540,10 @@ msgstr "Note: File is missing"
 msgid "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
 msgstr "Nothing — this wizard is run by hand. Add a trigger asset under its agentic-assets/trigger/ folder to have it run itself."
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+#~ msgid "Nothing — this wizard runs with no parameters."
+#~ msgstr "Nothing — this wizard runs with no parameters."
+
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Nothing caps this scope yet. Ask your team admin to set a budget."
 msgstr "Nothing caps this scope yet. Ask your team admin to set a budget."
@@ -13458,6 +13592,11 @@ msgstr "Nothing indexed yet. <0>Refresh Index</0> to populate."
 #: src/components/rag/RagView.tsx
 msgid "Nothing matched."
 msgstr "Nothing matched."
+
+#. placeholder {0}: step.ref ?? ''
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Nothing named \"{0}\" on this machine — the step will fail when it runs."
+msgstr "Nothing named \"{0}\" on this machine — the step will fail when it runs."
 
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Nothing new to push — message sent"
@@ -13656,6 +13795,10 @@ msgstr "once per machine"
 msgid "Once per project, the first time it is opened. Oldest agent wins if several set this."
 msgstr "Once per project, the first time it is opened. Oldest agent wins if several set this."
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+#~ msgid "one of this wizard's inputs"
+#~ msgstr "one of this wizard's inputs"
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "One per line. Empty means everything the sources allow."
 msgstr "One per line. Empty means everything the sources allow."
@@ -13675,6 +13818,10 @@ msgstr "Only a sandbox's owner can start one. If you share it as it is, they'll 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "Only harness entries here — enable “Show all” to view them."
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Only people you share with can view this agent."
+msgstr "Only people you share with can view this agent."
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -13755,6 +13902,10 @@ msgstr "Open a project to choose which of its secrets this machine can see."
 #: src/pages/discover-page/discover-page.tsx
 msgid "Open a project to see its assets."
 msgstr "Open a project to see its assets."
+
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "Open a session on this machine"
+msgstr "Open a session on this machine"
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Open address book"
@@ -14244,11 +14395,15 @@ msgstr "Opening your project…"
 msgid "OpenRouter"
 msgstr "OpenRouter"
 
+#: src/components/llm-endpoints/FiltersEditor.tsx
+msgid "OpenRouter hosts to avoid (one per line)"
+msgstr "OpenRouter hosts to avoid (one per line)"
+
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"
 msgstr "Operation failed"
 
-#: src/components/connections-manager/credential-value-form.tsx
+#: src/components/assets/editor/wizard/WizardForm.tsx
 #~ msgid "optional"
 #~ msgstr "optional"
 
@@ -14282,6 +14437,7 @@ msgstr "Org & teams"
 
 #: src/components/account/account-info.tsx
 #: src/components/account/organization-panel.tsx
+#: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/token-plan/token-plan-math.ts
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/i18n/type-labels.ts
@@ -14323,8 +14479,8 @@ msgid "Organizations, the teams inside them, and who has a budget in each."
 msgstr "Organizations, the teams inside them, and who has a budget in each."
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
-msgid "Origin"
-msgstr "Origin"
+#~ msgid "Origin"
+#~ msgstr "Origin"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Orphan"
@@ -14457,6 +14613,10 @@ msgstr "Page"
 msgid "pagination"
 msgstr "pagination"
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "parameter"
+msgstr "parameter"
+
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 msgid "Parent comments"
 msgstr "Parent comments"
@@ -14494,7 +14654,6 @@ msgstr "Past analyses"
 msgid "Past builds"
 msgstr "Past builds"
 
-#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Past chats"
 msgstr "Past chats"
@@ -15371,8 +15530,8 @@ msgid "protected"
 msgstr "protected"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Proved by"
-msgstr "Proved by"
+#~ msgid "Proved by"
+#~ msgstr "Proved by"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager.tsx
@@ -15435,6 +15594,10 @@ msgstr "PTY time"
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "PTY Viewer"
 msgstr "PTY Viewer"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Public access removed"
+msgstr "Public access removed"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
@@ -16019,6 +16182,11 @@ msgstr "Remove"
 msgid "Remove {0}"
 msgstr "Remove {0}"
 
+#. placeholder {0}: member.name
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove {0} from {teamName}"
+msgstr "Remove {0} from {teamName}"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
 msgstr "Remove {label}"
@@ -16064,6 +16232,11 @@ msgstr "Remove file"
 msgid "Remove folder"
 msgstr "Remove folder"
 
+#. placeholder {0}: team.name
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove from {0}?"
+msgstr "Remove from {0}?"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "Remove from folder"
@@ -16076,6 +16249,10 @@ msgstr "Remove from project"
 #: src/components/entity-execution-panel/QueueChip.tsx
 msgid "Remove from queue"
 msgstr "Remove from queue"
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "Remove from team"
+msgstr "Remove from team"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Remove from vibe agents"
@@ -16093,6 +16270,10 @@ msgstr "Remove member"
 msgid "Remove option"
 msgstr "Remove option"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Remove public access"
+msgstr "Remove public access"
+
 #: src/components/llm-endpoints/AliasesEditor.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Remove row"
@@ -16101,6 +16282,10 @@ msgstr "Remove row"
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Remove rule"
 msgstr "Remove rule"
+
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+msgid "Remove this argument"
+msgstr "Remove this argument"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Remove this budget and start again?"
@@ -16113,6 +16298,10 @@ msgstr "Remove this budget?"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "Remove this file from the next commit (git restore --staged)"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+#~ msgid "Remove this input"
+#~ msgstr "Remove this input"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Remove this row from the manifest"
@@ -16606,12 +16795,15 @@ msgstr "Retry download"
 msgid "Retry pull"
 msgstr "Retry pull"
 
-#. placeholder {0}: outcome.output
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
-msgid "Returned {0}"
-msgstr "Returned {0}"
+msgid "Returned"
+msgstr "Returned"
 
-#: src/components/assets/editor/wizard/WizardStepForm.tsx
+#: src/components/assets/editor/wizard/WizardStepInspector.tsx
+#~ msgid "Returned {0}"
+#~ msgstr "Returned {0}"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Returns"
 msgstr "Returns"
 
@@ -16778,6 +16970,7 @@ msgstr "Rules"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
@@ -16917,12 +17110,12 @@ msgstr "Running in the background."
 msgid "Running on the host's machine · status: {0}"
 msgstr "Running on the host's machine · status: {0}"
 
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Running…"
 msgstr "Running…"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
-#: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -17650,6 +17843,8 @@ msgstr "Selection toolbar"
 msgid "Self-Summary"
 msgstr "Self-Summary"
 
+#: src/components/ask/AskView.tsx
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -17737,6 +17932,10 @@ msgstr "Server did not come back. Restart Flowpad manually."
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "server.py in this asset — runs immediately"
 msgstr "server.py in this asset — runs immediately"
+
+#: src/i18n/type-labels.ts
+msgid "Service endpoints"
+msgstr "Service endpoints"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Service unavailable"
@@ -17909,6 +18108,10 @@ msgstr "Set conversation project"
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set project"
 msgstr "Set project"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Set public"
+msgstr "Set public"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
@@ -18282,9 +18485,17 @@ msgstr "Show hidden files"
 msgid "Show hidden path segments"
 msgstr "Show hidden path segments"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "Show imports"
+msgstr "Show imports"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "Show in folder (selects file for drag-and-drop)"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "Show init"
+msgstr "Show init"
 
 #: src/journey/JourneyViewer.tsx
 msgid "Show journey"
@@ -18674,8 +18885,8 @@ msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox
 msgstr "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "Skip if"
-msgstr "Skip if"
+#~ msgid "Skip if"
+#~ msgstr "Skip if"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Skip initial permission check on startup"
@@ -19119,6 +19330,10 @@ msgstr "sticky for you"
 msgid "Still can't link this project"
 msgstr "Still can't link this project"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Still loading this project — try again in a moment."
+msgstr "Still loading this project — try again in a moment."
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Still signed in"
 msgstr "Still signed in"
@@ -19207,6 +19422,14 @@ msgstr "Streaming must be allow, require or deny."
 #: src/components/data-sources/DataSourcesView.tsx
 #~ msgid "Streams"
 #~ msgstr "Streams"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+#~ msgid "string, or a JSON shape"
+#~ msgstr "string, or a JSON shape"
+
+#: src/components/assets/editor/wizard/WizardForm.tsx
+msgid "string, or a JSON shape — empty if it returns nothing"
+msgstr "string, or a JSON shape — empty if it returns nothing"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Structure"
@@ -19487,6 +19710,10 @@ msgstr "Tag view not found"
 msgid "Tags"
 msgstr "Tags"
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+#~ msgid "Takes"
+#~ msgstr "Takes"
+
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Takes ~4 seconds"
 msgstr "Takes ~4 seconds"
@@ -19646,6 +19873,10 @@ msgstr "Test passed — this source can fund a run"
 msgid "Test trigger"
 msgstr "Test trigger"
 
+#: src/components/ask/AskView.tsx
+msgid "Thank you — sent."
+msgstr "Thank you — sent."
+
 #: src/navigation/agentic-process-open.ts
 #: src/navigation/agentic-process-open.ts
 msgid "That agent is no longer in your workspace."
@@ -19802,6 +20033,10 @@ msgstr "the existing desk"
 msgid "The fetch failed. Retry once the backend is up."
 msgstr "The fetch failed. Retry once the backend is up."
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "The file changed outside the editor — reloaded it."
+msgstr "The file changed outside the editor — reloaded it."
+
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "The file is newer than its published row"
 #~ msgstr "The file is newer than its published row"
@@ -19849,6 +20084,10 @@ msgstr "The hub did not accept the request."
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "The hub makes this call itself, down this endpoint's chain. A vendor OAuth login or an API key stored on this machine is never used for it — with no key-holding root the test fails rather than falling back."
 msgstr "The hub makes this call itself, down this endpoint's chain. A vendor OAuth login or an API key stored on this machine is never used for it — with no key-holding root the test fails rather than falling back."
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "The hub refused the change."
+msgstr "The hub refused the change."
 
 #: src/components/account/user-info.tsx
 msgid "The hub refused this client."
@@ -19939,6 +20178,11 @@ msgstr "The query failed"
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "The recipient will see a PROMPT to approve."
 msgstr "The recipient will see a PROMPT to approve."
+
+#. placeholder {0}: anonAccess.repo ?? 'this project uses'
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
+msgstr "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "The repository {repoLabel} is private. Everyone here will still see the project and its language, but only people who connect GitHub and already have access to that repository can open its files and its skills — Flowpad can't grant that access."
@@ -20352,6 +20596,10 @@ msgstr "This permanently removes the file from disk. This cannot be undone."
 msgid "This permanently removes the saved context snapshot. This cannot be undone."
 msgstr "This permanently removes the saved context snapshot. This cannot be undone."
 
+#: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+msgid "This placement has no chat endpoint yet."
+msgstr "This placement has no chat endpoint yet."
+
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "This plan no longer exists."
 msgstr "This plan no longer exists."
@@ -20377,6 +20625,10 @@ msgstr "this project"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "This project"
 msgstr "This project"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This project could not be shared."
+msgstr "This project could not be shared."
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "This project declares the same variables, and its values win"
@@ -20441,6 +20693,10 @@ msgstr "This project's agent could not start"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "this project's own desk"
 msgstr "this project's own desk"
+
+#: src/components/ask/AskView.tsx
+msgid "This question is no longer waiting."
+msgstr "This question is no longer waiting."
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "This removes the downloaded help desk folder and its indexed entries from this machine. Nothing on the server changes, and everything is downloaded again the next time you open the help desk."
@@ -20537,6 +20793,7 @@ msgid "This starts the machine and sets up whatever it was created with."
 msgstr "This starts the machine and sets up whatever it was created with."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
+#: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "This step has not run."
 msgstr "This step has not run."
 
@@ -20545,8 +20802,8 @@ msgstr "This step has not run."
 #~ msgstr "This step launches an agent. Editing a process step is not supported here yet — change it in the file."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
-msgid "This step ran no commands."
-msgstr "This step ran no commands."
+#~ msgid "This step ran no commands."
+#~ msgstr "This step ran no commands."
 
 #: src/routes/loaders/load-tasks.ts
 msgid "This task no longer exists or is unavailable."
@@ -20609,6 +20866,10 @@ msgstr "This Wiki target has no readable content."
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 
+#: src/components/assets/editor/wizard/WizardStepForm.tsx
+#~ msgid "This wizard declares no input named \"{0}\"."
+#~ msgstr "This wizard declares no input named \"{0}\"."
+
 #: src/components/assets/editor/wizard/WizardDebugger.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard declares no steps."
@@ -20619,8 +20880,8 @@ msgstr "This wizard declares no steps."
 #~ msgstr "This wizard has not run on this machine yet."
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-msgid "This wizard needs something from you"
-msgstr "This wizard needs something from you"
+#~ msgid "This wizard needs something from you"
+#~ msgstr "This wizard needs something from you"
 
 #. placeholder {0}: wizard.agent
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -20695,6 +20956,10 @@ msgstr "Time spent"
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "timed out"
 msgstr "timed out"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "timed out after {timeoutSeconds}s — killed"
+msgstr "timed out after {timeoutSeconds}s — killed"
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "Timeline"
@@ -21609,8 +21874,8 @@ msgstr "Value for {0}"
 #~ msgstr "Value for {envVar}"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
-msgid "value name"
-msgstr "value name"
+#~ msgid "value name"
+#~ msgstr "value name"
 
 #: src/components/credentials/CredentialDialog.tsx
 #~ msgid "Value stays in .env.local"
@@ -22028,6 +22293,10 @@ msgstr "What should the agent do each time it runs?"
 msgid "What should the worker do with this message?"
 msgstr "What should the worker do with this message?"
 
+#: src/components/assets/editor/wizard/WizardForm.tsx
+#~ msgid "what the form asks"
+#~ msgstr "what the form asks"
+
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "What this machine's assistants are funded by right now"
 msgstr "What this machine's assistants are funded by right now"
@@ -22290,6 +22559,10 @@ msgstr "You"
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "You are not in any team in this organization yet."
 #~ msgstr "You are not in any team in this organization yet."
+
+#: src/components/organization/budgets/BudgetSection.tsx
+msgid "You are not on any team yet."
+msgstr "You are not on any team yet."
 
 #: src/components/organization/organization-page.tsx
 msgid "You are not part of an organization. Once you join or create one, its teams appear here."

@@ -84,7 +84,7 @@ _RANK_ENDPOINT = 20
 _RANK_DEVICE_UNPROVEN = 30
 
 
-def _hub_stub(typeid: str, *, name: str = "", provider: str = "") -> "LLMEndpoint":
+def _hub_stub(typeid: str, *, name: str = "", provider: str = "", public: bool = False) -> "LLMEndpoint":
     """A hub endpoint we know only by typeid.
 
     Used for the two cases where a budget is named before any listing describes it: the
@@ -97,7 +97,7 @@ def _hub_stub(typeid: str, *, name: str = "", provider: str = "") -> "LLMEndpoin
     """
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
 
-    return LLMEndpoint.projection("hub", typeid, name=name, provider=provider)
+    return LLMEndpoint.projection("hub", typeid, name=name, provider=provider, public=public)
 
 
 class Candidate(NamedTuple):
@@ -323,12 +323,15 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_autho
             bound_typeid,
             name=bound.name if bound else "",
             provider=bound.provider if bound else "",
+            public=bool(bound and bound.public),
         )
     out: list[Candidate] = []
     for typeid, endpoint in rows.items():
         name = endpoint.name or "hub endpoint"
         reason = ""
-        if not hub_logged_in:
+        # A PUBLIC endpoint is the one hub budget a box can spend without signing for it: the
+        # hub admits whoever holds the id (see ``LLMEndpoint.resolve_api_key``).
+        if not hub_logged_in and not endpoint.public:
             reason = "this box is not logged in to the hub"
         elif not endpoint.enabled:
             reason = f"endpoint {name} is disabled"
@@ -398,7 +401,12 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     # device login, which is the state a fresh desktop install with a hub budget is in.
     spendable_wallet = any(c.source.eligible for c in endpoint_candidates)
 
-    candidates = [_device_source(worker_type, getattr(cap, "login_state", None), spendable_wallet)]
+    # A harness with no account of its own has no device rung to rank (``has_device_login``).
+    candidates = (
+        [_device_source(worker_type, getattr(cap, "login_state", None), spendable_wallet)]
+        if spec.has_device_login
+        else []
+    )
     candidates += _key_sources(spec, rows, stored)
     candidates += endpoint_candidates
     return candidates, cap
@@ -420,7 +428,8 @@ async def device_candidate(worker_type: str, cap=None) -> Candidate | None:
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
 
-    if driver_api_auth_spec(worker_type) is None:
+    spec = driver_api_auth_spec(worker_type)
+    if spec is None or not spec.has_device_login:
         return None
     if cap is None:
         cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
@@ -441,6 +450,18 @@ def _hub_logged_in() -> bool:
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
 
     return bool(resolve_hub_api_key())
+
+
+def _hub_spendable() -> bool:
+    """Whether this box can spend ANY hub endpoint: it can sign, or it is bound to a public one.
+
+    What decides if a stored "use Flowpad" preference is live. A loginless box bound to a
+    public endpoint chose Flowpad on purpose, and dropping that choice as "signed out" would
+    fund it from whatever else happens to be on the machine.
+    """
+    from flow_sdk.instance_settings.llm_endpoint import public_binding  # noqa: PLC0415
+
+    return _hub_logged_in() or public_binding() is not None
 
 
 async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin] | None:
@@ -505,8 +526,11 @@ def _apply_constraint(
         # Eligibility still has to be judged here, not left to whoever materializes the
         # binding: a box that cannot sign for the endpoint cannot spend it, however
         # emphatically it was named.
-        unusable = "" if hub_logged_in else "this box is not logged in to the hub"
-        stub = _hub_stub(typeid, name=typeid)
+        from flow_sdk.instance_settings.llm_endpoint import public_binding  # noqa: PLC0415
+
+        public = public_binding(typeid) is not None
+        unusable = "" if hub_logged_in or public else "this box is not logged in to the hub"
+        stub = _hub_stub(typeid, name=typeid, public=public)
         out.append(
             Candidate(
                 stub,
@@ -597,7 +621,7 @@ def _apply_preference(candidates: list[Candidate], cap, worker_type: str) -> lis
     preferred = _preferred(cap)
     if not preferred:
         return candidates
-    if preferred == LMApiProvider.FLOWPAD.value and not _hub_logged_in():
+    if preferred == LMApiProvider.FLOWPAD.value and not _hub_spendable():
         return candidates
     name = next((c.source.name for c in candidates if _matches_preference(*c, preferred)), preferred)
     why = f"{worker_type} is set to use {name}"
@@ -754,7 +778,7 @@ def _ignored_preference_note(worker_type: str, cap, constraint) -> str:
     Says nothing when a constraint is in force -- a process or project pin already outranks
     the preference, so reporting the preference as "ignored" would blame the wrong rung.
     """
-    if constraint is not None or _preferred(cap) != LMApiProvider.FLOWPAD.value or _hub_logged_in():
+    if constraint is not None or _preferred(cap) != LMApiProvider.FLOWPAD.value or _hub_spendable():
         return ""
     return (
         f"{worker_type} is set to use Flowpad, but this box is signed out of Flowpad — "

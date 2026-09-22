@@ -535,13 +535,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Entity type for AgenticProcess */
   static type: string = 'agentic_process';
 
-  /** Backend redirect URL for the process's live web-app port. */
-  getWebAppHostUrl(port: string): string {
-    const action = new ActionInfo('get-host', AgenticProcess.type, this.id);
-    action.queryParameters = { port };
-    return action.fullActionUrl;
-  }
-
   /**
    * Spawn a visible AgenticProcess tab and (optionally) send an initial
    * prompt. Mirrors the `Start Claude` / `Start Codex` openers in
@@ -2526,8 +2519,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       }
 
       const processor = new FlowStreamProcessor();
+      toplog.log('chat_delivery', `prompt_stream_open process=${this.id}`);
       processor.on(FlowEvents.DATA, (fd: FlowData) => {
         try {
+          if (fd.elementType === FlowElementTypes.CHAT) {
+            toplog.log('chat_delivery', `from_prompt_stream group=${fd.groupId ?? 'none'} t=${fd.attributes['t'] ?? 'none'}`);
+          }
           this.flowDataStream.ingest(fd);
         } catch (err) {
           console.error('[AgenticProcess.prompt] ingest error', err);
@@ -2653,8 +2650,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     if (!response || !response.body) return; // nothing in flight — not an error
 
     const processor = new FlowStreamProcessor();
+    toplog.log('chat_delivery', `observe_turn_open process=${this.id} after_entry=${afterEntryId ?? 'none'}`);
     processor.on(FlowEvents.DATA, (fd: FlowData) => {
       try {
+        if (fd.elementType === FlowElementTypes.CHAT) {
+          toplog.log('chat_delivery', `from_observe_turn group=${fd.groupId ?? 'none'} t=${fd.attributes['t'] ?? 'none'}`);
+        }
         this.flowDataStream.ingest(fd);
       } catch (err) {
         console.error('[AgenticProcess.observeTurn] ingest error', err);

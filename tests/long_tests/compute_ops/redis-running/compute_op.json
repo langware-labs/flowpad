@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "name": "redis-running",
+  "label": "redis",
+  "description": "A local redis answers PING.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "linux": "apt-get install -y redis-server && redis-server --daemonize yes"
+    }
+  },
+  "completion_check": {
+    "commands": {
+      "linux": "redis-cli ping"
+    }
+  }
+}

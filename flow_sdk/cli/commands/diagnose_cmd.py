@@ -442,7 +442,12 @@ async def _run_diagnose(
 
     try:
         try:
-            await ap.prompt(prompt_text)
+            taken = await ap.send_turn(prompt_text)
+            if not taken.ok:
+                emit({"type": "error", "text": f"  ! The diagnostic agent did not take the prompt: {taken.detail}"})
+                emit({"type": "done", "ok": False, "diagnosis_id": None, "conversation_id": None,
+                      "flow_message_id": None, "feed_posted": False, "feed_entry_id": None})
+                return 1
             emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
             if not await await_worker_started(ap, transcript_timeout):
                 emit(
@@ -472,8 +477,9 @@ async def _run_diagnose(
             # the SAME session once to finish, then re-check.
             if not await _completed():
                 emit({"type": "status", "text": "  …agent stopped before recording — nudging it to finish."})
-                await ap.prompt(nudge_text)
-                await _stream()
+                nudged = await ap.send_turn(nudge_text)
+                if nudged.ok:
+                    await _stream()
         except (KeyboardInterrupt, asyncio.CancelledError):
             emit({"type": "error", "text": "Diagnose interrupted."})
             return 130

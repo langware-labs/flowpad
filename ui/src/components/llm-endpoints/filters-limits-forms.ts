@@ -38,6 +38,7 @@ export interface MappingRow {
 export interface FiltersForm {
   models_allow: string;
   models_deny: string;
+  providers_ignore: string;
   max_tokens_ceiling: string;
   max_input_chars: string;
   temperature_max: string;
@@ -115,6 +116,7 @@ export function filtersToForm(filters: Partial<LLMEndpointFilters> | null | unde
   return {
     models_allow: joinLines(f.models_allow),
     models_deny: joinLines(f.models_deny),
+    providers_ignore: joinLines(f.providers_ignore),
     max_tokens_ceiling: textOrEmpty(f.max_tokens_ceiling),
     max_input_chars: textOrEmpty(f.max_input_chars),
     temperature_max: textOrEmpty(f.temperature_max),
@@ -136,6 +138,7 @@ export function formToFilters(form: FiltersForm): LLMEndpointFilters {
   return {
     models_allow: splitLines(form.models_allow),
     models_deny: splitLines(form.models_deny),
+    providers_ignore: splitLines(form.providers_ignore),
     max_tokens_ceiling: finiteOrNull(numOrNull(form.max_tokens_ceiling)),
     max_input_chars: finiteOrNull(numOrNull(form.max_input_chars)),
     temperature_max: finiteOrNull(numOrNull(form.temperature_max)),

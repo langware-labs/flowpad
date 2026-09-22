@@ -30,6 +30,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
     from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 logger = logging.getLogger(__name__)
@@ -143,12 +144,13 @@ class Wizard(Entity):
     @computed_field
     @property
     def run_state(self) -> dict:
-        """This wizard's last/current run — inputs given, status, what it waits for.
+        """This wizard's last run — its ``WizardResult`` without step output, and
+        whether a person approved it.
 
         A ``@computed_field`` off disk, the way ``Project.customization`` reads
         ``.flow/customization/``: it rides the ordinary entity payload, so the UI
-        learns a run is waiting through the machinery it already uses and needs
-        no route of its own. Cheap and best-effort — a missing file is the common
+        learns a run finished through the machinery it already uses and needs no
+        route of its own. Cheap and best-effort — a missing file is the common
         case and means "never run".
 
         One file per wizard is enough because the lock is one run per NAMED
@@ -156,82 +158,61 @@ class Wizard(Entity):
         """
         from flow_sdk.core.wizard.state import read_state, strip_heavy  # noqa: PLC0415
 
-        default = {"status": "", "inputs": {}, "awaiting": [], "outcomes": [], "message": ""}
         if not self.id:
-            return default
+            return {"result": None, "approved": False}
         try:
-            # WITHOUT probes or returned values: this rides every row of
-            # `GET /graph/wizard` and every WS push. The debugger fetches both
-            # from `run-detail`.
-            state = strip_heavy(read_state(str(self.id)))
+            # The STORED dump, stripped — never re-validated here: this rides
+            # every row of `GET /graph/wizard` and every WS push, and `read_state`
+            # is already cached on the file's stamp. `run-detail` validates it
+            # whole. A record in any other shape is "never run".
+            state = read_state(str(self.id))
+            raw = state.get("result")
+            return {
+                "result": strip_heavy(raw) if isinstance(raw, dict) and "exit_code" in raw else None,
+                "approved": bool(state.get("approved")),
+            }
         except Exception:  # noqa: BLE001 — a run summary must never fail a fetch
-            return default
-        return {**default, **state} if state else default
+            return {"result": None, "approved": False}
 
-    @action.post(action_name="set-input")
-    async def set_input_action(self) -> ApiResponse:
-        """`POST /wizard/<id>/set-input` — `{name, value}`, then run again.
+    async def run(self, *, approved: bool = False) -> "WizardResult":
+        """Run this wizard, and answer what it did. Never raises for an outcome.
 
-        Resume is a re-run, not a continuation: every precondition is re-asked,
-        so steps already done skip and the run walks to the next thing it needs.
-        That is why nothing had to persist a cursor.
+        The OOP twin of ``ComputeOp.run``: a caller in Python drives the entity,
+        not a route. ``run_action`` is this plus the HTTP shapes — the approval
+        it reads off a POST body, and the status codes an answer maps to.
         """
-        from pydantic import TypeAdapter  # noqa: PLC0415
-
-        from flow_sdk.core.wizard.state import set_input  # noqa: PLC0415
-        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
-
-        request_info = get_current_request_info()
-        body = await request_info.get_post_data() if request_info else {}
-        name = str((body or {}).get("name") or "").strip()
-        if not name:
-            return ApiFailResponse(message="name is required", status_code=400)
-        if "value" not in (body or {}):
-            return ApiFailResponse(message="value is required", status_code=400)
-        value = body["value"]
+        from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import WizardResult  # noqa: PLC0415
 
         spec = self.spec()
         if spec is None:
-            return ApiFailResponse(message="Wizard document is unreadable", status_code=400)
-
-        declared = next(
-            (step.input for step in spec.steps if step.input is not None and step.input.name == name),
-            None,
-        )
-        if declared is None:
-            return ApiFailResponse(
-                message=f"{self.name or 'This wizard'} declares no input named {name!r}",
-                status_code=400,
+            return WizardResult.not_found(f"{self.name or self.asset_ref}: the document is missing or unreadable.")
+        if not (approved or self.is_system()):
+            return WizardResult.refused(
+                f"{self.name or 'This wizard'} is not shipped with Flowpad. It runs commands "
+                "on this machine, so it must be approved before it can run."
             )
-        if declared.shape is not None:
-            try:
-                value = TypeAdapter(declared.shape).validate_python(value)
-            except Exception as exc:  # noqa: BLE001 — the caller's value, not our bug
-                return ApiFailResponse(message=f"{name}: {exc}", status_code=422)
-
-        set_input(str(self.id), name, value)
-        # The approval that started this run carries forward; answering a question
-        # the wizard asked is not a second decision to run it.
-        return await self.run_action(_approved=True, _resume=True)
+        return await execute_wizard(
+            str(self.id), spec, self.asset_ref or "",
+            trusted=True, approved=approved, subject_entity=str(self.typeid),
+        )
 
     @action.post(action_name="run")
-    async def run_action(self, _approved: bool = False, _resume: bool = False) -> ApiResponse:
+    async def run_action(self) -> ApiResponse:
         """`POST /wizard/<id>/run` — execute this wizard to completion.
 
         The trust gate REFUSES; it never blocks. A non-system wizard needs
         ``approved: true`` in the body, which the UI supplies after a confirm
-        dialog. Modelling approval as a run the caller waits on — an activity
-        parked in BLOCKED until someone answers — is the shape that hangs a
-        headless run forever, so an unattended caller gets an immediate,
-        legible refusal instead of a process that never returns.
+        dialog. Modelling approval as a run the caller waits on is the shape that
+        hangs a headless run forever, so an unattended caller gets an immediate,
+        legible refusal instead.
 
-        An input step does NOT break that rule, because it does not wait either:
-        a run missing a value RETURNS ``pending`` and releases the caller. The
-        node is left BLOCKED so the chip still shows it as somebody's, and
-        ``set-input`` runs the wizard again. Nothing is ever awaited.
+        The body of every answer is the ``WizardResult``. Only the status code is
+        HTTP's: 403 for ``REFUSED``, 409 for a wizard that did not run because
+        another run holds it (``NOT_YET`` with ``ran=False``).
         """
-        from flow_sdk.core.wizard import WizardNotApproved  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
 
         spec = self.spec()
         if spec is None:
@@ -257,53 +238,24 @@ class Wizard(Entity):
 
         from flow_sdk.core.wizard.state import is_approved, record_approval  # noqa: PLC0415
 
-        trusted = self.is_system()
-        if not trusted:
+        approved = False
+        if not self.is_system():
             request_info = get_current_request_info()
             body = await request_info.get_post_data() if request_info else {}
-            # Three ways to be approved, and the last two are the same fact:
-            # this POST carried it, the caller already established it (set-input
-            # resuming a run you approved), or it was recorded on a previous run.
-            # Without the recorded form a parked wizard could never be resumed —
-            # the approval lived only in the first POST's body.
-            granted = (body or {}).get("approved") is True or _approved or is_approved(str(self.id))
-            if not granted:
-                return ApiFailResponse(
-                    message=(
-                        f"{self.name or 'This wizard'} is not shipped with Flowpad. It runs commands "
-                        "on this machine, so it must be approved before it can run."
-                    ),
-                    status_code=403,
-                )
-            record_approval(str(self.id))
-            trusted = True
+            # Recorded on a previous run, or carried by this POST — recorded
+            # once, the first time, rather than rewritten on every run.
+            approved = is_approved(str(self.id))
+            if not approved and (body or {}).get("approved") is True:
+                record_approval(str(self.id))
+                approved = True
 
-        from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
-        from flow_sdk.core.wizard.state import read_state  # noqa: PLC0415
-
-        # RESUME or START OVER, decided by what the last run left behind. A
-        # `pending` run is mid-flight and its answers carry forward; anything
-        # else is finished, so this is a new run and it asks again. `set-input`
-        # resumes explicitly (`_resume`) — otherwise answering a parked wizard
-        # would immediately start over and re-ask the value just given.
-        resume = _resume or (read_state(str(self.id)).get("status") == "pending")
-
-        try:
-            result = await execute_wizard(
-                str(self.id), spec, self.asset_ref or "",
-                trusted=trusted,
-                resume=resume,
-                # Scoped to this wizard: the viewer IS watching, so the tree
-                # goes to its watchers rather than to every connection.
-                subject_entity=str(self.typeid),
-            )
-        except WizardNotApproved as exc:
-            return ApiFailResponse(message=str(exc), status_code=403)
-        except RuntimeError as exc:
-            # Already running here — `execute_wizard` holds the wizard's slot.
-            return ApiFailResponse(message=str(exc), status_code=409)
-
-        return ApiSuccessResponse(data=result.to_payload())
+        result = await self.run(approved=approved)
+        payload = result.model_dump(mode="json")
+        if result.exit_code is ExitCode.REFUSED:
+            return ApiFailResponse(message=result.detail, status_code=403, data=payload)
+        if result.exit_code is ExitCode.NOT_YET and not result.ran:
+            return ApiFailResponse(message=result.detail, status_code=409, data=payload)
+        return ApiSuccessResponse(data=payload)
 
     @action.post(action_name="validate")
     async def validate_action(self) -> ApiResponse:
@@ -397,34 +349,15 @@ class Wizard(Entity):
 
     @action.get(action_name="run-detail")
     async def run_detail_action(self) -> ApiResponse:
-        """`GET /wizard/<id>/run-detail` — the run record WITH per-command probes.
+        """`GET /wizard/<id>/run-detail` — the last ``WizardResult`` WITH every
+        step's output.
 
-        The only place probes are served. `run_state` strips them because it
+        The only place step output is served. `run_state` strips it because it
         rides every row of a list and every WS push; a person debugging one
-        wizard asks for them here.
+        wizard asks for it here.
         """
-        from flow_sdk.core.wizard.state import (  # noqa: PLC0415
-            archived_runs,
-            read_outputs,
-            read_state,
-        )
+        from flow_sdk.core.wizard.state import archived_runs, read_result  # noqa: PLC0415
         from flow_sdk.schema.data_spec.wizard_spec import WizardRunDetailSpec  # noqa: PLC0415
 
-        state = read_state(str(self.id))
-        try:
-            detail = WizardRunDetailSpec(
-                status=str(state.get("status") or ""),
-                message=str(state.get("message") or ""),
-                inputs=dict(state.get("inputs") or {}),
-                awaiting=state.get("awaiting") or [],
-                outcomes=state.get("outcomes") or [],
-                archived=archived_runs(str(self.id)),
-                outputs=read_outputs(str(self.id)),
-            )
-        except Exception as exc:  # noqa: BLE001
-            # A record written by an older shape must not make the debugger the
-            # one screen you cannot open to find out what went wrong.
-            return ApiFailResponse(
-                message=f"This wizard's run record could not be read: {exc}", status_code=422
-            )
-        return ApiSuccessResponse(data=detail.model_dump())
+        detail = WizardRunDetailSpec(result=read_result(str(self.id)), archived=archived_runs(str(self.id)))
+        return ApiSuccessResponse(data=detail.model_dump(mode="json"))

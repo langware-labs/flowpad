@@ -3,10 +3,7 @@ from __future__ import annotations
 
 import json
 
-try:
-    import tomllib as _tomllib
-except ImportError:
-    import tomli as _tomllib
+import tomllib as _tomllib
 from datetime import datetime
 from pathlib import Path
 

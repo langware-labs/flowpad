@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+import sys
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -17,8 +18,8 @@ from flow_sdk.flowpad_types.vendors import (
 )
 
 
-def test_the_four_vendors_and_every_spelling_resolve():
-    assert VENDOR_KEYS == {"claude", "codex", "copilot", "opencode"}
+def test_the_five_vendors_and_every_spelling_resolve():
+    assert VENDOR_KEYS == {"claude", "codex", "copilot", "opencode", "deepagents"}
     for v in VENDORS:
         for name in (v.key, v.worker_type, *v.aliases):
             assert vendor_for(name) is v
@@ -70,6 +71,7 @@ def test_default_vendor_reads_the_env_in_any_spelling(monkeypatch):
         ("home/u/.copilot/session-state/events.jsonl", "copilot"),
         ("tmp/shadow/opencode_transcript_1.jsonl", "opencode"),
         ("tmp/shadow/session_ses_abc.jsonl", "opencode"),
+        ("tmp/shadow/deepagents_transcript.jsonl", "deepagents"),
         ("tmp/shadow/other.jsonl", None),
     ],
 )
@@ -87,9 +89,25 @@ def test_consumers_agree_with_the_table():
     registry = get_capability_registry()
     for v in VENDORS:
         assert get_driver(v.worker_type).name == v.key
-        assert factory({}, v.worker_type).EXECUTABLE == v.key  # alias-tolerant now; the executable IS the key
+        # The executable IS the key for a binary on PATH; a ``python -m`` harness runs on this interpreter.
+        expected_executable = Path(sys.executable).name if v.python_module else v.key
+        assert factory({}, v.worker_type).EXECUTABLE == expected_executable
         assert driver_key(v.worker_type) == v.key and worker_type_value(v.key) == v.worker_type
         assert coerce_harness(v.worker_type) is HarnessType(v.harness)
         assert coerce_harness(v.capability_kind) is HarnessType(v.harness)
         assert registry.worker_type_for_kind(v.capability_kind) == v.worker_type
         assert install_worker_type(v.capability_kind) == v.worker_type
+
+
+def test_declared_facts_single_out_the_builtin_worker():
+    """``hidden`` / ``interactive`` / ``python_module`` are FACTS machinery asks, so the table is
+    where they are pinned: exactly one vendor is the hidden, headless, package-shaped builtin."""
+    assert [v.key for v in VENDORS if v.hidden] == ["deepagents"]
+    assert [v.key for v in VENDORS if v.bootstrap] == ["deepagents"]
+    assert [v.key for v in VENDORS if not v.interactive] == ["deepagents"]
+    assert [v.key for v in VENDORS if v.python_module] == ["deepagents"]
+    for v in VENDORS:
+        # A python-module harness declares what makes it "installed"; nothing else may.
+        assert bool(v.python_requires) == bool(v.python_module)
+        # No dot-dir to sniff => the FlowPad-written transcript stems must be declared.
+        assert v.dot_dir or v.transcript_stems

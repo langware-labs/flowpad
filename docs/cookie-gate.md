@@ -152,11 +152,10 @@ The oss side is inert without this (FLOWPAD-1942):
 
 1. `_workspace_login` mints `S = secrets.token_urlsafe(32)`, stashes it at
    `node_config["cookie_gate"]`, and appends `&cookie-gate={S}` to its curl URL.
-2. `get_host_action` reads it back and points the browser at the exchange rather than the bare host
-   — `{host}/auth/gate?cookie-gate={S}&next=/` — in **both** the `redirect=false` JSON branch (what
-   the frontend actually uses) and the `RedirectResponse` branch. The frontend assigns the returned
-   url to a tab and needs no change.
-3. Ordering already holds: `workspace-ready` arms, then `get-host` links.
+2. `open-service/workspace` (the machine's `workspace` endpoint) reads it back and redirects the
+   browser to the exchange rather than the bare host — `{host}/auth/gate?cookie-gate={S}&next=/` —
+   and only for a caller entitled to be inside the box (`_may_receive_the_gate`).
+3. Ordering already holds: `workspace-ready` arms, then `open-service` links.
 
 Health needs no special handling on the launch path: `_workspace_ready_op` probes health *before* it
 logs in, so the gate is not armed yet. It runs once, on cold create — E2B's edge auto-resumes a
@@ -165,7 +164,7 @@ paused sandbox without the hub in the path.
 ## Known limitations
 
 - **The link is the password.** The secret in the link *is* the gate secret — there is no separate
-  burn-on-use token. A leaked `get-host` URL grants access until the instance dies. This is still an
+  burn-on-use token. A leaked gated URL grants access until the instance dies. This is still an
   improvement (the link carries real entropy instead of being guessable off an e2b hostname) but it
   is the same shape as the problem it replaces. A one-shot token in the link is the upgrade path and
   needs no change to the gate itself: it already accepts a param and trades it for the cookie.

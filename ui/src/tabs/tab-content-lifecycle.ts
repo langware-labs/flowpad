@@ -4,6 +4,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
 import { isAdoptableChildDock } from '@src/navigation/adoptable-child-dock';
 import { ViewType } from '@src/types/ViewType';
+import { dockLabel, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 
 export interface TabSetupResult {
   tab: Tab | null;
@@ -268,6 +269,7 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
       tabManager.lifecycle.set(key, TabLifecycleState.Opened, { tabId: opened.tabId });
       return { tab: null };
     } catch (error) {
+      toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=tab_open_failed dock=${dockLabel(dock)} err:`, error);
       tabManager.lifecycle.set(key, TabLifecycleState.OpenFailed, {
         tabId: opened.tabId,
         error,
@@ -311,6 +313,7 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
       if (isRedirectResponse(error)) {
         throw error;
       }
+      toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=tab_open_failed dock=${dockLabel(dock)} err:`, error);
       tabManager.lifecycle.set(key, TabLifecycleState.OpenFailed, { tabId: tab?.id ?? null, error });
       return { tab, tabs, error };
     }
@@ -336,6 +339,7 @@ export async function cleanupTab(
   try {
     await (adapters.get(dock.viewType ?? '') ?? defaultAdapter).cleanupTab(dock, tab);
   } catch (error) {
+    toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=tab_close_failed dock=${dockLabel(dock)} err:`, error);
     tabManager.lifecycle.set(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
     throw error;
   }
@@ -359,6 +363,7 @@ export async function closeTabWithLifecycle(tab: Tab): Promise<Tab[]> {
     }
     return await tabManager.close(tab.id);
   } catch (error) {
+    toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=tab_close_failed tab=${key} err:`, error);
     tabManager.lifecycle.set(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
     return [];
   }
@@ -398,6 +403,7 @@ export async function closeTabsWithLifecycle(
     }
     return result;
   } catch (error) {
+    toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=tab_close_failed tabs=${ready.length} err:`, error);
     for (const tab of ready) {
       tabManager.lifecycle.set(tabKey(tab), TabLifecycleState.CloseFailed, { tabId: tab.id, error });
     }

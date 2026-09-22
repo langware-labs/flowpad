@@ -67,7 +67,7 @@ function setVerdict(verdict: Partial<WebappVerdict>) {
 
 function renderDisplay() {
   return render(
-    <WebappDisplay processId="p1" src="http://localhost:6001/get-host?port=4173" port="4173" testId="frame" />,
+    <WebappDisplay endpoint={null} src="http://localhost:4173/" testId="frame" />,
   );
 }
 

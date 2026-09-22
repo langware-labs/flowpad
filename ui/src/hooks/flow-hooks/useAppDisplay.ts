@@ -1,10 +1,10 @@
-import { AgenticProcess, Deployment, MicroApp, QueryRequest, TypeId } from '@sdk';
+import { QueryRequest, ServiceEndpoint, TypeId } from '@sdk';
 import { useTheme } from 'next-themes';
 import { useViewMode } from '@src/contexts/view-mode-context';
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppDockAddress } from '@src/navigation/app-dock';
 import { useEntitiesQuery, useEntity } from '../entity-hooks';
-import { useProcessWebApp } from './useProcessWebApp';
 
 export type AppRuntime = 'dev' | 'served';
 
@@ -39,8 +39,9 @@ export interface AppDisplay {
   available: AppRuntime[];
   /** iframe src for the active runtime; '' when the app has neither. */
   src: string;
-  port: string | null;
-  microApp: MicroApp | null;
+  /** The endpoint the active runtime is served by — what the display probes and
+   *  the repair agent is pointed at. Null when nothing serves the app. */
+  endpoint: ServiceEndpoint | null;
   /** The host's CURRENT appearance — colour scheme and view mode. The frame is
    *  addressed with the skin it had at mount, so a later change is pushed to the
    *  guest rather than re-addressed; see the `initialSkin` note below. */
@@ -50,32 +51,49 @@ export interface AppDisplay {
   setRuntime: (runtime: AppRuntime) => void;
 }
 
+/** The query for the endpoints serving an app, by the field that names it. */
+function endpointsBy(field: 'artifact_id' | 'webapp_id', id: string | null): QueryRequest {
+  return new QueryRequest({ type: ServiceEndpoint.type, query: { match: { [field]: id ?? '' } }, name: 'useAppDisplay' });
+}
+
 /**
- * Resolve an app's viewable runtime from its address.
+ * The address a BROWSER loads a dev server at — resolved from its endpoint now,
+ * never stored (`direct-url`: localhost on a desktop, the box's public host in a
+ * sandbox). Re-resolved when the endpoint changes; '' until it answers.
+ */
+function useDirectUrl(endpoint: ServiceEndpoint | null): string {
+  const { data } = useQuery({
+    queryKey: ['service_endpoint', endpoint?.id ?? null, 'direct-url'],
+    queryFn: () => endpoint!.directUrl().catch(() => ''),
+    enabled: !!endpoint,
+    staleTime: Infinity,
+  });
+  return endpoint ? (data ?? '') : '';
+}
+
+/**
+ * Resolve an app's viewable runtime from its address — always through the
+ * `ServiceEndpoint`s that serve it.
  *
- * An app built from source is addressed by its Artifact; the dev server (its
- * `Deployment`'s port) and the built output (its `MicroApp`) are two ways to
- * reach that one app, and BOTH are resolved here from the artifact alone. That
- * is what lets the URL name only the artifact: a port belongs to whichever dev
- * server happens to be up, so one baked into the address goes stale the moment
- * the server moves.
- *
- * A webapp ASSET is addressed by its own delivery row instead. There is no
- * artifact to resolve from and no dev server to offer — the folder on disk is
- * the app — so that address fetches the one row directly and stops.
+ * A `proxy` endpoint is a dev server (`dev`, loaded at its own origin — HMR and
+ * absolute `/src/...` paths need that); a `static` one is a folder this backend
+ * serves (`served`, loaded through `service`). The address names the app —
+ * its artifact, its webapp definition, or the endpoint itself — never a port.
+ * Only THIS machine's endpoints count: a cloud placement of the same app is not
+ * served here.
  *
  * Preference follows the caller's `preferred` on first resolve, then whatever the
  * user picks — and it re-derives when the app changes, so switching apps never
  * inherits the previous one's mode.
  */
 export function useAppDisplay(
-  process: AgenticProcess | null | undefined,
-  address: Pick<AppDockAddress, 'artifactId' | 'microAppId' | 'options'> | null | undefined,
+  address: Pick<AppDockAddress, 'artifactId' | 'microAppId' | 'endpointId' | 'options'> | null | undefined,
   preferred: AppRuntime | null,
 ): AppDisplay {
   const [override, setOverride] = useState<AppRuntime | null>(null);
   const artifactId = address?.artifactId ?? null;
   const microAppId = address?.microAppId ?? null;
+  const endpointId = address?.endpointId ?? null;
   // A cross-origin guest cannot see the `.dark` class the host writes on its own
   // <html>, so the theme rides the iframe URL and the guest's first paint is
   // already correct. Deliberately NOT a dock option: the theme is not part of the
@@ -107,47 +125,36 @@ export function useAppDisplay(
   }).toString();
 
   // A new app re-derives its runtime rather than inheriting the last choice.
-  useEffect(() => setOverride(null), [artifactId, microAppId]);
+  useEffect(() => setOverride(null), [artifactId, microAppId, endpointId]);
 
-  // The asset address: one row, fetched by identity. No artifact query can find
-  // it — a webapp asset has no Artifact — so this is not a fallback, it is the
-  // other half of the grammar.
-  const appTypeId = useMemo(() => (microAppId ? new TypeId(MicroApp.type, microAppId) : null), [microAppId]);
-  const { data: addressedApp } = useEntity<MicroApp>(appTypeId);
-
-  const queryRequest = useMemo(
-    () =>
-      new QueryRequest({
-        type: MicroApp.type,
-        query: { match: { artifact_id: artifactId ?? '' } },
-        name: 'useAppDisplay',
-      }),
-    [artifactId],
+  const endpointTypeId = useMemo(
+    () => (endpointId ? new TypeId(ServiceEndpoint.type, endpointId) : null),
+    [endpointId],
   );
-  const { data: microApps = [] } = useEntitiesQuery<MicroApp>(queryRequest, { enabled: !!artifactId });
-  const microApp = (microAppId ? (addressedApp ?? null) : (microApps[0] ?? null)) as MicroApp | null;
+  const { data: addressed } = useEntity<ServiceEndpoint>(endpointTypeId);
+  const byArtifact = useMemo(() => endpointsBy('artifact_id', artifactId), [artifactId]);
+  const byWebapp = useMemo(() => endpointsBy('webapp_id', microAppId), [microAppId]);
+  const { data: artifactRows = [] } = useEntitiesQuery<ServiceEndpoint>(byArtifact, { enabled: !!artifactId });
+  const { data: webappRows = [] } = useEntitiesQuery<ServiceEndpoint>(byWebapp, { enabled: !!microAppId });
 
-  // The dev half of the same question, asked the same way. Kept beside the MicroApp
-  // query rather than in the caller so "which port serves this artifact" has one
-  // owner — two callers deriving it differently is how a stale port survives.
-  const deploymentQuery = useMemo(
-    () =>
-      new QueryRequest({
-        type: Deployment.type,
-        query: { match: { artifact_id: artifactId ?? '' } },
-        name: 'useAppDisplay',
-      }),
-    [artifactId],
-  );
-  const { data: deployments = [] } = useEntitiesQuery<Deployment>(deploymentQuery, { enabled: !!artifactId });
-  const devPort = deployments[0]?.runtimePort ?? null;
-
-  const devConfig = useProcessWebApp(process, devPort === null ? null : String(devPort));
+  const rows: ServiceEndpoint[] = endpointId
+    ? addressed
+      ? [addressed]
+      : []
+    : artifactId
+      ? artifactRows
+      : webappRows;
+  // This machine's rows only: a cloud placement of the same app is not served here.
+  const local = rows.filter((endpoint) => !endpoint.remote);
+  const devEndpoint = local.find((endpoint) => endpoint.backend.type === 'proxy') ?? null;
+  const servedEndpoint = local.find((endpoint) => endpoint.backend.type === 'static') ?? null;
+  const devUrl = useDirectUrl(devEndpoint);
+  const servedUrl = servedEndpoint ? servedEndpoint.serviceUrl() : '';
 
   return useMemo(() => {
     const available: AppRuntime[] = [];
-    if (devConfig.host) available.push('dev');
-    if (microApp) available.push('served');
+    if (devUrl) available.push('dev');
+    if (servedUrl) available.push('served');
 
     // A request only wins if the app actually has that runtime right now — a
     // dev server can stop, and a stale preference must not blank the display.
@@ -157,12 +164,11 @@ export function useAppDisplay(
     return {
       runtime,
       available,
-      src: withQuery(runtime === 'served' ? (microApp?.viewUrl ?? '') : runtime === 'dev' ? devConfig.host : '', appQuery),
-      port: devPort === null ? null : String(devPort),
-      microApp,
+      src: withQuery(runtime === 'served' ? servedUrl : runtime === 'dev' ? devUrl : '', appQuery),
+      endpoint: runtime === 'served' ? servedEndpoint : runtime === 'dev' ? devEndpoint : null,
       theme,
       view,
       setRuntime: setOverride,
     };
-  }, [appQuery, devConfig.host, devPort, microApp, override, preferred, theme, view]);
+  }, [appQuery, devUrl, devEndpoint, override, preferred, servedEndpoint, servedUrl, theme, view]);
 }

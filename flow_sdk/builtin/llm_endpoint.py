@@ -1,7 +1,7 @@
 """``LLMEndpoint`` — the box-side mirror of the hub entity.
 
 An LLM endpoint is a budget you may spend: a ROOT holding a provider credential, or an allocation
-drawing on another endpoint through the hub's ``source_llmendpoint`` relationship. The hub owns all
+drawing on another endpoint through the hub's ``partof`` edge to that endpoint. The hub owns all
 of it — the credential, the limits, the chain, the ledger — and authorizes every ``invoke`` against
 the endpoint named in the URL.
 
@@ -83,6 +83,8 @@ class LLMFilters(BaseModel):
 
     models_allow: list[str] = Field(default_factory=list)
     models_deny: list[str] = Field(default_factory=list)
+    #: Upstream hosts an OpenRouter root must not be routed to (OpenRouter's names, e.g. ``"Novita"``).
+    providers_ignore: list[str] = Field(default_factory=list)
     max_tokens_ceiling: int | None = None
     max_input_chars: int | None = None
     temperature_max: float | None = None
@@ -113,6 +115,11 @@ def endpoint_share_landing_path(endpoint_id: str) -> str:
     from flow_sdk.core.dock_address import PageId, ViewType, dock_url  # noqa: PLC0415
 
     return dock_url(ViewType.LLM_ENDPOINTS, pointer=endpoint_id, page=PageId.HUB)
+
+
+#: What a box with no hub login sends as its bearer to a PUBLIC endpoint. Not a credential: the
+#: hub reads it as an invalid token and falls through to the endpoint's own anonymous grant.
+PUBLIC_ENDPOINT_TOKEN = "flowpad-public-endpoint"
 
 
 def hub_invoke_path(typeid: Any) -> str:
@@ -146,11 +153,12 @@ class LLMEndpoint(Entity):
     member_default_limits: LLMLimits = APIField(default_factory=LLMLimits)
     #: ``****last4`` of the provider key, when this endpoint is a root. Never the key itself.
     credential_hint: str = APIField(default="")
-    #: Whose pot this is on the hub -- ``organization-``/``team-``/``user-<uuid>`` -- or ``None``
-    #: for a root or an allocation. Read-only here, like every other field in this projection.
-    principal_typeid: str | None = APIField(default=None)
-    #: True for an endpoint the hub made for a user/team/org rather than one somebody created.
-    system_default: bool = APIField(default=False)
+    #: The hub user this allowance is ``partof`` -- ``user-<uuid>``, in the spelling
+    #: ``hub_user_typeid`` uses -- or ``None`` for a pool, a root, a share, or when the hub could
+    #: not be asked. Filled by ``fetch_hub_llm_endpoints`` from the caller-scoped
+    #: ``token_plan/allowances`` read (the hub serializes no such field: whose allowance a row is
+    #: lives in an edge). Runtime-only, never a row: a hub endpoint is never stored on a box.
+    holder_typeid: str | None = APIField(default=None, persist=Persist.FALSE)
 
     #: Which of the three funding kinds this is. Defaults to HUB so every existing projection
     #: keeps its meaning; ``fetch_hub_llm_endpoints`` forces it, and the before-validator below
@@ -173,12 +181,17 @@ class LLMEndpoint(Entity):
     #: * ``True``  -- they administer it. On an admin's box this is every allowance they minted for
     #:   somebody else, which is exactly what must not read as their own wallet.
     #: * ``False`` -- they hold it and may only spend it. That is what a beneficiary is: ``allocate``
-    #:   grants them ``reader`` (``_BENEFICIARY_ROLE``) and stamps no ``principal_typeid``, so this
-    #:   flag is the ONLY thing on the wire that says the budget was handed to them.
+    #:   grants them ``reader`` (``_BENEFICIARY_ROLE``). ``holder_typeid`` says the same thing from
+    #:   the hub's ``partof`` edge; this flag is the fallback when that read is unavailable, and the
+    #:   only signal for a share (which has no holder edge).
     #: * ``None``  -- not held at all. The catalog's global root reaches every signed-in user
     #:   without a role edge, and answering ``False`` for it would turn the shared pool into
     #:   everybody's personal budget.
     can_administer: bool | None = APIField(default=None, persist=Persist.FALSE)
+    #: HUB only: the hub opened this budget to whoever holds its id, so it is spendable with NO
+    #: hub login. Runtime-only like the rest of a hub projection -- it arrives from the hub's
+    #: listing, or from this box's own public binding when no listing is reachable at all.
+    public: bool = APIField(default=False, persist=Persist.FALSE)
 
     #: An explicit key handed to the constructor. A PrivateAttr, so it is never a field, never
     #: dumped, never persisted and never shared — it exists for ``LLMEndpoint(provider=...,
@@ -245,8 +258,7 @@ class LLMEndpoint(Entity):
             "limits",
             "member_default_limits",
             "credential_hint",
-            "principal_typeid",
-            "system_default",
+            "holder_typeid",
             # Listed explicitly: ``invocable`` is Persist.FALSE, and a picker that cannot see it
             # would offer the user a device endpoint the backend can never call.
             "kind",
@@ -255,6 +267,7 @@ class LLMEndpoint(Entity):
             "harness",
             "invocable",
             "can_administer",
+            "public",
         )
     )
 
@@ -334,14 +347,18 @@ class LLMEndpoint(Entity):
         the user never stored, and let it outrank a hub budget they did configure.
 
         A HUB endpoint's key is the hub login key — the hub swaps in the real provider
-        credential on the far side. A DEVICE endpoint has no key at all, by definition.
+        credential on the far side. A PUBLIC hub endpoint needs none: the hub admits whoever
+        holds its id, so a box with no login sends ``PUBLIC_ENDPOINT_TOKEN`` -- a placeholder,
+        because every harness refuses to start with an empty token variable. A login key still
+        wins when there is one, so a signed-in box is attributed as itself. A DEVICE endpoint
+        has no key at all, by definition.
         """
         if self.kind == LLMEndpointKind.DEVICE:
             return None
         if self.kind == LLMEndpointKind.HUB:
             from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
 
-            return resolve_hub_api_key()
+            return resolve_hub_api_key() or (PUBLIC_ENDPOINT_TOKEN if self.public else None)
         if self._explicit_api_key:
             return self._explicit_api_key
         if self.secret_name:

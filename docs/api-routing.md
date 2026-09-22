@@ -286,7 +286,6 @@ Entity-specific actions on `ComputeNode` (`flow_sdk/builtin/faas/compute_node.py
 |--------|--------|-------------|
 | `terminal-command` | POST | Execute terminal command |
 | `ops` | POST | Filesystem operations |
-| `get-host` | ALL | Get host info |
 | `get-machine-status` | ALL | Get machine status |
 
 ## Dedicated Routes (Non-Graph)

@@ -1,6 +1,8 @@
 import { replace, redirect } from 'react-router';
 import type { DockPointer } from '@src/navigation';
 import { notify } from '@src/notifications';
+import { toplog } from '@sdk';
+import { dockLabel, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import {
   clearDockLoadError,
   setDockLoadError,
@@ -68,6 +70,13 @@ export function isRedirectResponse(error: unknown): boolean {
 export function handleDockLoadError(error: unknown, dock: DockPointer | null): void {
   if (isRedirectResponse(error)) throw error;
   if (!(error instanceof DockLoadError)) throw error;
+
+  // Every typed dock-load failure, whatever it resolves to — a rendered error, a
+  // redirect away, a toast, a banner or nothing visible at all.
+  toplog.log(
+    'tab_switch',
+    `error ${sinceTabSwitch()} sink=dock_load_error kind=${error.kind} source=${error.source} action=${error.resolution.action} dock=${dockLabel(dock) ?? '-'}`,
+  );
 
   switch (error.resolution.action) {
     case 'render_error': {

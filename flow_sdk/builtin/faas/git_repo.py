@@ -254,7 +254,9 @@ class GitRepo:
         """
         try:
             result = await self._folder.git(*args)
-            return result.stdout.rstrip("\n"), result.stderr.rstrip("\n"), result.returncode
+            # ``None`` is "did not finish" — for an int-reading caller that is a
+            # failure, the same 1 a raised call answers with below.
+            return result.stdout.rstrip("\n"), result.stderr.rstrip("\n"), _rc(result.returncode)
         except Exception:
             logger.debug("git command failed: git %s", " ".join(args), exc_info=True)
             return "", "", 1
@@ -271,7 +273,7 @@ class GitRepo:
         """
         try:
             result = await self._folder.git(*args, env=env)
-            return result.stdout.rstrip("\n"), result.returncode
+            return result.stdout.rstrip("\n"), _rc(result.returncode)
         except Exception:
             logger.debug("git command failed: git %s", " ".join(args), exc_info=True)
             return "", 1
@@ -1092,3 +1094,8 @@ class GitRepo:
                 return ApiFailResponse(message="Missing required parameter: file", status_code=400)
             return ApiSuccessResponse(data=(await post_file_ops[sub](file_path)).model_dump(by_alias=True))
         return ApiFailResponse(message=f"Unknown git-ops sub-path: '{sub}'", status_code=404)
+
+
+def _rc(returncode: "int | None") -> int:
+    """A raw exit for the int-reading callers here: ``None`` (never finished) is 1."""
+    return 1 if returncode is None else returncode

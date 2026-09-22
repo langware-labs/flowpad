@@ -35,17 +35,16 @@ describe('dockForDisplayTarget', () => {
     expect(dock?.pointer).toContain('notes.md');
   });
 
-  it('maps a webapp port to the WEB_APP dock', () => {
-    const dock = dockForDisplayTarget({ kind: 'webapp', port: 3000 });
-    expect(dock?.viewType).toBe(ViewType.WEB_APP);
-    expect(dock?.options?.port).toBe('3000');
-  });
-
-  it('addresses an app by its ARTIFACT, keeping the runtime derived', () => {
-    // The port is deliberately absent from the address even when one is live: it
-    // is a companion of `runtime=dev`, re-resolved from the Deployment on load.
-    // Baking it in is what would let a dead dev server become the app's identity.
-    const dock = dockForDisplayTarget({ kind: 'app', artifact_id: UUID, typeid: `artifact-${UUID}`, runtime: 'dev', port: 5173 });
+  it('addresses an app by its ARTIFACT, keeping the endpoint derived', () => {
+    // The endpoint the backend picked rides along but is not the address: which
+    // endpoint serves an app changes without the app changing.
+    const dock = dockForDisplayTarget({
+      kind: 'app',
+      artifact_id: UUID,
+      endpoint_id: 'e1',
+      typeid: `artifact-${UUID}`,
+      runtime: 'dev',
+    });
     expect(dock?.viewType).toBe(ViewType.APP);
     expect(dock?.pointer).toBe(`artifact-${UUID}`);
     expect(dock?.options?.port).toBeUndefined();
@@ -62,13 +61,26 @@ describe('dockForDisplayTarget', () => {
       expect(dock?.pointer).toBe(`artifact-${UUID}`);
     }
     // `unbuilt` is not a runtime the viewer can select, so it is not pinned.
-    expect(dockForDisplayTarget({ kind: 'app', artifact_id: UUID, runtime: 'unbuilt' })?.options?.runtime).toBeUndefined();
+    const unbuilt = dockForDisplayTarget({ kind: 'app', artifact_id: UUID, typeid: `artifact-${UUID}`, runtime: 'unbuilt' });
+    expect(unbuilt?.options?.runtime).toBeUndefined();
   });
 
-  it('falls back to the bare port for an app with no artifact behind it', () => {
-    const dock = dockForDisplayTarget({ kind: 'app', runtime: 'dev', port: 5173 });
-    expect(dock?.viewType).toBe(ViewType.WEB_APP);
-    expect(dock?.options?.port).toBe('5173');
+  it('addresses a bare dev server by its ENDPOINT, never its port', () => {
+    // `flow show webapp --port N` registers a proxy endpoint and shows THAT.
+    const dock = dockForDisplayTarget({
+      kind: 'app',
+      typeid: `service_endpoint-${UUID}`,
+      endpoint_id: UUID,
+      runtime: 'dev',
+    });
+    expect(dock?.viewType).toBe(ViewType.APP);
+    expect(dock?.pointer).toBe(`service_endpoint-${UUID}`);
+    expect(dock?.options).toEqual({ runtime: 'dev' });
+  });
+
+  it('addresses a webapp asset by its definition', () => {
+    const dock = dockForDisplayTarget({ kind: 'app', typeid: `micro_app-${UUID}`, micro_app_id: UUID, runtime: 'served' });
+    expect(dock?.pointer).toBe(`micro_app-${UUID}`);
   });
 
   it('routes a shell target to its terminal dock, not an editor', () => {
@@ -84,13 +96,8 @@ describe('dockForDisplayTarget', () => {
       expect(dockForDisplayTarget({ kind: 'entity', type: 'dataset', id: UUID })).toBeNull();
     });
 
-    it('for an app with neither an artifact nor a port', () => {
+    it('for an app with no typeid to address it by', () => {
       expect(dockForDisplayTarget({ kind: 'app', runtime: 'unbuilt' })).toBeNull();
-    });
-
-    it('for a webapp whose port is missing or blank', () => {
-      expect(dockForDisplayTarget({ kind: 'webapp' })).toBeNull();
-      expect(dockForDisplayTarget({ kind: 'webapp', port: '  ' })).toBeNull();
     });
 
     it('for a null/undefined target', () => {

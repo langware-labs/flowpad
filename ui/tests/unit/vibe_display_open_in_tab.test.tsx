@@ -204,11 +204,13 @@ describe('vibe display → promoting a shown document to its own tab', () => {
     expect(reopened.pointer ?? '').toContain(DOC_NAME);
   });
 
-  it('a running-app history row re-pins the Display pane instead of navigating', () => {
-    // A doc is on the display; an app (port) show sits older in the history.
+  it('a running-app history row opens the app by its address, like any past display', () => {
+    // A doc is on the display; an app show (a dev server, by its endpoint) sits
+    // older in the history. A running app is addressable now, so it is promoted
+    // like everything else — there is no port pin left for the pane to own.
     process.context_data = {
       display_stack: [
-        { kind: 'webapp', port: 3000, shown_at: 1 },
+        { kind: 'app', typeid: 'service_endpoint-e1', endpoint_id: 'e1', runtime: 'dev', name: 'Todo', shown_at: 1 },
         { kind: 'vfs', path: DOC_PATH, shown_at: 2 },
       ],
     } as never;
@@ -218,18 +220,14 @@ describe('vibe display → promoting a shown document to its own tab', () => {
       </Wrap>,
     );
     act(() => showListener?.({ kind: 'vfs', path: DOC_PATH }));
-    expect(screen.queryByTestId('vibe-webapp-frame')).toBeNull();
 
-    // The doc show above navigated (it is addressable). Only the history click is
-    // under test here, so measure from zero.
     openDock.mockReset();
     fireEvent.click(screen.getByTestId('display-history'));
-    fireEvent.click(screen.getAllByTestId('display-history-row')[1]); // the webapp entry
+    fireEvent.click(screen.getAllByTestId('display-history-row')[1]); // the app entry
 
-    // A running app has no dock address (its identity is an artifact whose runtime
-    // is derived), so it is the one target the pane still owns: the display must
-    // switch to it in place, with no navigation.
-    expect(openDock).not.toHaveBeenCalled();
-    expect(screen.getByTestId('vibe-webapp-frame')).toBeTruthy();
+    const opened = lastOpened();
+    expect(opened.viewType).toBe('app');
+    expect(opened.pointer).toBe('service_endpoint-e1');
+    expect(opened.isActiveDisplay).toBe(false);
   });
 });

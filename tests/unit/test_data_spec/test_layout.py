@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, ExampleKind, FileRef, FolderSpec, TextSpec
-from flow_sdk.schema.data_spec.layout import CsvLayout, FolderLayout, layout_for
+from flow_sdk.schema.data_spec.layout import CsvLayout, FolderLayout, dataset_layout_for
 
 pytestmark = pytest.mark.timeout(5)  # do not increase without approval
 
@@ -61,9 +61,9 @@ def test_csv_layout_round_trips_text_and_refuses_files(tmp_path: Path) -> None:
 
 
 def test_layout_for_dispatches_on_the_manifest_value() -> None:
-    assert isinstance(layout_for("io_folder"), FolderLayout)
-    assert isinstance(layout_for("csv"), CsvLayout)
-    assert isinstance(layout_for("nonsense"), CsvLayout)       # the walker's default
+    assert isinstance(dataset_layout_for("io_folder"), FolderLayout)
+    assert isinstance(dataset_layout_for("csv"), CsvLayout)
+    assert isinstance(dataset_layout_for("nonsense"), CsvLayout)       # the walker's default
 
 
 def test_write_example_meta_is_the_capture_seams_stamp(tmp_path: Path) -> None:

@@ -79,6 +79,24 @@ export function splitNamespace(tag: string): [string | null, string] {
   return [null, tag];
 }
 
+/**
+ * Inverse of `splitNamespace`: `("acme", "orders.created")` →
+ * `--acme--.orders.created`.
+ *
+ * A blank namespace returns the tag unchanged — the system namespace is the
+ * DEFAULT and is never written as a marker. Throws on a namespace name the
+ * marker cannot hold, so a bad name fails here rather than producing a tag
+ * `normalizeTag` will reject later.
+ */
+export function joinNamespace(ns: string | null | undefined, tag: string): string {
+  if (!ns) return tag;
+  const marker = `--${ns}--`;
+  if (!NAMESPACE_SEGMENT_PATTERN.test(marker)) {
+    throw new Error(`Invalid namespace: ${ns}`);
+  }
+  return tag ? `${marker}.${tag}` : marker;
+}
+
 /** Dot ancestors from broadest to narrowest (strict — normalizes first). */
 export function tagAncestors(tag: string, includeSelf = false): string[] {
   const segments = normalizeTag(tag).split('.');

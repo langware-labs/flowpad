@@ -81,8 +81,9 @@ flow app open "<artifact name>" --root "<artifact folder>"
 
 ## 3. Confirm it shows
 
-`flow show webapp --port <p>` (or `flow app open`'s `show:True`) pushes the running app
-onto this process's display stack — the Vibe preview then renders it. Run the show
+`flow show webapp --port <p>` (or `flow app open`'s `show:True`) registers the running
+server as a `ServiceEndpoint` of this project's placement and pushes that endpoint onto
+this process's display stack — the Vibe preview then renders it. Run the show
 driver **exactly once** (exit 0 = done). Report the URL you served.
 
 ## Claude Design handoff bundles

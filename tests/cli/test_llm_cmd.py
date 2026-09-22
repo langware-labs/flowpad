@@ -1035,3 +1035,65 @@ def test_a_lost_socket_is_a_connection_error_not_a_missing_source(monkeypatch):
 
     assert result.exit_code == llm_cmd.EXIT_CONNECTION_ERROR
     assert "CONNECTION_ERROR" in result.output
+
+
+# ------------------------------------------------ a public endpoint, by id, with no login
+
+OPEN = "llm_endpoint-99999999-2222-4333-8444-555555555555"
+OPEN_ID = OPEN.split("-", 1)[1]
+
+
+def _hub_answers(monkeypatch, status_code: int) -> list[tuple[str, dict]]:
+    asked: list[tuple[str, dict]] = []
+
+    def fake_get(url, headers=None, **_kwargs):
+        asked.append((url, headers or {}))
+        return type("Response", (), {"status_code": status_code})()
+
+    monkeypatch.setattr(llm_cmd.requests, "get", fake_get)
+    return asked
+
+
+@pytest.mark.parametrize("ref", [OPEN, OPEN_ID])
+def test_an_endpoint_id_the_box_never_heard_of_is_bound_as_public(recorder, monkeypatch, ref):
+    """THE loginless command. Not in the inventory is not a refusal: a box with no hub login is
+    offered nothing, and a public endpoint is exactly the budget meant for it."""
+    monkeypatch.setattr(llm_cmd, "_status", lambda project_id="": STATUS)
+    asked = _hub_answers(monkeypatch, 200)
+
+    result = runner.invoke(app, ["llm", "user", "use", ref, "--hub", "https://open.hub/"])
+
+    assert result.exit_code == 0, result.output
+    # Asked the hub FIRST, with no credential, about the one thing an anonymous caller may read.
+    assert [url for url, _ in asked] == [f"https://open.hub/api/v1/graph/llm_endpoint/{OPEN_ID}/models"]
+    selects = [body for method, path, body in recorder.calls if method == "POST" and path.endswith("/select")]
+    assert sorted(body["harness"] for body in selects) == ["claude", "codex"]
+    for body in selects:
+        assert (body["kind"], body["endpoint_typeid"], body["public"], body["hub_origin"]) == (
+            "endpoint",
+            OPEN,
+            True,
+            "https://open.hub",
+        )
+
+
+def test_an_endpoint_the_hub_will_not_open_is_refused_before_any_write(recorder, monkeypatch):
+    """A wrong id, or a private budget, must fail HERE with a sentence -- not at the first worker
+    spawn, inside a harness's retry loop."""
+    monkeypatch.setattr(llm_cmd, "_status", lambda project_id="": STATUS)
+    _hub_answers(monkeypatch, 401)
+
+    result = runner.invoke(app, ["llm", "user", "use", OPEN, "--hub", "https://open.hub"])
+
+    assert result.exit_code == 6, result.output
+    assert "NOT_PUBLIC" in result.output
+    assert not [call for call in recorder.calls if call[0] == "POST"]
+
+
+def test_hub_names_where_a_public_endpoint_lives_and_nothing_else(recorder, monkeypatch):
+    monkeypatch.setattr(llm_cmd, "_status", lambda project_id="": STATUS)
+
+    result = runner.invoke(app, ["llm", "user", "use", "1", "--hub", "https://open.hub"])
+
+    assert result.exit_code == 2, result.output
+    assert not [call for call in recorder.calls if call[0] == "POST"]

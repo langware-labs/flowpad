@@ -7,8 +7,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.schema.data_spec import SpecType, to_authoring_form
 from flow_sdk.tags.grammar import tag_is_within
+from flow_sdk.schema.data_spec._form import ShapeForm
 
 
 def now_iso() -> str:
@@ -41,6 +41,7 @@ class CapabilityKind(StrEnum):
     CODEX_CLI = "harness.codex.cli"
     COPILOT_CLI = "harness.copilot.cli"
     OPENCODE_CLI = "harness.opencode.cli"
+    DEEPAGENTS_CLI = "harness.deepagents.cli"
     CHROME_AUTHENTICATED = "browsing.chrome.authenticated"
     # Source control: parent = "a GitHub connection FlowPad can use" (OAuth
     # token OR gh); child = the gh CLI specifically (installed + authenticated).
@@ -85,10 +86,13 @@ def is_mcp_capability_kind(kind: str) -> bool:
     return len(parts) >= 3 and parts[1] == MCP_CAPABILITY_INFIX
 
 
-def _spec_kind(spec: SpecType | None) -> str | None:
-    """The registered kind of a named value spec; object forms have no kind."""
-    form = to_authoring_form(spec) if spec is not None else None
-    return form if isinstance(form, str) else None
+def _spec_kind(spec: "ShapeForm | None") -> str | None:
+    """The registered kind of a named value spec; object forms have no kind.
+
+    The field already holds the authoring form, so there is nothing to render:
+    a bare string IS the kind, and an object or list form has none.
+    """
+    return spec if isinstance(spec, str) else None
 
 
 class CapabilitySpec(BaseModel):
@@ -100,7 +104,7 @@ class CapabilitySpec(BaseModel):
     # The shape of this capability's discovered ``value`` — a ``DataSpec``
     # (``DataSpec.parse("fs_ref")`` for CLI harnesses, whose value is the bin
     # dir as an FSRef dict). None → no typed value (pure status).
-    value_spec: SpecType | None = None
+    value_spec: ShapeForm | None = None
 
     @property
     def value_type(self) -> str | None:
@@ -199,7 +203,7 @@ class CapabilityValue(BaseModel):
 
     kind: str
     value: Any | None = None
-    spec: SpecType | None = None
+    spec: ShapeForm | None = None
 
     @property
     def value_type(self) -> str | None:

@@ -8,8 +8,6 @@ import os
 import platform
 import sys
 
-from starlette.responses import RedirectResponse
-
 from flow_sdk.builtin.faas.system_profile_types import SystemProfile
 from flow_sdk.config import AGENT_MOUNT_FOLDER
 from flow_sdk.flowpad_types.machine_status import ExecutionEnvironmentStatus, MachineStatus
@@ -18,30 +16,6 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 
 
 class DesktopActionsMixin:
-    def _desktop_get_host(self, port: int, redirect: bool = True):
-        """Get the host URL for a given port on this compute node.
-
-        Args:
-            port: The port number (must be between 1024 and 65535)
-            redirect: If True, returns a redirect response. If False, returns JSON with URL.
-
-        Returns:
-            RedirectResponse or ApiResponse with host URL
-        """
-        int_port = int(port)
-        if not 1024 <= int_port <= 65535:
-            return ApiFailResponse(message="Invalid port")
-
-        if not self.node_provider_id:
-            return ApiFailResponse(message="Compute node provider ID not set")
-
-        host = self.get_host(int_port)
-
-        if not redirect:
-            return ApiResponse(data={"url": host, "port": int_port})
-
-        return RedirectResponse(url=host)
-
     async def _desktop_get_machine_status(self) -> ApiResponse:
         """Get machine status (processes, network, CPU, memory) from this compute node.
 
@@ -272,6 +246,8 @@ class DesktopActionsMixin:
 
         commands: list[dict[str, str]] = []
         for vendor in VENDORS:
+            if not vendor.interactive:
+                continue  # headless-only: there is no TUI to launch in a terminal
             try:
                 commands.append({"key": vendor.worker_type, "command": interactive_launch_command(vendor.worker_type, cwd)})
             except Exception:

@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, ClassVar, Optional, Sequence, Union
+from typing import Any, ClassVar, Optional, Sequence, Union, get_args, get_origin
 
 from flow_sdk.schema.data_spec.dataset_spec import (
     DataLayoutEnum,
@@ -30,6 +30,8 @@ from flow_sdk.schema.data_spec.dataset_spec import (
     FolderSpec,
     TextSpec,
 )
+from flow_sdk.schema.data_spec.io.names import ORDINAL
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 CSV_FILE = "data.csv"
 EXAMPLES_DIR = "examples"
@@ -85,8 +87,32 @@ def load_doc(path: Path) -> _Doc:
 
 
 def write_doc(path: Path, metadata: dict[str, Any], data: dict[str, Any]) -> None:
+    _write(path, json.dumps({"metadata": metadata, "data": data}, indent=2, default=str) + "\n")
+
+
+def _write(path: Path, text: str) -> None:
+    """One text write for the whole layout, through the asset writer's seam.
+
+    These files were the only ones in the tree written with a bare
+    ``write_text``: not atomic, and unconditional — so re-saving an unchanged
+    dataset rewrote every row and moved its mtime, which the indexer reads as a
+    change. ``_atomic_write_text`` already skips a write whose bytes match.
+    """
+    from flow_sdk.assets.frontmatter import _atomic_write_text  # noqa: PLC0415
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"metadata": metadata, "data": data}, indent=2, default=str) + "\n", encoding="utf-8")
+    _atomic_write_text(path, text)
+
+
+def _write_bytes(path: Path, payload: bytes) -> None:
+    """The binary half of ``_write`` — same no-churn rule, no text codec."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if path.read_bytes() == payload:
+            return
+    except OSError:
+        pass
+    path.write_bytes(payload)
 
 
 def is_binary(node: Any) -> bool:
@@ -140,7 +166,7 @@ class DatasetLayout:
         raise NotImplementedError
 
 
-def layout_for(name: Union[str, DataLayoutEnum]) -> DatasetLayout:
+def dataset_layout_for(name: Union[str, DataLayoutEnum]) -> DatasetLayout:
     layout = coerce_dataset_enum(name, DataLayoutEnum, DataLayoutEnum.CSV)
     return FolderLayout() if layout == DataLayoutEnum.IO_FOLDER else CsvLayout()
 
@@ -302,17 +328,114 @@ def _example_dirs(folder) -> list[Path]:
     return sorted((p for p in examples_dir.iterdir() if p.is_dir()), key=lambda p: p.name)
 
 
+def _main_document(shape: type) -> str:
+    from flow_sdk.schema.data_spec.io import names  # noqa: PLC0415 — cycle-safe
+
+    return names.main_document(shape)
+
+
+def _typed_slots(spec: type) -> dict[str, type]:
+    """Slots whose declared shape is an ordinary ``DataSpec``, not an artifact.
+
+    An artifact slot (``FileRef``/``FolderSpec``/``TextSpec``) is bytes on disk
+    and is classified by scanning. Anything else is a VALUE with a shape, and
+    the generic walker owns both ends of it.
+    """
+    from flow_sdk.schema.data_spec.io.placement import unwrap  # noqa: PLC0415 — cycle-safe
+
+    def _single(annotation: Any) -> Any:
+        """The shape of ONE occurrence. ``output`` is declared
+        ``Optional[Union[O, list[O]]]`` — N occurrences on disk arrive as a
+        list — so the bare arm is the one that names the shape."""
+        core = unwrap(annotation)
+        for arm in get_args(core) or ():
+            if arm is type(None) or get_origin(arm) is list:
+                continue
+            return unwrap(arm)
+        return core
+
+    out: dict[str, type] = {}
+    for base in SLOT_BASES:
+        field = spec.model_fields.get(base)
+        if field is None:
+            continue
+        shape = _single(field.annotation)
+        if (isinstance(shape, type) and issubclass(shape, DataSpec)
+                and not issubclass(shape, (FileRef, FolderSpec, TextSpec))):
+            out[base] = shape
+    return out
+
+
+def _declared_artifact(spec: type) -> dict[str, type]:
+    """Slots declared as a specific ARTIFACT leaf.
+
+    The scan classifies bytes: a file under ``input/`` becomes a ``FolderSpec``
+    holding one ``FileRef``, because on disk that is what it is. When the spec
+    says the slot IS a ``FileRef``, that promotion makes ``write`` → ``read``
+    stop being identity — you put a ``FileRef`` in and got a folder back, and a
+    declared ``ExampleSpec[FileRef, ...]`` then failed to validate at all.
+
+    Only the spec knows which was meant, and only here does it get asked.
+    """
+    from flow_sdk.schema.data_spec.io.placement import unwrap  # noqa: PLC0415 — cycle-safe
+
+    out: dict[str, type] = {}
+    for base in SLOT_BASES:
+        field = spec.model_fields.get(base)
+        if field is None:
+            continue
+        core = unwrap(field.annotation)
+        # EXACTLY a FileRef, never the ``Artifact`` union. Python flattens
+        # nested unions, so ``Optional[Union[Artifact, list[Artifact]]]`` has
+        # ``FileRef`` as its first arm too — and an ``Artifact`` slot means
+        # "whichever of the three is there", so the scan's answer is the right
+        # one and must not be second-guessed.
+        arms = [a for a in (get_args(core) or (core,))
+                if a is not type(None) and get_origin(a) is not list]
+        if len(arms) == 1 and isinstance(arms[0], type) and issubclass(arms[0], FileRef):
+            out[base] = arms[0]
+    return out
+
+
 class FolderLayout(DatasetLayout):
     """``examples/<name>/`` — slots are files or folders; sidecars annotate them."""
 
     name = DataLayoutEnum.IO_FOLDER.value
 
     def read(self, folder, spec, *, dataset_id, field_spec=None, delimiter=","):
+        from flow_sdk.schema.data_spec.io import load as _load  # noqa: PLC0415 — cycle-safe
+
         rows = []
+        typed = _typed_slots(spec)
+        # Pure functions of the shape — hoisted out of the per-example loop.
+        mains = {base: _main_document(shape) for base, shape in typed.items()}
+        artifact = _declared_artifact(spec)
         for ex_dir in _example_dirs(folder):
             row = self.read_example(ex_dir)
             if row is None:
                 continue  # no input DATA in any form → not an example
+            # A slot whose declared shape is an ordinary ``DataSpec`` was
+            # written by the generic walker, so it is read by the same one.
+            # ``read_example`` classifies bytes on disk and cannot know the
+            # declared type; this is the one place that does.
+            for base, shape in typed.items():
+                # A2: read what was WRITTEN. The write side decides per value,
+                # so a slot holding an artifact went down the artifact path even
+                # though its declared shape is a plain ``DataSpec``. Keying the
+                # read on the walker's own main document makes the two agree by
+                # looking, instead of by two rules that can drift.
+                if (ex_dir / base / mains[base]).is_file():
+                    row[base] = _load(shape, ex_dir / base)
+            # A slot the spec declares as a ``FileRef`` comes back as one, not
+            # as the folder the scan saw it sitting in. The scan classifies
+            # BYTES and is right about them; only the spec knows which was
+            # meant, and without asking it `write` → `read` was not identity.
+            for base in artifact:
+                held = row.get(base)
+                if isinstance(held, FolderSpec) and len(held.files) == 1:
+                    (only,) = held.files.values()
+                    if isinstance(only, FileRef):
+                        row[base] = only
             row["id"] = example_id(dataset_id, ex_dir.name)
             rows.append(spec.model_validate(row))
         return rows
@@ -393,7 +516,7 @@ class FolderLayout(DatasetLayout):
         folder = Path(folder)
         (folder / EXAMPLES_DIR).mkdir(parents=True, exist_ok=True)
         for i, ex in enumerate(examples, 1):
-            name = f"{i:04d}"
+            name = ORDINAL.format(i)
             self.write_example(folder / EXAMPLES_DIR / name, ex,
                                source=(Path(source) / EXAMPLES_DIR / name) if source else None)
 
@@ -495,7 +618,7 @@ class FolderLayout(DatasetLayout):
         if isinstance(node, TextSpec):
             if slot is None:
                 raise ValueError("a text cell cannot be a folder member — it has no path")
-            (ex_dir / f"{slot}.txt").write_text(node.text, encoding="utf-8")
+            _write(ex_dir / f"{slot}.txt", node.text)
             return
         if isinstance(node, FolderSpec):
             (ex_dir / node.path).mkdir(parents=True, exist_ok=True)
@@ -508,14 +631,28 @@ class FolderLayout(DatasetLayout):
             if node.path in contents:
                 payload = contents[node.path]
                 if isinstance(payload, (bytes, bytearray)):
-                    target.write_bytes(payload)
+                    _write_bytes(target, bytes(payload))
                 elif isinstance(payload, str):
-                    target.write_text(payload, encoding="utf-8")
+                    _write(target, payload)
                 else:
-                    target.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+                    _write(target, json.dumps(payload, indent=2, default=str) + "\n")
             elif source is not None and (source / node.path).is_file():
                 shutil.copyfile(source / node.path, target)
             elif not target.exists():
                 target.touch()
+            return
+        if isinstance(node, DataSpec) and slot is not None:
+            # ANY other shape is written by the one generic walker
+            # (``data_spec/io``), into a folder named for its slot. Before
+            # this, a typed slot could not be persisted at all — the layout
+            # knew three leaf types and raised for everything else, so
+            # ``ExampleSpec[Question, Answer, …]`` was declarable and
+            # unwritable. One walker now serves both.
+            from flow_sdk.schema.data_spec.io.writer import write as write_spec  # noqa: PLC0415 — cycle-safe
+
+            # ``_nested``: a slot is part of an example, not an entity of its
+            # own, so it mints no identity. The example directory is the thing
+            # with a name; its slots are its fields.
+            write_spec(node, ex_dir / slot, _nested=True)
             return
         raise ValueError(f"cannot write a {type(node).__name__} slot")

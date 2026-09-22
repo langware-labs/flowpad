@@ -58,10 +58,9 @@ class AssetCleanupResult:
 def transcript_reply(jsonl_path: Path) -> tuple[str, list[str]]:
     """(last assistant text, models seen) from a Claude JSONL transcript.
 
-    ``RunResult.text`` / ``models_used`` are empty on the headless path —
-    ``_build_run_result`` reads ``record.last_assistant_text`` /
-    ``record.models_used`` but no extractor produces those fields — so both
-    are recovered from the transcript directly.
+    The answer's ``text`` is empty on the headless path — ``_build_run_result``
+    reads ``record.last_assistant_text``, which no extractor produces — so the
+    reply and the models are recovered from the transcript directly.
     """
     text = ""
     models: list[str] = []
@@ -190,21 +189,20 @@ async def run_asset_cleanup(
         workdir=workdir or root_strs[0],
     )
     result = _build_run_result(proc)
+    session_id = proc.session_id or ""
     if not result.ok:
-        raise RuntimeError(f"asset_cleanup worker ended {result.status} (session {result.session_id})")
+        raise RuntimeError(f"asset_cleanup worker: {result.detail} (session {session_id})")
 
     text = result.text or ""
-    models_used = list(result.models_used or [])
-    if not text or not models_used:
-        transcript = proc.driver.transcript_path(proc)
-        if transcript:
-            t_text, t_models = transcript_reply(transcript)
-            text = text or t_text
-            models_used = models_used or t_models
+    models_used: list[str] = []
+    transcript = proc.driver.transcript_path(proc)
+    if transcript:
+        t_text, models_used = transcript_reply(transcript)
+        text = text or t_text
 
     report = parse_report(text)
     if report is None:
-        raise RuntimeError(f"asset_cleanup worker returned no parseable report (session {result.session_id})")
+        raise RuntimeError(f"asset_cleanup worker returned no parseable report (session {session_id})")
 
     findings = [
         AssetCleanupFinding(
@@ -225,13 +223,13 @@ async def run_asset_cleanup(
         len(root_strs),
         len(findings),
         sum(1 for f in findings if f.verdict == "garbage"),
-        result.session_id,
+        session_id,
     )
     return AssetCleanupResult(
         roots=report.get("scanned_roots") or root_strs,
         findings=findings,
         summary=summary,
-        session_id=result.session_id,
+        session_id=session_id,
         models_used=models_used,
         raw_text=text,
     )

@@ -6,7 +6,8 @@ import { ActionInfo } from '../models/ActionInfo';
 export interface IWebDomain extends IEntity {
   domain: string;
   verified?: boolean;
-  micro_app_id: string;
+  /** The endpoint this host name serves. */
+  service_endpoint_id?: string | null;
 }
 
 // `implements IWebDomain` only checks the class; it contributes no members, so every
@@ -20,13 +21,13 @@ export class WebDomain extends APIEntity<WebDomain> implements IWebDomain {
   static type: string = 'web_domain';
   domain!: string;
   verified?: boolean;
-  micro_app_id!: string;
+  service_endpoint_id?: string | null;
 
   constructor(entity: Partial<IWebDomain> = {}) {
     super(entity);
     this.domain = entity.domain || '';
     this.verified = entity.verified;
-    this.micro_app_id = entity.micro_app_id || '';
+    this.service_endpoint_id = entity.service_endpoint_id ?? null;
   }
 
   public static async getByName(name: string): Promise<WebDomain | undefined> {

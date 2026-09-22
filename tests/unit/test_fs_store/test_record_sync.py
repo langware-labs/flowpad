@@ -29,7 +29,8 @@ from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
 from flow_sdk.fs_store.fs_record import FSRecord, _json_default
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.schema.data_spec import DataSpec, SpecType, to_authoring_form
+from flow_sdk.schema.data_spec import DataSpec, to_authoring_form
+from flow_sdk.schema.data_spec._form import ShapeForm
 
 # ── Test type: one field per persist policy ──────────────────────────────────
 
@@ -51,7 +52,7 @@ class _SyncEntity(Entity):
     # DEFAULT but NOT in _SyncMeta → not persisted
     ghost: str | None = APIField(default=None)
     # A MODEL-valued persisted field (Dataset.spec is the real one).
-    spec: Optional[SpecType] = APIField(default=None, persist=Persist.TRUE)
+    spec: Optional[ShapeForm] = APIField(default=None, persist=Persist.TRUE)
 
 
 def _register_meta_model():
@@ -153,7 +154,7 @@ class TestModelValuedFields:
 
     def test_a_shape_class_is_written_as_its_authoring_form(self, tmp_path):
         """The seam is ``metadata_payload``: it dumps THROUGH Pydantic, so a
-        ``SpecType`` field's own serializer runs and the writer never sees a
+        ``ShapeForm`` field holds the form, so the writer sees it and the writer never sees a
         class. (A bare class handed to the raw writer is not a supported input.)"""
         e = _SyncEntity(name="alpha", spec={"tags": ["string"]})
         payload = e.metadata_payload()

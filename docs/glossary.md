@@ -91,6 +91,30 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
 | `GraphContext` (`flow_sdk/builtin/graph_context.py`) | A frozen list of typeids bound to a process before launch. | An automation run |
 | **display context** (`context_data.display_context`) | Live state the page shown in a process's display reported about itself (`setDisplayContext`). Read with `flow context display`; delivered to Vibe agents per turn. | One process's display, bound to the shown target |
 
+## type · subkind · kind (2026-09-19)
+
+Three words that were used interchangeably. Full rules and the namespace
+mechanism: [`ontology.md`](ontology.md).
+
+- **`type`** — the closed registry (`EntityType`). A row, a URL, a folder are all
+  named by it. A join key.
+- **`subkind`** — closed, per type: a variant *within* one type (a discriminator
+  field). Today this is spelled `kind` on `Conversation`, `FlowMessage`,
+  `LLMEndpoint` and `SubAgent`; renaming it is what frees the word.
+- **`kind`** — the OPEN dot-path ontology, one grammar
+  (`flow_sdk/tags/grammar.py`), shared with bus tags and capabilities.
+  **A kind names a SHAPE, never an Entity row class**, which cannot validate a
+  value. In practice that is a `DataSpec`; `fs_ref` → `FSRef` is the one
+  SDK-registered exception. An asset type resolves to its `asset_spec`; a registered type
+  with no asset document names no shape and raises.
+- **`--ns--` is the ontology namespace**, the grammar's existing first segment
+  (`--acme--.ingest.message.whatsapp`). **Ours is the default and it is SILENT:
+  `--flow--` is never written.** An externally authored asset declares `ns` in its
+  document and every kind its code mints is prefixed; a data driver that declares
+  none is refused at load.
+- Don't reuse `kind` for a registry key. `Capability.kind` and `DataDriver.kind`
+  hold a driver's own *name*, which is neither an ontology kind nor a subkind.
+
 ## Naming rules this implies
 
 - **`GraphWorkflow` always carries the full prefix.** Bare `Graph*` collides with
@@ -111,8 +135,15 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
   and never belongs in the toplog catalog.
 - **`harness` and `worker` are two names for one axis.** `HarnessType`
   (`assets/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
-  They're deliberately distinct and bridged by `_WORKER_NAME_TO_TYPE`, but the industry word
-  for both is *provider*.
+  They're deliberately distinct and bridged by the `VENDORS` table (`Vendor.harness`), but the
+  industry word for both is *provider*.
+- **`deepagents` is a provider mirror for the ENGINE only.** The vendor key, package and
+  capability kind follow LangChain's `deepagents` package like every other vendor follows its
+  CLI — but there is no `deepagents` CLI of ours to mirror: the **runner**
+  (`cli_drivers/deepagents/runner.py`) and its JSONL event protocol are OURS. Don't call it
+  a "deep agent" in our own vocabulary (`Agent` is reserved); it is the *Deep Agents worker*,
+  and its role — the hidden, headless worker of last resort — is a set of `Vendor` facts
+  (`hidden`, `bootstrap`, `interactive=False`), not a second name.
 - **`DataSource` is the ingestion entity, not the trace enum.** `DataSource`
   (`flow_sdk/builtin/data_source.py`) is a configured remote system of record we sync from —
   a feed, later a mailbox. It is unrelated to `FlowDataSource`, the History/Stream/Sniffer
@@ -157,10 +188,32 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   frozen `DataSpec` covering all three funding paths — a vendor **device login**, a stored
   **api_key**, or a hub **endpoint**. It is NOT `DataSource` (a system of record we ingest from),
   NOT `MessageSource` (a `DataSource` that can also reply), NOT `SourceItem` (a record one produces), and — the collision that actually bites — NOT the hub's
-  `source_llmendpoint` relationship, which is the fallback chain an `LLMEndpoint` allocation draws
-  *from*, one layer down and unrelated. An `LLMSource` names a way to pay; a `source_llmendpoint`
+  `partof` (endpoint → endpoint) relationship, which is the fallback chain an `LLMEndpoint` allocation draws
+  *from*, one layer down and unrelated. An `LLMSource` names a way to pay; a `partof` (endpoint → endpoint)
   names a budget upstream of another budget. `resolve_llm_source` picks one per spawn, and its
   `reason` field is what both the picker and the spawn error render.
+* **public endpoint** — ours. A hub `LLMEndpoint` its admin opened (the `public` action) to
+  **whoever holds its id**: spendable with no login, so a foreign machine binds it with
+  `flow llm user use <endpoint-id>`. The id is the bearer and the endpoint's cost limit is the
+  whole defence. NOT "public" in the `visitor_role` / public-listing sense — it is stamped as
+  `Entity.public_role`, which no listing matches, so a public endpoint is usable but never
+  enumerable. See [llm-endpoints §7](snippets/llm-endpoints.md).
+* **`ServiceEndpoint`** — ours. One service a `Deployment` EXPOSES, a child of it: `protocol` (a
+  tagged kind — `web.app`, `api.rest`, `api.chat.openai`, `api.mcp`, `flowpad.workspace`, or a
+  `--ns--` one), `backend` (`static` files, a `proxy` to a loopback port, or an `agent` answered
+  in-process — every agent placement's `chat`) and
+  `supports_direct_access` (a hint to clients, never a grant). Reached through its `service`
+  action — a pure proxy, any method, WebSockets too — and `direct-url`, resolved when asked and
+  never stored. INBOUND traffic to a placement; not an `LLMEndpoint`, which is OUTBOUND spend to a
+  model provider and meters it. A `web.*` endpoint gets an origin of its own on the hub. See
+  [service-endpoints](snippets/service-endpoints.md).
+* **serve loop / `TurnEngine` / `AgentServer`** — ours (`flow_sdk/builtin/agent_serve.py`). How an
+  agent ANSWERS on a placement. The `TurnEngine` runs one message as a turn: one headless process
+  per (placement, conversation), one turn at a time, a redelivery answered from the turn's record.
+  The serve loop is one durable drain over the channels a placement answers (a source's
+  `answer_place`); the placement's `chat` endpoint drives the same engine directly. The
+  `AgentServer` keeps every local placement serving. Not Claude Code's `Workflow`, and not the
+  bus: nothing answers a channel by reacting to the projection's tags.
 * **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, agent-mailbox, serializer, ingest-provider and reflect-mode registries.
 * **`SecretPack`** — ours. A named set of environment variables (a "secret pack") and the ONLY way a secret is declared: a folder asset at `agentic-assets/secret_pack/<name>/` in **user** or **project** scope; the shipped ones are **templates** (`system` scope). Not an OAuth connection, and not an `ApiKey` (an inbound Flowpad token). The file is `secret_pack.json`, its shape `CredentialSpec` (value-free); the row is `SecretPack` (type `secret_pack`, formerly `credential_spec`). The UI still says **Credentials**. See [secret_share](secret_share.md).
 * **`SecretStore`** — ours (was *value store*). A place secret values live, keyed by environment variable name: a type plus its config (`flow_sdk/secrets`). Three ship: `env_file` (a dotenv file; a credential's `value_store` spells it `env`, the scope root's `.env.local` by default), `vault` (the per-instance encrypted store, `sodot` on disk) and `gcp_secret_manager` (a Google Cloud Secret Manager project, read through a bound `google` connection). A credential names its store per environment; a `DataSource` instance binds one (`set_secret_store`). Not a `Connection`, which is an account that hands out a token. See [secret-stores](snippets/secret-stores.md).
@@ -180,8 +233,8 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 
 | Ours | One place | Notes |
 |---|---|---|
-| `VENDORS` / `Vendor` | `flow_sdk/flowpad_types/vendors.py` | The one table of facts about the four CLI harness vendors (key, persisted `worker_type`, aliases, placement harness, capability kind, dot-dir, session entity type, pricing prefixes). Stdlib-only so `placement.py` and `transcript_analyzer` can import it; classes are reached by the dotted `package`. `vendor_for` / `vendor_or_none` / `default_vendor` / `vendor_by` / `vendor_for_path`. |
-| `JsonlTeeStreamWorker` | `flow_sdk/builtin/agentic_process/cli_drivers/jsonl_tee_worker.py` | The one non-interactive JSONL turn loop for vendors whose CLI records no turn terminal (copilot, opencode); a vendor supplies its session-key spelling, terminal types, stdin mode, converter and gate. Claude and codex stay on their own workers. |
+| `VENDORS` / `Vendor` | `flow_sdk/flowpad_types/vendors.py` | The one table of facts about the five harness vendors (key, persisted `worker_type`, aliases, placement harness, capability kind, dot-dir, session entity type, pricing prefixes) plus the declared facts generic machinery asks instead of branching on a key: `hidden`, `bootstrap`, `interactive`, `python_module` / `python_requires`, `transcript_stems`. Stdlib-only so `placement.py` and `transcript_analyzer` can import it; classes are reached by the dotted `package`. `vendor_for` / `vendor_or_none` / `default_vendor` / `vendor_by` / `vendor_for_path`. |
+| `JsonlTeeStreamWorker` | `flow_sdk/builtin/agentic_process/cli_drivers/jsonl_tee_worker.py` | The one non-interactive JSONL turn loop for vendors whose stdout is one JSON event per line (copilot, opencode, deepagents); a vendor supplies its session-key spelling, terminal types, stdin mode, converter and gate. Claude and codex stay on their own workers. |
 | `GitOriginDriver.materialize(origin, *, preferred_root, preferred_project_id, token)` | `flow_sdk/builtin/drivers/git_driver.py` | THE clone/reuse/pull policy — bundle receive, `Project.setup_from_git_origin`, `setup_from_bootstrap_git`, `Folder.resolve_location` and `create-project-from-git` all route through it. An absent/empty `preferred_root` means *clone here*. The driver is anonymous; callers pass their own `token`. |
 | `GitOrigin.next_clone_target()` / `fresh_clone_slot(leaf, reuse_empty=)` | `flow_sdk/fs_store/origin/git_origin.py` | The two workspace placement policies: reuse a matching checkout vs. never reuse (suffix past a collision; an empty dir is not one unless `reuse_empty=False`). |
 | Live session (`RemoteWorkerSession`) | `flow_sdk/builtin/remote_worker_session.py`; ledger `docs/collab/live-sessions.md` | THE unit of running a prompt on a collaborator's machine: every prompt sent in a conversation opens or continues one, keyed by its `starting_message_id`. Carries the session's `reply_policy` (`auto` \| `review`) and `approved_via` (`manual` \| `standing_grant`). The inbound gate is `decide_inbound_prompt`; the turn runner is `run_session_turn`; a consumed turn is marked by `FlowMessage.prompt_auto_handled`. |
@@ -192,8 +245,8 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 
 | `data-integrations` | ours | The `kind: vibe` persona that guides connect → sample → define; mechanics in `connect-data-source` |
 | `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes an example row; a gold label is written against the dataset's output shape |
-| asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by `MicroApp.view`, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. |
-| `micro_app` (family `webapp`) | ours | The delivery plane of an app, and a REPO folder asset when the app IS a folder on disk: `webapp.json` declares `kind` / `build`, `asset_ref` is the app folder, and `serving_root()` is `<asset_ref>/<build>` — we start the app folder, we serve the build. A row registered by `flow app serve` stays DB-only (`location_type: Artifact`, no `asset_ref`). |
+| asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by the `static` endpoint indexing gives it, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. |
+| `micro_app` (family `webapp`) | ours | The DEFINITION of a webapp: a REPO folder asset whose `webapp.json` declares `kind` / `build` / `endpoints`; `asset_ref` is the app folder. It serves nothing: indexing it gives it a `static` `ServiceEndpoint` (`<asset_ref>/<build>`, `webapp_id` = this row) on its project's placement, and that endpoint is what a display loads. On the hub, a builtin app's row is the same: its `hub`-provider placement's endpoints serve it. |
 
 ## Help desk (2026-09-02)
 

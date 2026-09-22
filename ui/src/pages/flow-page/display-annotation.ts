@@ -1,4 +1,3 @@
-import type { ShowTarget } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { ViewType } from '@sdk';
 import { isMarkdownDocumentPath } from '@src/lib/markdown-path';
@@ -15,7 +14,6 @@ export interface DisplayAnnotationContext {
   title: string;
   path?: string;
   url?: string;
-  port?: string;
   typeid?: string;
   type?: string;
   viewType?: string;
@@ -30,17 +28,18 @@ function slug(value: string): string {
     .slice(0, 48);
 }
 
-export function displayAnnotationContextForWebapp(
-  host?: string | null,
-  port?: string | number | null,
+/** A web page or app in the display: its URL and, for an app, the endpoint (or
+ *  artifact / definition) it was shown by — the agent resolves the app from that. */
+export function displayAnnotationContextForWebsite(
+  url?: string | null,
+  { name, typeid }: { name?: string | null; typeid?: string | null } = {},
 ): DisplayAnnotationContext {
-  const portText = port != null && port !== '' ? String(port) : undefined;
   return {
     kind: 'website',
-    title: portText ? `Website on port ${portText}` : 'Website',
-    url: host || undefined,
-    port: portText,
-    viewType: ViewType.WEB_APP,
+    title: name || 'Website',
+    url: url || undefined,
+    typeid: typeid || undefined,
+    viewType: typeid ? ViewType.APP : ViewType.WEB_APP,
   };
 }
 
@@ -61,43 +60,14 @@ export function displayAnnotationContextForPath(path: string): DisplayAnnotation
   };
 }
 
-export function displayAnnotationContextForShown(
-  shown: ShowTarget,
-  host?: string | null,
-  port?: string | number | null,
-): DisplayAnnotationContext {
-  if (shown.kind === 'webapp' || shown.kind === 'app') {
-    const context = displayAnnotationContextForWebapp(host, shown.port ?? port);
-    return shown.name ? { ...context, title: shown.name } : context;
-  }
-
-  if (shown.path) {
-    return displayAnnotationContextForPath(shown.path);
-  }
-
-  if (shown.kind === 'entity') {
-    const kind = shown.type === 'markdown' ? 'markdown-document' : 'asset';
-    return {
-      kind,
-      title: kind === 'markdown-document' ? 'Markdown document' : 'Asset',
-      type: shown.type,
-      typeid: shown.typeid,
-    };
-  }
-
-  return {
-    kind: 'active-view',
-    title: t`Active display`,
-    type: shown.type,
-    typeid: shown.typeid,
-  };
-}
-
 export function displayAnnotationContextForDock(dock?: DockPointer | null): DisplayAnnotationContext {
   if (!dock) return { kind: 'active-view', title: t`Active display` };
 
   if (dock.viewType === ViewType.WEB_APP) {
-    return displayAnnotationContextForWebapp(null, null);
+    return displayAnnotationContextForWebsite(dock.webUrl);
+  }
+  if (dock.viewType === ViewType.APP) {
+    return displayAnnotationContextForWebsite(null, { typeid: dock.pointer });
   }
 
   if (dock.viewType === ViewType.EDITOR && dock.pointer) {
@@ -213,7 +183,6 @@ export function buildDisplayAnnotationPrompt({
 
   if (context.path) lines.push(`Target path: ${context.path}`);
   if (context.url) lines.push(`Target URL: ${context.url}`);
-  if (context.port) lines.push(`Target port: ${context.port}`);
   if (context.type) lines.push(`Target type: ${context.type}`);
   if (context.typeid) lines.push(`Target typeid: ${context.typeid}`);
   if (context.viewType) lines.push(`Target view: ${context.viewType}`);

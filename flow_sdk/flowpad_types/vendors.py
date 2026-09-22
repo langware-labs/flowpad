@@ -1,4 +1,5 @@
-"""``VENDORS`` — the one table of facts about the four CLI harness vendors.
+"""``VENDORS`` — the one table of facts about the harness vendors (four vendor CLIs, plus the
+builtin ``deepagents`` package).
 
 Fifteen sites used to each carry their own vendor→something mapping (driver
 aliases, options factory, capability kinds, placement harness, dot-dirs,
@@ -33,6 +34,13 @@ class Vendor:
     dot_dir: str | None               # the vendor's home dot-dir (``vendor_for_path``); None when it has none
     session_entity_type: str | None   # entity type of a per-session file; None when sessions live in a store
     model_prefixes: tuple[str, ...]   # a model id with one of these prefixes is priced by this vendor
+    # Declared FACTS generic machinery asks instead of branching on a key:
+    hidden: bool = False                   # never offered by a picker; still spawnable by ``worker_type``
+    bootstrap: bool = False                # the worker of last resort for a BUILTIN process when no harness is installed
+    interactive: bool = True               # has a TUI a terminal tab can host; False = headless-only
+    python_module: str | None = None       # the harness is ``python -m <module>``, not a binary on PATH
+    python_requires: tuple[str, ...] = ()  # DISTRIBUTIONS whose presence makes a ``python_module`` harness "installed"
+    transcript_stems: tuple[str, ...] = ()  # FlowPad-written transcript filename stems, when there is no dot-dir to sniff
 
     @property
     def package(self) -> str:
@@ -87,6 +95,28 @@ VENDORS: tuple[Vendor, ...] = (
         dot_dir=None,  # sessions live in a SQLite store; the streamer watches a FlowPad-written file
         session_entity_type=None,
         model_prefixes=("openrouter/",),
+        transcript_stems=("opencode_transcript", "session_ses_"),
+    ),
+    # LangChain's ``deepagents`` harness behind OUR runner CLI. A Python package, not a binary:
+    # the builtin worker a box with nothing but an LLM endpoint still has. Headless-only and
+    # never offered by a picker.
+    Vendor(
+        key="deepagents",
+        label="Deep Agents",
+        account_noun="LLM endpoint",
+        worker_type="deepagents",
+        aliases=(),
+        harness="agents",
+        capability_kind="harness.deepagents.cli",
+        dot_dir=None,  # sessions are LangGraph checkpoints under the instance's deepagents_data_dir
+        session_entity_type=None,
+        model_prefixes=(),  # no price table of its own: priced by the claude table (the documented fallback)
+        hidden=True,
+        bootstrap=True,
+        interactive=False,
+        python_module="flow_sdk.builtin.agentic_process.cli_drivers.deepagents.runner",
+        python_requires=("deepagents", "langchain-openai", "langgraph-checkpoint-sqlite"),
+        transcript_stems=("deepagents_transcript",),
     ),
 )
 
@@ -98,10 +128,6 @@ for _v in VENDORS:
     _REGISTRY.register(_v, _v.key)
 
 VENDOR_KEYS: frozenset[str] = frozenset(_REGISTRY.kinds())
-
-#: Files FlowPad itself writes for a vendor with no dot-dir (opencode) — the
-#: streamer keys on the stem because there is no vendor path to sniff.
-_OPENCODE_STEMS = ("opencode_transcript", "session_ses_")
 
 
 def vendor_or_none(name: object) -> Vendor | None:
@@ -129,13 +155,19 @@ def vendor_by(attr: str, value: object) -> Vendor | None:
     return next((v for v in VENDORS if getattr(v, attr) == value), None)
 
 
+#: Capability kinds no user-facing list may show (``Vendor.hidden``). The ROW still exists —
+#: funding and the install gate are keyed on it — it is only never OFFERED.
+HIDDEN_CAPABILITY_KINDS: frozenset[str] = frozenset(v.capability_kind for v in VENDORS if v.hidden)
+
+
 def vendor_for_path(path: PurePath) -> Vendor | None:
-    """The vendor a transcript file belongs to: the dot-dir it sits under, else
-    the FlowPad-written opencode stem."""
+    """The vendor a transcript file belongs to: the dot-dir it sits under, else a
+    declared ``transcript_stems`` match — the files FlowPad itself writes for a
+    vendor with no dot-dir to sniff (opencode, deepagents)."""
     for v in VENDORS:
         if v.dot_dir and v.dot_dir in path.parts:
             return v
-    return _REGISTRY.get("opencode") if path.name.startswith(_OPENCODE_STEMS) else None
+    return next((v for v in VENDORS if v.transcript_stems and path.name.startswith(v.transcript_stems)), None)
 
 
-__all__ = ["VENDORS", "VENDOR_KEYS", "Vendor", "default_vendor", "vendor_by", "vendor_for", "vendor_for_path", "vendor_or_none"]
+__all__ = ["VENDORS", "VENDOR_KEYS", "Vendor", "HIDDEN_CAPABILITY_KINDS", "default_vendor", "vendor_by", "vendor_for", "vendor_for_path", "vendor_or_none"]

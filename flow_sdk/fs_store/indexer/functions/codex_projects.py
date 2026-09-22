@@ -16,10 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-try:
-    import tomllib as _tomllib  # type: ignore[import-not-found]
-except ImportError:
-    import tomli as _tomllib  # type: ignore[import-not-found,no-redef]
+import tomllib as _tomllib
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions

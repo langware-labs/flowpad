@@ -142,3 +142,44 @@ async def test_share_still_raises_on_a_real_failure(hub, status):
 
     assert proj.remote is not True
     assert [m for m, _ in hub["calls"]] == ["POST"], "a non-409 must not probe"
+
+
+_ROSTER = (
+    '{"status":"success","data":['
+    '{"user_email":"eran@langware.ai","role":"owner","status":"approved"},'
+    '{"user_email":"gadi@langware.ai","role":"member","status":"approved"}]}'
+)
+
+
+def _member_posts(hub) -> list[str]:
+    return [p for m, p in hub["calls"] if m == "POST" and p.endswith("/members")]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_resharing_to_an_existing_member_does_not_reinvite(hub):
+    """THE BUG: sharing a project again to someone who already has it failed.
+
+    The hub answers a re-invite with ``400 User has already accepted; use
+    change_role…``, which ``Project.share`` raised — so the Share dialog, which
+    grants on every share, refused to send the note to someone who already had
+    the course. An existing member already holds what this call grants.
+    """
+    hub["get"] = _FakeResponse(200, _ROSTER)
+    proj = _project()
+
+    assert await proj.share(recipients=["Gadi@Langware.ai"]) is proj
+    assert _member_posts(hub) == [], "an existing member must not be re-invited (case-insensitively)"
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_resharing_still_invites_the_people_who_are_new(hub):
+    """The roster read skips existing members only — a new person is still invited."""
+    hub["get"] = _FakeResponse(200, _ROSTER)
+    proj = _project()
+
+    await proj.share(recipients=["gadi@langware.ai", "noa@langware.ai"])
+    assert _member_posts(hub) == [f"/graph/project/{proj.id}/members"], "exactly one invite: the new person"
