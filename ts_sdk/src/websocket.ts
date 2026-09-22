@@ -31,6 +31,7 @@ type MessageType =
   | 'tag_msg'
   | 'ui_command'
   | 'recovered_msg'
+  | 'file_changed_msg'
   | 'broadcast';
 
 
@@ -640,6 +641,11 @@ export class ConnectionManager extends EventEmitter {
     }
     if (data.message_type === 'recovered_msg') {
       return this.onRecoveredMessage(data);
+    }
+    if (data.message_type === 'file_changed_msg') {
+      // A file this connection watches changed on disk (fs/watch). FSManager
+      // routes it to the watchers of that path.
+      return this.emit('on_file_changed', data);
     }
     if (data.message_type === 'broadcast') {
       return this.onBroadcastMessage(data as BroadcastMessage);

@@ -601,6 +601,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         {isCustomView && isSnippet && snippetPath ? (
           <SnippetView
             path={snippetPath}
+            watch={effectiveTypeId && effectiveFilePath ? { typeid: effectiveTypeId, path: effectiveFilePath } : undefined}
             language={file.language}
             revision={fileContent}
             readOnly={readOnly}

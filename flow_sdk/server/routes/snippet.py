@@ -19,9 +19,11 @@ from flow_sdk.core.snippet import (
     SnippetReadRequest,
     SnippetRunRequest,
     SnippetSaveRequest,
+    SnippetStopRequest,
     edit_region,
     read_snippet,
     run_snippet,
+    stop_snippet,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
@@ -37,7 +39,7 @@ def _view(path: Path, doc: SnippetDoc) -> dict:
     file line that text starts on — so the viewer numbers lines the way a
     traceback does."""
     regions = []
-    line = doc.preamble.count("\n") + 1
+    line = 1
     for i, r in enumerate(doc.regions):
         line += r.marker.count("\n")
         regions.append({"index": i, "kind": r.kind, "shown": r.shown, "line": line})
@@ -90,5 +92,13 @@ def snippet_save(req: SnippetSaveRequest):
 async def snippet_run(req: SnippetRunRequest):
     """Run the file as written. Always succeeds at the HTTP level: a crash, a
     compile error and a timeout are all a ``CliResult`` to show, not a failure."""
-    result = await run_snippet(Path(req.path), timeout_seconds=req.timeout_seconds)
+    result = await run_snippet(
+        Path(req.path), timeout_seconds=req.timeout_seconds, run_id=req.run_id, connection_id=req.connection_id
+    )
     return ApiSuccessResponse(data=result.model_dump())
+
+
+@router.post("/api/v1/snippet/stop")
+async def snippet_stop(req: SnippetStopRequest):
+    """Stop a run by the id its caller gave it. ``stopped: false`` = it already ended."""
+    return ApiSuccessResponse(data={"stopped": stop_snippet(req.run_id)})
