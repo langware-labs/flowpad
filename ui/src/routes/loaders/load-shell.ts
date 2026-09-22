@@ -32,8 +32,10 @@ import {
   ShellStatus,
   systemTools,
   tabManager,
+  toplog,
   TypeId,
 } from '@sdk';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
@@ -349,6 +351,10 @@ async function routeProcessPointer(
     // sibling class of bugs after a backend restart. (Scope is already
     // aligned above, before this phase ran.)
     if (e.severity === 'soft') {
+      toplog.log(
+        'tab_switch',
+        `error ${sinceTabSwitch()} sink=process_runtime_soft kind=${e.kind} proc=${processId.slice(0, 8)}`,
+      );
       dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
       dataContext.setTerminalRuntimeError({
         kind: e.kind as Exclude<typeof e.kind, 'entity_not_found'>,
@@ -365,6 +371,10 @@ async function routeProcessPointer(
     // Hard failure — the URL itself is dead. Fall back to the next
     // candidate and ``replace()`` so BACK doesn't re-trigger this loader.
     const directCleanup = buildProcessCleanup(e);
+    toplog.log(
+      'tab_switch',
+      `error ${sinceTabSwitch()} sink=process_missing kind=${e.kind} proc=${processId.slice(0, 8)} → fallback`,
+    );
     const next = await loadNextProcess({
       excludeIds: new Set([processId]),
       projectId: dataContext.project?.id ?? null,
@@ -433,6 +443,7 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
 
     // See routeProcessPointer for rationale on `replace`.
     const directCleanup = await buildShellCleanup(e);
+    toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=shell_missing kind=${e.kind} shell=${shellId.slice(0, 8)} → fallback`);
     const next = await loadNextProcess({
       excludeIds: new Set([shellId]),
       projectId: dataContext.project?.id ?? null,
@@ -488,6 +499,7 @@ export async function loadShellRoute(
   try {
     await perfTime('connectionManager.waitForConnected', () => connectionManager.waitForConnected(5000));
   } catch {
+    toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=no_realtime waited_ms=5000`);
     notify.error({
       title: t`No realtime connection`,
       message: t`Terminal may be unresponsive until the connection recovers.`,

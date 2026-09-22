@@ -1,4 +1,4 @@
-"""Inbound mail runs through the owning Agent's launch bundle."""
+"""Inbound mail runs through the owning Agent's launch bundle, on its placement's turn engine."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.agent_serve import TurnEngine, answer
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.responses.response import ApiFailResponse
-from flow_sdk.stream_inbox.agent_runner import _reuse_or_spawn_agent_process, handle_inbound
 from flow_sdk.stream_inbox.projection import channel_of, thread_key_for
 
 pytestmark = pytest.mark.asyncio
@@ -34,8 +34,9 @@ async def test_mail_process_uses_agent_deployment_bundle_and_is_reused(mail_db, 
     agent = await _agent(f"mail-runtime-{mint_uuid()[:8]}")
     conversation_id = mint_uuid()
 
-    first = await _reuse_or_spawn_agent_process(agent, conversation_id, str(tmp_path))
-    second = await _reuse_or_spawn_agent_process(agent, conversation_id, str(tmp_path))
+    engine = TurnEngine(agent, await agent.local_deployment(), workdir=str(tmp_path))
+    first = await engine.process_for(f"conversation-{conversation_id}")
+    second = await engine.process_for(f"conversation-{conversation_id}")
 
     assert second.id == first.id
     assert first.target_typeid_str == f"conversation-{conversation_id}"
@@ -90,4 +91,20 @@ async def test_prompt_refusal_is_checked_before_reply_capture(mail_db, monkeypat
         must_not_capture,
     )
 
-    assert await handle_inbound(item) is False
+    assert await answer(TurnEngine(agent, await agent.local_deployment()), source, _Delivered(item)) is False
+
+
+class _Delivered:
+    """What the serve loop hands over: the row's fields, and a reply that must not happen here."""
+
+    def __init__(self, row):
+        self._row = row
+
+    def __getattr__(self, name):
+        return getattr(self._row, name)
+
+    async def reply_spec(self, **_k):
+        raise AssertionError("a refused turn replied")
+
+    async def reply(self, _spec):
+        raise AssertionError("a refused turn replied")

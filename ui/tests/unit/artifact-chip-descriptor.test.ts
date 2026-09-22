@@ -65,15 +65,14 @@ describe('describeEvent — flow artifact chips', () => {
     expect(d.target).toEqual({ kind: 'vfs', path: '/repo/out/report.md' });
   });
 
-  it('targets the port preview a `flow artifact webapp` addressed', () => {
-    const d = describeEvent(artifactFrame('webapp', '3000'));
-
-    expect(d.target).toEqual({ kind: 'webapp', port: 3000 });
+  it('leaves `flow artifact webapp <port>` unclickable — a port is not an address', () => {
+    // The command registered an ENDPOINT for that port; the command line never
+    // names its id, and a port is not something the display can open.
+    expect(describeEvent(artifactFrame('webapp', '3000')).target).toBeNull();
   });
 
   it('leaves an unresolvable reference unclickable rather than guessing', () => {
     expect(describeEvent(artifactFrame('entity', 'not-a-typeid')).target).toBeNull();
-    expect(describeEvent(artifactFrame('webapp', 'not-a-port')).target).toBeNull();
     expect(describeEvent(artifactFrame(null, null)).target).toBeNull();
   });
 

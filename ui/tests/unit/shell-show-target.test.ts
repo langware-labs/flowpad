@@ -22,7 +22,6 @@ describe('shellIdFromShowTarget', () => {
   it.each([
     ['an entity target', { kind: 'entity', type: 'markdown', id: SHELL_ID }],
     ['a vfs target', { kind: 'vfs' }],
-    ['a webapp target', { kind: 'webapp' }],
     ['an app target', { kind: 'app', id: SHELL_ID }],
     ['null', null],
     ['undefined', undefined],
@@ -39,7 +38,6 @@ describe('openDisplayTarget', () => {
   function navStub() {
     return {
       openShell: vi.fn().mockResolvedValue(null),
-      openWebApp: vi.fn(),
       openDock: vi.fn(),
       openFile: vi.fn(),
       openShellProcess: vi.fn(),
@@ -56,11 +54,11 @@ describe('openDisplayTarget', () => {
     expect((nav as unknown as { openDock: ReturnType<typeof vi.fn> }).openDock).not.toHaveBeenCalled();
   });
 
-  it('still routes a webapp target to the port preview', () => {
+  it('still routes an app target to the app dock', () => {
     const nav = navStub();
-    openDisplayTarget({ kind: 'webapp', port: 3000 }, nav);
+    openDisplayTarget({ kind: 'app', typeid: 'service_endpoint-e1', runtime: 'dev' }, nav);
 
-    expect((nav as unknown as { openWebApp: ReturnType<typeof vi.fn> }).openWebApp).toHaveBeenCalledWith('3000');
+    expect((nav as unknown as { openDock: ReturnType<typeof vi.fn> }).openDock).toHaveBeenCalledTimes(1);
     expect(nav.openShell).not.toHaveBeenCalled();
   });
 });

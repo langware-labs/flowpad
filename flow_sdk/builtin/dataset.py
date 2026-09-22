@@ -45,7 +45,8 @@ from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.json_body import current_user_id, read_json_body
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
-from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec, DatasetSpecType
+from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec
 from flow_sdk.schema.data_spec.dataset_spec import (  # noqa: F401 — enums re-exported
     DEFAULT_DATASET_SPEC,
     DataLayoutEnum,
@@ -100,7 +101,7 @@ class Dataset(Entity):
 
     # The shape every row has. `None` — the dataset declares no shape — is legal
     # and validates rows against DEFAULT_DATASET_SPEC. See datasets.md.
-    spec: Optional[DatasetSpecType] = APIField(None)
+    spec: Optional[ShapeForm] = APIField(None)
 
     # The rows. EAGER — `from_fs` reads them all — but DB-excluded: the record
     # file and `from_fs_ref` carry them, the SQLite row does not.
@@ -144,13 +145,23 @@ class Dataset(Entity):
 
     # ── the curation seam: SourceItem → example → gold ───────────────────
 
+    def _example_type(self) -> Any:
+        """The declared example shape, compiled.
+
+        ``spec`` holds the authoring FORM (it is a document field, so it is
+        data); a class is built only here, where one is actually needed.
+        ``DatasetSpec.parse`` rather than ``DataSpec.parse`` — a dataset form
+        names ``examples``, not fields.
+        """
+        return DatasetSpec.parse(self.spec) if self.spec else DEFAULT_DATASET_SPEC
+
     @property
     def input_shape(self) -> Any:
-        return (self.spec or DEFAULT_DATASET_SPEC).example_type().input_type()
+        return self._example_type().example_type().input_type()
 
     @property
     def output_shape(self) -> Any:
-        return (self.spec or DEFAULT_DATASET_SPEC).example_type().output_type()
+        return self._example_type().example_type().output_type()
 
     def _folder(self) -> Path:
         if not self.asset_ref:
@@ -160,11 +171,11 @@ class Dataset(Entity):
     def _index(self) -> List[Dict[str, Any]]:
         """Per-example scalars from the folder — the cheap read (one
         ``example.json`` per dir), never the typed payloads."""
-        from flow_sdk.schema.data_spec.layout import layout_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
         if self.data_layout != DataLayoutEnum.IO_FOLDER or not self.asset_ref:
             return []
-        return layout_for(self.data_layout).index(self._folder(), dataset_id=self.id)
+        return dataset_layout_for(self.data_layout).index(self._folder(), dataset_id=self.id)
 
     async def _counts_from_disk(self) -> "Dataset":
         """Re-derive the denormalized counts after a per-example write, and
@@ -196,12 +207,12 @@ class Dataset(Entity):
         ``ValueError`` when the dataset cannot take source items."""
         from flow_sdk.builtin.source_item import SourceItem
         from flow_sdk.schema.data_spec.dataset_spec import FileRef, FolderSpec  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.layout import INPUT, layout_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import INPUT, dataset_layout_for  # noqa: PLC0415
         from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
         if self.input_shape is not SourceItemSpec:
             raise ValueError('this dataset does not take source items — its spec input must be "ingest.source_item"')
-        layout = layout_for(self.data_layout)   # a CSV layout refuses `append` itself
+        layout = dataset_layout_for(self.data_layout)   # a CSV layout refuses `append` itself
         wanted = [str(i) for i in item_ids]
         rows = {item.id: item for item in await SourceItem.get_all(
             QueryFilter(type=SourceItem.get_type(), match=ExpressionNode(op=QueryOp.IN, operands=["id", wanted]))
@@ -229,11 +240,11 @@ class Dataset(Entity):
         (``ValidationError``) and written as ``ground_truth/label.json``."""
         from pydantic import TypeAdapter  # noqa: PLC0415
 
-        from flow_sdk.schema.data_spec.layout import layout_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
         gold = TypeAdapter(self.output_shape).validate_python(ground_truth)
         payload = gold.model_dump(mode="json") if hasattr(gold, "model_dump") else gold
-        layout_for(self.data_layout).annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by)
+        dataset_layout_for(self.data_layout).annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by)
 
     @action.post(action_name="promote")
     async def promote_action(self):

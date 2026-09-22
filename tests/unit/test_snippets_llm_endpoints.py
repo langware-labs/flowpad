@@ -18,6 +18,13 @@ import pytest
 SNIPPET_DOC = Path(__file__).resolve().parents[2] / "docs" / "snippets" / "llm-endpoints.md"
 
 
+def test_the_loginless_snippet_is_the_file_the_container_runs():
+    """§7 shows a whole script, and the docker acceptance runs that script from a FILE. Quoting
+    it by hand is how a doc ends up showing code that was never the code that passed."""
+    script = SNIPPET_DOC.parents[2] / "tests" / "loginless_e2e" / "agentic_process_snippet.py"
+    assert f"```python\n{script.read_text()}```" in _doc()
+
+
 def _doc() -> str:
     return SNIPPET_DOC.read_text()
 

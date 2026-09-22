@@ -149,11 +149,12 @@ export function describeEvent(fd: FlowData): EventDescriptor {
 }
 
 /**
- * `flow <verb> entity <typeid>` opens that entity, `… file <path>` opens the
- * file, `… webapp <port>` opens the port preview — the three addressing forms
- * `_TARGETED` derives (flow_sdk/transcript_analyzer/derive.py). Anything else
- * (a bare `flow record`, an unrecognized target) stays a payload popover rather
- * than guessing a destination.
+ * `flow <verb> entity <typeid>` opens that entity and `… file <path>` opens the
+ * file — two of the addressing forms `_TARGETED` derives
+ * (flow_sdk/transcript_analyzer/derive.py). `… webapp <port>` has no chip target:
+ * a port is not an address (the show registered an ENDPOINT, whose id the command
+ * line never names), so it stays a payload popover like anything else
+ * unrecognized, rather than guessing a destination.
  *
  * For `flow artifact` the target is the REFERENCED asset, never the Artifact
  * row that records it: the artifact is the receipt, the chip opens the thing.
@@ -166,9 +167,5 @@ function flowTarget(subverb: string, target: string): ChipTarget {
     return { kind: 'entity', typeid: target, type: new TypeId(target).type };
   }
   if (subverb === 'file') return filePath(target);
-  if (subverb === 'webapp') {
-    const port = Number(target);
-    return Number.isInteger(port) && port > 0 ? { kind: 'webapp', port } : null;
-  }
   return null;
 }

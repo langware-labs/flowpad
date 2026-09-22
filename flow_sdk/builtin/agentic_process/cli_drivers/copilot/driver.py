@@ -142,6 +142,11 @@ class CopilotDriver:
         ends a turn on the IDLE that follows a new one of these."""
         return entry.get("type") == "user.message"
 
+    @staticmethod
+    def pty_turn_complete(entry: "Any", *, active_turn_id: str | None) -> bool:  # noqa: ARG004
+        """Copilot records ``assistant.turn_end`` at the close of a turn."""
+        return getattr(entry, "subtype", "") == "assistant.turn_end"
+
     def cli_options(self, process: "AgenticProcess") -> CopilotAgentOptions:
         cmd = CopilotAgentOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id

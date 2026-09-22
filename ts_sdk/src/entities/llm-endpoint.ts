@@ -18,6 +18,8 @@ export type LLMStreamingPolicy = 'allow' | 'require' | 'deny';
 export interface LLMEndpointFilters {
   models_allow: string[];
   models_deny: string[];
+  /** Upstream hosts an OpenRouter root must not be routed to (OpenRouter's names, e.g. `Novita`). */
+  providers_ignore: string[];
   max_tokens_ceiling: number | null;
   max_input_chars: number | null;
   temperature_max: number | null;
@@ -46,6 +48,7 @@ export type LLMEndpointKind = 'root' | 'chain';
 export const DEFAULT_LLM_FILTERS: LLMEndpointFilters = {
   models_allow: [],
   models_deny: [],
+  providers_ignore: [],
   max_tokens_ceiling: null,
   max_input_chars: null,
   temperature_max: null,
@@ -79,6 +82,7 @@ export interface ILLMEndpoint extends IEntity {
   limits?: Partial<LLMEndpointLimits>;
   member_default_limits?: Partial<LLMEndpointLimits>;
   credential_hint?: string;
+  public?: boolean;
 }
 
 @registerEntity
@@ -101,6 +105,11 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
    *  (`MemberBudget.user_id`) and the box through `LLMEndpointOffer.holder_typeid`. */
   /** `""` or `****abcd`; read-only, written by the hub's credential action. */
   credential_hint: string = '';
+  /**
+   * Spendable by whoever holds the id, with no login (`flow llm user use <id>`). Read-only:
+   * toggled by the hub's `public` action, which refuses an endpoint with no cost limit.
+   */
+  public: boolean = false;
 
   constructor(entity: Partial<ILLMEndpoint> = {}) {
     super(entity);
@@ -113,6 +122,7 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
     this.limits = { ...DEFAULT_LLM_LIMITS, ...(entity.limits ?? {}) };
     this.member_default_limits = { ...DEFAULT_LLM_LIMITS, ...(entity.member_default_limits ?? {}) };
     this.credential_hint = entity.credential_hint ?? this.credential_hint;
+    this.public = entity.public ?? this.public;
   }
 
   /** Root ⇔ no sources. Derived, never stored. */

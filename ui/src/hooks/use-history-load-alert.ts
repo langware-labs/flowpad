@@ -1,4 +1,5 @@
-import type { AgenticProcess } from '@sdk';
+import { toplog, type AgenticProcess } from '@sdk';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { notify } from '@src/notifications';
 import { useLingui } from '@lingui/react/macro';
 import { useEffect } from 'react';
@@ -37,6 +38,8 @@ export function useHistoryLoadAlert(process: AgenticProcess | null | undefined):
     if (typeof process?.on !== 'function') return;
 
     const onHistoryError = ({ error }: { error: unknown }) => {
+      // `tab_switch` error sink: the pane now renders as an empty session.
+      toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=process_history proc=${process.id.slice(0, 8)} err:`, error);
       const detail = error instanceof Error ? error.message : String(error);
       notify.error({
         // Keyed by process so two open sessions failing don't overwrite each

@@ -35,7 +35,7 @@ export type WebappIssueCode =
   | 'failed_requests'
   | 'ok';
 
-/** Result of the backend `probe-webapp` action (Level A + optional Level B). */
+/** Result of `service_endpoint/<id>/probe` (Level A + optional Level B). */
 export interface WebappProbe {
   reachable: boolean;
   is_http: boolean;

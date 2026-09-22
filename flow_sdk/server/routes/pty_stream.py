@@ -14,7 +14,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from flow_sdk import toplog
-from flow_sdk.responses.response import ApiSuccessResponse
+from flow_sdk.responses.response import ApiResponseStatus
 
 router = APIRouter()
 
@@ -40,12 +40,20 @@ async def get_pty_stream(shell_id: str) -> JSONResponse:
     frames = PtyStreamFile(path=path).read_frames()
     if frames is None:
         return JSONResponse({"error": "no stream recorded"}, status_code=404)
-    # Parses the whole stream file on the event loop — a slow line here stalls
-    # every terminal on this backend, not just the one being mounted.
+    t_read = time.monotonic()
+    # The standard envelope (the ts_sdk axios interceptor unwraps
+    # response.data.data), built by hand rather than via ApiSuccessResponse:
+    # FastAPI runs a returned model through ``jsonable_encoder``, which walks
+    # every event in Python on the event loop — the frames came out of
+    # ``json.loads``, so one ``json.dumps`` gives the same bytes. See
+    # tests/unit/test_pty_stream_route_does_not_reencode.py.
+    response = JSONResponse({"status": ApiResponseStatus.SUCCESS.value, "message": "success", "data": frames})
+    # Both halves run on the event loop — a slow line here stalls every
+    # terminal on this backend, not just the one being mounted.
     if toplog.is_on("pty"):
         toplog.log(
-            "pty", "stream_read shell=%s bytes=%s events=%s ms=%.0f",
-            shell_id, path.stat().st_size, len(frames["events"]), (time.monotonic() - t0) * 1000,
+            "pty", "stream_read shell=%s bytes=%s events=%s ms=%.0f render_ms=%.0f",
+            shell_id, path.stat().st_size, len(frames["events"]),
+            (t_read - t0) * 1000, (time.monotonic() - t_read) * 1000,
         )
-    # Standard envelope — the ts_sdk axios interceptor unwraps response.data.data
-    return ApiSuccessResponse(data=frames)
+    return response

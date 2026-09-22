@@ -142,9 +142,9 @@ class HarnessWorker:
         instruction = fetch_instruction(row, config, receipt_path, mailbox=mailbox, since=since)
         proc.instruction_content = instruction
         await proc.save()
-        response = await proc.prompt(instruction)
-        if getattr(response, "status", None) and str(response.status).upper().endswith("FAIL"):
-            raise SourceError.transient("launch_failed", str(getattr(response, "message", "") or "prompt refused"))
+        taken = await proc.send_turn(instruction)
+        if not taken.ok:
+            raise SourceError.transient("launch_failed", taken.detail or "prompt refused")
         await proc.wait()
         try:
             await proc.exit()
@@ -184,9 +184,9 @@ class HarnessWorker:
         instruction = send_instruction(row, config, receipt_path, thread_key=thread_key, to=to, text=text, subject=subject)
         proc.instruction_content = instruction
         await proc.save()
-        response = await proc.prompt(instruction)
-        if getattr(response, "status", None) and str(response.status).upper().endswith("FAIL"):
-            raise LaunchError.config(LaunchErrorCode.UNKNOWN, str(getattr(response, "message", "") or "prompt refused"), "")
+        taken = await proc.send_turn(instruction)
+        if not taken.ok:
+            raise LaunchError.config(LaunchErrorCode.UNKNOWN, taken.detail or "prompt refused", "")
         await proc.wait()
         try:
             await proc.exit()

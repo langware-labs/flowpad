@@ -269,6 +269,7 @@ except ImportError as e:
 try:
     from flow_sdk.builtin.artifact import Artifact  # noqa: F401
     from flow_sdk.builtin.deployment import Deployment  # noqa: F401
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Artifact/Deployment entities: {e}")
 

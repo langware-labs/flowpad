@@ -24,7 +24,7 @@ rm -rf "${DIR}/wheels"; mkdir -p "${DIR}/wheels"
 uv build --wheel --out-dir "${DIR}/wheels" >/dev/null
 ls "${DIR}/wheels"/*.whl >/dev/null || { echo "FAIL: no wheel built" >&2; exit 1; }
 
-echo "## building image (python:3.10-slim — no node, no CLIs)"
+echo "## building image (python:3.11-slim — no node, no CLIs)"
 docker build -q -t "$IMAGE" "$DIR" >/dev/null
 
 echo "## running"

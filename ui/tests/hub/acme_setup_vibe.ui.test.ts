@@ -9,7 +9,7 @@
  *   - copy-mode webapp-artifact carrier (folder bytes ride in the bundle),
  *   - install → `_finalize_install` → `Entity.setup_on_receive` returning a
  *     DisplayTarget pointing at a spawned agentic_process,
- *   - the Vibe webapp preview (WebappViewer → get-host) rendering the served app.
+ *   - the Vibe app display (by the app's ServiceEndpoint) rendering the served app.
  *
  * Requires a local hub and launched dev instances (WITH frontends):
  *   scripts/instance_ctl.sh launch dev-1 && scripts/instance_ctl.sh launch dev-2

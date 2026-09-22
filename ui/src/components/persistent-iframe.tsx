@@ -325,13 +325,12 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
 
     // NOTE: there used to be a pre-flight availability probe here --
     // `fetch(src, { redirect: 'manual' })`, treating `status >= 400` as "not
-    // available". It could never work. `src` is the backend's `get-host` action,
-    // which answers 307, and `redirect: 'manual'` turns that into an OPAQUE
-    // REDIRECT whose status is always 0 -- measured identical whether the dev
-    // server behind it was alive or refusing connections. It therefore reported
-    // "available" unconditionally, and its `catch` for connection-refused was
-    // unreachable. Availability is now decided by `useWebappDiagnostics`, which
-    // asks the backend to probe the port directly. This component is purely the
+    // available". It could never work: a cross-origin `src` answers opaquely, with
+    // a status that is always 0 -- measured identical whether the dev server was
+    // alive or refusing connections. It therefore reported "available"
+    // unconditionally, and its `catch` for connection-refused was unreachable.
+    // Availability is decided by `useWebappDiagnostics`, which asks the endpoint's
+    // machine to probe its port directly. This component is purely the
     // mechanism: it mounts a frame and reports load state.
     const cacheKeyRef = useRef(cacheKey);
 

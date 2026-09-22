@@ -1,7 +1,7 @@
 """Filesystem contracts independent of application entities."""
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
@@ -139,10 +139,16 @@ class AuthSpec(DataSpec):
 class DataDriverSpec(DataSpec):
     """``data_driver.json`` — the shape, with every authoring rule as a validator."""
 
+    main_file: ClassVar[str | None] = "data_driver.json"
+
     model_config = ConfigDict(populate_by_name=True)   # extra="forbid" is DataSpec's
 
     #: The registry key AND the folder name. One noun: `rss` resolves the folder's own source class.
     name: str
+    #: Whose ontology this driver's kinds belong to; blank is ours. Declared here
+    #: rather than inherited because ``DataDriverSpec`` is a plain ``DataSpec``,
+    #: not an ``AssetDocumentSpec`` — see the re-basing follow-up.
+    ns: str = ""
     title: str = ""
     description: str = ""
     #: The record kind a source row carries (``datasource.api.slack``); ``datasource.<name>`` when omitted.

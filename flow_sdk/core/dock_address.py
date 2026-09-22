@@ -116,6 +116,9 @@ class ViewType(StrEnum):
     SKILLS = "skills"  # Retired: folded into assets `list/skill`
     AI_CONFIG = "ai-config"  # AI configuration (LLM APIs, CLIs)
     SHOW = "show"  # MCP UI display dock pointer
+    # A question a ComputeOp put to a person. Drawn on its own in `win/`, where
+    # the routed view IS the window — the pointer is the question's id.
+    ASK = "ask"
     APPS = "apps"  # Skill UI apps - /dock/apps/<uname>/<router>
     GRAPH = "graph"  # Dep-graph viewer - /dock/graph/<type>/<id>
     WORLDVIEW = "worldview"  # /dock[/hub]/worldview/<world|organization|deployment>
@@ -162,7 +165,7 @@ class ViewType(StrEnum):
     CREDENTIALS = "credentials"  # Env vars + OAuth connections + API keys
     # An Artifact-backed web app - /dock/app/artifact-<uuid>[?runtime=dev|served].
     # The ADDRESS is the artifact (the source plane); the runtime it is served from
-    # is DERIVED at resolve time from its Deployment/MicroApp companions, so a dev
+    # is DERIVED at resolve time from its Deployment/WebApp companions, so a dev
     # server that dies or a build that lands never changes the app's identity.
     # Named `app`, not `artifact`: `artifact` is a real EntityType, and a ViewType
     # whose string shadows one mints entity targets from a bare-id pointer
@@ -383,6 +386,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.SKILLS: _m(_OPT, addressable=False),
     ViewType.AI_CONFIG: _m(_OPT, label="AI Configuration", aliases=("ai config", "llm apis", "models", "clis")),
     ViewType.SHOW: _m(_REQ, label="Show"),
+    # Fullbleed: the question IS the window, so there is no workspace around it.
+    ViewType.ASK: _m(_REQ, label="Ask", chrome="fullbleed"),
     ViewType.APPS: _m(_REQ, folds_sub_pointer=True, label="Skill apps"),
     ViewType.GRAPH: _m(_REQ, label="Graph", aliases=("dep graph", "dependency graph")),
     ViewType.WORLDVIEW: _m(_REQ, label="WorldView", aliases=("world", "org graph"), pages=("desk", "hub")),

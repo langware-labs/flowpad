@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Iterator, Mapping
 
 #: ``(path, request_headers) -> (status, body, response_headers)``
@@ -49,7 +49,14 @@ def local_http_server(respond: Responder) -> Iterator[str]:
         def log_message(self, *args):  # keep test output clean
             pass
 
-    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    # THREADING, not the one-request-at-a-time HTTPServer: a client that opens a
+    # connection and never finishes its request — an outbound send cancelled
+    # mid-flight when a test cancels its loop task — parks the handler, and a
+    # single-threaded `serve_forever` cannot then reach its own shutdown check.
+    # Teardown blocked in `server.shutdown()` until pytest-timeout killed the
+    # run (CI, test_3_variant_b_answers_on_the_channel). Handler threads are
+    # daemons, so a parked one neither blocks `shutdown()` nor `server_close()`.
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     # A short shutdown poll: `serve_forever` checks for `shutdown()` once per interval.
     threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True).start()
     try:

@@ -4,6 +4,7 @@ import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { GraphEngine, type NodeData } from './graph/graphEngine';
 import { AtlasGraphRenderer } from './graph/AtlasGraphRenderer';
+import { nodeDataForGraph } from './graph/graphModel';
 import type { GraphRenderer } from './graph/graphRenderer';
 import { loadDepGraph, rebuildDepGraph, type GraphLayout } from './graph/loadDepGraph';
 import { loadWorldView, refreshWorldView } from './graph/loadWorldView';
@@ -88,9 +89,12 @@ export function GraphView({
   const [reloadKey, setReloadKey] = useState(0);
   const [localVisibleCount, setLocalVisibleCount] = useState(0);
 
+  // Read from the graph this memo depends on — not the engine, which is built in an effect
+  // AFTER `graph` lands: a URL that arrives with `selected` (a shared or reloaded link) was
+  // read before the engine existed, answered null, and never re-read.
   const selected = useMemo<NodeData | null>(() => {
     if (!graph || !urlState.selected) return null;
-    return engineRef.current?.getNodeData(urlState.selected) ?? null;
+    return nodeDataForGraph(graph, urlState.selected);
   }, [graph, urlState.selected]);
 
   const navigateSelection = useCallback((key: string | null) => setUrlStateRef.current({ selected: key }), []);

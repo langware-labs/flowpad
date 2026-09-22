@@ -724,3 +724,55 @@ async def test_a_hub_that_sends_no_expansion_leaves_the_answer_unknown(env, monk
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
     assert (await fetch_hub_llm_endpoints())[0].can_administer is None
+
+
+# ── a PUBLIC binding: bound by id, with no hub login ──────────────────────────────
+
+
+def test_a_public_binding_round_trips_with_the_hub_it_was_told_about(env) -> None:
+    """``public`` and the origin live ON the binding: a loginless box has no listing to learn
+    either from, and no hub of its own for ``FLOWPAD_HUB_URL`` to name."""
+    from flow_sdk.instance_settings import llm_endpoint
+
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH, public=True, hub_origin="https://open.hub/")
+    llm_endpoint.reset_cache()  # force the read back off disk
+
+    bound = llm_endpoint.get_hub_llm_endpoint()
+    assert bound is not None and (bound.public, bound.hub_origin) == (True, "https://open.hub")
+    assert llm_endpoint.public_binding("llm_endpoint:ep1") is bound
+    assert llm_endpoint.public_binding("llm_endpoint:other") is None
+    assert llm_endpoint.hub_llm_endpoint_invoke_url() == f"https://open.hub{INVOKE_PATH}"
+    # The origin belongs to THAT endpoint; any other hub call still goes to this box's own hub.
+    assert llm_endpoint.hub_origin("llm_endpoint:other") == llm_endpoint.hub_origin()
+
+
+def test_a_pushed_binding_never_carries_an_origin(env) -> None:
+    """Only a public binding may name its hub. A pushed one that did would pin a signed-in box
+    to wherever it was first bound -- the very thing reading the origin at call time avoids."""
+    from flow_sdk.instance_settings import llm_endpoint
+
+    bound = llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH, hub_origin="https://elsewhere")
+    assert (bound.public, bound.hub_origin) == (False, "")
+    with pytest.raises(ValueError, match="http"):
+        llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH, public=True, hub_origin="open.hub")
+
+
+async def test_a_refresh_never_drops_a_public_binding(env, monkeypatch) -> None:
+    """The twin of the drop test above, and the reason it needs an exemption.
+
+    A listing is scoped to what the CALLER holds. A public endpoint is spendable precisely by
+    people who hold nothing on it, so it is absent from every such listing by construction --
+    and a box that signs in to some unrelated account must not lose the budget it runs on.
+    """
+    import time
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import hub_llm_endpoint_status
+    from flow_sdk.instance_settings import llm_endpoint
+
+    _login()
+    llm_endpoint.set_hub_llm_endpoint("llm_endpoint:open", INVOKE_PATH, public=True, hub_origin="https://open.hub")
+    llm_endpoint._list_cache[llm_endpoint.get_instance_settings().instance_name] = (time.monotonic() + 1, [])
+
+    status = await hub_llm_endpoint_status()
+    assert (status["endpoint_typeid"], status["public"]) == ("llm_endpoint:open", True)
+    assert llm_endpoint.get_hub_llm_endpoint() is not None

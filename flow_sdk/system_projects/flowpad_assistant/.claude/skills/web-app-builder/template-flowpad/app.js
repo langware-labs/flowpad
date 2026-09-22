@@ -32,17 +32,17 @@ let projectTypeIdPromise = null;
  *
  * Load-bearing: `save()` with no scope places the entity outside any project
  * (`~/agentic-assets/…`), where the user's project task list will never show
- * it. The app is served at `/api/v1/graph/micro_app/<id>/view`, and that
- * MicroApp row carries `project_id` — so the app can read its own identity out
- * of its own URL rather than being told, and rather than assuming the SDK's
+ * it. The app is served by its endpoint at `/api/v1/graph/service_endpoint/<id>/service/`,
+ * whose WebApp row carries `project_id` — so the app can read its own identity
+ * out of its own URL rather than being told, and rather than assuming the SDK's
  * default project (which is the backend's default, not this app's).
  */
 /**
  * The project this app belongs to — and, when it is nested inside another asset,
  * what that asset is.
  *
- * Both come from `sdk.resolveAppHost()`, which reads the app's own delivery row
- * out of the page's path: `app` is this webapp, `subject` is the asset that
+ * Both come from `sdk.resolveAppHost()`, which reads the endpoint serving the page
+ * out of its path and follows it to the app's definition: `app` is this webapp, `subject` is the asset that
  * CONTAINS it (null at top level). An editor nested in an asset uses `subject`
  * to know what it edits — see the README.
  */
@@ -51,7 +51,7 @@ async function resolveProjectTypeId() {
     const { app } = await sdk.resolveAppHost();
     if (app?.project_id) return new sdk.TypeId('project', app.project_id);
   } catch (error) {
-    // Served some other way (a dev server has no micro_app in its path).
+    // Served some other way (a dev server has no endpoint in its path).
     console.warn('[app] could not resolve owning project, falling back', error);
   }
   return sdk.dataContext.projectTypeId ?? null;

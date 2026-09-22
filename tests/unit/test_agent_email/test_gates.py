@@ -8,7 +8,8 @@ decide before anything expensive — or dangerous — happens.
 The file splits deliberately. The policy cases below build an ``AgentMailbox``
 directly and stay PURE — no row, no asset, no network — because
 ``mailbox.allowed()`` runs on every inbound message and must never reach the Hub.
-The rest drive ``handle_inbound`` and pin behaviour rather than shape.
+The rest drive the serve loop's per-message ``answer`` on an engine that
+must not be reached, and pin behaviour rather than shape.
 """
 from __future__ import annotations
 
@@ -16,10 +17,10 @@ import pytest
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_mailbox import STATUS_ACTIVE, STATUS_DISABLED, AgentMailbox
+from flow_sdk.builtin.agent_serve import TurnEngine, answer, answered_sources, is_own_outgoing
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.stream_inbox.agent_runner import _is_own_outgoing, handle_inbound
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -107,9 +108,9 @@ async def test_from_source_resolves_the_agent_from_owner_when_config_has_no_agen
     (`allocate_mailbox`) driver only. Its agent is the `owner`.
 
     Before the fix, `from_source` read only `config.get("agent_id")`, got
-    `""`, and `TypeId(type="agent", id="")` raised — crashing
-    `handle_inbound` for every single bind_channel-bound source, always,
-    silently (swallowed by `_on_item`'s catch-all). `agent_id_of` is the
+    `""`, and `TypeId(type="agent", id="")` raised — crashing the inbound
+    answer path for every single bind_channel-bound source, always, silently
+    (swallowed by the handler's catch-all). `agent_id_of` is the
     already-existing reader that falls back to `owner`; `from_source` now
     goes through it instead of re-spelling half the rule.
     """
@@ -146,8 +147,8 @@ async def test_our_own_outgoing_copy_is_recognised(mail_db):
     agent = await _agent("ada-own-copy")
     source = await _source(agent.id, [MAILBOX])
 
-    assert _is_own_outgoing(_item(source.id, MAILBOX), source) is True
-    assert _is_own_outgoing(_item(source.id, "alice@example.com"), source) is False
+    assert is_own_outgoing(source, MAILBOX) is True
+    assert is_own_outgoing(source, "alice@example.com") is False
 
 
 async def test_own_outgoing_does_not_run_even_when_self_is_allowlisted(mail_db):
@@ -158,17 +159,17 @@ async def test_own_outgoing_does_not_run_even_when_self_is_allowlisted(mail_db):
     agent = await _agent("ada-self-loop")
     source = await _source(agent.id, [MAILBOX])
 
-    assert await handle_inbound(_item(source.id, MAILBOX)) is False
+    assert await _refused(agent, source, _item(source.id, MAILBOX))
 
 
-# ── handle_inbound short-circuits ────────────────────────────────────────────
+# ── answer short-circuits ────────────────────────────────────────────────────
 
 
 async def test_unlisted_sender_runs_nothing(mail_db):
     agent = await _agent("ada-unlisted")
     source = await _source(agent.id, ["alice@example.com"])
 
-    assert await handle_inbound(_item(source.id, "stranger@x.com")) is False
+    assert await _refused(agent, source, _item(source.id, "stranger@x.com"))
 
 
 async def test_a_disabled_source_runs_nothing(mail_db):
@@ -178,7 +179,7 @@ async def test_a_disabled_source_runs_nothing(mail_db):
     source.status = SourceStatus.DISABLED.value
     await source.save()
 
-    assert await handle_inbound(_item(source.id, "alice@example.com")) is False
+    assert await _refused(agent, source, _item(source.id, "alice@example.com"))
 
 
 async def test_a_listed_sender_passes_the_gate(mail_db):
@@ -193,11 +194,14 @@ async def test_a_listed_sender_passes_the_gate(mail_db):
 
 
 async def test_a_source_that_is_not_an_agents_mailbox_is_ignored(mail_db):
-    """An ordinary mailbox belongs to a person; nothing should answer for them."""
+    """An ordinary mailbox belongs to a person; nothing should answer for them —
+    it is never among the sources an agent's placement serves."""
+    agent = await _agent("ada-not-mine")
     source = DataSource(name="my mail", provider="cloud_email", channel="email", config={})
     await source.save()
 
-    assert await handle_inbound(_item(source.id, "alice@example.com")) is False
+    served = await answered_sources(agent, await agent.local_deployment())
+    assert str(source.id) not in {str(s.id) for s in served}
 
 
 async def test_an_empty_body_runs_nothing(mail_db):
@@ -205,4 +209,15 @@ async def test_an_empty_body_runs_nothing(mail_db):
     agent = await _agent("ada-empty")
     source = await _source(agent.id, ["alice@example.com"])
 
-    assert await handle_inbound(_item(source.id, "alice@example.com", body="   ")) is False
+    assert await _refused(agent, source, _item(source.id, "alice@example.com", body="   "))
+
+
+async def _refused(agent, source, item) -> bool:
+    """``answer`` refused *item* — without ever asking for a process."""
+
+    async def no_process(*_a, **_k):
+        raise AssertionError("a refused message reached the process machinery")
+
+    engine = TurnEngine(agent, None)
+    engine.process_for = no_process
+    return await answer(engine, source, item) is False

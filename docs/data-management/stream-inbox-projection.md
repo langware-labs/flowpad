@@ -198,9 +198,10 @@ half.
 * `outbound.py` — the inverse direction, and deliberately small: resolves
   *where* a reply goes and hands it to the driver's `send`; the sent copy
   re-enters through ingest and projects like any other item.
-* `agent_runner.py` — mail to an agent's own mailbox becomes a turn in one
-  headless process per conversation; subscribed on `stream_inbox.*.message.projected`.
-  The allowlist is also the loop breaker for the agent's own ingested replies.
+* Answering is not here: an agent answers its channels from its placement's serve
+  loop (`flow_sdk/builtin/agent_serve.py`) — one durable drain over the sources that
+  placement answers, one headless process per conversation, the reply on the same
+  channel. The self-address check is the loop breaker for the agent's own replies.
 * `catchup.py` — the hub-side one-shot `conversation-list` sweep on startup and
   cloud login, because the hub's WebSocket fan-out is live-only.
 * `hub_clock.py` — adopt the hub's `created_date` on `Conversation`/`FlowMessage`

@@ -26,13 +26,34 @@ def fences(markdown: str, lang: str = "python") -> list[str]:
     return [body for tag, body in _FENCE.findall(markdown) if tag == lang]
 
 
+def _without_fences(markdown: str) -> str:
+    """*markdown* with every fenced block blanked, keeping offsets intact.
+
+    A ``# comment`` inside a python fence is not a markdown heading, but the
+    heading regex cannot tell — it silently truncated a section at its first
+    fence ("section '2.' has 1 python fence(s), wanted #2").
+
+    Scanned LINE BY LINE rather than with the fence regex: that regex requires a
+    language tag, so an untagged ``` block makes it pair the wrong delimiters
+    and blank real headings instead of code.
+    """
+    out, inside = [], False
+    for line in markdown.split("\n"):
+        if line.lstrip().startswith("```"):
+            inside = not inside
+            out.append(" " * len(line))
+            continue
+        out.append(" " * len(line) if inside else line)
+    return "\n".join(out)
+
+
 def fence_under(markdown: str, heading: str, *, lang: str = "python", nth: int = 0) -> str:
     """The *nth* ``lang`` fence beneath the heading whose text starts with *heading*.
 
     Sections are addressed by heading rather than by index so inserting a snippet above does
     not silently re-point every pin below it.
     """
-    positions = [(m.start(), m.group(2).strip()) for m in _HEADING.finditer(markdown)]
+    positions = [(m.start(), m.group(2).strip()) for m in _HEADING.finditer(_without_fences(markdown))]
     start = next((pos for pos, text in positions if text.startswith(heading)), None)
     if start is None:
         raise LookupError(f"no heading starting with {heading!r}")
