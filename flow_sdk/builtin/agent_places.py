@@ -306,11 +306,7 @@ async def adopt_placement(agent: "Agent", deployment_id: str, environment: str |
         adopted = existing
     else:
         current = await agent.local_deployment()
-        data = current.model_dump(mode="json", exclude={"id", "created_date", "updated_date", "remote"})
-        adopted = Deployment(**{**data, "id": deployment_id, **({"environment": env} if env is not None else {})})
-        await adopted.save()
-        await current.delete()
-        logger.info("agent %s: local placement %s re-keyed to %s", agent.id, current.id, deployment_id)
+        adopted = await current.rekey(deployment_id, **({"environment": env} if env is not None else {}))
     if env is not None:
         set_default_environment(env)
     return adopted.with_element(agent)

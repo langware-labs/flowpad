@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
 import sys
 import textwrap
@@ -22,6 +23,7 @@ from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.faas.micro_app import WebApp
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
+from flow_sdk.builtin import webapp_placement
 from flow_sdk.builtin.webapp_placement import (
     place_webapp_locally,
     prune_delivery_rows,
@@ -212,10 +214,12 @@ async def test_a_box_asks_the_hub_to_refresh_a_desktop_does_not(monkeypatch, tmp
 
     monkeypatch.setattr(runtime, "own_sandbox_id", sandbox(None))
     await register_dev_endpoint(project, port=4803)
+    await asyncio.gather(*webapp_placement._TELLING)
     assert asked == []
 
     monkeypatch.setattr(runtime, "own_sandbox_id", sandbox("sbx-1"))
     row = await register_dev_endpoint(project, port=4804)
+    await asyncio.gather(*webapp_placement._TELLING)  # sent in the background, off the caller's write lock
     assert asked == [("deployment", row.parent_type_id.split("-", 1)[1], "refresh-endpoints")]
 
 

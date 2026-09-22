@@ -164,15 +164,6 @@ def _browser_scheme(request: Request, api_url_scheme: str | None) -> str:
     return api_url_scheme or request.url.scheme
 
 
-def _base_url_for(request: Request, api_url_scheme: str | None) -> str:
-    request_url = request.url
-    scheme = _browser_scheme(request, api_url_scheme)
-    if request_url.scheme != scheme:
-        request_url = request_url.replace(scheme=scheme)
-    base_url = str(request_url).split("?")[0]
-    return base_url if base_url.endswith("/") else base_url + "/"
-
-
 #: What a built app's assets are allowed to sit in a browser cache for. An app
 #: is a release; a file being iterated on is not, which is why the caller picks.
 ASSET_CACHE_CONTROL = "public, max-age=3600"
@@ -183,8 +174,6 @@ async def serve_app_bytes(
     sub_path: str | None,
     request: Request,
     *,
-    inject_base: bool = True,
-    api_url_scheme: str | None = None,
     fallback_index: bool = True,
     cache_control: str = ASSET_CACHE_CONTROL,
     process_id: str | None = None,
@@ -192,9 +181,11 @@ async def serve_app_bytes(
 ) -> Response:
     """Serve one file out of *root*, falling back to its ``index.html``.
 
-    ``inject_base``: an app served under a path needs ``<base>`` so its relative
-    asset URLs resolve. The API-origin injection is unconditional — it is what
-    makes the page's SDK reach the right backend.
+    ``base_url``: an app served under a path needs ``<base>`` at its ROOT so its
+    relative asset URLs resolve (a deep link `…/about` is a route, not a folder);
+    a caller whose url already mirrors the file passes none. The API-origin
+    injection is unconditional — it is what makes the page's SDK reach the
+    right backend.
 
     ``fallback_index`` and ``cache_control`` exist for the same reason: they are
     the two places where serving ONE FILE differs from serving an APP, and both
@@ -228,10 +219,8 @@ async def serve_app_bytes(
         # Hebrew page decodes to mojibake or dies outright on an undefined byte.
         async with await anyio.open_file(str(requested_file), "r", encoding="utf-8") as f:
             html = await f.read()
-        if inject_base:
-            # A caller that knows the app's ROOT says so: the request URL is the
-            # page's own path, and a deep link (`…/about`) is a route, not a folder.
-            html = inject_base_tag(html, base_url or _base_url_for(request, api_url_scheme))
+        if base_url:
+            html = inject_base_tag(html, base_url)
         # The document carries the same policy as its assets; without a header a
         # browser caches it heuristically and a cross-origin iframe never refetches.
         html = inject_process_id(inject_api_origin(html), process_id)

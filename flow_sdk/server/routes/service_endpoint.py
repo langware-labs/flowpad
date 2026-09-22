@@ -33,6 +33,8 @@ from websockets.exceptions import ConnectionClosed
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 from flow_sdk.server.service_proxy import (
     CALLER_HEADER,
+    SERVICE_ROUTE,
+    SERVICE_ROUTE_PREFIX,
     inbound_headers,
     outbound_headers,
     public_base,
@@ -40,9 +42,9 @@ from flow_sdk.server.service_proxy import (
     verify_caller,
 )
 
-router = APIRouter(prefix="/api/v1/graph")
+router = APIRouter(prefix=SERVICE_ROUTE_PREFIX)
 
-_PATH = "/service_endpoint/{endpoint_id}/service"
+_PATH = SERVICE_ROUTE
 _METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
 
 WS_POLICY = 1008
@@ -120,11 +122,7 @@ async def _serve_static(request: Request, endpoint: ServiceEndpoint, sub_path: s
     or the hub's path), which only the hub's gate-authenticated hop may state;
     otherwise it is this tier's endpoint root. Never the request's own path.
     """
-    from flow_sdk.builtin.faas.serve_static import (  # noqa: PLC0415
-        ASSET_CACHE_CONTROL,
-        _browser_scheme,
-        serve_app_bytes,
-    )
+    from flow_sdk.builtin.faas.serve_static import _browser_scheme, serve_app_bytes  # noqa: PLC0415
     from flow_sdk.config import default_service_config  # noqa: PLC0415
     from flow_sdk.instance_settings.cookie_gate import get_cookie_gate  # noqa: PLC0415
 
@@ -140,11 +138,11 @@ async def _serve_static(request: Request, endpoint: ServiceEndpoint, sub_path: s
         Path(endpoint.backend.root),
         sub_path,
         request,
-        api_url_scheme=scheme_config,
         base_url=base,
-        # A webapp asset is a folder under edit, not a release with hashed names:
-        # its `app.js` keeps one name across edits, so a cached copy is stale.
-        cache_control="no-cache" if endpoint.webapp_id else ASSET_CACHE_CONTROL,
+        # Revalidated, never trusted for an hour: a served folder may be under
+        # edit (`app.js` keeps its name across edits), and the ETag makes an
+        # unchanged file a cheap 304.
+        cache_control="no-cache",
     )
 
 

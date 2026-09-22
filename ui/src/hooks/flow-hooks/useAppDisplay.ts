@@ -1,6 +1,7 @@
 import { QueryRequest, ServiceEndpoint, TypeId } from '@sdk';
 import { useTheme } from 'next-themes';
 import { useViewMode } from '@src/contexts/view-mode-context';
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppDockAddress } from '@src/navigation/app-dock';
 import { useEntitiesQuery, useEntity } from '../entity-hooks';
@@ -61,22 +62,13 @@ function endpointsBy(field: 'artifact_id' | 'webapp_id', id: string | null): Que
  * sandbox). Re-resolved when the endpoint changes; '' until it answers.
  */
 function useDirectUrl(endpoint: ServiceEndpoint | null): string {
-  const [resolved, setResolved] = useState<{ id: string; url: string } | null>(null);
-  const id = endpoint?.id ?? null;
-  useEffect(() => {
-    if (!endpoint || !id) return;
-    let live = true;
-    endpoint
-      .directUrl()
-      .then((url) => live && setResolved({ id, url }))
-      .catch(() => live && setResolved({ id, url: '' }));
-    return () => {
-      live = false;
-    };
-    // Keyed on identity: the SDK mutates cached entities in place.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-  return resolved && resolved.id === id ? resolved.url : '';
+  const { data } = useQuery({
+    queryKey: ['service_endpoint', endpoint?.id ?? null, 'direct-url'],
+    queryFn: () => endpoint!.directUrl().catch(() => ''),
+    enabled: !!endpoint,
+    staleTime: Infinity,
+  });
+  return endpoint ? (data ?? '') : '';
 }
 
 /**

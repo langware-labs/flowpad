@@ -242,7 +242,7 @@ _ENDPOINT_FIELDS = {
 }
 
 
-async def upsert_endpoint(
+def _endpoint(
     parent_type_id: str,
     *,
     name: str,
@@ -253,16 +253,11 @@ async def upsert_endpoint(
     project_id: Optional[str] = None,
     supports_direct_access: bool = False,
     existing: Optional[Any] = None,
-) -> tuple[Any, bool]:
-    """Write one endpoint of the placement *parent_type_id*, at *existing*'s id when there is one.
-
-    Returns ``(row, saved)``. A no-op when nothing changed: an app is
-    re-registered on every turn, and a save costs an UPDATE, a broadcast and a
-    metadata write. The caller that holds the placement attaches a saved row.
-    """
+):
+    """The endpoint row these fields describe, at *existing*'s id when there is one."""
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
-    fresh = ServiceEndpoint(
+    return ServiceEndpoint(
         **({"id": existing.id} if existing is not None else {}),
         parent_type_id=str(parent_type_id),
         name=name,
@@ -273,11 +268,26 @@ async def upsert_endpoint(
         webapp_id=webapp_id,
         project_id=project_id,
     )
-    if existing is not None and existing.model_dump(mode="json", include=_ENDPOINT_FIELDS) == fresh.model_dump(
+
+
+def _unchanged(existing, fresh) -> bool:
+    return existing is not None and existing.model_dump(mode="json", include=_ENDPOINT_FIELDS) == fresh.model_dump(
         mode="json", include=_ENDPOINT_FIELDS
-    ):
+    )
+
+
+async def upsert_endpoint(deployment, *, existing: Optional[Any] = None, **fields) -> tuple[Any, bool]:
+    """Write one endpoint of *deployment*, at *existing*'s id when there is one. Returns ``(row, saved)``.
+
+    A no-op when nothing changed: an app is re-registered on every turn, and a
+    save costs an UPDATE, a broadcast and a metadata write. A saved row is
+    attached to its placement.
+    """
+    fresh = _endpoint(str(deployment.typeid), existing=existing, **fields)
+    if _unchanged(existing, fresh):
         return existing, False
     await fresh.save()
+    await deployment.attach_child(fresh)
     return fresh, True
 
 
@@ -294,7 +304,7 @@ async def upsert_artifact_endpoints(deployment, artifact, backends: list[tuple[s
     changed = False
     for name, backend in backends:
         row, saved = await upsert_endpoint(
-            placement,
+            deployment,
             name=name,
             backend=backend,
             artifact_id=artifact.id,
@@ -302,12 +312,10 @@ async def upsert_artifact_endpoints(deployment, artifact, backends: list[tuple[s
             supports_direct_access=backend["type"] == "proxy",
             existing=existing.get(backend["type"]),
         )
-        if saved:
-            await deployment.attach_child(row)
-            changed = True
+        changed = changed or saved
         rows.append(row)
     if changed:
-        await tell_hub(deployment)
+        tell_hub(deployment)
     return rows
 
 
@@ -332,7 +340,7 @@ async def register_dev_endpoint(project, *, port: int, name: Optional[str] = Non
     if existing is not None:
         backend = existing.backend.model_dump(mode="json")
     row, saved = await upsert_endpoint(
-        str(deployment.typeid),
+        deployment,
         name=name or f"port-{port}",
         backend=backend,
         artifact_id=existing.artifact_id if existing is not None else None,
@@ -341,22 +349,32 @@ async def register_dev_endpoint(project, *, port: int, name: Optional[str] = Non
         existing=existing,
     )
     if saved:
-        await deployment.attach_child(row)
-        await tell_hub(deployment)
+        tell_hub(deployment)
     return row
 
 
 # ── webapp assets: indexed here, served here ────────────────────────────────
 
 
-async def tell_hub(deployment) -> None:
-    """On a box: ask the hub to re-read what this placement exposes. Best-effort.
+#: In-flight hub refreshes, held so a task is not collected mid-flight.
+_TELLING: set = set()
+
+
+def tell_hub(deployment) -> None:
+    """On a box: ask the hub to re-read what this placement exposes. Best-effort, in the background.
 
     The hub is authoritative for a placement it made, and pulls rather than being
     pushed rows: it asks the box for the placement's endpoints and adopts them at
-    the box's ids (``deployment/<id>/refresh-endpoints``). Only a box has a hub
-    placement to refresh; a desktop's placements are its own.
+    the box's ids (``deployment/<id>/refresh-endpoints``) — which reads this box's
+    database, so the caller must not hold its write lock while waiting (an index
+    pass does). Only a box has a hub placement to refresh; a desktop's are its own.
     """
+    task = asyncio.get_running_loop().create_task(_tell_hub(deployment))
+    _TELLING.add(task)
+    task.add_done_callback(_TELLING.discard)
+
+
+async def _tell_hub(deployment) -> None:
     from flow_sdk.instance_settings.runtime import own_sandbox_id  # noqa: PLC0415
 
     if not await asyncio.to_thread(own_sandbox_id):
@@ -411,33 +429,24 @@ async def place_webapp_locally(app) -> Optional[Any]:
         ((name, spec) for name, spec in _app_specs(app) if spec.serving.type == "static"),
         (app.name, WebappEndpointSpec(name=app.name)),
     )
-    backend = _static_backend(app, spec)
-    protocol = spec.model_dump(mode="json")["protocol"]
+    fields = dict(
+        name=name,
+        backend=_static_backend(app, spec),
+        protocol=spec.model_dump(mode="json")["protocol"],
+        webapp_id=app.id,
+        project_id=app.project_id or None,
+        supports_direct_access=spec.supports_direct_access,
+    )
     existing = next((e for e in await webapp_endpoints(app.id) if e.backend.type == "static"), None)
-    if (
-        existing is not None
-        and existing.name == name
-        and existing.backend.model_dump(mode="json") == backend
-        and existing.protocol.model_dump(mode="json") == protocol
-    ):
+    if existing is not None and _unchanged(existing, _endpoint(existing.parent_type_id, existing=existing, **fields)):
         return existing  # the steady state: an index pass that changed nothing writes nothing
     project = await Project.get_by_id(app.project_id) if app.project_id else None
     deployment = await local_web_deployment(project)
     if deployment is None:
         return None
-    row, saved = await upsert_endpoint(
-        str(deployment.typeid),
-        name=name,
-        backend=backend,
-        protocol=protocol,
-        webapp_id=app.id,
-        project_id=project.id if project is not None else None,
-        supports_direct_access=spec.supports_direct_access,
-        existing=existing,
-    )
+    row, saved = await upsert_endpoint(deployment, existing=existing, **fields)
     if saved:
-        await deployment.attach_child(row)
-        await tell_hub(deployment)
+        tell_hub(deployment)
     return row
 
 
@@ -480,7 +489,6 @@ async def adopt_project_placement(project, deployment_typeid: str):
     :func:`local_web_deployment` lookup.
     """
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
-    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
     deployment_id = deployment_typeid.partition("-")[2]
     existing = await Deployment.get_by_id(deployment_id)
@@ -488,19 +496,8 @@ async def adopt_project_placement(project, deployment_typeid: str):
         if existing.parent_type_id != str(project.typeid) or not existing.is_local:
             raise ValueError(f"{deployment_typeid} is not this project's placement on this machine")
         return existing
-    current = await local_web_deployment(project)
-    data = current.model_dump(mode="json", exclude={"id", "created_date", "updated_date", "remote"})
-    adopted = Deployment(**{**data, "id": deployment_id})
-    await adopted.save()
+    adopted = await (await local_web_deployment(project)).rekey(deployment_id)
     await project.attach_child(adopted)
-    for endpoint in await ServiceEndpoint.of_deployment(str(current.typeid)):
-        endpoint.parent_type_id = str(adopted.typeid)
-        await endpoint.save()
-        await adopted.attach_child(endpoint)
-        # Cut the old edge first: a delete cascades to children, and these are the adopted placement's now.
-        await current.detach_child(endpoint.typeid, notify=False)
-    await current.delete()
-    _log.info("project %s: local web placement %s re-keyed to %s", project.id, current.id, deployment_id)
     return adopted
 
 
@@ -532,8 +529,8 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
         for name, spec in _app_specs(app):
             existing = by_name.get(name)
             backend = await _placed_backend(app, spec, existing)
-            row, saved = await upsert_endpoint(
-                deployment_typeid,
+            await upsert_endpoint(
+                deployment,
                 name=name,
                 backend=backend,
                 protocol=spec.model_dump(mode="json")["protocol"],
@@ -542,8 +539,6 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
                 supports_direct_access=spec.supports_direct_access,
                 existing=existing,
             )
-            if saved:
-                await deployment.attach_child(row)
     return await ServiceEndpoint.of_deployment(deployment_typeid)
 
 
