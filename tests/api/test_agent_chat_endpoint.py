@@ -50,6 +50,21 @@ def _ask(text: str, **extra) -> dict:
     return {"model": "agent", "messages": [{"role": "user", "content": text}], **extra}
 
 
+async def test_concurrent_ensures_make_one_chat_endpoint(worker, user):
+    """The supervisor and a box's expose-endpoints ensure it at the same moment on a deploy."""
+    import asyncio
+
+    agent = Agent(name=f"racing-agent-{time.monotonic_ns()}", worker_type="claude")
+    await agent.save()
+    try:
+        placement = await agent.local_deployment()
+        rows = await asyncio.gather(*(ensure_chat_endpoint(agent, placement) for _ in range(4)))
+        assert len({r.id for r in rows}) == 1
+        assert [e.name for e in await ServiceEndpoint.of_deployment(str(placement.typeid))].count("chat") == 1
+    finally:
+        await agent.delete()
+
+
 async def test_every_agent_placement_has_one_chat_endpoint(chat, user):
     again = await ensure_chat_endpoint(await Agent.get_by_id(chat.backend.agent_id), await _placement(chat))
     assert again.id == chat.id, "idempotent"
