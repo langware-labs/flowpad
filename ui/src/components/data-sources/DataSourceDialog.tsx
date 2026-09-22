@@ -124,6 +124,9 @@ export function DataSourceDialog({
   const specs = only ? offered.filter(only) : offered;
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft());
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // Nothing is wrong with a form nobody has filled in yet. Problems are shown once the person
+  // asks to add the source — before that the red box reads as a broken dialog, not as guidance.
+  const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Seed the form once per opening, keyed on WHAT is being edited. `specs` /
@@ -135,9 +138,10 @@ export function DataSourceDialog({
   seedRef.current = { specFor, specs };
   useEffect(() => {
     if (!open) return;
-    const { specFor: lookup, specs: available } = seedRef.current;
-    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft(available[0]));
+    const { specFor: lookup } = seedRef.current;
+    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft());
     setShowAdvanced(false);
+    setTried(false);
   }, [open, editing]);
 
   const spec = specFor(draft.provider);
@@ -330,7 +334,7 @@ export function DataSourceDialog({
             </TileSection>
           )}
 
-          {provisioned ? (
+          {!editing && !draft.provider ? null : provisioned ? (
             <p className="text-sm text-muted-foreground" data-testid="provisioned-source-note">
               {spec?.description}
             </p>
@@ -423,7 +427,7 @@ export function DataSourceDialog({
             </>
           )}
 
-          {problems.length > 0 && (
+          {tried && problems.length > 0 && (
             <ul className="space-y-1 rounded bg-destructive/10 p-2 text-xs text-destructive">
               {problems.map((p) => (
                 <li key={p}>{p}</li>
@@ -436,7 +440,7 @@ export function DataSourceDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             <Trans>Cancel</Trans>
           </Button>
-          <Button onClick={() => void submit()} disabled={busy || problems.length > 0}>
+          <Button onClick={() => { setTried(true); void submit(); }} disabled={busy}>
             {busy ? '…' : editing ? t`Save` : provisioned ? t`Create ${spec?.title}` : t`Add source`}
           </Button>
         </DialogFooter>

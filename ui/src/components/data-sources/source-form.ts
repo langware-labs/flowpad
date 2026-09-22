@@ -66,7 +66,10 @@ export function fieldRules(spec: DataDriver | undefined, key: string): { require
 /** A new source's draft for `spec` — its provider, and the fields its `Config` gives a `default`. */
 export function emptyDraft(spec?: DataDriver): SourceDraft {
   return {
-    name: '',
+    // The driver's own title, so nothing is required of a person who has nothing to say about
+    // the name — an empty box under a red "Name is required." is the form asking for a word it
+    // could supply itself.
+    name: spec?.title ?? '',
     provider: spec?.name ?? '',
     // Empty means "derive from the fields" — `accountKeyFor` owns the default,
     // so exactly one place knows it.
