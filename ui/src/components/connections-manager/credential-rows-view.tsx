@@ -72,7 +72,7 @@ export function CredentialConnectionRows({
                       ? t`Values are kept in ${credentialEnvFileName(row.source.environment)} in your home folder`
                       : t`Values are kept in this project's ${credentialEnvFileName(row.source.environment)}`,
                 ]}
-                testId={`connection-store-${testKey}`}
+                testId={`connection-kind-${testKey}`}
               />
             </TableCell>
 

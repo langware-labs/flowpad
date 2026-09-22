@@ -669,7 +669,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <TableHead className="w-[180px]">
                 <Trans>Provider</Trans>
               </TableHead>
-              <TableHead className="w-[130px]">
+              <TableHead className="w-[80px]">
                 <Trans>Sign-in</Trans>
               </TableHead>
               <TableHead>

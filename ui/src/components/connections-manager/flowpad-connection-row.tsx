@@ -81,7 +81,17 @@ export function FlowpadConnectionRow() {
   // silently instead of failing to compile.
   const visual = hubStatusVisual(login.status, connection.status);
   const signingIn = busy || login.status === 'logging_in';
-  const statusText = signingIn ? t`Signing in…` : i18n._(visual.text);
+  // The table's vocabulary, not the account menu's: every other row says
+  // "Connected" / "Not connected", so "Connection verified" and "Logged out"
+  // read as two more states. The hub's own finer word moves to the tooltip.
+  const healthy = loggedIn && (connection.status === 'verified' || connection.status === 'connected');
+  const statusText = signingIn
+    ? t`Signing in…`
+    : healthy
+      ? t`Connected`
+      : login.status === 'logged_out'
+        ? t`Not connected`
+        : i18n._(visual.text);
   // The dot is the shared table's too; `busy` covers the moment before the hub
   // reports `logging_in`.
   const dot = signingIn ? LOGIN_VISUAL.logging_in.dot : visual.dot;
@@ -89,7 +99,7 @@ export function FlowpadConnectionRow() {
 
   const email = typeof login.user?.email === 'string' ? login.user.email : null;
   /** Who this machine is signed in as — the one fact a status word cannot carry. */
-  const account = [cloudUrl, email].filter(Boolean).join(' · ');
+  const account = [healthy ? i18n._(visual.text) : null, cloudUrl, email].filter(Boolean).join(' · ');
 
   return (
     <TableRow data-testid="connection-row-flowpad">

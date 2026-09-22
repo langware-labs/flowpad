@@ -529,7 +529,7 @@ describe('ConnectionsManager — credential rows', () => {
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
     expect(screen.getByTestId('connection-row-user-twilio')).toBeTruthy();
-    const method = screen.getByTestId('connection-store-user-twilio');
+    const method = screen.getByTestId('connection-kind-user-twilio');
     expect(method.dataset.method).toBe('api_key');
     expect(method.getAttribute('aria-label')).toMatch(/vault/i);
     expect(screen.getByTestId('connection-scope-user-twilio').textContent).toMatch(/all projects/i);

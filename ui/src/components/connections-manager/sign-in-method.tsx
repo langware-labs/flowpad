@@ -67,8 +67,8 @@ export function SignInMethodIcon({
         </TooltipTrigger>
         <TooltipContent align="start">
           <div className="font-medium">{text}</div>
-          {details.map((line) => (
-            <div key={line} className="text-[11px] opacity-80">
+          {details.map((line, i) => (
+            <div key={i} className="text-[11px] opacity-80">
               {line}
             </div>
           ))}
