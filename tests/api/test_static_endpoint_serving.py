@@ -161,17 +161,16 @@ async def test_unbuilt_app_is_a_distinct_404(bootstrapped_client, user, tmp_path
 
 
 @pytest.mark.asyncio
-async def test_a_webapp_asset_is_revalidated_a_release_is_cached(bootstrapped_client, user, tmp_path):
-    """A webapp asset is a folder under edit: `app.js` keeps its name across edits,
-    so a cached copy is the previous version. A built release keeps the hour."""
-    release = await _make_app(tmp_path)
-    asset = await _static(tmp_path / "todo-app" / "dist", webapp_id=str(uuid.uuid4()))
+async def test_a_served_folder_is_revalidated_not_trusted_for_an_hour(bootstrapped_client, user, tmp_path):
+    """A served folder may be under edit (`app.js` keeps its name), so every endpoint
+    revalidates; the ETag keeps an unchanged file a cheap 304."""
+    app = await _make_app(tmp_path)
 
-    cached = await bootstrapped_client.get(_view_url(release, "app.js"))
-    edited = await bootstrapped_client.get(_view_url(asset, "app.js"))
+    first = await bootstrapped_client.get(_view_url(app, "app.js"))
+    again = await bootstrapped_client.get(_view_url(app, "app.js"), headers={"If-None-Match": first.headers["etag"]})
 
-    assert cached.headers["cache-control"] == "public, max-age=3600"
-    assert edited.headers["cache-control"] == "no-cache"
+    assert first.headers["cache-control"] == "no-cache"
+    assert again.status_code == 304
 
 
 def _base_href(html: str) -> str | None:

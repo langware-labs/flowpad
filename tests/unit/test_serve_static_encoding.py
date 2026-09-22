@@ -43,7 +43,7 @@ scope = {
 }
 
 async def main():
-    resp = await serve_app_bytes(root, None, Request(scope), api_url_scheme="http")
+    resp = await serve_app_bytes(root, None, Request(scope))
     body = resp.body.decode("utf-8")
     # Expectations are derived HERE, from the file, with an explicit encoding.
     # Nothing non-ASCII may cross into this process any other way: argv is

@@ -270,6 +270,28 @@ class Deployment(Entity):
             await existing.save()
         return existing.with_element(element)
 
+    async def rekey(self, new_id: str, **changes: Any) -> "Deployment":
+        """This placement, at *new_id* — the hub's id for it. Returns the re-keyed row.
+
+        One placement, one id everywhere: a box re-keys the local placement it
+        minted rather than translating ids at every read. What the placement
+        exposes moves with it; the old edge is cut first, because deleting the old
+        row cascades to its children. *changes* are applied on the way.
+        """
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+        data = self.model_dump(mode="json", exclude={"id", "created_date", "updated_date", "remote"})
+        adopted = Deployment(**{**data, **changes, "id": new_id})
+        await adopted.save()
+        for endpoint in await ServiceEndpoint.of_deployment(str(self.typeid)):
+            endpoint.parent_type_id = str(adopted.typeid)
+            await endpoint.save()
+            await adopted.attach_child(endpoint)
+            await self.detach_child(endpoint.typeid, notify=False)
+        await self.delete()
+        logger.info("placement %s re-keyed to %s", self.id, new_id)
+        return adopted
+
     @classmethod
     async def adopt_from_hub(cls, payload: Any, element: Optional[Entity] = None) -> Optional["Deployment"]:
         """Store a hub-created placement locally, AT THE HUB'S ID.
@@ -616,13 +638,11 @@ class Deployment(Entity):
 
         ``wait=True`` polls to a terminal state.
         """
-        from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
-
         proc = await self.create_process(prompt, **options)
         await proc.save()
-        resp = await proc.prompt(prompt)
-        if isinstance(resp, ApiFailResponse):
-            raise RuntimeError(f"launch failed — {resp.message}")
+        taken = await proc.send_turn(prompt)
+        if not taken.ok:
+            raise RuntimeError(f"launch failed — {taken.detail}")
         if wait:
             await proc.wait()
         return proc

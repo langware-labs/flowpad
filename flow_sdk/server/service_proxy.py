@@ -95,6 +95,15 @@ def inbound_headers(headers: Iterable[tuple[str, str]]) -> Headers:
 
 _PATH_SAFE = "/:@!$&'()*+,;=-._~"
 
+#: The ``service`` route, as mounted (``server/routes/service_endpoint.py``) — one spelling.
+SERVICE_ROUTE_PREFIX = "/api/v1/graph"
+SERVICE_ROUTE = "/service_endpoint/{endpoint_id}/service"
+
+
+def service_path(endpoint_id: str) -> str:
+    """``/api/v1/graph/service_endpoint/<id>/service/`` — where an endpoint is served on this tier."""
+    return SERVICE_ROUTE_PREFIX + SERVICE_ROUTE.format(endpoint_id=endpoint_id) + "/"
+
 
 def upstream_path(sub_path: str, query: str) -> str:
     """``/<sub>?<query>`` on the service. Refuses a dot segment — the service is
@@ -121,7 +130,7 @@ def public_base(headers, *, gate_secret: Optional[str], scheme: str, host: str, 
     they would let a client move a page's assets to a host of its choosing. A
     malformed address falls back rather than being half-trusted.
     """
-    own = f"{scheme}://{host}/api/v1/graph/service_endpoint/{endpoint_id}/service/"
+    own = f"{scheme}://{host}{service_path(endpoint_id)}"
     presented = headers.get(GATE_HEADER) or ""
     if not gate_secret or not hmac.compare_digest(presented, gate_secret):
         return own
