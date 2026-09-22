@@ -8,7 +8,7 @@
  *   1. DESKTOP (`DAC_FE_PORT`/`DAC_BE_PORT`): the agent profile, the cloud place's
  *      chat panel — the turn goes desktop → hub → box and its reply streams back;
  *      a reload shows the conversation as it stands.
- *   2. HUB UI (`DAC_HUB_FE_PORT`, a hub-mode dev UI on the hub `DAC_HUB_URL`): the
+ *   2. HUB UI (`DAC_HUB_FE_PORT`, a hub-mode dev UI proxying to its hub): the
  *      owner, signed in by the test through the hub's login API
  *      (`DAC_HUB_EMAIL`/`DAC_HUB_PASSWORD`, a seeded test user), selects the agent
  *      in the WorldView and chats with the same placement from the hub itself.
@@ -19,8 +19,6 @@
 import { expect, type Page, test } from '@playwright/test';
 
 const BE = `http://localhost:${process.env.DAC_BE_PORT || '6009'}`;
-const FE = `http://localhost:${process.env.DAC_FE_PORT || '5009'}`;
-const HUB = process.env.DAC_HUB_URL?.trim() || 'http://localhost:8093';
 const HUB_FE = `http://localhost:${process.env.DAC_HUB_FE_PORT || '4098'}`;
 const AGENT_ID = process.env.DAC_AGENT_ID?.trim() ?? '';
 const DEPLOYMENT_ID = process.env.DAC_DEPLOYMENT_ID?.trim() ?? '';
@@ -32,10 +30,8 @@ async function getJson(url: string): Promise<any> {
   return r.json();
 }
 
-/** The agent profile with the cloud place's chat open — a URL, like every dock state. */
-function chatUrl(base: string): string {
-  return `${base}/dock/assets/editor/agent/typeid/agent-${AGENT_ID}?place=${DEPLOYMENT_ID}&chat=${DEPLOYMENT_ID}`;
-}
+/** The agent profile with the cloud place's chat open — a URL, like every dock state (the desktop is `baseURL`). */
+const CHAT_PATH = `/dock/assets/editor/agent/typeid/agent-${AGENT_ID}?place=${DEPLOYMENT_ID}&chat=${DEPLOYMENT_ID}`;
 
 /** Send one token prompt in the open panel; the assistant's reply carries the token. */
 async function chatOnce(page: Page): Promise<string> {
@@ -70,13 +66,8 @@ test.describe('desktop', () => {
     expect(deployment?.data?.target?.provider, 'the placement is not on this machine').not.toBe('local');
   });
 
-  test('the cloud place chat streams the agent reply through the hub', async ({ page }) => {
-    await page.goto(chatUrl(FE));
-    await chatOnce(page);
-  });
-
-  test('a reload shows the conversation as it stands', async ({ page }) => {
-    await page.goto(chatUrl(FE));
+  test('the cloud place chat streams the agent reply through the hub, and a reload keeps it', async ({ page }) => {
+    await page.goto(CHAT_PATH);
     const token = await chatOnce(page);
     await page.reload();
     const panel = page.getByTestId('deployed-agent-chat');
@@ -89,7 +80,8 @@ test.describe('hub UI', () => {
     if (!AGENT_ID || !DEPLOYMENT_ID || !HUB_EMAIL || !HUB_PASSWORD) {
       test.skip(true, 'DAC_HUB_EMAIL / DAC_HUB_PASSWORD name the seeded owner on the hub');
     }
-    const bootstrap = await getJson(`${HUB}/api/v1/graph/bootstrap`);
+    // Through the dev UI's own proxy: the runtime the browser will actually talk to.
+    const bootstrap = await getJson(`${HUB_FE}/api/v1/graph/bootstrap`);
     expect(bootstrap?.data?.supported_pages, 'this must be the HUB runtime').toEqual(['hub']);
   });
 

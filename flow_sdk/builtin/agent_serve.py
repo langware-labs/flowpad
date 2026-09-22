@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import weakref
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional
 
@@ -377,7 +378,8 @@ async def answers_here(source, deployment) -> bool:
 # ── the chat endpoint every agent placement has ─────────────────────────────
 
 CHAT = "chat"
-_CHAT_LOCKS: dict[str, asyncio.Lock] = {}
+#: Per event loop, per placement (``stream_inbox/_locks``): a lock bound to a dead loop never blocks a new one.
+_CHAT_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
 async def ensure_chat_endpoint(agent, deployment):
@@ -385,10 +387,11 @@ async def ensure_chat_endpoint(agent, deployment):
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
     from flow_sdk.builtin.webapp_placement import upsert_endpoint  # noqa: PLC0415
     from flow_sdk.schema.data_spec.service_endpoint_spec import PROTOCOL_API_CHAT_OPENAI  # noqa: PLC0415
+    from flow_sdk.stream_inbox._locks import keyed_loop_lock  # noqa: PLC0415
 
     # Looked up and written under one lock: the supervisor and a box's expose-endpoints
     # both ensure it, and two lookups that each miss would mint two `chat` rows.
-    async with _CHAT_LOCKS.setdefault(str(deployment.id), asyncio.Lock()):
+    async with keyed_loop_lock(_CHAT_LOCKS, str(deployment.id)):
         existing = await ServiceEndpoint.find_existing(str(deployment.typeid), CHAT)
         row, _saved = await upsert_endpoint(
             deployment,

@@ -9,7 +9,7 @@ export type AgentChatEvent =
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'error'; message: string }
-  | { type: 'done'; conversationId: string };
+  | { type: 'done' };
 
 export interface AgentChatMessage {
   role: 'user' | 'assistant';
@@ -33,7 +33,7 @@ export class AgentChat {
     return endpoint ? new AgentChat(endpoint) : null;
   }
 
-  /** Send *text*; yields the conversation it is in (when it is new), then what the agent writes as it writes it, ending with `done` (or `error`). */
+  /** Send *text*; yields the conversation it is in (when it is new — keep it to continue), then what the agent writes as it writes it, ending with `done` (or `error`). */
   async *send(
     text: string,
     opts: { conversationId?: string | null; signal?: AbortSignal } = {},
@@ -68,7 +68,7 @@ export class AgentChat {
       if (typeof delta.content === 'string' && delta.content) yield { type: 'text', text: delta.content };
       if (chunk.flowpad?.tool) yield { type: 'tool', name: String(chunk.flowpad.tool) };
     }
-    yield { type: 'done', conversationId };
+    yield { type: 'done' };
   }
 
   /** The conversation so far, oldest first. */
