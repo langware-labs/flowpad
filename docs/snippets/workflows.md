@@ -29,7 +29,7 @@ async with workflow("mail-concierge"):
 
     async with agent.process_messages():
         async for m in stream_inbox.listen():         # m: Delivered[SourceItemSpec]
-            out = await agent.process_message(m)      # out: RunOutput
+            out = await agent.process_message(m)      # out: PromptResult
             await m.reply(EmailMessageSpec.reply_to(m, body=out.text))   # send → record → ack
 ```
 
@@ -53,9 +53,10 @@ What each line does:
   thread, so the same thread continues the same conversation. Spawns go
   through the agent's `Deployment`, so worker, model and permission mode come
   from `agent.md`.
-* `agent.process_message(m)` prompts with the message body and returns the
-  assistant's reply as a frozen `RunOutput`. A failed prompt raises instead of
-  hanging.
+* `agent.process_message(m)` prompts with the message body and answers with a
+  frozen `PromptResult`: `text` is the assistant's reply, `executor` the process
+  that ran it. A turn the process would not take answers `NOT_YET` with
+  `ran=False` instead of hanging — see [call-returns](call-returns.md).
 * `EmailMessageSpec.reply_to(m, body=...)` addresses the author, keeps the
   thread, adds `Re:` once. `m.reply(spec)` sends it through the driver and
   then acks — the ack piggybacks on the reply. It records its intent before
@@ -179,7 +180,7 @@ The unit pins in `tests/unit/test_blocks_email.py`. Useful when you want the
 shapes without a provider.
 
 ```python
-from flow_sdk.blocks import EmailMessageSpec, RunOutput, SlackMessageSpec, TelegramMessageSpec
+from flow_sdk.blocks import EmailMessageSpec, PromptResult, SlackMessageSpec, TelegramMessageSpec
 
 reply = EmailMessageSpec.reply_to(m, body="yes!")
 reply.to                      # [m.author_external_id]
@@ -190,7 +191,7 @@ reply.subject                 # "Re: <m.name>", never stacked
 reply.body = "edited"         # raises: frozen
 EmailMessageSpec(to=["a@b"], body="x", cc=["nope"])   # raises: extra="forbid"
 
-RunOutput(text="done", files=[])   # what a turn returns; files carry FileRef
+PromptResult.satisfied("The agent replied.", text="done")   # what a turn returns
 
 SlackMessageSpec.reply_to(m, body="x").to      # [channel id] — from m.origin_namespace
 TelegramMessageSpec.reply_to(m, body="x").to   # [chat id] — the leading part of thread_key
@@ -203,9 +204,6 @@ that rule, so the loop body is the same line in all three.
 ## Limits today
 
 * `StreamInbox.send` takes exactly one recipient and no attachments.
-* `RunOutput` carries the captured chat text; parsing it against the agent's
-  declared `output` shape is the planned upgrade and lands without changing a
-  caller.
 * `listen()` is in-process polling. Under a running backend the heartbeat
   poller syncs the same source on its own schedule; both paths converge on the
   same rows — and on one position per workflow name, so two loops with the

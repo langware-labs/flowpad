@@ -55,7 +55,7 @@ Names + one-liners; no bodies.
 
 **Lifecycle**
 
-* `run(instruction, workdir=None, **kw)` *(classmethod)* — one-shot create→start→send→wait→`RunResult`→stop.
+* `run(instruction, workdir=None, **kw)` *(classmethod)* — one-shot create→start→send→wait→`PromptResult`→stop (see [call-returns](../snippets/call-returns.md) §5).
 
 * `resume(session_id, workdir=None, **kw)` *(classmethod)* — factory that pre-bakes `--resume <session_id>` cli\_config.
 
@@ -387,7 +387,7 @@ Class: `AgenticProcess extends APIEntity<AgenticProcess> implements IAgenticProc
 
 **Lifecycle** — `start(options?)`, `exit()`, `stop()`, `restart()` (emits `restarted`), `close()`, `switchMode(mode, opts?)` (interactive → `start`; cli → `switch-mode` round-trip), `fork(visible=false)`.
 
-**Prompting** — `prompt(...)`, `input(text, options?)`, `submit(instruction?, options?)`, `executeInstruction(...)`, `cancelPrompt()` (print-mode), `interruptTurn()` (PTY Ctrl-C or `cancelPrompt`), `sendInput(text)`, `inject(instruction)`, `continue(command)`.
+**Prompting** — `prompt(...)`, `send_turn(instruction)` (Python; → `PromptResult`), `input(text, options?)`, `submit(instruction?, options?)`, `executeInstruction(...)`, `cancelPrompt()` (print-mode), `interruptTurn()` (PTY Ctrl-C or `cancelPrompt`), `sendInput(text)`, `inject(instruction)`, `continue(command)`.
 
 **Queue** — `enqueue(prompt, source?)`, `dequeue(idOrIndex)`, `clearQueue()`, `drainQueue()`, `setQueueEnabled(enabled)`, plus `pinPrompt`/`unpinPrompt`/`linkExecutedPrompt`.
 
