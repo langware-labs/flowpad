@@ -2,6 +2,7 @@ import { navigator as sdkNavigator, redeemInviteLink } from '@sdk';
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router';
 import WrongAccountPanel from './WrongAccountPanel';
+import { errorDetail } from '@src/lib/error-message';
 
 /** What a redeem failure means to the person holding the link. A 200 never gets
  *  here — it navigates. */
@@ -62,15 +63,13 @@ const InvitePage: React.FC = () => {
         window.location.href = redirect_url;
       })
       .catch((err: unknown) => {
-        const e = err as {
-          response?: { status?: number; data?: { detail?: string; message?: string } };
-          status?: number;
-          detail?: string;
-        };
+        const e = err as { response?: { status?: number }; status?: number };
         const status = e?.response?.status ?? e?.status;
-        // The hub's ApiFailResponse carries `message`; FastAPI HTTPExceptions
-        // carry `detail`. Read both.
-        const detail = e?.response?.data?.detail ?? e?.response?.data?.message ?? e?.detail;
+        // The hub's ApiFailResponse carries `message`; FastAPI HTTPExceptions carry
+        // `detail`, and a rejected body carries a LIST of issues. `errorDetail` reads
+        // all three AS A STRING — spelling the chain out here once declared `detail`
+        // a string and handed an array to React instead, which kills the page.
+        const detail = errorDetail(err) || undefined;
 
         if (status === 401) {
           // Came back from login and still 401 → signed in as someone the hub

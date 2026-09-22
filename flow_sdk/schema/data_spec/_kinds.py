@@ -91,16 +91,14 @@ def register_builtin_kinds() -> None:
     # to be the dot prefix ``"ingest."``, which is a claim about what a kind is ABOUT; a loader
     # answers for what it OWNS. That mismatch is why an authored asset's kind could not be
     # reached from a read at all: the only loader under that prefix scans the shipped tree.
-    SchemaRegistry.set_kind_loaders(ours=_load_source_value_kinds, external=_load_namespace_value_kinds)
+    SchemaRegistry.set_kind_loader(_load_value_kinds)
 
 
-def _load_source_value_kinds() -> None:
-    from flow_sdk.ingest.driver_registry import load_driver_value_kinds  # noqa: PLC0415
+def _load_value_kinds(ns: "str | None") -> None:
+    """The asset folders that may define this kind. ``None`` is ours."""
+    from flow_sdk.ingest import driver_registry  # noqa: PLC0415
 
-    load_driver_value_kinds()
-
-
-def _load_namespace_value_kinds(ns: str) -> None:
-    from flow_sdk.ingest.driver_registry import load_namespace_value_kinds  # noqa: PLC0415
-
-    load_namespace_value_kinds(ns)
+    if ns is None:
+        driver_registry.load_driver_value_kinds()
+    else:
+        driver_registry.load_namespace_value_kinds(ns)

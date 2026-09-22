@@ -821,14 +821,11 @@ class SQLiteDBDriver(DBDriver):
                 # Filter to columns EntitySchema knows — stale DBs can have extra
                 # leftover columns (e.g. old ``content_hash``) that would crash kwargs.
                 schema = EntitySchema(**{k: v for k, v in row_dict.items() if k in entity_cols})
-                try:
-                    entity = self._schema_to_entity(schema)
+                for entity in self._hydrate([schema], "FTS search"):
                     entity._fts_snippet = snippet_val  # type: ignore[attr-defined]
                     entity._fts_title = fts_title  # type: ignore[attr-defined]
                     entity._fts_description = fts_description  # type: ignore[attr-defined]
                     entities_with_score.append((bm25_score, entity))
-                except Exception:
-                    logger.warning("FTS search: failed to hydrate entity %s", row_dict.get("id"))
 
         # Python-side recency blend: blended = bm25 / (1 + days_old * k)
         if cal.recency_factor and entities_with_score:
@@ -998,13 +995,10 @@ class SQLiteDBDriver(DBDriver):
                 fts_title = row_dict.pop("_fts_title", None) or None
                 fts_description = row_dict.pop("_fts_description", None) or None
                 schema = EntitySchema(**{k: v for k, v in row_dict.items() if k in entity_cols})
-                try:
-                    entity = self._schema_to_entity(schema)
+                for entity in self._hydrate([schema], "browse_by_type"):
                     entity._fts_title = fts_title  # type: ignore[attr-defined]
                     entity._fts_description = fts_description  # type: ignore[attr-defined]
                     entities.append(entity)
-                except Exception:
-                    logger.warning("browse_by_type: failed to hydrate entity %s", row_dict.get("id"))
             return entities, total
 
     async def fts_delete(self, entity_id: str) -> None:
@@ -1977,7 +1971,7 @@ class SQLiteDBDriver(DBDriver):
 
         async with self._session_ctx(write=False) as session:
             result = await session.execute(query)
-            entities = [e for s in result.scalars().all() if (e := self._row_or_skip(s)) is not None]
+            entities = self._hydrate(result.scalars().all(), "get_all")
 
         # Python post-filter — only needed when SQL pushdown was partial
         if not fully_sql:
@@ -3055,23 +3049,38 @@ class SQLiteDBDriver(DBDriver):
             return dt.replace(tzinfo=UTC)
         return dt
 
-    def _row_or_skip(self, schema: EntitySchema) -> Optional[DBBaseRecord]:
-        """One row of a LIST, or None with a warning — a list survives a row it cannot build.
+    def _hydrate(self, schemas: "Sequence[EntitySchema]", where: str) -> List[DBBaseRecord]:
+        """The rows of a LIST that can be built, with ONE warning for those that cannot.
 
         A row whose stored body no longer validates (a payload whose ``spec_kind`` names a
-        class this process cannot reach, a field a migration removed) used to abort the whole
-        comprehension, so one bad row returned a 500 and an empty screen instead of the other
-        several hundred. Same rule as ``graph.py``'s "never let a reflection-layer bug 500 the
-        whole request" and the indexer's malformed-record skip.
+        class this process cannot reach, a field a migration removed) used to abort the
+        whole comprehension, so one bad row returned a 500 and an empty screen instead of
+        the other several hundred. Same rule as ``graph.py``'s "never let a reflection-layer
+        bug 500 the whole request" and the indexer's malformed-record skip.
 
-        LIST reads only: ``_schema_to_entity`` still raises for every single-row caller, where
-        skipping would turn "this row is corrupt" into "no such row".
+        One line per LIST, not per row, on purpose: these failures are properties of a TYPE,
+        not of a row — a missing payload class poisons every row of that type at once — so
+        per-row logging would emit thousands of identical multi-line pydantic errors while
+        saying nothing the first does not. The count is what tells you it is systematic.
+
+        LIST reads only: ``_schema_to_entity`` still raises for every single-row caller,
+        where skipping would turn "this row is corrupt" into "no such row".
         """
-        try:
-            return self._schema_to_entity(schema)
-        except Exception as exc:  # noqa: BLE001 — the row is data; any failure to build it is its own
-            logger.warning("[sqlite] get_all: skipping unreadable %s %s — %s", schema.type, schema.id, exc)
-            return None
+        built: List[DBBaseRecord] = []
+        skipped: list[str] = []
+        first: Optional[Exception] = None
+        for schema in schemas:
+            try:
+                built.append(self._schema_to_entity(schema))
+            except Exception as exc:  # noqa: BLE001 — the row is data; failing to build it is its own
+                skipped.append(f"{schema.type} {schema.id}")
+                first = first or exc
+        if skipped:
+            logger.warning(
+                "[sqlite] %s: skipped %d unreadable row(s) (%s%s) — %s",
+                where, len(skipped), ", ".join(skipped[:3]), ", …" if len(skipped) > 3 else "", first,
+            )
+        return built
 
     def _schema_to_entity(self, schema: EntitySchema) -> DBBaseRecord:
         """Convert schema to entity."""

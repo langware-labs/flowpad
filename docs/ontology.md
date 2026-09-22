@@ -213,9 +213,9 @@ creation, and the boot sweep. It is a cache of a fact on disk — an empty map m
 Which says what an asset CANNOT do: a folder with no module to import mints
 nothing. A `compute_op` asset is `compute_op.json` plus `setup.md`, so an op's
 `output_spec_kind` names a primitive or a kind flow_sdk registers — never a shape
-the op declares for itself. The day one needs to, the mechanism already exists:
-another `add_kind_loader` prefix, the way `ingest.` works for a data source, and
-the kinds namespaced by the asset's own name. Not a second mechanism.
+the op declares for itself. The day one needs to, the mechanism already exists: the
+asset's kinds are namespaced by its project, and the external loader already imports
+that project's assets. Not a second mechanism.
 
 ## Not yet done
 

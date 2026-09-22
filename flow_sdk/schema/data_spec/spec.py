@@ -119,11 +119,10 @@ class DataSpec(BaseModel):
             # externally authored asset declares it, so such an asset cannot mint
             # into ours even by declaring the same string a shipped asset does.
             # Ours declares nothing and the kind is written bare.
-            # Stamped on the class, not recomputed at dump time: ``current_ns()``
-            # is a contextvar set only for the duration of the loader's import,
-            # and a value is dumped long after that import has returned.
-            cls.__spec_tag__ = qualified(cls.spec_kind, current_ns())
-            SchemaRegistry.register_kind(cls.__spec_tag__, cls)
+            # ``register_kind`` stamps the name it binds onto the class, so the
+            # registry and ``__spec_tag__`` cannot disagree about what this class
+            # is called — registering IS naming.
+            SchemaRegistry.register_kind(qualified(cls.spec_kind, current_ns()), cls)
 
     @classmethod
     def parse(cls, data: Any) -> type:
@@ -320,7 +319,9 @@ def to_authoring_form(t: Any) -> Any:
         (inner,) = get_args(t)
         return [to_authoring_form(inner)]
     if getattr(t, "spec_kind", ""):
-        return t.spec_kind
+        # The REGISTERED name, for the same reason a dumped value carries it: an
+        # external's authoring form must name a kind that resolves.
+        return spec_tag(t)
     if getattr(t, "__authoring__", None) is not None:
         return t.__authoring__
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
@@ -338,6 +339,22 @@ def to_authoring_form(t: Any) -> Any:
                 raise NoAuthoringForm(exc.inner, t) from exc
         return out
     raise NoAuthoringForm(t)
+
+
+def spec_tag(value: Any) -> str:
+    """The name a value is WRITTEN under — its class's registered name.
+
+    Every place that puts a kind on the wire goes through here, because the tag
+    written has to be the key a read looks up. Ours is bare (the default is silent),
+    so this is ``spec_kind`` for everything we ship; an externally authored class
+    carries its namespace, and writing the bare name instead left its values
+    unreadable by the very class that minted them.
+
+    Takes a value or a class; the stamp is inherited exactly as ``spec_kind`` is, so
+    a subclass that declares no kind of its own writes what its parent writes.
+    """
+    cls = value if isinstance(value, type) else type(value)
+    return getattr(cls, "__spec_tag__", "") or getattr(cls, "spec_kind", "")
 
 
 class Tagged:
@@ -375,6 +392,6 @@ def _with_kind(value: DataSpec, info: Any) -> dict:
     minted it, in the same process.
     """
     dumped = value.model_dump(mode=info.mode)
-    tag = type(value).__spec_tag__ or value.spec_kind
+    tag = spec_tag(value)
     return {"spec_kind": tag, **dumped} if tag else dumped
 

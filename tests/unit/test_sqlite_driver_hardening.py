@@ -261,9 +261,23 @@ class TestGetAllSkipsUnreadableRows:
         rows = await driver.get_all(QueryFilter(type="note"))
 
         assert sorted(r.id for r in rows) == ["ok1", "ok2"]
-        assert "bad" in caplog.text and "skipping unreadable" in caplog.text
+        assert "bad" in caplog.text and "skipped 1 unreadable row" in caplog.text
 
     @pytest.mark.asyncio
     async def test_a_list_of_only_broken_rows_is_empty_not_an_error(self, driver):
         await self._insert_broken(driver, "bad")
         assert await driver.get_all(QueryFilter(type="note")) == []
+
+    @pytest.mark.asyncio
+    async def test_a_systematic_failure_warns_once_not_once_per_row(self, driver, caplog):
+        """These failures are a property of a TYPE — a payload class this process cannot
+        reach poisons every row of it — so per-row logging would emit thousands of
+        identical multi-line pydantic errors. The count is the diagnostic."""
+        for i in range(25):
+            await self._insert_broken(driver, f"bad{i}")
+
+        assert await driver.get_all(QueryFilter(type="note")) == []
+
+        warnings = [r for r in caplog.records if "unreadable" in r.getMessage()]
+        assert len(warnings) == 1
+        assert "skipped 25 unreadable row(s)" in warnings[0].getMessage()

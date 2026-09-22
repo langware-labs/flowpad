@@ -392,4 +392,4 @@ async def _materialize(
     # its assets have minted anything, so first sight is the only safe moment to seed it.
     from flow_sdk.builtin.project_manifest import ensure_project_namespace  # noqa: PLC0415 — cycle
 
-    await ensure_project_namespace(proj)
+    await asyncio.to_thread(ensure_project_namespace, proj)

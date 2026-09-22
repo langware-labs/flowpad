@@ -169,3 +169,37 @@ def test_a_folder_in_no_project_is_ours(tmp_path) -> None:
     loose = tmp_path / "nowhere"
     loose.mkdir()
     assert namespace_for(loose) == ""
+
+
+# ── the invariant, frozen ────────────────────────────────────────────────────
+
+
+def test_every_tag_writer_goes_through_spec_tag() -> None:
+    """A tag put on the wire is the name the class is REGISTERED under.
+
+    The bug was one writer spelling it `value.spec_kind`, which is the author's bare
+    declaration. Three more writers spelled it the same way and kept the hole open in
+    protocols, in the authoring form, and in the migration that rewrites legacy rows.
+    Freeze it by grep: `spec_kind` may be READ off a dict, never written from a class.
+    """
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3] / "flow_sdk"
+    offenders: list[str] = []
+    for path in root.rglob("*.py"):
+        if "system_projects" in path.parts or "server/static" in str(path):
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            # `{"spec_kind": <expr>.spec_kind, ...}` — a tag written from an attribute.
+            if not isinstance(node, ast.Dict):
+                continue
+            for key, value in zip(node.keys, node.values):
+                names_tag = isinstance(key, ast.Constant) and key.value == "spec_kind"
+                from_attr = isinstance(value, ast.Attribute) and value.attr == "spec_kind"
+                if names_tag and from_attr:
+                    offenders.append(f"{path.relative_to(root)}:{node.lineno}")
+
+    assert offenders == [], (
+        "write the REGISTERED name — `spec_tag(value)` — not the bare declaration: " + ", ".join(offenders)
+    )

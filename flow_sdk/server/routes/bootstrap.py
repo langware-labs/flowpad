@@ -1112,13 +1112,20 @@ async def _seed_project_namespaces() -> None:
     from flow_sdk.builtin.project_manifest import ensure_project_namespace  # noqa: PLC0415
     from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
 
-    for project in await get_cached_projects():
-        try:
-            # Reads the project's manifest, and tells the namespace map what it read —
-            # which is why no separate "load every manifest row" query is needed.
-            await ensure_project_namespace(project)
-        except Exception as exc:  # noqa: BLE001 — one bad checkout must not stop the sweep
-            logging.warning("[namespace] %s could not be seeded (non-fatal): %s", project.id, exc)
+    projects = await get_cached_projects()
+
+    def _sweep() -> None:
+        for project in projects:
+            try:
+                # Reads the project's manifest, and tells the namespace map what it read —
+                # which is why no separate "load every manifest row" query is needed.
+                ensure_project_namespace(project)
+            except Exception as exc:  # noqa: BLE001 — one bad checkout must not stop the sweep
+                logging.warning("[namespace] %s could not be seeded (non-fatal): %s", project.id, exc)
+
+    # ONE thread for the whole sweep. Per project this is a ~40µs file read; a thread
+    # hop each costs several times that, and the projects are independent.
+    await asyncio.to_thread(_sweep)
 
 
 async def _reap_protected_path_projects() -> None:

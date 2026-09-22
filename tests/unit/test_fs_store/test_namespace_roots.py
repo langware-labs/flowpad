@@ -55,11 +55,26 @@ def test_remembering_the_same_root_twice_is_quiet(tmp_path, caplog):
     assert "claimed by" not in caplog.text
 
 
-def test_invalidate_lets_the_folders_be_imported_again():
-    """The map and the "already imported" memo are one fact; dropping one without the
-    other would leave a namespace permanently unloadable after a project moved."""
-    from flow_sdk.ingest import driver_registry
+def test_a_namespace_is_claimed_once(tmp_path):
+    """The loader imports a project's folders on the FIRST miss and not again — the
+    second ask is a set membership test, not another directory scan."""
+    namespace_roots.remember("acme", tmp_path)
+    assert namespace_roots.claim_unloaded("acme") == tmp_path
+    assert namespace_roots.claim_unloaded("acme") is None
 
-    driver_registry._NS_LOADED.add("acme")
+
+def test_an_unknown_root_is_never_claimed():
+    """The map may simply not be filled yet. Claiming an unknown namespace as done
+    would leave it unreadable for the life of the process."""
+    assert namespace_roots.claim_unloaded("acme") is None
+    assert namespace_roots.claim_unloaded("acme") is None
+
+
+def test_invalidate_lets_the_folders_be_imported_again(tmp_path):
+    """The map and what has been loaded from it are ONE fact; dropping the map alone
+    would leave a moved project's folders permanently unreachable."""
+    namespace_roots.remember("acme", tmp_path)
+    namespace_roots.claim_unloaded("acme")
     namespace_roots.invalidate()
-    assert "acme" not in driver_registry._NS_LOADED
+    namespace_roots.remember("acme", tmp_path)
+    assert namespace_roots.claim_unloaded("acme") == tmp_path
