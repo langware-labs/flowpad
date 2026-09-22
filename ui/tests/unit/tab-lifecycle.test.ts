@@ -75,10 +75,8 @@ describe('tab lifecycle registry', () => {
     expect(tabManager.lifecycle.get(d.tabHash)?.error).toBe('attach failed');
   });
 
-  // A dead address — a deleted process or shell — mints no tab: the backend
-  // will not ensure a tab for a target that is gone. Its content loader owns the
-  // recovery (notice + redirect to the next session), so it must still run;
-  // otherwise the page is stranded on "Tab could not be materialized".
+  // A deleted process/shell mints no tab; without its loader's redirect the page
+  // was stranded on "Tab could not be materialized".
   it('lets the content loader redirect a dead address that mints no tab', async () => {
     const d = dock();
     mockNoExistingTabs();
@@ -91,10 +89,7 @@ describe('tab lifecycle registry', () => {
       cleanupTab: () => Promise.resolve(),
     });
 
-    const thrown = await setupTab(d).then(
-      () => null,
-      (error: unknown) => error,
-    );
+    const thrown = await setupTab(d).catch((error: unknown) => error);
 
     expect(thrown).toBeInstanceOf(Response);
     expect((thrown as Response).headers.get('Location')).toBe('/dock/shell/shell-fallback');

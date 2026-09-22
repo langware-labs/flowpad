@@ -70,6 +70,8 @@ export interface NavigationCommitOptions {
    * mode to a bare URL — only a switch saves the preference.
    */
   viewModeSwitch?: boolean;
+  /** The `tab_switch` start line's `via=` when neither flag above names it. */
+  via?: string;
 }
 
 interface PendingDockNavigation {
@@ -257,7 +259,6 @@ export class NavigationActions {
     fullUrl: string,
     routerUrl: string,
     opts?: NavigationCommitOptions,
-    via: string = 'openDock',
   ): void {
     this.markPendingNavigation(target, fullUrl);
 
@@ -274,7 +275,7 @@ export class NavigationActions {
     });
     if (willNavigate) {
       NavigationActions.logTabSwitchStart(
-        opts?.viewModeSwitch ? 'view_mode' : opts?.replace ? 'replace' : via,
+        opts?.viewModeSwitch ? 'view_mode' : opts?.replace ? 'replace' : (opts?.via ?? 'openDock'),
         target,
       );
       // React Router owns browser history and, critically, loader execution.
@@ -346,7 +347,7 @@ export class NavigationActions {
     const url = dock.toUrl(window.location.pathname);
     if (NavigationActions.getCurrentBrowserUrl() === url) return;
     // `via=commit`: a param edit, a journey close or the dock closing — not a click.
-    this.commitBrowserNavigation(dock, url, url, undefined, 'commit');
+    this.commitBrowserNavigation(dock, url, url, { via: 'commit' });
   }
 
   /**
