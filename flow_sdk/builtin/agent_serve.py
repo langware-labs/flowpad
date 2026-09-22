@@ -377,6 +377,7 @@ async def answers_here(source, deployment) -> bool:
 # ── the chat endpoint every agent placement has ─────────────────────────────
 
 CHAT = "chat"
+_CHAT_LOCKS: dict[str, asyncio.Lock] = {}
 
 
 async def ensure_chat_endpoint(agent, deployment):
@@ -385,15 +386,18 @@ async def ensure_chat_endpoint(agent, deployment):
     from flow_sdk.builtin.webapp_placement import upsert_endpoint  # noqa: PLC0415
     from flow_sdk.schema.data_spec.service_endpoint_spec import PROTOCOL_API_CHAT_OPENAI  # noqa: PLC0415
 
-    existing = await ServiceEndpoint.find_existing(str(deployment.typeid), CHAT)
-    row, _saved = await upsert_endpoint(
-        deployment,
-        name=CHAT,
-        protocol={"spec_kind": PROTOCOL_API_CHAT_OPENAI},
-        backend={"type": "agent", "agent_id": agent.id},
-        project_id=getattr(deployment, "project_id", None) or getattr(agent, "project_id", None),
-        existing=existing,
-    )
+    # Looked up and written under one lock: the supervisor and a box's expose-endpoints
+    # both ensure it, and two lookups that each miss would mint two `chat` rows.
+    async with _CHAT_LOCKS.setdefault(str(deployment.id), asyncio.Lock()):
+        existing = await ServiceEndpoint.find_existing(str(deployment.typeid), CHAT)
+        row, _saved = await upsert_endpoint(
+            deployment,
+            name=CHAT,
+            protocol={"spec_kind": PROTOCOL_API_CHAT_OPENAI},
+            backend={"type": "agent", "agent_id": agent.id},
+            project_id=getattr(deployment, "project_id", None) or getattr(agent, "project_id", None),
+            existing=existing,
+        )
     return row
 
 
