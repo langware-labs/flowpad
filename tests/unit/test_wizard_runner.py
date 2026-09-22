@@ -20,7 +20,7 @@ import pytest
 
 from flow_sdk.core.compute.receipt import receipt_path
 from flow_sdk.core.compute_op.runner import VALUE_KEY
-from flow_sdk.core.wizard.runner import Resolved, run_wizard
+from flow_sdk.core.wizard.runner import MAX_WIZARD_DEPTH, Resolved, run_wizard
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import (
     CliResult,
@@ -292,6 +292,90 @@ async def test_being_shipped_does_not_lend_approval_to_a_callee(tmp_path):
     # A refusal stops the run whatever `on_fail` says.
     assert "after" not in result.steps
     assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_after_real_work_does_not_report_that_nothing_ran(tmp_path):
+    """`ran=False` means SKIPPED to every reader — so a run that installed
+    something before it hit an untrusted callee must not claim it."""
+    spec = WizardSpec.model_validate({"name": "w", "steps": [
+        {"id": "jq", "kind": "compute", "ref": "jq"},
+        {"id": "rg", "kind": "compute", "ref": "rg"},
+    ]})
+    # `have jq` fails until `install jq` has run, so the first step really works;
+    # `rg` does not resolve as trusted, so the second step refuses.
+    async def resolve(name: str):
+        return Resolved(_op(name), name != "rg")
+
+    installed: list[str] = []
+
+    def code_for(command: str) -> int:
+        if command == "install jq":
+            installed.append(command)
+            return 0
+        return 0 if installed else 1
+
+    result = await _run_wizard(spec, tmp_path=tmp_path, resolve_op=resolve, shell=_shell(code_for))
+
+    assert result.exit_code is ExitCode.REFUSED
+    assert result.steps["jq"].ran is True, "the first step really installed something"
+    assert result.ran is True, "the run did work before it was stopped"
+
+
+@pytest.mark.asyncio
+async def test_a_wizard_that_calls_itself_answers_instead_of_recursing(tmp_path):
+    """A cycle is caught by NAME, and the answer names the loop.
+
+    Unbounded nesting ends in a crash — the Activity tree's own depth cap raises
+    before the stack gives out — and a crash is not an answer.
+    """
+    spec = WizardSpec.model_validate({"name": "loop", "steps": [
+        {"id": "again", "kind": "wizard", "ref": "loop"},
+    ]})
+    result = await _run_wizard(spec, tmp_path=tmp_path, resolve_wizard=_wizards({"loop": spec}))
+
+    assert result.exit_code is ExitCode.NOT_YET
+    assert "already running" in result.steps["again"].detail
+    assert "loop -> loop" in result.steps["again"].detail
+
+
+@pytest.mark.asyncio
+async def test_a_chain_that_never_repeats_still_has_a_floor(tmp_path):
+    """The other runaway: each wizard calls a DIFFERENT one, forever."""
+    table = {
+        name: WizardSpec.model_validate({"name": name, "steps": [
+            {"id": "down", "kind": "wizard", "ref": nxt},
+        ]})
+        for name, nxt in (("w0", "w1"), ("w1", "w2"), ("w2", "w3"), ("w3", "w4"))
+    }
+    table["w4"] = WizardSpec.model_validate({"name": "w4", "steps": [
+        {"id": "jq", "kind": "compute", "ref": "jq"},
+    ]})
+    result = await _run_wizard(
+        table["w0"], tmp_path=tmp_path,
+        resolve_op=_ops(_op("jq")), resolve_wizard=_wizards(table),
+    )
+
+    assert result.exit_code is ExitCode.NOT_YET
+    deepest = result.steps["down"].steps["down"].steps["down"]
+    assert f"more than {MAX_WIZARD_DEPTH}" in deepest.detail
+
+
+@pytest.mark.asyncio
+async def test_a_declared_output_the_steps_do_not_satisfy_fails_the_wizard(tmp_path):
+    """A wizard's `output` binds, exactly as an op's `output_spec_kind` does —
+    otherwise a caller binds a value that does not hold and carries the breakage
+    somewhere it cannot be explained."""
+    spec = WizardSpec.model_validate({
+        "name": "w",
+        "output": {"port": "int"},
+        "steps": [{"id": "jq", "kind": "compute", "ref": "jq", "bind": "jq"}],
+    })
+    result = await _run_wizard(spec, tmp_path=tmp_path, resolve_op=_ops(_op("jq")))
+
+    assert result.exit_code is ExitCode.NOT_YET
+    assert "not the declared output" in result.detail
+    assert result.steps["jq"].ok, "the step itself was fine; the wizard's promise was not"
 
 
 @pytest.mark.asyncio

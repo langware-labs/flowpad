@@ -172,6 +172,40 @@ async def test_a_call_silent_on_this_platform_runs_nothing(tmp_path):
     assert answer.exit_code is ExitCode.NOT_APPLICABLE
 
 
+@pytest.mark.asyncio
+async def test_a_call_silent_on_this_platform_stays_not_applicable_after_the_recheck(tmp_path):
+    """A check THIS box can run does not turn "not my platform" into a failure.
+
+    The op installs on darwin only; the check runs everywhere and says no. The
+    re-check has nothing to report about a call that never happened, so the
+    call's own answer stands.
+    """
+    spec = _spec(exe_data={"commands": {"darwin": "brew install jq"}})
+    answer = await _run_op(spec, _shell(lambda _c: 1), tmp_path=tmp_path)
+
+    assert answer.exit_code is ExitCode.NOT_APPLICABLE
+    assert "no command for this platform" in answer.detail
+    assert answer.check is not None and answer.check.exit_code is ExitCode.NOT_YET
+
+
+@pytest.mark.asyncio
+async def test_a_call_that_never_started_keeps_its_own_reason(tmp_path):
+    """"Nothing ran" must not be reported as "it ran and the check still fails".
+
+    The launcher answers the way it does with no harness on the box: NOT_YET,
+    ``ran=False``, and the sentence that is the only account of why.
+    """
+    async def launch(*_a, **_kw):
+        return PromptResult.not_yet("No coding-agent harness is available to run this.", ran=False)
+
+    spec = _spec(subkind="agent", exe_data={"agent": "provisioner"})
+    answer = await _run_op(spec, _shell(lambda _c: 1), launch, tmp_path=tmp_path)
+
+    assert answer.exit_code is ExitCode.NOT_YET and answer.ran is False
+    assert "No coding-agent harness" in answer.detail
+    assert answer.check is not None
+
+
 # ── the agent subkind ────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
