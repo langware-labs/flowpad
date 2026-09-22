@@ -3199,7 +3199,8 @@ class AgenticProcess(Entity):
         # and reset the timer.
         _settle_seconds = 2.0
         _post_tool_settle_seconds = 8.0
-        _terminal_states = {_WS.COMPLETE, _WS.INTERRUPTED, _WS.INACTIVE}
+        # ERROR is an abnormal END (the CLI gave up — retries mid-turn are API_ERROR), so it ends a turn too.
+        _terminal_states = {_WS.COMPLETE, _WS.INTERRUPTED, _WS.INACTIVE, _WS.ERROR}
         # A driver whose interactive transcript never writes a terminal marker
         # (copilot) ends a turn on IDLE — but only once a user turn has landed since
         # the stream opened: a reused session's tail is the PRIOR turn's IDLE. Not

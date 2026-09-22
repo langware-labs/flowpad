@@ -39,11 +39,12 @@ describe('AgentChat', () => {
     expect(seen).toEqual(['{"a":1}', '[DONE]']);
   });
 
+  // The conversation comes from the body: cross-origin, an unexposed header reads null.
   it('streams the turn as text and tool events, then done with the conversation', async () => {
     const body = sse(chunk({ role: 'assistant' }), chunk({}, { tool: 'Read' }), chunk({ content: 'hello' }), chunk({}), '[DONE]');
     const spy = vi
       .spyOn(dataManager, 'callAction')
-      .mockResolvedValue(new Response(body, { headers: { 'x-flowpad-conversation': 'c-1' } }) as never);
+      .mockResolvedValue(new Response(body) as never);
 
     const events = [];
     for await (const event of new AgentChat(ENDPOINT).send('hi', { conversationId: 'c-0' })) events.push(event);
@@ -69,5 +70,18 @@ describe('AgentChat', () => {
     const events = [];
     for await (const event of new AgentChat(ENDPOINT).send('hi')) events.push(event);
     expect(events[0]).toEqual({ type: 'error', message: 'busy' });
+  });
+
+  it('reads a conversation from the raw service body', async () => {
+    const messages = [
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hello' },
+    ];
+    const spy = vi
+      .spyOn(dataManager, 'callAction')
+      .mockResolvedValue(JSON.stringify({ conversation_id: 'c-1', messages }) as never);
+
+    expect(await new AgentChat(ENDPOINT).history('c-1')).toEqual(messages);
+    expect((spy.mock.calls[0][0] as { subpath: string }).subpath).toBe('v1/conversations/c-1');
   });
 });
