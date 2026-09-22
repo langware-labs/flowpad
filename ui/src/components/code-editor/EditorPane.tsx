@@ -238,6 +238,10 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   // A deep link is honoured once per (file, line): re-revealing on every content
   // change would fight the user as they scroll away from it.
   const revealedRef = useRef<string | null>(null);
+  // The file whose first content already landed. Opening a file shows its top,
+  // like any code editor; only content arriving AFTER that (an agent streaming
+  // the file) is tail-followed.
+  const openedRef = useRef<string | null>(null);
   const decorationsRef = useRef<string[]>([]);
   const [editorReady, setEditorReady] = useState(false);
 
@@ -269,6 +273,11 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
       return;
     }
 
+    const path = file?.path ?? '';
+    if (openedRef.current !== path) {
+      if (fileContent) openedRef.current = path;
+      return;
+    }
     if (isUserScrolling) return;
     editor.revealLine(model.getLineCount());
     /*
