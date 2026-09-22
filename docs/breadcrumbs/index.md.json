@@ -5,10 +5,10 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "breadcrumbs",
   "folder_name": "breadcrumbs",
-  "inputs_hash": "0a2f7fb8dc7953e1f301a14b13cbde998ebdc864a4ab82bf1d309e71826ce951",
+  "inputs_hash": "0aa55e335e6e6101e0aa68bee704eede7a7f8cbf621f2c62be518f4b80835014",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it \u2014 personas, composer readiness, live frames, port picking, login state.",
+  "self_summary": "Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it — personas, composer readiness, live frames, port picking, login state.",
   "files": [
     {
       "name": "agent_activity_readout.md",
@@ -29,7 +29,7 @@
     {
       "name": "bootstrap_default_project.md",
       "rel_path": "bootstrap_default_project.md",
-      "title": "Bootstrap's default_project \u2014 which project a machine opens",
+      "title": "Bootstrap's default_project — which project a machine opens",
       "summary": "Which project a machine opens at bootstrap: browser memory outranks all, then hub default_project one-shot, last active project, @local; resolved per caller, never cached.",
       "content_hash": "6a61bad72c2dfa14a3949b13635b58917f51c43e261068b7d4d58cb9df981dc8",
       "size_bytes": 12212
@@ -77,7 +77,7 @@
     {
       "name": "live_plan_detection.md",
       "rel_path": "live_plan_detection.md",
-      "title": "Live plan detection \u2014 the plan path lives on the attachment",
+      "title": "Live plan detection — the plan path lives on the attachment",
       "summary": "Where a live plan's file path actually lives: on the earlier plan_mode attachment, not on ExitPlanMode, resolved through plan_path_from_attachments.",
       "content_hash": "c259d73dfe848dd13765401b8d51b81a47fd5424baf84bef43d9c390c4376beb",
       "size_bytes": 5342
@@ -118,17 +118,17 @@
       "name": "sandbox_browser_url.md",
       "rel_path": "sandbox_browser_url.md",
       "title": "Sandbox preview urls: browser vs server",
-      "summary": "A dev-server port has two correct URLs in a cloud box: loopback for the server, the public per-port host for the browser, plus sandbox-id resolution.",
-      "content_hash": "4a18ab0817ebd35ba4416752852babc29d003304c9db6fa2b7700feb24c57de3",
-      "size_bytes": 5833
+      "summary": "A dev-server port has two correct URLs in a cloud box: loopback for the server, the public per-port host for the browser.",
+      "content_hash": "f498244f792f29b0743a63a63b5e4e6594ef9f0f0f8ad5ced5603e5f7c1244c7",
+      "size_bytes": 5740
     },
     {
       "name": "served_html_encoding.md",
       "rel_path": "served_html_encoding.md",
       "title": "Served app HTML must be read as UTF-8",
-      "summary": "Served app HTML must be read as UTF-8: a text read without encoding decodes as cp1252 on Windows, giving mojibake and occasional 500s.",
-      "content_hash": "602e4f72bc20eaf16e05ff4001d3fe71ee0748580500f2cdd2b6a023b46f8454",
-      "size_bytes": 4982
+      "summary": "Served app HTML must be read as UTF-8: without an encoding it decodes as cp1252 on Windows, giving mojibake and 500s.",
+      "content_hash": "4923a4b2119aeb5c1b3397915c4105dbf9893655a5e09fa48735835f9ea47309",
+      "size_bytes": 5000
     },
     {
       "name": "surface_transcript_reconcile.md",
@@ -172,6 +172,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-19T23:43:14.540041+00:00",
+  "generated_at": "2026-09-22T10:22:30.916793+00:00",
   "latest_process_ref": ""
 }

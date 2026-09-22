@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "8c82b04ca132fd070680d195b7d0ceb8b15e55668050313cc103bcf9b9d79e3d",
+  "inputs_hash": "b621bf7deb54b28ea98a5c8b25527b80482076ca304a22eba8ee66c94b58bdc6",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the single shape system with its kind registry, data sources and datasets, records, search and the SQLite layer underneath.",
@@ -22,7 +22,7 @@
       "name": "asset-management.md",
       "rel_path": "asset-management.md",
       "title": "Asset management",
-      "summary": "flow_sdk.assets \u2014 filesystem asset discovery, identity resolution, install, removal, projection and inventory, built on frozen Asset and AssetFolder values.",
+      "summary": "flow_sdk.assets — filesystem asset discovery, identity resolution, install, removal, projection and inventory, built on frozen Asset and AssetFolder values.",
       "content_hash": "158342912007daa71149c524bd2b1a9a4d131b821b4a162dba022eecbb591e5d",
       "size_bytes": 8808
     },
@@ -61,18 +61,18 @@
     {
       "name": "data-spec.md",
       "rel_path": "data-spec.md",
-      "title": "DataSpec \u2014 shape as Pydantic, the spec as the layout",
-      "summary": "DataSpec as the one shape system: Pydantic subclasses, spec_kind registration in the SchemaRegistry, runtime-compiled shapes, and asset layout as a class.",
-      "content_hash": "b5367c30906ebc6826068b4dac086d4bba337f85d7cc4a2e9092c36745983dc5",
-      "size_bytes": 18687
+      "title": "DataSpec — shape as Pydantic, the spec as the layout",
+      "summary": "DataSpec design: every shape is Pydantic, runtime shapes compile via DataSpec.parse, spec_kind links shapes to the registry, and an asset's disk layout is its class.",
+      "content_hash": "14e7238d9b8545872f9b029fd92ad6e553076b896c065036fa84baf91532e7e3",
+      "size_bytes": 18881
     },
     {
       "name": "database.md",
       "rel_path": "database.md",
       "title": "Database Architecture",
-      "summary": "SQLite layer wiring: WAL pragmas, BEGIN IMMEDIATE, pooled connections, one transaction per request, and the database-is-locked cascade that forced the async refactor.",
-      "content_hash": "ac1c9214c097ccbc8d2e9409c4f42142dded789bf9a92d3ef193a114b318ea1b",
-      "size_bytes": 15278
+      "summary": "SQLite layer architecture: one async engine, pooling, pragmas, BEGIN IMMEDIATE on writers, batched indexer commits with writer-lock hand-over, and driver session resolution.",
+      "content_hash": "31745ea3febe727bde390b4034e7dff5d31dca1933cbe05d4096116f38fba23d",
+      "size_bytes": 15907
     },
     {
       "name": "datasets.md",
@@ -117,7 +117,7 @@
     {
       "name": "invalidation.md",
       "rel_path": "invalidation.md",
-      "title": "Content Invalidation (file change \u2192 reindex \u2192 refresh)",
+      "title": "Content Invalidation (file change → reindex → refresh)",
       "summary": "The invalidation loop that turns an out-of-band file write into fresh UI content: the re-index trigger and the file-body re-read at the two outer edges.",
       "content_hash": "71de6e8fa1a36f132fd4e2fd036ea8134bf6a116060a98e280f65840959de8a8",
       "size_bytes": 10885
@@ -174,33 +174,33 @@
       "name": "scan-and-discovery.md",
       "rel_path": "scan-and-discovery.md",
       "title": "Scan and Discovery",
-      "summary": "How FSIndexer's DFS finds records on disk: roots, waypoint fan-out, per-type parser and freshness slots, RecordQuery, and why indexing is explicit-action only.",
-      "content_hash": "24851ec9f76eb364d4b016f6a7c380d71c661a1813fd1f7749ade1813abb5eee",
-      "size_bytes": 39151
+      "summary": "How FSIndexer walks roots through waypoints and per-type parsers, commits in batches handing the writer lock to queued writers, plus session lookup and index actions.",
+      "content_hash": "e3aa0d88c194f976ada9b70d2458fc9002afb1ef3e2a67882c72c12b314832fb",
+      "size_bytes": 39443
     },
     {
       "name": "schema-registry.md",
       "rel_path": "schema-registry.md",
       "title": "Schema Registry",
-      "summary": "SchemaRegistry, the single source of truth for per-type metadata: TypeInfo authoring, registration, and how DataSpec kinds bind into the same namespace.",
-      "content_hash": "aae264b69ebb3471cc1fe3d8eddd296e30af8c34f07d9698dec8842ca8929b0e",
-      "size_bytes": 24630
+      "summary": "SchemaRegistry as the single source of type metadata: declarative TypeInfo modules, entity self-registration, merge semantics, kind resolution and persistence.",
+      "content_hash": "0c8dae40242e2933852b660b4ad401a341d56ed27adb4ef085b30f1d7a7a796b",
+      "size_bytes": 25165
     },
     {
       "name": "source-contract-boundary.md",
       "rel_path": "source-contract-boundary.md",
       "title": "The source contract and the sync runtime",
-      "summary": "The line between the source contract in flow_sdk/sources and the ingest runtime: the async session API, frozen value specs, capability protocols, the import ban.",
-      "content_hash": "4a9526c15b0e425f6b46f60c226acce99dcc18c2bf450f9206a8cbe3189b2a1f",
-      "size_bytes": 5299
+      "summary": "The boundary between the flow_sdk/sources contract (async sources, pages, ack) and the ingest sync runtime, with its one dependency direction.",
+      "content_hash": "89723df1cbed6e0cadcdf94e5d6037646470a650bcc4cf0b7b090a82a9b9326a",
+      "size_bytes": 5293
     },
     {
       "name": "stream-inbox-projection.md",
       "rel_path": "stream-inbox-projection.md",
-      "title": "Stream inbox projection \u2014 ingested messages become conversations",
-      "summary": "One-way projection of ingested SourceItems into stream inbox conversations: reference-model FlowMessages, lookup-not-derive identity, the dedupe lock, and which kinds are admitted.",
-      "content_hash": "171a5623701d3677a6460a2639ec248ec27ed3ccb6dd702d06da857ccff4aa6e",
-      "size_bytes": 12807
+      "title": "Stream inbox projection — ingested messages become conversations",
+      "summary": "One-way projection of ingested records into stream-inbox conversations: reference rows, the timestamp law, self-healing reindex, the two lanes and purge semantics.",
+      "content_hash": "2a53857d4600db4bfca6063e6f9e896ade229ce932fa4f80cbb429b748c2c45e",
+      "size_bytes": 12898
     },
     {
       "name": "system-tools.md",
@@ -220,6 +220,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-19T23:43:14.698454+00:00",
+  "generated_at": "2026-09-22T11:53:02.619684+00:00",
   "latest_process_ref": ""
 }

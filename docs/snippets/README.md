@@ -38,7 +38,7 @@ pinned by a test so it cannot drift silently.
   first lookup is kept.
 * **Values travel as `DataSpec`.** What a driver emits is a
   `SourceItemSpec`, what you send back is a `MessageSpec` subclass, and what an
-  agent returns is a `RunOutput`. They are frozen and refuse unknown keys. A
+  agent returns is a `PromptResult` (see [call-returns](call-returns.md)). They are frozen and refuse unknown keys. A
   simple `MessageBlock` yields an ephemeral `MessageRequest`; the block owns
   its one-shot reply correlation.
 * **Read before you believe.** A verb returning does not mean rows landed.

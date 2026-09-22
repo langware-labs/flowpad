@@ -5,23 +5,23 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "79482712bcafa8d195eed38416bf876302bc1af090e1c7bf5cdcf89dc0862ce9",
+  "inputs_hash": "74794d1183005d3a3a4edc462c4edebc6ac14d16303e0251e86d4058ed37924c",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes and workflows \u2014 copyable code rather than prose.",
+  "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
   "files": [
     {
       "name": "README.md",
       "rel_path": "README.md",
-      "title": "Snippets \u2014 the dev onboarding shelf",
-      "summary": "Index of the runnable SDK snippet shelf, one page per category, naming the test that pins each so the examples cannot drift.",
-      "content_hash": "0169c758968f4129439d9e77776a85f1956df23d3718ec1ef5b66ea0a24fa7c4",
-      "size_bytes": 5468
+      "title": "Snippets — the dev onboarding shelf",
+      "summary": "Conventions for the dev snippets shelf: short runnable SDK Python, one file per category, each pinned by a test; values travel as DataSpec.",
+      "content_hash": "9acfde7f753f8f0a0db75772b4c09eefeb20bcf1c70addac1af25611e7a8cfbd",
+      "size_bytes": 5855
     },
     {
       "name": "activity.md",
       "rel_path": "activity.md",
-      "title": "Activity \u2014 progress on anything, from anywhere",
+      "title": "Activity — progress on anything, from anywhere",
       "summary": "Activity progress API by example: path-addressed nodes, cheap ticks versus published transitions, and why a finished root is dropped from the live tree.",
       "content_hash": "09ff5dd4c2d757be068d03e7891e0555799817cad58c72fef2aa88bdcd97cfb8",
       "size_bytes": 10611
@@ -29,18 +29,18 @@
     {
       "name": "agent-deployment.md",
       "rel_path": "agent-deployment.md",
-      "title": "Agent deployment \u2014 snippets",
-      "summary": "Runnable snippets for placing an Agent as a Deployment and launching it into an AgenticProcess, with the local placement and dispatch contracts.",
-      "content_hash": "de932d5c0db71463b32d4d2231341d48fab5dcba04897748edc1f4f792b9ba6e",
-      "size_bytes": 5561
+      "title": "Agent deployment — snippets",
+      "summary": "Snippets for placing an agent: Deployment rows, starting a session on a placement, reading and stopping placements, and a dedicated machine.",
+      "content_hash": "8851df3f0ffe185af4abd0d70ac083a42056c46b8a1bb7a5004053d31b746b09",
+      "size_bytes": 6092
     },
     {
       "name": "agent-email.md",
       "rel_path": "agent-email.md",
       "title": "Agent email",
-      "summary": "Runnable snippet giving an Agent its own mailbox and answering incoming mail in a threaded reply through StreamInbox.listen.",
-      "content_hash": "0e97d28cb3d9afaddf69d0141e4689ef1f301f3af7db47308be6c49fa15d9fe5",
-      "size_bytes": 4243
+      "summary": "Snippet: allocate an agent's mailbox and answer each incoming email through the agent with a threaded reply via its StreamInbox.",
+      "content_hash": "a6ce31f8a73793b6afc9710db102142b30bd6f99092e3a9ab0cce9879204ea43",
+      "size_bytes": 4360
     },
     {
       "name": "agent-helpdesk.md",
@@ -53,15 +53,31 @@
     {
       "name": "agents-on-channels.md",
       "rel_path": "agents-on-channels.md",
-      "title": "An agent on a channel \u2014 snippets",
-      "summary": "Putting an agent on a messaging channel, WhatsApp as the example: the credential, the app-answers variant, and running your own loop over the same SDK.",
-      "content_hash": "b1c2015b9db2b284dc3e9340fcb0e9a7c891c319e27c5021da2bf37545d50f12",
-      "size_bytes": 4433
+      "title": "An agent on a channel — snippets",
+      "summary": "Snippets for putting an agent on a messaging channel like WhatsApp: the credential, the app-runs-it variant, and the your-process-runs-the-loop variant.",
+      "content_hash": "11d8e4ab0d54db9151a5b3a85faf256401a64e219e55f5a9d62d16a950919952",
+      "size_bytes": 4944
+    },
+    {
+      "name": "call-returns.md",
+      "rel_path": "call-returns.md",
+      "title": "Call → ExitCode → Return",
+      "summary": "The call-return contract, every fence tested: ComputeOp as one call per subkind, ReturnedValue subclasses, no raised outcomes, role timeouts, ask, wizard and agent continuation.",
+      "content_hash": "29d1475e1a4f155ee8f7f862d3e504e8a7ebd5be7b1cfd6cc89d00eda6b1b06d",
+      "size_bytes": 17017
+    },
+    {
+      "name": "compute-ops.md",
+      "rel_path": "compute-ops.md",
+      "title": "Compute ops — one call that converges, composes, and can ask",
+      "summary": "Compute op snippets: one convergent call per subkind, asking a person once, a fallback as two ops, retries as the caller's, cancel and silence answers.",
+      "content_hash": "66cabcba34d5c75cda0d70826c0eb76cfce2ecebe89e8ae66cf0f134fdc4dc4e",
+      "size_bytes": 4496
     },
     {
       "name": "connections.md",
       "rel_path": "connections.md",
-      "title": "Connections \u2014 Python SDK and CLI",
+      "title": "Connections — Python SDK and CLI",
       "summary": "Runnable Python and CLI snippets for OAuth connections: listing the provider catalogue, connecting, testing, and how the local service is borrowed or started.",
       "content_hash": "ee8faf7cd4f8a8cfe2c2b22a4f2ef552921c5c09807fc66aff605c6aa4d25870",
       "size_bytes": 3066
@@ -69,7 +85,7 @@
     {
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
-      "title": "Data sources \u2014 snippets",
+      "title": "Data sources — snippets",
       "summary": "Runnable data-source snippets: connect a feed on a driver, sync it once, read the SourceItems, and the per-provider config and secret keys.",
       "content_hash": "a82ffba997f4b81c883022350f53ab8f98511a4ba82bd4c0b4a6b01d57b4c3a9",
       "size_bytes": 16439
@@ -78,9 +94,9 @@
       "name": "data-spec.md",
       "rel_path": "data-spec.md",
       "title": "DataSpec",
-      "summary": "Runnable DataSpec examples: declaring a shape, frozen and extra-forbid semantics, parsing an authoring form from a document, and the three authoring forms.",
-      "content_hash": "bd9d91dfd6338679204904c3faead1420ebc9295c93e23dceb396cfc6ff0b2aa",
-      "size_bytes": 10043
+      "summary": "Runnable DataSpec snippets: declaring shapes, shapes written in documents, what a call returns, saving and loading, and file-valued fields.",
+      "content_hash": "06fe7bea8bc2b43f87be2deaeb4d08ffeed550f6f7e62484cf79cf4ecd514475",
+      "size_bytes": 10396
     },
     {
       "name": "gmail-source.md",
@@ -93,7 +109,7 @@
     {
       "name": "llm-endpoints.md",
       "rel_path": "llm-endpoints.md",
-      "title": "LLM endpoints \u2014 snippets",
+      "title": "LLM endpoints — snippets",
       "summary": "Runnable snippets for LLMEndpoint, the answer to who pays for tokens: api_key, hub and device kinds, completions, embeddings, model listing and probes.",
       "content_hash": "c2c2ae5175447f36a00ae979d69a0f8be3a18e3db86721aa62aaed5685f8af8e",
       "size_bytes": 12312
@@ -109,7 +125,7 @@
     {
       "name": "pipes.md",
       "rel_path": "pipes.md",
-      "title": "Pipes \u2014 wiring a source to whatever consumes it",
+      "title": "Pipes — wiring a source to whatever consumes it",
       "summary": "Runnable examples wiring a source to its consumer: one sync cycle, folder-to-folder mirroring with reflect, and following changes with ack and redelivery.",
       "content_hash": "27a0f09687b3f85660047293ef0cf62754a4cab28557f7a0ee82c56f7b30e272",
       "size_bytes": 7883
@@ -117,7 +133,7 @@
     {
       "name": "processes.md",
       "rel_path": "processes.md",
-      "title": "Processes and agents \u2014 snippets",
+      "title": "Processes and agents — snippets",
       "summary": "Runnable snippets for processes and agents: attaching MCP servers to a process or an agent, how each harness renders them, and when MCP resolves.",
       "content_hash": "01fd7843f85e88e8866380d56b3842c6b723528a22a0bac80e4881aecd54e7e5",
       "size_bytes": 5494
@@ -125,7 +141,7 @@
     {
       "name": "rag.md",
       "rel_path": "rag.md",
-      "title": "RAG \u2014 snippets",
+      "title": "RAG — snippets",
       "summary": "Runnable snippets for RagIndex: marking folders searchable, chunking and embedding markdown, why re-indexing is cheap, and querying the vectors.",
       "content_hash": "8db8ecbebb7d5de8dd5276d31fd2f20ed80c4c6d616daa985830fc043ae6c987",
       "size_bytes": 5343
@@ -139,15 +155,23 @@
       "size_bytes": 21679
     },
     {
+      "name": "service-endpoints.md",
+      "rel_path": "service-endpoints.md",
+      "title": "Service endpoints — snippets",
+      "summary": "ServiceEndpoint snippets: what a placement answers on, reaching endpoints, web-app endpoints, cloud boxes, hub-served endpoints and an agent's chat.",
+      "content_hash": "2e77a1e5786759a84a49dee4c0efa618353b8e3e86152948f43f3141f6abd996",
+      "size_bytes": 7404
+    },
+    {
       "name": "workflows.md",
       "rel_path": "workflows.md",
-      "title": "Workflows \u2014 snippets",
-      "summary": "Runnable flow_sdk.blocks workflow examples: the mail concierge loop over a StreamInbox, named consumer positions, agent turns and typed replies that ack.",
-      "content_hash": "0f5de165b42e6688329b3793e6ea314694f89a6afd0fb47c8de894544f93325c",
-      "size_bytes": 10485
+      "title": "Workflows — snippets",
+      "summary": "Plain-Python workflow snippets with flow_sdk.blocks: a mail concierge, Telegram and Slack bots, and one loop on every channel.",
+      "content_hash": "5cfd69002b06d1970047535c54bea21fd91816fdc2a7b12605fc8ec4153d8b19",
+      "size_bytes": 10470
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-19T23:43:15.734237+00:00",
+  "generated_at": "2026-09-22T11:53:02.843835+00:00",
   "latest_process_ref": ""
 }
