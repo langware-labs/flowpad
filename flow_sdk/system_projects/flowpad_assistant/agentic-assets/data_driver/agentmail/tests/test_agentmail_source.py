@@ -158,9 +158,9 @@ class TestSend:
         assert mail.requests[-1].endswith("/messages/send")
         assert (mail.bodies[-1]["to"], mail.bodies[-1]["subject"]) == (["joe@agentmail.to"], "Hello")
 
-    async def test_the_sent_copy_is_not_recorded_here(self, mail):
+    async def test_the_sent_copy_is_recorded_on_the_key_the_listing_returns(self, mail):
         out = await DataDriver.loaded("agentmail").send(_row(mail), thread_key="", to="j@x.to", text="hi")
-        assert out.recorded is False, "the listing returns the sent copy; recording it here would be the same row twice"
+        assert out.recorded is True, "on record at send; the listing's copy has the same message_id, so it lands on this row"
 
 
 class TestTheKey:

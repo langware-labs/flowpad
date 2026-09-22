@@ -236,7 +236,7 @@ async def test_a_reply_routes_to_the_author_with_the_reply_headers(gmail):
     out = await DataDriver.loaded("gmail").send(_row(), thread_key="", to="sailor@example.com", text="Arr.", in_reply_to="<incoming@gmail.test>")
     (sent,) = gmail.sent
     assert (sent["To"], sent["In-Reply-To"], sent["Subject"]) == ("sailor@example.com", "<incoming@gmail.test>", "Re: Treasure")
-    assert out.external_id == str(sent["Message-ID"]) and out.recorded is False
+    assert out.external_id == str(sent["Message-ID"]) and out.recorded is True
 
 
 async def test_reply_lookup_fetches_only_the_newest_matching_header(monkeypatch):

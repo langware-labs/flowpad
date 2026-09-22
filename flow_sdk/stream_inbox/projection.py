@@ -544,7 +544,7 @@ async def _sender_for(item, source, channel: str) -> tuple[MessageSender, str]:
 
     address = (item.author_external_id or "").strip()
     display = display_name_of(item.author_display or "", address)
-    if is_self_address(source, address):
+    if item.is_ours(source):
         # An AGENT's mailbox is not the user's. Attributing its sent copies to
         # the human would put words in their mouth — the owner would appear to
         # have written replies they never saw. Same reasoning as

@@ -492,7 +492,7 @@ class StreamInbox:
         from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
-        from flow_sdk.stream_inbox.projection import is_self_address, project_source_item  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
 
         source = await self.ensure_source()
         position = await ConsumerPosition.ensure_for(
@@ -527,7 +527,7 @@ class StreamInbox:
                         except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
                             logger.exception("blocks: projection failed for %s", item.id)
                         sender = str(item.author_external_id or "").strip().lower()
-                        if is_self_address(source, item.author_external_id or "") or (
+                        if item.is_ours(source) or (
                             self.senders and sender not in self.senders
                         ):
                             # Acked now while nothing in this page has been handed over — an ack is an

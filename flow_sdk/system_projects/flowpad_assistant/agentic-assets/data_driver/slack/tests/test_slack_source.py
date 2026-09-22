@@ -20,6 +20,7 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, position
@@ -358,7 +359,9 @@ async def test_send_posts_into_the_thread_and_returns_the_ts(serve):
     source = _source(channel=_saved_channel())
     await source.save()
     outcome = await DataDriver.loaded("slack").send(source, thread_key="100.000100", to=CHANNEL, text="on it", in_reply_to="100.000100")
-    assert outcome.external_id == "300.000300" and outcome.recorded is False
+    assert outcome.external_id == "300.000300" and outcome.recorded is True
+    (row,) = await SourceItem.get_all({"data_source_id": str(source.id), "external_id": "300.000300"})
+    assert row.sent_by_us, "on record at send, marked ours — the echo lands on this row"
     assert slack.requests[0] == "/chat.postMessage"
     assert json.loads(slack.bodies[0]) == {"channel": CHANNEL, "text": "on it", "thread_ts": "100.000100"}
 

@@ -17,9 +17,9 @@ nothing has to re-derive an id it does not hold.
 
 **Snapshot vs local state.** ``SourceItemSpec`` — the type's ``asset_spec`` — IS
 the snapshot: what a driver emits and what the ingestor copies onto the row
-whenever the content digest moves. ``read`` and ``starred`` are ours, outside
-the header, and so survive re-delivery structurally rather than by a hand-kept
-field map.
+whenever the content digest moves. ``read``, ``starred`` and ``sent_by_us`` are
+ours, outside the header, and so survive re-delivery structurally rather than by
+a hand-kept field map.
 """
 
 from __future__ import annotations
@@ -282,6 +282,10 @@ class SourceItem(Entity):
     # ── local state — PRESERVED across re-delivery ─────────────────────────
     read: bool = APIField(default=False, persist=Persist.TRUE)
     starred: bool = APIField(default=False, persist=Persist.TRUE)
+    # This machine sent it (``DataDriver.send`` records the copy at send time). Outside the spec,
+    # so the provider's echo of the same message — same natural key — never clears it, and no
+    # ingest caller can claim it.
+    sent_by_us: bool = APIField(default=False, persist=Persist.TRUE)
 
     _api_visible: ClassVar[bool] = True
 
@@ -311,6 +315,13 @@ class SourceItem(Entity):
             },
         )
 
+    def is_ours(self, source) -> bool:
+        """Did WE write this? Sent from here, or authored by one of the source's own addresses —
+        the latter covers what we sent from elsewhere (a Sent folder, another machine)."""
+        from flow_sdk.stream_inbox.projection import is_self_address  # noqa: PLC0415
+
+        return self.sent_by_us or is_self_address(source, self.author_external_id or "")
+
     @classmethod
     async def newest_for(cls, data_source_id: str) -> Optional["SourceItem"]:
         """The last row ingested for a source — a fresh listener's baseline."""
@@ -331,21 +342,16 @@ class SourceItem(Entity):
         Slack threads carry the root ``thread_ts``, not the replied-to message. Primary: a
         self-authored row whose ``reply_to_external_id`` names the item. Fallback: a
         self-authored row on the same thread ingested at or after *since* (the moment the
-        reply was attempted). Self-authorship is decided by ``is_self_address``, in Python —
-        a source's own addresses are a handful.
+        reply was attempted). Self-authorship is ``is_ours``.
 
-        Eventually consistent for the four senders that do not record their own copy; the
-        caller syncs first and treats "not found" as "do not resend".
+        The caller syncs first (a crash may have fallen between send and record) and treats
+        "not found" as "do not resend".
         """
-        from flow_sdk.stream_inbox.projection import is_self_address  # noqa: PLC0415
-
-        def mine(row: "SourceItem") -> bool:
-            return is_self_address(source, row.author_external_id or "")
 
         if item.external_id:
             rows = await cls.get_all({"data_source_id": str(source.id), "reply_to_external_id": item.external_id})
             for row in rows:
-                if mine(row):
+                if row.is_ours(source):
                     return row
         if item.thread_key:
             operands = [
@@ -359,7 +365,7 @@ class SourceItem(Entity):
                 order_by=[{"created_date": "asc"}, {"id": "asc"}],
             ))
             for row in rows:
-                if mine(row) and str(row.id) != str(getattr(item, "id", "")):
+                if row.is_ours(source) and str(row.id) != str(getattr(item, "id", "")):
                     return row
         return None
 

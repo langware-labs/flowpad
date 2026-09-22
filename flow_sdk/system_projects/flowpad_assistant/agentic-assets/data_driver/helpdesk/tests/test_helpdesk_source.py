@@ -226,7 +226,7 @@ class TestSend:
     async def test_it_picks_the_ticket_up_before_answering_every_time(self, hub):
         out = await DataDriver.loaded("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
         assert [c for c in hub.calls if c[0] == "post"] == [("post", "conversation", TICKET, "pickup"), ("post", "conversation", TICKET, "add_message")]
-        assert out.recorded is False, "the next poll ingests the sent copy onto the hub's id"
+        assert out.recorded is True, "recorded at send, on the hub's id — the next poll's copy lands on the same row"
         assert out.external_id == hub.messages[-1]["id"]
 
     async def test_a_send_records_who_we_answer_as(self, hub):

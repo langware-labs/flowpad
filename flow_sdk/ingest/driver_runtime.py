@@ -81,7 +81,7 @@ class SendStatus(StrEnum):
 @dataclass(frozen=True)
 class SendOutcome:
     """What the channel confirmed about one message. ``recorded`` is load-bearing: False on a SENT
-    message means the mail is gone but the local copy is missing, and re-sending to fix the
+    message means recording the copy failed — the mail is gone, and re-sending to fix the
     bookkeeping would mail the recipient twice."""
 
     external_id: str = ""
@@ -603,9 +603,8 @@ class DriverRuntime:
         # A transport whose connector may only DRAFT reports the draft with no `sent_at`; one that
         # records its own copy says so on the payload.
         drafted = bool(getattr(type(source), "sends_may_draft", False)) and sent.data.sent_at is None
-        if drafted or type(source).echoes_sends:
-            recorded = bool(getattr(sent.data, "recorded", False))
-        else:
+        recorded = bool(getattr(sent.data, "recorded", False))
+        if not drafted and not recorded:
             recorded = await self._record(row, source, sent)
         return SendOutcome(
             external_id=sent.origin.key,
@@ -615,12 +614,13 @@ class DriverRuntime:
         )
 
     async def _record(self, row: Any, source: Source, sent: Any) -> bool:
-        """Ingest a sent message the provider will never echo back — without it a conversation shows
-        only its inbound half. After identity is stamped, so the copy reads as ours."""
-        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        """Ingest what we just sent, marked ours — at once, not whenever the provider's echo is next
+        read. The echo carries the same natural key, so it lands on this row and keeps the mark;
+        without the mark a copy with no self author would read as a stranger's message."""
+        from flow_sdk.ingest.ingestor import ingest_item  # noqa: PLC0415
 
         try:
-            await ingest_items([envelope_of(sent, data_source_id=str(row.id), provider=self.provider)])
+            await ingest_item(envelope_of(sent, data_source_id=str(row.id), provider=self.provider), sent_by_us=True)
         except Exception:  # noqa: BLE001 — the message IS delivered; bookkeeping must not unsend it
             logger.exception("[ingest] %s sent %s but could not record the copy", self.provider, sent.origin.key)
             return False

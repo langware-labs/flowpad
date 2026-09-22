@@ -190,10 +190,10 @@ async def test_conformance(check, serve):
 def recorded(monkeypatch):
     seen: list = []
 
-    async def _ingest(items, **_kw):
-        seen.extend(items)
+    async def _ingest(item, **_kw):
+        seen.append(item)
 
-    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", _ingest)
+    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_item", _ingest)
     return seen
 
 
