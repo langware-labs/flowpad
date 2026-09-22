@@ -86,6 +86,40 @@ async def ensure_manifest_indexed(project) -> Entity | None:
     return await ProjectManifest.get_one({"id": resolved.id})
 
 
+async def ensure_project_namespace(project) -> str:
+    """The project names its ontology ONCE, so every asset under it inherits.
+
+    Called when a project is first materialized and once per boot for the rest. The
+    namespace is seeded from the folder name and then frozen — ``ensure_namespace``
+    never overwrites a declaration, so this is safe to call on every index.
+
+    Returns the namespace in force (possibly one declared earlier), or ``""``.
+
+    **A system project is never seeded.** What we ship is OURS by definition; stamping
+    a namespace on ``flowpad_assistant`` would push every kind its shipped drivers mint
+    under a marker, and every bare kind already written would stop resolving.
+    """
+    from flow_sdk.assets.project_manifest import ensure_namespace, namespace_seed  # noqa: PLC0415
+    from flow_sdk.config import is_hidden_project  # noqa: PLC0415
+    from flow_sdk.fs_store.operations import namespace_roots  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import is_valid_project_cwd  # noqa: PLC0415
+
+    mount = _mount_of(project)
+    if mount is None or is_hidden_project(str(mount), bool(getattr(project, "system", False))):
+        return ""
+    if not is_valid_project_cwd(mount):
+        return ""
+    try:
+        spec = await asyncio.to_thread(ensure_namespace, mount, namespace_seed(mount))
+    except OSError as exc:  # a read-only or vanished checkout is not a startup failure
+        logger.warning("[namespace] %s could not be seeded: %s", mount, exc)
+        return ""
+    ns = spec.ns if spec is not None else ""
+    if ns:
+        namespace_roots.remember(ns, mount)
+    return ns
+
+
 async def origin_for_asset(asset_ref: str):
     """WHERE a reader can fetch this asset: its repo's ``GitOrigin`` (repo,
     branch, commit, rel_path) when the checkout has a usable remote, else the

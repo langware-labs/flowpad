@@ -233,3 +233,37 @@ class TestGetAllJsonFieldFilter:
 
         assert len(results) == 1
         assert results[0].session_id == "session-A"
+
+
+class TestGetAllSkipsUnreadableRows:
+    """A list survives a row it cannot build; a single-row read still says it is broken.
+
+    A `source_item` whose payload named a `spec_kind` this process could not reach used to
+    abort the whole hydration loop, so `GET /api/v1/graph/source_item` answered 500 and the
+    screen was empty — several hundred good rows lost to one bad one.
+    """
+
+    async def _insert_broken(self, driver, entity_id):
+        """A body the model cannot validate: `data` must be a dict, not a list."""
+        async with driver.session_factory() as session:
+            await session.execute(text(
+                "INSERT INTO entities (id, type, namespace, data, record_data_ref) "
+                "VALUES (:id, 'note', '', :data, NULL)"
+            ), {"id": entity_id, "data": '{"created_date": []}'})
+            await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_the_good_rows_still_come_back(self, driver, caplog):
+        await _insert_entity(driver, "ok1", "note")
+        await self._insert_broken(driver, "bad")
+        await _insert_entity(driver, "ok2", "note")
+
+        rows = await driver.get_all(QueryFilter(type="note"))
+
+        assert sorted(r.id for r in rows) == ["ok1", "ok2"]
+        assert "bad" in caplog.text and "skipping unreadable" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_list_of_only_broken_rows_is_empty_not_an_error(self, driver):
+        await self._insert_broken(driver, "bad")
+        assert await driver.get_all(QueryFilter(type="note")) == []

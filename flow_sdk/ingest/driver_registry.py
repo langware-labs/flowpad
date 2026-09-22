@@ -33,6 +33,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Iterator, TYPE_CHECKING, Optional
 
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.assets.project_manifest import namespace_for
 from flow_sdk.schema.data_spec._namespace import loading as loading_ns
 from flow_sdk.schema.data_spec.data_driver_spec import SOURCE_FILE, DataDriverSpec
@@ -184,6 +185,56 @@ def load_driver_value_kinds() -> None:
     from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
 
     DRIVERS.kinds()
+
+
+#: Namespaces whose drivers this process has already imported. A MISS is never
+#: recorded: the map may simply not be built yet, and recording absence would make
+#: a namespace unreadable for the life of the process.
+_NS_LOADED: set[str] = set()
+
+
+def forget_namespace_loads() -> None:
+    """Allow authored folders to be re-imported (the ns → root map was dropped)."""
+    _NS_LOADED.clear()
+
+
+def load_namespace_value_kinds(ns: str) -> None:
+    """Import the data drivers of the project that OWNS ``ns``, registering their kinds.
+
+    Synchronous by contract — it is called from ``SchemaRegistry.kind_type`` while a row
+    is being validated, so it may not await and may not touch the database. The project
+    is looked up in the namespace map, which the indexing paths keep filled.
+
+    An unknown namespace loads NOTHING. There is deliberately no search of other
+    projects for a matching kind: finding it under the wrong owner is exactly the
+    collision the namespace exists to prevent (see ``_importing``).
+    """
+    from flow_sdk.fs_store.operations import namespace_roots  # noqa: PLC0415 — cycle
+
+    if not ns or ns in _NS_LOADED:
+        return
+    root = namespace_roots.root_for(ns)
+    if root is None:
+        return
+    _NS_LOADED.add(ns)
+    folder_root = root / AGENTIC_ASSETS_DIR / "data_driver"
+    if not folder_root.is_dir():
+        return
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+
+    for folder in sorted(p for p in folder_root.iterdir() if (p / MANIFEST_FILE).is_file()):
+        name = folder.name
+        if DRIVERS.get_or_none(name) is not None:
+            continue
+        try:
+            # ``load_driver`` re-derives the namespace from the folder's own manifest, so
+            # the kinds land under the owner the ASSET declares, never under the ``ns``
+            # that happened to be asked for.
+            DRIVERS.register(load_driver(folder))
+            _LOAD_ERRORS.pop(name, None)
+        except DriverLoadError as exc:
+            _LOAD_ERRORS[name] = str(exc)
+            logger.error("[sources] authored data source %s did not load: %s", name, exc)
 
 
 def register_shipped(registry: "KindRegistry[DataDriver]") -> None:

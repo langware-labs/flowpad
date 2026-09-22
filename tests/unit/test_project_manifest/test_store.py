@@ -11,6 +11,8 @@ import pytest
 from flow_sdk.assets.project_manifest import (
     MANIFEST_REL_PATH,
     ManifestError,
+    ensure_namespace,
+    namespace_seed,
     load_or_empty,
     make_entry,
     manifest_path,
@@ -117,3 +119,59 @@ def test_write_manifest_is_readable_by_a_bare_json_reader(tmp_path):
     text = manifest_path(tmp_path).read_text()
     assert text.endswith("\n") and json.loads(text)["entries"][0]["name"] == "Guide"
     assert parse_manifest(text).find(entry.typeid) == entry
+
+
+# ── the project's ontology namespace ─────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "folder, seed",
+    [
+        ("ai-course", "ai_course"),          # a dash is not legal in a marker
+        ("My Project", "my_project"),
+        ("flowpad_oss", "flowpad_oss"),
+        ("---", ""),                          # nothing usable survives
+        ("$$$", ""),
+        ("2026", "2026"),                     # digits are fine on their own
+    ],
+)
+def test_the_seed_folds_a_folder_name_into_a_legal_marker(tmp_path, folder, seed):
+    """`--ai-course--` is not a namespace: a marker segment is `[a-z0-9_]` only, and
+    `join_namespace` RAISES on anything else — during an import, where it would take
+    the asset down. Folding here is what keeps that from ever being reached."""
+    assert namespace_seed(tmp_path / folder) == seed
+
+
+def test_ensure_writes_the_namespace_and_creates_the_manifest(tmp_path):
+    assert read_manifest(tmp_path) is None
+    assert ensure_namespace(tmp_path, "acme").ns == "acme"
+    assert read_manifest(tmp_path).ns == "acme"
+    assert json.loads((tmp_path / MANIFEST_REL_PATH).read_text())["ns"] == "acme"
+
+
+def test_a_declared_namespace_is_never_overwritten(tmp_path):
+    """Frozen once minted, as a MECHANISM rather than a convention: re-keying orphans
+    every kind the project's assets have already written."""
+    ensure_namespace(tmp_path, "acme")
+    assert ensure_namespace(tmp_path, "renamed").ns == "acme"
+
+
+def test_an_empty_seed_writes_nothing(tmp_path):
+    """A project with no usable name stays OURS rather than getting a junk marker."""
+    assert ensure_namespace(tmp_path, "") is None
+    assert read_manifest(tmp_path) is None
+
+
+def test_ensure_leaves_published_entries_alone(tmp_path):
+    skill = _skill(tmp_path)
+    entry = make_entry(typeid=f"skill-{uuid.uuid4()}", rel_path=rel_path_for(tmp_path, skill), name="rca")
+    publish(tmp_path, entry)
+    ensure_namespace(tmp_path, "acme")
+    spec = read_manifest(tmp_path)
+    assert spec.ns == "acme" and [e.typeid for e in spec.entries] == [entry.typeid]
+
+
+def test_unpublish_still_never_creates_a_manifest(tmp_path):
+    """The rule ensure_namespace must not have loosened."""
+    unpublish(tmp_path, "skill-" + str(uuid.uuid4()))
+    assert not (tmp_path / MANIFEST_REL_PATH).exists()

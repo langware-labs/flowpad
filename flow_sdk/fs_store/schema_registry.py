@@ -928,7 +928,13 @@ class SchemaRegistry:
     # table is the standing rule. Runtime-only, like ``entity_cls`` — not part
     # of ``to_dict()`` or the schema hash. A miss is None, never a mint.
     _kinds: ClassVar[dict[str, Any]] = {}
-    _kind_loaders: ClassVar[list[tuple[str, Callable[[], Any]]]] = []
+    #: Loaded on a miss, chosen by the kind's NAMESPACE — never by how it is
+    #: spelled. ``_kinds_ours`` covers everything we ship (including the shipped
+    #: driver folders, whose payload classes live in asset code); ``_kinds_external``
+    #: is asked for one namespace at a time. Both are called SYNCHRONOUSLY from
+    #: ``kind_type``, so neither may await.
+    _kinds_ours: ClassVar[Optional[Callable[[], Any]]] = None
+    _kinds_external: ClassVar[Optional[Callable[[str], Any]]] = None
     _kind_of_shape: ClassVar[dict[int, str]] = {}   # id(shape) → kind; the O(1) inverse
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
@@ -1057,21 +1063,30 @@ class SchemaRegistry:
         cls._ensure_loaded()
         hit = cls._kinds.get(kind)
         if hit is None and kind not in cls._types:
-            # A kind can be defined by code loaded on demand (a data source asset's value class):
-            # the loader owning its namespace gets a chance to register it, then look again.
-            for prefix, loader in cls._kind_loaders:
-                if kind.startswith(prefix):
-                    loader()
+            # A kind can be defined by code loaded on demand (an asset's value class).
+            # WHOSE it is decides who is asked, and the kind says so itself: bare is
+            # ours, ``--ns--.`` is theirs. Keying this on a spelling (it was
+            # ``kind.startswith("ingest.")``) asked the wrong loader for anything
+            # spelled differently, and could never reach an authored asset at all.
+            from flow_sdk.tags.grammar import split_namespace  # lazy: avoid import cycle
+
+            ns, _ = split_namespace(kind)
+            loader = cls._kinds_ours if ns is None else cls._kinds_external
+            if loader is not None:
+                loader() if ns is None else loader(ns)  # type: ignore[operator]
             hit = cls._kinds.get(kind)
         return hit
 
     @classmethod
-    def add_kind_loader(cls, prefix: str, loader: Callable[[], Any]) -> None:
-        """Ask ``loader`` whenever a kind under ``prefix`` misses — for kinds whose classes are defined
-        by code the process loads lazily. The loader must be cheap once loaded; it is never dropped,
-        so code loaded later (an authored source) still answers."""
-        if (prefix, loader) not in cls._kind_loaders:
-            cls._kind_loaders.append((prefix, loader))
+    def set_kind_loaders(cls, *, ours: Callable[[], Any], external: Callable[[str], Any]) -> None:
+        """Who to ask when a kind misses, by namespace.
+
+        ``ours`` loads everything the SDK vouches for and takes no argument — there is
+        one flow ontology. ``external`` is handed the namespace off the kind and loads
+        that owner's assets. Both must be cheap once loaded and must not await: they run
+        inside ``kind_type``, which a pydantic validator calls while restoring a row.
+        """
+        cls._kinds_ours, cls._kinds_external = ours, external
 
     @classmethod
     def register_crud_type(cls, type_name: str, *, icon: str | None = None) -> None:
