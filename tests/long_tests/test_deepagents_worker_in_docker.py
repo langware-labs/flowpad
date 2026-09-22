@@ -178,3 +178,106 @@ async def main():
 asyncio.run(main())
 ''')
     assert next(line for line in out.splitlines() if line.startswith("BUILTIN")).split()[1:] == ["deepagents", "deepagents"]
+
+
+# ── the bootstrap: the builtin worker installs and enables a REAL harness ─────────────────────
+
+BOOTSTRAP_INSTRUCTION = """\
+You are running inside a fresh Linux container that has FlowPad and NO coding-agent CLI.
+Do these three things in order, verifying each before moving on. Work autonomously; nobody is
+watching and nobody will answer a question.
+
+1. INSTALL the Claude Code CLI. The official installer is:
+       curl -fsSL https://claude.ai/install.sh | bash
+   `claude --version` must succeed from a brand-new login shell. If the installer puts the binary
+   somewhere that is not on the default PATH, link it into /usr/local/bin.
+
+2. ENABLE it in FlowPad. The backend is at http://localhost:{port}.
+   a. Make FlowPad notice the install: GET /api/v1/graph/capability?include_system=true, find the
+      row whose kind is "harness.claude.cli", then POST /api/v1/graph/capability/<its id>/test and
+      confirm it now reports available.
+   b. Fund it from this box's LLM endpoint: `flow llm list` shows the sources; make the OpenRouter
+      key source the claude harness's funding with `flow llm user use <row number> claude`.
+
+3. LAUNCH a FlowPad agentic process that runs on the claude worker, as proof the install works:
+       POST /api/v1/graph/agentic_process
+            {{"worker_type": "claude_code", "workdir": "/tmp/claude-proof", "pty_mode": false,
+              "cli_config": {{"model": "{model}"}}}}
+   (create the workdir first), then
+       POST /api/v1/graph/agentic_process/<id>/prompt   {{"message": "Reply with exactly: {token}"}}
+   The response streams. Confirm the claude worker's reply contains {token}.
+
+Finish with a short report of what you did and the id of the claude process.
+"""
+
+
+def test_the_builtin_worker_installs_claude_funds_it_and_launches_a_claude_process(funded):
+    """The whole reason the builtin worker exists, end to end and with nobody helping it:
+    a deepagents process on GLM is TOLD to install Claude Code, enable it against this box's LLM
+    endpoint, and launch a claude-based agentic process — which can only work because of its own
+    install. The test then checks evidence the agent cannot talk its way to."""
+    c = funded
+    token = f"BOOT-{uuid.uuid4().hex[:8].upper()}"
+    assert _sh("docker", "exec", c["name"], "sh", "-c", "command -v claude; true").stdout.strip() == "", "claude must start ABSENT"
+
+    instruction = BOOTSTRAP_INSTRUCTION.format(port=c["port"], model=MODEL, token=token)
+    _sh("docker", "exec", "-i", c["name"], "sh", "-c", "cat > /tmp/bootstrap_instruction.txt", input=instruction)
+    out = _py(c["name"], '''
+import asyncio, json, tempfile
+from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
+async def main():
+    p = await AgenticProcess(worker_type=WorkerType.DEEPAGENTS, workdir=tempfile.mkdtemp(), visible=False,
+                             cli_config={"model": "lg"}, name="Bootstrap: install + enable claude").save()
+    await p.prompt(open("/tmp/bootstrap_instruction.txt").read())
+    await p.wait()
+    fresh = await AgenticProcess.get_by_id(p.id)
+    events = [json.loads(l) for l in open(fresh.driver.transcript_path(fresh))]
+    print("INSTALLER " + json.dumps({
+        "id": p.id, "last": events[-1]["type"], "is_error": events[-1].get("is_error"),
+        "tool_calls": sum(1 for e in events if e["type"] == "tool_call"),
+        "duration_s": round((events[-1].get("duration_ms") or 0) / 1000),
+        "report": " ".join(e["text"] for e in events if e["type"] == "text")[-700:],
+    }))
+asyncio.run(main())
+''')
+    installer = json.loads(next(line for line in out.splitlines() if line.startswith("INSTALLER "))[10:])
+    print(f"\ninstaller turn: {installer['tool_calls']} tool calls, {installer['duration_s']}s\n{installer['report']}")
+    assert installer["last"] == "result" and installer["is_error"] is False, installer
+
+    # 1. installed — and findable the way a fresh login shell finds it
+    version = _sh("docker", "exec", c["name"], "bash", "-lc", "claude --version", check=False)
+    assert version.returncode == 0 and "Claude Code" in version.stdout, f"claude is not runnable: {version.stdout} {version.stderr}"
+
+    # 2 + 3. enabled and PROVEN — read from the product, in a fresh process (no cached discovery)
+    proof = _py(c["name"], f'''
+import asyncio, json
+from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind, worker_is_installed
+from flow_sdk.builtin.capability import Capability
+async def main():
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    rows = [r for r in await AgenticProcess.get_all() if str(r.worker_type).endswith("claude_code")]
+    answers = []
+    for r in rows:
+        # The token is in the PROMPT too, so only an ASSISTANT frame counts as claude answering.
+        chat = [str(fd.flow_value) for fd in r.driver.load_history(r)
+                if str((fd.attributes or {{}}).get("element-type")) == "chat"]
+        transcript = r.driver.transcript_path(r)
+        models = sorted({{(json.loads(l).get("message") or {{}}).get("model") for l in open(transcript)
+                         if l.strip().startswith("{{")}} - {{None}}) if transcript else []
+        answers.append({{"id": r.id, "has_token": any("{token}" in c for c in chat), "models": models,
+                        "transcript": str(transcript)}})
+    print("PROOF " + json.dumps({{"installed": worker_is_installed("claude"), "auth_mode": cap.auth_mode,
+                                 "api_provider": cap.api_provider, "claude_processes": answers}}))
+asyncio.run(main())
+''')
+    result = json.loads(next(line for line in proof.splitlines() if line.startswith("PROOF "))[6:])
+    assert result["installed"] is True, "FlowPad's own install gate does not see claude"
+    assert (result["auth_mode"], result["api_provider"]) == ("api", "openrouter"), f"claude is not funded by the endpoint: {result}"
+    answered = [p for p in result["claude_processes"] if p["has_token"]]
+    assert answered, f"no claude-worker ASSISTANT message carries the token — the install did not yield a working worker: {result}"
+    # It ran as the real claude CLI (its transcript lives under ~/.claude) on the endpoint's model.
+    assert "/.claude/" in answered[0]["transcript"], answered
+    assert MODEL in answered[0]["models"], f"claude did not run on the endpoint's model: {answered}"
+    print(f"claude worker answered on {answered[0]['models']} — transcript {answered[0]['transcript']}")
