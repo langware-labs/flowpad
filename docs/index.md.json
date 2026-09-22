@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "18007a4a3a5c5312ddbd8bf5abc641d3ee78daec8928662c748edb93fe488917",
+  "inputs_hash": "01c373124bf3feddfa347faed2f643b89223599e5ae054bfe4e9c5c8507f9e10",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -517,7 +517,7 @@
       "rel_path": "snippets",
       "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
       "child_typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
-      "child_inputs_hash": "f36bfbcee29da2c5380cd3923410cf564cb0d475f1bc6142c5fe3ea739b70947"
+      "child_inputs_hash": "ac630dec3c0be5374d6ff1c52f6eaaa57f78158edb03ccbce325b60a578ad0f3"
     },
     {
       "name": "tabs",
@@ -527,6 +527,6 @@
       "child_inputs_hash": "ca533fab86503809f37a9360c1517505abf503b1b0f9dab6950e9d54f2943730"
     }
   ],
-  "generated_at": "2026-09-22T21:15:15.480021+00:00",
+  "generated_at": "2026-09-22T21:16:48.190544+00:00",
   "latest_process_ref": ""
 }

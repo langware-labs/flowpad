@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "f36bfbcee29da2c5380cd3923410cf564cb0d475f1bc6142c5fe3ea739b70947",
+  "inputs_hash": "ac630dec3c0be5374d6ff1c52f6eaaa57f78158edb03ccbce325b60a578ad0f3",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
@@ -71,8 +71,8 @@
       "rel_path": "compute-ops.md",
       "title": "Compute ops — one call that converges, composes, and can ask",
       "summary": "Compute op snippets: one convergent call per subkind, asking a person once, a fallback as two ops, retries as the caller's, cancel and silence answers.",
-      "content_hash": "93381e4ec1372e151c35af2c86e25a6de7ee5767f46d5a5717a4854e8479a490",
-      "size_bytes": 4730
+      "content_hash": "b1839d1cff59e33b67b20b679fd2d8a9e2989013da414dd3d69bf9954e449c5d",
+      "size_bytes": 5181
     },
     {
       "name": "connections.md",
@@ -180,6 +180,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T21:12:30.105833+00:00",
+  "generated_at": "2026-09-22T21:16:48.032516+00:00",
   "latest_process_ref": ""
 }
