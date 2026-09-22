@@ -10,7 +10,7 @@ import asyncio
 
 import pytest
 
-from flow_sdk.core.compute.ask import open_question, wait_for
+from flow_sdk.core.compute_op.ask import open_question, wait_for
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -46,7 +46,7 @@ async def test_an_answer_of_the_wrong_shape_is_correctable(client):
 
 
 async def test_cancelling_ends_the_wait_without_a_value(client):
-    from flow_sdk.core.compute.ask import Cancelled
+    from flow_sdk.core.compute_op.ask import Cancelled
 
     question = open_question("get-api-key", "token", {"token": "string"})
     waiting = asyncio.create_task(wait_for(question, timeout=5))

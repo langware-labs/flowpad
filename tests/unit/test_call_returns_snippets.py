@@ -26,7 +26,7 @@ from typing import ClassVar
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.core.compute.ask import answer, open_questions
+from flow_sdk.core.compute_op.ask import answer, open_questions
 from flow_sdk.core.compute_op import runner
 from flow_sdk.core.wizard.runner import Resolved, run_wizard
 from flow_sdk.schema.data_spec import compute_op_spec, returned_value_spec

@@ -18,9 +18,9 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from flow_sdk.core.compute.ask import answer as deliver_answer
-from flow_sdk.core.compute.ask import cancel as decline
-from flow_sdk.core.compute.ask import open_questions, pending
+from flow_sdk.core.compute_op.ask import answer as deliver_answer
+from flow_sdk.core.compute_op.ask import cancel as decline
+from flow_sdk.core.compute_op.ask import open_questions, pending
 from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
 from flow_sdk.responses.response import ApiSuccessResponse
 
