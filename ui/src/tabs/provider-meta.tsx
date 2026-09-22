@@ -59,7 +59,7 @@ export function providerKeyFor(workerType: string | undefined | null): keyof typ
  *  surface where drawing Claude's mark on someone else's row would be a lie. */
 export function knownProviderKey(workerType: string | undefined | null): keyof typeof PROVIDER_META | undefined {
   const key = workerType === 'claude_code' ? 'claude' : workerType;
-  return key && key in PROVIDER_META ? (key as keyof typeof PROVIDER_META) : undefined;
+  return key && Object.hasOwn(PROVIDER_META, key) ? (key as keyof typeof PROVIDER_META) : undefined;
 }
 
 export function providerMetaFor(workerType: string | undefined | null) {

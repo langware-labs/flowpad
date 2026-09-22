@@ -59,7 +59,7 @@ describe('FlowpadConnectionRow', () => {
     renderRow();
     // The wording is the SHARED hub-status table's, so this row and the Account
     // screen cannot drift apart on the same fact.
-    expect(screen.getByTestId('connection-status-flowpad').textContent).toMatch(/logged out/i);
+    expect(screen.getByTestId('connection-status-flowpad').textContent).toBe('Not connected');
     expect(screen.getByTestId('connection-flowpad-connect')).toBeTruthy();
   });
 
@@ -96,9 +96,10 @@ describe('FlowpadConnectionRow', () => {
     h.connection = { status: 'verified', error: null };
     renderRow();
 
-    expect(screen.getByTestId('connection-status-flowpad').textContent).toMatch(
-      /connection verified/i,
-    );
+    // The table's word; the hub's finer "Connection verified" is in the tooltip.
+    const status = screen.getByTestId('connection-status-flowpad');
+    expect(status.textContent).toBe('Connected');
+    expect(status.getAttribute('title')).toMatch(/connection verified/i);
     expect(screen.queryByTestId('connection-flowpad-connect')).toBeNull();
   });
 
