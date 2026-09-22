@@ -10,8 +10,9 @@ import { defineConfig, devices } from '@playwright/test';
  * the test (a deploy is a real box; it is never a test's job). Timeouts are the
  * agent-auto-launch scenario's, unchanged.
  *
- * Run:
+ * Run (the hub-UI leg adds a hub-mode dev UI on the same hub and its seeded owner):
  *   DAC_FE_PORT=5009 DAC_BE_PORT=6009 DAC_AGENT_ID=<uuid> DAC_DEPLOYMENT_ID=<uuid> \
+ *   DAC_HUB_URL=http://localhost:8093 DAC_HUB_FE_PORT=4098 DAC_HUB_EMAIL=<seeded> DAC_HUB_PASSWORD=<seeded> \
  *   npx playwright test --config tests/e2e/deployed-agent-chat/playwright.config.ts
  */
 export default defineConfig({
@@ -26,6 +27,8 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${process.env.DAC_FE_PORT || '5009'}`,
     headless: true,
+    // The hub leg opens the WorldView, a WebGL graph; headless Chromium has no GPU.
+    launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
     trace: 'retain-on-first-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
