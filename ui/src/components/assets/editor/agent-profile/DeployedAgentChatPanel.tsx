@@ -95,13 +95,12 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
       setMessages((prev) => [...prev.slice(0, -1), patch(prev[prev.length - 1])]);
     try {
       for await (const event of chat.send(text, { conversationId, signal: controller.signal })) {
-        if (event.type === 'text') patchReply((reply) => ({ ...reply, content: reply.content + event.text }));
-        else if (event.type === 'tool') patchReply((reply) => ({ ...reply, tools: [...(reply.tools ?? []), event.name] }));
-        else if (event.type === 'error') setError(event.message);
-        else if (event.type === 'done' && event.conversationId) {
+        if (event.type === 'conversation') {
           setConversationId(event.conversationId);
           remember(deployment.id, event.conversationId);
-        }
+        } else if (event.type === 'text') patchReply((reply) => ({ ...reply, content: reply.content + event.text }));
+        else if (event.type === 'tool') patchReply((reply) => ({ ...reply, tools: [...(reply.tools ?? []), event.name] }));
+        else if (event.type === 'error') setError(event.message);
       }
     } catch (err) {
       if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err));

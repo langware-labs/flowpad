@@ -147,6 +147,16 @@ The reader exception matters: forcing SELECT-only driver methods through
 through `_session_ctx(write=False)` → `reader_session_factory`, which
 emits no `BEGIN` and relies on the WAL snapshot.
 
+SQLite's busy handler is not a queue: a writer that commits and re-begins
+at once re-takes the lock while a waiter sleeps between retries. So the
+`begin` hook also counts this process's writers blocked in `BEGIN
+IMMEDIATE` (`writers_waiting()`), and a long writer calls
+`yield_to_waiting_writers()` between units of work to let one of them in.
+The indexer does this before each record. Other back-to-back writers
+(stream-inbox reconcile, the transcript reindex, bulk saves) do not hand
+over yet — an in-process FIFO writer gate at `BEGIN IMMEDIATE` would cover
+them all.
+
 Combined with WAL + `busy_timeout=15000`, this eliminates both the
 original "close-shells flood" cascade and the read-then-write upgrade
 trap. The contention this once caused with the api-test scaffolding (each
@@ -258,9 +268,9 @@ diagnostics.
   shared session for the whole entity + FTS + wiki write so bulk indexer
   paths don't pay per-step connection setup. The indexer hoists one
   session over its whole loop and **commits every 50 records**
-  (`_INDEX_COMMIT_BATCH`, `index_function.py:669`) so the writer lock is
-  released between batches; `.hash` sentinels are stamped only after each
-  commit.
+  (`_INDEX_COMMIT_BATCH`) so the writer lock is released between batches,
+  and hands it to a queued writer before each record (see BEGIN IMMEDIATE above);
+  `.hash` sentinels are stamped only after each commit.
 - `BEGIN IMMEDIATE` on every transaction (`begin` event listener).
 - Collapsing `database.py` to a pure facade with no engine of its own.
 

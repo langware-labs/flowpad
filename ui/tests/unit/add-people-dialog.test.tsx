@@ -165,7 +165,6 @@ describe('AddPeopleDialog — uploading a CSV', () => {
         limit_usd: 10,
         spent_usd: 0,
         user_id: 'u1',
-        system_default: false,
       },
     ]);
     const csv = 'name,email,budget\nAda,ada@example.com,80\n';

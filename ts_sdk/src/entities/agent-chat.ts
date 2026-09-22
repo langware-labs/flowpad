@@ -5,10 +5,11 @@ import { ServiceEndpoint } from './service-endpoint';
 
 /** What a chat turn produced, as it is produced. */
 export type AgentChatEvent =
+  | { type: 'conversation'; conversationId: string }
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'error'; message: string }
-  | { type: 'done'; conversationId: string };
+  | { type: 'done' };
 
 export interface AgentChatMessage {
   role: 'user' | 'assistant';
@@ -32,7 +33,7 @@ export class AgentChat {
     return endpoint ? new AgentChat(endpoint) : null;
   }
 
-  /** Send *text*; yields what the agent writes as it writes it, ending with `done` (or `error`). */
+  /** Send *text*; yields the conversation it is in (when it is new — keep it to continue), then what the agent writes as it writes it, ending with `done` (or `error`). */
   async *send(
     text: string,
     opts: { conversationId?: string | null; signal?: AbortSignal } = {},
@@ -53,7 +54,12 @@ export class AgentChat {
       if (payload === '[DONE]') break;
       const chunk = parseJson(payload);
       if (!chunk) continue;
-      if (chunk.flowpad?.conversation_id) conversationId = String(chunk.flowpad.conversation_id);
+      const named = chunk.flowpad?.conversation_id ? String(chunk.flowpad.conversation_id) : '';
+      if (named && named !== conversationId) {
+        // Named on the turn's first chunk: a caller keeps it from then on, not only once the turn is over.
+        conversationId = named;
+        yield { type: 'conversation', conversationId };
+      }
       if (chunk.error) {
         yield { type: 'error', message: String(chunk.error.message ?? 'the turn failed') };
         continue;
@@ -62,7 +68,7 @@ export class AgentChat {
       if (typeof delta.content === 'string' && delta.content) yield { type: 'text', text: delta.content };
       if (chunk.flowpad?.tool) yield { type: 'tool', name: String(chunk.flowpad.tool) };
     }
-    yield { type: 'done', conversationId };
+    yield { type: 'done' };
   }
 
   /** The conversation so far, oldest first. */

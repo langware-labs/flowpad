@@ -22,6 +22,7 @@ import { getViewMode, rememberedDockViewMode, VIEW_MODE_SWITCH_STATE, ViewMode }
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
+import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
@@ -241,11 +242,14 @@ export class NavigationActions {
     }, 1000);
   }
 
-  // `viewType:pointer` label for the navigation toplog trace.
-  // `viewType` is optional because a DockPointer's is — this is a log label, and
-  // every caller hands it a real DockPointer.
-  private static dockLabel(d: { viewType?: string; pointer?: string | null } | null): string | null {
-    return d ? `${d.viewType}:${d.pointer ?? ''}` : null;
+  /** `tab_switch` start line: a navigation that will actually move the app. */
+  static logTabSwitchStart(via: string, target: DockPointer | null): void {
+    if (!toplog.isOn('tab_switch')) return;
+    const sw = beginTabSwitch();
+    toplog.log(
+      'tab_switch',
+      `start sw=${sw} via=${via} from=${dockLabel(NavigationActions.currentBrowserDock())} to=${dockLabel(target) ?? '-'} visibility=${document.visibilityState}`,
+    );
   }
 
   private commitBrowserNavigation(
@@ -268,6 +272,10 @@ export class NavigationActions {
       historyLen: window.history.length,
     });
     if (willNavigate) {
+      NavigationActions.logTabSwitchStart(
+        opts?.viewModeSwitch ? 'view_mode' : opts?.replace ? 'replace' : 'openDock',
+        target,
+      );
       // React Router owns browser history and, critically, loader execution.
       // A hand-written pushState/popstate updates useLocation but can bypass
       // data-router revalidation, leaving the new URL rendered against stale
@@ -304,6 +312,7 @@ export class NavigationActions {
     if (carriedHost) target = target.withHost(carriedHost);
     const url = target.toUrl(window.location.pathname);
     if (here?.equals(target)) return;
+    NavigationActions.logTabSwitchStart('detached', target);
     window.history.pushState(null, '', url);
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
@@ -450,7 +459,7 @@ export class NavigationActions {
         pointer === null
           ? null
           : `${(pointer as IDockPointer).viewType ?? '?'}:${(pointer as IDockPointer).pointer ?? ''}`,
-      currentDock: NavigationActions.dockLabel(this.currentDock),
+      currentDock: dockLabel(this.currentDock),
       currentUrl,
       extraOptions,
     });
@@ -552,8 +561,11 @@ export class NavigationActions {
 
     if (this.currentDock?.equals(dock)) {
       toplog.log('navigation', 'openDock no-op (currentDock equals target)', {
-        dock: NavigationActions.dockLabel(dock),
+        dock: dockLabel(dock),
       });
+      if (toplog.isOn('tab_switch')) {
+        toplog.log('tab_switch', `noop sw=${tabSwitch.id} reason=same_dock to=${dockLabel(dock)}`);
+      }
       return; // already at this pointer, no-op
     }
 
@@ -568,6 +580,12 @@ export class NavigationActions {
         fullUrl,
         pending: pendingDockNavigation?.targetUrl ?? null,
       });
+      if (toplog.isOn('tab_switch')) {
+        toplog.log(
+          'tab_switch',
+          `noop sw=${tabSwitch.id} reason=${currentUrl === fullUrl ? 'url_current' : 'url_pending'} to=${dockLabel(dock)}`,
+        );
+      }
       return;
     }
 
@@ -1081,7 +1099,7 @@ export class NavigationActions {
       canGoBack,
       idx,
       currentUrl: NavigationActions.getCurrentBrowserUrl(),
-      currentDock: NavigationActions.dockLabel(this.currentDock),
+      currentDock: dockLabel(this.currentDock),
     });
     if (!canGoBack) return;
     void this.navigate(-1);

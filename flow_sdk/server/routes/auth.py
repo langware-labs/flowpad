@@ -204,6 +204,29 @@ async def login_callback(
             return RedirectResponse(url=f"/electron/keychain-approval?{qs}", status_code=302)
 
         user_info = await validate_api_key_async(flowpad_api_key)
+
+        # A shared sandbox has exactly one logged-in identity for the whole
+        # instance. If this login resolves to a DIFFERENT person than the one
+        # currently signed in, drop the outgoing person's session and their
+        # hub-mirrored data (conversations/messages/org membership) BEFORE
+        # finalizing the new login — otherwise the incoming person inherits
+        # the previous one's stream inbox. Checked strictly after the api-key
+        # validates, for the same reason cookie-gate/runtime are: an
+        # unvalidated caller must not be able to trigger a logout.
+        from flow_sdk.cli.app_config import get_user
+
+        current_user = get_user()
+        incoming_id = user_info.get("id") if isinstance(user_info, dict) else None
+        if current_user and incoming_id and current_user.get("id") != incoming_id:
+            from flow_sdk.cli.auth.cloud_login import clear_user_data
+
+            logger.info(
+                "login_callback: switching logged-in user (%s -> %s), clearing previous session",
+                current_user.get("id"),
+                incoming_id,
+            )
+            await clear_user_data()
+
         await _finalize_login(
             LoginData(
                 token=flowpad_api_key,
@@ -305,5 +328,7 @@ async def oauth_callback(state: str = "", code: str = "", error: str = ""):
     except Exception:
         await _broadcast_oauth_error("Sandbox sign-in failed. Start sign-in again.")
         return HTMLResponse("Sandbox sign-in failed. Return to Flowpad and try again.", status_code=400)
-    return HTMLResponse("<p>Signed in. You can close this window.</p><script>window.close()</script>",
-                        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+    return HTMLResponse(
+        "<p>Signed in. You can close this window.</p><script>window.close()</script>",
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
