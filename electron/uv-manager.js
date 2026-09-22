@@ -69,11 +69,39 @@ function parseNetstatPids(stdout, port) {
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
 
-// Python interpreter flowpad's tool venv must run on. flowpad requires >=3.11,
-// but uv would otherwise pick the system default (e.g. 3.12). Pin every
-// `uv tool install` to 3.11 so the backend always runs on the supported
-// interpreter; uv auto-downloads a managed CPython 3.11 if none is present.
-const PYTHON_VERSION = '3.11';
+// Python interpreter flowpad's tool venv must run on: the `>=` floor of
+// `requires-python` in the repo's pyproject.toml (">=3.11" → "3.11"). It is
+// READ, not hand-pinned, so the desktop shell can never drift from what the
+// package declares — v0.2.44 shipped a hand-pinned 3.10 after the package had
+// already moved to 3.11, and uv silently resolved a stale flowpad for it.
+// uv would otherwise pick the system default (e.g. 3.12); with the pin it
+// auto-downloads a managed CPython of that minor if none is present.
+//
+// pyproject.toml is bundled as an extraResource (electron-builder.json), so a
+// packaged app reads `<resources>/pyproject.toml`; a dev checkout (`electron .`,
+// the tests) reads the repo-root file directly.
+function pythonVersionFromPyproject(text) {
+  const m = text.match(/^\s*requires-python\s*=\s*"([^"]*)"/m);
+  if (!m) throw new Error('pyproject.toml has no `requires-python`');
+  const floor = m[1].match(/>=\s*(\d+\.\d+)/);
+  if (!floor) {
+    throw new Error(`pyproject.toml requires-python "${m[1]}" has no ">=" floor to pin uv to`);
+  }
+  return floor[1];
+}
+
+function readPythonVersion() {
+  const candidates = [
+    process.resourcesPath && path.join(process.resourcesPath, 'pyproject.toml'),
+    path.join(__dirname, '..', 'pyproject.toml'),
+  ].filter(Boolean);
+  for (const file of candidates) {
+    if (fs.existsSync(file)) return pythonVersionFromPyproject(fs.readFileSync(file, 'utf8'));
+  }
+  throw new Error(`pyproject.toml not found (looked in ${candidates.join(', ')})`);
+}
+
+const PYTHON_VERSION = readPythonVersion();
 
 const API_PREFIX = '/api/v1';
 
@@ -1635,6 +1663,7 @@ module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;
 // `uv tool install` command to the user in the startup-timeout dialog.
 module.exports.PYPI_PACKAGE = PYPI_PACKAGE;
 module.exports.PYTHON_VERSION = PYTHON_VERSION;
+module.exports.pythonVersionFromPyproject = pythonVersionFromPyproject;
 // Pure helpers exported for unit testing (electron/uv-manager.test.js).
 module.exports.needsShellOnWin = needsShellOnWin;
 module.exports.quoteWinCmd = quoteWinCmd;
