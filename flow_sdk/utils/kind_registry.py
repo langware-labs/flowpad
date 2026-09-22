@@ -43,11 +43,9 @@ class KindRegistry(Generic[T]):
         return self._aliases.get(name, name)
 
     def ensure(self) -> None:
-        """Force the one-shot build, for a caller that wants the registrations and not
-        the items — ``kinds()`` sorts the whole table and throws the list away."""
-        self._ensure()
-
-    def _ensure(self) -> None:
+        """Force the one-shot build. Every reader below calls it first, and so does a
+        caller that wants the registrations and not the items — ``kinds()`` sorts the
+        whole table and throws the list away."""
         if not self._built:
             self._built = True           # before the call: a builder may re-enter
             self._builder(self)          # type: ignore[misc]
@@ -61,19 +59,19 @@ class KindRegistry(Generic[T]):
         return item
 
     def unregister(self, kind: str) -> bool:
-        self._ensure()
+        self.ensure()
         return self._items.pop(self.normalize(kind), None) is not None
 
     # ── lookup ───────────────────────────────────────────────────────────
     def get(self, kind: Any) -> T:
-        self._ensure()
+        self.ensure()
         try:
             return self._items[self.normalize(kind)]
         except KeyError as exc:
             raise KeyError(f"Unknown {self.label} kind: {kind!r}") from exc
 
     def get_or_none(self, kind: Any) -> Optional[T]:
-        self._ensure()
+        self.ensure()
         return self._items.get(self.normalize(kind))
 
     @property
@@ -81,14 +79,14 @@ class KindRegistry(Generic[T]):
         return MappingProxyType(self._aliases)
 
     def items(self) -> list[tuple[str, T]]:
-        self._ensure()
+        self.ensure()
         return sorted(self._items.items())
 
     def kinds(self) -> list[str]:
         return [k for k, _ in self.items()]
 
     def __contains__(self, kind: Any) -> bool:
-        self._ensure()
+        self.ensure()
         return self.normalize(kind) in self._items
 
 

@@ -2935,9 +2935,8 @@ class SQLiteDBDriver(DBDriver):
         if all_entity_ids:
             async with self._session_ctx(write=False) as session:
                 result = await session.execute(select(EntitySchema).where(EntitySchema.id.in_(all_entity_ids)))
-                for schema in result.scalars():
-                    entity = self._schema_to_entity(schema)
-                    entities_by_id[schema.id] = entity
+                for entity in self._hydrate(result.scalars().all(), "connection_paths"):
+                    entities_by_id[str(entity.id)] = entity
 
         # Build all paths from cached data
         paths = []
@@ -2948,8 +2947,8 @@ class SQLiteDBDriver(DBDriver):
                 if not rel:
                     continue
 
-                source = entities_by_id.get(rel.from_typeid.id if rel.from_typeid else None)
-                target = entities_by_id.get(rel.to_typeid.id if rel.to_typeid else None)
+                source = entities_by_id.get(str(rel.from_typeid.id) if rel.from_typeid else "")
+                target = entities_by_id.get(str(rel.to_typeid.id) if rel.to_typeid else "")
 
                 if source and target:
                     connections.append(NodeConnection(source=source, rel=rel, target=target))

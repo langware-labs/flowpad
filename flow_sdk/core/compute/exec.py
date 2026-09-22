@@ -88,8 +88,9 @@ async def run_shell(
     # hung. Reading to EOF under a shield keeps it; the kill closes the pipes.
     finished = asyncio.ensure_future(asyncio.gather(proc.stdout.read(), proc.stderr.read(), proc.wait()))
     stopper = asyncio.ensure_future(stop.wait()) if stop is not None else None
+    waiters = [finished, stopper] if stopper is not None else [finished]
     try:
-        await asyncio.wait({finished, *([stopper] if stopper else [])}, timeout=timeout_seconds, return_when=asyncio.FIRST_COMPLETED)
+        await asyncio.wait(waiters, timeout=timeout_seconds, return_when=asyncio.FIRST_COMPLETED)
     except asyncio.CancelledError:
         # Reap before re-raising, exactly as a timeout does: the kill closes the
         # pipes, and returning earlier leaves the process and its transports open.
@@ -103,16 +104,15 @@ async def run_shell(
         if stopper is not None:
             stopper.cancel()
     stopped = False
-    if finished.done():
-        stdout, stderr, _ = finished.result()
-    else:
+    if not finished.done():
         kill_process_tree(proc)
         stopped = stop is not None and stop.is_set()
         timed_out = not stopped
-        try:
-            stdout, stderr, _ = await finished
-        except Exception:  # noqa: BLE001 — the kill already decided the outcome
-            stdout, stderr = b"", b""
+    try:
+        # Already done on the fast path; on the kill path the closed pipes end it.
+        stdout, stderr, _ = await finished
+    except Exception:  # noqa: BLE001 — the kill already decided the outcome
+        stdout, stderr = b"", b""
     # ``of_process`` keeps the END of each stream: that is where the error is.
     return CliResult.of_process(
         command,

@@ -306,9 +306,10 @@ async def run_snippet(
         known = ", ".join(sorted(RUNNERS))
         return CliResult.of_process(str(path), None, stderr=f"no runner for '{path.suffix}' files (runnable: {known})")
     stop = asyncio.Event()
-    key = run_id or (f"connection:{connection_id}:{id(stop)}" if connection_id else None)
-    if key is not None:
-        _RUNNING[key] = (stop, connection_id)
+    # Registered under the caller's run id when it has one, else a key of its own:
+    # ``stop_runs_of`` finds it by owner, and ``stop_snippet`` only knows real run ids.
+    key = run_id or f"run:{secrets.token_hex(8)}"
+    _RUNNING[key] = (stop, connection_id)
     try:
         with tempfile.TemporaryDirectory(prefix="flowpad-snippet-build-") as build:
             command = template.format(file=shlex.quote(str(path)), out=shlex.quote(str(Path(build) / "snippet")))
@@ -320,8 +321,7 @@ async def run_snippet(
                 stop=stop,
             )
     finally:
-        if key is not None:
-            _RUNNING.pop(key, None)
+        _RUNNING.pop(key, None)
 
 
 __all__ = [

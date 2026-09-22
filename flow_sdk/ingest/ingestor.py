@@ -77,9 +77,10 @@ async def ingest_item(
 
     mark = sent_by_us and not (existing is not None and existing.sent_by_us)
     row, status = ser.upsert(SourceItem, item, existing=existing)
-    if row is None and not mark:
-        return IngestOutcome(entity_id=str(existing.id), external_id=item.external_id, status="unchanged")
     if row is None:
+        # Nothing changed on the row itself: only the "we sent this" mark is worth a write.
+        if not mark:
+            return IngestOutcome(entity_id=str(existing.id), external_id=item.external_id, status="unchanged")
         row, status = existing, "updated"
     if mark:
         row.sent_by_us = True
