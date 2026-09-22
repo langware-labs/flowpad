@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-db29ea2c-c8aa-53ca-afbd-2721465a5366
-inputs_hash: 2f91d0573e9574c1569178fa5ac2e45644fa709bf48c5003e0d8ee10738246fc
+inputs_hash: ccca09d768b25ba5170403aeff3d17c3f0cedeb8b198fe426c2cb2bdd2bd2751
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-19T23:43:15.446584+00:00'
+generated_at: '2026-09-22T10:22:31.277705+00:00'
 latest_process_ref: ''
 file_count: 2
 subfolder_count: 0
@@ -19,4 +19,4 @@ subfolder_count: 0
 
 ## Files
 - [FSRef Rules](fs-ref.md) — FSRef doctrine: path-only declarative refs, VFSPath translation, computeNode.fsAction dispatch, JSON serialization, and the record-refs endpoint.
-- [TypeId Specification](typeid.md) — The TypeId identifier format: type plus id split on the first dash, and the four identifier flavours including UUID and the @uname singleton form.
+- [TypeId Specification](typeid.md) — TypeId specification: the {type}-{id} format with its first-dash split, the UUID, @uname, namespace-key and property-id forms, and parsing rules.

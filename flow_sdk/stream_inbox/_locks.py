@@ -30,3 +30,12 @@ def loop_lock(registry: "weakref.WeakKeyDictionary") -> asyncio.Lock:
         lock = asyncio.Lock()
         registry[loop] = lock
     return lock
+
+
+def keyed_loop_lock(registry: "weakref.WeakKeyDictionary", key: str) -> asyncio.Lock:
+    """The calling loop's lock for *key* from ``registry`` — one lock per (loop, key)."""
+    per_loop = registry.setdefault(asyncio.get_running_loop(), {})
+    lock = per_loop.get(key)
+    if lock is None:
+        lock = per_loop[key] = asyncio.Lock()
+    return lock

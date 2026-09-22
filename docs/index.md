@@ -1,15 +1,15 @@
 ---
 type: markdown_index
 id: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-inputs_hash: eba2c7830a68796e23d84c67acd010a815543dd1224b7f1173b7f7c1d99f40a2
+inputs_hash: 8f0ca709737142ebd13947addae291bbe36a1c4e7209b77cb3b557bdd518bac0
 template_version: 1
 prompt_version: 1
 parent_ref: ''
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-19T23:43:16.028557+00:00'
+generated_at: '2026-09-22T11:53:02.946167+00:00'
 latest_process_ref: ''
 file_count: 52
-subfolder_count: 10
+subfolder_count: 14
 ---
 
 # docs
@@ -21,18 +21,18 @@ subfolder_count: 10
 - [Record System Requirements](CLAUDE.md) — The record-system rules: disk is the source of truth, FSRef as the declarative file reference, FSRecord as the single record class, and per-type TypeInfo slots.
 - [AgenticProcess Architecture](agentic-process.md) — AgenticProcess architecture: the durable entity behind an agent run, and why execution routes on pty_mode while tab visibility routes on visible.
 - [Agentic process outputs](agentic_process_outputs.md) — What an agentic run produces: the derivation layer turning transcript shape into meaning, the Artifact recording outputs, and the bus lane keeping clients current.
-- [Agent Management](agents-management.md) — Index for agent management: the Agent identity, its Deployment, the AgenticProcess run, and the entity-document authoring bundle on disk.
-- [API Routing Specification](api-routing.md) — How a graph HTTP request becomes an action handler: the scope-pair URL grammar, APIRequest parsing, and the matching routing on both backend and frontend.
+- [Agent Management](agents-management.md) — Top-level index for agent management: the Agent identity versus each AgenticProcess execution, Deployment, the authoring bundle, and links to focused documents.
+- [API Routing Specification](api-routing.md) — API routing specification: graph URL structure, parsing algorithm, implicit action mapping, request flow and RequestInfo across backend and frontend.
 - [Server Boot & Bootstrap Flows](boot.md) — How the backend gets from process start to serving requests: startup flows, what runs inline versus detached, and the sub-100ms bootstrap budget.
 - [Capabilities](capabilities.md) — Capability entities describing local features like CLI harnesses and browser access: the hierarchical kind ontology, prefix matching, and dynamic MCP-server capabilities.
 - [Claude Code PTY scrolling — why the terminal scrollbar disappears](claude_pty_scroll.md) — Why the terminal scrollbar vanishes under Claude Code fullscreen rendering, why one cannot be synthesized inside it, and leaving that mode as the fix.
-- [ComputeNode action surface — pre-refactor STATUS](compute_node_action_audit.md) — Pre-refactor status of the ComputeNode action surface, grouping each action by shape and noting provider leaks, tests, and hub-versus-oss divergence.
+- [ComputeNode action surface — pre-refactor STATUS](compute_node_action_audit.md) — Pre-refactor audit of the hub ComputeNode action surface: clean delegations, envelope problems, provider-bound actions and the planned migration steps.
 - [Contributing to Flowpad](contributing.md) — Getting a Flowpad dev environment running: prerequisites, backend and frontend startup, repository layout, and the contribution workflow.
-- [cookie-gate](cookie-gate.md) — The cookie-gate auth path: why it exists, how it arms or refuses, the gate exchange, cookie attributes, the WebSocket half, and hub contract.
+- [cookie-gate](cookie-gate.md) — Cookie-gate: an optional pre-shared secret locking an instance to invited callers — arming rules, the gate exchange endpoint and cookie attributes.
 - [Data Management](data-management.md) — Overview of the two-layer data model — filesystem FSRecords as source of truth, SQLite Entities as queryable cache — linking each subsystem doc.
 - [debugMCP Setup](debugMCP-setup.md) — Setting up debugMCP: launching Chrome Canary with CDP, the debugMcp server, the standard Playwright MCP server, and the usage rules.
 - [Developer Setup](dev_setup.md) — Why PyCharm shows unresolved flow_sdk imports under an editable install, and marking the repo root as a Sources Root to fix it.
-- [Global Display Capabilities — Survey & Open Questions](display-capabilities.md) — Survey of every way Flowpad displays content, the two address systems (dock pointers and flow show targets), and the open design questions they raise.
+- [Global Display Capabilities — Survey & Open Questions](display-capabilities.md) — Survey of every way Flowpad displays content — files, entities, webapps, artifacts, foreign-HTML trust tiers — across two address systems (dock pointers and flow show targets), with the open design questions.
 - [Electron Desktop App](electron.md) — The desktop app: Electron installs the flowpad backend from PyPI on first launch, runs flow start, and loads the backend-served UI, plus packaging and distribution.
 - [Entities Groups — generic folder-like containment](entities-groups.md) — Group, the generic folder-like container: membership is a group_id on Entity, nesting is the same field, and tree roots are virtual namespaces.
 - [`flow connect --docker <container>` — enroll a Docker container into the hub](flow-connect-docker.md) — Enrolling a running Docker container as a hub compute node with flow connect --docker: what the CLI installs, the machine.env written, and the gotchas.
@@ -40,14 +40,14 @@ subfolder_count: 10
 - [Frontend Debug Cheatsheet](frontend-debug-cheatsheet.md) — Browser-console recipes for debugging the running frontend: the registered debug globals, bootstrap and WebSocket health, entity cache, and data or PTY bugs.
 - [FSRef — declarative file/folder references](fs-ref.md) — FSRef, the declarative file and folder reference used throughout records: its class family, indexer walk tags, and read-only inheritance.
 - [fs_store: Record System Architecture](fs_store.md) — Directory page for the fs_store package: no single FsStore class exists; a table routes each subject to its current home under data-management.
-- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Flowpad nouns cross-walked against Claude Code's and OpenClaw's, and the rule behind them: a name says whether the thing mirrors a provider or is ours.
+- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Cross-walk of our nouns against Claude Code's and OpenClaw's: provider mirrors versus ours, the three contexts, type·subkind·kind, and naming rules.
 - [Icons](icons.md) — Icons: the backend names the glyph, the frontend resolves it, with names in the repo's one dot-tag grammar so collisions cannot arise.
 - [Flowpad](intro.md) — What Flowpad is: secure, AI-native collaborative agent work, the collaborative context conversation, and the use cases it addresses.
 - [Listen Webhook Pipeline](listen_webhook.md) — The webhook listen pipeline: how Claude Code hooks and hook_op envelopes reach POST /webhook/listen, get routed by type, become FlowData, and render.
 - [Wiki namespaces and link graph — flowpad-oss](llm_wiki.md) — Wiki namespaces and the link graph: wiki-link syntax, edge extraction on sync, page resolution, the edge store schema, cleanup paths, and API surface.
 - [Local Patch Runbook](local_patch.md) — Runbook for running your local checkout on the installed flowpad: the one supported stamped +local deployment, and why site-packages overlays broke.
 - [MCP UI Architecture](mcp-ui.md) — Interactive chat forms in Vibe: the agent writes a .mcp.html file, the sandbox proxy hosts it, and the app message returns as a prompt.
-- [Ontology — type, subkind, kind](ontology.md) — Ground truth for type, subkind and kind: closed registry, per-type enum, open dot-path tag, and why a kind names a shape.
+- [Ontology — type, subkind, kind](ontology.md) — Ground truth for type, subkind and kind: a kind names a shape never a row, composition rules, namespaces, and how kinds are declared and resolved.
 - [Playwright MCP — Usage & Debug](playwright-usage.md) — Using the Playwright MCP server: its .mcp.json config, the checks required before every use, common errors, and the operating rules.
 - [Prompt Library — managed prompts, foldered, one click to queue](prompt-library.md) — The prompt record type and its foldered library in the terminal ribbon: markdown layout, entity-group folders, and one-click enqueue onto the prompt queue.
 - [Prompt Queue](prompt_queue.md) — The prompt queue: on-disk format, components, launch and follow-up drain flows, UI reflection, the readiness decision, entry lifecycle, and concurrency.
@@ -58,7 +58,7 @@ subfolder_count: 10
 - [Session Share Spec](session_share_spec.md) — Transferring a worker session between machines: project path encoding, experiment results, where paths appear in a transcript, and the transfer algorithm.
 - [shellMode vs Direct / Agentic PTY](shell-claude-session-api.md) — How a plain shell terminal differs from an agent running over a PTY: creation paths, entity model, shell_mode, titles and recovery.
 - [Staging OAuth validation — 2026-09-12](staging-oauth-validation.md) — Results of the 2026-09-12 staging OAuth validation: per-provider pass table, local token copies bound to the cloud account, and the delegated-sandbox login limitation.
-- [System Agents](system_agents.md) — System agents as shipped SubAgent assets: loading a prompt file as an FSRecord, embedding it in an AgenticProcess, and serializing it for the CLI.
+- [System Agents](system_agents.md) — System agents: shipped SubAgent prompt assets, their architecture and components, and how they load — distinct from the launchable Agent entity.
 - [Tab Management](tab-management.md) — The Tab entity as the one membership system for content and terminal tabs: ids derived from DockPointer, the SDK TabManager, and the design history.
 - [Tags — the unified event bus](tags.md) — Tags, the unified event bus: a tag is an opaque dot-separated string the bus never interprets, with one grammar owner and two match semantics.
 - [Fresh-Mac QA with Tart](tart.md) — Fresh-Mac QA using Tart VMs: why a vanilla image matters, one-time setup, the verified baseline, running a session, gotchas, and cost.
@@ -78,7 +78,11 @@ subfolder_count: 10
 - [collab/](collab/index.md) — 
 - [data-management/](data-management/index.md) — How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the single shape system with its kind registry, data sources and datasets, records, search and the SQLite layer underneath.
 - [flows/](flows/index.md) — Cross-subsystem flows — the path a feature actually takes end to end across several entities and skills, as opposed to the per-entity API references in interface/. Currently covers the trace-analysis and skill-improvement cycle.
+- [historical/](historical/index.md) — Retired design documents, kept for provenance rather than guidance. The stack and loaders they describe have since moved; read them to understand how a decision was reached, not how the system works now.
 - [interface/](interface/index.md) — Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.
+- [mockups/](mockups/index.md) — Interface mockups. Empty for now.
 - [modes/](modes/index.md) — The workspace modes. Vibe is the creator-first one: a side chat beside a live display, with the rules that keep the display authoritative.
 - [primitives/](primitives/index.md) — The small identifier and reference types everything else is built from: FSRef, the path-only declarative file reference, and TypeId, the type-plus-id format entities are addressed by.
+- [reports/](reports/index.md) — Validation records for completed refactors: what was run, what passed, and the gates each change had to clear. Evidence that a migration landed, not instructions for doing one.
+- [snippets/](snippets/index.md) — The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.
 - [tabs/](tabs/index.md) — The Display pane as an address: how `flow show` navigates a URL-owned target and why the display stack belongs to the router rather than to component state.
