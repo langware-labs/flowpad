@@ -16,7 +16,9 @@ import {
   TypeId,
   latestPointer,
   ChannelTransport,
+  toplog,
 } from '@sdk';
+import { sinceTabSwitch, tabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
@@ -206,9 +208,41 @@ export function ConversationView({
       }),
     [conversationId],
   );
-  const { data: conversationMessages = [], refetch: refetchConversationMessages } = useEntitiesQuery<FlowMessage>(messagesRequest, {
+  const {
+    data: conversationMessages = [],
+    refetch: refetchConversationMessages,
+    isSuccess: messagesLoaded,
+    error: messagesError,
+  } = useEntitiesQuery<FlowMessage>(messagesRequest, {
     enabled: !!conversationId,
   });
+  // `tab_switch` ready point for a conversation tab: the first frame after its
+  // message window arrived (or failed). Once per mounted conversation.
+  const readyTracedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!conversationId || readyTracedRef.current === conversationId) return;
+    if (messagesError) {
+      readyTracedRef.current = conversationId;
+      toplog.log(
+        'tab_switch',
+        `error ${sinceTabSwitch()} sink=conversation_messages conversation=${conversationId.slice(0, 8)} err=${messagesError.message}`,
+      );
+      return;
+    }
+    if (!messagesLoaded) return;
+    readyTracedRef.current = conversationId;
+    if (tabSwitch.readyLogged || !toplog.isOn('tab_switch')) return;
+    const count = conversationMessages.length;
+    requestAnimationFrame(() => {
+      if (tabSwitch.readyLogged) return;
+      tabSwitch.readyLogged = true;
+      toplog.log(
+        'tab_switch',
+        `ready ${sinceTabSwitch()} kind=conversation mode=cold conversation=${conversationId.slice(0, 8)} messages=${count}`,
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- logs a count, not a dependency
+  }, [conversationId, messagesLoaded, messagesError]);
   const conversationMessagesKey = conversationMessages.map((message) => message.id).sort().join(',');
   useEffect(() => {
     if (!agentId || !conversationMessagesKey) return;

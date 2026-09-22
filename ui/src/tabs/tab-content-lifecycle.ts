@@ -4,6 +4,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
 import { isAdoptableChildDock } from '@src/navigation/adoptable-child-dock';
 import { ViewType } from '@src/types/ViewType';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 
 export interface TabSetupResult {
   tab: Tab | null;
@@ -223,6 +224,14 @@ export function unregisterTabContentAdapter(viewType: string): void {
   adapters.delete(viewType);
 }
 
+/** `tab_switch` error line for a tab whose open/close failed ("Tab failed to open"). */
+function logTabLifecycleFailure(sink: string, dock: DockPointer, error: unknown): void {
+  toplog.log(
+    'tab_switch',
+    `error ${sinceTabSwitch()} sink=${sink} dock=${dock.viewType}:${dock.pointer ?? ''} err=${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`,
+  );
+}
+
 export async function setupTab(dock: DockPointer, options: SetupTabOptions = {}): Promise<TabSetupResult> {
   const key = dock.tabHash;
   const adapter = adapterFor(dock, options);
@@ -268,6 +277,7 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
       tabManager.lifecycle.set(key, TabLifecycleState.Opened, { tabId: opened.tabId });
       return { tab: null };
     } catch (error) {
+      logTabLifecycleFailure('tab_open_failed', dock, error);
       tabManager.lifecycle.set(key, TabLifecycleState.OpenFailed, {
         tabId: opened.tabId,
         error,
@@ -311,6 +321,7 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
       if (isRedirectResponse(error)) {
         throw error;
       }
+      logTabLifecycleFailure('tab_open_failed', dock, error);
       tabManager.lifecycle.set(key, TabLifecycleState.OpenFailed, { tabId: tab?.id ?? null, error });
       return { tab, tabs, error };
     }
@@ -336,6 +347,7 @@ export async function cleanupTab(
   try {
     await (adapters.get(dock.viewType ?? '') ?? defaultAdapter).cleanupTab(dock, tab);
   } catch (error) {
+    logTabLifecycleFailure('tab_close_failed', dock, error);
     tabManager.lifecycle.set(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
     throw error;
   }

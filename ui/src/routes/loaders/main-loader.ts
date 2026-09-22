@@ -15,6 +15,7 @@ import {
   isBackendUnreachable,
   Project,
   systemTools,
+  toplog,
   TypeId,
 } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -27,6 +28,7 @@ import { pageRedirectUrl } from '@src/navigation/supported-pages';
 import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { ProjectLoadError, loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
@@ -110,7 +112,41 @@ export function redirectLegacyAssetFsDock(dock: DockPointer, requestPath: string
   throw replace(canonical.toUrl(requestPath));
 }
 
+/**
+ * The dock loader, with its outcome on the `tab_switch` trail: one line per run —
+ * `loader` (resolved), `loader_redirect` (a thrown redirect Response) or
+ * `loader_error` — carrying the loader's own `ms` next to the switch's `+ms`.
+ * A run with no switch before it is a revalidation (search-param write, etc.).
+ */
 export async function loadAgentApp(args: LoaderArgs) {
+  const started = performance.now();
+  const path = new URL(args.request.url).pathname;
+  const kind = args.params.viewType ?? '-';
+  try {
+    const result = await loadAgentAppBody(args);
+    toplog.log(
+      'tab_switch',
+      `loader ${sinceTabSwitch()} kind=${kind} ms=${Math.round(performance.now() - started)} path=${path}`,
+    );
+    return result;
+  } catch (err) {
+    const ms = Math.round(performance.now() - started);
+    if (err instanceof Response) {
+      toplog.log(
+        'tab_switch',
+        `loader_redirect ${sinceTabSwitch()} kind=${kind} ms=${ms} status=${err.status} to=${err.headers.get('Location') ?? '-'}`,
+      );
+    } else {
+      toplog.log(
+        'tab_switch',
+        `loader_error ${sinceTabSwitch()} kind=${kind} ms=${ms} path=${path} err=${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`,
+      );
+    }
+    throw err;
+  }
+}
+
+async function loadAgentAppBody(args: LoaderArgs) {
   const { params } = args;
   const requestUrl = new URL(args.request.url);
   // Stamp the per-nav perf clock at EVERY loader entry — not just click-nav.
