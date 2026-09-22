@@ -6,9 +6,9 @@
 
 A thin HTTP caller over the same entity actions the UI calls; no logic here.
 
-**The exit code is the product.** It is what a wizard's ``verify`` check reads
-and what a shell script tests, so both verbs answer in exit codes and not only
-in prose:
+**The exit code is the product.** It is the op's own verdict — the same one a
+wizard step reads — in the form a shell script can test, so both verbs answer in
+exit codes and not only in prose:
 
     0  the goal holds  (check: satisfied · run: proven by the re-check)
     1  it does not     (check: work to do · run: the call did not reach it)
@@ -105,7 +105,7 @@ def _find(name: str) -> dict:
 def list_ops() -> None:
     rows = _rows(get_graph_json(_url("compute_op"), on_error=_on_error()))
     ok({"ops": [
-        {k: row.get(k) for k in ("name", "description", "shipped", "enabled")}
+        {k: row.get(k) for k in ("name", "description", "shipped")}
         for row in rows
     ]})
 

@@ -146,7 +146,7 @@ async def run_op(
     exe = spec.exe_data
     if not trusted:
         # Refused before anything runs — an unapproved op cannot even ask its question.
-        return exe.ANSWER.refused(f"{spec.display_label} runs on this machine and has not been approved.")
+        return refused_for(spec)
     workdir = Path(workdir) if workdir else Path.cwd()
     say = _say(on_status)
 
@@ -177,10 +177,28 @@ async def run_op(
             "exit_code": ExitCode.OK, "check": after, "detail": f"{spec.display_label}: done.",
         })
         return _with_value(spec, done, said=after)
+    if not call.ran or call.exit_code is ExitCode.NOT_APPLICABLE:
+        # The call never happened — no command for this box, no harness to run it
+        # — so the check's verdict is not news about it. Keeping the call's own
+        # exit code and sentence is the whole point: NOT_APPLICABLE must not
+        # become a failure, and "nothing ran" must not read as "it ran and failed".
+        return call.model_copy(update={"value": None, "check": after})
     return call.model_copy(update={
         "exit_code": ExitCode.NOT_YET, "value": None, "check": after,
         "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.",
     })
+
+
+def refused_for(spec: ComputeOpSpec) -> ReturnedValue:
+    """The one refusal an op can answer, in the op's own answer type.
+
+    Both gates — the entity's (approved or system) and the runner's own
+    ``trusted`` — say this, and a person should not meet two spellings of one
+    sentence depending on which way the op was reached.
+    """
+    return spec.exe_data.ANSWER.refused(
+        f"{spec.display_label} runs on this machine and has not been approved."
+    )
 
 
 def _say(on_status: Optional[Callable[[str], None]]) -> Callable[[str], None]:
@@ -259,8 +277,8 @@ async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], 
     A cancel and a timeout are both "no value" — ``NOT_YET`` — and differ in
     ``cancelled`` / ``timed_out``, which is what a caller branches on.
     """
-    from flow_sdk.core.compute.ask import Cancelled, open_question, wait_for  # noqa: PLC0415
-    from flow_sdk.core.compute.ask_window import raise_question  # noqa: PLC0415
+    from flow_sdk.core.compute_op.ask import Cancelled, open_question, wait_for  # noqa: PLC0415
+    from flow_sdk.core.compute_op.ask_window import raise_question  # noqa: PLC0415
 
     # The person gets the SHORTEST of: what the op asks for, what the caller
     # allows, and the product default. Nothing here lengthens it.
