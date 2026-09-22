@@ -14,6 +14,10 @@ placement ANSWERS on — one row per exposed service:
       └── ServiceEndpoint  "workspace"  flowpad.workspace proxy  → the box's own app (cloud only;
                                                                      with "shell-mcp" / "fs-mcp")
 
+    Deployment (runtime.agent — an agent's placement)
+      └── ServiceEndpoint  "chat"       api.chat.openai  agent   → the agent's turns, answered
+                                                                     by the app holding the placement
+
 Everything a machine serves is one of these — there is no other serving path: no
 per-process port lookup, no `micro_app` view route, no hub services table.
 
@@ -119,3 +123,32 @@ placement: `workspace`, `shell-mcp`, `fs-mcp`. `compute_node/<id>/open-service/<
 resolves names through those endpoints only. The hub's builtin apps (the chatbot, …)
 are endpoints of `hub`-provider placements, read off the hub's disk; a custom domain
 (`WebDomain`) names an endpoint (`service_endpoint_id`).
+
+## 6. An agent's `chat`
+
+Every agent placement has one standard endpoint, `chat` (`api.chat.openai`, backend
+`{type: agent, agent_id}`), made by the app's agent server for every local placement and
+reported by a box for its own. It is answered in-process by the FlowPad app holding the
+placement, through the same turn engine that answers the agent's channels — so a chat turn is
+the turn an email or a WhatsApp message gets. Whoever may use the endpoint may chat: the hub
+authorizes `service` by the endpoint's roles and vouches for the caller; on a desktop the
+caller is the person at it.
+
+```
+POST v1/chat/completions   {messages, stream?, metadata: {conversation_id?}}   # SSE when stream
+GET  v1/models                                                                  # the one model: the agent
+GET  v1/conversations/<id>                                                      # {messages}
+```
+
+A conversation is the caller's own — the same id from someone else is a different
+conversation. `metadata.conversation_id` continues one; omitted, one is started and every
+answer names it (`flowpad.conversation_id` on each chunk). `direct-url` is refused: there is
+no port behind it. From the SDK:
+
+```ts
+const chat = await AgentChat.forDeployment(deployment);        // its `chat` endpoint, here or on the hub
+for await (const e of chat.send('hello', { conversationId })) { /* text | tool | error | done */ }
+const past = await chat.history(conversationId);
+```
+
+Pinned by `tests/api/test_agent_chat_endpoint.py`.

@@ -367,7 +367,7 @@ class RunAgentActionHandler(TriggerActionHandler):
         changes: Optional[list["ChangeEvent"]] = None,
     ) -> Any:
         from flow_sdk.builtin.agent import Agent  # noqa: PLC0415 — entity layer imports this module
-        from flow_sdk.stream_inbox.agent_runner import _workdir_for  # noqa: PLC0415
+        from flow_sdk.builtin.agent_serve import workdir_for  # noqa: PLC0415
 
         prompt = str(getattr(action, "prompt", "") or "").strip()
         if not prompt:
@@ -406,7 +406,7 @@ class RunAgentActionHandler(TriggerActionHandler):
             prompt,
             deployment=deployment,
             name=f"{getattr(trigger, 'name', '') or agent.name} · scheduled",
-            workdir=await _workdir_for(agent),
+            workdir=await workdir_for(agent),
             context_data={"trigger_id": str(getattr(trigger, "id", "") or "")},
         )
         # A launched run is never finished by anyone: `launch` returns at

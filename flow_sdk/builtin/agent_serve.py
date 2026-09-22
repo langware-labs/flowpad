@@ -22,6 +22,7 @@ it writes it (a chat caller watches the answer form).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional
@@ -49,6 +50,18 @@ async def stamp_turn(ap, key: str, entry: dict) -> None:
     if len(turns) > TURNS_KEPT:
         for stale in list(turns)[: len(turns) - TURNS_KEPT]:
             turns.pop(stale, None)
+    await _write_turns(ap, turns)
+
+
+async def _forget_turn(ap, key: str) -> None:
+    """Drop one turn's record — a turn that was never taken has none."""
+    turns = dict(turns_of(ap))
+    if turns.pop(key, None) is not None:
+        await _write_turns(ap, turns)
+
+
+async def _write_turns(ap, turns: dict) -> None:
+    """The ONE writer of a session's turn records."""
     data = dict(getattr(ap, "context_data", None) or {})
     data[TURNS] = turns
     ap.context_data = data
@@ -56,6 +69,20 @@ async def stamp_turn(ap, key: str, entry: dict) -> None:
 
 
 # ── what a turn is asked with, and what it answers with ──────────────────────
+
+
+def turn_key(message) -> str:
+    """One message, one key. The natural key (source + origin) when the message has one, else its own id."""
+    source = getattr(message, "data_source_id", "") or ""
+    external = str(getattr(message, "external_id", "") or "")
+    if not source:
+        return external
+    parts = (
+        getattr(message, "origin_kind", ""),
+        getattr(message, "origin_namespace", ""),
+        getattr(message, "origin_key", "") or external,
+    )
+    return ":".join([source, *(str(p or "") for p in parts)])
 
 
 @dataclass(frozen=True)
@@ -116,7 +143,9 @@ class TurnEngine:
 
     async def process_for(self, session: str, *, name: Optional[str] = None, context: Optional[dict] = None):
         """The session's process on this placement — :meth:`find_process`, else a new one."""
-        workdir = self.workdir or await workdir_for(self.agent)
+        if not self.workdir:
+            self.workdir = await workdir_for(self.agent)
+        workdir = self.workdir
         process = await self.find_process(session)
         if process is not None:
             if getattr(process, "shell_id", None):
@@ -145,15 +174,23 @@ class TurnEngine:
         await process.save()
         return process
 
-    async def run(self, turn: Turn) -> TurnEvent:
-        """The turn's outcome once it is over: ``done`` with the reply, or ``refused``."""
+    async def run(self, turn: Turn, *, process=None) -> TurnEvent:
+        """The turn's outcome once it is over: ``done`` with the reply, or ``refused``.
+
+        *process* runs the turn on a process the caller already routed (the block
+        runner keeps its own per-session map); otherwise the session's process here.
+        """
         last = TurnEvent("refused", "the turn produced nothing")
-        async for event in self.run_stream(turn):
+        async for event in self._turn(turn, process, stream=False):
             last = event
         return last
 
-    async def run_stream(self, turn: Turn) -> AsyncIterator[TurnEvent]:
+    async def run_stream(self, turn: Turn, *, process=None) -> AsyncIterator[TurnEvent]:
         """Run *turn*, yielding what the agent writes as it writes it; the last event is ``done`` or ``refused``."""
+        async for event in self._turn(turn, process, stream=True):
+            yield event
+
+    async def _turn(self, turn: Turn, process, *, stream: bool) -> AsyncIterator[TurnEvent]:
         from flow_sdk.app.actions.execute_prompt import (  # noqa: PLC0415
             _capture_assistant_reply,
             _last_turn_assistant_text,
@@ -161,7 +198,7 @@ class TurnEngine:
         )
 
         async with conversation_turn_lock(turn.session):
-            ap = await self.process_for(turn.session, name=turn.name, context=turn.context)
+            ap = process or await self.process_for(turn.session, name=turn.name, context=turn.context)
             prior = turns_of(ap).get(turn.key)
             if prior and prior.get("status") == DONE:
                 yield TurnEvent("done", prior.get("text", ""))
@@ -173,15 +210,21 @@ class TurnEngine:
                     await stamp_turn(ap, turn.key, {"status": DONE, "text": text})
                     yield TurnEvent("done", text)
                     return
-            start = len(transcript_entries(ap))
+            start = len(transcript_entries(ap)) if stream else 0
             await stamp_turn(ap, turn.key, {"status": STARTED})
             taken = await ap.send_turn(turn.body)
             if not taken.ok:
+                # Nothing ran, so nothing is recorded: a STARTED stamp left behind would
+                # make the redelivery read the transcript's latest reply — another turn's.
+                await _forget_turn(ap, turn.key)
                 yield TurnEvent("refused", taken.detail or "the turn was not taken")
                 return
-            async for event in _follow(ap, start):
-                yield event
-            text = _last_turn_assistant_text(transcript_entries(ap)[start:]) or await _capture_assistant_reply(ap)
+            if stream:
+                async for event in _follow(ap, start):
+                    yield event
+                text = _last_turn_assistant_text(transcript_entries(ap)[start:]) or await _capture_assistant_reply(ap)
+            else:
+                text = await _capture_assistant_reply(ap)
             await stamp_turn(ap, turn.key, {"status": DONE, "text": text or ""})
             yield TurnEvent("done", text or "")
 
@@ -218,8 +261,6 @@ async def _follow(ap, start: int) -> AsyncIterator[TurnEvent]:
     It runs beside a re-read of the transcript on each new line, so what the agent
     writes is seen while it writes it.
     """
-    import asyncio  # noqa: PLC0415
-
     seen = start
     lines = ap.stream_transcript().__aiter__()
     finished = False
@@ -359,143 +400,274 @@ async def ensure_chat_endpoint(agent, deployment):
 # ── the serve loop: every channel the agent answers here ─────────────────────
 
 
-def _inbox_of(source, agent):
-    """A ``StreamInbox`` over an EXISTING source — the block's durable drain, no adoption step."""
-    from flow_sdk.blocks import StreamInbox  # noqa: PLC0415
+async def answered_sources(agent, deployment) -> list:
+    """The agent's message sources that *deployment* answers."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
 
-    inbox = StreamInbox("", provider=source.provider, owner=agent)
-    inbox._source = source  # the row is already known; ``ensure_source`` would look it up again
-    return inbox
+    return [
+        s
+        for s in await DataSource.find_owned(agent.typeid)
+        if is_message_source(s) and await answers_here(s, deployment)
+    ]
 
 
-async def serve(agent, deployment) -> None:
+def consumer_of(deployment) -> str:
+    """The durable consumer a placement's serve loop drains as — its position per source."""
+    return f"agent-serve:{deployment.id}"
+
+
+async def hold_positions(deployment, sources) -> None:
+    """The placement's position on each source, made now if it is new.
+
+    A loop yields ARRIVALS — what a source held when its position was made is
+    history. Made before the loop starts, so "serving" means a message landing
+    from here on is answered, not "once the loop's first cycle has run".
+    """
+    from flow_sdk.builtin.consumer_position import ConsumerPosition  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    for source in sources:
+        newest = await SourceItem.newest_for(str(source.id))
+        await ConsumerPosition.ensure_for(consumer_of(deployment), str(source.id), baseline=newest)
+
+
+async def serve(agent, deployment, *, sources=None, poll_every: "float | None" = None) -> None:
     """Answer every message on the agent's channels that answer on *deployment*, until cancelled.
 
     One durable drain (a named consumer per placement, so a restart resumes after
     the last answer) over all of them; each message passes the loop guard and the
     source's gate, runs through the turn engine in its conversation, and is
-    replied to on its own channel (send → record → ack).
+    replied to on its own channel (send → record → ack). *sources* defaults to
+    :func:`answered_sources`; ``poll_every`` is the drain's cadence (the driver's
+    own, else 3 s).
     """
-    from flow_sdk.blocks import workflow  # noqa: PLC0415
+    from flow_sdk.blocks import StreamInbox, workflow  # noqa: PLC0415
     from flow_sdk.blocks.merge import pages  # noqa: PLC0415
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
 
-    sources = [
-        s
-        for s in await DataSource.find_owned(agent.typeid)
-        if is_message_source(s) and await answers_here(s, deployment)
-    ]
+    sources = list(sources) if sources is not None else await answered_sources(agent, deployment)
     if not sources:
         return
     by_id = {str(s.id): s for s in sources}
     engine = TurnEngine(agent, deployment)
-    async with workflow(f"agent-serve:{deployment.id}"):
-        async for page in pages(*(_inbox_of(s, agent) for s in sources)):
+    async with workflow(consumer_of(deployment)):
+        async for page in pages(*(StreamInbox.of(s) for s in sources), poll_every=poll_every):
             source = by_id[page.source_id]
             for message in page:
-                await _answer(engine, agent, source, message)
+                await answer(engine, source, message)
             await page.ack()
 
 
-async def _answer(engine: TurnEngine, agent, source, message) -> None:
-    """One channel message: gate it, run it in its conversation, reply on its channel."""
+async def answer(engine: TurnEngine, source, message) -> bool:
+    """One channel message: gate it, run it in its conversation, reply on its channel.
+
+    Answers whether a reply went out. Every refusal — our own outgoing copy, a
+    sender the source does not admit, an empty body, a turn that produced
+    nothing — is an ordinary outcome, not an error: the message is already
+    ingested and projected, so its owner sees it either way.
+    """
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
     from flow_sdk.stream_inbox.projection import display_name_of  # noqa: PLC0415
 
+    agent = engine.agent
     author = str(getattr(message, "author_external_id", "") or "")
     body = str(getattr(message, "body", "") or "").strip()
-    if is_own_outgoing(source, author) or not admits(source, author) or not body:
-        return
-    session = await _conversation_session(message, source)
+    # The loop guard first: pure string work, and every reply the agent sends comes back.
+    if is_own_outgoing(source, author):
+        return False
+    if not admits(source, author):
+        logger.info("agent %s: not answering an unlisted sender on %s", agent.name or agent.id, source.id)
+        return False
+    if not body:
+        return False
+    conversation = await conversation_of(message, source)
+    if not conversation:
+        logger.warning("agent %s: message on %s has no conversation yet", agent.name or agent.id, source.id)
+        return False
+    session = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation))
     who = display_name_of(getattr(message, "author_display", "") or "", author)
     outcome = await engine.run(
         Turn(
             session=session,
-            key=str(getattr(message, "id", "") or getattr(message, "external_id", "")),
+            key=turn_key(message),
             body=body,
             name=" · ".join(p for p in (agent.name, source.channel or source.provider, who) if p) or None,
         )
     )
     if outcome.kind != "done" or not outcome.text:
         logger.info("agent %s: no reply to %s (%s)", agent.name or agent.id, session, outcome.text or outcome.kind)
-        return
+        return False
     await message.reply(await message.reply_spec(body=outcome.text))
+    return True
 
 
-async def _conversation_session(message, source) -> str:
-    """The conversation the message was placed in — its thread's, as the projection wrote it."""
-    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
-    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+async def conversation_of(message, source) -> Optional[str]:
+    """The conversation the message was placed in, or None when it has not been placed.
+
+    READ from the thread the way the projection wrote it (``find_thread``), never
+    re-derived: once a thread exists its ``conversation_id`` is authoritative,
+    because merging two threads repoints it — a derivation would answer with the
+    pre-merge id and split the session. No thread means no answer: a fabricated
+    conversation would pin a process nothing else can find.
+    """
     from flow_sdk.stream_inbox.projection import channel_of, find_thread, owner_of, thread_key_for  # noqa: PLC0415
 
     row = getattr(message, "_row", None) or message
-    owner = await owner_of(source)
     thread = await find_thread(
-        channel_of(source), thread_key_for(row, getattr(row, "name", "") or ""), owner, str(source.id)
+        channel_of(source), thread_key_for(row, getattr(row, "name", "") or ""), await owner_of(source), str(source.id)
     )
-    conversation = str(getattr(thread, "conversation_id", "") or "") or str(getattr(message, "thread_key", "") or "")
-    return str(TypeId(type=EntityType.CONVERSATION.value, id=conversation)) if conversation else f"thread:{source.id}"
+    return str(getattr(thread, "conversation_id", "") or "") or None
 
 
 # ── the supervisor: one loop per agent placement on this machine ────────────
+
+
+def _serving_key(source) -> tuple:
+    """What a loop's copy of *source* must still say for the loop to keep serving it.
+
+    A poll's runtime write (a cursor, a next-poll time) is not news; a new owner,
+    place, status or allowlist is — the loop holds its rows, so it restarts on them.
+    """
+    return (
+        str(source.id),
+        str(getattr(source, "owner", "") or ""),
+        str(getattr(source, "channel", "") or ""),
+        str(getattr(source, "provider", "") or ""),
+        str(getattr(source, "answer_place", "") or ""),
+        str(getattr(source, "status", "") or ""),
+        tuple(sorted(str(a) for a in (getattr(source, "inbound_allowed_senders", None) or []))),
+    )
 
 
 class AgentServer:
     """Keeps every agent placement on this machine serving.
 
     For each local ``runtime.agent`` Deployment whose agent is enabled there: its
-    ``chat`` endpoint exists, and (when ``serve_channels``) one :func:`serve` task
-    runs. Reconciled at start and whenever an agent, a placement or a source
-    changes (``entity.*`` tags); a task whose placement went away is cancelled.
+    ``chat`` endpoint exists, and (when ``serve_channels``) one :func:`serve` loop
+    runs over the sources that placement answers. An agent that owns a channel has
+    a placement here. Reconciled at start and whenever an agent, a placement or a
+    source changes (``entity.*`` tags) — a source only when what serving depends on
+    changed, so a poll's own runtime write never sets it off. A loop whose placement
+    went away is ended; one whose sources changed is restarted over them.
     """
 
     def __init__(self, *, serve_channels: bool):
         self.serve_channels = serve_channels
-        self._tasks: dict[str, Any] = {}
+        #: placement id → (the serving keys of the sources its loop serves, the loop)
+        self._loops: dict[str, tuple[frozenset, Any]] = {}
+        #: source id → its serving key as last seen
+        self._seen: dict[str, tuple] = {}
+        #: (entity type, id) of the writes not yet reconciled
+        self._touched: set[tuple[str, str]] = set()
         self._pending: Any = None
         self._unsubscribe: Any = None
+        self._reconciling = asyncio.Lock()
 
     async def start(self) -> None:
+        """Arm, and reconcile in the background — startup does not wait on it."""
         from flow_sdk.tags import on_tag  # noqa: PLC0415
 
         self._unsubscribe = on_tag("entity.*", self._on_entity)
-        await self.reconcile()
+        self._touch("start", "")
 
     async def stop(self) -> None:
-        import asyncio  # noqa: PLC0415
-
         if self._unsubscribe is not None:
             self._unsubscribe()
-        tasks = list(self._tasks.values())
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        self._tasks.clear()
+        for _keys, loop in self._loops.values():
+            await _ended(loop)
+        self._loops.clear()
+
+    def serving(self) -> dict[str, frozenset]:
+        """Placement id → the ids of the sources its live loop serves."""
+        return {key: frozenset(k[0] for k in keys) for key, (keys, loop) in self._loops.items() if not loop.done()}
 
     async def _on_entity(self, event) -> None:
+        data = event.data or {}
+        kind = str(data.get("entity_type") or "")
+        if kind in ("agent", "deployment", "data_source"):
+            self._touch(kind, str(data.get("id") or ""))
+
+    def _touch(self, kind: str, entity_id: str) -> None:
         from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
 
-        kind = str((event.data or {}).get("entity_type") or "")
-        if kind not in ("agent", "deployment", "data_source"):
-            return
-        # Coalesced: a burst of writes (an agent saved with its placements) is one reconcile.
+        self._touched.add((kind, entity_id))
         if self._pending is None or self._pending.done():
-            # Detached: the tag fires inside the writer's commit, whose session this must not join.
-            self._pending = create_detached_task(self.reconcile(), name="agent-server-reconcile")
+            # Detached: a tag fires inside the writer's commit, whose session this must not join.
+            self._pending = create_detached_task(self._drain(), name="agent-server-reconcile")
+
+    async def _drain(self) -> None:
+        """Reconcile until no write is left unreconciled — one that lands mid-reconcile runs it again."""
+        while self._touched:
+            touched, self._touched = self._touched, set()
+            if all(kind == "data_source" for kind, _ in touched) and not await self._sources_changed(touched):
+                continue
+            try:
+                await self.reconcile()
+            except Exception:  # noqa: BLE001 — the next write reconciles again
+                logger.exception("agent server: reconcile failed")
+
+    async def _sources_changed(self, touched) -> bool:
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        for _kind, source_id in touched:
+            source = await DataSource.get_by_id(source_id) if source_id else None
+            if self._seen.get(source_id) != (_serving_key(source) if source is not None else None):
+                return True
+        return False
 
     async def reconcile(self) -> None:
-        import asyncio  # noqa: PLC0415
+        async with self._reconciling:
+            owned = await self._channels_by_agent()
+            wanted = await self._placements(owned)
+            if self.serve_channels:
+                await self._converge(wanted, owned)
 
+    async def _channels_by_agent(self) -> dict[str, list]:
+        """Agent id → the message sources it owns. One read of the sources on a channel."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+        from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+        from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
+
+        on_a_channel = QueryFilter(match=ExpressionNode(op=QueryOp.IS_NOT_NULL, operands=["channel"]))
+        owned: dict[str, list] = {}
+        for source in await DataSource.get_all(on_a_channel):
+            self._seen[str(source.id)] = _serving_key(source)
+            if not is_message_source(source):
+                continue
+            owner = await owner_of(source)
+            if owner is not None and owner.type == EntityType.AGENT.value:
+                owned.setdefault(owner.id, []).append(source)
+        return owned
+
+    async def _placements(self, owned: dict[str, list]) -> dict[str, tuple]:
+        """Every local agent placement whose agent is enabled there — each with its ``chat`` endpoint.
+
+        An agent that owns a channel answers it from this machine unless told otherwise,
+        so it has a placement here — made on first need, as ``local_deployment`` always has.
+        """
         from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
         from flow_sdk.builtin.deployment import KIND_AGENT, Deployment  # noqa: PLC0415
         from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
 
+        agents: dict[str, Any] = {}
+
+        async def agent_of(agent_id: str):
+            if agent_id not in agents:
+                agents[agent_id] = await Agent.get_by_id(agent_id) if agent_id else None
+            return agents[agent_id]
+
+        for agent_id in owned:
+            agent = await agent_of(agent_id)
+            if agent is not None:
+                await agent.local_deployment()
         wanted: dict[str, tuple] = {}
         for deployment in await Deployment.get_all({"match": {"kind": KIND_AGENT}}):
             if not kind_matches(KIND_AGENT, deployment.kind) or not deployment.is_local:
                 continue
-            agent_id = str(deployment.parent_type_id or "").partition("-")[2]
-            agent = await Agent.get_by_id(agent_id) if agent_id else None
+            agent = await agent_of(str(deployment.parent_type_id or "").partition("-")[2])
             if agent is None or not agent.enabled_on(deployment.id):
                 continue
             try:
@@ -503,35 +675,59 @@ class AgentServer:
             except Exception:  # noqa: BLE001 — one placement's endpoint must not stop the others
                 logger.exception("agent %s: chat endpoint for %s failed", agent.id, deployment.id)
             wanted[str(deployment.id)] = (agent, deployment)
-        if not self.serve_channels:
-            return
-        for key in [k for k in self._tasks if k not in wanted or self._tasks[k].done()]:
-            self._tasks.pop(key).cancel()
+        return wanted
+
+    async def _converge(self, wanted: dict[str, tuple], owned: dict[str, list]) -> None:
+        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
+        for key in [k for k in self._loops if k not in wanted]:
+            await _ended(self._loops.pop(key)[1])
         for key, (agent, deployment) in wanted.items():
-            if key not in self._tasks:
-                self._tasks[key] = asyncio.get_running_loop().create_task(_serving(agent, deployment))
+            sources = [s for s in owned.get(agent.id, []) if await answers_here(s, deployment)]
+            keys = frozenset(_serving_key(s) for s in sources)
+            current = self._loops.get(key)
+            if current is not None and current[0] == keys and not current[1].done():
+                continue
+            if current is not None:
+                # Ended before its successor starts: one drain per placement, never two.
+                await _ended(self._loops.pop(key)[1])
+            if sources:
+                await hold_positions(deployment, sources)
+                loop = create_detached_task(_serving(agent, deployment, sources), name=f"agent-serve:{deployment.id}")
+                self._loops[key] = (keys, loop)
 
 
-async def _serving(agent, deployment) -> None:
+async def _ended(loop) -> None:
+    loop.cancel()
+    await asyncio.gather(loop, return_exceptions=True)
+
+
+async def _serving(agent, deployment, sources) -> None:
     try:
-        await serve(agent, deployment)
+        await serve(agent, deployment, sources=sources)
     except Exception:  # noqa: BLE001 — a loop that fails is logged; the next reconcile restarts it
         logger.exception("agent %s: serve loop on %s failed", agent.id, deployment.id)
 
 
 __all__ = [
     "AgentServer",
+    "answer",
+    "answered_sources",
     "CHAT",
     "Turn",
     "TurnEngine",
     "TurnEvent",
     "admits",
+    "consumer_of",
+    "conversation_of",
     "answers_here",
     "ensure_chat_endpoint",
+    "hold_positions",
     "is_own_outgoing",
     "serve",
     "stamp_turn",
     "transcript_entries",
+    "turn_key",
     "turns_of",
     "workdir_for",
 ]

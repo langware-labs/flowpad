@@ -33,8 +33,11 @@ await save_credential(
 
 ## 2. Variant A — the app answers
 
-The agent owns the source; the backend turns every message from an allowed sender into a turn and
-sends the answer back on the channel. Nothing of yours keeps running.
+The agent owns the source; the app answers it. Owning a channel gives the agent a placement on this
+machine, and that placement's **serve loop** (`flow_sdk/builtin/agent_serve.py`) drains every channel
+it answers — one durable position per source, so a restart resumes after the last answer — turns
+each message from an allowed sender into a turn in that conversation's process, and sends the
+answer back on the channel. Nothing of yours keeps running.
 
 ```python
 from flow_sdk.builtin.agent import Agent
@@ -56,12 +59,14 @@ verdict = await source.verify()                # ACTIVE once the token works
 ```
 
 Point Meta's webhook at `https://<this instance>/api/v1/data_source/webhook/whatsapp` with the same
-`VERIFY_TOKEN`; the thread is at `/dock/agent/<agent id>/stream_inbox`.
+`VERIFY_TOKEN`; the thread is at `/dock/agent/<agent id>/stream_inbox`. Deploy the agent and set the
+source's `answer_place` to that placement's id to have the cloud box answer instead — one place
+answers a source, never two.
 
 ## 3. Variant B — your process runs the loop
 
 The same agent and channel, but the loop is yours: a script that stays up, spawns the agent's
-worker per chat, and replies. `workflow(name)` makes the position durable — a restart resumes
+worker per chat, and replies — the same turn engine the app's loop uses, driven by your code. `workflow(name)` makes the position durable — a restart resumes
 after the last reply.
 
 ```python

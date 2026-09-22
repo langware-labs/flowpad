@@ -403,14 +403,13 @@ _AGENT_SERVER = None
 
 
 async def _start_agent_server() -> None:
-    """Every agent placement here serves: its ``chat`` endpoint exists (channel loops follow)."""
+    """Every agent placement here serves: its ``chat`` endpoint, and its channels' serve loop."""
     global _AGENT_SERVER
     try:
         from flow_sdk.builtin.agent_serve import AgentServer
+        from flow_sdk.config import default_service_config
 
-        # Channel loops stay off while the bus runner still answers channels
-        # (``stream_inbox/agent_runner``) — two answerers would reply twice.
-        _AGENT_SERVER = AgentServer(serve_channels=False)
+        _AGENT_SERVER = AgentServer(serve_channels=default_service_config.agent_serve_channels)
         await _AGENT_SERVER.start()
     except Exception:
         logging.getLogger(__name__).exception("Agent server: start failed")
