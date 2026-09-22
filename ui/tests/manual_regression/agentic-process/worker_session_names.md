@@ -1,3 +1,6 @@
+---
+id: ccf40615-ef9d-48d9-a6f9-36f5d5d4d462
+---
 # Worker session names
 
 `worker_session_names.md.ts` exercises real Claude Code, Codex, Copilot and

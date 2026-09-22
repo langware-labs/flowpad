@@ -79,17 +79,35 @@ _monitor_lock: FileLock | None = None
 log = logging.getLogger("flow.monitor")
 
 
-def _setup_logging() -> None:
-    """Configure timestamped file + stderr logging for the monitor process."""
+# Set by `start_monitor_detached` on the monitor it spawns: the monitor log
+# file its stdout and stderr were already pointed at, so `_setup_logging`
+# writes to the same file instead of opening a second one — and does not add
+# a stderr handler, which would be the same file twice.
+ENV_MONITOR_LOG = "FLOWPAD_MONITOR_LOG"
 
-    monitor_log_dir = _logs_base() / "monitor"
-    cleanup_old_logs(monitor_log_dir)
-    monitor_log_path = generate_timestamped_log_path("monitor")
+
+def _setup_logging() -> None:
+    """Configure timestamped file logging for the monitor process, plus stderr
+    when stderr is not already the log file."""
+
+    preopened = os.environ.get(ENV_MONITOR_LOG)
+    if preopened:
+        monitor_log_path = Path(preopened)
+    else:
+        monitor_log_dir = _logs_base() / "monitor"
+        cleanup_old_logs(monitor_log_dir)
+        monitor_log_path = generate_timestamped_log_path("monitor")
 
     handler = logging.FileHandler(str(monitor_log_path), encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     log.addHandler(handler)
-    log.addHandler(logging.StreamHandler(sys.stderr))
+    if not preopened:
+        log.addHandler(logging.StreamHandler(sys.stderr))
+    # The monitor's handlers are the whole story. Propagation would hand every
+    # record to the root logger too, whose default stderr handler (installed by
+    # some import's module-level `logging.info`) now writes into the same file
+    # — each line twice, in two formats.
+    log.propagate = False
     log.setLevel(logging.INFO)
 
 
@@ -135,14 +153,14 @@ def kill_process(pid: int, timeout: float = 5.0) -> bool:
         return False
 
 
-def start_detached_process(args: list[str], env: dict | None = None, stderr=None) -> subprocess.Popen:
+def start_detached_process(args: list[str], env: dict | None = None, stderr=None, stdout=None) -> subprocess.Popen:
     """Launch a fully detached subprocess that survives parent exit.
 
     Returns the Popen so a long-lived parent can poll and reap it.
     """
     kwargs: dict = {
         "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
+        "stdout": stdout if stdout is not None else subprocess.DEVNULL,
         "stderr": stderr if stderr is not None else subprocess.DEVNULL,
         "env": env or os.environ.copy(),
     }
@@ -217,21 +235,27 @@ def start_server_process(port: int) -> int:
 
     env = os.environ.copy()
     env["LOCAL_SERVER_PORT"] = str(port)
+    env.pop(ENV_MONITOR_LOG, None)  # the monitor's own; the server has its own log
 
     server_log_dir = _logs_base() / "server"
     cleanup_old_logs(server_log_dir)
     server_log_path = generate_timestamped_log_path("server")
 
+    # Both streams into the server log. stdout carries the boot's own account
+    # of itself — the startup-timing report, "another instance is running" —
+    # and used to be thrown away. `-u` so those lines land as they happen
+    # (a file-bound stdout is block-buffered otherwise); a flag rather than
+    # PYTHONUNBUFFERED so the server's own children don't inherit it.
     server_log = open(server_log_path, "a")  # noqa: WPS515 — fd inherited by child
-    args = [sys.executable, "-m", "flow_sdk.server.run"]
+    args = [sys.executable, "-u", "-m", "flow_sdk.server.run"]
     global _server_child, _server_log_path, _server_log_seen, _server_booting, _boot_started_at
-    _server_child = start_detached_process(args, env=env, stderr=server_log)
+    _server_child = start_detached_process(args, env=env, stdout=server_log, stderr=server_log)
     server_log.close()
     _server_log_path = Path(server_log_path)
     _server_log_seen = 0
     _server_booting = True
     _boot_started_at = time.monotonic()
-    log.info("Started server process PID=%d on port %d (stderr → %s)", _server_child.pid, port, server_log_path)
+    log.info("Started server process PID=%d on port %d (stdout+stderr → %s)", _server_child.pid, port, server_log_path)
     return _server_child.pid
 
 
@@ -564,7 +588,26 @@ def start_monitor_detached(port: int) -> int:
     to the lock sidecar for that window).
     """
     _set_info({"port": port, "launch_iso_time": datetime.now(timezone.utc).isoformat()})
-    return start_detached_process([sys.executable, "-m", "flow_sdk.server.launch", str(port)]).pid
+
+    # The monitor's stdout and stderr go into its log, the way the server's go
+    # into the server log. Anything it says outside its logger — an interpreter
+    # traceback before `_setup_logging`, an "Exception ignored in" — used to
+    # vanish into DEVNULL.
+    cleanup_old_logs(_logs_base() / "monitor")
+    monitor_log_path = generate_timestamped_log_path("monitor")
+    env = os.environ.copy()
+    env[ENV_MONITOR_LOG] = str(monitor_log_path)
+    monitor_log = open(monitor_log_path, "a")  # noqa: WPS515 — fd inherited by child
+    try:
+        child = start_detached_process(
+            [sys.executable, "-u", "-m", "flow_sdk.server.launch", str(port)],
+            env=env,
+            stdout=monitor_log,
+            stderr=monitor_log,
+        )
+    finally:
+        monitor_log.close()
+    return child.pid
 
 
 def _scan_for_monitors(port: int) -> list[int]:

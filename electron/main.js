@@ -7,7 +7,7 @@ const log = require('electron-log');
 const crypto = require('crypto');
 const UvManager = require('./uv-manager');
 const { createShutdown, relaunchAfterStop } = require('./shutdown');
-const { waitForBackend: runBackendGate, createLogActivityProbe } = require('./backend-wait');
+const { waitForBackend: runBackendGate, createLogActivityProbe, createChangeProbe } = require('./backend-wait');
 const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
 
 // Exact, copy-pasteable terminal commands surfaced to the user when the backend
@@ -417,15 +417,67 @@ const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — the just-upgraded pat
                                         // heaviest AV scan), so this is the riskiest
                                         // window to tighten; kept == the normal window.
 // Past the base window the gate (backend-wait.js) keeps polling only while the
-// SERVER log (~/.flow/logs/server/, the backend's own stderr) keeps growing —
-// a weak machine still importing the backend writes to it, a hung or dead one
-// does not. LOG_STALL_CHECKS is how long that log may stay silent before the
-// wait ends anyway; MAX_EXTENDED_HEALTH_CHECKS bounds the whole wait even if the
-// log never goes quiet (the monitor restarting an unhealthy backend opens a
-// fresh log per attempt). The monitor log is deliberately NOT the signal: it
-// grows on every failed health check, i.e. fastest when the backend is broken.
-const LOG_STALL_CHECKS = 60;             // 30 seconds of server-log silence
+// boot reports progress: a line from `flow start` on its pipe, or growth of the
+// SERVER log (BACKEND_LOGS/server, the backend's own stdout+stderr). Both
+// processes write one `[boot] … phase=…` line per step forward and nothing
+// while standing still (flow_sdk/boot_progress.py), so a weak machine still
+// importing keeps the signal alive and a hung or dead boot goes silent.
+// LOG_STALL_CHECKS is how long the signal may stay silent before the wait ends
+// anyway — with progress asserted by the boot itself, 30s of silence means no
+// module loaded and no phase changed for 30s. MAX_EXTENDED_HEALTH_CHECKS bounds
+// the whole wait even if the signal never goes quiet (the monitor restarting an
+// unhealthy backend opens a fresh log per attempt); it runs from the gate's
+// start, i.e. from the `flow start` spawn, so it fires up to the launcher's
+// duration before the monitor's own 600s boot ceiling. The monitor log is
+// deliberately NOT the signal: it grows on every failed health check, i.e.
+// fastest when the backend is broken.
+const LOG_STALL_CHECKS = 60;             // 30 seconds of silence
 const MAX_EXTENDED_HEALTH_CHECKS = 1200; // 10 minutes, restart loops included
+
+// What the loading screen says for each boot phase the two processes report.
+// Unlisted phases keep the previous label.
+const BOOT_PHASE_LABELS = {
+  // `flow start` (the launcher)
+  import: 'Preparing Flowpad',
+  migration: 'Updating your data',
+  spawn: 'Starting server',
+  wait_health: 'Starting server',
+  // the server
+  entities: 'Loading server',
+  app: 'Loading server',
+  uvicorn: 'Starting server',
+  db: 'Opening the database',
+  startup_hooks: 'Running startup tasks',
+  done: 'Almost ready',
+};
+const BOOT_PHASE_RE = /\[boot\] .*?\bphase=(\S+)/;
+
+function bootPhaseLabel(line) {
+  const m = BOOT_PHASE_RE.exec(String(line || ''));
+  return m ? BOOT_PHASE_LABELS[m[1]] || null : null;
+}
+
+/** The last `[boot]` line in the newest server log, read from its tail. */
+function lastBootLine(serverLogDir) {
+  try {
+    const newest = getNewestLogFile(serverLogDir);
+    if (!newest) return null;
+    const TAIL = 4096;
+    const size = fs.statSync(newest.path).size;
+    const fd = fs.openSync(newest.path, 'r');
+    try {
+      const start = Math.max(0, size - TAIL);
+      const buf = Buffer.alloc(size - start);
+      fs.readSync(fd, buf, 0, buf.length, start);
+      const lines = buf.toString('utf8').split('\n').filter((l) => l.includes('[boot]'));
+      return lines.length ? lines[lines.length - 1] : null;
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+}
 
 let mainWindow = null;
 let uvManager = null;
@@ -771,14 +823,39 @@ function createWindow() {
   return mainWindow;
 }
 
-// Resolves `{ ready, reason, extended, elapsedSec, checks }` — see backend-wait.js.
-// `reason` is 'healthy' | 'timeout' | 'stalled' | 'hard-cap'.
-async function waitForBackend({ maxChecks = MAX_HEALTH_CHECKS } = {}) {
+// The startup gate over the whole chain: `flow start` (CLI import → migrations
+// → monitor spawn), then the server's own boot. One clock and one base window
+// for both, and two sources of evidence that the boot is still moving — a line
+// from `flow start` on its pipe (`launch`, the handle uvManager.start() returned)
+// or growth of the server log — either of which extends the wait past the base
+// window. A non-zero `flow start` exit ends the wait at once: the launcher
+// failed, and its output is the diagnosis. Resolves
+// `{ ready, reason, extended, elapsedSec, checks }` — see backend-wait.js;
+// `reason` is 'healthy' | 'timeout' | 'stalled' | 'hard-cap' | 'launcher-failed'.
+async function waitForBackend({
+  maxChecks = MAX_HEALTH_CHECKS,
+  launch = uvManager ? uvManager.lastLaunch() : null,
+} = {}) {
   const baseSec = Math.round((maxChecks * HEALTH_CHECK_INTERVAL) / 1000);
   const serverLogDir = path.join(BACKEND_LOGS, 'server');
   log.info(
-    `Waiting for backend at ${BACKEND_URL} (${baseSec}s, longer while ${serverLogDir} keeps growing)...`,
+    `Waiting for backend at ${BACKEND_URL} (${baseSec}s, longer while flow start or ${serverLogDir} reports progress)...`,
   );
+
+  const serverLogActivity = createLogActivityProbe({
+    newestLogFile: () => getNewestLogFile(serverLogDir),
+    fileSize: (file) => fs.statSync(file).size,
+  });
+  const launchActivity = createChangeProbe(() => (launch ? launch.lines : 0));
+
+  let statusLabel = 'Waiting for server';
+  const showPhase = (line) => {
+    const label = bootPhaseLabel(line);
+    if (label && label !== statusLabel) {
+      statusLabel = label;
+      sendStatus(label);
+    }
+  };
 
   const result = await runBackendGate({
     probeHealth: async () => {
@@ -789,20 +866,25 @@ async function waitForBackend({ maxChecks = MAX_HEALTH_CHECKS } = {}) {
         return false; // Backend not ready yet
       }
     },
-    logActivity: createLogActivityProbe({
-      newestLogFile: () => getNewestLogFile(serverLogDir),
-      fileSize: (file) => fs.statSync(file).size,
-    }),
+    logActivity: () => {
+      // Both probes run on every poll so both cursors advance — no short-circuit.
+      const fromLauncher = launchActivity();
+      const fromServerLog = serverLogActivity();
+      if (fromLauncher && launch) showPhase(launch.lastLine);
+      if (fromServerLog) showPhase(lastBootLine(serverLogDir));
+      return fromLauncher || fromServerLog;
+    },
+    aborted: () => (launch && launch.exit && launch.exit.code !== 0 ? 'launcher-failed' : null),
     maxChecks,
     stallChecks: LOG_STALL_CHECKS,
     hardCapChecks: MAX_EXTENDED_HEALTH_CHECKS,
     intervalMs: HEALTH_CHECK_INTERVAL,
-    onExtended: (elapsedSec) => sendStatus(`Waiting for server — still starting (${elapsedSec}s, the server log is active)`),
+    onExtended: (elapsedSec) => sendStatus(`${statusLabel} — still starting (${elapsedSec}s, progress is being reported)`),
     log,
   });
 
   if (result.ready) {
-    log.info(`Backend is ready! (${result.elapsedSec}s, ${result.checks} checks${result.extended ? ', extended on log activity' : ''})`);
+    log.info(`Backend is ready! (${result.elapsedSec}s, ${result.checks} checks${result.extended ? ', extended on reported progress' : ''})`);
   } else {
     log.error(`Backend failed to start: ${result.reason} after ${result.elapsedSec}s (${result.checks} checks)`);
   }
@@ -1037,6 +1119,10 @@ async function startApp() {
     // Try to gather diagnostics for the error dialog
     const timeoutSec = backendWait.elapsedSec;
     let detail = `Backend server failed to respond within ${timeoutSec} seconds (${backendWait.reason}).`;
+    const launch = uvManager ? uvManager.lastLaunch() : null;
+    if (backendWait.reason === 'launcher-failed' && launch) {
+      detail += `\n\nflow start exited with code ${launch.exit.code}:\n${launch.tail()}`;
+    }
     try {
       const newest = getNewestLogFile(path.join(BACKEND_LOGS, 'monitor'));
       if (newest) {
@@ -1066,8 +1152,9 @@ async function startApp() {
     // the native OS error box. The user quits from the panel's Quit button; the
     // next launch re-runs startApp() (including the upgrade path) from scratch.
     const why = {
-      stalled: 'It was starting but its log went quiet, so it has most likely hung. ',
-      'hard-cap': 'It kept restarting without ever becoming healthy. ',
+      stalled: 'It was starting but stopped reporting progress, so it has most likely hung. ',
+      'hard-cap': 'It kept reporting progress but never became healthy within 10 minutes. ',
+      'launcher-failed': 'Its launcher (flow start) exited with an error. ',
     }[backendWait.reason] || '';
     showStartupTimeoutError(
       `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ${why}` +
