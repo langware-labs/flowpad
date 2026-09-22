@@ -63,18 +63,22 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
     queryFn: () => AgentChat.forDeployment(deployment),
   });
 
-  // A remembered conversation is shown as it stands.
+  // The conversation remembered when the panel opened is shown as it stands. Only
+  // that one: an id learned from a turn names what is already on screen, and a
+  // refetch racing the next turn would replace it.
+  const resumed = useRef(conversationId);
   useEffect(() => {
-    if (!chat || !conversationId) return;
+    const past = resumed.current;
+    if (!chat || !past) return;
     let live = true;
     chat
-      .history(conversationId)
-      .then((past) => live && setMessages(past))
-      .catch(() => live && setMessages([]));
+      .history(past)
+      .then((messages) => live && setMessages((shown) => (shown.length ? shown : messages)))
+      .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [chat, conversationId]);
+  }, [chat]);
 
   useEffect(() => () => abort.current?.abort(), []);
 

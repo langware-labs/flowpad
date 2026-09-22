@@ -47,11 +47,13 @@ export class AgentChat {
     };
     const response = await dataManager.callAction<unknown, Response>(action);
     if (!response?.body) throw new Error('the chat endpoint answered without a stream');
-    const conversationId = response.headers.get('x-flowpad-conversation') ?? opts.conversationId ?? '';
+    // The body names the conversation on every chunk — a header would need CORS exposure cross-origin.
+    let conversationId = opts.conversationId ?? '';
     for await (const payload of sseData(response.body)) {
       if (payload === '[DONE]') break;
       const chunk = parseJson(payload);
       if (!chunk) continue;
+      if (chunk.flowpad?.conversation_id) conversationId = String(chunk.flowpad.conversation_id);
       if (chunk.error) {
         yield { type: 'error', message: String(chunk.error.message ?? 'the turn failed') };
         continue;
@@ -67,8 +69,10 @@ export class AgentChat {
   async history(conversationId: string): Promise<AgentChatMessage[]> {
     const action = new ActionInfo('service', ServiceEndpoint.type, this.endpoint.id, 'GET', true);
     action.subpath = `v1/conversations/${encodeURIComponent(conversationId)}`;
-    const data = await dataManager.callAction<unknown, { messages?: AgentChatMessage[] }>(action);
-    return data?.messages ?? [];
+    // A raw response — the service speaks its own shape, not the envelope — is the body text.
+    const raw = await dataManager.callAction<unknown, unknown>(action);
+    const body = typeof raw === 'string' ? parseJson(raw) : raw;
+    return Array.isArray(body?.messages) ? (body.messages as AgentChatMessage[]) : [];
   }
 }
 

@@ -237,15 +237,34 @@ async def _follow(ap, start: int) -> AsyncIterator[TurnEvent]:
         await asyncio.sleep(0)
 
 
+# The entries that are something the agent DID — everything else a transcript
+# records (meta, token usage, summaries, system lines) is bookkeeping, not news.
+_OPERATIONS = frozenset(
+    {
+        "tool_use",
+        "file_write",
+        "file_edit",
+        "file_read",
+        "shell_command",
+        "flow_command",
+        "skill_call",
+        "artifact",
+        "search",
+        "web_fetch",
+        "todo_update",
+        "agent_spawn",
+    }
+)
+
+
 def _event_of(entry) -> Optional[TurnEvent]:
     kind = getattr(getattr(entry, "kind", None), "value", getattr(entry, "kind", ""))
     if kind == "assistant_message":
         text = str(getattr(entry, "text", "") or "").strip()
         return TurnEvent("text", text) if text else None
-    if kind in ("user_message", "tool_result"):
-        return None
-    # Every operation kind (a file write, a shell command, a skill) is a tool the agent used.
-    return TurnEvent("tool", name=str(getattr(entry, "tool_name", "") or kind))
+    if kind in _OPERATIONS:
+        return TurnEvent("tool", name=str(getattr(entry, "tool_name", "") or kind))
+    return None
 
 
 async def workdir_for(agent) -> str:
@@ -454,14 +473,15 @@ class AgentServer:
         self._tasks.clear()
 
     async def _on_entity(self, event) -> None:
-        import asyncio  # noqa: PLC0415
+        from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
 
         kind = str((event.data or {}).get("entity_type") or "")
         if kind not in ("agent", "deployment", "data_source"):
             return
         # Coalesced: a burst of writes (an agent saved with its placements) is one reconcile.
         if self._pending is None or self._pending.done():
-            self._pending = asyncio.get_running_loop().create_task(self.reconcile())
+            # Detached: the tag fires inside the writer's commit, whose session this must not join.
+            self._pending = create_detached_task(self.reconcile(), name="agent-server-reconcile")
 
     async def reconcile(self) -> None:
         import asyncio  # noqa: PLC0415
