@@ -7,7 +7,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from flow_sdk import toplog
 from flow_sdk.request_context.execution_context import (
     ExecutionContext,
     set_execution_context,
@@ -33,37 +32,6 @@ async def _get_local_user_cached():
     if user is not None:
         _LOCAL_USER_CACHE = user
     return user
-
-
-def _toplog_http_send(scope: Scope, send: Send) -> Send:
-    """Wrap ``send`` so the request ends in one ``http`` toplog line.
-
-    ``ttfb_ms`` is the time until the response headers went out (the handler's
-    own work); ``ms`` also covers writing the body, so a large gap between the
-    two is transfer, not compute. Both run on the event loop — while either is
-    long, every other request and every live terminal waits.
-    """
-    started = time.perf_counter()
-    status = 0
-    ttfb_ms = 0.0
-    body_bytes = 0
-
-    async def timed_send(message: Message):
-        nonlocal status, ttfb_ms, body_bytes
-        if message["type"] == "http.response.start":
-            status = message.get("status", 0)
-            ttfb_ms = (time.perf_counter() - started) * 1000
-        elif message["type"] == "http.response.body":
-            body_bytes += len(message.get("body", b""))
-        await send(message)
-        if message["type"] == "http.response.body" and not message.get("more_body", False):
-            toplog.log(
-                "http", "request method=%s path=%s status=%s ttfb_ms=%.0f ms=%.0f bytes=%s",
-                scope.get("method"), scope.get("path"), status, ttfb_ms,
-                (time.perf_counter() - started) * 1000, body_bytes,
-            )
-
-    return timed_send
 
 
 class RequestTransactionMiddleware:
@@ -176,9 +144,6 @@ class RequestTransactionMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-
-        if toplog.is_on("http"):
-            send = _toplog_http_send(scope, send)
 
         if scope.get("path") == "/api/v1/graph/bootstrap":
             started = time.perf_counter()

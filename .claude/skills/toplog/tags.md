@@ -79,7 +79,7 @@ The registry is every `### <tag>` heading below. Add entries in this format:
 
 ### http
 - **Traces:** one line per HTTP request the backend serves: `request method=… path=… status=… ttfb_ms=… ms=… bytes=…`. `ttfb_ms` is the time until the response headers went out (the handler's own work); `ms` also covers writing the body, so `ms` ≫ `ttfb_ms` means transfer, not compute. WebSocket traffic is not HTTP — the WS lane is covered by `pty` `ws_slow_message`.
-- **Where:** `flow_sdk/server/middleware/request_transaction_middleware.py` (`_toplog_http_send`, installed per request only while the tag is on).
+- **Where:** `flow_sdk/server/middleware/http_timing_middleware.py` (`HttpTimingMiddleware`), registered OUTERMOST in `flow_server.py`, so it also times requests an inner layer answers itself (cookie-gate rejections, CORS preflights). Off, it costs one `toplog.is_on` check.
 - **Use for:** timing everything a page load or a tab switch fetches, finding which request held the event loop during a stall (correlate with `pty` `output_delayed` at the same timestamp), and response bloat (`bytes` — e.g. `get-history` shipping an 82MB transcript). Pair with `process_load` lines (`loadShellRoute(…) start`) to bucket requests by the switch that caused them.
 - **Verified 2026-09-22** by `tests/unit/test_toplog_http_request_timing.py` (one line per request with the real status and body size; none when off).
 
