@@ -40,6 +40,10 @@
       "from": "resources/icons",
       "to": "icons",
       "filter": ["**/*"]
+    },
+    {
+      "from": "../pyproject.toml",
+      "to": "pyproject.toml"
     }
   ],
   "asar": true,

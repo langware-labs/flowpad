@@ -248,6 +248,8 @@
       line-height: 1.5;
       color: hsl(0 0% 63.9%);
       margin-bottom: 28px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     .error-step {
@@ -326,6 +328,27 @@
       margin-top: 12px;
       display: flex;
       justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .retry-btn {
+      padding: 8px 18px;
+      font-size: 0.8rem;
+      color: hsl(0 0% 3.9%);
+      background: hsl(0 0% 98%);
+      border: 1px solid hsl(0 0% 98%);
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .retry-btn:hover {
+      background: hsl(0 0% 85%);
+      border-color: hsl(0 0% 85%);
+    }
+
+    .retry-btn[hidden] {
+      display: none;
     }
 
     .quit-btn {
@@ -365,7 +388,8 @@
     <pre class="logs-content" id="logs-content"></pre>
   </div>
 
-  <!-- Startup-timeout recovery panel: replaces the native OS error popup. -->
+  <!-- Startup error panel: replaces the native OS error popup. Retry is shown
+       only for a failed install/start (retryable), not for a backend timeout. -->
   <div class="error-overlay" id="error-overlay">
     <div class="error-card">
       <h2>Flowpad couldn’t start</h2>
@@ -395,6 +419,7 @@
 
       <div class="error-actions">
         <button class="quit-btn" id="quit-btn">Quit</button>
+        <button class="retry-btn" id="retry-btn" hidden>Retry</button>
       </div>
     </div>
   </div>

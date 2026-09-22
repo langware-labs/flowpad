@@ -8,7 +8,10 @@
 
 const assert = require('assert');
 const UvManager = require('./uv-manager');
-const { needsShellOnWin, quoteWinCmd, parseNetstatPids, isInstallProgressLine } = UvManager;
+const {
+  needsShellOnWin, quoteWinCmd, parseNetstatPids, isInstallProgressLine,
+  pythonVersionFromPyproject, getPythonVersion, tryPythonVersion, upgradeCommand,
+} = UvManager;
 
 const IS_WIN = process.platform === 'win32';
 
@@ -38,6 +41,29 @@ if (IS_WIN) {
 } else {
   eq(needsShellOnWin('uv'), false, 'non-Windows → never shell');
   eq(needsShellOnWin('/Users/avi tal/.local/bin/flow'), false, 'non-Windows → never shell (2)');
+}
+
+// ── PYTHON_VERSION (read from pyproject.toml, never hand-pinned) ────────────
+eq(pythonVersionFromPyproject('requires-python = ">=3.11"\n'), '3.11', '>= floor');
+eq(pythonVersionFromPyproject('[project]\nname = "x"\nrequires-python = ">=3.12,<3.14"\n'),
+  '3.12', 'floor of a bounded range');
+eq(pythonVersionFromPyproject('requires-python = ">= 3.11.2"\n'), '3.11',
+  'patch component dropped — uv pins a minor');
+assert.throws(() => pythonVersionFromPyproject('name = "x"\n'), /no `requires-python`/,
+  'missing requires-python is a build error, not a silent default');
+assert.throws(() => pythonVersionFromPyproject('requires-python = "==3.11.*"\n'), /no ">=" floor/,
+  'a specifier without a >= floor is a build error');
+passed += 2;
+{
+  // The runtime value must be whatever the repo's pyproject.toml declares —
+  // the whole point is that the shell cannot drift from the package.
+  const repoToml = require('fs').readFileSync(require('path').join(__dirname, '..', 'pyproject.toml'), 'utf8');
+  const floor = pythonVersionFromPyproject(repoToml);
+  eq(getPythonVersion(), floor, 'getPythonVersion() == repo requires-python floor');
+  ok(/^\d+\.\d+$/.test(floor), `pin is a bare minor (${floor})`);
+  eq(tryPythonVersion(), floor, 'tryPythonVersion() returns the pin when the file exists');
+  eq(upgradeCommand(), `uv tool install flowpad@latest --python ${floor} --force`,
+    'recovery command mirrors the install with the pin');
 }
 
 // ── quoteWinCmd ─────────────────────────────────────────────────────────────
