@@ -17,7 +17,7 @@ from typing import ClassVar
 import pytest
 
 from flow_sdk.builtin.compute_op import ComputeOp
-from flow_sdk.core.compute_op.ask import _PENDING, open_questions
+from flow_sdk.core.compute_op.ask import open_questions
 from flow_sdk.schema.data_spec.returned_value_spec import AskResult, ExitCode
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -42,11 +42,9 @@ DOCUMENT = {
 
 
 @pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
+def _no_browser(monkeypatch):
+    # The registry itself is cleared for every api test — see tests/api/conftest.
     monkeypatch.setenv("FLOWPAD_NO_BROWSER", "1")
-    _PENDING.clear()
-    yield
-    _PENDING.clear()
 
 
 @pytest.fixture

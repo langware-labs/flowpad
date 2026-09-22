@@ -155,6 +155,22 @@ def _restore_records_root():
 
 
 @pytest.fixture(autouse=True)
+def _no_leaked_questions():
+    """Leave the pending-question registry as we found it.
+
+    ``ask._PENDING`` is module state. A test that opens a question and never
+    settles it makes the NEXT test's ``open_questions()[0]`` that orphan — it
+    answers the wrong question and then waits out its own deadline for an answer
+    that already went elsewhere. Alphabetical ordering used to hide this.
+    """
+    from flow_sdk.core.compute_op import ask
+
+    ask._PENDING.clear()
+    yield
+    ask._PENDING.clear()
+
+
+@pytest.fixture(autouse=True)
 def _embedded_storage_fallback(tmp_path_factory):
     """Give every API test an isolated embedded-storage context.
 

@@ -171,18 +171,21 @@ async def run_op(
         # person's valid answer IS the verdict of an ask.
         return _with_value(spec, call) if call.ok else call
 
+    if not call.ran:
+        # The call never happened — no command for this box, no harness to run
+        # it. Nothing has changed since ``before``, so there is nothing to
+        # re-check: running it again would spend a process (and up to
+        # CHECK_TIMEOUT) to learn what we already know. The call's own exit code
+        # and sentence stand — NOT_APPLICABLE must not become a failure, and
+        # "nothing ran" must not read as "it ran and failed".
+        return call.model_copy(update={"value": None, "check": before})
+
     after = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
     if after.exit_code is ExitCode.OK:
         done = call.model_copy(update={
             "exit_code": ExitCode.OK, "check": after, "detail": f"{spec.display_label}: done.",
         })
         return _with_value(spec, done, said=after)
-    if not call.ran or call.exit_code is ExitCode.NOT_APPLICABLE:
-        # The call never happened — no command for this box, no harness to run it
-        # — so the check's verdict is not news about it. Keeping the call's own
-        # exit code and sentence is the whole point: NOT_APPLICABLE must not
-        # become a failure, and "nothing ran" must not read as "it ran and failed".
-        return call.model_copy(update={"value": None, "check": after})
     return call.model_copy(update={
         "exit_code": ExitCode.NOT_YET, "value": None, "check": after,
         "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.",

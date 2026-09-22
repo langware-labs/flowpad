@@ -180,12 +180,16 @@ async def test_a_call_silent_on_this_platform_stays_not_applicable_after_the_rec
     re-check has nothing to report about a call that never happened, so the
     call's own answer stands.
     """
+    seen: list[str] = []
     spec = _spec(exe_data={"commands": {"darwin": "brew install jq"}})
-    answer = await _run_op(spec, _shell(lambda _c: 1), tmp_path=tmp_path)
+    answer = await _run_op(spec, _shell(lambda _c: 1, seen=seen), tmp_path=tmp_path)
 
     assert answer.exit_code is ExitCode.NOT_APPLICABLE
     assert "no command for this platform" in answer.detail
     assert answer.check is not None and answer.check.exit_code is ExitCode.NOT_YET
+    # And the check ran ONCE: nothing happened, so re-checking would spend a
+    # process to learn what the first check already said.
+    assert seen == ["have jq"]
 
 
 @pytest.mark.asyncio
