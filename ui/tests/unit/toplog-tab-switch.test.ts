@@ -70,6 +70,18 @@ describe('toplog tab_switch — start / noop', () => {
     expect(lines[0]).toMatch(/^noop sw=\d+ reason=same_dock to=preferences:/);
   });
 
+  it('a param edit on the current surface is labelled via=commit, not as a click', () => {
+    setToplog({ tab_switch: true });
+    window.history.pushState({}, '', '/dock/preferences');
+    const navigation = new NavigationActions(vi.fn(), DockPointer.fromUrl('/dock/preferences'));
+
+    navigation.setOption('highlight', 'x');
+
+    const lines = tabSwitchLines(logSpy);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^start sw=\d+ via=commit from=preferences: to=preferences: /);
+  });
+
   it('writes nothing while the tag is off', () => {
     setToplog({ navigation: true });
     const before = tabSwitch.id;

@@ -56,6 +56,10 @@ function bindNavigationTrace() {
 // in flight so a broken tab's error lands in its own trail.
 function bindUncaughtErrorTrace() {
   window.addEventListener('error', (e) => {
+    // Chrome reports a ResizeObserver callback that resized its own target as
+    // an error with no Error attached; xterm's fit does that on every resize.
+    // It is a notification, not a failure, and would flood the trail.
+    if (!e.error && e.message?.startsWith('ResizeObserver loop')) return;
     if (toplog.isOn('tab_switch')) toplog.log('tab_switch', `uncaught ${sinceTabSwitch()} kind=error err:`, e.error ?? e.message);
   });
   window.addEventListener('unhandledrejection', (e) => {
