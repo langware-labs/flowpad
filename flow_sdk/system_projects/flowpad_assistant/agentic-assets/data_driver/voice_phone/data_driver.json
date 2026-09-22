@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "name": "voice_phone",
+  "title": "Voice — phone (Twilio)",
+  "icon_name": "Phone",
+  "channel_icon_names": {
+    "voice": "Phone"
+  },
+  "description": "A phone number the agent answers and calls from. Twilio carries the line to OpenAI Realtime over SIP; the agent answers as itself and every sentence lands in the conversation. OpenAI and Twilio must be able to reach this instance.",
+  "kind": "datasource.api.voice.phone",
+  "calls": "dial",
+  "auth": {
+    "env": [
+      "OPENAI_API_KEY",
+      "OPENAI_WEBHOOK_SECRET",
+      "TWILIO_ACCOUNT_SID",
+      "TWILIO_AUTH_TOKEN"
+    ]
+  },
+  "setup_wiki": "Voice phone line",
+  "config": {
+    "number": {
+      "type": "text",
+      "label": "Twilio number",
+      "placeholder": "+14155550100",
+      "hint": "The Twilio voice number, E.164. Calls to it reach the agent; the agent's calls come from it."
+    },
+    "project": {
+      "type": "text",
+      "label": "OpenAI project ID",
+      "placeholder": "proj_…",
+      "hint": "The project whose key calls run on. Its SIP connector webhook points at this instance: /api/v1/data_source/webhook/voice_phone."
+    },
+    "voice": {
+      "type": "text",
+      "advanced": true,
+      "label": "Voice",
+      "placeholder": "marin"
+    },
+    "model": {
+      "type": "text",
+      "advanced": true,
+      "label": "Realtime model",
+      "placeholder": "gpt-realtime-2.1"
+    },
+    "base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "OpenAI API base URL"
+    },
+    "twilio_base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "Twilio API base URL"
+    }
+  }
+}

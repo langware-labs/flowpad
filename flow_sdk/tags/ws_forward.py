@@ -52,6 +52,10 @@ logger = logging.getLogger(__name__)
 # completion races the detached projection handler, while this event fires only
 # after the FlowMessage and its conversation pointer have both been written.
 #
+# `voice.call.*` is a live call's transient: the caller mid-sentence (`partial`, at most
+# 500 chars, one frame per provider delta). It is never stored — the finished sentence arrives
+# as a projected message — so without forwarding, nobody watching the call would see it.
+#
 # `app.ready` is an exact tag, not a glob, and fires at most once per boot —
 # the cheapest possible entry on this list. It is forwarded because a client
 # that is up when the backend finishes starting should hear so directly rather
@@ -64,6 +68,7 @@ FORWARDED_TAG_PATTERNS: list[str] = [
     "ingest.*.sync.*",
     "stream_inbox.*.message.projected",
     "agent.status",
+    "voice.call.*",
 ]
 
 #: Envelopes retained for the Signals feed's initial paint. Bounded because the

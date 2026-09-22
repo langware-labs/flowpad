@@ -136,6 +136,18 @@ class AuthSpec(DataSpec):
         return self
 
 
+class CallStart(StrEnum):
+    """How a person starts a call on a source that takes calls (``DataDriverSpec.calls``)."""
+
+    NONE = ""
+    #: This browser's microphone and speakers.
+    WEBRTC = "webrtc"
+    #: A recorded sound file handed in; the answer comes back as one.
+    CLIP = "clip"
+    #: A number the agent calls.
+    DIAL = "dial"
+
+
 class DataDriverSpec(DataSpec):
     """``data_driver.json`` — the shape, with every authoring rule as a validator."""
 
@@ -186,6 +198,10 @@ class DataDriverSpec(DataSpec):
     #: The cloud creates the account for the owning agent: there is nothing to paste
     #: and no form, so the picker asks the cloud instead of saving a draft.
     provisioned: bool = False
+    #: How a person starts a call on this source, when it takes calls: ``webrtc`` (this browser's
+    #: microphone and speakers), ``clip`` (a recorded sound file) or ``dial`` (a number the agent
+    #: calls). Blank: the source takes no calls. The UI offers the matching control from this alone.
+    calls: CallStart = CallStart.NONE
 
     @field_validator("name")
     @classmethod
