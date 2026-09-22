@@ -64,10 +64,11 @@ beforeEach(() => {
 describe('DeployedAgentChatPanel', () => {
   it('streams a turn through the placement chat endpoint and remembers its conversation', async () => {
     const { chat, send } = fakeChat([
+      { type: 'conversation', conversationId: 'conv-1' },
       { type: 'tool', name: 'Read' },
       { type: 'text', text: 'hello ' },
       { type: 'text', text: 'there' },
-      { type: 'done', conversationId: 'conv-1' },
+      { type: 'done' },
     ]);
     const forDeployment = vi.spyOn(AgentChat, 'forDeployment').mockResolvedValue(chat);
 
