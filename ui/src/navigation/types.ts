@@ -1,3 +1,5 @@
+import type { ScopeFilter } from '@src/lib/scope-filter';
+
 /**
  * Options for tab navigation
  */
@@ -19,4 +21,7 @@ export interface FileOptions {
   line?: number;
   column?: number;
   openInNewTab?: boolean;
+  /** Scope stamped onto the file's dock, so moving between files keeps the
+   *  active scope filter (e.g. the code editor's tree and tabs). */
+  scope?: ScopeFilter | null;
 }

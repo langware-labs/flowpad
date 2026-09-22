@@ -730,7 +730,7 @@ export class NavigationActions {
       line: options?.line,
       column: options?.column,
     });
-    this.openDock(pointer);
+    this.openDock(options?.scope ? pointer.withScopeFilter(options.scope) : pointer);
   }
 
   /**

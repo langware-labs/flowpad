@@ -12656,6 +12656,10 @@ msgstr "No feed items"
 msgid "No files"
 msgstr "No files"
 
+#: src/components/code-editor/EditorFileTree.tsx
+msgid "No file tree for this location"
+msgstr "No file tree for this location"
+
 #: src/components/code-editor/CodeEditor.tsx
 msgid "No files open"
 msgstr "No files open"
@@ -15132,6 +15136,10 @@ msgstr "Preview"
 #. placeholder {0}: location.path
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "Preview {0}"
+#: src/components/code-editor/CodeEditor.tsx
+msgid "Preview — double-click to keep open"
+msgstr "Preview — double-click to keep open"
+
 msgstr "Preview {0}"
 
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
@@ -20997,6 +21005,10 @@ msgstr "Toggle plan mode (Shift+Tab)"
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Toggle terminal"
 msgstr "Toggle terminal"
+#: src/components/code-editor/CodeEditor.tsx
+msgid "Toggle file tree"
+msgstr "Toggle file tree"
+
 
 #: src/components/theme-toggle/theme-toggle.tsx
 msgid "Toggle theme"
