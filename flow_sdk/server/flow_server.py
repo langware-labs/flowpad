@@ -81,6 +81,7 @@ class FlowServer:
         # 4. Middleware (added in reverse execution order)
         from .middleware.catch_all_exception_middleware import CatchAllExceptionMiddleware
         from .middleware.cookie_gate_middleware import CookieGateMiddleware
+        from .middleware.http_timing_middleware import HttpTimingMiddleware
         from .middleware.json_body_relabel_middleware import JsonBodyRelabelMiddleware
         from .middleware.request_transaction_middleware import RequestTransactionMiddleware
 
@@ -95,6 +96,9 @@ class FlowServer:
         # RequestTransactionMiddleware opens a transaction or resolves a user.
         # No-op on an unarmed instance, which is the default and every desktop.
         app.add_middleware(CookieGateMiddleware)
+        # Outermost of all: the `http` toplog tag times every request that reaches
+        # the app, including the ones an inner layer rejects or answers itself.
+        app.add_middleware(HttpTimingMiddleware)
 
         # 5. Core routers
         from .routes import bootstrap_router, health_router, wiki_router
