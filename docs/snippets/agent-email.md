@@ -1,3 +1,6 @@
+---
+id: dc1ccad6-a2f8-44ab-a671-73c5c09c7b35
+---
 # Agent email
 
 Allocate the Agent's mailbox, then process each incoming email through the Agent
