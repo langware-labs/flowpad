@@ -1698,13 +1698,13 @@ msgstr "מימון הסוכן"
 msgid "Agent Hook"
 msgstr "הוק סוכן"
 
-#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
-msgid "Agent mailbox"
-msgstr "תיבת הדואר של הסוכן"
-
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Agent is public"
 msgstr ""
+
+#: src/components/stream-inbox-view/AgentStreamInboxView.tsx
+msgid "Agent mailbox"
+msgstr "תיבת הדואר של הסוכן"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "Agent name"
