@@ -685,6 +685,27 @@ class DataSource(Entity):
             "detail": "queued for the next heartbeat tick (≤60s)",
         }
 
+    def note_attention(self) -> Optional[int]:
+        """Someone is waiting on this source — arm its fast lane. The cadence armed, or None.
+
+        THE demand signal, for every kind of waiter: a viewer (``request_poll``)
+        and an agent serving the source both renew the same short lease, and the
+        poller's attention loop does the polling — a waiter never polls a
+        provider itself. A driver that tolerates it declares
+        ``attention_poll_seconds`` (telegram: 5s); one that declares nothing stays
+        on its ``poll_interval_seconds``. A source that may not be polled at all
+        (``poll_refusal``: parked, disabled, not set up) is never armed.
+        """
+        if self.poll_refusal():
+            return None
+        driver = self._driver()
+        cadence = getattr(driver, "attention_poll_seconds", None) if driver else None
+        if cadence:
+            from flow_sdk.ingest.poller import note_attention  # noqa: PLC0415
+
+            note_attention(str(self.id), cadence)
+        return cadence or None
+
     @core_action.post(action_name="request_poll")
     async def request_poll_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/request_poll — attention.
@@ -712,16 +733,7 @@ class DataSource(Entity):
         if self.next_poll_at is not None:
             self.next_poll_at = None
             await self.save_runtime()
-        # A driver that tolerates it gets the sub-tick FAST LANE while watched:
-        # each request renews a short lease and the poller's attention loop
-        # polls at the driver's cadence (telegram: 5s). Drivers that declare
-        # nothing stay tick-bound — due on the next minute, no faster.
-        driver = self._driver()
-        cadence = getattr(driver, "attention_poll_seconds", None) if driver else None
-        if cadence:
-            from flow_sdk.ingest.poller import note_attention  # noqa: PLC0415
-
-            note_attention(str(self.id), cadence)
+        cadence = self.note_attention()
         return ApiSuccessResponse(data={
             "status": "due", "health": self.health, "source_status": self.status,
             "attention_seconds": cadence,
