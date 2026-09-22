@@ -413,6 +413,13 @@ async def _start_agent_server() -> None:
         await _AGENT_SERVER.start()
     except Exception:
         logging.getLogger(__name__).exception("Agent server: start failed")
+    try:
+        # The task ledger's runtime: dispatch subagent runs, deliver task news, feed the Tasks channel.
+        from flow_sdk.tasks import runtime as task_runtime
+
+        task_runtime.start()
+    except Exception:
+        logging.getLogger(__name__).exception("Task runtime: start failed")
 
 
 async def _prune_web_delivery_rows() -> None:
@@ -746,6 +753,9 @@ from .routes.service_endpoint import router as service_endpoint_router  # noqa: 
 server.add_router(service_endpoint_router)
 server.add_router(webhook_api_router)
 server.add_router(data_source_webhook_router)
+from flow_sdk.server.routes.tasks import router as task_ledger_router  # noqa: E402
+
+server.add_router(task_ledger_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(debug_router)

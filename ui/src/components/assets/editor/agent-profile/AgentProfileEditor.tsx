@@ -496,6 +496,31 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     aria-label={t`Load Flowpad assistant`}
                   />
                 </div>
+                <div className="space-y-2 rounded-md border border-border px-3 py-2" data-testid="agent-chief-of-staff">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">
+                      <Trans>Chief of Staff</Trans>
+                    </span>
+                    <Switch
+                      checked={!!profile.chief_of_staff}
+                      onCheckedChange={(v) => void save({ chief_of_staff: v })}
+                      aria-label={t`Chief of Staff`}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    <Trans>
+                      Answers fast and hands longer work to its staff as tasks. Their progress arrives on the agent's
+                      Tasks channel; only the agent talks to people.
+                    </Trans>
+                  </p>
+                  {profile.chief_of_staff ? (
+                    <AgentListField
+                      label={t`Staff (sub-agents; the general worker is always there)`}
+                      value={profile.subagents}
+                      onCommit={(v) => void save({ subagents: v ?? [] })}
+                    />
+                  ) : null}
+                </div>
                 <div className="space-y-3">
                   <p className="text-xs text-muted-foreground">
                     <Trans>Declared on the agent's card. Not yet applied to the worker.</Trans>
@@ -515,11 +540,6 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     label={t`Disallowed tools`}
                     value={profile.disallowed_tools}
                     onCommit={(v) => void save({ disallowed_tools: v })}
-                  />
-                  <AgentListField
-                    label={t`Sub-agents`}
-                    value={profile.subagents}
-                    onCommit={(v) => void save({ subagents: v ?? [] })}
                   />
                   <AgentListField
                     label={t`Additional directories`}

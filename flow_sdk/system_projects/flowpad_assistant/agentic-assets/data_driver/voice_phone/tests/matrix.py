@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import base64
 import json
-
 from contextlib import contextmanager
+from urllib.parse import parse_qsl
+from xml.sax.saxutils import unescape
 
 from pydantic import SecretStr
 
@@ -60,7 +61,12 @@ class Double:
 
     def rings_back(self, call_id: str = "rtc_phone1") -> dict:
         """OpenAI's signed ``realtime.call.incoming`` for the dialled call: our number calling out."""
-        raw = json.dumps(incoming_call(call_id, caller=NUMBER, dialled="proj_matrix", number_header=f"sip:{NUMBER}@pstn.twilio.com")).encode()
+        # The leg carries the X- params of the TwiML the dial handed Twilio — our dial's token among them.
+        twiml = unescape(self.dials[-1].get("Twiml", "")) if self.dials else ""
+        sip_params = dict(parse_qsl(twiml.split("?", 1)[1].split("<", 1)[0])) if "?" in twiml else {}
+        extra = {k: v for k, v in sip_params.items() if k.startswith("X-") and k != "X-Flow-Number"}
+        raw = json.dumps(incoming_call(call_id, caller=NUMBER, dialled="proj_matrix",
+                                       number_header=f"sip:{NUMBER}@pstn.twilio.com", extra_headers=extra)).encode()
         return {"path": "/api/v1/data_source/webhook/voice_phone", "body": raw, "headers": sign(raw, SECRET)}
 
     async def ring(self, driver, row):

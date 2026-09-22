@@ -53,7 +53,7 @@ class Double:
         """A message from chat ``sender`` arriving now, queued for the next ``getUpdates``. ``thread``
         as ``<chat>/<topic>`` puts it in a forum topic. The chat becomes one the bot may reply to."""
         chat_id = str(sender)
-        message_id, self.bot.next_id = self.bot.next_id, self.bot.next_id + 1
+        message_id = self.bot.mint_id()
         message: dict = {
             "message_id": message_id,
             "date": int(time.time()),

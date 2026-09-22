@@ -47,3 +47,14 @@ describe('Agent profile document adapter', () => {
     expect(f.update).toHaveBeenCalledWith({expected_revision: 'first', set_fields: {title: 'My title'}});
   });
 });
+
+describe('Chief of Staff checkbox', () => {
+  it('writes chief_of_staff to the card and only then offers the staff roster', async () => {
+    const f = fixture();
+    const toggle = await screen.findByRole('switch', { name: 'Chief of Staff' });
+    expect(screen.queryByText(/Staff \(sub-agents/)).toBeNull();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(f.update).toHaveBeenCalledWith({ expected_revision: 'first', set_fields: { chief_of_staff: true } }));
+    await screen.findByText(/Staff \(sub-agents/);
+  });
+});

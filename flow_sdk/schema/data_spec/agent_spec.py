@@ -72,6 +72,7 @@ class AgentSpec(AssetDocumentSpec):
     subagents: Optional[list[str]] = None
     additional_dirs: Optional[list[str]] = None
     load_flowpad_assistant: Optional[bool] = None
+    chief_of_staff: Optional[bool] = None
     cli_options: Optional[dict] = None
     enabled: Optional[bool] = None
     intro: Optional[str] = None

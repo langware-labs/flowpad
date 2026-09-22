@@ -195,11 +195,17 @@ class Agent(Entity):
         default_factory=list,
         description="SubAgent NAMES this agent may delegate to. Names, not TypeIds, because a "
         "shipped agent.json is authored before the SubAgent it references has ever been indexed. "
-        "DECLARED ONLY — nothing projects these into --agents yet; wire through "
-        "AgenticProcess.load_embedded_subagent(name) when a caller needs it.",
+        "With chief_of_staff on these are its STAFF: registered natively (--agents) on a harness "
+        "that spawns subagents, and offered as task owners (subagent:<name>) on every harness.",
     )
     additional_dirs: list[str] = APIField(default_factory=list)
     load_flowpad_assistant: bool = APIField(default=False)
+    chief_of_staff: bool = APIField(
+        default=False,
+        description="Chief of Staff mode: answer fast, run quick jobs on native subagents, delegate long "
+        "ones as tasks to its staff (subagents) and follow up. Everything the mode does hangs off this "
+        "one flag — off, the agent is exactly as it was (flow_sdk/tasks/cos.py).",
+    )
     cli_options: dict = APIField(
         default_factory=dict,
         description="Vendor-specific launch keys the schema does not enumerate (e.g. Claude's "

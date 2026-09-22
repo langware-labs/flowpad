@@ -539,7 +539,8 @@ class StreamInbox:
                     if position.mark_in_flight(rows[-1]):
                         await position.commit()
                     yield page
-                await until(arrived, cadence)
+                if not await until(arrived, cadence):
+                    return
 
     async def listen(
         self,

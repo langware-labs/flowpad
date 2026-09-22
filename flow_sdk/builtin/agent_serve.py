@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import weakref
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional
 
@@ -406,10 +407,9 @@ async def ensure_chat_endpoint(agent, deployment):
 
 async def answered_sources(agent, deployment) -> list:
     """The agent's message sources that *deployment* answers."""
+    from flow_sdk.builtin.agent_calls import answers_live  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
-
-    from flow_sdk.builtin.agent_calls import answers_live  # noqa: PLC0415
 
     # A channel people talk to live is answered by the call (``agent_calls``), never by the drain.
     return [
@@ -450,6 +450,7 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
     own, else 3 s).
     """
     from flow_sdk.blocks import StreamInbox, workflow  # noqa: PLC0415
+    from flow_sdk.blocks.arrivals import stoppable  # noqa: PLC0415
     from flow_sdk.blocks.merge import pages  # noqa: PLC0415
 
     sources = list(sources) if sources is not None else await answered_sources(agent, deployment)
@@ -457,12 +458,19 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
         return
     by_id = {str(s.id): s for s in sources}
     engine = TurnEngine(agent, deployment)
-    async with workflow(consumer_of(deployment)):
-        async for page in pages(*(StreamInbox.of(s) for s in sources), poll_every=poll_every):
-            source = by_id[page.source_id]
-            for message in page:
-                await answer(engine, source, message)
-            await page.ack()
+    stop = asyncio.Event()
+    task = asyncio.current_task()
+    if task is not None:
+        _STOPS[task] = stop
+    with stoppable(stop):
+        async with workflow(consumer_of(deployment)):
+            async for page in pages(*(StreamInbox.of(s) for s in sources), poll_every=poll_every):
+                if stop.is_set():
+                    continue  # unacked: the next loop on this placement is handed it again
+                source = by_id[page.source_id]
+                for message in page:
+                    await answer(engine, source, message)
+                await page.ack()
 
 
 async def answer(engine: TurnEngine, source, message) -> bool:
@@ -488,11 +496,22 @@ async def answer(engine: TurnEngine, source, message) -> bool:
         return False
     if not body:
         return False
-    conversation = await conversation_of(message, source)
-    if not conversation:
-        logger.warning("agent %s: message on %s has no conversation yet", agent.name or agent.id, source.id)
+    # Three facts a source may declare about its messages (the driver class says; nothing here names one):
+    # a ``quiet`` message is the log, not a call to act; ``turn_session`` names the session a message is
+    # answered in; ``replies_explicitly`` means the turn's text is not sent back by itself.
+    driver_cls = _driver_cls(source)
+    if getattr(getattr(message, "data", None), "quiet", False):
         return False
-    session = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation))
+    session = ""
+    hook = getattr(driver_cls, "turn_session", None)
+    if callable(hook):
+        session = str(hook(message) or "")
+    if not session:
+        conversation = await conversation_of(message, source)
+        if not conversation:
+            logger.warning("agent %s: message on %s has no conversation yet", agent.name or agent.id, source.id)
+            return False
+        session = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation))
     who = display_name_of(getattr(message, "author_display", "") or "", author)
     outcome = await engine.run(
         Turn(
@@ -505,8 +524,17 @@ async def answer(engine: TurnEngine, source, message) -> bool:
     if outcome.kind != "done" or not outcome.text:
         logger.info("agent %s: no reply to %s (%s)", agent.name or agent.id, session, outcome.text or outcome.kind)
         return False
+    if getattr(driver_cls, "replies_explicitly", False):
+        return True
     await message.reply(await message.reply_spec(body=outcome.text))
     return True
+
+
+def _driver_cls(source):
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    driver = DataDriver.loaded(str(getattr(source, "provider", "") or ""))
+    return driver.cls if driver is not None else None
 
 
 async def conversation_of(message, source) -> Optional[str]:
@@ -561,6 +589,7 @@ class AgentServer:
 
     def __init__(self, *, serve_channels: bool):
         self.serve_channels = serve_channels
+        self._stopped = False
         #: placement id → (the serving keys of the sources its loop serves, the loop)
         self._loops: dict[str, tuple[frozenset, Any]] = {}
         #: source id → its serving key as last seen
@@ -570,6 +599,7 @@ class AgentServer:
         self._pending: Any = None
         self._unsubscribe: Any = None
         self._reconciling = asyncio.Lock()
+        #: Agents that were Chiefs of Staff at the last reconcile.
 
     async def start(self) -> None:
         """Arm, and reconcile in the background — startup does not wait on it."""
@@ -581,6 +611,12 @@ class AgentServer:
     async def stop(self) -> None:
         if self._unsubscribe is not None:
             self._unsubscribe()
+        # A reconcile still in flight (start's own, or one a write kicked off) would start loops AFTER
+        # the ones below are ended — loops nobody ends. Stop converging, let it finish, then end all.
+        self._stopped = True
+        self._touched.clear()
+        if self._pending is not None and not self._pending.done():
+            await asyncio.gather(self._pending, return_exceptions=True)
         for _keys, loop in self._loops.values():
             await _ended(loop)
         self._loops.clear()
@@ -625,10 +661,38 @@ class AgentServer:
 
     async def reconcile(self) -> None:
         async with self._reconciling:
+            await self._sync_chiefs_of_staff()
             owned = await self._channels_by_agent()
             wanted = await self._placements(owned)
-            if self.serve_channels:
+            if self.serve_channels and not self._stopped:
                 await self._converge(wanted, owned)
+
+    async def _sync_chiefs_of_staff(self) -> None:
+        """A Chief of Staff's Tasks channel follows its checkbox — bound here, so its serve loop picks
+        it up; an active one whose agent is no longer a chief is paused. Read from the rows, not
+        remembered, so a checkbox turned off while this machine was down is honoured too."""
+        from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+        from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+        from flow_sdk.ingest.bus_sources import principal_channel_for  # noqa: PLC0415
+        from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+        from flow_sdk.tasks.cos import sync_tasks_channel  # noqa: PLC0415
+        from flow_sdk.tasks.identity import ref_kind  # noqa: PLC0415
+
+        agents = {str(a.id): a for a in await Agent.get_all(QueryFilter.by_type(EntityType.AGENT.value)) or []}
+        wanted = {aid for aid, a in agents.items() if getattr(a, "chief_of_staff", False)}
+        runtime = principal_channel_for("task.created")
+        if runtime is not None:
+            key = runtime.cls.identity_config_key
+            for row in await DataSource.get_all({"provider": runtime.provider}) or []:
+                kind, aid = ref_kind(str((row.config or {}).get(key) or ""))
+                if kind == "agent" and aid in agents and aid not in wanted and row.status == SourceStatus.ACTIVE.value:
+                    wanted.add(aid)  # to be paused
+        for aid in wanted:
+            try:
+                await sync_tasks_channel(agents[aid])
+            except Exception:  # noqa: BLE001 — one agent's channel must not stop the rest
+                logger.exception("agent %s: tasks channel sync failed", aid)
 
     async def _channels_by_agent(self) -> dict[str, list]:
         """Agent id → the message sources it owns. One read of the sources on a channel."""
@@ -706,7 +770,22 @@ class AgentServer:
 
 
 async def _ended(loop) -> None:
-    loop.cancel()
+    await stop_serving(loop)
+
+
+#: Each running :func:`serve` loop's stop — how :func:`stop_serving` asks it to end.
+_STOPS: "weakref.WeakKeyDictionary[asyncio.Task, asyncio.Event]" = weakref.WeakKeyDictionary()
+
+
+async def stop_serving(loop) -> None:
+    """End a :func:`serve` loop between cycles — never mid-poll, mid-page or mid-turn, where a
+    cancel cuts a database write in half (the turn's reply unsent, a session rolled back mid-close).
+    A turn in progress finishes first; pages not yet answered stay unacked for the next loop."""
+    stop = _STOPS.get(loop)
+    if stop is None:
+        loop.cancel()
+    else:
+        stop.set()
     await asyncio.gather(loop, return_exceptions=True)
 
 
@@ -734,6 +813,7 @@ __all__ = [
     "is_own_outgoing",
     "serve",
     "stamp_turn",
+    "stop_serving",
     "transcript_entries",
     "turn_key",
     "turns_of",
