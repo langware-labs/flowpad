@@ -90,18 +90,49 @@ function pythonVersionFromPyproject(text) {
   return floor[1];
 }
 
-function readPythonVersion() {
+// Resolved LAZILY, on the first install/upgrade that needs it — never at
+// module load. A build that somehow lacks the bundled file is broken, but a
+// user whose install is already healthy takes the fast path and needs no pin;
+// failing at require() time would stop every launch for a file only the
+// installer reads. The failure surfaces where it belongs: as the install
+// error (→ the startup panel), with a message that names the build as the
+// cause so nobody chases their network.
+let _pythonVersion = null;
+function getPythonVersion() {
+  if (_pythonVersion) return _pythonVersion;
   const candidates = [
     process.resourcesPath && path.join(process.resourcesPath, 'pyproject.toml'),
     path.join(__dirname, '..', 'pyproject.toml'),
   ].filter(Boolean);
   for (const file of candidates) {
-    if (fs.existsSync(file)) return pythonVersionFromPyproject(fs.readFileSync(file, 'utf8'));
+    if (fs.existsSync(file)) {
+      _pythonVersion = pythonVersionFromPyproject(fs.readFileSync(file, 'utf8'));
+      return _pythonVersion;
+    }
   }
-  throw new Error(`pyproject.toml not found (looked in ${candidates.join(', ')})`);
+  throw new Error(
+    `This Flowpad build is missing its bundled pyproject.toml (looked in ${candidates.join(', ')}), ` +
+    'so the Python version to install cannot be determined. Reinstall the desktop app.'
+  );
 }
 
-const PYTHON_VERSION = readPythonVersion();
+// The pin for display (a copy-pasteable command in a dialog): null when the
+// build is broken, so the dialog can still render instead of throwing.
+function tryPythonVersion() {
+  try { return getPythonVersion(); } catch { return null; }
+}
+
+// `uv tool install …` argument list for the pinned interpreter. Throws (see
+// getPythonVersion) only on a broken build — and only when an install runs.
+function pythonPinArgs() {
+  return ['--python', getPythonVersion()];
+}
+
+// The recovery command shown to the user, mirroring installLatest()/upgrade().
+function upgradeCommand() {
+  const v = tryPythonVersion();
+  return `uv tool install ${PYPI_PACKAGE}@latest${v ? ` --python ${v}` : ''} --force`;
+}
 
 const API_PREFIX = '/api/v1';
 
@@ -825,7 +856,7 @@ class UvManager {
   async installLatest({ onProgress } = {}) {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
     await this._uvToolInstallForce(
-      ['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--force'],
+      ['tool', 'install', PYPI_PACKAGE, ...pythonPinArgs(), '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
@@ -1474,7 +1505,7 @@ class UvManager {
             message: 'FlowPad couldn’t finish updating and couldn’t restart automatically.',
             detail:
               'Please quit and reopen FlowPad. If it keeps happening, run:\n\n' +
-              `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force\n\n` +
+              `${upgradeCommand()}\n\n` +
               'then reopen FlowPad, or run "flow diagnose".',
             buttons: ['OK'],
             defaultId: 0,
@@ -1537,7 +1568,7 @@ class UvManager {
   async upgrade({ onProgress } = {}) {
     this.log.info('[uv] Upgrading flowpad...');
     await this._uvToolInstallForce(
-      ['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', PYTHON_VERSION, '--force'],
+      ['tool', 'install', `${PYPI_PACKAGE}@latest`, ...pythonPinArgs(), '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
@@ -1555,7 +1586,7 @@ class UvManager {
   async reinstall({ onProgress } = {}) {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
     await this._uvToolInstallForce(
-      ['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--reinstall', '--force'],
+      ['tool', 'install', PYPI_PACKAGE, ...pythonPinArgs(), '--reinstall', '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
@@ -1662,7 +1693,9 @@ module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;
 // PyPI package + pinned interpreter, exported so main.js can surface the exact
 // `uv tool install` command to the user in the startup-timeout dialog.
 module.exports.PYPI_PACKAGE = PYPI_PACKAGE;
-module.exports.PYTHON_VERSION = PYTHON_VERSION;
+module.exports.getPythonVersion = getPythonVersion;
+module.exports.tryPythonVersion = tryPythonVersion;
+module.exports.upgradeCommand = upgradeCommand;
 module.exports.pythonVersionFromPyproject = pythonVersionFromPyproject;
 // Pure helpers exported for unit testing (electron/uv-manager.test.js).
 module.exports.needsShellOnWin = needsShellOnWin;
