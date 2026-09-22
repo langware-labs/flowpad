@@ -57,8 +57,8 @@ describe('FlowpadConnectionRow', () => {
 
   it('offers Connect when signed out', () => {
     renderRow();
-    // The wording is the SHARED hub-status table's, so this row and the Account
-    // screen cannot drift apart on the same fact.
+    // The Connections table's word (`STATE_VISUAL`), shared with every other row —
+    // not the account menu's "Logged out".
     expect(screen.getByTestId('connection-status-flowpad').textContent).toBe('Not connected');
     expect(screen.getByTestId('connection-flowpad-connect')).toBeTruthy();
   });
@@ -110,6 +110,25 @@ describe('FlowpadConnectionRow', () => {
     renderRow();
     const dot = screen.getByTestId('connection-status-flowpad').previousElementSibling!;
     expect(dot.className).toContain('bg-emerald-500');
+  });
+
+  it('reads a refused hub login as the table\'s "Reconnect needed"', () => {
+    h.login = { status: 'logged_in', user: { email: 'me@example.com' }, reason: null };
+    h.connection = { status: 'auth_rejected', error: null };
+    renderRow();
+    expect(screen.getByTestId('connection-status-flowpad').textContent).toBe('Reconnect needed');
+  });
+
+  it('keeps the hub\'s own word when no table state says it', () => {
+    // Logged in with the socket down is not the table's "Not connected" (signed
+    // out) — and the hub's word for it is what the account menu shows too.
+    h.login = { status: 'logged_in', user: { email: 'me@example.com' }, reason: null };
+    h.connection = { status: 'error', error: null };
+    renderRow();
+    const status = screen.getByTestId('connection-status-flowpad');
+    expect(status.textContent).toBe('Connection error');
+    // Nothing replaced, so nothing repeated in the tooltip.
+    expect(status.getAttribute('title')).not.toMatch(/connection error/i);
   });
 
   it('shows its sign-in as a browser (OAuth) sign-in, with the account in the tooltip', () => {

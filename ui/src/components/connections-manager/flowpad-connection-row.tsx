@@ -12,6 +12,7 @@ import { Button } from '../ui/button';
 import { TableCell, TableRow } from '../ui/table';
 import { SignInMethodIcon } from './sign-in-method';
 import { MachineWideCell, TextActionCell } from './machine-wide-cell';
+import { hubConnectionState, STATE_VISUAL } from './connection-state-visual';
 
 /**
  * FlowPad's own account, as a row in the Connections table.
@@ -81,25 +82,20 @@ export function FlowpadConnectionRow() {
   // silently instead of failing to compile.
   const visual = hubStatusVisual(login.status, connection.status);
   const signingIn = busy || login.status === 'logging_in';
-  // The table's vocabulary, not the account menu's: every other row says
-  // "Connected" / "Not connected", so "Connection verified" and "Logged out"
-  // read as two more states. The hub's own finer word moves to the tooltip.
-  const healthy = loggedIn && (connection.status === 'verified' || connection.status === 'connected');
-  const statusText = signingIn
-    ? t`Signing in…`
-    : healthy
-      ? t`Connected`
-      : login.status === 'logged_out'
-        ? t`Not connected`
-        : i18n._(visual.text);
-  // The dot is the shared table's too; `busy` covers the moment before the hub
-  // reports `logging_in`.
-  const dot = signingIn ? LOGIN_VISUAL.logging_in.dot : visual.dot;
+  // The table's word and dot (`STATE_VISUAL`) whenever a table state says it —
+  // every other row reads "Connected" / "Not connected", and "Connection
+  // verified" / "Logged out" read as two more states. Mid-flight or broken, the
+  // hub names it better, so its own word and dot stay. `busy` covers the moment
+  // before the hub reports `logging_in`.
+  const state = signingIn ? null : hubConnectionState(login.status, connection.status);
+  const hubWord = i18n._(visual.text);
+  const statusText = signingIn ? t`Signing in…` : state ? i18n._(STATE_VISUAL[state].text) : hubWord;
+  const dot = signingIn ? LOGIN_VISUAL.logging_in.dot : state ? STATE_VISUAL[state].dot : visual.dot;
   const failed = visual.variant === 'destructive';
 
   const email = typeof login.user?.email === 'string' ? login.user.email : null;
   /** Who this machine is signed in as — the one fact a status word cannot carry. */
-  const account = [healthy ? i18n._(visual.text) : null, cloudUrl, email].filter(Boolean).join(' · ');
+  const account = [statusText !== hubWord ? hubWord : null, cloudUrl, email].filter(Boolean).join(' · ');
 
   return (
     <TableRow data-testid="connection-row-flowpad">
