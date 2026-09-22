@@ -375,7 +375,6 @@ def test_the_entity_mirrors_a_hub_payload_and_ignores_what_it_does_not_model() -
         "limits": {"cost_usd_total": 1.0},
         "filters": {"models_allow": ["openai/*"]},
         "credential_hint": "",
-        "system_default": False,
         # things the hub sends that this projection deliberately does not model
         "created_by": "user-99999999-2222-4333-8444-555555555555",
         "expand": {"roles": ["reader"]},
@@ -482,12 +481,14 @@ async def test_the_listing_unions_the_catalog_so_the_global_root_is_offered(env,
         asked.append(action)
         if action is None:
             return {"data": [mine]}
+        if action == "allowances":
+            return {"data": {"allowances": []}}
         return [globalroot, mine]  # the catalog repeats rows the caller has a role on
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
     names = [e.name for e in await fetch_hub_llm_endpoints()]
 
-    assert asked == [None, "catalog"], "both listings must be read"
+    assert asked == [None, "catalog", "allowances"], "both listings, then the caller's own allowances"
     assert names == ["my allocation", "global"], f"expected the union, de-duplicated; got {names}"
 
 
@@ -622,13 +623,12 @@ async def test_binding_an_endpoint_the_listing_has_not_heard_of_survives_the_bin
 
 async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, monkeypatch) -> None:
     """The scoped listing is read WITH the hub's permission expansion, and the answer is what tells
-    a wallet handed TO somebody from one they administer FOR somebody else.
+    a wallet handed TO somebody from one they administer FOR somebody else when the hub's own
+    answer (``token_plan/allowances`` -> ``holder_typeid``) is unavailable.
 
-    ``allocate`` -- the "add people to this budget" flow -- stamps no ``principal_typeid`` at all and
-    records the beneficiary only as a ``reader`` grant. On the wire those two rows are otherwise
-    identical, so matching on the stamp alone hid every hand-allocated budget from the person it was
-    made for while correctly hiding it from the admin: the recipient's Assets tree showed no LLM
-    Endpoints row at all. ``can_administer`` is the difference, and the hub already knew it.
+    On the wire a wallet handed to somebody and one they administer for somebody else are otherwise
+    identical rows, so ``can_administer`` is the fallback that keeps a hand-allocated budget visible
+    to the person it was made for while hiding it from the admin who minted it.
     """
     import flow_sdk.cloud_client.transport.hub_http as hub_http
     from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
@@ -653,6 +653,8 @@ async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, mo
         params_seen.append(kwargs.get("params"))
         if action is None:
             return {"data": [given, administered]}
+        if action == "allowances":
+            return None  # an older hub: no such read
         return [globalroot]
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
@@ -660,6 +662,7 @@ async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, mo
 
     assert params_seen[0] == {"expand": "permissions"}, "the scoped listing must ask for permissions"
     assert params_seen[1] is None, "the catalog is asked WITHOUT them -- see below"
+    assert all(e.holder_typeid is None for e in by_name.values()), "no allowances read -> no holder claimed"
     assert by_name["Gadi +20"].can_administer is False, "a reader holds it; it was handed to them"
     assert by_name["Gadi +1"].can_administer is True, "an administrator's own allowance for somebody else"
     # NOT False. The catalog's root reaches every signed-in user through a stamp rather than a role
@@ -668,6 +671,42 @@ async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, mo
     assert by_name["global"].can_administer is None
     # And it survives `to_wire`, or the box would answer the UI with the field missing.
     assert by_name["Gadi +20"].to_wire()["can_administer"] is False
+
+
+async def test_the_listing_marks_the_callers_own_allowances_by_the_hubs_holder_edge(env, monkeypatch) -> None:
+    """Whose allowance a row is lives in a ``partof`` edge on the hub, which no listing serializes.
+    ``token_plan/allowances`` is the caller-scoped answer, and every row it names gets
+    ``holder_typeid`` = the signed-in hub user; every other row gets None. An admin's OWN allowance
+    under a team they administer is the case ``can_administer`` alone gets wrong -- it is theirs."""
+    import flow_sdk.cloud_client.transport.hub_http as hub_http
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
+
+    _login()
+    mine_id = "11111111-2222-4333-8444-555555555555"
+    theirs_id = "22222222-2222-4333-8444-555555555555"
+    mine = {"id": mine_id, "type": "llm_endpoint", "name": "mine", "expand": {"allowed_actions": ["read", "update"]}}
+    theirs = {
+        "id": theirs_id,
+        "type": "llm_endpoint",
+        "name": "theirs",
+        "expand": {"allowed_actions": ["read", "update"]},
+    }
+
+    async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+        if action is None:
+            return {"data": [mine, theirs]}
+        if action == "allowances":
+            assert entity_type == "token_plan"
+            return {"data": {"allowances": [f"llm_endpoint-{mine_id}"]}}
+        return []
+
+    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
+    by_name = {e.name: e for e in await fetch_hub_llm_endpoints()}
+
+    assert by_name["mine"].holder_typeid == "user-99999999-2222-4333-8444-555555555555"
+    assert by_name["mine"].can_administer is True, "an admin may edit their own allowance; it is still theirs"
+    assert by_name["theirs"].holder_typeid is None
+    assert by_name["mine"].to_wire()["holder_typeid"] == "user-99999999-2222-4333-8444-555555555555"
 
 
 async def test_a_hub_that_sends_no_expansion_leaves_the_answer_unknown(env, monkeypatch) -> None:

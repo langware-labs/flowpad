@@ -137,6 +137,9 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
   const upgradeEl = document.getElementById('upgrade-cmd');
   const diagnoseEl = document.getElementById('diagnose-cmd');
   const quitBtn = document.getElementById('quit-btn');
+  const retryBtn = document.getElementById('retry-btn');
+  const spinner = document.querySelector('.spinner');
+  const statusEl = document.getElementById('status-text');
 
   function wireCopy(buttonId, getText) {
     const button = document.getElementById(buttonId);
@@ -164,14 +167,25 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     quitBtn.addEventListener('click', () => api.quitApp());
   }
 
+  // Retry: back to the loading view, main re-runs the install/start and
+  // streams its progress into the status line as on first launch.
+  if (retryBtn && api.retryStartup) {
+    retryBtn.addEventListener('click', () => {
+      if (overlay) overlay.classList.remove('visible');
+      if (spinner) spinner.style.display = '';
+      if (statusEl) statusEl.textContent = 'Retrying';
+      api.retryStartup();
+    });
+  }
+
   api.onStartupError((data) => {
     if (!data) return;
     if (detailEl) detailEl.textContent = data.detail || '';
     if (upgradeEl) upgradeEl.textContent = data.upgradeCommand || '';
     if (diagnoseEl) diagnoseEl.textContent = data.diagnoseCommand || '';
+    if (retryBtn) retryBtn.hidden = !data.retryable;
     if (overlay) overlay.classList.add('visible');
     // Stop the spinner/status from animating behind the overlay.
-    const spinner = document.querySelector('.spinner');
     if (spinner) spinner.style.display = 'none';
   });
 })();

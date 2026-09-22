@@ -13,7 +13,8 @@
 #   4. Creates a git tag
 #   5. Pushes to GitHub
 #   6. Builds and publishes to PyPI (unless --no-pypi)
-#   7. Validates the installed version
+#   7. Validates the installed version — pip3 install, then the desktop app's
+#      own clean-room `uv tool install … --python <pin>` (validate_uv_tool_install.sh)
 #
 # Usage: ./scripts/deploy_to_github.sh [--skip-tests] [--no-pypi] [--skip-flow-rs-sign]
 #                                      [--minor | --major | --version X.Y.Z]
@@ -504,6 +505,21 @@ if [[ "$NO_PYPI" == false ]]; then
         echo -e "${YELLOW}Validating PyPI package...${NC}"
         pip3 install --quiet "flowpad==${NEW_VERSION}" --force-reinstall
         echo -e "${GREEN}PyPI package validated${NC}"
+
+        # Validate the install the way USERS get it: the desktop app's own
+        # `uv tool install flowpad --python <pin> --force`, in a throwaway uv
+        # home (no cache, no system Python, no existing venv). Catches what the
+        # pip3 install above cannot — a pin the package has outgrown, a source
+        # build that fails on a clean machine, a stale resolution.
+        echo ""
+        echo -e "${YELLOW}Validating clean-room uv tool install (desktop first-launch path)...${NC}"
+        if "${SCRIPT_DIR}/validate_uv_tool_install.sh" "flowpad==${NEW_VERSION}"; then
+            echo -e "${GREEN}✓ Clean-room uv tool install passed${NC}"
+        else
+            echo -e "${RED}✗ Clean-room uv tool install FAILED${NC}"
+            echo -e "${RED}A fresh user cannot install this version. Do NOT release the desktop on it.${NC}"
+            exit 1
+        fi
     fi
 else
     echo ""

@@ -777,6 +777,11 @@ class CloudManager extends EventEmitter {
     await ctx.setContextEntityTypeId(await _currentUserKey(), null);
     ctx.setCloudLoggedIn?.(false);
     this._applyLoginStatus('logged_out', null, null);
+    // DIAGNOSTIC BISECT (temporary, do not merge): commented out to test
+    // whether this is what breaks tests/headless/agent_auto_launch.test.tsx
+    // in CI. See FLOWPAD-2151 discussion.
+    // const dm = await _dataManager();
+    // dm.adoptReadScope('anonymous');
     // Connection state is owned by its own channel; logout-driven
     // DISCONNECTED arrives via cloud_connection_status_msg.
     this.emit('logout_complete');

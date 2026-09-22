@@ -7,13 +7,15 @@ const log = require('electron-log');
 const crypto = require('crypto');
 const UvManager = require('./uv-manager');
 const { createShutdown, relaunchAfterStop } = require('./shutdown');
-const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
+const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 
 // Exact, copy-pasteable terminal commands surfaced to the user when the backend
-// fails to come up in time — mirrors the upgrade uv-manager.js itself runs
-// (`uv tool install flowpad@latest --python 3.11 --force`). Keep these in sync
-// with uv-manager.js's upgrade()/installLatest().
-const UPGRADE_COMMAND = `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force`;
+// fails to come up — `upgradeCommand()` is the same string uv-manager.js's
+// upgrade()/installLatest() run (`uv tool install flowpad@latest --python <pin>
+// --force`, the pin being the `requires-python` floor read from the bundled
+// pyproject.toml). Resolved when a panel is shown, not at load: a build missing
+// that file must still launch a healthy install (see getPythonVersion).
+const upgradeCommand = () => UvManager.upgradeCommand();
 const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
 
@@ -787,14 +789,17 @@ function installProgress(label) {
   return (line) => sendStatus(`${label} — ${line}`);
 }
 
-// Render the in-app startup-timeout panel (loading.html) instead of the bland
+// Render the in-app startup error panel (loading.html) instead of the bland
 // native OS error box. Gives the user the two exact, copy-pasteable recovery
 // commands — upgrade first, then `flow diagnose` — each with a copy button.
-// Falls back to the native dialog only if the loading window is already gone.
-function showStartupTimeoutError(detail) {
+// `retryable` adds a Retry button that re-runs the install/start in-app (see
+// installAndStartBackend). Falls back to the native dialog only if the loading
+// window is already gone; returns whether the panel was rendered.
+function showStartupErrorPanel(detail, { retryable = false } = {}) {
   const payload = {
     detail,
-    upgradeCommand: UPGRADE_COMMAND,
+    retryable,
+    upgradeCommand: upgradeCommand(),
     diagnoseCommand: DIAGNOSE_COMMAND,
   };
   startupFailed = true;
@@ -808,10 +813,190 @@ function showStartupTimeoutError(detail) {
   dialog.showErrorBox(
     'Flowpad couldn’t start',
     `${detail}\n\n` +
-      `1) Upgrade Flowpad, then relaunch:\n   ${UPGRADE_COMMAND}\n\n` +
+      `1) Upgrade Flowpad, then relaunch:\n   ${upgradeCommand()}\n\n` +
       `2) If that doesn’t work, run:\n   ${DIAGNOSE_COMMAND}`,
   );
   return false;
+}
+
+// The paragraph the error panel shows for a failed install/start. The full
+// dump (HOME, PATH, 500 chars of stderr) stays in the log; on screen the user
+// needs the command, WHY it stopped, and the last lines uv printed. A signal
+// with no uv `error:` line means the process was killed, not that uv failed —
+// exactly the trace the old fixed install cap used to produce, which read as
+// an inexplicable "Command failed" over pure progress output.
+function describeStartupFailure(error) {
+  const parts = [String(error?.message || error).split('\n')[0]];
+  if (error?.signal) parts.push(`The process was killed (${error.signal}).`);
+  else if (typeof error?.code === 'number') parts.push(`Exit code ${error.code}.`);
+  const stderr = error?.stderr ? error.stderr.toString().trim() : '';
+  if (stderr) parts.push(`Last output:\n${stderr.split('\n').slice(-6).join('\n')}`);
+  parts.push('Retry keeps what was already downloaded, so a second attempt is usually quick.');
+  return parts.join('\n');
+}
+
+function waitForRetryRequest() {
+  return new Promise((resolve) => ipcMain.once('retry-startup', () => resolve()));
+}
+
+// Install (first launch) or upgrade the flowpad package and start the backend.
+// Resolves { ok: true, backendJustUpgraded } — or { ok: false } after rendering
+// the error panel with a Retry button, so startApp() can run it again. A fresh
+// UvManager per attempt: nothing from a failed attempt leaks into the retry.
+async function installAndStartBackend() {
+  let backendJustUpgraded = false;
+  // Install and start backend via uv + flow CLI
+  uvManager = new UvManager(log);
+
+  // Did the user just upgrade to a new desktop build? Logged for diagnostics
+  // only — the pre-start update prompt below decides (and asks) whether to
+  // bring the flowpad backend up to match; we don't silently auto-upgrade.
+  const lastDesktopVersion = readLastDesktopVersion();
+  const desktopUpgraded =
+    app.isPackaged && lastDesktopVersion && lastDesktopVersion !== app.getVersion();
+  if (desktopUpgraded) {
+    log.info(`[update] desktop upgraded ${lastDesktopVersion} → ${app.getVersion()}`);
+  }
+
+  try {
+    // FAST PATH: check if flow binary exists on disk (no subprocess, just fs.existsSync)
+    const flowBin = uvManager.getInstalledFlowBin();
+
+    if (flowBin) {
+      log.info(`Fast path: flow binary found at ${flowBin}`);
+
+      // ── Pre-start updates: desktop + backend, asked ONCE ───────────────
+      // Two independent channels: the desktop wrapper (electron-updater /
+      // GitHub) and the flowpad backend (PyPI). We check the desktop FIRST,
+      // without downloading, so that when BOTH have a newer version we show a
+      // single consolidated dialog instead of two. The backend is applied
+      // immediately (fast, local); the desktop downloads in the background and
+      // prompts to restart when ready. We never silently auto-upgrade — the
+      // dialog is the one decision point, so the user stays in control.
+      let activeBin = flowBin;
+      const desktopLatest = await getDesktopUpdateVersion();
+
+      if (desktopLatest) {
+        // Only consolidate when the backend ALSO has an update; otherwise keep
+        // the desktop channel's own background-download + restart-prompt flow.
+        const backendStatus = await uvManager._pypiUpdateStatus();
+        if (backendStatus) {
+          const { response } = await dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'Updates available',
+            message: 'New versions of FlowPad are available.',
+            detail:
+              `Desktop app: ${app.getVersion()} → ${desktopLatest}\n` +
+              `FlowPad engine: ${backendStatus.currentVersion || 'unknown'} → ${backendStatus.latestVersion}`,
+            buttons: ['Update', 'Later'],
+            defaultId: 0,
+            cancelId: 1,
+          });
+          if (response === 0) {
+            // Backend first (quick) so the about-to-restart desktop boots
+            // paired with the new engine; the desktop downloads in the
+            // background and prompts to restart once ready.
+            const loadingPath = path.join(__dirname, 'loading.html');
+            await mainWindow.loadFile(loadingPath);
+            await uvManager.upgrade({ onProgress: installProgress('Upgrading Flowpad') });
+            activeBin = uvManager.getInstalledFlowBin() || flowBin;
+            backendJustUpgraded = true;
+            downloadDesktopUpdateInBackground({ version: desktopLatest });
+          } else {
+            // Later: still pre-download the desktop in the background so the
+            // next restart comes back on the latest — but don't nag (it
+            // auto-installs on quit). The backend stays as-is (deferred) and
+            // is not re-offered by the periodic check this session.
+            uvManager.deferPackageVersion(backendStatus.latestVersion);
+            downloadDesktopUpdateInBackground({ promptOnReady: false, version: desktopLatest });
+          }
+        } else {
+          // Desktop only → background download + restart prompt (unchanged UX).
+          downloadDesktopUpdateInBackground({ version: desktopLatest });
+        }
+      } else {
+        // No desktop update → the standalone backend prompt handles the
+        // "newer on PyPI" case (and no-ops otherwise). Reads the installed
+        // version from `_version.py`, so it works even when the install is
+        // broken or the cloud is unreachable. `beforeBackendStart` makes the
+        // call return right after the upgrade — the normal start path below
+        // boots the upgraded backend, avoiding a double start + early UI load.
+        const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
+          sendStatus,
+          waitForBackend,
+          backendUrl: BACKEND_URL,
+          cloudUrl: FLOWPAD_CLOUD_URL,
+          beforeBackendStart: true,
+        });
+        if (upgradedPreStart) {
+          activeBin = uvManager.getInstalledFlowBin() || activeBin;
+          backendJustUpgraded = true;
+        }
+      }
+
+      const version = uvManager.getInstalledVersionSync(activeBin);
+      const versionSuffix = version ? ` v${version}` : '';
+      sendStatus(`Starting flowpad${versionSuffix}`);
+      try {
+        await uvManager.startWithBin(activeBin);
+      } catch (startErr) {
+        // A shim exists on disk (so we took the fast path), but its env can't
+        // import flow_sdk — a corrupt/half-finished install. Without this the
+        // app would crash on the same broken shim every launch and never
+        // self-heal (a --force reinstall only runs in the first-time branch).
+        // Repair once and retry; if it still fails, fall through to the dialog.
+        if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
+        log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
+        sendStatus('Repairing Flowpad installation');
+        await uvManager.ensureUv();
+        await uvManager.reinstall({ onProgress: installProgress('Repairing Flowpad installation') });
+        backendJustUpgraded = true;
+        const repairedVersion = uvManager.getInstalledVersionSync();
+        sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
+        await uvManager.start();
+      }
+    } else {
+      // FIRST-TIME SETUP: uv tool install flowpad (latest)
+      log.info('First-time setup: flow binary not found, installing latest from PyPI');
+      sendStatus('Setting up Flowpad (first time)');
+
+      sendStatus('Checking Python installation');
+      await uvManager.ensureUv();
+
+      await uvManager.installLatest({ onProgress: installProgress('Installing Flowpad') });
+      backendJustUpgraded = true;
+
+      const version = uvManager.getInstalledVersionSync();
+      const versionSuffix = version ? ` v${version}` : '';
+      sendStatus(`Starting flowpad${versionSuffix}`);
+      await uvManager.start();
+    }
+  } catch (error) {
+    log.error('Failed to start Python backend:', error);
+
+    const details = [
+      error?.message || String(error),
+      `HOME=${process.env.HOME || ''}`,
+      `cwd=${os.homedir()}`,
+      `flowBin=${uvManager?._flowBin || ''}`,
+      `PATH=${(process.env.PATH || '').slice(0, 500)}`
+    ];
+
+    if (error?.stderr) details.push(`stderr=${error.stderr.toString().slice(-500)}`);
+    if (error?.stdout) details.push(`stdout=${error.stdout.toString().slice(-500)}`);
+
+    const detailText = details.join('\n');
+    log.error(`[startup error details]\n${detailText}`);
+
+    // In-app panel with Retry (uv keeps what it already fetched in its
+    // cache, so a retry after a slow or flaky download is usually seconds).
+    // Only if the loading window is already gone is the failure fatal.
+    if (!showStartupErrorPanel(describeStartupFailure(error), { retryable: true })) {
+      app.quit();
+    }
+    return { ok: false };
+  }
+  return { ok: true, backendJustUpgraded };
 }
 
 async function startApp() {
@@ -836,156 +1021,21 @@ async function startApp() {
   if (isDev) {
     log.info('Development mode: expecting backend to be running externally');
   } else {
-    // Install and start backend via uv + flow CLI
-    uvManager = new UvManager(log);
-
-    // Did the user just upgrade to a new desktop build? Logged for diagnostics
-    // only — the pre-start update prompt below decides (and asks) whether to
-    // bring the flowpad backend up to match; we don't silently auto-upgrade.
-    const lastDesktopVersion = readLastDesktopVersion();
-    const desktopUpgraded =
-      app.isPackaged && lastDesktopVersion && lastDesktopVersion !== app.getVersion();
-    if (desktopUpgraded) {
-      log.info(`[update] desktop upgraded ${lastDesktopVersion} → ${app.getVersion()}`);
-    }
-
-    try {
-      // FAST PATH: check if flow binary exists on disk (no subprocess, just fs.existsSync)
-      const flowBin = uvManager.getInstalledFlowBin();
-
-      if (flowBin) {
-        log.info(`Fast path: flow binary found at ${flowBin}`);
-
-        // ── Pre-start updates: desktop + backend, asked ONCE ───────────────
-        // Two independent channels: the desktop wrapper (electron-updater /
-        // GitHub) and the flowpad backend (PyPI). We check the desktop FIRST,
-        // without downloading, so that when BOTH have a newer version we show a
-        // single consolidated dialog instead of two. The backend is applied
-        // immediately (fast, local); the desktop downloads in the background and
-        // prompts to restart when ready. We never silently auto-upgrade — the
-        // dialog is the one decision point, so the user stays in control.
-        let activeBin = flowBin;
-        const desktopLatest = await getDesktopUpdateVersion();
-
-        if (desktopLatest) {
-          // Only consolidate when the backend ALSO has an update; otherwise keep
-          // the desktop channel's own background-download + restart-prompt flow.
-          const backendStatus = await uvManager._pypiUpdateStatus();
-          if (backendStatus) {
-            const { response } = await dialog.showMessageBox(mainWindow, {
-              type: 'info',
-              title: 'Updates available',
-              message: 'New versions of FlowPad are available.',
-              detail:
-                `Desktop app: ${app.getVersion()} → ${desktopLatest}\n` +
-                `FlowPad engine: ${backendStatus.currentVersion || 'unknown'} → ${backendStatus.latestVersion}`,
-              buttons: ['Update', 'Later'],
-              defaultId: 0,
-              cancelId: 1,
-            });
-            if (response === 0) {
-              // Backend first (quick) so the about-to-restart desktop boots
-              // paired with the new engine; the desktop downloads in the
-              // background and prompts to restart once ready.
-              const loadingPath = path.join(__dirname, 'loading.html');
-              await mainWindow.loadFile(loadingPath);
-              await uvManager.upgrade({ onProgress: installProgress('Upgrading Flowpad') });
-              activeBin = uvManager.getInstalledFlowBin() || flowBin;
-              backendJustUpgraded = true;
-              downloadDesktopUpdateInBackground({ version: desktopLatest });
-            } else {
-              // Later: still pre-download the desktop in the background so the
-              // next restart comes back on the latest — but don't nag (it
-              // auto-installs on quit). The backend stays as-is (deferred) and
-              // is not re-offered by the periodic check this session.
-              uvManager.deferPackageVersion(backendStatus.latestVersion);
-              downloadDesktopUpdateInBackground({ promptOnReady: false, version: desktopLatest });
-            }
-          } else {
-            // Desktop only → background download + restart prompt (unchanged UX).
-            downloadDesktopUpdateInBackground({ version: desktopLatest });
-          }
-        } else {
-          // No desktop update → the standalone backend prompt handles the
-          // "newer on PyPI" case (and no-ops otherwise). Reads the installed
-          // version from `_version.py`, so it works even when the install is
-          // broken or the cloud is unreachable. `beforeBackendStart` makes the
-          // call return right after the upgrade — the normal start path below
-          // boots the upgraded backend, avoiding a double start + early UI load.
-          const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
-            sendStatus,
-            waitForBackend,
-            backendUrl: BACKEND_URL,
-            cloudUrl: FLOWPAD_CLOUD_URL,
-            beforeBackendStart: true,
-          });
-          if (upgradedPreStart) {
-            activeBin = uvManager.getInstalledFlowBin() || activeBin;
-            backendJustUpgraded = true;
-          }
-        }
-
-        const version = uvManager.getInstalledVersionSync(activeBin);
-        const versionSuffix = version ? ` v${version}` : '';
-        sendStatus(`Starting flowpad${versionSuffix}`);
-        try {
-          await uvManager.startWithBin(activeBin);
-        } catch (startErr) {
-          // A shim exists on disk (so we took the fast path), but its env can't
-          // import flow_sdk — a corrupt/half-finished install. Without this the
-          // app would crash on the same broken shim every launch and never
-          // self-heal (a --force reinstall only runs in the first-time branch).
-          // Repair once and retry; if it still fails, fall through to the dialog.
-          if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
-          log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
-          sendStatus('Repairing Flowpad installation');
-          await uvManager.ensureUv();
-          await uvManager.reinstall({ onProgress: installProgress('Repairing Flowpad installation') });
-          backendJustUpgraded = true;
-          const repairedVersion = uvManager.getInstalledVersionSync();
-          sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
-          await uvManager.start();
-        }
-      } else {
-        // FIRST-TIME SETUP: uv tool install flowpad (latest)
-        log.info('First-time setup: flow binary not found, installing latest from PyPI');
-        sendStatus('Setting up Flowpad (first time)');
-
-        sendStatus('Checking Python installation');
-        await uvManager.ensureUv();
-
-        await uvManager.installLatest({ onProgress: installProgress('Installing Flowpad') });
-        backendJustUpgraded = true;
-
-        const version = uvManager.getInstalledVersionSync();
-        const versionSuffix = version ? ` v${version}` : '';
-        sendStatus(`Starting flowpad${versionSuffix}`);
-        await uvManager.start();
+    // Install/upgrade + start, retryable from the in-app error panel. A failed
+    // `uv tool install` is usually transient (slow link, flaky mirror) and uv
+    // keeps everything it already fetched, so the retry typically finishes in
+    // seconds — no relaunch, no terminal.
+    let result = await installAndStartBackend();
+    while (!result.ok) {
+      await waitForRetryRequest();
+      log.info('[startup] retry requested from the error panel');
+      startupFailed = false;
+      if (uvManager) {
+        await uvManager.stop().catch((e) => log.warn(`[startup] pre-retry stop failed: ${e.message}`));
       }
-    } catch (error) {
-      log.error('Failed to start Python backend:', error);
-
-      const details = [
-        error?.message || String(error),
-        `HOME=${process.env.HOME || ''}`,
-        `cwd=${os.homedir()}`,
-        `flowBin=${uvManager?._flowBin || ''}`,
-        `PATH=${(process.env.PATH || '').slice(0, 500)}`
-      ];
-
-      if (error?.stderr) details.push(`stderr=${error.stderr.toString().slice(-500)}`);
-      if (error?.stdout) details.push(`stdout=${error.stdout.toString().slice(-500)}`);
-
-      const detailText = details.join('\n');
-      log.error(`[startup error details]\n${detailText}`);
-
-      dialog.showErrorBox(
-        'Startup Error',
-        `Failed to start the Python backend:\n\n${detailText}`
-      );
-      app.quit();
-      return;
+      result = await installAndStartBackend();
     }
+    backendJustUpgraded = result.backendJustUpgraded;
   }
 
   // Wait for backend to be ready. After an install/upgrade the freshly
@@ -1031,7 +1081,7 @@ async function startApp() {
     // Surface the in-app recovery panel with copy-pasteable commands instead of
     // the native OS error box. The user quits from the panel's Quit button; the
     // next launch re-runs startApp() (including the upgrade path) from scratch.
-    showStartupTimeoutError(
+    showStartupErrorPanel(
       `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ` +
         'This usually means the installed Flowpad package is out of date or broken.',
     );

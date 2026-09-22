@@ -254,6 +254,24 @@ def _can_administer(row: dict) -> bool | None:
     return ("update" in actions) if isinstance(actions, list) else None
 
 
+def _allowance_ids(body) -> set[str]:
+    """The typeids out of a ``token_plan/allowances`` answer; empty when the call failed."""
+    data = body.get("data") if isinstance(body, dict) else None
+    ids = data.get("allowances") if isinstance(data, dict) else None
+    return {str(typeid) for typeid in ids} if isinstance(ids, list) else set()
+
+
+def _hub_user_typeid() -> str | None:
+    """The hub identity this box is signed in as (``user-<uuid>``), or ``None`` when signed out."""
+    try:
+        from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+
+        user_id = str((get_user() or {}).get("id") or "")
+    except Exception:  # noqa: BLE001
+        return None
+    return f"user-{user_id}" if user_id else None
+
+
 async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndpoint"]:
     """Every ``LLMEndpoint`` the signed-in hub user may spend, as the hub serializes them.
 
@@ -338,12 +356,11 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
         return data if isinstance(data, list) else []
 
     # ``expand=permissions`` on the SCOPED listing only, and the asymmetry is the point. It answers
-    # "may this person change this budget", which is the one thing that separates a wallet handed TO
-    # them from one they administer FOR somebody else -- ``allocate`` stamps no ``principal_typeid``,
-    # so on the wire those two are otherwise identical rows. The catalog is deliberately asked
-    # WITHOUT it: those rows reach every signed-in user through a stamp rather than a role edge, and
-    # a "cannot change it" there would read as "it was given to me", turning the shared pool into
-    # everybody's personal wallet.
+    # "may this person change this budget", which separates a wallet handed TO them from one they
+    # administer FOR somebody else -- on the wire those two are otherwise identical rows. The
+    # catalog is deliberately asked WITHOUT it: those rows reach every signed-in user through a
+    # stamp rather than a role edge, and a "cannot change it" there would read as "it was given to
+    # me", turning the shared pool into everybody's personal wallet.
     rows = _rows(await hub_get("llm_endpoint", params={"expand": "permissions"}))
     if rows is None:
         return stale
@@ -351,6 +368,12 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     # A failed catalog read costs only the fallback: answering with the scoped rows beats
     # answering with nothing.
     rows = list(rows) + list(_rows(await hub_get("llm_endpoint", action="catalog")) or [])
+    # THIRD read: which of these are this person's OWN allowances. The hub keeps "whose allowance"
+    # as a ``partof`` edge to the user and serializes no field for it; ``token_plan/allowances`` is
+    # the caller-scoped answer. Same failure tolerance as the catalog: a failed read leaves
+    # ``holder_typeid`` None on every row, and the picker falls back to ``can_administer``.
+    mine = _allowance_ids(await hub_get("token_plan", action="allowances"))
+    me = _hub_user_typeid()
 
     fields = set(LLMEndpoint.model_fields)
     endpoints: list[LLMEndpoint] = []
@@ -371,6 +394,7 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
             payload["kind"] = LLMEndpointKind.HUB
             # ``None`` unless this row came from the scoped listing WITH an answer -- see the field.
             payload["can_administer"] = _can_administer(row) if row_id in held else None
+            payload["holder_typeid"] = me if (me and f"llm_endpoint-{row_id}" in mine) else None
             endpoints.append(LLMEndpoint(**payload))
             if row_id:
                 seen.add(row_id)

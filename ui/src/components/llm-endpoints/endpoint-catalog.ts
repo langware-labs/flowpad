@@ -151,7 +151,7 @@ export interface EndpointDraft {
   base_url: string;
   /** Chain only: the typeid of the endpoint this one draws from.
    *
-   *  One parent, not a list. The hub makes the link a `source_llmendpoint` relationship written
+   *  One parent, not a list. The hub makes the link a `partof` (endpoint → endpoint) relationship written
    *  only by `allocate`, which takes a single endpoint to draw from — an ordered fallback list is
    *  no longer expressible, so offering one would be a form that lies. */
   source: string;
@@ -192,7 +192,7 @@ export function withProvider(draft: EndpointDraft, provider: LLMEndpointProvider
  * Root ⇔ no source — answered by the CHAIN report, not by the entity.
  *
  * `LLMEndpoint.kind` derives from `sources`, and the hub does not serialize that field: a source is
- * a `source_llmendpoint` EDGE, deliberately not a field, because a client-writable list was
+ * a `partof` (endpoint → endpoint) EDGE, deliberately not a field, because a client-writable list was
  * authorized against nothing — a create could name any endpoint the caller could merely spend
  * through, hanging an uncapped sibling off a pool. So `entity.kind` answers `root` for EVERY
  * endpoint that has ever existed, and a correctly allocated chain is indistinguishable from a
