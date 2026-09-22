@@ -4,22 +4,21 @@
  * `DataManager.deepAssign` recurses into arrays and objects and merges by
  * key/index, never shrinking the target. A run record that gets SMALLER is
  * therefore corrupted by a refresh — and reset is exactly that: the backend
- * clears `inputs`, `awaiting` and `outcomes`, and merging `[]` over the old
- * arrays leaves every one of them in place. Only `status` (a scalar) cleared,
- * so the viewer went on showing the answers and step results of a run that no
+ * clears `result`, and merging `null` over the old one leaves its steps in
+ * place, so the viewer went on showing the step results of a run that no
  * longer existed. Caught in a browser, not by a test, which is why this exists.
  */
 import { describe, expect, it } from 'vitest';
-import { Wizard, type WizardRunState } from '@sdk';
+import { ExitCode, Wizard, type WizardRunState } from '@sdk';
 
 const SETTLED: WizardRunState = {
-  status: 'completed',
-  inputs: { release: 'v1.0.0' },
-  awaiting: [{ name: 'release' }],
-  outcomes: [
-    { step_id: 'a', status: 'completed' },
-    { step_id: 'b', status: 'completed' },
-  ],
+  result: {
+    exit_code: ExitCode.OK,
+    steps: {
+      a: { exit_code: ExitCode.OK },
+      b: { exit_code: ExitCode.OK },
+    },
+  },
   approved: true,
 };
 
@@ -35,13 +34,11 @@ function update(wizard: Wizard, data: Record<string, unknown>) {
 describe('Wizard.onEntityUpdate', () => {
   it('clears a run record that shrank to nothing', () => {
     const wizard = fresh();
-    update(wizard, { run_state: { status: '', inputs: {}, awaiting: [], outcomes: [], approved: true } });
+    update(wizard, { run_state: { result: null, approved: true } });
 
-    expect(wizard.run_state?.inputs).toEqual({});
-    expect(wizard.run_state?.outcomes).toEqual([]);
-    expect(wizard.run_state?.awaiting).toEqual([]);
+    expect(wizard.run_state?.result).toBeNull();
     // Approval survives a reset — it is a fact about trusting this wizard to
-    // run shell here, not about one run's answers.
+    // run shell here, not about one run.
     expect(wizard.run_state?.approved).toBe(true);
   });
 
@@ -49,7 +46,7 @@ describe('Wizard.onEntityUpdate', () => {
     const wizard = fresh();
     // Assigning alone is not enough: deepAssign runs AFTER this hook on the
     // cached path and would merge the raw value straight back in.
-    const payload = update(wizard, { name: 'renamed', run_state: { status: '', outcomes: [] } });
+    const payload = update(wizard, { name: 'renamed', run_state: { result: null } });
 
     expect('run_state' in payload).toBe(false);
     expect(payload.name).toBe('renamed');
@@ -59,15 +56,17 @@ describe('Wizard.onEntityUpdate', () => {
     const wizard = fresh();
     update(wizard, { name: 'renamed' });
 
-    expect(wizard.run_state?.outcomes).toHaveLength(2);
+    expect(Object.keys(wizard.run_state?.result?.steps ?? {})).toHaveLength(2);
   });
 
-  it('keeps a shorter outcome list short', () => {
+  it('keeps a smaller step map small', () => {
     const wizard = fresh();
-    update(wizard, { run_state: { status: 'completed', outcomes: [{ step_id: 'a', status: 'failed' }] } });
+    update(wizard, {
+      run_state: { result: { exit_code: ExitCode.NOT_YET, steps: { a: { exit_code: ExitCode.NOT_YET } } } },
+    });
 
-    // Index-wise merge would leave `b` stranded at index 1 behind the new `a`.
-    expect(wizard.run_state?.outcomes).toHaveLength(1);
-    expect(wizard.run_state?.outcomes?.[0]).toMatchObject({ step_id: 'a', status: 'failed' });
+    // A key-wise merge would leave `b` stranded beside the new `a`.
+    expect(Object.keys(wizard.run_state?.result?.steps ?? {})).toEqual(['a']);
+    expect(wizard.run_state?.result?.steps?.a).toMatchObject({ exit_code: ExitCode.NOT_YET });
   });
 });

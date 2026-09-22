@@ -74,6 +74,9 @@ _META_TYPES = frozenset({
     # turn, so leaving it unclassified made the tail scan report UNKNOWN for the
     # whole of a live turn (QA 2026-08-20).
     "atis-latch",
+    # `{"type":"cost-state",…}` — Claude 2.1.27x writes it after the turn's
+    # `last-prompt`; unclassified, it hid the terminal marker, so no turn ended.
+    "cost-state",
 })
 
 _ATTACHMENT_TYPE_PLAN_MODE_EXIT = "plan_mode_exit"

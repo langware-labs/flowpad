@@ -12,7 +12,7 @@ const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
 
 // Exact, copy-pasteable terminal commands surfaced to the user when the backend
 // fails to come up in time — mirrors the upgrade uv-manager.js itself runs
-// (`uv tool install flowpad@latest --python 3.10 --force`). Keep these in sync
+// (`uv tool install flowpad@latest --python 3.11 --force`). Keep these in sync
 // with uv-manager.js's upgrade()/installLatest().
 const UPGRADE_COMMAND = `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force`;
 const DIAGNOSE_COMMAND = 'flow diagnose';

@@ -17,7 +17,7 @@
  * Both are routinely an org pool — that is the normal way a company funds a machine — and a
  * screen that omits what is actually paying is worse than the clutter it set out to remove.
  * A freshly pushed binding is the same case for a different reason: it arrives as a stub with
- * no principal at all (`_hub_stub`), so every attribution test says "not yours" until a listing
+ * no holder at all (`_hub_stub`), so every attribution test says "not yours" until a listing
  * catches up.
  *
  * Deliberately NOT done in the backend. `_hub_user_typeid` says why in its own words: the

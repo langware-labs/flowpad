@@ -1,3 +1,4 @@
+import type { ServiceEndpoint } from '@sdk';
 import PersistentIframe, { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -8,11 +9,11 @@ import { useWebappDiagnostics } from './useWebappDiagnostics';
 import { useWebappFix } from './useWebappFix';
 
 export interface WebappDisplayProps {
-  /** Process owning the dev server — the probe and the repair run hang off it. */
-  processId: string | null | undefined;
-  /** The get-host URL the frame loads. */
+  /** The endpoint serving what the frame shows — the probe asks it what is wrong,
+   *  and the repair run is pointed at it. */
+  endpoint: ServiceEndpoint | null;
+  /** The URL the frame loads: the endpoint's direct address or its service path. */
   src: string;
-  port: string | null;
   testId?: string;
   /** Bumped by the caller to force a reload (re-show, agent turn end). */
   cacheKey?: number;
@@ -38,17 +39,17 @@ export interface WebappDisplayProps {
  *   ok       → get out of the way
  */
 export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayProps>(function WebappDisplay(
-  { processId, src, port, testId, cacheKey = 0, workdir, targetTypeId },
+  { endpoint, src, testId, cacheKey = 0, workdir, targetTypeId },
   ref,
 ) {
   const frameRef = useRef<PersistentIframeHandle>(null);
   const [dismissedBanner, setDismissedBanner] = useState<string | null>(null);
 
-  const diagnostics = useWebappDiagnostics({ processId, host: src, port });
+  const diagnostics = useWebappDiagnostics({ endpoint, host: src });
 
   const fix = useWebappFix({
     verdict: diagnostics,
-    port,
+    endpoint,
     url: src,
     workdir,
     targetTypeId,

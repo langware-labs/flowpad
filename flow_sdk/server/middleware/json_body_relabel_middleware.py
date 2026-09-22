@@ -29,10 +29,19 @@ response being wrapped.
 from __future__ import annotations
 
 import json
+import re
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 MAX_SNIFF_BYTES = 10 * 1024 * 1024
+
+#: Routes whose body is relayed to someone else as bytes — its label is the
+#: sender's, never this middleware's to rewrite. Today: a ServiceEndpoint's proxy.
+_RAW_BODY_PATH = re.compile(r"/graph/service_endpoint/[^/]+/service(?:/|$)")
+
+
+def is_raw_body_path(path: str) -> bool:
+    return bool(_RAW_BODY_PATH.search(path or ""))
 
 _BODY_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _FORM = "application/x-www-form-urlencoded"
@@ -53,6 +62,9 @@ def _json_container_or_none(raw: bytes) -> dict | list | None:
 
 def _may_be_mislabelled(scope: Scope) -> bool:
     if scope["type"] != "http" or scope.get("method") not in _BODY_METHODS:
+        return False
+    # A proxied body belongs to the SERVICE behind an endpoint; its label is its own.
+    if is_raw_body_path(scope.get("path") or ""):
         return False
     for name, value in scope.get("headers") or ():
         if name == b"content-type":

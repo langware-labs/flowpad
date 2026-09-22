@@ -80,7 +80,7 @@ async def test_connect_passes_reauthorize_to_the_orchestrator_only_when_asked(mo
 
     async def connect(provider, presenter, *, reauthorize=False):
         asked.append(reauthorize)
-        return ConnectionResult(held, ConnectionTestResult(ok=True, identity="me@example.com"))
+        return ConnectionResult(spec=held, test=ConnectionTestResult(ok=True, identity="me@example.com"))
 
     monkeypatch.setattr(connections, "_connect", connect)
     google = await Connection.get("google")

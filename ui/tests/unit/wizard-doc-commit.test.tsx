@@ -13,7 +13,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { useWizardDoc } from '@src/components/assets/editor/wizard/useWizardDoc';
 import { setIn, type WizardDoc } from '@src/components/assets/editor/wizard/wizard-doc';
 
-const DOC: WizardDoc = { name: 'w', steps: [{ id: 'a', command: { commands: { linux: 'true' } } }] };
+const DOC: WizardDoc = { name: 'w', steps: [{ id: 'a', kind: 'compute', ref: 'noop', args: {} }] };
 
 function harness({ ok = true, shipped = false }: { ok?: boolean; shipped?: boolean } = {}) {
   const write = vi.fn().mockResolvedValue(undefined);

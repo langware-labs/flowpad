@@ -144,3 +144,15 @@ class OpenCodeNamingAdapter(MetadataNamingAdapter):
         # OpenCode does not advance time_updated for a manual title-only rename.
         item = _observation(process, row[0], NameOrigin.UNKNOWN, 'opencode.session')
         return [item] if item else []
+
+
+class DeepAgentsNamingAdapter:
+    """The Deep Agents runner keeps no title of its own — a LangGraph thread has none — so
+    there is never a native name to observe and no transcript entry can move one. The
+    process keeps whatever FlowPad's own first-prompt naming gave it."""
+
+    def read(self, process: AgenticProcess) -> list[NameObservation]:
+        return []
+
+    def transcript_may_rename(self, entries: Sequence[object]) -> bool:
+        return False

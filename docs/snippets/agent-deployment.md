@@ -12,6 +12,13 @@ resolves the `local` one — the seam for choosing another is `deployment=`.
     Agent.deploy(provider)  -> Deployment        kind "runtime.agent"
     Deployment.launch(...)  -> AgenticProcess
 
+A placement is also where the agent ANSWERS. The app's agent server keeps every local
+placement serving: its standard `chat` endpoint (`service-endpoints.md` §6) and one serve
+loop over the channels it answers (`agents-on-channels.md` §2) — a source's `answer_place`
+names the placement that answers it; a source that names none is answered where it is held.
+Both go through one turn engine (`flow_sdk/builtin/agent_serve.py`): one process per
+conversation, one turn at a time, a redelivered message answered from its record.
+
 Pinned by `tests/unit/agent/test_agent_deployment_contract.py` (placement) and
 `tests/unit/agent/test_agent_run_dispatch.py` (routing). The spawn itself needs
 a real CLI and is the `tests/long_tests/test_process_mcp_multi_vendor.py` leg.

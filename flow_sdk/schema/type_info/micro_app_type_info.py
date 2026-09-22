@@ -10,22 +10,17 @@ walker recurses, and the enclosure rule makes the containing asset its parent.
 human reads should be named for the thing, not for the internal distinction
 between the delivery row and the app.
 
-Not every MicroApp is an asset. ``flow app serve`` registers a row for a folder
-somewhere in the user's checkout, which has no ``webapp.json`` and no
-``asset_ref``; such a row is DB-only and the orphan sweep never considers it.
+Indexing one places it: ``post_sync_fn`` gives the app a ``static`` endpoint on
+its project's local placement, and removing the folder takes that endpoint with
+it (``orphan_cascade_fn``).
 """
 from flow_sdk.assets.identity import derived_identity
-from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.types.webapp import derive_webapp
+from flow_sdk.fs_store.operations.webapp_placement import place_indexed_webapp, unplace_webapp
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.webapp_spec import WebappManifestSpec
 from flow_sdk.schema.types import EntityType
 
-# MicroApp is an Entity but had no TypeInfo, so the registry could not see
-# it: no icon, no display name, absent from the bootstrap schema the frontend
-# queries through. Registering it is what lets an app's delivery row be read
-# from the UI at all — the same treatment its sibling companion Deployment and
-# its subject Artifact already have.
 MICRO_APP = TypeInfo(
     type_name=EntityType.MICRO_APP,
     api_visible=True,
@@ -36,11 +31,12 @@ MICRO_APP = TypeInfo(
     indexed_by_default=True,
     asset_class="repo",
     family="webapp",
-    shape=Folder(main="webapp.json"),
     asset_spec=WebappManifestSpec,
     derive_fields_fn=derive_webapp,
     fts_content=("name", "title", "description"),
-    index_fields=["name", "kind", "artifact_id"],
+    index_fields=["name", "kind"],
+    post_sync_fn=place_indexed_webapp,
+    orphan_cascade_fn=unplace_webapp,
     # DERIVED, not a capsule: `webapp.json` deliberately carries no id, so the
     # id falls out of the path — a shipped editor then has the SAME id on every
     # machine, which is what makes a `/dock/app/micro_app-<uuid>` link portable.

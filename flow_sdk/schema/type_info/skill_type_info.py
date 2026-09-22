@@ -2,7 +2,7 @@
 from flow_sdk.assets.identity import (
     frontmatter_identity,
 )
-from flow_sdk.assets.layout import Folder, Walk
+from flow_sdk.assets.layout import Walk
 from flow_sdk.assets.process_projection import _skill as project_process_asset
 from flow_sdk.assets.types.skill import (
     derive_skill,
@@ -26,7 +26,6 @@ SKILL = TypeInfo(
     index_fields=["description"],
     asset_class="shared",
     family="skills",
-    shape=Folder(main="SKILL.md"),
     # Two walks: ``<prefix>/skills/<name>/`` under every harness dot-dir at
     # the scope roots, and the folder-wide "a SKILL.md folder anywhere in a
     # project" walk over the FOLDER scaffold (gitignore-pruned, so an ignored

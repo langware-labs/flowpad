@@ -43,15 +43,44 @@ def test_the_trait_is_read_through_a_default_so_a_vendor_may_omit_it():
     assert getattr(BareDriver(), "pty_interrupt_sequence", CTRL_C) == CTRL_C
 
 
-def test_cancel_path_does_not_hardcode_ctrl_c():
-    """Pin the call site: the bytes must come from the driver, not a literal."""
-    import inspect
+@pytest.mark.asyncio
+async def test_cancel_sends_the_drivers_interrupt_not_a_hardcoded_ctrl_c(monkeypatch):
+    """Pin the call site BEHAVIOURALLY: the bytes the PTY receives are the
+    driver's, whatever they are.
 
-    from flow_sdk.builtin.agentic_process import agentic_process
+    This used to assert on ``inspect.getsource``, which passes for any file that
+    merely mentions the attribute and breaks on any edit to the method — it
+    could not tell a real read from a comment. Driving the cancel and capturing
+    what reaches the PTY cannot be fooled either way.
+    """
+    import uuid
 
-    source = inspect.getsource(agentic_process.AgenticProcess._http_cancel_prompt)
-    assert "pty_interrupt_sequence" in source, (
-        "the PTY cancel branch stopped consulting the driver — a hardcoded Ctrl-C "
-        "here kills an opencode session instead of interrupting its turn"
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    SENTINEL = b"\x99-not-ctrl-c"
+
+    class _SentinelDriver:
+        name = "claude"
+        pty_interrupt_sequence = SENTINEL
+
+    ap = AgenticProcess(id=str(uuid.uuid4()), worker_type="claude_code")
+    ap.pty_mode = True
+    ap.shell_id = "shell-1"
+    # `driver` is a cached_property — seed the cache rather than the row.
+    ap.__dict__["driver"] = _SentinelDriver()
+
+    sent: list[bytes] = []
+
+    async def _capture(self, payload):
+        sent.append(payload)
+
+    # Patch on the class — the entity forbids setting unknown attributes.
+    monkeypatch.setattr(AgenticProcess, "send", _capture, raising=False)
+
+    result = await ap._http_cancel_prompt()
+
+    assert sent == [SENTINEL], (
+        "the PTY cancel branch stopped consulting the driver — a hardcoded "
+        "Ctrl-C here kills an opencode session instead of interrupting its turn"
     )
-    assert 'await self.send(b"\\x03")' not in source
+    assert result.data["transport"] == "pty"

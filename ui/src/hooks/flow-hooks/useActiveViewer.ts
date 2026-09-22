@@ -31,23 +31,13 @@ export function useActiveViewer() {
       // the APP case adds `artifactId`, which is nullable.
       let viewerOptions: NonNullable<ViewContext['viewerOptions']> = currentDock.options ?? {};
       switch (currentDock.viewType) {
-        case ViewType.WEB_APP:
-          if (currentDock.options?.port) {
-            viewerOptions = { ...viewerOptions, port: currentDock.options?.port };
-          }
-          break;
         case ViewType.APP: {
           // Through the one owner of the app grammar, not a second parse of the
-          // pointer here. The viewer derives the RUNTIME itself (MicroApp for
-          // `served`, the host process's dev port for `dev`); only identity and the
-          // user's preference travel.
+          // pointer here. The viewer derives the RUNTIME itself from the app's
+          // endpoints; only identity and the user's preference travel.
           const app = appDockAddress(currentDock);
           if (app) {
-            viewerOptions = {
-              ...viewerOptions,
-              artifactId: app.artifactId,
-              ...(app.host ? { host: app.host } : {}),
-            };
+            viewerOptions = { ...viewerOptions, artifactId: app.artifactId };
           }
           break;
         }

@@ -2,7 +2,6 @@
 from flow_sdk.assets.identity import (
     folder_json_identity,
 )
-from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.types.dataset import dataset_asset_hash, derive_dataset
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.dataset_manifest_spec import DatasetManifestSpec
@@ -22,7 +21,6 @@ DATASET = TypeInfo(
     # The manifest that marks a folder as a dataset — also the repo walker's
     # marker gate (a dataset folder must carry it). asset_ref stays the folder
     # so this only names the marker/body file.
-    shape=Folder(main="dataset.json"),
     rows_layout_field="data_layout",
     rows_field="examples",
     derive_fields_fn=derive_dataset,

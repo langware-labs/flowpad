@@ -1069,3 +1069,83 @@ def test_the_flag_rides_the_wire():
 
     assert wire["unverified"] is True
     assert wire["endpoint_typeid"] == "llm_endpoint:device-1", "the source's own fields survive"
+
+
+# ── public endpoints: a hub budget spendable with NO hub login ────────────────────
+
+
+def _bind_public(monkeypatch, *, typeid: str = EP1, hub_origin: str = "https://open.hub.test") -> None:
+    """What ``flow llm user use <id> --hub ...`` leaves behind on a box that never signed in."""
+    from flow_sdk.instance_settings import llm_endpoint
+
+    llm_endpoint.reset_cache()
+    llm_endpoint.set_hub_llm_endpoint(
+        typeid, f"/api/v1/graph/{typeid}/invoke", name="open budget", public=True, hub_origin=hub_origin
+    )
+
+
+async def test_a_public_endpoint_funds_a_box_that_never_logged_in(env, monkeypatch) -> None:
+    """THE loginless path: no hub key, no provider key, no device login -- and a spawn is funded.
+
+    The bearer is a placeholder (every harness refuses an empty token variable; the hub ignores
+    it and admits the caller on the endpoint's own public grant), and the URL is the hub the
+    box was TOLD about, not ``FLOWPAD_HUB_URL`` -- a loginless box has no hub of its own.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
+    from flow_sdk.builtin.llm_endpoint import PUBLIC_ENDPOINT_TOKEN
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
+
+    _bind_public(monkeypatch)
+    assert resolve_hub_api_key() is None, "the premise: this box holds no hub key"
+
+    endpoint, source = await resolve_llm_endpoint(_process())
+    assert (str(endpoint.kind), endpoint.public, source.endpoint_typeid) == ("hub", True, EP1)
+    assert source.eligible and source.auto and not source.reason
+
+    auth = await resolve_worker_api_auth(_process())
+    assert auth is not None
+    assert auth.env["ANTHROPIC_AUTH_TOKEN"] == PUBLIC_ENDPOINT_TOKEN
+    assert auth.env["ANTHROPIC_BASE_URL"] == f"https://open.hub.test/api/v1/graph/{EP1.replace('-', '/', 1)}/invoke"
+
+
+async def test_a_private_endpoint_still_needs_a_login(env, monkeypatch) -> None:
+    """``public`` is the ONLY thing that lifts the login gate -- the same binding without it is
+    refused in the same words as before."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates
+
+    _bind(monkeypatch, login=False)
+    hub = [c.source for c in await list_llm_candidates("claude") if str(c.endpoint.kind) == "hub"]
+    assert [(s.eligible, s.reason) for s in hub] == [(False, "this box is not logged in to the hub")]
+
+
+async def test_a_flowpad_preference_holds_on_a_public_binding(env, monkeypatch) -> None:
+    """Choosing a public endpoint IS choosing Flowpad, and a loginless box made that choice on
+    purpose. Dropping it as "signed out" would fund the box from whatever else is lying around --
+    here a stored key the user never picked."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view, resolve_llm_endpoint
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    _bind_public(monkeypatch)
+    cap = await Capability.get_by_kind(worker_capability_kind("claude"))
+    cap.auth_mode, cap.api_provider = "api", "flowpad"
+    await cap.save(notify=False)
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+
+    endpoint, source = await resolve_llm_endpoint(_process())
+    assert (str(endpoint.kind), source.endpoint_typeid) == ("hub", EP1)
+    assert not (await llm_picker_view("claude")).note, "nothing was ignored, so there is nothing to explain"
+
+
+async def test_a_process_pinned_to_a_public_endpoint_spends_it_without_a_login(env, monkeypatch) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
+
+    _bind_public(monkeypatch)
+    _, source = await resolve_llm_endpoint(_process(endpoint=EP1))
+    assert source.eligible and source.endpoint_typeid == EP1
+
+    # ...and only THAT one: a pin to some other hub endpoint is still unsigned-for.
+    with pytest.raises(Exception, match="not logged in to the hub"):
+        await resolve_llm_endpoint(_process(endpoint=EP2))

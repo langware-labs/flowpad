@@ -7,8 +7,7 @@ learns while it runs (status, health, the next poll, identities) is row-only, so
 rewrites the file. The file is the truth: a row with no file is removed, with everything it
 ingested (``orphan_cascade_fn``).
 """
-from flow_sdk.assets.layout import Folder
-from flow_sdk.fs_store.schema_registry import ENTITY_LAYOUT, TypeInfo
+from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
 from flow_sdk.schema.types import EntityType
 
@@ -34,8 +33,6 @@ DATA_SOURCE = TypeInfo(
     index_fields=["name", "provider", "kind", "status", "health"],
     asset_class="repo",
     family="data_source",
-    shape=Folder.entity_json(EntityType.DATA_SOURCE.value),
-    manifest_layout=ENTITY_LAYOUT,
     asset_spec=DataSourceSpec,
     # The entity is the authoring surface: an edit re-renders the document. Identical bytes are not
     # rewritten, and runtime fields are not spec fields, so a poll never touches the file.

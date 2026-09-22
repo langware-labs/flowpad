@@ -108,7 +108,7 @@ async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, di
 
 def _hub_user_typeid() -> str | None:
     """The hub identity this box is signed in as, in the same spelling an endpoint's
-    ``principal_typeid`` uses (``user-<uuid>``), or ``None`` when signed out.
+    ``holder_typeid`` uses (``user-<uuid>``), or ``None`` when signed out.
 
     The box's LOCAL user is a different person as far as ids go -- the bootstrap ``user`` is
     ``uname: local`` with a v5 id minted here -- so a screen cannot ask "is this budget mine"
@@ -132,7 +132,10 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False, scope: LLMScope
     # out), so computing sources before this ran left every endpoint out of the FIRST
     # answer and put it in the second -- a picker that fills in on its own second poll.
     available = await fetch_hub_llm_endpoints(cached_only=not refresh)
-    if refresh and bound is not None and listing_supersedes_binding():
+    # A PUBLIC binding is exempt: a public endpoint is spendable by whoever holds its id, which
+    # is precisely NOT a role this caller holds -- so a listing scoped to the caller never
+    # contains it, and its absence there says nothing about whether it still exists.
+    if refresh and bound is not None and not bound.public and listing_supersedes_binding():
         # Drop a binding the hub has just told us it will not honour. ``_endpoint_sources``
         # already stops OFFERING it, so routing is correct either way -- but the record itself
         # is read as "this box was given a budget" (``box_bound`` demotes an unproven device
@@ -159,6 +162,8 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False, scope: LLMScope
         "invoke_url": hub_llm_endpoint_invoke_url(),
         "provider": bound.provider if bound else None,
         "name": bound.name if bound else None,
+        # The bound endpoint is a PUBLIC one: spendable with no hub login (the id is the bearer).
+        "public": bool(bound and bound.public),
         "hub_logged_in": hub_logged_in,
         # Every variable a shell binding can set. Static and secret-free; it rides the status so
         # a client that already has one need not ask again, but ``flow llm clear`` calls
@@ -370,13 +375,20 @@ async def select_llm_source(payload: dict) -> dict:
             raise HubEndpointBindError(f"unknown provider {provider!r}", 400) from exc
         cap.auth_mode, cap.api_provider = "api", provider
     else:
-        if not hub_key:
-            raise HubEndpointBindError("this box is not logged in to the hub", 409)
         typeid = str(payload.get("endpoint_typeid") or "")
         bound = get_hub_llm_endpoint()
+        # A PUBLIC endpoint is the one hub budget a box may choose without a hub login: the
+        # caller says so (``flow llm user use <id>`` on a box that never signed in), or the box
+        # is already bound to it that way. Anything else still needs a key to sign with.
+        asked_public = payload.get("public") is True
+        public = asked_public or (
+            bound is not None and bound.public and (not typeid or bound.endpoint_typeid == typeid)
+        )
+        if not hub_key and not public:
+            raise HubEndpointBindError("this box is not logged in to the hub", 409)
         if not typeid and bound is None:
             raise HubEndpointBindError("no hub endpoint is available to this box", 400)
-        if typeid and (bound is None or bound.endpoint_typeid != typeid):
+        if typeid and (bound is None or bound.endpoint_typeid != typeid or asked_public):
             from flow_sdk.builtin.llm_endpoint import hub_invoke_path  # noqa: PLC0415
             from flow_sdk.db.drivers.db_base_record import TypeId  # noqa: PLC0415
 
@@ -389,6 +401,8 @@ async def select_llm_source(payload: dict) -> dict:
                 hub_invoke_path(parsed),
                 provider=str(payload.get("provider") or ""),
                 name=str(payload.get("name") or ""),
+                public=public,
+                hub_origin=str(payload.get("hub_origin") or "") if public else "",
             )
         cap.auth_mode, cap.api_provider = "api", LMApiProvider.FLOWPAD.value
 
@@ -468,7 +482,14 @@ async def test_hub_llm_endpoint(payload: dict) -> dict:
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
 
-    endpoint_id = _endpoint_id(str(payload.get("endpoint_typeid") or payload.get("id") or ""))
+    endpoint_ref = str(payload.get("endpoint_typeid") or payload.get("id") or "")
+    endpoint_id = _endpoint_id(endpoint_ref)
+    bound = get_hub_llm_endpoint()
+    if bound is not None and bound.public and _endpoint_id(bound.endpoint_typeid) == endpoint_id:
+        from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
+
+        if not resolve_hub_api_key():
+            return await _test_public_endpoint(bound)
     _require_hub_login()
 
     try:
@@ -478,6 +499,25 @@ async def test_hub_llm_endpoint(payload: dict) -> dict:
     if verdict is None:
         raise HubEndpointBindError("no hub is configured for this box", 409)
     return verdict
+
+
+async def _test_public_endpoint(bound: HubLLMEndpoint) -> dict:
+    """Spend one token through a PUBLIC endpoint from a box with no hub login.
+
+    The hub's ``test`` action is deliberately not in the anonymous grant -- a caller holding
+    only the id may spend the budget and list its models, nothing else -- so the honest test is
+    the thing a worker is about to do: one minimal completion through the invoke URL, signed
+    with the same placeholder a spawn sends.
+    """
+    from flow_sdk.builtin.llm_endpoint import PUBLIC_ENDPOINT_TOKEN  # noqa: PLC0415
+
+    model = _TEST_MODELS["openrouter"]
+    return await _spend_one(
+        f"{hub_llm_endpoint_invoke_url()}/v1/chat/completions",
+        {"Authorization": f"Bearer {PUBLIC_ENDPOINT_TOKEN}"},
+        {"model": model, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]},
+        model,
+    )
 
 
 async def chain_hub_llm_endpoint(endpoint_ref: str) -> dict:
@@ -665,10 +705,6 @@ async def _test_api_key(provider: str) -> dict:
     The key never leaves this machine: the call goes straight to the provider from the box
     that stores it, which is the same path a worker's own key auth takes.
     """
-    import time  # noqa: PLC0415
-
-    import httpx  # noqa: PLC0415
-
     from flow_sdk.cli.auth.lm_api_keys import get_lm_api  # noqa: PLC0415
 
     key = get_lm_api(provider)
@@ -687,6 +723,15 @@ async def _test_api_key(provider: str) -> dict:
         url = f"{base}/chat/completions"
         headers = {"Authorization": f"Bearer {key}"}
         body = {"model": model, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+
+    return await _spend_one(url, headers, body, model)
+
+
+async def _spend_one(url: str, headers: dict, body: dict, model: str) -> dict:
+    """POST one minimal completion and turn whatever came back into a verdict."""
+    import time  # noqa: PLC0415
+
+    import httpx  # noqa: PLC0415
 
     started = time.monotonic()
     try:

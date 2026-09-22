@@ -30,6 +30,7 @@ vi.mock('@src/components/organization/budgets/use-budgets', () => ({
   useTeamBudgets: (...args: unknown[]) => h.team(...args),
   useSetLifetimeCap: () => ({ mutate: h.setCap, isPending: false }),
   useRemoveAllowance: () => ({ mutate: vi.fn(), isPending: false }),
+  useRemoveTeamMember: () => ({ mutate: vi.fn(), isPending: false }),
   useAddPeople: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSetPayingProvider: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useInvalidateBudgets: () => vi.fn().mockResolvedValue(undefined),

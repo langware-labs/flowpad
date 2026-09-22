@@ -16,6 +16,7 @@ import logging
 from flow_sdk.core.capabilities.discovery import ensure_discovered, get_capability_value
 from flow_sdk.core.capabilities.models import CapabilityKind
 from flow_sdk.core.capabilities.registry import get_capability_registry
+from flow_sdk.flowpad_types.vendors import HIDDEN_CAPABILITY_KINDS
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,8 @@ async def compute_harness_state(wait_for_discovery: bool = True) -> dict:
     for spec in registry.matching_specs("harness"):
         if spec.kind == CapabilityKind.HARNESS.value:
             continue  # the reference pointer itself, not a concrete harness
+        if spec.kind in HIDDEN_CAPABILITY_KINDS:
+            continue  # a hidden vendor is never offered by the harness picker
         harnesses.append(
             {
                 "kind": spec.kind,

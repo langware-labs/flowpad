@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 import flow_sdk.blocks as blocks
-from flow_sdk.blocks import EmailMessageSpec, RunOutput, StreamInbox, _AgentRunner
+from flow_sdk.blocks import EmailMessageSpec, PromptResult, StreamInbox, _AgentRunner
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource
 
@@ -222,7 +222,7 @@ class TestAgentMessageProcessing:
                 if message.body == "wait":
                     self.started.set()
                     await self.release.wait()
-                return RunOutput(text=f"answer: {message.body}")
+                return PromptResult.satisfied("answered", text=f"answer: {message.body}")
 
             async def close(self):
                 self.closed = True
@@ -367,9 +367,11 @@ class TestStreamInboxSend:
             await stream_inbox.send(EmailMessageSpec(to=["a@b", "c@d"], body="x"))
 
 
-def test_run_output_is_a_value():
-    out = RunOutput(text="hi")
-    assert out.text == "hi" and out.files == []
+def test_a_turn_answer_is_a_value():
+    out = PromptResult.satisfied("answered", text="hi")
+    assert out.text == "hi" and out.ok
+    with pytest.raises(Exception):
+        out.text = "edited"  # frozen: a value is a value
 
 
 # ── owner: the block says whose stream inbox it is; `agent_id=` stays as the alias ──

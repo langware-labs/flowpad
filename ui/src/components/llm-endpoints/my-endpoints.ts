@@ -13,13 +13,13 @@
  * teams' pools, and every allowance they minted for somebody else. None of those is their
  * budget.
  *
- * So a row is kept when it is STAMPED with this person (`principal_typeid === user-<me>`, which
- * `hub_user_typeid` supplies — the local user id is a different id entirely and would match
- * nothing), or when it is untagged and they may only SPEND it. See `isAllocatedToUser`: the
- * second half is not a refinement, it is the half that makes "add a person to this budget" work
- * at all, because that flow stamps no principal on what it creates.
+ * So a row is kept when it is HELD by this person (`holder_typeid === user-<me>`, the hub's
+ * `partof` edge from the allowance to the person, which the box reads through
+ * `token_plan/allowances`; `hub_user_typeid` supplies the `me` half — the local user id is a
+ * different id entirely and would match nothing), or, when that read was unavailable, when they
+ * may only SPEND it. See `isAllocatedToUser`.
  *
- * A group's pot is excluded by the first rule — its principal names the org or the team, not a
+ * A group's pot is excluded by the first rule — it is `partof` the org or the team, not a
  * person — and the shared catalog root by the second, since nobody holds a role on it.
  */
 import { TypeId, dataContext, llmSourcesService, type LLMEndpointOffer, type LLMFundingStatus } from '@sdk';
@@ -30,19 +30,15 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { ENDPOINT_TYPE, endpointIdFromTypeId } from './llm-endpoints-pointer';
 
 /**
- * True when this endpoint is the signed-in person's to SPEND, by either of the two ways a budget
- * becomes somebody's.
+ * True when this endpoint is the signed-in person's to SPEND.
  *
- * 1. **It is stamped with them.** A wallet the hub mints for a person carries
- *    `principal_typeid: user-<them>`.
- * 2. **It was handed to them.** `allocate` — the "add people to this budget" flow — stamps NO
- *    principal at all; the beneficiary exists only as a `reader` grant. So an untagged row is
- *    theirs exactly when they may not change it: a reader spends, an administrator manages.
- *
- * The second rule is what the first version of this file got wrong. Matching on the stamp alone
- * hid every hand-allocated budget from the person it was made for — their Assets tree showed no
- * LLM Endpoints row at all — while the same rows correctly stayed hidden for the admin who minted
- * them. The distinction was never the stamp; it was the role, and the hub already knew it.
+ * 1. **It is held by them.** Every allowance a person holds — the hub's own default and one an
+ *    admin added them to alike — is `partof` that person on the hub, and the box surfaces that
+ *    edge as `holder_typeid: user-<them>`. This is the answer whenever the hub could be asked.
+ * 2. **Fallback: they may only spend it.** When the allowances read was unavailable (an older
+ *    hub, a failed call) `holder_typeid` is null on every row, and a row is theirs exactly when
+ *    they may not change it: a reader spends, an administrator manages. It is only a fallback —
+ *    it hides an admin's OWN allowance under a team they administer, which rule 1 keeps.
  *
  * `can_administer: null` (not held, or an older backend) is NOT "it was given to me": the catalog's
  * shared root reaches every signed-in user, and reading it as a gift would put the company pool in
@@ -54,8 +50,8 @@ export function isAllocatedToUser(offer: LLMEndpointOffer, hubUserTypeid: string
   // Both spellings of a typeid reach the client (`user-<id>` and `user:<id>`), and only the
   // id half is the identity — comparing the raw strings would miss on the separator alone.
   const idOf = (typeid: string) => typeid.trim().toLowerCase().replace(':', '-');
-  const principal = idOf(offer.principal_typeid ?? '');
-  if (principal) return principal === idOf(me);
+  const holder = idOf(offer.holder_typeid ?? '');
+  if (holder) return holder === idOf(me);
   return offer.can_administer === false;
 }
 

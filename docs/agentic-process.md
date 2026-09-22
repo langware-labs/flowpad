@@ -165,6 +165,15 @@ row's `auth_mode` field:
   `llm-endpoint` box action after login. That push is an **offer**, not an order: it
   no longer rewrites `auth_mode`, so a user's stored choice survives it.
 
+  A **public** endpoint is the one hub budget that needs no hub login: the hub admits
+  whoever holds its id, so `flow llm user use <endpoint-id> [--hub URL]` binds a box that
+  never signed in. The binding carries `public` and the hub origin it was told about (a
+  loginless box has no hub of its own for `FLOWPAD_HUB_URL` to name); the resolver treats a
+  hub candidate as spendable when the box is logged in **or** the endpoint is public, and
+  the spawn sends `PUBLIC_ENDPOINT_TOKEN` — a placeholder the hub ignores, because every
+  harness refuses an empty token variable. See
+  [llm-endpoints §7](snippets/llm-endpoints.md).
+
 `Capability.auth_mode` is therefore a *preference* — what the user asked for, honoured
 while it is available — not a record of what a given spawn actually did.
 

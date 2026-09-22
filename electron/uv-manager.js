@@ -69,11 +69,11 @@ function parseNetstatPids(stdout, port) {
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
 
-// Python interpreter flowpad's tool venv must run on. flowpad requires >=3.10,
+// Python interpreter flowpad's tool venv must run on. flowpad requires >=3.11,
 // but uv would otherwise pick the system default (e.g. 3.12). Pin every
-// `uv tool install` to 3.10 so the backend always runs on the supported
-// interpreter; uv auto-downloads a managed CPython 3.10 if none is present.
-const PYTHON_VERSION = '3.10';
+// `uv tool install` to 3.11 so the backend always runs on the supported
+// interpreter; uv auto-downloads a managed CPython 3.11 if none is present.
+const PYTHON_VERSION = '3.11';
 
 const API_PREFIX = '/api/v1';
 

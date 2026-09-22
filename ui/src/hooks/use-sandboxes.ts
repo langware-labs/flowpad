@@ -60,8 +60,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
  */
 
 /** The hub's name for the workspace app. The client names a SERVICE and never a
- *  port — the hub resolves it. This is now the only way anything here opens a
- *  box; `get-host` is a hub-internal detail the UI no longer touches.
+ *  port — the hub resolves it through the box's endpoints. This is the only way
+ *  anything here opens a box.
  *  Wire contract — pinned hub-side by `unit/test_open_service_route_contract.py`. */
 export const WORKSPACE_SERVICE = 'workspace';
 // `WORKSPACE_FLAVOR` is imported from the SDK: this hook WRITES the marker at

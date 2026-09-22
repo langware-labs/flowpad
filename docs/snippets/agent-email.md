@@ -87,7 +87,8 @@ its own Agent process, `EmailMessageSpec.reply_to(...)` preserves the email
 thread when replying, and `message.reply(...)` sends it and acks the message in
 one step — a restart resumes after the last reply and never sends one twice.
 
-When Flowpad's server is running, its built-in stream inbox runtime already
-performs this processing for Agents whose mailbox is active. Use the explicit loop above
-when the Python process owns the workflow; do not run both processors for the
-same mailbox.
+When Flowpad's server is running, the agent's placement already answers an active
+mailbox — its serve loop (`agents-on-channels.md` §2). Use the explicit loop above
+when the Python process owns the workflow, and then take the mailbox off the app's
+loop — switch the placement off for it (`agent/<id>/set_place_enabled`) — so the same
+mailbox never has two answerers.

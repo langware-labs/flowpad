@@ -721,6 +721,7 @@ class FSIndexer:
         # Imports localized to break cycles
         from flow_sdk.db import get_db_driver
         from flow_sdk.db import session as _db_session
+        from flow_sdk.db.drivers.sqlite.connection import writers_waiting, yield_to_waiting_writers
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
         # Skip-fresh is entirely on-disk: it reads each record's own ``.hash``
@@ -893,12 +894,31 @@ class FSIndexer:
             only after its row is durably committed, so a crash before commit
             leaves no sentinel (skip-fresh re-indexes next run). Every commit
             site must go through here — never stamp ``_pending_hashes`` ad hoc.
+            It also restarts the batch count: the writer lock is free again.
             """
+            nonlocal _since_commit
             await _flush_fts()
             await _idx_session.commit()
+            _since_commit = 0
             for pr in _pending_hashes:
                 pr.write_hash()
             _pending_hashes.clear()
+
+        async def _hand_over_if_waited_on() -> None:
+            """Commit early and let a queued writer in before this run writes again.
+
+            The batch keeps the writer lock for up to _INDEX_COMMIT_BATCH records
+            of parse + link resolution + disk writes — seconds on a cold index —
+            and the busy handler never gets a waiter in on the gap between two
+            batches (see ``writers_waiting``). Checked once per record, so a
+            user's write waits for at most the record in hand. Only while this
+            run holds writes (``_since_commit``): with nothing written since the
+            last commit it holds no lock, and there is nothing to hand over.
+            """
+            if not _since_commit or not writers_waiting():
+                return
+            await _commit_batch()
+            await yield_to_waiting_writers()
 
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
@@ -1010,6 +1030,7 @@ class FSIndexer:
 
         async with _db_session() as _idx_session:
             for ref, info, ref_id, probe, fresh, canon_path in all_probed:
+                await _hand_over_if_waited_on()
                 progress.current = ref.record_type
                 acc = per_type_counts[ref.record_type]
                 # Start the per-type clock at the TOP of the ref, not after the
@@ -1145,14 +1166,12 @@ class FSIndexer:
                 _since_commit += 1
                 if _since_commit >= _INDEX_COMMIT_BATCH:
                     await _commit_batch()
-                    _since_commit = 0
 
             # Commit + stamp the trailing partial batch (records since the last
             # bounded-batch commit). The commit was implicit on session exit
             # before; _commit_batch makes it explicit so the trailing batch's
             # sentinels are stamped under the same write-ahead ordering.
             await _commit_batch()
-            _since_commit = 0
 
             # Reflect the complete collision view only after all primaries have
             # been parsed/skipped, so a newly-created row is available too.
@@ -1169,6 +1188,7 @@ class FSIndexer:
             for (type_name, entity_id), decision in collision_by_key.items():
                 if not decision.changed:
                     continue
+                await _hand_over_if_waited_on()
                 entity = await driver.get_by_id(entity_id, type_name)
                 if entity is None or not hasattr(entity, "reflect_asset_occurrences"):
                     continue
@@ -1176,7 +1196,6 @@ class FSIndexer:
                 _since_commit += 1
                 if _since_commit >= _INDEX_COMMIT_BATCH:
                     await _commit_batch()
-                    _since_commit = 0
             await _commit_batch()
 
         # The writer session ends above, before the potentially long orphan

@@ -19,3 +19,4 @@ export * from './DockPointer';
 export * from './GitOrigin';
 export * from './FSOrigin';
 export * from './Kind';
+export * from './ReturnedValue';
