@@ -61,6 +61,19 @@ class ServiceEndpoint(Entity):
         return await cls.get_all({"match": {"parent_type_id": str(deployment_typeid)}})
 
     @classmethod
+    async def adopt_from_hub(cls, payload: Any) -> Optional["ServiceEndpoint"]:
+        """Hold a hub endpoint here AT THE HUB'S ID (``remote``); a call on it is forwarded to the hub."""
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+
+        if not isinstance(payload, dict) or not is_valid_entity_id(str(payload.get("id") or "")):
+            return None
+        fields = {k: v for k, v in payload.items() if k in cls.model_fields}
+        endpoint = cls(**fields)
+        endpoint.remote = True
+        await endpoint.save()
+        return endpoint
+
+    @classmethod
     async def find_existing(cls, deployment_typeid: str, name: str) -> Optional["ServiceEndpoint"]:
         """The endpoint *name* of *deployment_typeid*, or None — a lookup, never a derived id."""
         return next((row for row in await cls.of_deployment(deployment_typeid) if row.name == name), None)

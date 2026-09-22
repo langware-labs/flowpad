@@ -249,6 +249,7 @@ async def _on_server_startup():
     await _migrate_list_configs()
     await _prune_retired_type_rows()
     await _prune_web_delivery_rows()
+    await _start_agent_server()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
     await _start_system_content_index()
@@ -395,6 +396,24 @@ async def _prune_retired_type_rows() -> None:
                 await remove_orphan_row(str(record.id), type_name)
     except Exception:
         logging.getLogger(__name__).exception("Retired entity types: prune failed")
+
+
+#: The one supervisor of agent placements on this machine (``builtin/agent_serve``).
+_AGENT_SERVER = None
+
+
+async def _start_agent_server() -> None:
+    """Every agent placement here serves: its ``chat`` endpoint exists (channel loops follow)."""
+    global _AGENT_SERVER
+    try:
+        from flow_sdk.builtin.agent_serve import AgentServer
+
+        # Channel loops stay off while the bus runner still answers channels
+        # (``stream_inbox/agent_runner``) — two answerers would reply twice.
+        _AGENT_SERVER = AgentServer(serve_channels=False)
+        await _AGENT_SERVER.start()
+    except Exception:
+        logging.getLogger(__name__).exception("Agent server: start failed")
 
 
 async def _prune_web_delivery_rows() -> None:
@@ -639,6 +658,12 @@ async def _start_cloud_ws_listener() -> None:
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
+
+    if _AGENT_SERVER is not None:
+        try:
+            await _AGENT_SERVER.stop()
+        except Exception:
+            logging.getLogger(__name__).debug("Agent server: stop failed", exc_info=True)
 
     try:
         from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks

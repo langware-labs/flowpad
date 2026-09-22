@@ -39,6 +39,8 @@ class DataSourceSpec(AssetDocumentSpec):
     config: dict[str, Any] = Field(default_factory=dict, alias="data_driver_config")
     #: Whose source: the local user or an Agent (a TypeId string). Absent = the local user.
     owner: Optional[str] = None
+    #: The one place (a Deployment id) that answers this source for its owning agent.
+    answer_place: Optional[str] = None
     reflect: Optional[str] = None
     reflect_into: Optional[str] = None
     poll_interval_seconds: Optional[int] = None

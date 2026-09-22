@@ -200,6 +200,11 @@ class DataSource(Entity):
     # the local user), so nothing depends on a backfill having run. PRIVATE: an
     # owner is a fact about this machine, never a thing that travels.
     owner: Optional[TypeId] = APIField(default=None, sharing=Sharing.PRIVATE)
+    #: The one place (a Deployment id) that answers this source for its owning agent.
+    #: A fact of the SOURCE — it is in ``data_source.json`` — so every machine that
+    #: holds the file agrees which of them answers (``agent_serve.answers_here``).
+    #: Unset: every place holding it answers, as before places existed.
+    answer_place: Optional[str] = APIField(default=None, description="The Deployment that answers this source")
 
     # The mailbox allowlist, cached for the gate that runs on every inbound
     # message (`AgentMailbox.allowed`). The HUB owns this policy; this is a copy,

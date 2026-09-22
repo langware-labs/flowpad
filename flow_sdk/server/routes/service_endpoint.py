@@ -112,6 +112,10 @@ async def service_http(request: Request, endpoint_id: str, sub_path: str = "") -
         return await _via_hub(request, endpoint, path)
     if endpoint.backend.type == "static":
         return await _serve_static(request, endpoint, sub_path)
+    if endpoint.backend.type == "agent":
+        from flow_sdk.server.routes.agent_chat import agent_chat_http  # noqa: PLC0415
+
+        return await agent_chat_http(request, endpoint, sub_path, _verified_user(request.headers))
     return await _proxy_http(request, endpoint, path)
 
 

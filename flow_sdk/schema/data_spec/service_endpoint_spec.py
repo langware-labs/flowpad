@@ -188,10 +188,25 @@ class ProxyBackend(DataSpec):
     health: str = "/"
 
 
-Backend = Annotated[Union[StaticBackend, ProxyBackend], Field(discriminator="type")]
+class AgentBackend(DataSpec):
+    """An agent, answered by the FlowPad app that holds the placement.
+
+    No port and no folder: the app itself takes the request and runs the agent's
+    turn on this placement (``builtin/agent_serve``). A deployed agent's ``chat``
+    endpoint is one — reached through the hub like any other, never directly.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["agent"] = "agent"
+    agent_id: str
+
+
+Backend = Annotated[Union[StaticBackend, ProxyBackend, AgentBackend], Field(discriminator="type")]
 
 
 __all__ = [
+    "AgentBackend",
     "Backend",
     "ChatOpenAIProtocol",
     "ExternalProtocol",

@@ -361,6 +361,30 @@ class Deployment(Entity):
 
         return await ServiceEndpoint.of_deployment(str(self.typeid))
 
+    @action.get(action_name="endpoints")
+    async def endpoints_action(self):
+        """`GET /deployment/<id>/endpoints` — what this placement serves.
+
+        For a cloud placement the hub is authoritative: its rows are read now and
+        adopted here at the hub's ids (``remote``), so a ``service`` call on one is
+        forwarded to the hub, and the hub to the machine — the way a desktop chats
+        with an agent placed in a box.
+        """
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if self.remote:
+            from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+            data = await hub_http.hub_get(self.get_type(), self.id, "endpoints")
+            rows = data.get("endpoints") if isinstance(data, dict) else None
+            if not isinstance(rows, list):
+                return ApiFailResponse(message="the hub did not answer for this cloud placement", status_code=502)
+            endpoints = [e for e in [await ServiceEndpoint.adopt_from_hub(row) for row in rows] if e is not None]
+        else:
+            endpoints = await self.endpoints()
+        return ApiSuccessResponse(data={"endpoints": [e.model_dump(mode="json") for e in endpoints]})
+
     async def element(self) -> Optional[Entity]:
         """The entity this places — the parent. Agent, WebApp, ComputeNode…
 
