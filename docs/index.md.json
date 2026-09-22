@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "f8ee59e10e4271616b109642b2bda6dfb0638213a7c8fa9bbe8c9fa4eabdc5f0",
+  "inputs_hash": "18007a4a3a5c5312ddbd8bf5abc641d3ee78daec8928662c748edb93fe488917",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -191,8 +191,8 @@
       "rel_path": "glossary.md",
       "title": "Glossary — our nouns vs. the ecosystem's",
       "summary": "Cross-walk of our nouns against Claude Code's and OpenClaw's: provider mirrors versus ours, the three contexts, type·subkind·kind, and naming rules.",
-      "content_hash": "5b68f56fc347d21f26c01ceeb5767419858591f1a29c3f31a7fc77044cb6bbdf",
-      "size_bytes": 35519
+      "content_hash": "ac07e92754cc7c186bab39bac91d0ce39e2cd2979c10f992d6f6648ca66959da",
+      "size_bytes": 36382
     },
     {
       "name": "icons.md",
@@ -247,8 +247,8 @@
       "rel_path": "ontology.md",
       "title": "Ontology — type, subkind, kind",
       "summary": "Ground truth for type, subkind and kind: a kind names a shape never a row, composition rules, namespaces, and how kinds are declared and resolved.",
-      "content_hash": "3a0017c630819f892fb73bce6307bc7c334878fd63b1c1829825a7e02bde7a0d",
-      "size_bytes": 10345
+      "content_hash": "d5a3bb90ac8def2bb8d2374be7eb26ea168de12a467d9ac23307a6aa9c2db71a",
+      "size_bytes": 14292
     },
     {
       "name": "playwright-usage.md",
@@ -461,7 +461,7 @@
       "rel_path": "data-management",
       "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the single shape system with its kind registry, data sources and datasets, records, search and the SQLite layer underneath.",
       "child_typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
-      "child_inputs_hash": "b621bf7deb54b28ea98a5c8b25527b80482076ca304a22eba8ee66c94b58bdc6"
+      "child_inputs_hash": "08e12e2167dfc64b26e32d2aa5fc3bc6e14468f4f9e761b4ad3097a747848f4b"
     },
     {
       "name": "flows",
@@ -517,7 +517,7 @@
       "rel_path": "snippets",
       "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
       "child_typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
-      "child_inputs_hash": "e0eb4453788680d3ee4293e506c950127a5c2fa75480cf017c168a7d34c45954"
+      "child_inputs_hash": "f36bfbcee29da2c5380cd3923410cf564cb0d475f1bc6142c5fe3ea739b70947"
     },
     {
       "name": "tabs",
@@ -527,6 +527,6 @@
       "child_inputs_hash": "ca533fab86503809f37a9360c1517505abf503b1b0f9dab6950e9d54f2943730"
     }
   ],
-  "generated_at": "2026-09-22T20:38:26.102751+00:00",
+  "generated_at": "2026-09-22T21:15:15.480021+00:00",
   "latest_process_ref": ""
 }
