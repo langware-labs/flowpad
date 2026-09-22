@@ -201,9 +201,34 @@ async def _steps(run: _Run, root: Any) -> WizardResult:
             # know whether it came from a person, a command or a model.
             run.values[step.bind] = answer.value
 
-    if failed is not None:
-        return _answer(run, WizardResult.not_yet, failed.detail)
+    unmet = _still_unmet(run)
+    if unmet is not None:
+        return _answer(run, WizardResult.not_yet, unmet.detail)
     return _held_to_output(run, _answer(run, WizardResult.satisfied, ""))
+
+
+def _still_unmet(run: _Run) -> Optional[ReturnedValue]:
+    """The first failed step whose GOAL no later step reached, or None.
+
+    A wizard answers for the goals it was asked to reach, not for every attempt
+    it made on the way. Two rungs of a fallback are one goal, and they say so by
+    carrying the same completion check — the resolved command a step's answer
+    reports in ``check.command``. So a rung that failed and was covered by a
+    later step that reached the SAME goal does not make the run a failure, while
+    a step with a goal of its own that nobody reached still does.
+    """
+    answers = list(run.steps.values())          # in the order the steps ran
+    for position, answer in enumerate(answers):
+        if answer.ok:
+            continue
+        goal = answer.check.command if answer.check is not None else None
+        covered = goal is not None and any(
+            later.ok and later.check is not None and later.check.command == goal
+            for later in answers[position + 1:]
+        )
+        if not covered:
+            return answer
+    return None
 
 
 def _answer(run: _Run, make: Callable[..., WizardResult], detail: str) -> WizardResult:

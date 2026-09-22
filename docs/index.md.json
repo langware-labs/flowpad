@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "01c373124bf3feddfa347faed2f643b89223599e5ae054bfe4e9c5c8507f9e10",
+  "inputs_hash": "39a5d4f7dc8155e79ee6c7fe0470b25a7335c59998cf4c3c90d872ec543cc03a",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -247,8 +247,8 @@
       "rel_path": "ontology.md",
       "title": "Ontology — type, subkind, kind",
       "summary": "Ground truth for type, subkind and kind: a kind names a shape never a row, composition rules, namespaces, and how kinds are declared and resolved.",
-      "content_hash": "d5a3bb90ac8def2bb8d2374be7eb26ea168de12a467d9ac23307a6aa9c2db71a",
-      "size_bytes": 14292
+      "content_hash": "5dd9bd980272f5df4f5dc025a3aec1518d65058908f4c7de19ebd1270052b605",
+      "size_bytes": 14277
     },
     {
       "name": "playwright-usage.md",
@@ -461,7 +461,7 @@
       "rel_path": "data-management",
       "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the single shape system with its kind registry, data sources and datasets, records, search and the SQLite layer underneath.",
       "child_typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
-      "child_inputs_hash": "08e12e2167dfc64b26e32d2aa5fc3bc6e14468f4f9e761b4ad3097a747848f4b"
+      "child_inputs_hash": "0f9313e09e5f0c7dc1e81e4b2c2c1a8c6eb2b5be31ed9c84be88e03b6279798f"
     },
     {
       "name": "flows",
@@ -517,7 +517,7 @@
       "rel_path": "snippets",
       "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
       "child_typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
-      "child_inputs_hash": "ac630dec3c0be5374d6ff1c52f6eaaa57f78158edb03ccbce325b60a578ad0f3"
+      "child_inputs_hash": "321c8dc8fa3d9fddbc3d571ee0b0a22ba386abaec4ed926b8666442e2f2fdb43"
     },
     {
       "name": "tabs",
@@ -527,6 +527,6 @@
       "child_inputs_hash": "ca533fab86503809f37a9360c1517505abf503b1b0f9dab6950e9d54f2943730"
     }
   ],
-  "generated_at": "2026-09-22T21:16:48.190544+00:00",
+  "generated_at": "2026-09-22T21:26:04.526492+00:00",
   "latest_process_ref": ""
 }

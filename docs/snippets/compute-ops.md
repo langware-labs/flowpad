@@ -95,10 +95,10 @@ turn in the SAME session runs the next op with `executor=answer.executor`. A tur
 that ran out of time is `timed_out` — that process is busy, not done, so it is
 not prompted again on top of itself.
 
-**What the sequencing wizard then answers.** A wizard reports for every step it
-ran, so the cheap rung failing makes the RUN `NOT_YET` even though the second
-rung reached the goal — the goal holds and the run still says not yet. Ask the
-last step, or the check, for "did we get there"; see
+**What the sequencing wizard then answers.** The shared check is what makes the
+pair one goal: a wizard counts goals, not attempts, so the cheap rung missing
+does not fail the run once the second rung reaches that same goal — the miss
+stays on its own step. See
 [wizards](wizards.md#3-a-fallback-is-two-steps-with-the-same-check). In Python
 the same pair is two `run_op` calls and the second answer is the one you keep.
 

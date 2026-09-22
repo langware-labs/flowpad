@@ -100,7 +100,7 @@ result = await run_wizard(
 result.steps["cheap"].exit_code    # ExitCode.NOT_YET — it ran and did not get there
 result.steps["thorough"].ok        # True — the second rung reached the goal
 (tmp / "tool").exists()            # True
-result.exit_code                   # ExitCode.NOT_YET — the RUN still reports the failed rung
+result.ok                          # True — the GOAL holds; the rung that missed is on the step
 ```
 
 `on_fail: "continue"` is what makes the pair a fallback rather than an abort,
@@ -108,11 +108,12 @@ and the shipped `dev-toolchain` wizard is four steps of exactly this shape — a
 `cli` rung and an `agent` rung per tool, sharing a check. When the cheap rung
 reaches the goal the expensive one costs one check and answers `ran=False`.
 
-**Read the run's verdict carefully.** A wizard answers for every step it ran, so
-one failed rung makes the run `NOT_YET` even when a later rung with the same
-check reached the goal — as above, where `tool` exists and the run still says
-not yet. A caller that wants "did we get there" asks the LAST step, or the check
-itself; the run's own verdict answers "did everything I ran succeed".
+**A wizard answers for GOALS, not attempts.** Two rungs of a fallback are one
+goal and say so by carrying the same completion check, so a rung that failed and
+was covered by a later step reaching that same goal does not make the run a
+failure — the miss stays visible on its own step. A step with a goal of its own
+that nobody reached still does: had `thorough` checked something else, the run
+would be `NOT_YET` and name it.
 
 ## 4. A declared output binds
 

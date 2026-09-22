@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "ac630dec3c0be5374d6ff1c52f6eaaa57f78158edb03ccbce325b60a578ad0f3",
+  "inputs_hash": "321c8dc8fa3d9fddbc3d571ee0b0a22ba386abaec4ed926b8666442e2f2fdb43",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
@@ -71,8 +71,8 @@
       "rel_path": "compute-ops.md",
       "title": "Compute ops — one call that converges, composes, and can ask",
       "summary": "Compute op snippets: one convergent call per subkind, asking a person once, a fallback as two ops, retries as the caller's, cancel and silence answers.",
-      "content_hash": "b1839d1cff59e33b67b20b679fd2d8a9e2989013da414dd3d69bf9954e449c5d",
-      "size_bytes": 5181
+      "content_hash": "be0fdc260e42e056c802acafb76fe8bf3113d8f06018b808a135e94832dcd968",
+      "size_bytes": 5153
     },
     {
       "name": "connections.md",
@@ -167,8 +167,8 @@
       "rel_path": "wizards.md",
       "title": "Wizards — a sequence of calls, and what travels between them",
       "summary": "Wizard snippets, every fence tested: step order and a step with nothing to do, values passed between steps as environment, a fallback as two steps with one check, a declared output that binds, and a cycle that answers instead of recursing.",
-      "content_hash": "ff855feb71a071829e01b0ab939c157391885e6acc5ecdded868642f8caf93bf",
-      "size_bytes": 7668
+      "content_hash": "ed61eb5d833cd52cb0d9f6eef1d6d77dad9d5286466737203207e9be6bf7e3f8",
+      "size_bytes": 7709
     },
     {
       "name": "workflows.md",
@@ -180,6 +180,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T21:16:48.032516+00:00",
+  "generated_at": "2026-09-22T21:26:04.426267+00:00",
   "latest_process_ref": ""
 }

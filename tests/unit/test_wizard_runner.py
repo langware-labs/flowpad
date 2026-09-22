@@ -211,13 +211,9 @@ async def test_continue_lets_the_rest_of_the_run_proceed(tmp_path):
     assert list(result.steps) == ["first", "second"]
     assert result.steps["first"].exit_code is ExitCode.NOT_YET
     assert result.steps["second"].ok and result.steps["second"].ran is False
-    assert result.exit_code is ExitCode.NOT_YET, "one step failing is still a run that did not finish"
-    # OPEN (2026-09-23): this collides with the fallback idiom compute-ops.md §3
-    # recommends and the shipped dev-toolchain wizard uses — a cheap rung failing
-    # and an expensive rung with the SAME check reaching the goal still answers
-    # NOT_YET. Either the verdict is "did everything I ran succeed" (here) or "does
-    # the goal hold at the end"; changing it changes what every caller reads, so it
-    # waits on a decision. docs/snippets/wizards.md §3 states today's behaviour.
+    # The two ops have DIFFERENT checks — `have broken` and `have jq` — so the
+    # failed one is a goal of its own that nobody reached: the run did not finish.
+    assert result.exit_code is ExitCode.NOT_YET
 
 
 # ── arguments ────────────────────────────────────────────────────────────────
