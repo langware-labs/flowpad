@@ -11,8 +11,11 @@
  *   own `grant_to` cannot do this — it needs an account that already exists.
  * * **Already here:** their allowance is UPDATED in place. Re-uploading a corrected sheet is how a
  *   whole team gets re-budgeted, so a repeated address must not mint a second wallet for the same
- *   person. This is matched on the email the hub already resolved, so it also catches the hub's own
- *   per-user default rather than shadowing it with a duplicate.
+ *   person. This is matched on the email the hub reports on the row: the holder's address for an
+ *   accepted allowance (the hub's own per-user default included), or the invitee's address while
+ *   a share is still PENDING -- so a second press while the first invitation is in flight
+ *   re-budgets the pending row instead of minting a second blank one. The hub enforces the same
+ *   rule on its side (one allowance per person per pool) the moment the share is accepted.
  *
  * Nothing here aborts on the first failure: rows are independent, and someone importing forty
  * people needs to know which one bounced, not to lose the other thirty-nine.

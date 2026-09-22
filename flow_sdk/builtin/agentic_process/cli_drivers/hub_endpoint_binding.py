@@ -108,7 +108,7 @@ async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, di
 
 def _hub_user_typeid() -> str | None:
     """The hub identity this box is signed in as, in the same spelling an endpoint's
-    ``principal_typeid`` uses (``user-<uuid>``), or ``None`` when signed out.
+    ``holder_typeid`` uses (``user-<uuid>``), or ``None`` when signed out.
 
     The box's LOCAL user is a different person as far as ids go -- the bootstrap ``user`` is
     ``uname: local`` with a v5 id minted here -- so a screen cannot ask "is this budget mine"
