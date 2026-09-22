@@ -1677,6 +1677,10 @@ msgstr "הוק סוכן"
 msgid "Agent inbox not found"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Agent is public"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #~ msgid "Agent name"
 #~ msgstr "שם הסוכן"
@@ -2169,6 +2173,14 @@ msgstr "כל אחד עם גישה יכול לפתוח את {entityType} ישיר
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
 msgstr "כל מי שיש לו הקישור יכול להצטרף כחבר. הקישור הועתק ללוח ההעתקים שלך — לא ניתן להציג אותו שוב."
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone with the link can view this agent — remove to make it private again"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone with the link can view this agent."
+msgstr ""
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Anyone you share with can open, use and delete this sandbox."
@@ -5017,6 +5029,10 @@ msgstr ""
 msgid "Could not load your token plan."
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Could not make the agent public"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentPlaceEmail.tsx
 #~ msgid "Could not move email here"
 #~ msgstr ""
@@ -5096,6 +5112,10 @@ msgstr "לא ניתן להסיר גישה"
 
 #: src/components/organization/org-node-management.tsx
 msgid "Could not remove member"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Could not remove public access"
 msgstr ""
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
@@ -10575,6 +10595,10 @@ msgstr "סוג עדשה \"{0}/{1}\" אינו נתמך."
 msgid "Let an agent assess progress and fill in missing fields"
 msgstr "לאפשר לסוכן להעריך את ההתקדמות ולהשלים שדות חסרים"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Let anyone with the link view this agent — its files stay private"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Let other participants see when messages are delivered or read."
 msgstr "אפשר למשתתפים אחרים לראות מתי הודעות נמסרו או נקראו."
@@ -13644,6 +13668,10 @@ msgstr "רק הבעלים של סנדבוקס יכול להפעיל אותו. א
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "כאן מוצגים רק ערכי רתמה — יש להפעיל את \"Show all\" כדי לראות את הכול."
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Only people you share with can view this agent."
+msgstr ""
+
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -15395,6 +15423,10 @@ msgstr "זמן PTY"
 msgid "PTY Viewer"
 msgstr "מציג PTY"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Public access removed"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Publish"
@@ -16051,6 +16083,10 @@ msgstr ""
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Remove option"
 msgstr "הסרת אפשרות"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Remove public access"
+msgstr ""
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
@@ -17863,6 +17899,10 @@ msgstr "הגדר פרויקט שיחה"
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set project"
 msgstr "הגדר פרויקט"
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Set public"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
@@ -19777,6 +19817,10 @@ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "The hub makes this call itself, down this endpoint's chain. A vendor OAuth login or an API key stored on this machine is never used for it — with no key-holding root the test fails rather than falling back."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "The hub refused the change."
 msgstr ""
 
 #: src/components/account/user-info.tsx
