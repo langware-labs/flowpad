@@ -10,7 +10,7 @@ const assert = require('assert');
 const UvManager = require('./uv-manager');
 const {
   needsShellOnWin, quoteWinCmd, parseNetstatPids, isInstallProgressLine,
-  pythonVersionFromPyproject, PYTHON_VERSION,
+  pythonVersionFromPyproject, getPythonVersion, tryPythonVersion, upgradeCommand,
 } = UvManager;
 
 const IS_WIN = process.platform === 'win32';
@@ -58,8 +58,12 @@ passed += 2;
   // The runtime value must be whatever the repo's pyproject.toml declares —
   // the whole point is that the shell cannot drift from the package.
   const repoToml = require('fs').readFileSync(require('path').join(__dirname, '..', 'pyproject.toml'), 'utf8');
-  eq(PYTHON_VERSION, pythonVersionFromPyproject(repoToml), 'PYTHON_VERSION == repo requires-python floor');
-  ok(/^\d+\.\d+$/.test(PYTHON_VERSION), `PYTHON_VERSION is a bare minor (${PYTHON_VERSION})`);
+  const floor = pythonVersionFromPyproject(repoToml);
+  eq(getPythonVersion(), floor, 'getPythonVersion() == repo requires-python floor');
+  ok(/^\d+\.\d+$/.test(floor), `pin is a bare minor (${floor})`);
+  eq(tryPythonVersion(), floor, 'tryPythonVersion() returns the pin when the file exists');
+  eq(upgradeCommand(), `uv tool install flowpad@latest --python ${floor} --force`,
+    'recovery command mirrors the install with the pin');
 }
 
 // ── quoteWinCmd ─────────────────────────────────────────────────────────────

@@ -7,14 +7,15 @@ const log = require('electron-log');
 const crypto = require('crypto');
 const UvManager = require('./uv-manager');
 const { createShutdown, relaunchAfterStop } = require('./shutdown');
-const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
+const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 
 // Exact, copy-pasteable terminal commands surfaced to the user when the backend
-// fails to come up in time — mirrors the upgrade uv-manager.js itself runs
-// (`uv tool install flowpad@latest --python <PYTHON_VERSION> --force`, where the
-// version is the `requires-python` floor read from pyproject.toml). Keep these
-// in sync with uv-manager.js's upgrade()/installLatest().
-const UPGRADE_COMMAND = `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force`;
+// fails to come up — `upgradeCommand()` is the same string uv-manager.js's
+// upgrade()/installLatest() run (`uv tool install flowpad@latest --python <pin>
+// --force`, the pin being the `requires-python` floor read from the bundled
+// pyproject.toml). Resolved when a panel is shown, not at load: a build missing
+// that file must still launch a healthy install (see getPythonVersion).
+const upgradeCommand = () => UvManager.upgradeCommand();
 const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
 
@@ -798,7 +799,7 @@ function showStartupErrorPanel(detail, { retryable = false } = {}) {
   const payload = {
     detail,
     retryable,
-    upgradeCommand: UPGRADE_COMMAND,
+    upgradeCommand: upgradeCommand(),
     diagnoseCommand: DIAGNOSE_COMMAND,
   };
   startupFailed = true;
@@ -812,7 +813,7 @@ function showStartupErrorPanel(detail, { retryable = false } = {}) {
   dialog.showErrorBox(
     'Flowpad couldn’t start',
     `${detail}\n\n` +
-      `1) Upgrade Flowpad, then relaunch:\n   ${UPGRADE_COMMAND}\n\n` +
+      `1) Upgrade Flowpad, then relaunch:\n   ${upgradeCommand()}\n\n` +
       `2) If that doesn’t work, run:\n   ${DIAGNOSE_COMMAND}`,
   );
   return false;
