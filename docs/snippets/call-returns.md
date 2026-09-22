@@ -165,6 +165,13 @@ except ValidationError as refused:
 "unknown kind 'snippet.greetin'" in reason    # True — refused at read, never Any
 ```
 
+That `class Greeting(DataSpec)` is the registration: a kind exists once the
+module declaring it has been imported. So a kind is nameable here — in flow_sdk,
+or in an asset that ships a module, like a data source — and NOT in an op's own
+folder, which holds a JSON document and a markdown file. An op returns a
+primitive or a kind that already exists. The rule, and the one mechanism to
+reuse if that changes, are in [ontology](../ontology.md).
+
 ## 5. Nothing raises for an outcome
 
 Refused, busy, never started, timed out, failed: all returned. Only bad input

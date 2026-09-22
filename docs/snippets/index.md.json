@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "74794d1183005d3a3a4edc462c4edebc6ac14d16303e0251e86d4058ed37924c",
+  "inputs_hash": "e0eb4453788680d3ee4293e506c950127a5c2fa75480cf017c168a7d34c45954",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
@@ -55,24 +55,24 @@
       "rel_path": "agents-on-channels.md",
       "title": "An agent on a channel — snippets",
       "summary": "Snippets for putting an agent on a messaging channel like WhatsApp: the credential, the app-runs-it variant, and the your-process-runs-the-loop variant.",
-      "content_hash": "11d8e4ab0d54db9151a5b3a85faf256401a64e219e55f5a9d62d16a950919952",
-      "size_bytes": 4944
+      "content_hash": "b9a3de8c243936d483cf933e96e2caeee652313742a40c849c9780ba556e2639",
+      "size_bytes": 5482
     },
     {
       "name": "call-returns.md",
       "rel_path": "call-returns.md",
       "title": "Call → ExitCode → Return",
       "summary": "The call-return contract, every fence tested: ComputeOp as one call per subkind, ReturnedValue subclasses, no raised outcomes, role timeouts, ask, wizard and agent continuation.",
-      "content_hash": "29d1475e1a4f155ee8f7f862d3e504e8a7ebd5be7b1cfd6cc89d00eda6b1b06d",
-      "size_bytes": 17017
+      "content_hash": "5b5ba70e931dc99d313be5b009f003e236f6f11b04238666892b16898eff0c8a",
+      "size_bytes": 17466
     },
     {
       "name": "compute-ops.md",
       "rel_path": "compute-ops.md",
       "title": "Compute ops — one call that converges, composes, and can ask",
       "summary": "Compute op snippets: one convergent call per subkind, asking a person once, a fallback as two ops, retries as the caller's, cancel and silence answers.",
-      "content_hash": "66cabcba34d5c75cda0d70826c0eb76cfce2ecebe89e8ae66cf0f134fdc4dc4e",
-      "size_bytes": 4496
+      "content_hash": "93381e4ec1372e151c35af2c86e25a6de7ee5767f46d5a5717a4854e8479a490",
+      "size_bytes": 4730
     },
     {
       "name": "connections.md",
@@ -127,8 +127,8 @@
       "rel_path": "pipes.md",
       "title": "Pipes — wiring a source to whatever consumes it",
       "summary": "Runnable examples wiring a source to its consumer: one sync cycle, folder-to-folder mirroring with reflect, and following changes with ack and redelivery.",
-      "content_hash": "27a0f09687b3f85660047293ef0cf62754a4cab28557f7a0ee82c56f7b30e272",
-      "size_bytes": 7883
+      "content_hash": "206c7cd59f124ed3e6aa68a47e9de23f5c47438124bc8d02d3eb5b63577385fe",
+      "size_bytes": 8177
     },
     {
       "name": "processes.md",
@@ -172,6 +172,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T11:53:02.843835+00:00",
+  "generated_at": "2026-09-22T20:38:25.912618+00:00",
   "latest_process_ref": ""
 }

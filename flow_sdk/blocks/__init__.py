@@ -195,9 +195,10 @@ class _AgentRunner:
     def _output(self, text: str, executor: str) -> PromptResult:
         """The turn's reply as a value, held to the persona's declared shape.
 
-        Every return path in ``run`` goes through here — including the two that
-        answer from a record rather than from a fresh turn — so a replayed turn
-        and a live one produce the same shape, not merely the same text.
+        Both value-bearing returns go through here, and ``TurnEngine`` hands
+        back one ``TurnEvent`` whether the turn was live or replayed from a
+        record — so the two produce the same shape, not merely the same text. A
+        refusal returns before this: it has no reply to shape.
         """
         from flow_sdk.core.compute.declared_value import (  # noqa: PLC0415
             DeclaredShapeError,

@@ -40,7 +40,10 @@ and `output_spec_kind` is what the person provides:
 ```
 
 `output_spec_kind` names a REGISTERED kind — a primitive, or a DataSpec with a
-`spec_kind` — and an unknown one is refused when the document is read.
+`spec_kind` — and an unknown one is refused when the document is read. An op
+cannot declare a shape of its OWN: this folder holds a JSON document and a
+markdown file, and a kind is registered by importing the module that declares
+it. See [ontology](../ontology.md) for what to do the day an op needs one.
 
 The op raises the question and waits a bounded time. A live tab is sent to
 `win/`, the chrome-less layout where the routed view IS the window; with no tab
