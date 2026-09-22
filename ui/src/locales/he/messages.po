@@ -4459,9 +4459,8 @@ msgstr "יש לחבר את חשבון ה-GitHub שלך כדי לפתוח אות�
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/account/user-info.tsx
-#: src/components/connections-manager.tsx
+#: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Connected"
 msgstr "מחובר"
 
@@ -5156,6 +5155,7 @@ msgstr "לא ניתן להתחבר לשרת. יש לנסות שוב בעוד ר�
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr ""
 
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not read the snippet"
 msgstr ""
@@ -12656,13 +12656,13 @@ msgstr "אין אירועים עדיין"
 msgid "No feed items"
 msgstr "אין פריטים בהזנה"
 
-#: src/components/assets/MarkdownIndexPanel.tsx
-msgid "No files"
-msgstr "אין קבצים"
-
 #: src/components/code-editor/EditorFileTree.tsx
 msgid "No file tree for this location"
 msgstr ""
+
+#: src/components/assets/MarkdownIndexPanel.tsx
+msgid "No files"
+msgstr "אין קבצים"
 
 #: src/components/code-editor/CodeEditor.tsx
 msgid "No files open"
@@ -13392,13 +13392,12 @@ msgid "Not available in Local mode"
 msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/connections-manager/connection-state-visual.ts
 msgid "Not checked"
 msgstr "לא בדוק"
 
 #: src/components/account/hub-status-visuals.ts
-#: src/components/connections-manager.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/connections-manager/connection-state-visual.ts
 msgid "Not connected"
 msgstr "לא מחובר"
 
@@ -15137,13 +15136,13 @@ msgstr "תצוגה מקדימה"
 msgid "Preview"
 msgstr "תצוגה מקדימה"
 
-#. placeholder {0}: location.path
-#: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
-msgid "Preview {0}"
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Preview — double-click to keep open"
 msgstr ""
 
+#. placeholder {0}: location.path
+#: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
+msgid "Preview {0}"
 msgstr "תצוגה מקדימה של {0}"
 
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
@@ -15928,8 +15927,7 @@ msgstr "פריטים שנערכו לאחרונה ושיחות צ'אט"
 msgid "Reconnect"
 msgstr "התחברו מחדש"
 
-#: src/components/connections-manager.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/connections-manager/connection-state-visual.ts
 msgid "Reconnect needed"
 msgstr "נדרשת התחברות מחדש"
 
@@ -17071,7 +17069,6 @@ msgstr "פועל ברקע."
 msgid "Running on the host's machine · status: {0}"
 msgstr "פועל על מחשב המארח · מצב: {0}"
 
-#: src/components/code-editor/SnippetView.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Running…"
 msgstr "הפעלה..."
@@ -19317,6 +19314,7 @@ msgstr "עדיין עובד — אורז ומעלה את הקבצים המצור
 msgid "Still working — waiting on the cloud. This can take a minute."
 msgstr "עדיין עובד — ממתין לענן. זה עשוי לקחת דקה."
 
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -21007,6 +21005,10 @@ msgstr "משימות"
 msgid "Toggle Connected mode"
 msgstr "החלף למצב מחובר"
 
+#: src/components/code-editor/CodeEditor.tsx
+msgid "Toggle file tree"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Toggle plan mode (Shift+Tab)"
 msgstr "הפעל/כבה מצב תכנון (Shift+Tab)"
@@ -21014,10 +21016,6 @@ msgstr "הפעל/כבה מצב תכנון (Shift+Tab)"
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Toggle terminal"
 msgstr "הפוך מסוף"
-#: src/components/code-editor/CodeEditor.tsx
-msgid "Toggle file tree"
-msgstr ""
-
 
 #: src/components/theme-toggle/theme-toggle.tsx
 msgid "Toggle theme"

@@ -4459,9 +4459,8 @@ msgstr "ربط حساب GitHub مطلوب لفتح Sandbox. الشخص الذي 
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/account/user-info.tsx
-#: src/components/connections-manager.tsx
+#: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
 msgid "Connected"
 msgstr "متصل"
 
@@ -5156,6 +5155,7 @@ msgstr "تعذّر الوصول إلى الخادم. يُرجى المحاولة
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr ""
 
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not read the snippet"
 msgstr ""
@@ -12656,13 +12656,13 @@ msgstr "لا توجد أحداث حتى الآن"
 msgid "No feed items"
 msgstr "لا توجد عناصر في الخلاصة"
 
-#: src/components/assets/MarkdownIndexPanel.tsx
-msgid "No files"
-msgstr "لا توجد ملفات"
-
 #: src/components/code-editor/EditorFileTree.tsx
 msgid "No file tree for this location"
 msgstr ""
+
+#: src/components/assets/MarkdownIndexPanel.tsx
+msgid "No files"
+msgstr "لا توجد ملفات"
 
 #: src/components/code-editor/CodeEditor.tsx
 msgid "No files open"
@@ -13392,13 +13392,12 @@ msgid "Not available in Local mode"
 msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/connections-manager/connection-state-visual.ts
 msgid "Not checked"
 msgstr "لم يتم الفحص"
 
 #: src/components/account/hub-status-visuals.ts
-#: src/components/connections-manager.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/connections-manager/connection-state-visual.ts
 msgid "Not connected"
 msgstr "غير متصل"
 
@@ -15137,13 +15136,13 @@ msgstr "المعاينة"
 msgid "Preview"
 msgstr "معاينة"
 
-#. placeholder {0}: location.path
-#: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
-msgid "Preview {0}"
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Preview — double-click to keep open"
 msgstr ""
 
+#. placeholder {0}: location.path
+#: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
+msgid "Preview {0}"
 msgstr "معاينة {0}"
 
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
@@ -15928,8 +15927,7 @@ msgstr "العناصر المحرَّرة مؤخرًا وجلسات المحاد
 msgid "Reconnect"
 msgstr "إعادة الاتصال"
 
-#: src/components/connections-manager.tsx
-#: src/components/connections-manager/harness-connection-rows.tsx
+#: src/components/connections-manager/connection-state-visual.ts
 msgid "Reconnect needed"
 msgstr "يلزم إعادة الاتصال"
 
@@ -17071,7 +17069,6 @@ msgstr "قيد التشغيل في الخلفية."
 msgid "Running on the host's machine · status: {0}"
 msgstr "يعمل على جهاز المضيف · الحالة: {0}"
 
-#: src/components/code-editor/SnippetView.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Running…"
 msgstr "جارٍ التنفيذ…"
@@ -19317,6 +19314,7 @@ msgstr "لا يزال العمل جارياً — يتم حزم المرفقات
 msgid "Still working — waiting on the cloud. This can take a minute."
 msgstr "لا يزال العمل جارياً — في انتظار السحابة. قد يستغرق هذا دقيقة."
 
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -21007,6 +21005,10 @@ msgstr "المهام"
 msgid "Toggle Connected mode"
 msgstr "تبديل وضع الاتصال"
 
+#: src/components/code-editor/CodeEditor.tsx
+msgid "Toggle file tree"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Toggle plan mode (Shift+Tab)"
 msgstr "تبديل وضع التخطيط (Shift+Tab)"
@@ -21014,10 +21016,6 @@ msgstr "تبديل وضع التخطيط (Shift+Tab)"
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Toggle terminal"
 msgstr "إظهار/إخفاء الطرفية"
-#: src/components/code-editor/CodeEditor.tsx
-msgid "Toggle file tree"
-msgstr ""
-
 
 #: src/components/theme-toggle/theme-toggle.tsx
 msgid "Toggle theme"
