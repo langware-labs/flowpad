@@ -1,5 +1,7 @@
+import { i18n } from '@lingui/core';
 import {
   ConnectionKind,
+  ConnectionState,
   ConnectionStatus,
   type SecretPack,
   DEFAULT_CREDENTIAL_ENVIRONMENT,
@@ -38,6 +40,7 @@ import { CredentialConnectionRows } from './connections-manager/credential-rows-
 import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-row';
 import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
 import { methodForOAuthFlow, SignInMethodIcon } from './connections-manager/sign-in-method';
+import { STATE_VISUAL } from './connections-manager/connection-state-visual';
 import { useCheckHarnessLogins, useConnections } from '@src/hooks/use-connections';
 import { openLlmSources } from './llm-sources/llm-sources-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -118,6 +121,13 @@ const GRANT_META: Record<GrantStatus, { dot: string; text: string }> = {
   // Held but dead. Red rather than amber: amber would say "one click from
   // working", and this needs the whole grant again.
   [GrantStatus.NEEDS_REAUTH]: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-500' },
+};
+
+/** A grant, in the table's one vocabulary (`STATE_VISUAL`). */
+const GRANT_STATE: Record<GrantStatus, ConnectionState> = {
+  [GrantStatus.NONE]: ConnectionState.Disconnected,
+  [GrantStatus.HELD]: ConnectionState.Connected,
+  [GrantStatus.NEEDS_REAUTH]: ConnectionState.NeedsReauth,
 };
 
 /** How many scopes to show before collapsing the rest into a count. A dozen
@@ -390,15 +400,9 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // disables only itself).
   const [testing, setTesting] = React.useState<ReadonlySet<string>>(new Set());
 
-  // Labels live here, not in a module-level lookup table: a raw string in a
-  // Record escapes lingui extraction entirely, so the redesign had quietly made
-  // every status and grant name untranslatable.
-  const statusLabel = (grant: GrantStatus): string =>
-    grant === GrantStatus.HELD
-      ? t`Connected`
-      : grant === GrantStatus.NEEDS_REAUTH
-        ? t`Reconnect needed`
-        : t`Not connected`;
+  // The word is the table's shared one (`STATE_VISUAL`, lazy descriptors, so
+  // extraction and locale switches both still work).
+  const statusLabel = (grant: GrantStatus): string => i18n._(STATE_VISUAL[GRANT_STATE[grant]].text);
 
   const grantHint = (kind: OAuthFlowKind): string =>
     kind === 'device'

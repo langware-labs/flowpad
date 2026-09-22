@@ -1,10 +1,9 @@
 import { i18n } from '@lingui/core';
-import { msg } from '@lingui/core/macro';
-import type { MessageDescriptor } from '@lingui/core';
 import { Trans } from '@lingui/react/macro';
 import { ConnectionState, type ConnectionSpec } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { HarnessMark } from './harness-mark';
+import { STATE_VISUAL } from './connection-state-visual';
 import { Button } from '../ui/button';
 import { TableCell, TableRow } from '../ui/table';
 import { SignInMethodIcon } from './sign-in-method';
@@ -36,23 +35,6 @@ import { MachineWideCell, TextActionCell } from './machine-wide-cell';
  * tier, because signing out means running the vendor's own CLI in your own terminal.
  */
 
-/**
- * State → how it reads. Keyed by the enum, so a new state is a type error rather
- * than a row that silently falls through to the neutral dot.
- *
- * "Not checked" is a first-class answer, not a hedge: the backing field is not
- * persisted, so "nobody has asked" is the COMMON state after any restart, and
- * rendering it as "not connected" tells a signed-in user they are signed out
- * every time the backend restarts.
- */
-const STATE_VISUAL: Record<ConnectionState, { text: MessageDescriptor; dot: string }> = {
-  // The table's one vocabulary: an OAuth grant, the FlowPad account and a CLI
-  // login are all "Connected" — three words for one state read as three states.
-  [ConnectionState.Connected]: { text: msg`Connected`, dot: 'bg-emerald-500' },
-  [ConnectionState.Disconnected]: { text: msg`Not connected`, dot: 'bg-muted-foreground/40' },
-  [ConnectionState.NeedsReauth]: { text: msg`Reconnect needed`, dot: 'bg-red-500' },
-  [ConnectionState.Unknown]: { text: msg`Not checked`, dot: 'bg-muted-foreground/40' },
-};
 
 export function HarnessConnectionRows({
   rows,
