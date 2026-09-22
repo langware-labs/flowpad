@@ -1,8 +1,10 @@
 """``WizardSpec`` — the shape of ``wizard.json``.
 
-A Wizard is a folder asset holding an ordered list of steps. Each step asks a
-question of the machine (``precondition``), does something about the answer
-(``command`` or ``process``), then proves it worked (``verify``).
+A Wizard is a folder asset holding an ordered list of steps. A step CALLS one
+thing by name — a ComputeOp or another Wizard — and reads one answer back.
+Everything about HOW work is done (the check, the per-OS command, the agent,
+the question to a person, the re-check) lives in the ComputeOp; see
+``compute_op_spec``.
 
 The distinction from ``Journey``, which is also a folder of ordered steps, is
 the whole reason both exist:
@@ -11,24 +13,18 @@ the whole reason both exist:
     A Wizard DECIDES and executes.
 
 So a journey step carries ``present``/``waitFor`` and parks the run; a wizard
-step carries an exit-code map and runs unattended.
+step names a callee and runs unattended. Nothing here parks: a step that needs a
+person calls an ``ask`` op, which is bounded like any other call.
 
-Three things here are load-bearing and easy to break:
+Two things here are load-bearing and easy to break:
 
-* **The per-OS ``commands`` maps are legal only because their carrying classes
-  declare ``spec_kind``.** The authoring form has no map type at all —
-  ``to_authoring_form`` short-circuits on a registered kind before it would
-  reach the ``dict`` and fail. ``FolderSpec.files`` and ``McpSpec.env`` are the
-  precedents. Drop a ``spec_kind`` and the class stops being expressible.
-* **The keys are ``sys.platform`` values**, the same convention as
-  ``CapabilitySpec.install_commands`` (``darwin`` / ``linux`` / ``win32``) —
-  reused deliberately so the two tables can never disagree about what "this
-  machine" means. ``win32`` is POWERSHELL, because that is what the built-in
-  terminal spawns there.
-* **A step's action is two optional fields plus a validator, not a tagged
-  union.** The authoring form has no union, and ``extra="forbid"`` makes a
-  discriminated dict hostile to the field-by-field projection a foreign
-  document requires. "Exactly one of" is the honest encoding.
+* **A step is a reference, not an action.** ``kind`` + ``ref`` + ``args``, with
+  ``bind`` naming what its value is called later and ``on_fail`` saying whether
+  the sequence continues. A step that carried its own command would make the op
+  optional, and then two things would know how to run a command.
+* **``output`` binds.** A wizard that declares one is held to it, exactly as an
+  op is held to its ``output_spec_kind`` — the runner validates the collected
+  step values before answering.
 
 Stdlib + pydantic only, like the rest of ``data_spec``.
 """
@@ -171,9 +167,9 @@ class WizardSpec(DataSpec):
 class WizardIssueSpec(DataSpec):
     """One problem with a wizard document.
 
-    `loc` is pydantic's own — ``["steps", 3, "command", "commands"]`` addresses a
-    field the form is already rendering, which is the whole reason validation
-    goes to the backend instead of being duplicated in the frontend.
+    `loc` is pydantic's own — ``["steps", 3, "ref"]`` addresses a field the form
+    is already rendering, which is the whole reason validation goes to the
+    backend instead of being duplicated in the frontend.
     """
 
     spec_kind: ClassVar[str] = "wizard.issue"

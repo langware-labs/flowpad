@@ -159,6 +159,13 @@ Paths 1 and 3 are one mechanism: loading an asset imports its module, and the
 class declaration is what registers. Scoping the declaration to that import
 is what makes it safe — a name cannot be claimed before the loader has had its say.
 
+Which says what an asset CANNOT do: a folder with no module to import mints
+nothing. A `compute_op` asset is `compute_op.json` plus `setup.md`, so an op's
+`output_spec_kind` names a primitive or a kind flow_sdk registers — never a shape
+the op declares for itself. The day one needs to, the mechanism already exists:
+another `add_kind_loader` prefix, the way `ingest.` works for a data source, and
+the kinds namespaced by the asset's own name. Not a second mechanism.
+
 ## Not yet done
 
 * `Project.ns` is not wired, and nothing stamps a project's namespace into its
@@ -172,7 +179,9 @@ is what makes it safe — a name cannot be claimed before the loader has had its
 * ComputeOp is the first type with a `subkind` (`cli | prompt | agent | ask`):
   each subkind's structure is its own DataSpec under the kind
   `compute_op.<subkind>`, nested in `exe_data` rather than flattened onto the op
-  (see [call-returns](snippets/call-returns.md)).
+  (see [call-returns](snippets/call-returns.md)). An op cannot register a kind of its own
+  (see Coverage above) — no shipped op needs one, and giving a JSON document a
+  module to import is a bigger decision than it looks.
 
 * Rules 1–2 (`subkind`, derived `kind`, payload-kind) are otherwise unimplemented. The
   blockers: `Conversation.kind` is a two-repo change gating hub authorization,
