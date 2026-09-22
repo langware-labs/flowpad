@@ -49,3 +49,70 @@ def test_the_shipped_dev_toolchain_wizard_is_trusted_where_it_actually_lives():
 
     ref = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "dev-toolchain"
     assert Wizard(name="dev-toolchain", asset_ref=str(ref)).is_system() is True
+
+
+# ── refusal and busy are ANSWERS; only the HTTP edge turns them into codes ───
+
+def _folder_wizard(tmp_path, monkeypatch):
+    import json
+
+    from flow_sdk.builtin.wizard import Wizard
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard import state as wizard_state
+
+    monkeypatch.setattr(wizard_state, "run_dir", lambda wid: tmp_path / "runs" / wid)
+    monkeypatch.setattr(wizard_execute, "run_dir", lambda wid: tmp_path / "runs" / wid)
+    folder = tmp_path / "project" / "agentic-assets" / "wizard" / "demo"
+    folder.mkdir(parents=True)
+    (folder / "wizard.json").write_text(json.dumps(
+        {"name": "demo", "steps": [{"id": "a", "kind": "compute", "ref": "nothing-by-this-name"}]}
+    ))
+    return Wizard(name="demo", asset_ref=str(folder))
+
+
+def test_an_unapproved_wizard_answers_refused_and_never_raises(tmp_path, monkeypatch):
+    import asyncio
+
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, WizardResult
+
+    wizard = _folder_wizard(tmp_path, monkeypatch)
+    result = asyncio.run(wizard.run())
+    assert type(result) is WizardResult
+    assert result.exit_code is ExitCode.REFUSED and result.ran is False
+
+
+def test_run_action_maps_refused_to_403_with_the_answer_in_the_body(tmp_path, monkeypatch):
+    import asyncio
+
+    from flow_sdk.responses.response import ApiFailResponse
+
+    wizard = _folder_wizard(tmp_path, monkeypatch)
+    response = asyncio.run(wizard.run_action())
+    assert isinstance(response, ApiFailResponse) and response.status_code == 403
+    assert response.data["exit_code"] == 7 and "steps" in response.data
+
+
+def test_run_action_maps_busy_to_409_with_the_answer_in_the_body(tmp_path, monkeypatch):
+    """Another run holds the wizard: `NOT_YET` with `ran=False` — did not run,
+    try later — which the HTTP edge, and only it, spells as 409."""
+    import asyncio
+
+    from filelock import FileLock
+
+    from flow_sdk.builtin.wizard import Wizard
+    from flow_sdk.core.wizard import state as wizard_state
+    from flow_sdk.responses.response import ApiFailResponse
+
+    wizard = _folder_wizard(tmp_path, monkeypatch)
+    monkeypatch.setattr(Wizard, "is_system", lambda _self: True)
+    run_dir = wizard_state.run_dir(str(wizard.id))
+    run_dir.mkdir(parents=True, exist_ok=True)
+    held = FileLock(str(run_dir / "run.lock"))
+    held.acquire(blocking=False)
+    try:
+        response = asyncio.run(wizard.run_action())
+    finally:
+        held.release()
+    assert isinstance(response, ApiFailResponse) and response.status_code == 409
+    assert response.data["exit_code"] == 1 and response.data["ran"] is False
+    assert "already running" in response.message

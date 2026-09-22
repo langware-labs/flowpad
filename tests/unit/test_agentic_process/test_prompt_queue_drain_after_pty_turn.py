@@ -189,19 +189,24 @@ async def test_prompt_queued_during_a_pty_turn_drains_when_the_turn_ends(
     await _route_to_ap(ap.session_id, path, [])
     await _settle(before)
 
-    # Proxy assertion: we assert the queue was consumed, not that the worker
-    # produced output — `_maybe_drain_queue` pop-persists the head before it
-    # injects, and no real PTY can be spawned here.
+    # What this pins is that the turn-end seam fired and CONSUMED the head.
+    #
+    # It deliberately does NOT assert an empty queue. No real PTY can be
+    # spawned in this sandbox, so `prompt()` always fails here and the drain's
+    # requeue guard correctly puts the prompt back. An empty queue used to be
+    # the proxy for "the drain ran", but it was only ever satisfied because a
+    # failed delivery destroyed the entry — the queue went empty without the
+    # prompt going anywhere. Popping at the turn-end seam is the real signal.
     fresh = await AgenticProcess.get_by_id(str(ap.id))
-    remaining = [e["prompt"] for e in fresh.queue.entries]
     drain_checks = [
         (e.get("source"), e.get("reason"))
         for e in fresh.queue.log_entries()
         if e.get("action") == "drain_check"
     ]
-    assert remaining == [], (
+    popped_from = [e.get("source") for e in fresh.queue.log_entries() if e.get("action") == "pop"]
+    assert "ready" in popped_from, (
         f"the prompt queued mid-turn was never drained after the turn ended: "
-        f"still {remaining}; drain_check={drain_checks}; "
+        f"pops={popped_from}; drain_check={drain_checks}; "
         f"worker_status at turn end={at_turn_end}"
     )
     # ...and specifically from the turn-end seam. No other drain source is

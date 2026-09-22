@@ -6,7 +6,7 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.stream_inbox.agent_runner import _admits
+from flow_sdk.builtin.agent_serve import admits as _admits
 
 pytestmark = [pytest.mark.timeout(30)]  # do not increase timeout without approval
 

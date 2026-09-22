@@ -14,9 +14,10 @@ import { VIBE_MODEL_DEFAULT, VibeModelSelect, useVibeModelTier, type VibeModelCh
 import { VibeWorkerSelect } from './vibe-worker-select';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
-import { AgenticProcess, ProcessKind } from '@sdk';
+import { AgenticProcess, ProcessKind, toplog } from '@sdk';
+import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { Plus } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import type { AssetWorkContext } from './asset-work-context';
 import { useKeyedAssetPromptContext } from './asset-work-context';
@@ -62,6 +63,28 @@ export function VibeChatPane({
     workdir: string | null | undefined;
   } | null>(null);
   const [workerSwitchIntent, setWorkerSwitchIntent] = useState<VibeWorkerSwitchIntent | null>(null);
+
+  // `tab_switch` ready point for the vibe workspace chat: the process history is
+  // in the stream (EntityExecutionPanel hydrates the same idempotent load) and
+  // the next frame paints it. Once per process this pane is bound to — a switch
+  // between the workspace's child tabs keeps the pane and only repaints the
+  // Display, which the `painted` line covers.
+  useEffect(() => {
+    if (!process || !toplog.isOn('tab_switch')) return;
+    const started = performance.now();
+    void process.loadHistory().then(() => {
+      if (!process.historyLoaded) return; // useHistoryLoadAlert logs the failure
+      requestAnimationFrame(() => {
+        if (!claimTabSwitchReady()) return;
+        toplog.log(
+          'tab_switch',
+          `ready ${sinceTabSwitch()} kind=vibe mode=cold proc=${process.id.slice(0, 8)} history_ms=${Math.round(performance.now() - started)}`,
+        );
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per bound process, not per entity instance
+  }, [process?.id]);
+
   const [localNewSessionPending, setLocalNewSessionPending] = useState(false);
   const startingNewSession = newSessionPending ?? localNewSessionPending;
   const markNewSessionPending = useCallback(

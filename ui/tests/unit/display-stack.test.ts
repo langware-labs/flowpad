@@ -36,10 +36,10 @@ describe('displayHistory', () => {
   });
 
   it('distinguishes targets by the key their kind actually uses', () => {
-    const port3000 = { kind: 'webapp', port: 3000 } as DisplayEntry;
-    const port3001 = { kind: 'webapp', port: 3001 } as DisplayEntry;
-    expect(displayHistory([port3000], port3001)).toHaveLength(2);
-    expect(displayHistory([port3000], port3000)).toHaveLength(1);
+    const devA = { kind: 'app', typeid: 'service_endpoint-a' } as DisplayEntry;
+    const devB = { kind: 'app', typeid: 'service_endpoint-b' } as DisplayEntry;
+    expect(displayHistory([devA], devB)).toHaveLength(2);
+    expect(displayHistory([devA], devA)).toHaveLength(1);
 
     const appX = { kind: 'app', artifact_id: 'x' } as DisplayEntry;
     const appY = { kind: 'app', artifact_id: 'y' } as DisplayEntry;

@@ -26,6 +26,7 @@ import {
   RestApiMessage,
 } from '../websocket';
 import { FlowData, FlowDataSource } from '../flow_processing';
+import { toplog } from '../services/toplog';
 import { getUtmParams } from './auth';
 import { emitEntityTag } from './entity.onTag';
 import { ExpansionType } from './expand';
@@ -550,6 +551,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // tagged as WebSocket.
     if (flowData.source === FlowDataSource.Unknown) {
       flowData.source = FlowDataSource.WebSocket;
+    }
+
+    if (flowData.elementType === 'chat') {
+      toplog.log(
+        'chat_delivery',
+        `from_websocket entity=${typeId.toString()} group=${flowData.groupId ?? 'none'} t=${attributes['t'] ?? 'none'} i=${attributes['i'] ?? 'none'}`,
+      );
     }
 
     // Route to entity's handleFlowData method if it exists

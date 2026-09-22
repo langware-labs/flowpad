@@ -35,7 +35,7 @@ agentic-assets/agent/q/
 └── avatar.png
 ```
 
-The Agent is an **entity document** (`TypeInfo.manifest_layout="entity"`, see
+The Agent is an **entity document** (`AgentSpec.manifest_layout="entity"`, see
 [data-spec.md](data-management/data-spec.md#entity-document--typejson)): every field lives in
 `agent.json` — `type`, `id`, `name`, `version`, then the `AgentSpec` fields — and the system
 prompt is the plain file `system_prompt.md` beside it. A folder still holding the retired

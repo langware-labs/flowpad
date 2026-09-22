@@ -24,6 +24,7 @@ EXPECTED = {
     "AGENTIC_PROCESS": "agentic_process",
     "ARTIFACT": "artifact",
     "DEPLOYMENT": "deployment",
+    "SERVICE_ENDPOINT": "service_endpoint",
     "BOOKMARK": "bookmark",
     "ANNOTATION": "annotation",
     "COMMENT": "comment",
@@ -58,6 +59,7 @@ EXPECTED = {
     "TRANSCRIPT_CUSTOM_TITLE": "transcript_entry:custom_title",
     "TRANSCRIPT_PR_LINK": "transcript_entry:pr_link",
     "COMPUTE_NODE": "compute_node",
+    "COMPUTE_OP": "compute_op",
     "ENVIRONMENT": "environment",
     "SESSION_ANALYSIS": "session_analysis",
     "SESSION_CLASSIFICATION": "session_classification",
@@ -131,7 +133,6 @@ EXPECTED = {
     "JOB_EXECUTION": "job_execution",
     "API_KEY": "api_key",
     "LLM_ENDPOINT": "llm_endpoint",
-    "CODE_REF": "code_ref",
     "AGENT_HOOK": "agent_hook",
     "TRIGGER": "trigger",
     "PROCESS_RESULT": "process_result",
@@ -245,6 +246,7 @@ RETIRED_VALUES: dict[str, str] = {
     "credential_spec": "the named set of environment variables, now secret_pack (0.2.170; old rows are pruned at boot)",
     "data_source_cursor": "a source's per-segment position, now DataSource.cursor (one source = one stream; old rows are pruned at boot)",
     "inbox_manager": "the unread-badge singleton, now stream_inbox_manager (old rows are pruned at boot, no migration)",
+    "code_ref": "a pointer to a file/folder/glob/URL, Artifact's old base class; the class went in 0a425adcd, the name lingered unused",
 }
 
 

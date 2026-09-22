@@ -28,6 +28,8 @@ allowed-tools:
 # The third `flow show` form. Entities and files were allow-listed and SCREENS were
 # not, so the one target kind that needs no id was the one this skill could not open.
 - Bash(flow show view:*)
+- Bash(flow show snippet:*)
+- Bash(flow snippet run:*)
 - Bash(flow schema views:*)
 - Bash(flow process restart:*)
 - Bash(curl:*)

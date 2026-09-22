@@ -563,10 +563,18 @@ export class Project extends APIEntity<Project> {
 
   /** Clone/materialize the shared project's portable GitOrigin locally. */
   async setupFromGitOrigin(): Promise<Project> {
-    const response = await this.post<Project>('setup-from-git');
-    // A refused install answers with a FAIL envelope, which the client unwraps
-    // to `undefined` rather than throwing. Left alone, the next line fails on a
-    // missing field and the user is shown that instead of what went wrong.
+    let response: Project | undefined;
+    try {
+      response = await this.post<Project>('setup-from-git');
+    } catch (err: unknown) {
+      // The action answers a refused install with a 400 carrying the real
+      // reason ("Git clone failed: Repository not found"). Axios throws on the
+      // status and its own message is "Request failed with status code 400",
+      // which is what the recipient saw — the one sentence that says nothing.
+      const ax = err as { response?: { data?: { message?: string } }; message?: string };
+      throw new Error(ax.response?.data?.message ?? ax.message ?? 'The project could not be set up from its Git origin.');
+    }
+    // A FAIL envelope on a 200 unwraps to `undefined` rather than throwing.
     if (!response) throw new Error('The project could not be set up from its Git origin.');
     return dataManager.updateEntityFromJson<Project>(response as unknown as Record<string, unknown>);
   }

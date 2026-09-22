@@ -174,7 +174,7 @@ lifecycle/I/O to it.
 | `sendInput(data)` | → `ptyConnection.sendInput` |
 | `resize(cols, rows)` | → `ptyConnection.resize` |
 | `close()` | `close` action; on success (or 404) dispose connection + `status=CLOSED` |
-| `run(command) -> ShellResult` | `run` action → `{stdout, stderr, exitCode}` |
+| `run(command) -> Promise<CliResult>` | `run` action → `CliResult` (see [call-returns](../snippets/call-returns.md)) |
 | `setEnv(vars)` | `set-env` action |
 | `onOutput(fn)` | Live output subscription (gated on `attached`; undefined if not attached yet) |
 | `onLine(fn)` | ANSI-stripped line subscription (fires for replay too) |

@@ -53,6 +53,15 @@ class DataDriver(DriverRuntime, Entity):
     title: str = APIField(default="")
     description: str = APIField(default="")
     kind: str = APIField(default="")
+    ns: str = APIField(
+        default="",
+        description=(
+            "Whose ontology this driver's kinds belong to. Blank is OURS — the "
+            "flow namespace is the default and it is silent. An externally "
+            "authored driver names itself here and every kind it mints is "
+            "prefixed `--<ns>--`."
+        ),
+    )
     icon_name: str = APIField(default="")
     channel_icon_names: dict[str, str] = APIField(default_factory=dict)
     setup_wiki: str = APIField(default="")

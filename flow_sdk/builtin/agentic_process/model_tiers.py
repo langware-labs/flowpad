@@ -60,6 +60,15 @@ OPENCODE_MODEL_TIERS: dict[str, str] = {
     ModelTier.LG.value: "openrouter/z-ai/glm-5.2",
 }
 
+# Deep Agents runs OUR runner over the chat-completions wire, so a tier is a bare
+# gateway slug (no ``openrouter/`` prefix — that is opencode's provider syntax).
+# Three DISTINCT slugs: a collapsed ``md == lg`` is a silent no-op tier.
+DEEPAGENTS_MODEL_TIERS: dict[str, str] = {
+    ModelTier.SM.value: "z-ai/glm-5.3-flash",
+    ModelTier.MD.value: "z-ai/glm-5.2",
+    ModelTier.LG.value: "z-ai/glm-5.3",
+}
+
 
 def resolve_model_tier(tier_map: dict[str, str | None], model: str | None) -> str | None:
     """Map a tier to a concrete model or vendor-auto via *tier_map*.

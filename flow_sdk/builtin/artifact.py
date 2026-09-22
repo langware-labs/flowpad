@@ -90,6 +90,151 @@ class Artifact(Entity):
             data["origin"] = local_origin_for_path(Path(raw_path).expanduser())
         return data
 
+    @classmethod
+    async def find_existing(
+        cls,
+        *,
+        generated_by: str | None = None,
+        project_id: str | None = None,
+        asset_ref: str | None = None,
+        target_type_id: str | None = None,
+        origin_path: str | None = None,
+        kind: str | None = None,
+    ) -> "Artifact | None":
+        """The artifact already registered for this address in this scope, or None.
+
+        THE idempotency seam for registration. Re-registering converges here
+        rather than on a derived id: an id is a name, not a fact about the
+        thing, and a key baked into one can never change afterwards. Same shape
+        as ``Deployment.find_existing`` / ``SourceItem.find_existing``.
+
+        **Scope is the caller's, and the two differ on purpose:**
+
+        * ``generated_by`` — RUN scope, for a file or a row. One run
+          re-registering the same deliverable converges; a DIFFERENT run
+          producing the same path gets its own artifact, because provenance is
+          per-run and an artifact may itself be an event ("a message it sent").
+        * ``project_id`` — PROJECT scope, for a web app. An app is a durable
+          asset of the project, not of the run that happened to build it, so
+          any run re-registering it converges on the one row.
+
+        ``asset_ref`` and ``target_type_id`` are plain indexed columns, so they
+        go INTO the query — one row comes back instead of every artifact in the
+        scope. That matters here in a way it does not for
+        ``Deployment.find_existing``, whose scope is one element: a project's
+        artifact scope is every file, message and row an agent ever registered
+        there, and a run's grows for the life of the run.
+
+        ``origin_path`` cannot: it is the canonical POSIX path of a LOCAL
+        origin, which lives inside a JSON column. That one case still scans the
+        scope in Python, the way ``Deployment.target.provider`` does.
+
+        ``kind`` narrows exact-or-DESCENDANT, never by equality — the ontology
+        is hierarchical, so a row refined to ``application.web.react`` is still
+        the web app at that path. It keeps a deliverable of one kind from
+        converging onto an unrelated row that merely shares an address.
+        """
+        if (generated_by is None) == (project_id is None):
+            raise ValueError("find_existing takes exactly one scope: generated_by or project_id")
+        if not (asset_ref or target_type_id or origin_path):
+            # No address is not a wildcard — it is a caller bug that would
+            # otherwise converge on an arbitrary row of the scope.
+            return None
+
+        scope = {"generated_by": generated_by} if generated_by is not None else {"project_id": project_id}
+        for column, value in (("asset_ref", asset_ref), ("target_type_id", target_type_id)):
+            if not value:
+                continue
+            row = cls._first_matching_kind(await cls.get_all({"match": {**scope, column: value}}), kind)
+            if row is not None:
+                return row
+        if origin_path:
+            rows = await cls.get_all({"match": scope})
+            return cls._first_matching_kind(rows, kind, origin_path=origin_path)
+        return None
+
+    @classmethod
+    def _first_matching_kind(cls, rows, kind: str | None, *, origin_path: str | None = None):
+        """First row passing the kind gate (and the local-origin path, if given)."""
+        for row in rows:
+            if kind is not None and not kind_matches(kind, row.kind):
+                continue
+            if origin_path is not None and row.local_origin_path() != origin_path:
+                continue
+            return row
+        return None
+
+    @classmethod
+    async def register(
+        cls,
+        *,
+        generated_by: str,
+        name: str,
+        kind: str,
+        description: str | None = None,
+        asset_ref: str = "",
+        target_type_id: str | None = None,
+        project_id: str | None = None,
+    ) -> "Artifact":
+        """Record what a run produced — minting the row, or converging on the
+        one this run already registered for the same deliverable.
+
+        RUN-scoped by construction: the lookup passes ``generated_by``, so a
+        retry within one run updates its row while a different run producing
+        the same path still gets its own (see :meth:`find_existing`).
+
+        The no-op case has to be a REAL no-op. An agent may re-register the
+        same deliverable on every turn, and a save costs a SQL UPDATE, a WS
+        broadcast to every connected client and a metadata write. Change
+        detection dumps both sides to JSON and compares once, the way
+        ``Deployment.upsert`` does — a per-field ``!=`` walk looks equivalent
+        and is not, because comparing a pydantic model against a plain dict
+        returns ``NotImplemented`` and so reads as "changed" every time.
+        """
+        from flow_sdk.worldview.ontology import normalize_kind  # noqa: PLC0415
+
+        body: dict[str, Any] = {
+            "name": name,
+            "kind": normalize_kind(kind),
+            "description": description,
+            "asset_ref": asset_ref,
+            "target_type_id": target_type_id,
+            "generated_by": generated_by,
+        }
+        if project_id is not None:
+            body["project_id"] = project_id
+
+        existing = await cls.find_existing(
+            generated_by=generated_by,
+            asset_ref=asset_ref or None,
+            target_type_id=target_type_id,
+        )
+        if existing is None:
+            artifact = cls(**body)
+            await artifact.save()
+            return artifact
+
+        keys = set(body)
+        candidate = cls(id=existing.id, **body)
+        if existing.model_dump(mode="json", include=keys) != candidate.model_dump(mode="json", include=keys):
+            existing.apply_field_updates(body)
+            await existing.save()
+        return existing
+
+    def local_origin_path(self) -> str | None:
+        """Canonical POSIX path of this artifact's LOCAL origin, else None.
+
+        A git-backed origin deliberately answers None: two checkouts of one repo
+        are the same origin but different paths, so a path match there would
+        converge rows that are not the same placement.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+        origin = self.origin
+        if getattr(origin, "kind", None) != "local":
+            return None
+        return canonical_posix_path(str(Path(origin.base) / origin.rel_path))
+
     async def setup_on_receive(self, *, project_id=None, workdir=None) -> dict:
         """Only application.web artifacts invoke the artifact setup skill."""
 

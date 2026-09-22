@@ -294,8 +294,31 @@ async def test_run_command(bootstrapped_client):
     assert response.status_code == 200, response.text
     res = ApiResponse(**response.json())
     assert res.status == "SUCCESS"
+    # A CliResult: `returncode` is the process's own exit, `exit_code` the verdict.
+    assert set(res.data) >= {"exit_code", "command", "returncode", "stdout", "stderr", "executor"}
     assert res.data["stdout"].strip() == "hello"
+    assert res.data["returncode"] == 0
     assert res.data["exit_code"] == 0
+    assert res.data["command"] == "echo hello"
+    assert res.data["executor"] == f"shell-{entity_id}"
+
+
+@pytest.mark.asyncio
+async def test_run_command_failure_keeps_the_raw_exit(bootstrapped_client):
+    """A non-zero exit is the raw `returncode`; the verdict is NOT_YET (1), never the raw code."""
+    create_resp = await bootstrapped_client.post(
+        "/api/v1/graph/shell",
+        json={"name": "Run Fail", "status": "idle"},
+    )
+    entity_id = ApiResponse(**create_resp.json()).data["id"]
+    response = await bootstrapped_client.post(
+        f"/api/v1/graph/shell/{entity_id}/run",
+        json={"command": "exit 7"},
+    )
+    assert response.status_code == 200, response.text
+    data = ApiResponse(**response.json()).data
+    assert data["returncode"] == 7
+    assert data["exit_code"] == 1
 
 
 @pytest.mark.asyncio

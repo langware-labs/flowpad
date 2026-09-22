@@ -1,9 +1,8 @@
 """Filesystem contracts independent of application entities."""
 from typing import Optional
 
-from pydantic import BaseModel
-
 from flow_sdk._compat import StrEnum
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 
 class ActionType(StrEnum):
@@ -16,8 +15,15 @@ class ActionType(StrEnum):
     RUN_AGENT = "run_agent"
 
 
-class TriggerAction(BaseModel):
-    """Action to be executed when a trigger matches."""
+class TriggerAction(DataSpec):
+    """Action to be executed when a trigger matches.
+
+    A ``DataSpec``, not a bare ``BaseModel``: it is stored on a trigger record
+    and read back, so it travels — and it lives in ``data_spec``, where the
+    rule is that every value is one. The practical difference is
+    ``extra="forbid"``: a misspelled key now fails instead of yielding an
+    action with an empty field.
+    """
 
     action_type: ActionType
     # RUN_SCRIPT delivery: external script path on disk (preferred if it exists).

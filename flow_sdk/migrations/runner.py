@@ -291,7 +291,10 @@ async def _drive_migration(
     # dropped for visible=False precisely so the migration runner can spawn
     # without a pre-saved record.
 
-    await ap.prompt(prompt_text)
+    taken = await ap.send_turn(prompt_text)
+    if not taken.ok:
+        # Not taken: there is no turn to wait for, and waiting would read as a stall.
+        raise RuntimeError(f"migration {version}: {taken.detail}")
 
     # Wait for Claude to write its first transcript line. The driver
     # pre-assigns ``ap.session_id`` so that alone is unreliable;

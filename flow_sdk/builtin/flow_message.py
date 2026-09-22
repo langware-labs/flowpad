@@ -192,7 +192,13 @@ def is_image_filename(name: str) -> bool:
 # STRUCTURAL_ATTACHMENT_TYPES) and the live-session carrier. They must NOT gate
 # the message-level ``body_downloaded`` signal, or a message carrying one would
 # be stuck behind the Download button forever.
-_NON_MATERIALIZING_TYPE_IDS = frozenset({"conversation", "flow_message", "task", "remote_worker_session"})
+_NON_MATERIALIZING_TYPE_IDS = frozenset(
+    # A project never rides the bundle: it is delivered by a membership grant
+    # and cloned from its Git origin. Treating it as materializable pinned
+    # every project share at body_downloaded=false with a permanent
+    # ``body_missing_attachments: [project-<id>]``.
+    {"conversation", "flow_message", "task", "remote_worker_session", "project"}
+)
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
 # that has only ``metadata.json`` and no backing source file is a content-less

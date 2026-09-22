@@ -6,12 +6,11 @@ import { ViewMode } from '@src/contexts/view-mode-context';
 /**
  * The reception nav seam: after `install()` returns a DisplayTarget, the FE only
  * routes it — never decides what to show. A spawned setup process opens in Vibe;
- * a webapp target opens the port preview.
+ * an app target opens the app dock, addressed by what it was shown by.
  */
 function mockNav() {
   return {
     openShellProcess: vi.fn(),
-    openWebApp: vi.fn(),
     openDock: vi.fn(),
   } as never;
 }
@@ -29,10 +28,12 @@ describe('openDisplayTarget', () => {
     );
   });
 
-  it('routes a webapp target to the port preview', () => {
+  it('routes an app target to the app dock, by the endpoint it was shown by', () => {
     const nav = mockNav();
-    openDisplayTarget({ kind: 'webapp', port: 3000 }, nav);
-    expect((nav as { openWebApp: ReturnType<typeof vi.fn> }).openWebApp).toHaveBeenCalledWith('3000');
+    openDisplayTarget({ kind: 'app', typeid: 'service_endpoint-e1', endpoint_id: 'e1', runtime: 'dev' }, nav);
+    const dock = (nav as { openDock: ReturnType<typeof vi.fn> }).openDock.mock.calls[0][0];
+    expect(dock.viewType).toBe('app');
+    expect(dock.pointer).toBe('service_endpoint-e1');
   });
 
   it('no-ops on null / undefined', () => {
@@ -40,6 +41,6 @@ describe('openDisplayTarget', () => {
     openDisplayTarget(null, nav);
     openDisplayTarget(undefined, nav);
     expect((nav as { openShellProcess: ReturnType<typeof vi.fn> }).openShellProcess).not.toHaveBeenCalled();
-    expect((nav as { openWebApp: ReturnType<typeof vi.fn> }).openWebApp).not.toHaveBeenCalled();
+    expect((nav as { openDock: ReturnType<typeof vi.fn> }).openDock).not.toHaveBeenCalled();
   });
 });

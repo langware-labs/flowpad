@@ -7,6 +7,7 @@ from .base import Parser
 from .claude import ClaudeParser
 from .codex import CodexParser, CodexRolloutParser, CodexStreamParser
 from .copilot import CopilotEventsParser, CopilotParser, CopilotStreamParser
+from .deepagents import DeepAgentsParser, DeepAgentsStreamParser
 from .opencode import OpenCodeParser, OpenCodeSessionParser, OpenCodeStreamParser
 from .workflow import WorkflowParser
 
@@ -14,6 +15,7 @@ _REGISTRY: dict[str, type[Parser]] = {
     "claude": ClaudeParser,
     "codex": CodexParser,
     "copilot": CopilotParser,
+    "deepagents": DeepAgentsParser,
     "opencode": OpenCodeParser,
     "workflow": WorkflowParser,
 }
@@ -33,6 +35,7 @@ _BY_FORMAT: dict[TranscriptFormat, type[Parser]] = {
     TranscriptFormat.CODEX_STREAM: CodexStreamParser,
     TranscriptFormat.COPILOT_EVENTS: CopilotEventsParser,
     TranscriptFormat.COPILOT_STREAM: CopilotStreamParser,
+    TranscriptFormat.DEEPAGENTS_STREAM: DeepAgentsStreamParser,
     TranscriptFormat.OPENCODE_SESSION: OpenCodeSessionParser,
     TranscriptFormat.OPENCODE_STREAM: OpenCodeStreamParser,
 }
@@ -65,6 +68,8 @@ __all__ = [
     "CopilotEventsParser",
     "CopilotParser",
     "CopilotStreamParser",
+    "DeepAgentsParser",
+    "DeepAgentsStreamParser",
     "OpenCodeParser",
     "OpenCodeSessionParser",
     "OpenCodeStreamParser",
