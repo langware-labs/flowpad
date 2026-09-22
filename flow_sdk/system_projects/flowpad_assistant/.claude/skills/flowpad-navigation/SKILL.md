@@ -82,7 +82,8 @@ SNIP
   read from stdin into the OS temp dir; the JSON answer's `path` is that file. To
   change it on a later turn, edit that file, then run `flow show snippet <path>` again
   so the view reloads it — the view does not watch the file. An existing file:
-  `flow show snippet <path>`.
+  `flow show snippet <path>` (on an explicit "take me there", `flow navigate file <path>`
+  opens the same snippet view).
 - The file runs top to bottom **as written** — the markers are only comments, so the
   whole file must be a complete, valid program. A compiled language needs its entry
   point: in rust, `fn main() { ... }` goes inside the snippet region (bare statements
