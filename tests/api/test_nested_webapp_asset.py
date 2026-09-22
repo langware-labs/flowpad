@@ -3,9 +3,10 @@
 This is the replacement for the editor action that used to live beside it. The
 point of the change is that there is no longer a second implementation to test:
 an editor is a `micro_app` like any other, so it is discovered by the ordinary
-repo walker, served by ``MicroApp.view``, and addressed by its own row. What is
-worth pinning is that the whole chain actually holds together — discovery gives
-the app a PARENT, and serving reaches the app's own folder and nothing above it.
+repo walker, served by the ``static`` endpoint indexing gives it, and addressed
+by its own row. What is worth pinning is that the whole chain actually holds
+together — discovery gives the app a PARENT and an endpoint, and serving reaches
+the app's own folder and nothing above it.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import pytest
 
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR as AA
 from flow_sdk.builtin.faas.serve_static import API_ORIGIN_SNIPPET
+from flow_sdk.builtin.webapp_placement import webapp_endpoints
 from flow_sdk.core.display_target import resolve_display_target
 
 pytestmark = pytest.mark.asyncio
@@ -56,14 +58,14 @@ async def _index(root: Path) -> dict:
     )
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.DATA_DRIVER, RecordType.MICRO_APP]))
     from flow_sdk.builtin.data_driver import DataDriver
-    from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
+    from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
     # Scoped to THIS tree, not to the name: "demo"/"editor" are ordinary words and
     # the DB is shared across the suite, so a name lookup can answer with another
     # test's row and pass or fail for the wrong reason.
     under = str(root.resolve())
     specs = [s for s in await DataDriver.get_all({"name": "demo"}) if str(s.asset_ref).startswith(under)]
-    apps = [a for a in await MicroApp.get_all({"name": "editor"}) if str(a.asset_ref).startswith(under)]
+    apps = [a for a in await WebApp.get_all({"name": "editor"}) if str(a.asset_ref).startswith(under)]
     return {"spec": specs[0] if specs else None, "app": apps[0] if apps else None}
 
 
@@ -77,7 +79,13 @@ async def test_a_nested_editor_is_indexed_as_a_child_of_its_definition(bootstrap
     # breadcrumb without anything declaring the relationship.
     assert app.parent_type_id == str(spec.typeid)
     assert app.kind == "application.web.editor"
-    assert app.location_type == "Asset"
+
+
+async def _served_at(app) -> str:
+    """The app's endpoint path — the endpoint indexing placed it on."""
+    (endpoint,) = await webapp_endpoints(app.id)
+    assert endpoint.backend.type == "static" and endpoint.backend.root == str(Path(app.asset_ref) / ".")
+    return f"/api/v1/graph/service_endpoint/{endpoint.id}/service/"
 
 
 async def test_the_editor_is_served_like_any_other_webapp(bootstrapped_client, user, tmp_path):
@@ -86,7 +94,7 @@ async def test_the_editor_is_served_like_any_other_webapp(bootstrapped_client, u
 
     # The SAME route a built-from-source app is served on. There is no second
     # implementation to reach an editor through any more.
-    resp = await bootstrapped_client.get(f"/api/v1/graph/micro_app/{app.id}/view/")
+    resp = await bootstrapped_client.get(await _served_at(app))
     assert resp.status_code == 200
     body = resp.text
     assert API_ORIGIN_SNIPPET in body, "the page must learn its backend origin"
@@ -100,8 +108,8 @@ async def test_nothing_above_the_app_folder_is_reachable(bootstrapped_client, us
     _definition_with_editor(tmp_path)
     app = (await _index(tmp_path))["app"]
 
-    resp = await bootstrapped_client.get(f"/api/v1/graph/micro_app/{app.id}/view/%2E%2E%2Foutside.txt")
-    assert resp.status_code == 403
+    resp = await bootstrapped_client.get(f"{await _served_at(app)}%2E%2E%2Foutside.txt")
+    assert resp.status_code == 400, "refused at the path, before any file is resolved"
     assert "OUTSIDE THE APP" not in resp.text
 
 
@@ -115,4 +123,6 @@ async def test_showing_the_editor_resolves_to_the_app_dock(bootstrapped_client, 
     assert target["kind"] == "app"
     assert target["typeid"] == str(app.typeid)
     assert target["runtime"] == "served"
+    assert target["micro_app_id"] == app.id
+    assert f"/{target['endpoint_id']}/" in await _served_at(app), "shown through the endpoint that serves it"
     assert "artifact_id" not in target, "a webapp asset has no source plane"

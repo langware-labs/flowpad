@@ -11,7 +11,8 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWebappHealth } from '@src/components/display-toolbar/use-webapp-health';
 
-const HOST = 'http://localhost:6001/api/v1/graph/agentic_process/abc/get-host?port=4173';
+// A dev server's direct address — what the display pings for a `proxy` endpoint.
+const HOST = 'http://localhost:4173/';
 
 describe('useWebappHealth', () => {
   beforeEach(() => {

@@ -28,10 +28,13 @@ import json
 import logging
 import re
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Optional
+from typing import Iterator, TYPE_CHECKING, Optional
 
+from flow_sdk.assets.project_manifest import namespace_for
+from flow_sdk.schema.data_spec._namespace import loading as loading_ns
 from flow_sdk.schema.data_spec.data_driver_spec import SOURCE_FILE, DataDriverSpec
 from flow_sdk.sources.base import Source
 
@@ -101,6 +104,31 @@ def driver_class(module: ModuleType) -> type[Source]:
     return defined[0]
 
 
+@contextmanager
+def _importing(folder: Path, manifest: DataDriverSpec, *, shipped: bool) -> "Iterator[None]":
+    """Declare whose ontology this driver's kinds belong to, for the import that mints them.
+
+    Resolving, refusing and declaring are ONE step on purpose. They must always
+    happen together and they must happen BEFORE the import, because importing
+    ``source.py`` is what mints the kinds — a driver that has not named its
+    ontology has to be refused while its classes are still undefined. Split
+    apart, the next reader copies the declaration and forgets the gate, and
+    forgetting the gate is silent: an externally authored ``whatsapp`` would
+    register ``ingest.message.whatsapp``, the same string the shipped one
+    declares, and one of them loses with nothing said anywhere.
+    """
+    # What we ship is ours. Otherwise the driver's own declaration, else its
+    # project's — a project names its namespace once and its assets inherit it.
+    ns = "" if shipped else (manifest.ns or namespace_for(folder))
+    if not shipped and not ns:
+        raise DriverLoadError(
+            f"{folder} declares no `ns`: an externally authored data driver must name the "
+            "ontology namespace its kinds belong to, or they land in ours"
+        )
+    with loading_ns(ns):
+        yield
+
+
 def load_driver(folder: Path) -> "DataDriver":
     """A data source folder as a source type, or ``DriverLoadError`` naming what is wrong."""
 
@@ -109,12 +137,14 @@ def load_driver(folder: Path) -> "DataDriver":
     manifest = read_manifest(folder)
     if not (folder / SOURCE_FILE).is_file():
         raise DriverLoadError(f"{folder} has no {SOURCE_FILE} — a data source carries its own Source class")
+    shipped = folder.resolve().is_relative_to(SHIPPED_ROOT)
     digest = content_hash(folder)
-    cls = driver_class(load_module(folder, digest=digest))
+    with _importing(folder, manifest, shipped=shipped):
+        cls = driver_class(load_module(folder, digest=digest))
     if cls.provider != manifest.name:
         raise DriverLoadError(f"{cls.__name__}.provider is {cls.provider!r} but the manifest names {manifest.name!r}")
     check_config(cls, manifest)
-    return DataDriver.for_class(cls, manifest, folder=folder, content_hash=digest, shipped=folder.resolve().is_relative_to(SHIPPED_ROOT))
+    return DataDriver.for_class(cls, manifest, folder=folder, content_hash=digest, shipped=shipped)
 
 
 def check_config(cls: type[Source], manifest: DataDriverSpec) -> None:

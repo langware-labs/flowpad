@@ -42,7 +42,7 @@ async def _reset_harness_auth_mode():
     )
     from flow_sdk.builtin.capability import Capability
 
-    for worker in ("claude", "codex", "copilot", "opencode"):
+    for worker in ("claude", "codex", "copilot", "opencode", "deepagents"):
         cap = await Capability.get_by_kind(worker_capability_kind(worker))
         if cap is not None and getattr(cap, "auth_mode", "device") != "device":
             cap.auth_mode = "device"
@@ -487,3 +487,49 @@ async def test_opencode_reaches_the_endpoint_through_its_config_not_its_env(env,
     assert not any("BASE_URL" in name for name in auth.env), (
         "opencode reads no base-URL variable; putting one in env would look like it worked"
     )
+
+
+# ── deepagents: OUR runner, the chat-completions wire, and no account of its own ──
+
+
+async def test_deepagents_api_binding(env) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+    await _set_harness_api("deepagents")
+
+    auth = await resolve_worker_api_auth(_fake_process("deepagents", model="lg"))
+    assert auth is not None
+    # Both are read by the runner's model factory; nothing is written to disk.
+    assert auth.env["FLOWPAD_DEEPAGENTS_BASE_URL"] == "https://openrouter.ai/api/v1"
+    assert auth.env["FLOWPAD_DEEPAGENTS_API_KEY"] == "sk-or-test"
+    assert auth.model_slug == "z-ai/glm-5.3"  # a bare gateway slug — no opencode-style provider prefix
+    assert auth.config_overrides == []
+
+
+async def test_deepagents_hub_endpoint_binding(env, monkeypatch) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api("deepagents", provider="flowpad")
+
+    auth = await resolve_worker_api_auth(_fake_process("deepagents", model="sm"))
+    assert auth is not None
+    assert auth.env["FLOWPAD_DEEPAGENTS_BASE_URL"] == f"{HUB_INVOKE}/v1"
+    assert auth.env["FLOWPAD_DEEPAGENTS_API_KEY"] == "fp-hub-key"
+    assert auth.model_slug == "z-ai/glm-5.3-flash"
+
+
+async def test_deepagents_has_no_device_login_to_fall_back_on(env) -> None:
+    """Nothing stored, nothing bound: every other harness answers ``None`` here ("use your device
+    login"). This one has no account of its own, so ``None`` would mean a worker spawned with no
+    credentials at all — it must be a loud spawn error instead."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import device_candidate
+
+    assert await device_candidate("deepagents") is None
+    assert await device_candidate("claude") is not None
+    with pytest.raises(WorkerSpawnError):
+        await resolve_worker_api_auth(_fake_process("deepagents"))

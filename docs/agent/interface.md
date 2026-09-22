@@ -94,10 +94,11 @@ properties:
   markdown_docs: "list[dict]"
   status_report: "dict | null"
 methods:
-  run: "async (instruction, workdir=None, **kwargs) -> RunResult"
+  run: "async (instruction, workdir=None, **kwargs) -> PromptResult"
   resume: "(session_id, workdir=None, **kwargs) -> AgenticProcess"
   start_pty: "async (instruction=None, visible=None, retry=false, session_id_override=None) -> ApiResponse"
-  prompt: "async (instruction) -> Any"
+  prompt: "async (instruction) -> ApiResponse"
+  send_turn: "async (instruction) -> PromptResult — OK = accepted; NOT_YET ran=False if not taken"
   wait: "async (timeout=None) -> AgenticProcess"
   restart: "async () -> ApiResponse"
   close: "async () -> ApiResponse"
@@ -148,9 +149,8 @@ params:
   AgenticProcessEventName: "first_prompt"
   WorkerMode: "interactive | cli"
   ModelTier: "sm | md | lg"
-  RunResult: "one-shot run result"
+  PromptResult: "a turn's answer (ReturnedValue): text, value, executor"
   StreamEvent: "streamed execution event"
-  ProcessError: "typed process failure"
 returns: "supporting Python contracts"
 source:
   origin:
@@ -168,7 +168,7 @@ source:
 name: AgenticProcess.factories
 description: Class-level construction, environment checks, session adoption, and lookup.
 params:
-  run: "async (instruction, workdir=None, **kwargs) -> RunResult"
+  run: "async (instruction, workdir=None, **kwargs) -> PromptResult"
   is_installed: "async (worker_type=None) -> bool"
   is_logged_in: "async (worker_type=None) -> WorkerAuthResult"
   resume: "(session_id, workdir=None, **kwargs) -> AgenticProcess"
@@ -421,7 +421,6 @@ params:
   restart-info: "GET -> loaded-versus-current launch diff"
   cmd-line: "GET -> {cmd_line}"
   status: "GET | POST -> {status, busy, worker_status, ready_for_input}"
-  get-host: "GET | POST {port, redirect?} -> host payload"
   set-graph-context: "POST {graph_context_id} -> bound GraphContext"
   add-dir: "POST {path} -> additional_dirs"
   remove-dir: "POST {path} -> additional_dirs"
@@ -619,7 +618,6 @@ source:
 name: AgenticProcess.state_and_navigation
 description: URL-first navigation targets, reflected state, runtime handles, and computed projections.
 params:
-  getWebAppHostUrl: "(port) -> string"
   openTerminalDock: "(extraOptions?) -> void"
   isHeadless: "getter -> boolean"
   terminalDockPointer: "getter -> DockPointerData"

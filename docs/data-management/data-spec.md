@@ -39,7 +39,11 @@ Subclassing **registers** the class under its kind in the one `SchemaRegistry`
 both enforced: `spec_kind` must stay a `ClassVar` (annotating it makes it a
 field, and the guard — an `assert` in the hook — trips at class creation); and a
 Pydantic **parametrization** (`ExampleSpec[A, B]`) inherits its origin's kind and
-deliberately does not register — only a *named* subclass does.
+deliberately does not register — only a *named* subclass does. So does a plain
+subclass that declares no kind of its own: `spec_kind` must be in the class's own
+`__dict__`, because an inherited one is not a new kind. Without that rule
+`FileDataPage` rebound `source.page` to itself and a plain `DataPage` no longer
+resolved from its own name.
 
 Registration is import-time, and forgetting it fails silently: a kind whose
 module nobody imported resolves to `Any`. `register_builtin_kinds()`
@@ -73,10 +77,21 @@ what was written — that is what keeps `agent.json` and `dataset.json` readable
 An ordinary dot-path tag (`flow_sdk/tags/grammar.py`), resolved through the
 **one** `SchemaRegistry`: a reserved primitive (`string` `int` `float` `bool`)
 → its Python type; a registered kind → its class (`register_kind` /
-`kind_type` / `kind_for`; entity type names live in the same table, so
-`"dataset"` is a kind); anything else → **anonymous**: `Any`. Legal, opaque,
-never minted. A kind referenced before it is registered resolves to `Any` —
-compilation is eager, so there is no cycle to detect.
+`kind_type` / `kind_for`); an unregistered name → **anonymous**: `Any`. Legal,
+opaque, never minted. A kind referenced before it is registered resolves to
+`Any` — compilation is eager, so there is no cycle to detect.
+
+**A kind names a SHAPE, never an Entity row.** Entity type names live in the same table,
+so `"dataset"` is a kind — and it resolves to that type's `asset_spec`, its
+document shape, registered automatically from the type name. It never resolves
+to the Entity class: a row model is not a `DataSpec`, and a `SpecType` field
+holding one could not validate a value against it. A registered type with **no**
+asset document therefore names no shape and raises, rather than answering `Any`:
+the author meant a real thing. See [`ontology.md`](../ontology.md).
+
+A spec that declares its own `spec_kind` keeps it, and it stays the name that is
+WRITTEN — so `SourceItemSpec` dumps as `ingest.source_item` while both that and
+`source_item` resolve.
 
 ### A shape held by a field — `SpecType`
 
@@ -169,35 +184,40 @@ is an entity field with a compatible core (the entity may narrow: `str` → `Typ
 
 ```python
 class SubAgentSpec(FrontMatter):            # a DataSpec with extra="ignore" (hand-edited file)
+    file_ext: ClassVar[str | None] = ".md"
     name: str | None = None
     tools: Any = None
     prompt: Body = ""                       # ⇒ frontmatter + body
 
 class DatasetManifestSpec(FrontMatter):     # dataset.json
+    main_file: ClassVar[str | None] = "dataset.json"
     title: str | None = None
     data_layout: str | None = None
     data: Optional[FreeSection] = None      # ⇒ {"metadata": …, "data": …}
 
 SUBAGENT = TypeInfo(..., asset_spec=SubAgentSpec)
-DATASET  = TypeInfo(..., shape=Folder(main="dataset.json"), asset_spec=DatasetManifestSpec)
+DATASET  = TypeInfo(..., asset_spec=DatasetManifestSpec)
 ```
 
-What `TypeInfo` still declares is **naming and placement**, not structure:
-`shape` (a folder with no byte fields — `DataDriver` — is a Claude
-Code placement convention the spec cannot derive), `name_from_path`,
-`hub_main_file`, the identity carrier, and the DB medium's `natural_key` /
-`digest_fields`. `FrontMatter` is the one `DataSpec` variant for disk documents
-(`extra="ignore"`: an undeclared key in a hand-edited file is dropped, never an
-error); a wire spec keeps `forbid`. A type with no `asset_spec` still goes
-through the ONE `DiskSerializer`: it renders via `TypeInfo.default_body_fn` (a
-template the spec vocabulary cannot express — `dynamic_workflow`'s `.js`) and
-loads via `from_disk_fn` → record → entity.
+The asset spec owns its filesystem contract as class metadata: `main_file` names
+an enclosing folder's main document; `file_ext`, `file_names`, and
+`file_extensions` describe standalone files. `TypeInfo.shape` is the derived
+`File`/`Folder` projection consumed by discovery and the frontend. These class
+variables are not document fields. Plain value and row-only specs declare no
+filesystem contract. A spec-backed type cannot repeat its contract on `TypeInfo`.
 
-Two more layout facts a spec cannot say live on `TypeInfo`: `manifest_layout`
-(`"sections"` = `{metadata, data}` as a dataset writes; `"flat"` = the header's
-keys merged onto the payload's own document, as a trace/report file is — a
-`SectionedHeader` lifts/pushes fields under one nested key such as `summary`)
-and `derive_fields_fn(data, root, header_raw)` — the facts the DISK carries
+`TypeInfo` still declares placement and application policy: `name_from_path`,
+`hub_main_file`, identity, discovery scope, and the DB medium's `natural_key` /
+`digest_fields`. Custom-parser types without a filesystem spec continue to
+supply `shape` directly and use their existing parsers and writers.
+
+The spec also owns explicit `manifest_layout` choices (`"sections"` for
+`{metadata, data}`, `"flat"` for a report payload, `"entity"` for an entity JSON
+document). `TypeInfo` exposes the resolved value; omitted choices retain the
+serializer's existing inference. `SectionedHeader` maps fields under keys such
+as `summary`. This does not change the separate `DataSpec.save/load` format.
+
+`TypeInfo` retains `derive_fields_fn(data, root, header_raw)` — the facts the DISK carries
 that the header cannot (counts over rows, wiki-links in a body, a name from the
 path), applied by `load` before the row is built. The header dump is
 `exclude_defaults`: a spec default is not authored, so a fresh doc has an empty
@@ -218,7 +238,8 @@ agentic-assets/agent/whatsapp-e2e/
   system_prompt.md  You are an end-to-end test agent reached over WhatsApp…
 ```
 
-- **Declare it with one slot:** `shape=Folder.entity_json(type)` and `manifest_layout=ENTITY_LAYOUT`.
+- **Declare it on the spec:** `main_file="<type>.json"` and `manifest_layout="entity"`
+  as `ClassVar` metadata.
   Registration refuses a main that is not `<type>.json`, a `FreeSection`, or a carrier other
   than `JsonRoot`; `__post_init__` defaults the carrier and the fingerprint.
 - **Keys, in order:** `type`, `id` (the identity carrier — `JsonRoot`), `name`, `version`

@@ -189,8 +189,8 @@ class _AutoTarget(NamedTuple):
 
 def _auto_classify(payload: Dict[str, Any]) -> _AutoTarget:
     """Classify a resolved display target once. Entity → its type + curated
-    ``TypeInfo.display_name``; raw file → "Files" (nav by path); webapp → "Web Apps"
-    (nav by port)."""
+    ``TypeInfo.display_name``; raw file → "Files" (nav by path); app → "Web Apps"
+    (nav by the typeid it was shown by — its endpoint, artifact or definition)."""
     kind = payload.get("kind")
     if kind == "entity":
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
@@ -198,9 +198,9 @@ def _auto_classify(payload: Dict[str, Any]) -> _AutoTarget:
         t = str(payload.get("type") or "entity")
         return _AutoTarget(t, SchemaRegistry.get_display_name(t), t,
                            str(payload.get("id") or ""), str(payload.get("path") or ""), {})
-    if kind == "webapp":
-        port = payload.get("port")
-        return _AutoTarget("webapp", _AUTO_KIND_LABELS["webapp"], "webapp", str(port), "", {"port": port})
+    if kind == "app":
+        entity_type, _, entity_id = str(payload.get("typeid") or "").partition("-")
+        return _AutoTarget("webapp", _AUTO_KIND_LABELS["webapp"], entity_type, entity_id, "", {})
     path = str(payload.get("path") or "")
     return _AutoTarget("file", _AUTO_KIND_LABELS["file"], "vfs", path, path, {})
 
@@ -229,8 +229,6 @@ def _auto_leaf_title(payload: Dict[str, Any], target: _AutoTarget) -> str:
     name = payload.get("name")
     if name:
         return str(name)
-    if payload.get("kind") == "webapp":
-        return f"localhost:{payload.get('port')}"
     if target.asset_ref:
         return _auto_nice_name_from_path(target.asset_ref)
     return f"{target.entity_type}-{target.entity_id[:8]}" if target.entity_id else (target.entity_type or "item")

@@ -68,7 +68,7 @@ def _rmtree_onexc(func, path, exc):
 
 
 def _rmtree_safe(path) -> None:
-    """rmtree with error handler, compatible with Python 3.10–3.12+."""
+    """rmtree with error handler: ``onexc`` from Python 3.12, ``onerror`` before it."""
     if sys.version_info >= (3, 12):
         shutil.rmtree(path, onexc=_rmtree_onexc)
     else:

@@ -4,8 +4,9 @@ Each ``schema/type_info/<type>_info.py`` module declares one (or more)
 ``TypeInfo`` instance at module scope — the SAME object the registry serves.
 ``register_all()`` imports every sibling module and registers every ``TypeInfo``
 it finds into ``SchemaRegistry`` as ``declared``, with the default ``locations``. There is no separate authoring mirror: a type
-declares itself ONCE, with its on-disk shape as ``shape=File(...) | Folder(...)``
-and its editor as ``editor=``.
+declares itself ONCE. Spec-backed assets declare their filesystem contract on
+``asset_spec``; ``TypeInfo.shape`` is its runtime projection. Custom-parser types
+without a contract still declare ``shape=File(...) | Folder(...)`` here.
 
 Concrete entity classes carry NO type-metadata config; they only attach
 ``entity_cls`` via ``Entity.__init_subclass__`` (merged in by the registry).

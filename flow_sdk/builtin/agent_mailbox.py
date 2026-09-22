@@ -32,7 +32,7 @@ An Agent holds a mailbox; it is not one. ``Agent`` keeps exactly two things — 
 * **release** — terminal. The address is gone and mail to it bounces.
 
 **``allowed`` is pure and synchronous, and that is load-bearing.** It runs on
-every inbound message in ``flow_sdk/stream_inbox/agent_runner.py``, so it must never
+every inbound message an agent's serve loop answers (``flow_sdk/builtin/agent_serve.py``), so it must never
 reach the Hub or the database — which is why :meth:`from_source` exists and why
 ``allowed_senders`` rides on the projection as a runtime-only field. That is
 also what lets its storage move to the Hub later without this file's callers or
@@ -255,7 +255,7 @@ class AgentMailbox(Entity):
     def from_source(cls, source: "DataSource") -> "AgentMailbox":
         """The mailbox as the INBOUND path sees it — no Hub call, no DB read.
 
-        ``handle_inbound`` already holds the DataSource and runs per message, so
+        The serve loop already holds the DataSource and runs per message, so
         the gate has to be answerable from what is in hand. The source carries
         everything needed: the Hub identity that :meth:`ensure_source` stamped
         into its config, the cached allowlist, and its own status — which is what
@@ -267,8 +267,8 @@ class AgentMailbox(Entity):
 
         ``agent_id`` goes through ``agent_id_of`` — not a bare ``config.get``
         — because a `bind_channel`-bound source (Slack, Teams, …) carries no
-        ``config.agent_id`` at all; its agent is the ``owner``. `handle_inbound`
-        only reaches here after confirming that owner IS an agent, so the
+        ``config.agent_id`` at all; its agent is the ``owner``. The serve loop
+        only reaches here over sources that agent owns, so the
         helper's fallback is never empty at this call site — a bare
         ``config.get`` left it empty for every such source, and constructing
         ``TypeId(..., id="")`` below raised on every single one of them.

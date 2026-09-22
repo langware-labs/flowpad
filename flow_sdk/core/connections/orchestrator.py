@@ -165,10 +165,11 @@ def _authorization(provider: str, data) -> Authorization:
     verification_uri = str(data.get("verification_uri") or "").strip()
     user_code = str(data.get("user_code") or "").strip()
     if verification_uri and user_code:
-        return DeviceAuthorization(request_id, provider, verification_uri, user_code)
+        return DeviceAuthorization(oauth_request_id=request_id, provider=provider,
+                                  verification_uri=verification_uri, user_code=user_code)
     url = str(data.get("auth_url") or data.get("url") or "").strip()
     if url:
-        return BrowserAuthorization(request_id, provider, url)
+        return BrowserAuthorization(oauth_request_id=request_id, provider=provider, url=url)
     raise _error(provider, ConnectionStage.AUTHORIZATION, "invalid_response")
 
 
@@ -241,7 +242,7 @@ async def _ensure_cloud_login(provider: str, client, presenter: AuthorizationPre
     url = str(started.data.get("url") or "").strip()
     if not request_id or not url:
         raise _error(provider, ConnectionStage.CLOUD, "invalid_response")
-    authorization = BrowserAuthorization(request_id, "flowpad_cloud", url)
+    authorization = BrowserAuthorization(oauth_request_id=request_id, provider="flowpad_cloud", url=url)
     try:
         if started.data.get("present") is not False:
             await presenter.present(authorization)

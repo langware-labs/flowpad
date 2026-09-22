@@ -1,4 +1,4 @@
-import apiClient from '@sdk/client';
+import type { ServiceEndpoint } from '@sdk';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebappHealth, type WebappHealth } from '@src/components/display-toolbar/use-webapp-health';
 import { classifyWebappSeverity, type WebappProbe, type WebappVerdict } from './classify';
@@ -8,8 +8,8 @@ import { classifyWebappSeverity, type WebappProbe, type WebappVerdict } from './
  *
  * Two signals feed this. The browser can only ever answer "did a request to the
  * app throw" -- the guest is cross-origin, so its console, its HTTP status and
- * its exceptions are all invisible from here. The backend probe can answer the
- * rest, because it talks to the port directly. This hook owns the stateful part
+ * its exceptions are all invisible from here. The endpoint's probe can answer the
+ * rest, because it runs on the machine the service is on and talks to its port. This hook owns the stateful part
  * of combining them; the verdict itself comes from the pure `classify` module.
  */
 
@@ -36,14 +36,14 @@ export interface WebappDiagnostics extends WebappVerdict {
 }
 
 interface Options {
-  /** Process that owns the dev server; the probe action hangs off it. */
-  processId: string | null | undefined;
-  /** The get-host URL the iframe points at (also the liveness ping target). */
+  /** The endpoint being shown; `probe` hangs off it. Only a dev server (`proxy`)
+   *  on this machine has a process to probe — a served folder has none. */
+  endpoint: ServiceEndpoint | null;
+  /** The URL the iframe points at (also the liveness ping target). */
   host: string;
-  port: string | null;
 }
 
-export function useWebappDiagnostics({ processId, host, port }: Options): WebappDiagnostics {
+export function useWebappDiagnostics({ endpoint, host }: Options): WebappDiagnostics {
   const health = useWebappHealth(host);
   const [probe, setProbe] = useState<WebappProbe | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -56,19 +56,15 @@ export function useWebappDiagnostics({ processId, host, port }: Options): Webapp
   const lastProbeAt = useRef(0);
   const lastHealth = useRef<WebappHealth>('checking');
 
+  const probeable = !!endpoint && endpoint.backend.type === 'proxy' && !endpoint.remote;
   const runProbe = useCallback(
     async (force = false) => {
-      if (!processId || !port) return;
+      if (!endpoint || !probeable) return;
       const now = Date.now();
       if (!force && now - lastProbeAt.current < PROBE_DEBOUNCE_MS) return;
       lastProbeAt.current = now;
       try {
-        const data = await apiClient.post<WebappProbe>(
-          `/graph/agentic_process/${processId}/probe-webapp`,
-          undefined,
-          { params: { port } },
-        );
-        setProbe((data as unknown as WebappProbe) ?? null);
+        setProbe((await endpoint.probe<WebappProbe>()) ?? null);
       } catch {
         // The probe is a diagnostic, not a dependency: if the backend cannot
         // answer we fall back to the liveness signal rather than showing an
@@ -76,11 +72,13 @@ export function useWebappDiagnostics({ processId, host, port }: Options): Webapp
         setProbe(null);
       }
     },
-    [processId, port],
+    // Keyed on identity: the SDK mutates cached entities in place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [endpoint?.id, probeable],
   );
 
   // Kept in a ref so the effects below can fire the probe without taking a
-  // dependency on the callback's identity -- `processId` arrives asynchronously,
+  // dependency on the callback's identity -- the endpoint arrives asynchronously,
   // and re-running a forced probe on every identity change costs a second full
   // round trip that bypasses the debounce.
   const runProbeRef = useRef(runProbe);

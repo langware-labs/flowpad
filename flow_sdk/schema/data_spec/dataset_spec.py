@@ -76,9 +76,14 @@ FolderSpec.model_rebuild()
 
 # ── one example ───────────────────────────────────────────────────────────────
 
-InputSpecT = TypeVar("InputSpecT", bound=DataSpec)
-OutputSpecT = TypeVar("OutputSpecT", bound=DataSpec)
-ContextSpecT = TypeVar("ContextSpecT", bound=DataSpec)
+#: A slot's shape. Deliberately UNBOUND: ``bound=DataSpec`` advertised a
+#: restriction that does not exist — Python never checks a TypeVar bound at
+#: runtime, so ``ExampleSpec[int, int, DataSpec]`` was always accepted and
+#: worked — and it contradicted the authoring grammar, where ``"int"`` is a
+#: reserved primitive and a perfectly good slot shape.
+InputSpecT = TypeVar("InputSpecT")
+OutputSpecT = TypeVar("OutputSpecT")
+ContextSpecT = TypeVar("ContextSpecT")
 
 
 class ExampleSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):

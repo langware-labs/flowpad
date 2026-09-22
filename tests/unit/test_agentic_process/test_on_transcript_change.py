@@ -3,7 +3,9 @@
 Covers the streamer-driven status update path that replaced _poll_for_completion:
 
   - on_transcript_change buffers entries and arms a 1-second debounce timer
-  - Multiple rapid calls within the window coalesce into ONE flush
+  - Multiple rapid calls within the window coalesce into ONE flush (these
+    exercise it on one instance; ``test_debounce_coalesces_across_hydrations``
+    covers the path the streamer actually takes, a fresh AP per event)
   - The flush is idempotent — running with no transitions does nothing visible
   - Status transitions trigger notify_updated; equal status does not
   - API_TIMEOUT invokes _on_timeout
@@ -24,6 +26,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.agentic_process import _DEBOUNCE_TASKS, _PENDING_ENTRIES
 from flow_sdk.builtin.agentic_process.naming.runtime import refresh_process_name
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums import WorkerType
@@ -31,6 +34,16 @@ from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
+
+
+def _flush_task(ap: AgenticProcess):
+    """The armed flush for this process.
+
+    Keyed by process id rather than held on the instance — the streamer
+    delivers each event to a freshly hydrated AP, so instance-held state read
+    back empty and coalescing never happened.
+    """
+    return _DEBOUNCE_TASKS.get(str(ap.id))
 
 
 async def _make_ap(status: WorkerStatus, monkeypatch) -> AgenticProcess:
@@ -58,17 +71,22 @@ async def _make_ap(status: WorkerStatus, monkeypatch) -> AgenticProcess:
 
 @pytest.mark.asyncio
 async def test_buffer_extends_and_arms_debounce(initialize_test_db, monkeypatch) -> None:
-    """on_transcript_change extends the pending buffer and arms one task."""
+    """on_transcript_change extends the pending buffer and arms one task.
+
+    Buffer and timer are keyed by process id, not held on the instance: the
+    streamer hydrates a fresh AP per event, so instance-held state read back
+    empty and every event armed its own timer.
+    """
     ap = await _make_ap(WorkerStatus.THINKING, monkeypatch)
 
     await ap.on_transcript_change(Path("/tmp/x.jsonl"), ["e1", "e2"])
-    assert ap._pending_entries == ["e1", "e2"]
-    assert ap._debounce_task is not None
-    first_task = ap._debounce_task
+    assert _PENDING_ENTRIES[ap.id] == ["e1", "e2"]
+    first_task = _DEBOUNCE_TASKS.get(ap.id)
+    assert first_task is not None
 
     await ap.on_transcript_change(Path("/tmp/x.jsonl"), ["e3"])
-    assert ap._pending_entries == ["e1", "e2", "e3"]
-    assert ap._debounce_task is first_task
+    assert _PENDING_ENTRIES[ap.id] == ["e1", "e2", "e3"]
+    assert _DEBOUNCE_TASKS.get(ap.id) is first_task
 
     first_task.cancel()
     try:
@@ -94,7 +112,7 @@ async def test_flush_broadcasts_on_status_transition(initialize_test_db, monkeyp
     monkeypatch.setattr(type(ap), "notify_updated", lambda self: _fake_notify(), raising=False)
 
     await ap.on_transcript_change(Path("/tmp/x.jsonl"), [])
-    await ap._debounce_task
+    await _flush_task(ap)
 
     assert notify_calls == [None]
     # COMPLETE is ¬busy while running.
@@ -120,7 +138,7 @@ async def test_flush_broadcasts_on_wire_flip_same_worker(initialize_test_db, mon
     monkeypatch.setattr(type(ap), "notify_updated", lambda self: _fake_notify(), raising=False)
 
     await ap.on_transcript_change(Path("/tmp/x.jsonl"), [])
-    await ap._debounce_task
+    await _flush_task(ap)
 
     assert notify_calls == [None]
     assert ap._last_broadcast_key == ("running", False, "complete")
@@ -142,7 +160,7 @@ async def test_flush_skips_broadcast_when_status_unchanged(initialize_test_db, m
     monkeypatch.setattr(type(ap), "notify_updated", lambda self: _fake_notify(), raising=False)
 
     await ap.on_transcript_change(Path("/tmp/x.jsonl"), [])
-    await ap._debounce_task
+    await _flush_task(ap)
 
     assert notify_calls == []
 
@@ -171,7 +189,7 @@ async def test_a_rehydrated_flush_dedups_against_the_previous_one(
     monkeypatch.setattr(type(first), "notify_updated", lambda self: _fake_notify(), raising=False)
 
     await first.on_transcript_change(Path("/tmp/x.jsonl"), [])
-    await first._debounce_task
+    await _flush_task(first)
     assert notify_calls == [None], "the first flush is a transition — it must broadcast"
 
     second = await AgenticProcess.get_by_id(str(first.id))
@@ -181,7 +199,7 @@ async def test_a_rehydrated_flush_dedups_against_the_previous_one(
     )
 
     await second.on_transcript_change(Path("/tmp/x.jsonl"), [])
-    await second._debounce_task
+    await _flush_task(second)
 
     assert notify_calls == [None], "nothing changed — the rehydrated flush must not re-broadcast"
 
@@ -209,14 +227,14 @@ async def test_on_timeout_fires_once_per_transition_not_once_per_flush(
     monkeypatch.setattr(type(first), "notify_updated", lambda self: asyncio.sleep(0), raising=False)
 
     await first.on_transcript_change(Path("/tmp/x.jsonl"), [])
-    await first._debounce_task
+    await _flush_task(first)
     assert timeout_calls == [None]
 
     for _ in range(3):
         rehydrated = await AgenticProcess.get_by_id(str(first.id))
         assert rehydrated is not None
         await rehydrated.on_transcript_change(Path("/tmp/x.jsonl"), [])
-        await rehydrated._debounce_task
+        await _flush_task(rehydrated)
 
     assert timeout_calls == [None], "the stall is unchanged — the handler must not re-fire"
 
@@ -237,7 +255,7 @@ async def test_flush_short_circuits_when_not_running(initialize_test_db, monkeyp
 
     await ap.on_transcript_change(Path("/tmp/x.jsonl"), [])
     ap.status = ProcessStatus.STOPPED.value
-    await ap._debounce_task
+    await _flush_task(ap)
 
     assert notify_calls == []
 
@@ -264,7 +282,7 @@ async def test_stale_pty_flush_cannot_overwrite_durable_cli_switch(initialize_te
     durable.visible = False
     await durable.save(notify=False)
 
-    await ap._debounce_task
+    await _flush_task(ap)
 
     assert notify_snapshots == []
     persisted = await AgenticProcess.get_by_id(str(ap.id))
@@ -294,7 +312,7 @@ async def test_flush_invokes_on_timeout_for_api_timeout(initialize_test_db, monk
     monkeypatch.setattr(type(ap), "notify_updated", lambda self: _fake_notify(), raising=False)
 
     await ap.on_transcript_change(Path("/tmp/x.jsonl"), [])
-    await ap._debounce_task
+    await _flush_task(ap)
 
     assert timeout_calls == [None]
     assert notify_calls == [None]
@@ -308,10 +326,10 @@ async def test_buffer_cap_drops_oldest_on_overflow(initialize_test_db, monkeypat
     big_chunk = list(range(ap._DEBOUNCE_BUFFER_CAP + 50))
     await ap.on_transcript_change(Path("/tmp/x.jsonl"), big_chunk)
 
-    assert len(ap._pending_entries) == ap._DEBOUNCE_BUFFER_CAP
-    assert ap._pending_entries[-1] == big_chunk[-1]
-    ap._debounce_task.cancel()
+    assert len(_PENDING_ENTRIES[ap.id]) == ap._DEBOUNCE_BUFFER_CAP
+    assert _PENDING_ENTRIES[ap.id][-1] == big_chunk[-1]
+    _flush_task(ap).cancel()
     try:
-        await ap._debounce_task
+        await _flush_task(ap)
     except (asyncio.CancelledError, Exception):
         pass

@@ -11,20 +11,20 @@
  * freshly written one is invisible to the graph for reasons that have nothing to
  * do with the shapes under test. It also does not RUN one — the wizards
  * guaranteed to exist on any instance are the shipped ones, and running those on
- * a machine without python3 or git spawns a real installer agent. So probe
- * CONTENT is pinned on the Python side (`tests/unit/test_wizard_probes_and_reset.py`
- * asserts the serialized payload) and by `run-detail` here whenever the instance
- * happens to carry a recorded run; the assertions below are the ones that hold
- * on every instance.
+ * a machine without python3 or git spawns a real installer agent. So step
+ * CONTENT is pinned on the Python side and by `run-detail` here whenever the
+ * instance happens to carry a recorded run; the assertions below are the ones
+ * that hold on every instance.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   dataManager,
   QueryRequest,
   Wizard,
+  type CliResult,
+  type ReturnedValue,
   type WizardRunDetail,
-  type WizardStepOutcome,
-  type WizardStepProbe,
+  type WizardRunState,
   type WizardValidation,
 } from '@sdk';
 import { apiTestSetup } from '../utils/test-utils';
@@ -33,15 +33,16 @@ import { apiTestSetup } from '../utils/test-utils';
 const VALIDATION_FIELDS: Array<keyof WizardValidation> = [
   'ok', 'issues', 'read_only', 'read_only_reason',
 ];
-const DETAIL_FIELDS: Array<keyof WizardRunDetail> = [
-  'status', 'message', 'inputs', 'awaiting', 'outcomes', 'archived',
+const DETAIL_FIELDS: Array<keyof WizardRunDetail> = ['result', 'archived'];
+const RUN_STATE_FIELDS: Array<keyof WizardRunState> = ['result', 'approved'];
+/** The base every answer carries, whatever called it. */
+const ANSWER_FIELDS: Array<keyof ReturnedValue> = [
+  'exit_code', 'value', 'detail', 'ran', 'timed_out', 'duration_s', 'executor', 'check',
 ];
-const OUTCOME_FIELDS: Array<keyof WizardStepOutcome> = [
-  'step_id', 'status', 'message', 'returncode', 'process_id', 'duration_s',
-];
-const PROBE_FIELDS: Array<keyof WizardStepProbe> = [
-  'phase', 'command', 'returncode', 'timed_out', 'duration_s', 'stdout', 'stderr', 'truncated',
-];
+/** What a cli answer adds. */
+const CLI_FIELDS: Array<keyof CliResult> = ['command', 'returncode', 'stdout', 'stderr'];
+/** Step fields `strip_heavy` removes from `run_state` — output, not verdict. */
+const HEAVY: string[] = ['stdout', 'stderr', 'text', 'value'];
 
 let wizards: Wizard[];
 
@@ -67,10 +68,16 @@ describe('wizard — frontend/backend shape contract', () => {
     }
   });
 
-  it('never puts probes on `run_state`, which rides every row and every push', () => {
+  it('carries `run_state` as a result and an approval, and never puts step output on it', () => {
     for (const wizard of wizards) {
-      for (const outcome of wizard.run_state?.outcomes ?? []) {
-        expect(outcome, `probes leaked onto ${wizard.name}'s run_state`).not.toHaveProperty('probes');
+      for (const field of RUN_STATE_FIELDS) {
+        expect(wizard.run_state, `WizardRunState.${String(field)} is missing`).toHaveProperty(field);
+      }
+      // It rides every row and every push; output is for `run-detail`.
+      for (const [id, step] of Object.entries(wizard.run_state?.result?.steps ?? {})) {
+        for (const heavy of HEAVY) {
+          expect(step, `${heavy} leaked onto ${wizard.name}'s run_state step ${id}`).not.toHaveProperty(heavy);
+        }
       }
     }
   });
@@ -107,23 +114,31 @@ describe('wizard — frontend/backend shape contract', () => {
     expect(verdict.read_only_reason).toBeTruthy();
   });
 
-  it('round-trips every run-detail field, and every probe field it carries', async () => {
-    const detail = await wizards[0].runDetail();
-    for (const field of DETAIL_FIELDS) {
-      expect(detail, `WizardRunDetail.${String(field)} is missing`).toHaveProperty(field);
-    }
-
-    // Whatever runs this instance happens to hold get their shapes checked too.
-    for (const outcome of detail.outcomes ?? []) {
-      for (const field of OUTCOME_FIELDS) {
-        expect(outcome, `WizardStepOutcome.${String(field)} is missing`).toHaveProperty(field);
+  it('round-trips every run-detail field, and every answer field it carries', async () => {
+    for (const wizard of wizards) {
+      const detail = await wizard.runDetail();
+      for (const field of DETAIL_FIELDS) {
+        expect(detail, `WizardRunDetail.${String(field)} is missing`).toHaveProperty(field);
       }
-      for (const probe of outcome.probes ?? []) {
-        for (const field of PROBE_FIELDS) {
-          expect(probe, `WizardStepProbe.${String(field)} is missing`).toHaveProperty(field);
+      if (!detail.result) continue;
+
+      // Whatever runs this instance happens to hold get their shapes checked too.
+      for (const field of ANSWER_FIELDS) {
+        expect(detail.result, `WizardResult.${String(field)} is missing`).toHaveProperty(field);
+      }
+      for (const step of Object.values(detail.result.steps ?? {})) {
+        for (const field of ANSWER_FIELDS) {
+          expect(step, `step answer .${String(field)} is missing`).toHaveProperty(field);
         }
-        // The RESOLVED command for this platform, never the per-OS map.
-        expect(typeof probe.command).toBe('string');
+        // A NESTED answer carries its class's tag, so a step reads back as what it was.
+        expect(step.spec_kind, 'a step answer is tagged').toMatch(/^compute\.returned/);
+        if (step.spec_kind === 'compute.returned.cli') {
+          for (const field of CLI_FIELDS) {
+            expect(step, `CliResult.${String(field)} is missing`).toHaveProperty(field);
+          }
+          // The RESOLVED command for this platform, never the per-OS map.
+          expect(typeof step.command).toBe('string');
+        }
       }
     }
   });

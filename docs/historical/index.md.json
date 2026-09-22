@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-dd704676-0ed2-54f5-b428-c5a87a43ce40",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "historical",
+  "folder_name": "historical",
+  "inputs_hash": "1ac8099865a56ed141d21850141709b9b03ecc552d257e15355a3bebbab968f9",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "Retired design documents, kept for provenance rather than guidance. The stack and loaders they describe have since moved; read them to understand how a decision was reached, not how the system works now.",
+  "files": [
+    {
+      "name": "AgentApi.md",
+      "rel_path": "AgentApi.md",
+      "title": "AgentApi.md \u2014 Agent Execution API Specification",
+      "summary": "Historical design spec for the three-layer agent execution stack, AgenticProcess over Shell over Pty, with the shared open/start/stop verb vocabulary.",
+      "content_hash": "5761f3fb25ea57f704afc3283188a9db6d660006ee01d19d387440f3bc1ef31b",
+      "size_bytes": 49966
+    },
+    {
+      "name": "DESIGN_loadConversation.md",
+      "rel_path": "DESIGN_loadConversation.md",
+      "title": "Design: `loadConversation` Loader \u2014 moved",
+      "summary": "Retired stub: the loadConversation loader design moved into the collaboration docs' hub fan-out and loader page.",
+      "content_hash": "51a1aef92bfa3d4e561a84bfae25d2864b6e034a5e58861e33c3de8ea30b14fc",
+      "size_bytes": 743
+    },
+    {
+      "name": "contextProcess.md",
+      "rel_path": "contextProcess.md",
+      "title": "ContextProcess",
+      "summary": "ContextProcess as a pattern, not a type: pairing a GraphContext with an AgenticProcess and folding captured context into a worker's launch prompt.",
+      "content_hash": "446c57729a863c200506c18dfffddf8791df0fb3a80813abc6256ed7f90aeb8d",
+      "size_bytes": 9676
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-09-19T23:43:14.850578+00:00",
+  "latest_process_ref": ""
+}

@@ -41,7 +41,7 @@ def test_every_vendor_is_an_accepted_hint():
 
     source = inspect.getsource(scan_actions.ScanActionsMixin._scan_get_by_worker_id)
     assert "VENDOR_KEYS" in source
-    assert VENDOR_KEYS == {"claude", "codex", "copilot", "opencode"}
+    assert VENDOR_KEYS == {"claude", "codex", "copilot", "opencode", "deepagents"}
 
 
 def test_the_resolver_probes_opencode():
@@ -116,9 +116,14 @@ def _patch_all(monkeypatch, called):
         "find_opencode_session",
         _spy(called, "opencode"),
     )
+    monkeypatch.setattr(
+        "flow_sdk.builtin.agentic_process.cli_drivers.deepagents.session_history."
+        "find_deepagents_session",
+        _spy(called, "deepagents"),
+    )
 
 
-@pytest.mark.parametrize("hint", ["claude", "codex", "copilot", "opencode"])
+@pytest.mark.parametrize("hint", ["claude", "codex", "copilot", "opencode", "deepagents"])
 def test_a_hint_probes_exactly_one_backend(hint, monkeypatch):
     called: list[str] = []
     _patch_all(monkeypatch, called)
@@ -127,8 +132,8 @@ def test_a_hint_probes_exactly_one_backend(hint, monkeypatch):
 
 
 def test_no_hint_probes_every_vendor(monkeypatch):
-    """The unhinted path must still cover all four, or resume silently 404s."""
+    """The unhinted path must still cover every vendor, or resume silently 404s."""
     called: list[str] = []
     _patch_all(monkeypatch, called)
     scan_actions._resolve_session_record("some-session-id", hint=None)
-    assert set(called) == {"claude", "codex", "copilot", "opencode"}
+    assert set(called) == {"claude", "codex", "copilot", "opencode", "deepagents"}

@@ -1,15 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
-import {
-  ActionInfo,
-  dataManager,
-  FSRef,
-  TypeId,
-  Wizard,
-  type WizardAwaiting,
-  type WizardStepOutcome,
-} from '@sdk';
+import { ActionInfo, dataManager, FSRef, TypeId, Wizard } from '@sdk';
 import {
   CheckCircle2,
   Circle,
@@ -23,7 +15,6 @@ import {
 
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
-import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { AdvancedOnly } from '@src/components/view-mode';
@@ -36,7 +27,7 @@ import { useSideWindows } from '@src/navigation/useSideWindows';
 import { WizardDebugger } from './WizardDebugger';
 import { WizardForm } from './WizardForm';
 import { useWizardDoc } from './useWizardDoc';
-import { useWizardRun } from './useWizardRun';
+import { stepStatus, useWizardRun } from './useWizardRun';
 import { LIVE_STATE, type WizardDoc } from './wizard-doc';
 
 /** The document beside `wizard.json` — the file the editor owns. */
@@ -55,8 +46,10 @@ const STEP_STYLE: Record<string, { Icon: typeof Circle; className: string }> = {
   completed: { Icon: CheckCircle2, className: 'text-green-500' },
   satisfied: { Icon: CheckCircle2, className: 'text-green-500/70' },
   not_applicable: { Icon: CircleDashed, className: 'text-muted-foreground/40' },
-  awaiting_input: { Icon: Loader2, className: 'text-amber-500' },
+  running: { Icon: Loader2, className: 'text-amber-500' },
   failed: { Icon: TriangleAlert, className: 'text-destructive' },
+  refused: { Icon: TriangleAlert, className: 'text-destructive' },
+  not_found: { Icon: TriangleAlert, className: 'text-destructive' },
   not_reached: { Icon: Circle, className: 'text-muted-foreground/30' },
 };
 
@@ -107,21 +100,10 @@ function WizardViewerBody({
 }) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>({});
   const [askApproval, setAskApproval] = useState(false);
 
-  // The SDK entity already types this; a local re-declaration was both a
-  // duplicate and weaker (plain `string` where the SDK has the union).
   const state = wizard.run_state ?? {};
-  const awaiting: WizardAwaiting[] = state.awaiting ?? [];
-  const pending = state.status === 'pending';
   const conversational = Boolean(wizard.agent);
-  // What a previous run was told. Persisting these is what lets a PARKED run
-  // resume without re-asking — but it also means a SETTLED run re-runs with the
-  // same answers, silently, producing a result identical to the last one. So a
-  // settled run has to show them and offer a way to change them.
-  const answers = Object.entries(state.inputs ?? {});
-  const settled = !pending && (state.outcomes?.length ?? 0) > 0;
 
   // Both hooks run UNCONDITIONALLY. The advanced gate below is a skin — it
   // changes what is rendered, never which hooks execute or what data is
@@ -136,9 +118,9 @@ function WizardViewerBody({
   const { windows, open, close, closeAll, select } = useSideWindows();
   const isAdvanced = useIsAdvanced();
 
-  // The DOCUMENT is the source of the step list, not `state.outcomes`. A wizard
-  // that has never run used to show no steps at all; and an outcome list is the
-  // shape of the last run, which may predate the document being read here.
+  // The DOCUMENT is the source of the step list, not the last run's steps. A
+  // wizard that has never run used to show no steps at all; and the last run's
+  // steps are its shape, which may predate the document being read here.
   const doc = editor.doc ?? initial;
   const stepIds = (doc?.steps ?? []).map((step) => step.id);
   const { steps: joinedSteps, orphaned } = runView.join(stepIds);
@@ -224,21 +206,6 @@ function WizardViewerBody({
     await call('run', { approved: true });
   }, [call, revealRunDetail]);
 
-  const submit = useCallback(
-    async (name: string) => {
-      // What the field SHOWS, which may be the previous answer offered back and
-      // never touched. Reading `values` alone would make Continue a no-op until
-      // the user typed something, on a form that already looks filled in.
-      const value = values[name] ?? String(state.inputs?.[name] ?? '');
-      if (value === '') return;
-      // `set-input` runs the wizard again, so this is a run start too.
-      revealRunDetail();
-      await call('set-input', { name, value });
-      setValues((prev) => ({ ...prev, [name]: '' }));
-    },
-    [call, revealRunDetail, values, state.inputs],
-  );
-
   const main = (
     <div className="flex flex-col gap-4 p-4" data-testid="wizard-viewer">
       <header className="flex items-center gap-2">
@@ -282,7 +249,7 @@ function WizardViewerBody({
             </AdvancedOnly>
             <Button onClick={run} disabled={busy} data-testid="wizard-run">
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {pending ? <Trans>Continue</Trans> : <Trans>Run</Trans>}
+              <Trans>Run</Trans>
             </Button>
           </>
         )}
@@ -316,47 +283,6 @@ function WizardViewerBody({
         </section>
       ) : null}
 
-      {/* The form is rendered from what the RUN said it needs, not from a
-          hand-written list — a wizard that declares a new input grows a field
-          here with no change to this component. */}
-      {pending && awaiting.length > 0 ? (
-        <section className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3" data-testid="wizard-awaiting">
-          <p className="mb-2 text-sm font-medium">
-            <Trans>This wizard needs something from you</Trans>
-          </p>
-          {awaiting.map((item) => (
-            <div key={item.name} className="mb-2 flex flex-col gap-1">
-              <label className="text-sm" htmlFor={`wz-${item.name}`}>
-                {item.label || item.name}
-              </label>
-              {item.description ? (
-                <span className="text-xs text-muted-foreground">{item.description}</span>
-              ) : null}
-              <div className="flex gap-2">
-                <Input
-                  id={`wz-${item.name}`}
-                  data-testid={`wizard-input-${item.name}`}
-                  // Offer the previous answer back rather than making it be
-                  // retyped: a fresh run ASKS, but it should not pretend the
-                  // wizard has never been told anything.
-                  value={values[item.name] ?? String(state.inputs?.[item.name] ?? '')}
-                  onChange={(e) => setValues((prev) => ({ ...prev, [item.name]: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter') void submit(item.name); }}
-                />
-                <Button
-                  variant="secondary"
-                  disabled={busy || !(values[item.name] ?? state.inputs?.[item.name])}
-                  onClick={() => void submit(item.name)}
-                  data-testid={`wizard-submit-${item.name}`}
-                >
-                  <Trans>Continue</Trans>
-                </Button>
-              </div>
-            </div>
-          ))}
-        </section>
-      ) : null}
-
       {/* The reader SWALLOWS a malformed document — one bad file must not wedge
           an indexer walking a hundred assets — which made "I saved it and my
           wizard disappeared" indistinguishable from "there was never a wizard
@@ -372,19 +298,18 @@ function WizardViewerBody({
           <ul className="flex flex-col gap-1">
             {joinedSteps.map(({ step_id, live, outcome }) => {
               // Live wins while the run is in flight — it is the fresher of the
-              // two — and the durable outcome takes over once it settles.
-              const status = live && runView.live ? LIVE_STATE[live.state]?.status : outcome?.status;
+              // two — and the durable answer takes over once it settles.
+              const status = live && runView.live ? LIVE_STATE[live.state]?.status : stepStatus(outcome);
               const style = STEP_STYLE[status ?? ''] ?? STEP_STYLE.not_reached;
               const { Icon } = style;
-              // A running step maps to `awaiting_input` in LIVE_STATE, so this
-              // one test covers both the live and the parked case.
-              const spin = status === 'awaiting_input';
+              // A step still in flight spins.
+              const spin = status === 'running';
               return (
                 <li key={step_id} className="flex items-center gap-2 text-sm" data-testid={`wizard-step-${step_id}`}>
                   <Icon className={`h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
                   <span className="font-mono text-xs text-muted-foreground">{step_id}</span>
-                  {live?.current || outcome?.message ? (
-                    <span className="text-muted-foreground">— {live?.current || outcome?.message}</span>
+                  {live?.current || outcome?.detail ? (
+                    <span className="text-muted-foreground">— {live?.current || outcome?.detail}</span>
                   ) : null}
                 </li>
               );
@@ -406,26 +331,9 @@ function WizardViewerBody({
 
       {/* What the RUN did, which is not a fact about the document's steps. This
           used to live inside the step list, and re-sourcing that list from the
-          document made a completed run's answers vanish for any wizard whose
+          document made a completed run's answer vanish for any wizard whose
           steps had since changed. */}
-      {state.message ? <p className="text-xs text-muted-foreground">{state.message}</p> : null}
-
-      {settled && answers.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2" data-testid="wizard-answers">
-          <span className="text-xs text-muted-foreground">
-            <Trans>Answered with</Trans>
-          </span>
-          {answers.map(([name, value]) => (
-            <span
-              key={name}
-              className="rounded border border-border px-1.5 py-0.5 font-mono text-xs"
-              data-testid={`wizard-answer-${name}`}
-            >
-              {name}: {typeof value === 'string' ? value : JSON.stringify(value)}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      {state.result?.detail ? <p className="text-xs text-muted-foreground">{state.result.detail}</p> : null}
 
       {/* `reserve={false}`: the default keeps the subtree mounted and its inputs
           focusable in Standard view, which is wrong for a form — you would tab

@@ -28,7 +28,18 @@ def resolve_kind(kind: str) -> Any:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # lazy: avoid import cycle
 
     shape = SchemaRegistry.kind_type(kind)
-    return Any if shape is None else shape
+    if shape is not None:
+        return shape
+    # A REGISTERED type that names no shape is an authoring mistake, not an
+    # anonymous kind: the author meant a real thing and it has no document form.
+    # An unregistered name stays anonymous (``Any``) — forward references during
+    # eager compilation depend on it.
+    if SchemaRegistry.get(kind) is not None:
+        raise ValueError(
+            f"{kind!r} is an entity type with no document shape (no asset_spec); "
+            "a kind names a DataSpec"
+        )
+    return Any
 
 
 def register_builtin_kinds() -> None:
@@ -40,10 +51,14 @@ def register_builtin_kinds() -> None:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # lazy
 
     SchemaRegistry.register_kind("fs_ref", FSRef)
+    from flow_sdk.schema.data_spec.io import native  # noqa: PLC0415 — the file carriers
+
+    native.register()  # ``Text`` renders as ``string``; ``binary`` is its own form
     import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
     import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
     import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``
     import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
+    import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.cli`` / ``compute_op.prompt`` / ``compute_op.agent`` / ``compute_op.ask``
     import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
     import flow_sdk.schema.data_spec.folder_change_spec  # noqa: F401  — registers ``ingest.folder_change``
@@ -56,10 +71,12 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
     import flow_sdk.schema.data_spec.rag_spec  # noqa: F401  — registers ``rag.chunk`` / ``rag.hit``
     import flow_sdk.schema.data_spec.runtime_info_spec  # noqa: F401 — registers ``runtime.info``
+    import flow_sdk.schema.data_spec.service_endpoint_spec  # noqa: F401  — registers ``web.app`` / ``api.rest`` / ``api.chat.openai`` / ``api.mcp`` / ``flowpad.workspace``
+    import flow_sdk.schema.data_spec.returned_value_spec  # noqa: F401  — registers ``compute.returned`` and its ``.cli`` / ``.prompt`` / ``.ask`` / ``.wizard`` answers
     import flow_sdk.schema.data_spec.session_spec  # noqa: F401  — registers ``session.start``
     import flow_sdk.schema.data_spec.source_item_spec  # noqa: F401  — registers ``ingest.source_item``
     import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action``
-    import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.check`` / ``wizard.action.*`` / ``wizard.outcome`` / ``wizard.awaiting`` / ``wizard.probe`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
+    import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
     import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``
     import flow_sdk.sources.values  # noqa: F401  — registers ``source.*`` and ``ingest.file`` / ``ingest.profile`` / ``ingest.message``
     # A data source asset defines its own payload kinds (``ingest.message.whatsapp``) in code the

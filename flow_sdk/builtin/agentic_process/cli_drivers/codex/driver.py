@@ -149,6 +149,26 @@ class CodexDriver:
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def pty_turn_complete(entry: "Any", *, active_turn_id: str | None) -> bool:
+        """Codex records ``event_msg.task_complete``, sometimes with a turn id.
+
+        A present ``turn_id`` must correlate EXACTLY with the turn we saw start
+        — a mismatch belongs to another turn and must not end this one. Codex
+        often omits it, and a bare ``task_complete`` does refer to the active
+        turn, so treat absence as a match rather than waiting out the
+        inactivity fallback.
+        """
+        if getattr(entry, "subtype", "") != "event_msg.task_complete":
+            return False
+        payload = getattr(entry, "payload", None)
+        completed_turn_id = ""
+        if isinstance(payload, dict):
+            completed_turn_id = str(payload.get("turn_id") or "")
+        if not completed_turn_id:
+            return True
+        return completed_turn_id == active_turn_id
+
     def cli_options(self, process: "AgenticProcess") -> CodexAgentOptions:
         """Build a Codex CLI command for ``process``.
 

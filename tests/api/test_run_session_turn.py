@@ -23,9 +23,13 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 def fake_worker(monkeypatch):
     """Patch the two worker seams: ``ap.prompt`` records the text, capture
     answers with a reply derived from it. ``in_flight`` proves serialization."""
-    state = {"prompts": [], "in_flight": 0, "max_in_flight": 0, "fail": False}
+    state = {"prompts": [], "in_flight": 0, "max_in_flight": 0, "fail": False, "busy": False}
 
     async def fake_prompt(self, text, *a, **k):
+        if state["busy"]:
+            from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+
+            return ApiFailResponse(message="another prompt turn is already in flight for this process", status_code=409)
         state["in_flight"] += 1
         state["max_in_flight"] = max(state["max_in_flight"], state["in_flight"])
         state["prompts"].append(text)
@@ -100,6 +104,23 @@ async def test_failed_run_marks_error_and_keeps_the_marker(bootstrapped_client, 
     assert result.status != "SUCCESS"
     assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.ERROR.value
     assert (await FlowMessage.get_one({"id": fm.id})).prompt_auto_handled is True
+    assert _reply_rows(await FlowMessage.get_all({"conversation_id": conv_id}), rws.id) == []
+
+
+async def test_a_turn_the_worker_refuses_is_not_answered_with_the_previous_reply(bootstrapped_client, user, fake_worker):
+    """A refused turn has no reply of its own. Capturing anyway handed back the
+    PREVIOUS turn's text as this one's answer."""
+    fake_worker["busy"] = True
+    conv_id = await make_conversation(bootstrapped_client)
+    conv = await Conversation.get_one({"id": conv_id})
+    rws = await make_session(conv_id, S.IDLE.value)
+    fm = inbound_prompt_fm(conv_id, rws.id, fm_id="d4d4d4d4-0000-4000-8000-0000000000d1")
+    await fm.save(notify=False)
+
+    result = await ep.run_session_turn(rws, fm, conv, someone_typeid=await _someone(user))
+    assert result.status != "SUCCESS"
+    assert "already in flight" in (result.message or "")
+    assert fake_worker["prompts"] == []
     assert _reply_rows(await FlowMessage.get_all({"conversation_id": conv_id}), rws.id) == []
 
 

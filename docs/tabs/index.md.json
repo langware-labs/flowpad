@@ -5,21 +5,21 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "tabs",
   "folder_name": "tabs",
-  "inputs_hash": "a47d5b94713d86b649d44e0e53cd94039d9b79daca69f45cd2afb0a9e797acc5",
+  "inputs_hash": "ca533fab86503809f37a9360c1517505abf503b1b0f9dab6950e9d54f2943730",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "Tab surfaces beyond the strip itself \u2014 how a view mode lays content over a process's single shell dock, what is allowed to write that content, and how it reaches the client. Currently covers the vibe-mode Display pane.",
+  "self_summary": "The Display pane as an address: how `flow show` navigates a URL-owned target and why the display stack belongs to the router rather than to component state.",
   "files": [
     {
       "name": "display.md",
       "rel_path": "display.md",
       "title": "Vibe Display surface",
-      "summary": "Vibe Display pane: the display_stack model, on_show single writer with stale-save guard, two transport channels, dock routing, and VibeWorkspace layout precedence.",
-      "content_hash": "e288a107ffad88fac99ce5dc1fed17234e30a854c9ac048f69d921c246fc0e6b",
-      "size_bytes": 13516
+      "summary": "The vibe Display surface: display-stack data model, flow show target resolution, transport channels, reactivity guards, and the display as an address.",
+      "content_hash": "22bc728d33eadfb8962ec1445f6d4b1b938b10c753b6751efaeb1d1b3571dfd6",
+      "size_bytes": 21393
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-08-23T22:11:28.823621+00:00",
+  "generated_at": "2026-09-22T10:22:31.474894+00:00",
   "latest_process_ref": ""
 }

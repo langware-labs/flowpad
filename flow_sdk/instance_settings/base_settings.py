@@ -513,6 +513,15 @@ class BaseInstanceSettings:
         return self.instances_root / self.instance_name
 
     @property
+    def deepagents_data_dir(self) -> Path:
+        """The Deep Agents worker's session store (one LangGraph checkpoint DB per session).
+
+        Ours, not a vendor's home — so it lives under ``instance_dir`` and is per-instance and
+        test-sandboxed by construction, with no redirect env var to invent.
+        """
+        return self.instance_dir / "deepagents"
+
+    @property
     def sodot_path(self) -> Path:
         """Encrypted secrets file under ``instance_dir``."""
         return self.instance_dir / SODOT_FILENAME

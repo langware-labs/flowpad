@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
-import type { WizardStepOutcome } from '@sdk';
 
 import { WizardStepInspector } from './WizardStepInspector';
 import { LIVE_STATE, type WizardStepDoc } from './wizard-doc';
-import type { WizardRunStep } from './useWizardRun';
+import { stepStatus, type WizardRunStep, type WizardStepAnswer } from './useWizardRun';
 
 /**
  * What the run did, step by step, with the commands and their output.
@@ -24,7 +23,7 @@ export function WizardDebugger({
   docSteps = [],
 }: {
   steps: WizardRunStep[];
-  orphaned: WizardStepOutcome[];
+  orphaned: WizardStepAnswer[];
   loadingDetail: boolean;
   onExpand: () => void;
   /** The DOCUMENT's steps, so the inspector can tell an agentic step from a
@@ -37,7 +36,7 @@ export function WizardDebugger({
   const toggle = (stepId: string) => {
     const next = open === stepId ? null : stepId;
     setOpen(next);
-    // Probes are fetched on the EXPAND gesture, not on advanced mode — the
+    // Step output is fetched on the EXPAND gesture, not on advanced mode — the
     // gate is a skin, so keying the fetch off `isAdvanced` would fetch for
     // every wizard anyone opens in Advanced.
     if (next) onExpand();
@@ -57,7 +56,7 @@ export function WizardDebugger({
 
       <ul className="flex flex-col">
         {steps.map(({ step_id, live: liveNode, outcome }) => {
-          const status = liveNode ? (LIVE_STATE[liveNode.state]?.label ?? liveNode.state) : outcome?.status;
+          const status = liveNode ? (LIVE_STATE[liveNode.state]?.label ?? liveNode.state) : stepStatus(outcome);
           return (
             <li key={step_id} className="border-t border-border/60 py-1.5 first:border-t-0">
               <button
@@ -68,7 +67,7 @@ export function WizardDebugger({
               >
                 <span className="font-mono text-xs text-muted-foreground">{step_id}</span>
                 <span className="flex-1 text-xs text-muted-foreground">
-                  {liveNode?.current || outcome?.message || ''}
+                  {liveNode?.current || outcome?.detail || ''}
                 </span>
                 {status && <span className="font-mono text-[11px] text-muted-foreground">{status}</span>}
                 {outcome?.duration_s ? (
@@ -102,8 +101,8 @@ export function WizardDebugger({
             {orphaned.map((o) => (
               <li key={o.step_id} className="flex gap-2 text-xs text-muted-foreground">
                 <span className="font-mono">{o.step_id}</span>
-                <span>{o.status}</span>
-                {o.message && <span>— {o.message}</span>}
+                <span>{stepStatus(o)}</span>
+                {o.detail && <span>— {o.detail}</span>}
               </li>
             ))}
           </ul>

@@ -3,7 +3,7 @@
 Every placement is this entity, whatever is placed and wherever it lands:
 
     Agent      → a sandbox of its own            (kind ``runtime.agent``)
-    MicroApp   → a dev server, or a sandbox      (kind ``runtime.web``)
+    WebApp   → a dev server, or a sandbox      (kind ``runtime.web``)
     ComputeNode→ a desktop                       (kind ``compute.node``)
     GCP/AWS/…  → an inventoried cloud resource   (kind ``gcp.*``)
 
@@ -270,6 +270,28 @@ class Deployment(Entity):
             await existing.save()
         return existing.with_element(element)
 
+    async def rekey(self, new_id: str, **changes: Any) -> "Deployment":
+        """This placement, at *new_id* — the hub's id for it. Returns the re-keyed row.
+
+        One placement, one id everywhere: a box re-keys the local placement it
+        minted rather than translating ids at every read. What the placement
+        exposes moves with it; the old edge is cut first, because deleting the old
+        row cascades to its children. *changes* are applied on the way.
+        """
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+        data = self.model_dump(mode="json", exclude={"id", "created_date", "updated_date", "remote"})
+        adopted = Deployment(**{**data, **changes, "id": new_id})
+        await adopted.save()
+        for endpoint in await ServiceEndpoint.of_deployment(str(self.typeid)):
+            endpoint.parent_type_id = str(adopted.typeid)
+            await endpoint.save()
+            await adopted.attach_child(endpoint)
+            await self.detach_child(endpoint.typeid, notify=False)
+        await self.delete()
+        logger.info("placement %s re-keyed to %s", self.id, new_id)
+        return adopted
+
     @classmethod
     async def adopt_from_hub(cls, payload: Any, element: Optional[Entity] = None) -> Optional["Deployment"]:
         """Store a hub-created placement locally, AT THE HUB'S ID.
@@ -329,29 +351,42 @@ class Deployment(Entity):
         node_id = self.compute_node_id
         return node_id is not None and node_id == ComputeNode._local_id()
 
-    @property
-    def runtime_port(self) -> int | None:
-        """The local dev-server port this placement runs on, if any.
+    async def endpoints(self) -> list:
+        """What this placement exposes — one ``ServiceEndpoint`` per service it answers on.
 
-        Owned here because callers kept re-deriving it from the raw label —
-        parse, swallow ValueError, sometimes range-check, sometimes not. A junk
-        label now reads as "no port" everywhere instead of only where someone
-        remembered to guard.
+        Replaces the port label and the ``host_url`` guess: where a placement is
+        reached is a fact about each thing it serves, not one string on the row.
         """
-        raw = (self.provider_labels or {}).get("flowpad.runtime.port")
-        try:
-            port = int(str(raw))
-        except (TypeError, ValueError):
-            return None
-        return port if 0 < port <= 65535 else None
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
-    @property
-    def host_url(self) -> str | None:
-        """Where a human reaches this placement, if it is reachable at all."""
-        return (self.origin.url if self.origin else None) or self.target.location
+        return await ServiceEndpoint.of_deployment(str(self.typeid))
+
+    @action.get(action_name="endpoints")
+    async def endpoints_action(self):
+        """`GET /deployment/<id>/endpoints` — what this placement serves.
+
+        For a cloud placement the hub is authoritative: its rows are read now and
+        adopted here at the hub's ids (``remote``), so a ``service`` call on one is
+        forwarded to the hub, and the hub to the machine — the way a desktop chats
+        with an agent placed in a box.
+        """
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if self.remote:
+            from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+            data = await hub_http.hub_get(self.get_type(), self.id, "endpoints")
+            rows = data.get("endpoints") if isinstance(data, dict) else None
+            if not isinstance(rows, list):
+                return ApiFailResponse(message="the hub did not answer for this cloud placement", status_code=502)
+            endpoints = [e for e in [await ServiceEndpoint.adopt_from_hub(row) for row in rows] if e is not None]
+        else:
+            endpoints = await self.endpoints()
+        return ApiSuccessResponse(data={"endpoints": [e.model_dump(mode="json") for e in endpoints]})
 
     async def element(self) -> Optional[Entity]:
-        """The entity this places — the parent. Agent, MicroApp, ComputeNode…
+        """The entity this places — the parent. Agent, WebApp, ComputeNode…
 
         Resolved through the registry rather than a per-kind ``if`` ladder, so a
         new deployable element needs no change here. ``TypeId`` has no
@@ -627,13 +662,11 @@ class Deployment(Entity):
 
         ``wait=True`` polls to a terminal state.
         """
-        from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
-
         proc = await self.create_process(prompt, **options)
         await proc.save()
-        resp = await proc.prompt(prompt)
-        if isinstance(resp, ApiFailResponse):
-            raise RuntimeError(f"launch failed — {resp.message}")
+        taken = await proc.send_turn(prompt)
+        if not taken.ok:
+            raise RuntimeError(f"launch failed — {taken.detail}")
         if wait:
             await proc.wait()
         return proc

@@ -1,16 +1,12 @@
 import { openExternal } from '@src/lib/open-external';
-import { ServiceStatusLed } from '@src/components/machine-overview/service-status-led';
 import type { PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebUrlDisplay } from '@src/components/web-url-display/WebUrlDisplay';
-import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappTerminalPanel } from '@src/components/webapp-viewer/webapp-terminal-panel';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer, useDockNavigation } from '@src/navigation';
 import { requestTabClose } from '@src/tabs/tab-close-request';
-import { useProcessWebApp } from '@src/hooks/flow-hooks';
-import { useViewerStore } from '@src/hooks/flow-hooks';
 import { ViewType, WebappSubview } from '@sdk';
 import { useContext as useSdkContext } from '@sdk/react/hooks';
 import { hasElectronDisplayCapture } from '@src/components/display-toolbar/capture-region';
@@ -24,11 +20,15 @@ interface WebappViewerProps {
   onAnnotate?: (target: HTMLElement) => void;
 }
 
+/**
+ * A web page by its URL (`/dock/web-app?url=…`) — an external site, or anything
+ * else addressed only by where it lives. A running app is NOT shown here: it is
+ * addressed by what serves it and rendered by the app dock (`AppDisplayViewer`).
+ */
 export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
   const { t } = useLingui();
   const { flow } = useAgentContext();
   const { isDesktop } = useSdkContext();
-  const { currentContext } = useViewerStore();
   const { navigation, currentDock } = useDockNavigation();
   const iframeRef = useRef<PersistentIframeHandle>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -58,16 +58,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
     [navigation],
   );
 
-  // A web preview is a concrete running-process concern. The port arrives in
-  // the URL-derived viewer context; logical Artifacts no longer carry it.
-  const webAppPort = currentContext?.viewerOptions?.port ?? null;
-
-  const webAppConfig = useProcessWebApp(flow, webUrl ? null : webAppPort);
-  const src = webUrl ?? webAppConfig.host;
-
-  // Failure handling now lives in WebappDisplay: it diagnoses the app through
-  // the backend probe and runs the repair agent itself, so this viewer no longer
-  // has to route a generic "it's broken" prompt back up to the chat.
+  const src = webUrl;
 
   const handleRefresh = useCallback(() => {
     iframeRef.current?.refresh();
@@ -96,13 +87,8 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
         <div className="flex items-center gap-2">
           {webUrl ? (
             <span className="truncate font-mono text-xs text-muted-foreground" title={webUrl}>{webUrl}</span>
-          ) : webAppPort ? (
-            <>
-              <span className="font-mono text-xs text-muted-foreground">localhost:{webAppPort}</span>
-              <ServiceStatusLed />
-            </>
           ) : (
-            <span className="text-xs text-muted-foreground"><Trans>No runtime port in this view</Trans></span>
+            <span className="text-xs text-muted-foreground"><Trans>No web page in this view</Trans></span>
           )}
         </div>
 
@@ -212,14 +198,6 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
               url={webUrl}
               testId="web-url-frame"
               onOpenedInBrowser={handleOpenedInBrowser}
-            />
-          ) : hasWebApp ? (
-            <WebappDisplay
-              ref={iframeRef}
-              processId={flow?.id}
-              src={webAppConfig.host}
-              port={webAppPort != null ? String(webAppPort) : null}
-              cacheKey={webAppConfig.cacheKey}
             />
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No web app available</Trans></div>

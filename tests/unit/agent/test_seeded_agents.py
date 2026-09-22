@@ -16,7 +16,8 @@ AGENT_ROOT = Path(flowpad_assistant_project_root()) / "agentic-assets" / "agent"
 EXPECTED = {
     "artifact-setup", "asset-cleanup", "capability-installer", "chrome-auth",
     "cloud-error-fixer", "diagnose", "email-summarizer", "emailer", "git-setup",
-    "migration-runner", "slack-poster", "slack-summarizer", "task-analyze", "vibe",
+    "migration-runner", "provisioner", "slack-poster", "slack-summarizer", "task-analyze",
+    "vibe",
 }
 
 

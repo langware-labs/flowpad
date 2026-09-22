@@ -169,18 +169,18 @@ def _inject_claude_harness() -> None:
 
 
 @pytest.fixture(autouse=True)
-async def armed_agent_runner():
+async def agent_server():
     """Bring the process up the way the server does, then run the test.
 
-    pytest never runs server startup, so nothing is armed and nothing discovers
-    the CLI. Both halves below stand that up — and both go through the same
-    entry point production uses, so a change to what startup arms reaches this
-    test instead of leaving it asserting against a half-wired process.
+    pytest never runs server startup, so nothing serves and nothing discovers
+    the CLI. Both halves below stand that up — through the same entry points
+    production uses: the stream inbox (ingested mail is projected) and the agent
+    server (each agent placement's serve loop answers its channels). The test
+    tier turns channel loops off by default; this test IS one, so it asks.
     """
+    from flow_sdk.builtin.agent_serve import AgentServer
     from flow_sdk.stream_inbox import start_stream_inbox
 
-    # The SAME call `server/app.py` makes — the lane order is a production
-    # contract, so the test asserts against it rather than restating it.
     start_stream_inbox()
 
     # The turn spawns a real CLI, and the driver resolves it from the discovered
@@ -199,10 +199,15 @@ async def armed_agent_runner():
     # would have found: the folder holding the CLI on PATH.
     _inject_claude_harness()
 
-    yield
+    server = AgentServer(serve_channels=True)
+    await server.start()
+    try:
+        yield server
+    finally:
+        await server.stop()
 
 
-async def _agent_mailbox(mailboxes, *, allow: list[str]) -> DataSource:
+async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
     """A local Agent wired to the allocated mailbox; returns the source to poll.
 
     Returns the DataSource rather than the Agent because that is the only half
@@ -226,7 +231,17 @@ async def _agent_mailbox(mailboxes, *, allow: list[str]) -> DataSource:
         account_key=mailboxes["agent_address"],
     )
     await source.save()
+    await _served(server, agent, source)
     return source
+
+
+async def _served(server, agent, source) -> None:
+    """The agent's placement serves *source* from now on — a reconcile holds its position before
+    the loop starts, so mail sent after this is an arrival, never history."""
+    deployment = await agent.local_deployment()
+    await server.reconcile()
+    served = server.serving().get(str(deployment.id), frozenset())
+    assert str(source.id) in served, "the placement does not serve the mailbox"
 
 
 async def _await_reply(outsider_id: str, *, from_address: str) -> dict | None:
@@ -254,7 +269,7 @@ async def _await_reply(outsider_id: str, *, from_address: str) -> dict | None:
     return None
 
 
-async def test_an_outsider_emails_the_agent_and_gets_an_answer(mailboxes):
+async def test_an_outsider_emails_the_agent_and_gets_an_answer(mailboxes, agent_server):
     """The whole feature, from the outside: write to the address, get a reply.
 
     The question carries a NONCE and asks for it back. Asserting only that mail
@@ -262,7 +277,7 @@ async def test_an_outsider_emails_the_agent_and_gets_an_answer(mailboxes):
     reply came from a model that read the question.
     """
     driver = get_agent_mailbox_driver()
-    source = await _agent_mailbox(mailboxes, allow=[mailboxes["outsider_address"]])
+    source = await _agent_mailbox(mailboxes, agent_server, allow=[mailboxes["outsider_address"]])
     nonce = f"okra{uuid.uuid4().hex[:8]}"
 
     await driver.send(
@@ -274,7 +289,7 @@ async def test_an_outsider_emails_the_agent_and_gets_an_answer(mailboxes):
         },
     )
 
-    # One poll drives the whole chain: ingest → project → run the agent → reply.
+    # The poll ingests it; the agent's serve loop answers it (drain → gate → turn → reply).
     await sync_source(source)
 
     reply = await _await_reply(mailboxes["outsider_id"], from_address=mailboxes["agent_address"])
@@ -311,10 +326,10 @@ async def _ran_a_turn() -> bool:
     )
 
 
-async def test_an_unlisted_sender_is_ignored(mailboxes):
+async def test_an_unlisted_sender_is_ignored(mailboxes, agent_server):
     """The gate is what stands between a public address and an agent with tools."""
     driver = get_agent_mailbox_driver()
-    source = await _agent_mailbox(mailboxes, allow=["nobody@example.com"])
+    source = await _agent_mailbox(mailboxes, agent_server, allow=["nobody@example.com"])
 
     await driver.send(
         mailboxes["outsider_id"],
@@ -348,7 +363,7 @@ async def _sync_until_message(
                 return item
 
 
-async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
+async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
     """The public SDK snippet: Gmail → Agent mailbox → real Agent → Gmail."""
     gmail_address = str(os.environ.get("GMAIL_ADDRESS") or "").strip().lower()
     if not gmail_address or not os.environ.get("GMAIL_APP_PASSWORD"):
@@ -387,6 +402,7 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply():
         assert agent_source is not None, "allocate_mailbox() did not create the polling source"
         # Establish an empty committed cursor before the public message arrives.
         await sync_source(agent_source)
+        await _served(agent_server, pirate, agent_source)
 
         nonce = f"doubloon-{uuid.uuid4().hex[:8]}"
         sent = await gmail.send(

@@ -1,0 +1,235 @@
+"""Serving coverage for a ``static`` ServiceEndpoint — the one way a folder is served.
+
+A built app, a webapp asset and a static site are all a placement's ``static``
+endpoint, served at ``service_endpoint/<id>/service/…``. This suite covers that
+we serve the right bytes, revalidate them, refuse to escape the folder, tell an
+unbuilt app apart from a missing file, and hand every served document the API
+origin its SDK needs.
+
+The API-origin injection is the load-bearing one: it is what makes a served app
+talk to the backend that served it — the same document works on a laptop and in
+a cloud sandbox with nothing to configure.
+"""
+
+from __future__ import annotations
+
+import re
+import uuid
+
+import pytest
+
+from flow_sdk.builtin.faas.serve_static import API_ORIGIN_SNIPPET
+from flow_sdk.builtin.service_endpoint import ServiceEndpoint
+from flow_sdk.schema.data_spec.service_endpoint_spec import PROTOCOL_WEB_APP
+
+
+def _view_url(app: ServiceEndpoint, sub_path: str = "") -> str:
+    return f"/api/v1/graph/service_endpoint/{app.id}/service/{sub_path}"
+
+
+async def _static(root, **over) -> ServiceEndpoint:
+    endpoint = ServiceEndpoint(
+        name="Todo",
+        parent_type_id=f"deployment-{uuid.uuid4()}",
+        protocol={"spec_kind": PROTOCOL_WEB_APP},
+        backend={"type": "static", "root": str(root)},
+        **over,
+    )
+    await endpoint.save()
+    return endpoint
+
+
+async def _make_app(tmp_path, *, build: bool = True) -> ServiceEndpoint:
+    dist = tmp_path / "todo-app" / "dist"
+    if build:
+        dist.mkdir(parents=True)
+        (dist / "index.html").write_text("<html><head><title>Todo</title></head><body>todo</body></html>")
+        (dist / "app.js").write_text("console.log('todo')")
+        (dist / "secret-sibling.txt").write_text("in-app file")
+        (tmp_path / "todo-app" / "outside.txt").write_text("OUTSIDE THE SERVING ROOT")
+    return await _static(dist)
+
+
+@pytest.mark.asyncio
+async def test_serves_index_with_api_origin_injected(bootstrapped_client, user, tmp_path):
+    app = await _make_app(tmp_path)
+
+    resp = await bootstrapped_client.get(_view_url(app))
+
+    assert resp.status_code == 200, resp.text
+    body = resp.text
+    assert "todo" in body
+    # The page's SDK resolves the backend that served it — not a baked URL.
+    assert API_ORIGIN_SNIPPET in body
+    # <base> so the app's relative asset URLs resolve under the view path.
+    assert "<base" in body
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.served_html_encoding.rules: FAILING? read this tag's rules before
+#       editing — a 200 is not a pass, assert the served text matches disk
+# flowpad:endcapsule tag
+@pytest.mark.asyncio
+async def test_non_ascii_index_is_served_intact(bootstrapped_client, user, tmp_path):
+    """A UTF-8 document must survive being served, whatever the host's codepage.
+
+    App HTML is UTF-8 by definition; the host's locale is an accident of the
+    machine. Serving must not consult it. On a Windows box whose ANSI codepage
+    is cp1252 this is not a cosmetic issue: the Hebrew below decodes to mojibake
+    at best, and ``א`` (UTF-8 ``D7 90``) hits a byte cp1252 leaves undefined, so
+    the read raises and the whole view 500s.
+    """
+    dist = tmp_path / "tasks-app" / "dist"
+    dist.mkdir(parents=True)
+    # encoding= on purpose: the fixture must be UTF-8 on disk like a real app's
+    # build output, not whatever the test host would have written by default.
+    (dist / "index.html").write_text(
+        '<html lang="he" dir="rtl"><head><meta charset="utf-8" />'
+        "<title>ניהול משימות</title></head>"
+        "<body><h1>אין משימות</h1></body></html>",
+        encoding="utf-8",
+    )
+    app = await _static(dist)
+
+    resp = await bootstrapped_client.get(_view_url(app))
+
+    assert resp.status_code == 200, resp.text
+    assert "ניהול משימות" in resp.text
+    assert "אין משימות" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_asset_carries_etag_and_revalidates(bootstrapped_client, user, tmp_path):
+    app = await _make_app(tmp_path)
+
+    first = await bootstrapped_client.get(_view_url(app, "app.js"))
+    assert first.status_code == 200
+    assert first.text.strip() == "console.log('todo')"
+    etag = first.headers.get("etag")
+    assert etag
+
+    again = await bootstrapped_client.get(_view_url(app, "app.js"), headers={"If-None-Match": etag})
+    assert again.status_code == 304
+
+
+@pytest.mark.asyncio
+async def test_unknown_path_falls_back_to_index(bootstrapped_client, user, tmp_path):
+    """A client-side-routed app must not 404 its own deep links."""
+    app = await _make_app(tmp_path)
+
+    resp = await bootstrapped_client.get(_view_url(app, "todos/42"))
+
+    assert resp.status_code == 200
+    assert "todo" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_traversal_out_of_the_app_is_refused(bootstrapped_client, user, tmp_path):
+    """The URL layer decodes `..%2F..` into literal `..` segments before we see
+    them, so the resolve-then-compare check is the only thing standing between a
+    served app and the rest of the disk.
+
+    Percent-encoded on purpose: a bare `../` is normalized away by any
+    conforming client, so it would test the client, not us.
+    """
+    app = await _make_app(tmp_path)
+
+    resp = await bootstrapped_client.get(_view_url(app, "%2E%2E%2Foutside.txt"))
+
+    # The endpoint route refuses a dot segment before any file is resolved (400);
+    # `resolve_within` is the second wall behind it (403).
+    assert resp.status_code in (400, 403), resp.text
+    assert "OUTSIDE THE SERVING ROOT" not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_unbuilt_app_is_a_distinct_404(bootstrapped_client, user, tmp_path):
+    """Registered but never built is a normal early state, not a server error.
+
+    It must also be distinguishable from "no such file", because the display
+    shows a build CTA for one and nothing for the other.
+    """
+    app = await _make_app(tmp_path, build=False)
+
+    resp = await bootstrapped_client.get(_view_url(app))
+
+    assert resp.status_code == 404
+    assert "not built" in resp.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_a_served_folder_is_revalidated_not_trusted_for_an_hour(bootstrapped_client, user, tmp_path):
+    """A served folder may be under edit (`app.js` keeps its name), so every endpoint
+    revalidates; the ETag keeps an unchanged file a cheap 304."""
+    app = await _make_app(tmp_path)
+
+    first = await bootstrapped_client.get(_view_url(app, "app.js"))
+    again = await bootstrapped_client.get(_view_url(app, "app.js"), headers={"If-None-Match": first.headers["etag"]})
+
+    assert first.headers["cache-control"] == "no-cache"
+    assert again.status_code == 304
+
+
+def _base_href(html: str) -> str | None:
+    found = re.search(r'<base[^>]*\bhref="([^"]*)"', html)
+    return found.group(1) if found else None
+
+
+@pytest.mark.asyncio
+async def test_base_href_is_https_when_served_through_a_sandbox_host(bootstrapped_client, user, tmp_path):
+    """The <base> must name the scheme the BROWSER used, not the one we speak.
+
+    E2B publishes a sandbox at ``https://<port>-<id>.e2b.dev`` and terminates
+    TLS at its proxy, which then speaks plain http to us **and sends no
+    ``X-Forwarded-Proto``** (measured against a live sandbox: the only headers
+    that survive are Host, Via and X-Cloud-Trace-Context). So neither the
+    request's own scheme nor any forwarded header can tell us we are on https,
+    and ``backend_scheme`` defaults to http.
+
+    Get this wrong and the page is delivered over https carrying
+    ``<base href="http://…">``: every relative asset becomes a mixed-content
+    request the browser blocks, and the app renders blank. The Host header is
+    the only per-request evidence of how the browser arrived — and an e2b
+    public host is https by construction (``sandbox_public_url``).
+    """
+    app = await _make_app(tmp_path)
+
+    # Exactly how e2b delivers it: plain http, public Host, no forwarded proto.
+    resp = await bootstrapped_client.get(f"http://9007-izaqamfcs55jm22e3evdn.e2b.dev{_view_url(app)}")
+
+    assert resp.status_code == 200, resp.text
+    assert _base_href(resp.text) == (
+        f"https://9007-izaqamfcs55jm22e3evdn.e2b.dev/api/v1/graph/service_endpoint/{app.id}/service/"
+    )
+
+
+@pytest.mark.asyncio
+async def test_base_href_follows_x_forwarded_proto(bootstrapped_client, user, tmp_path):
+    """Behind a proxy that does announce the scheme, believe it."""
+    app = await _make_app(tmp_path)
+
+    resp = await bootstrapped_client.get(
+        f"http://apps.example.com{_view_url(app)}",
+        headers={"X-Forwarded-Proto": "https"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert _base_href(resp.text) == (f"https://apps.example.com/api/v1/graph/service_endpoint/{app.id}/service/")
+
+
+@pytest.mark.asyncio
+async def test_base_href_stays_http_on_a_local_dev_host(bootstrapped_client, user, tmp_path):
+    """The guard on the fix: plain local development is not silently upgraded.
+
+    There is no TLS on a laptop's backend; rewriting to https here would break
+    every served app in local dev — the opposite failure, equally blank.
+    """
+    app = await _make_app(tmp_path)
+
+    resp = await bootstrapped_client.get(f"http://localhost:9007{_view_url(app)}")
+
+    assert resp.status_code == 200, resp.text
+    assert _base_href(resp.text) == (f"http://localhost:9007/api/v1/graph/service_endpoint/{app.id}/service/")

@@ -35,6 +35,8 @@ export interface LLMEndpointOffer {
   enabled: boolean;
   credential_hint: string;
   system_default: boolean;
+  /** Spendable with no hub login: the endpoint's id is its bearer. */
+  public?: boolean;
   invoke_path: string;
   /** `LLMFundingKind` — which of the three funding kinds this is. */
   kind: string;
