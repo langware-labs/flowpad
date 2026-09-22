@@ -295,12 +295,8 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
       tab = materialized.tab;
       tabs = materialized.tabs;
       if (!tab) {
-        // No tab mints for a dead address: the backend will not ensure a tab
-        // for a target that is gone (a deleted process or shell). Recovering
-        // from that — a notice and a redirect to the next session — is the
-        // content loader's job, so it runs here too, without a tab, exactly as
-        // it does for the docks that never materialize one. Its redirect leaves
-        // through the catch below; only a target it CAN load is a failed open.
+        // A gone target (deleted process or shell) mints no tab, and its content
+        // loader owns the recovery redirect — so run it before failing the open.
         await adapter.setupTab(dock);
         throw new Error('Tab could not be materialized for this URL.');
       }

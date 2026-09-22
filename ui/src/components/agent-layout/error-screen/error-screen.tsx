@@ -31,11 +31,10 @@ const ErrorScreen = () => {
   const errorAny = (error ?? null) as ErrorLike | null;
 
   // The route's errorElement replaced the whole page — the loudest way a tab
-  // switch can fail. One `tab_switch` line per error shown (StrictMode runs the
-  // effect twice for the same error).
+  // switch can fail. One line per error: StrictMode double-invokes effects.
   const loggedErrorRef = useRef<unknown>(undefined);
   useEffect(() => {
-    if (loggedErrorRef.current === error) return;
+    if (!toplog.isOn('tab_switch') || loggedErrorRef.current === error) return;
     loggedErrorRef.current = error;
     toplog.log(
       'tab_switch',
