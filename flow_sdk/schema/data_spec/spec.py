@@ -67,6 +67,12 @@ class DataSpec(BaseModel):
     #: The authoring form an anonymous subclass was compiled from — what it
     #: dumps back to. ``None`` on hand-written subclasses.
     __authoring__: ClassVar[Any] = None
+    #: The name this class is REGISTERED under — ``spec_kind`` qualified by the
+    #: namespace that was loading when the class body ran. It is what a dump
+    #: writes, so the tag on the wire is the key a read looks up. Ours is the
+    #: bare kind (the default is silent), so this differs from ``spec_kind``
+    #: only for an externally authored asset. Stamped at registration, below.
+    __spec_tag__: ClassVar[str] = ""
 
     #: ``frozen``: a spec is a VALUE — a launch payload, a file header, an
     #: ingestion envelope. Nothing downstream may edit one in place and hand it
@@ -113,7 +119,11 @@ class DataSpec(BaseModel):
             # externally authored asset declares it, so such an asset cannot mint
             # into ours even by declaring the same string a shipped asset does.
             # Ours declares nothing and the kind is written bare.
-            SchemaRegistry.register_kind(qualified(cls.spec_kind, current_ns()), cls)
+            # Stamped on the class, not recomputed at dump time: ``current_ns()``
+            # is a contextvar set only for the duration of the loader's import,
+            # and a value is dumped long after that import has returned.
+            cls.__spec_tag__ = qualified(cls.spec_kind, current_ns())
+            SchemaRegistry.register_kind(cls.__spec_tag__, cls)
 
     @classmethod
     def parse(cls, data: Any) -> type:
@@ -358,6 +368,13 @@ def _by_kind(value: Any) -> Any:
 
 
 def _with_kind(value: DataSpec, info: Any) -> dict:
+    """The tag written is the key registered — ``_by_kind`` looks up what this wrote.
+
+    An externally authored asset registers under ``--ns--.<kind>``; writing the bare
+    ``spec_kind`` instead left every value it minted unreadable, by the class that
+    minted it, in the same process.
+    """
     dumped = value.model_dump(mode=info.mode)
-    return {"spec_kind": value.spec_kind, **dumped} if value.spec_kind else dumped
+    tag = type(value).__spec_tag__ or value.spec_kind
+    return {"spec_kind": tag, **dumped} if tag else dumped
 

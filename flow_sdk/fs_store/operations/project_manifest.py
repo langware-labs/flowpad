@@ -51,6 +51,13 @@ async def reconcile_published_cache(rec) -> None:
         return
     if spec is None:
         return
+    # One namespace declaration reaching the map. This hook fires on every manifest
+    # change — a publish, a hand edit, a `git pull` — so the map follows the file
+    # without anyone having to remember to tell it.
+    if spec.ns:
+        from flow_sdk.fs_store.operations import namespace_roots  # noqa: PLC0415
+
+        namespace_roots.remember(spec.ns, mount)
 
     wanted = {entry.typeid: entry for entry in spec.entries}
 

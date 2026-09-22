@@ -8,6 +8,10 @@ Resolution order for a kind:
   2. a registered kind     -> its class
   3. anything else         -> ``Any`` — anonymous: legal, opaque, never minted
 
+A kind carries WHOSE it is, and that decides who is asked to load it on a miss:
+bare is ours, ``--ns--.`` is that namespace's owner. The registered name and the
+name written into a value are the same string — see ``_with_kind`` in ``spec.py``.
+
 A kind that references itself while being parsed resolves to ``Any`` (it is
 not registered yet). Compilation is eager, so that is the whole story — no
 cycle detection is needed, and none is done.
@@ -79,13 +83,24 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
     import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``
     import flow_sdk.sources.values  # noqa: F401  — registers ``source.*`` and ``ingest.file`` / ``ingest.profile`` / ``ingest.message``
-    # A data source asset defines its own payload kinds (``ingest.message.whatsapp``) in code the
-    # registry loads lazily; a row read before any source ran still restores its payload. Imported
-    # only on a miss, so registering the loader drags nothing in.
-    SchemaRegistry.add_kind_loader("ingest.", _load_source_value_kinds)
+    # An asset defines its own payload kinds (``ingest.message.whatsapp``) in code the registry
+    # loads lazily; a row read before any source ran still restores its payload. Imported only on
+    # a miss, so registering the loaders drags nothing in.
+    #
+    # WHOSE the kind is decides who is asked — bare is ours, ``--ns--.`` is theirs. The key used
+    # to be the dot prefix ``"ingest."``, which is a claim about what a kind is ABOUT; a loader
+    # answers for what it OWNS. That mismatch is why an authored asset's kind could not be
+    # reached from a read at all: the only loader under that prefix scans the shipped tree.
+    SchemaRegistry.set_kind_loaders(ours=_load_source_value_kinds, external=_load_namespace_value_kinds)
 
 
 def _load_source_value_kinds() -> None:
     from flow_sdk.ingest.driver_registry import load_driver_value_kinds  # noqa: PLC0415
 
     load_driver_value_kinds()
+
+
+def _load_namespace_value_kinds(ns: str) -> None:
+    from flow_sdk.ingest.driver_registry import load_namespace_value_kinds  # noqa: PLC0415
+
+    load_namespace_value_kinds(ns)

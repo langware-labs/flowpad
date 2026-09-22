@@ -201,14 +201,33 @@ def test_a_declared_shape_is_held_as_the_form_and_dumps_unchanged() -> None:
 
 
 def test_a_kind_miss_asks_the_loader_that_owns_its_namespace(monkeypatch) -> None:
-    """A kind defined by lazily loaded code (a data source asset's value class) resolves on first
-    read; a miss outside the loader's prefix never runs it."""
-    calls: list[str] = []
+    """WHOSE a kind is decides who is asked to load it — never how it is spelled.
 
-    def loader() -> None:
-        calls.append("ran")
+    The key used to be a dot prefix (``"ingest."``), which says what a kind is ABOUT. A
+    loader answers for what it OWNS, and the kind states that itself: bare is ours,
+    ``--ns--.`` is theirs. Under the prefix rule an authored asset's kind could not be
+    reached from a read at all — the only loader registered scanned the shipped tree.
+    """
+    asked: list[str] = []
+
+    def ours() -> None:
+        asked.append("ours")
         SchemaRegistry.register_kind("test.lazy.loaded", DataSpec.parse({"a": "int"}))
 
-    monkeypatch.setattr(SchemaRegistry, "_kind_loaders", [("test.lazy.", loader)])
-    assert SchemaRegistry.kind_type("other.namespace.kind") is None and calls == []
-    assert SchemaRegistry.kind_type("test.lazy.loaded") is not None and calls == ["ran"]
+    def external(ns: str) -> None:
+        asked.append(ns)
+        SchemaRegistry.register_kind(f"--{ns}--.test.lazy.theirs", DataSpec.parse({"b": "int"}))
+
+    monkeypatch.setattr(SchemaRegistry, "_kinds_ours", staticmethod(ours))
+    monkeypatch.setattr(SchemaRegistry, "_kinds_external", staticmethod(external))
+
+    # A bare miss is ours, whatever it is called — no prefix to match.
+    assert SchemaRegistry.kind_type("test.lazy.loaded") is not None and asked == ["ours"]
+
+    # A namespaced miss asks the owner, and hands it the namespace off the kind.
+    assert SchemaRegistry.kind_type("--acme--.test.lazy.theirs") is not None
+    assert asked == ["ours", "acme"], "the external loader is asked for ITS namespace only"
+
+    # Neither loader is asked for the other's kind.
+    assert SchemaRegistry.kind_type("--other--.test.lazy.theirs") is not None
+    assert asked == ["ours", "acme", "other"]

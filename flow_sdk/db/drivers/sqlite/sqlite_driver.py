@@ -1977,7 +1977,7 @@ class SQLiteDBDriver(DBDriver):
 
         async with self._session_ctx(write=False) as session:
             result = await session.execute(query)
-            entities = [self._schema_to_entity(s) for s in result.scalars().all()]
+            entities = [e for s in result.scalars().all() if (e := self._row_or_skip(s)) is not None]
 
         # Python post-filter — only needed when SQL pushdown was partial
         if not fully_sql:
@@ -3054,6 +3054,24 @@ class SQLiteDBDriver(DBDriver):
         if dt.tzinfo is None:
             return dt.replace(tzinfo=UTC)
         return dt
+
+    def _row_or_skip(self, schema: EntitySchema) -> Optional[DBBaseRecord]:
+        """One row of a LIST, or None with a warning — a list survives a row it cannot build.
+
+        A row whose stored body no longer validates (a payload whose ``spec_kind`` names a
+        class this process cannot reach, a field a migration removed) used to abort the whole
+        comprehension, so one bad row returned a 500 and an empty screen instead of the other
+        several hundred. Same rule as ``graph.py``'s "never let a reflection-layer bug 500 the
+        whole request" and the indexer's malformed-record skip.
+
+        LIST reads only: ``_schema_to_entity`` still raises for every single-row caller, where
+        skipping would turn "this row is corrupt" into "no such row".
+        """
+        try:
+            return self._schema_to_entity(schema)
+        except Exception as exc:  # noqa: BLE001 — the row is data; any failure to build it is its own
+            logger.warning("[sqlite] get_all: skipping unreadable %s %s — %s", schema.type, schema.id, exc)
+            return None
 
     def _schema_to_entity(self, schema: EntitySchema) -> DBBaseRecord:
         """Convert schema to entity."""
