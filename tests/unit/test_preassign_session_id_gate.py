@@ -23,7 +23,7 @@ def _preassigns(worker_type: str) -> bool:
     return bool(getattr(get_driver(worker_type), "preassign_interactive_session_id", False))
 
 
-@pytest.mark.parametrize("worker_type", ["claude", "copilot"])
+@pytest.mark.parametrize("worker_type", ["claude", "copilot", "deepagents"])
 def test_vendors_that_accept_a_launch_id_preassign(worker_type):
     assert _preassigns(worker_type) is True
 
@@ -34,7 +34,7 @@ def test_vendors_that_mint_their_own_id_do_not(worker_type):
     assert _preassigns(worker_type) is False
 
 
-@pytest.mark.parametrize("worker_type", ["claude", "codex", "copilot", "opencode"])
+@pytest.mark.parametrize("worker_type", ["claude", "codex", "copilot", "opencode", "deepagents"])
 def test_the_trait_is_always_readable(worker_type):
     """Two drivers omit the attribute entirely — a bare access would raise."""
     getattr(get_driver(worker_type), "preassign_interactive_session_id", False)

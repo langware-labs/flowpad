@@ -11,9 +11,11 @@ import os
 import stat
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
 from pydantic import BaseModel
 
@@ -49,16 +51,6 @@ def _kill_script_tree(proc) -> None:
     kill_process_tree(proc)
 
 
-@dataclass
-class RunResult:
-    """Result of executing a RUN_SCRIPT action."""
-
-    stdout: str
-    stderr: str
-    returncode: Optional[int]
-    duration_ms: int
-    timed_out: bool
-    script_path: Optional[str] = None  # which path actually ran (after resolution)
 
 
 
@@ -205,15 +197,17 @@ async def _exec_script(
     trigger: Any,
     changes: Optional[list["ChangeEvent"]],
     timeout_seconds: float = _DEFAULT_SCRIPT_TIMEOUT_S,
-) -> RunResult:
-    """Run an external script via asyncio.create_subprocess_exec.
+) -> "CliResult":
+    """Run an external script via asyncio.create_subprocess_exec. Never raises:
+    a script that cannot start, fails or hangs is a ``CliResult`` (``command`` is
+    the path that actually ran).
 
     Env vars: TRIGGER_ID / TRIGGER_NAME / CHANGES_COUNT / FIRST_CHANGED_PATH /
     FIRST_CHANGE_TYPE for quick access; the full batch is serialized to a
     tempfile (cross-platform via tempfile.NamedTemporaryFile) and its path
     passed via CHANGES_JSON_PATH so scripts that need the batch can read it.
 
-    Captures stdout/stderr (truncated to _SCRIPT_OUTPUT_CAP). Kills the
+    Captures stdout/stderr (the last _SCRIPT_OUTPUT_CAP of each). Kills the
     process at `timeout_seconds`. Cleans up the tempfile after the subprocess.
     """
     import json
@@ -248,17 +242,22 @@ async def _exec_script(
             "FIRST_CHANGE_TYPE": first.change_type if first else "",
             "CHANGES_JSON_PATH": changes_json_path,
         }
-        proc = await asyncio.create_subprocess_exec(
-            str(script_path),
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(Path(script_path).parent),
-            # Own process GROUP so a timeout can kill the whole tree — see
-            # _kill_script_tree() for why the child alone is not enough.
-            start_new_session=CAN_KILLPG,
-        )
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
         t0 = time.monotonic()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                str(script_path),
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(Path(script_path).parent),
+                # Own process GROUP so a timeout can kill the whole tree — see
+                # _kill_script_tree() for why the child alone is not enough.
+                start_new_session=CAN_KILLPG,
+            )
+        except (OSError, ValueError) as exc:
+            return CliResult.of_process(str(script_path), None, "", f"{type(exc).__name__}: {exc}")
         timed_out = False
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
@@ -269,14 +268,14 @@ async def _exec_script(
                 stdout, stderr = await proc.communicate()
             except Exception:
                 stdout, stderr = b"", b""
-        duration_ms = int((time.monotonic() - t0) * 1000)
-        return RunResult(
-            stdout=stdout.decode(errors="replace")[:_SCRIPT_OUTPUT_CAP] if stdout else "",
-            stderr=stderr.decode(errors="replace")[:_SCRIPT_OUTPUT_CAP] if stderr else "",
-            returncode=proc.returncode,
-            duration_ms=duration_ms,
+        return CliResult.of_process(
+            str(script_path),
+            proc.returncode,
+            stdout.decode(errors="replace") if stdout else "",
+            stderr.decode(errors="replace") if stderr else "",
+            cap=_SCRIPT_OUTPUT_CAP,  # the END of each stream, where the error is
             timed_out=timed_out,
-            script_path=str(script_path),
+            duration_s=time.monotonic() - t0,
         )
     finally:
         if changes_json_path is not None:
@@ -301,7 +300,7 @@ class RunScriptActionHandler(TriggerActionHandler):
         action: Optional["TriggerAction"] = None,
         changes: Optional[list["ChangeEvent"]] = None,
         timeout_seconds: float = _DEFAULT_SCRIPT_TIMEOUT_S,
-    ) -> Optional[RunResult]:
+    ) -> "Optional[CliResult]":
         if action is None:
             _log.warning("RUN_SCRIPT on %s: no action supplied", getattr(trigger, "name", "?"))
             return None
@@ -368,7 +367,7 @@ class RunAgentActionHandler(TriggerActionHandler):
         changes: Optional[list["ChangeEvent"]] = None,
     ) -> Any:
         from flow_sdk.builtin.agent import Agent  # noqa: PLC0415 — entity layer imports this module
-        from flow_sdk.stream_inbox.agent_runner import _workdir_for  # noqa: PLC0415
+        from flow_sdk.builtin.agent_serve import workdir_for  # noqa: PLC0415
 
         prompt = str(getattr(action, "prompt", "") or "").strip()
         if not prompt:
@@ -407,7 +406,7 @@ class RunAgentActionHandler(TriggerActionHandler):
             prompt,
             deployment=deployment,
             name=f"{getattr(trigger, 'name', '') or agent.name} · scheduled",
-            workdir=await _workdir_for(agent),
+            workdir=await workdir_for(agent),
             context_data={"trigger_id": str(getattr(trigger, "id", "") or "")},
         )
         # A launched run is never finished by anyone: `launch` returns at

@@ -21,6 +21,4 @@ export const config = {
   SIGNUP_QUERY_PARAM: 'signup',
 };
 
-export const DEFAULT_MICRO_APP_ID = 'ff69b3dc-9b91-4283-8a09-e9467514bc3d';
-
 export default config;

@@ -8,8 +8,9 @@
  * long_tests/flow_show_display_focus.test.ts.
  */
 
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, Project } from '@sdk';
 import { afterEach, describe, expect, it } from 'vitest';
+import { purgeTracked, trackForCleanup } from '../_cleanup';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -25,6 +26,7 @@ describe('agentic_process show action → onShow', () => {
     } catch {
       /* never started a worker — best-effort */
     }
+    await purgeTracked();
     if (workdir) fs.rmSync(workdir, { recursive: true, force: true });
     proc = null;
     workdir = null;
@@ -34,11 +36,19 @@ describe('agentic_process show action → onShow', () => {
   async function showRoundTrip(
     testName: string,
     target: (workdir: string) => { path?: string; port?: number },
+    { inProject = false }: { inProject?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     await apiTestSetup(getTestSignupInfo(), testName);
     workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-show-'));
 
-    proc = await new AgenticProcess({ workdir, pty_mode: false }).save([]);
+    // A dev server is placed in a project (its endpoint hangs off the project's
+    // local placement), so the port case runs inside one.
+    const project = inProject
+      ? trackForCleanup(await new Project({ name: `ap-show-${Date.now()}`, fs_storage_mount_path: workdir }).save([]))
+      : null;
+    proc = await new AgenticProcess({ workdir, pty_mode: false, ...(project ? { project_id: project.id } : {}) }).save(
+      [],
+    );
     await proc.watch();
 
     const seen = new Promise<Record<string, unknown>>((resolve) => proc!.onShow(resolve));
@@ -74,9 +84,13 @@ describe('agentic_process show action → onShow', () => {
     expect(String(payload.path)).toContain(path.join('docs', 'hello.md'));
   }, 30_000); // do not increase timeout without approval
 
-  it('show({port}) round-trips a webapp payload', async (ctx: any) => {
-    const payload = await showRoundTrip(ctx.task.name, () => ({ port: 3000 }));
-    expect(payload.kind).toBe('webapp');
-    expect(payload.port).toBe(3000);
+  it('show({port}) registers the dev server as an endpoint and shows THAT', async (ctx: any) => {
+    const payload = await showRoundTrip(ctx.task.name, () => ({ port: 3000 }), { inProject: true });
+    expect(payload.kind).toBe('app');
+    expect(payload.runtime).toBe('dev');
+    // The address is the endpoint, never the port.
+    expect(String(payload.typeid)).toMatch(/^service_endpoint-[0-9a-f-]{36}$/);
+    expect(payload.endpoint_id).toBe(String(payload.typeid).slice('service_endpoint-'.length));
+    expect(payload.port).toBeUndefined();
   }, 30_000); // do not increase timeout without approval
 });

@@ -560,18 +560,29 @@ Goal: list every registry the worker name must appear in, so nothing falls back
 silently. Each item is a table row in FlowPad code, not vendor behavior — see
 `AgenticWorkerSpec.md` §10 for the file for each.
 
-- [ ] Worker type added to both `WorkerType` enums.
-- [ ] `get_driver` registry entry (plus aliases) and `factory()` key.
-- [ ] Capability kind, spec, and `CliCapabilityRunner` registration.
+- [ ] A `Vendor` row in `VENDORS` (`flowpad_types/vendors.py`) — THE registration. Driver
+      resolution, aliases, the capability-runner loop, placement and the transcript path
+      sniff all derive from it; there is no `get_driver` registry or `factory()` key to edit.
+- [ ] The declared facts are set honestly: `hidden`, `bootstrap`, `interactive`,
+      `python_module` + `python_requires`, `transcript_stems` (required when `dot_dir` is None).
+- [ ] `cli_drivers/<key>/driver.py` exports `DRIVER`; `cli_drivers/<key>/cli.py` exports
+      `AGENT_OPTIONS` — the two module-level aliases ARE the handshake.
+- [ ] Worker type added to both `WorkerType` enums (`test_vendors_table.py` keeps them in step).
+- [ ] Capability kind and `CapabilitySpec` (the runner itself is built by the `VENDORS` loop).
 - [ ] Model tier map (`sm`/`md`/`lg` → concrete models or vendor auto/no flag).
+- [ ] `ApiAuthSpec` + `_SPECS` row with three DISTINCT tier slugs; `_<vendor>_hub_binding` if a
+      hub `LLMEndpoint` can fund it; `has_device_login=False` if it has no account of its own.
 - [ ] `TranscriptFormat` member(s) — one per canonical shape, plus the stdout tee.
-- [ ] Transcript parser module and `PARSERS` entry.
-- [ ] Transcript resolver branch and worker→record-type mapping.
-- [ ] Transcript streamer path-sniff branch.
-- [ ] Pricing module and dispatcher branch.
-- [ ] Session `EntityType`, `TypeInfo`, indexer function, and its registration.
-- [ ] Asset placement harness prefix.
-- [ ] `InstanceSettings` fields for the vendor's home/session/config paths.
+- [ ] Transcript parser module and its `_REGISTRY` / `_BY_FORMAT` rows.
+- [ ] Transcript resolver branch (only when the vendor has per-session files to resolve).
+- [ ] Pricing module and dispatcher row — OPTIONAL (empty `model_prefixes` = the claude table).
+- [ ] Session `EntityType`, `TypeInfo`, indexer function — ONLY for per-session files; a
+      store-backed vendor sets `session_entity_type=None`.
+- [ ] `Vendor.harness` names the placement convention the vendor reads.
+- [ ] `InstanceSettings` paths for the vendor's home/session/config — a store of OURS lives
+      under `instance_dir` (sandboxed by construction) and needs no redirect env var.
+- [ ] Every capability the vendor lacks is DECLARED unsupported (see the spec's §0), and the
+      vendor has joined the contract tests listed there.
 
 Exit criteria:
 
@@ -583,7 +594,9 @@ Exit criteria:
 Goal: prove FlowPad can detect, install-check, and log in this CLI without
 guessing.
 
-- [ ] Confirm the executable is discoverable and record its bin folder.
+- [ ] Confirm the executable is discoverable and record its bin folder — or, for a harness
+      that is a Python package, that its distributions are readable from package metadata
+      and its `--version` answers WITHOUT importing the engine (the probe budget is 5s).
 - [ ] Confirm the CLI runs with a PATH that does NOT include the user's shell
       profile (workers do not inherit nvm shims).
 - [ ] Identify the auth-state command and whether its exit code is meaningful.

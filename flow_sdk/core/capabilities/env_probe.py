@@ -114,6 +114,11 @@ def capture_terminal_path() -> str:
     now resolve? — which is the only reading under which a freshly installed
     harness is discoverable without a restart.
 
+    Unix: this process's own PATH entries are appended after the terminal's
+    (terminal wins a tie) — the same union the Windows branch makes. A login
+    zsh never reads ``~/.profile``, which is where rustup puts ``~/.cargo/bin``,
+    so a terminal PATH alone can miss a toolchain the backend was launched with.
+
     Falls back to this process's PATH on any failure — degraded, never empty.
     """
     fallback = os.environ.get("PATH", "")
@@ -132,7 +137,9 @@ def capture_terminal_path() -> str:
             timeout=4,  # parent caps the whole probe at 5s; leave headroom
         )
         if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip().splitlines()[-1]
+            terminal = out.stdout.strip().splitlines()[-1]
+            entries = dict.fromkeys(e for e in (terminal + os.pathsep + fallback).split(os.pathsep) if e)
+            return os.pathsep.join(entries)
     except Exception:
         pass
     return fallback

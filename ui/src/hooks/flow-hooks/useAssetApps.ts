@@ -1,4 +1,4 @@
-import { MicroApp, QueryRequest, TypeId, kindMatches } from '@sdk';
+import { WebApp, QueryRequest, TypeId, kindMatches } from '@sdk';
 import { useMemo } from 'react';
 import { useEntitiesQuery } from '../entity-hooks';
 
@@ -17,13 +17,13 @@ export const EDITOR_APP_KIND = 'application.web.editor';
  * card, most of them for a menu nobody opens.
  */
 const appsQuery = new QueryRequest({
-  type: MicroApp.type,
+  type: WebApp.type,
   scope: [],
   name: 'asset-apps',
 });
 
 /** Stable while loading — a fresh `[]` per render would change every caller's memo. */
-const EMPTY: MicroApp[] = [];
+const EMPTY: WebApp[] = [];
 
 /**
  * The apps an asset ships — its child `micro_app` rows.
@@ -39,8 +39,8 @@ const EMPTY: MicroApp[] = [];
  * it does everywhere else that reads a kind. It is also exact-or-descendant, so
  * `application.web.editor.advanced` still counts as an editor.
  */
-export function useAssetApps(parent: TypeId | null | undefined): MicroApp[] {
-  const { data: apps = EMPTY } = useEntitiesQuery<MicroApp>(appsQuery);
+export function useAssetApps(parent: TypeId | null | undefined): WebApp[] {
+  const { data: apps = EMPTY } = useEntitiesQuery<WebApp>(appsQuery);
   const parentKey = parent?.toString() ?? '';
   return useMemo(
     () =>

@@ -39,7 +39,8 @@ from urllib.parse import urlparse
 from weakref import WeakValueDictionary
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.utils.command_executor import CommandExecutor, CommandResult
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+from flow_sdk.utils.command_executor import CommandExecutor
 
 if TYPE_CHECKING:
     from flow_sdk.assets.git_publish import GitAuthor
@@ -232,7 +233,7 @@ class GitFolder:
         env: Mapping[str, str] | None = None,
         timeout: int | None = None,
         cwd: str | Path | None = None,
-    ) -> CommandResult:
+    ) -> CliResult:
         auth_args, auth_env = self._auth(auth)
         return await self.executor.run(
             ["git", *auth_args, *args],
@@ -313,7 +314,7 @@ class GitFolder:
         return [line for line in out.splitlines() if line.strip()]
 
     @staticmethod
-    def _failure_code(result: CommandResult) -> GitErrorCode:
+    def _failure_code(result: CliResult) -> GitErrorCode:
         """Classify a git failure without echoing what git said (it can hold the token).
 
         One classifier for every remote operation. Split in two it drifted

@@ -107,6 +107,11 @@ class ApiAuthSpec:
     user_config_note: str = ""
     # FLOWPAD: (invoke_url, no trailing slash) -> binding. None = unsupported.
     hub_endpoint_binding: Callable[[str], ProviderBinding] | None = None
+    #: Does this harness have an ACCOUNT OF ITS OWN to be signed into? False for one that is
+    #: funded only by a key or an endpoint (deepagents). The resolver then has no device rung at
+    #: all -- otherwise an unproven, rank-0 "device login" that cannot exist outranks the real
+    #: funding and the worker is spawned with no credentials.
+    has_device_login: bool = True
 
     def binding_for(self, provider: LMApiProvider, *, hub_invoke_url: str | None) -> ProviderBinding:
         """The binding to spawn with for *provider*.
@@ -319,11 +324,44 @@ OPENCODE_API_AUTH_SPEC = ApiAuthSpec(
 )
 
 
+# The runner defines the two variables it reads; a retyped literal here would spawn an unfunded
+# worker the day one of them is renamed. (``runner`` is stdlib-only at import.)
+from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.runner import (  # noqa: E402
+    API_KEY_ENV as _DEEPAGENTS_KEY_ENV,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.runner import (  # noqa: E402
+    BASE_URL_ENV as _DEEPAGENTS_URL_ENV,
+)
+from flow_sdk.builtin.agentic_process.model_tiers import DEEPAGENTS_MODEL_TIERS  # noqa: E402
+
+
+def _deepagents_hub_binding(url: str) -> ProviderBinding:
+    """Our own runner speaks the chat-completions wire, so only the base URL moves (the same
+    ``/v1`` the hub serves copilot and opencode)."""
+    return ProviderBinding(token_env_var=_DEEPAGENTS_KEY_ENV, base_env={_DEEPAGENTS_URL_ENV: f"{url}/v1"})
+
+
+DEEPAGENTS_API_AUTH_SPEC = ApiAuthSpec(
+    # Both variables are read by OUR runner (``cli_drivers/deepagents/models.py``), so there is
+    # no vendor config to write: no pointer, no box-wide file, nothing on disk. There is also no
+    # CLI a person types, hence no ``prompt_model_env_vars`` -- the slug always rides ``--model``.
+    token_env_var=_DEEPAGENTS_KEY_ENV,
+    base_env={_DEEPAGENTS_URL_ENV: "https://openrouter.ai/api/v1"},
+    # One wire, so ONE tier table: unlike claude/codex there is no separate native spelling.
+    tier_models=dict(DEEPAGENTS_MODEL_TIERS),
+    supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
+    default_provider=LMApiProvider.OPENROUTER,
+    hub_endpoint_binding=_deepagents_hub_binding,
+    has_device_login=False,
+)
+
+
 _SPECS: dict[str, ApiAuthSpec] = {
     "claude": CLAUDE_API_AUTH_SPEC,
     "codex": CODEX_API_AUTH_SPEC,
     "copilot": COPILOT_API_AUTH_SPEC,
     "opencode": OPENCODE_API_AUTH_SPEC,
+    "deepagents": DEEPAGENTS_API_AUTH_SPEC,
 }
 
 

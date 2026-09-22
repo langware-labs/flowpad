@@ -50,5 +50,5 @@ def kind_ancestors(kind: str, *, include_self: bool = False) -> list[str]:
 
 #: A pydantic field type for a ``kind`` column: normalized (and rejected when
 #: malformed) on input, exactly as ``normalize_kind`` does. One definition for
-#: every entity that carries a kind — Artifact, Deployment, MicroApp.
+#: every entity that carries a kind — Artifact, Deployment, WebApp.
 KindStr = Annotated[str, BeforeValidator(normalize_kind)]

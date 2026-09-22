@@ -169,7 +169,12 @@ is what makes it safe — a name cannot be claimed before the loader has had its
   resolver but dropped by the model; declaring it there means mirroring the field
   onto 14 entity classes (`check_asset_spec` enforces it).
 
-* Rules 1–2 (`subkind`, derived `kind`, payload-kind) are unimplemented. The
+* ComputeOp is the first type with a `subkind` (`cli | prompt | agent | ask`):
+  each subkind's structure is its own DataSpec under the kind
+  `compute_op.<subkind>`, nested in `exe_data` rather than flattened onto the op
+  (see [call-returns](snippets/call-returns.md)).
+
+* Rules 1–2 (`subkind`, derived `kind`, payload-kind) are otherwise unimplemented. The
   blockers: `Conversation.kind` is a two-repo change gating hub authorization,
   `FlowMessage.kind` is on the wire, and `SourceItem.kind` is first in
   `DIGESTED_FIELDS` so changing its value re-digests the corpus.

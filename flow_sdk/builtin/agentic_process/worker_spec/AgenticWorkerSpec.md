@@ -12,18 +12,27 @@ integration cost.
 **Legend:** [ ] Not yet checked · [x] Supported · [~] Partial · [-] Not supported · [N/A] Not applicable
 **Effort tag:** S ≤ 1 day · M ≤ 1 week · L > 1 week
 
-**Reference impls:** `cli_drivers/claude/` (richest surface), `cli_drivers/codex/` and
-  `cli_drivers/copilot/` (what a *minimum viable* vendor looks like — no hooks, no fork,
-  no plan mode). Copilot is the newest and therefore the best template for a fourth.
+**Reference impls:** `cli_drivers/claude/` (richest surface: fork, plan mode, `report_event`,
+  credential renewal), `cli_drivers/codex/`, `cli_drivers/copilot/`, `cli_drivers/opencode/`
+  and `cli_drivers/deepagents/`. **Pick the template by shape, not by age:**
+  - a vendor CLI with its own dot-dir and per-session files → `codex/` or `copilot/`;
+  - a vendor with **no dot-dir**, a store-backed session and a FlowPad-written transcript →
+    `opencode/` (it is the only one exercising `dot_dir=None`, `session_entity_type=None`,
+    no `--add-dir`, and `JsonlTeeStreamWorker`);
+  - a harness that is a **Python package, not a binary** (spawned as
+    `python -m <runner>`, headless-only, hidden from the pickers) → `deepagents/`.
+  Do **not** copy-paste `copilot/` for a vendor without `--add-dir`: instructions and skills
+  are silently dropped — `tests/unit/test_cli_driver_contract.py` pins that trap for opencode.
 **Protocol surface:** `flow_sdk/builtin/agentic_process/cli_drivers/cli_worker_base_driver.py`
   (`WorkerDriver`, `AgenticWorker`, `AgentOptions`), described end-to-end in
   [docs/interface/cli-drivers.md](../../../../docs/interface/cli-drivers.md)
 
-Per-item evidence lists **Claude** and **Codex**; **Copilot** appears only where it
-differs from both. Inline `file.py:NN` line numbers are indicative — the symbol names are
-the durable citation.
+Per-item evidence lists **Claude** and **Codex**; **Copilot**, **OpenCode** and
+**Deep Agents** appear where they differ. Inline `file.py:NN` line numbers are indicative —
+the symbol names are the durable citation.
 
 ## Sections
+0. The `VENDORS` row and the driver package (start here)
 1. CLI Invocation & Switches
 2. Headless Mode + JSON Event Stream
 3. Transcript on Disk (location + JSONL schema)
@@ -37,6 +46,121 @@ the durable citation.
 11. Authentication & Installation (discovery, login probe, device login, API keys)
 12. Directories, Structures & Folder Formats (vendor dirs, process assets, skills)
 13. Interactive PTY & UI Surfacing (composer gate, icon/logo pair, chips)
+
+---
+
+## 0. The `VENDORS` row and the driver package
+
+Everything below hangs off ONE table row and ONE package. Do these first; most of §10's
+"registries" are now derived from them.
+
+### The `Vendor` row
+- **Where:** `VENDORS` in `flow_sdk/flowpad_types/vendors.py` — stdlib-only on purpose
+  (`assets/placement.py` and `transcript_analyzer` import it and may not import `builtin`).
+- **Fields:** `key` (driver short-id = package dir = what an `agent.json` writes),
+  `worker_type` (the persisted `AgenticProcess.worker_type`), `label`, `account_noun`,
+  `aliases`, `harness` (`assets.placement.HarnessType` value), `capability_kind`
+  (`harness.<key>.cli`), `dot_dir` (`None` when the vendor has no home dot-dir),
+  `session_entity_type` (`None` when sessions live in a store, not per-session files),
+  `model_prefixes` (empty = priced by the claude table), and four declared FACTS that
+  generic machinery asks instead of branching on a key:
+  - `hidden` — never offered by a picker (`compute_harness_state`, `no_worker_message`,
+    `flow llm`); still spawnable by `worker_type`. The TS picker lists
+    (`LAUNCHABLE_WORKERS`, `HARNESS_CAPABILITY_KINDS`, `VALID_OPENER_IDS`) are hand-written —
+    a hidden vendor is simply never added to them.
+  - `bootstrap` — the worker of last resort for a BUILTIN process (a capability install, a
+    wizard step): used only when the user's selected harness is not installed
+    (`core/capabilities/registry.py::resolve_builtin_worker_type`). It is what lets a box with
+    nothing but an LLM endpoint run the process that installs a real harness.
+  - `interactive` — has a TUI a terminal tab can host. `False` = headless-only:
+    `interactive_launch_command` raises, the desktop launch-commands list skips it, and opening
+    a terminal on such a process answers a clear error instead of spawning.
+  - `python_module` + `python_requires` — the harness is `python -m <module>`, not a binary on
+    PATH. Selects `PythonModuleCapabilityRunner`: installed ⇔ every DISTRIBUTION in
+    `python_requires` is present in this interpreter's environment (read from package metadata,
+    never by importing); executable = `sys.executable`.
+  - `transcript_stems` — filename stems of FlowPad-written transcripts, for a vendor with
+    no dot-dir to sniff (`vendor_for_path`).
+- **What the row buys you (no further edit):** `get_driver` / `factory` dispatch, alias
+  resolution (`vendor_for`), the `CliCapabilityRunner` registration loop
+  (`core/capabilities/registry.py::_build_default_registry`), placement
+  (`assets/placement.py::coerce_harness`), the transcript-path sniff
+  (`transcript_streamer/registry.py` → `vendor_for_path`), pricing dispatch.
+- **Still hand-written, each guarded by a test:** the two `WorkerType` enums (§10),
+  `CapabilityKind.<VENDOR>_CLI` + its `CapabilitySpec` (§11), `TranscriptFormat` + parser
+  (§10), the `ApiAuthSpec` row in `api_auth._SPECS` (§11).
+- [ ] Row added · [ ] Guard tests updated (`tests/unit/test_vendors_table.py`)
+
+### The driver package — the registration handshake
+- **Where:** `flow_sdk/builtin/agentic_process/cli_drivers/<key>/` (`Vendor.package`).
+- **Two module-level aliases ARE the registration.** `get_driver` imports
+  `<package>.driver` and instantiates its **`DRIVER`**; `factory` imports `<package>.cli` and
+  calls **`AGENT_OPTIONS`**`.from_json(...)` (`_vendor_module` in
+  `cli_worker_base_driver.py`). Omit either and the vendor raises `AttributeError` on first
+  use. There is no registry dict and no alias map to edit.
+- **Files a vendor ships:** `driver.py` (`DRIVER`), `cli.py` (`AGENT_OPTIONS`; class knobs
+  `MODEL_TIERS`, `EXECUTABLE`, `PROMPT_CHANNEL`, `SYSTEM_PROMPT_FLAG`/`_FILE_FLAG`, and the
+  serialization trio `SERIALIZED_FIELDS` / `WORKER_TYPE` / `_COERCE`), `stream_worker.py`,
+  `event_to_flowdata.py`, `session_history.py`, `asset_inventory.py`; `status.py` when the
+  tail classifier is not claude-shaped; vendor extras (`opencode/config_gen.py`,
+  `opencode/hook_plugin.py`, `claude/credential.py`, `deepagents/runner.py`).
+- [ ] `DRIVER` exported · [ ] `AGENT_OPTIONS` exported
+
+### `WorkerDriver` is a Protocol, not a base class
+- Structural typing on purpose: two contract tests assert the **absence** of an attribute
+  (`report_event`, `preassign_interactive_session_id`), which a shared base would defeat
+  (`cli_drivers/headless_turn.py` docstring).
+- **Class attributes:** `name`, `supports_process_hooks`, `process_hooks_use_assets`,
+  `supports_process_mcp`, `preassign_interactive_session_id` (optional — omit if the vendor
+  mints its own id), `pty_interrupt_sequence`, `pty_submits_on_paste`,
+  `pty_composer_ready_pattern`, `pins_resume_cwd`, `device_login_spec`.
+- **Method groups:** CLI shape (`cli_options`, `restart_snapshot`); process hooks
+  (`hook_capabilities`, `process_hook_snapshot`, `prepare_process_hooks`,
+  `normalize_process_hook_data`, `render_hook_response`); instructions + MCP
+  (`prepare_instruction_assets`, `prepare_process_mcp`, `AgentOptions.apply_process_mcp`);
+  per turn (`headless_prompt`, `stream_worker`, optional `report_event`); auth
+  (`auth_probe`); naming/store (`naming_adapter`, `session_store_env`); discovery
+  (`transcript_descriptor`, optional `transcript_is_final`, `transcript_path`,
+  `available_assets`, `asset_search_roots`, `skills_root`, `tail_status`,
+  `has_resumable_session`, `supports_plan_mode`); history/prompt/probe (`load_history`,
+  `compose_prompt`, `external_session_dirs`).
+
+### Shared building blocks — reuse, don't re-derive
+- **`JsonlTeeStreamWorker`** (`cli_drivers/jsonl_tee_worker.py`) — the stream worker for any
+  vendor whose stdout is JSONL. Subclass and set ClassVars `vendor`, `session_key`,
+  `session_id_parents`, `terminal_types`, `prompt_on_stdin`, `converter_cls`, `gate_cls`;
+  hooks `_build_spawn`, `_end_frame`, `_pre_spawn_events`, `cancel_grace_seconds`. It owns
+  spawn, tee-to-transcript, cancel (process-tree kill) and the terminal frame.
+- **`TranscriptDurabilityGate`** (`transcript_durability_gate.py`) — override
+  `is_terminal_candidate` + `is_continuation`. It locks on an event whose `type` is the
+  literal **`"result"`**: a vendor that controls its own event names should spell its
+  terminal event that way.
+- **`run_headless_turn`** (`headless_turn.py`) — the driver-agnostic tail of every
+  `headless_prompt`. **`tail_status(path, classify)`** (`transcript_tail_status.py`) — pass a
+  vendor `Classifier`. **`transcript_path_for_process(vendor_key, process_id)`**
+  (`session_paths.py`) — the process-local tee path; there are no per-vendor helpers.
+
+### Declaring a capability unsupported
+A vendor that lacks a capability DECLARES it; it never pretends and never silently no-ops:
+`supports_process_hooks = False` (and `prepare_process_hooks` raises `NotImplementedError`
+for a non-empty event list — `tests/unit/test_hook_capability_matrix.py` expects exactly
+that), `supports_plan_mode() → False`, `has_resumable_session() → False`, no
+`fork_session_id` field on the options class, `device_login_spec = None`,
+`Vendor.interactive = False`. An unsupported permission mode fails the spawn with a
+`WorkerSpawnError` naming the mode.
+
+### Tests a new driver must join
+| Test | What to add |
+|---|---|
+| `tests/unit/test_vendors_table.py` | the key in the exact-set guard; path rows for `vendor_for_path` |
+| `tests/unit/test_cross_vendor_session_resolver.py` | the key in the exact-set + fan-out guards |
+| `tests/unit/test_hook_capability_matrix.py` | `HARNESSES` / `WORKER_TYPE`; `EXPECTED_PROCESS` only if hooks are supported |
+| `tests/unit/test_cli_driver_contract.py` | `compose_prompt` row; resumable / plan / fork / `report_event` traits |
+| `tests/unit/test_headless_turn_runner.py`, `test_cli_process_tree_cleanup.py`, `test_preassign_session_id_gate.py`, `test_worker_asset_discovery.py`, `test_api_auth_binding.py`, `test_capabilities*.py` | one row each |
+| `tests/unit/test_llm_source_resolution.py` | nothing — but it FAILS unless `tier_models` has three DISTINCT sm/md/lg slugs |
+| `tests/unit/test_<key>_cli_stream_worker.py` (new) | clone `test_opencode_cli_stream_worker.py`; `tests/utils/fake_cli.patch_build_spawn` runs a turn with no LLM |
+| `tests/long_tests/conftest.py` | `_WORKER_PARAMS` + `_DRIVER_TO_ENUM` (real-LLM matrix, `DEEP_TESTING=1`) |
+| vitest | `FLOWPAD_DEFAULT_WORKER=<key>` on the BACKEND process + `npm run test:vitest:long` |
 
 ---
 
@@ -885,12 +1009,24 @@ the durable citation.
 
 ## 7. Agent Hooks
 
-**Whole section is Claude-only today.** Codex and Copilot ship with no hook channel at
-all, and both are supported workers — so treat every "Required: Yes" below as "required
-*for hook-derived features*", not as an adoption gate. Without hooks a vendor loses the
-live trace gutter, `PermissionRequest` auto-approve, and inline plan-path capture; status,
-history, usage and cancellation all still work because they are transcript-derived. A new
-vendor with no hooks is viable — it just lands at the codex/copilot feature level.
+**Process hooks are cross-vendor.** Claude, Codex, Copilot and OpenCode all declare
+`supports_process_hooks = True` and implement the hook group of the `WorkerDriver`
+Protocol: `hook_capabilities()` (which events, at which scope), `process_hook_snapshot()`,
+`prepare_process_hooks()` → `ProcessHookRuntime`, `normalize_process_hook_data()`,
+`render_hook_response()` → `HookOutcome`. They differ in the ARTIFACT:
+`process_hooks_use_assets` is `True` for Claude/Copilot/OpenCode (a settings/plugin file
+under the process asset dir — OpenCode's is executable code, `opencode/hook_plugin.py`) and
+`False` for Codex (config overrides). The harness × scope × event matrix is pinned by
+`tests/unit/test_hook_capability_matrix.py`; real-CLI acceptance by
+`tests/long_tests/test_process_hooks_multi_vendor.py` against the shared fixture
+`tests/fixtures/process_hook_acceptance.json`.
+
+The per-item evidence below is the CLAUDE wire format (settings.json `hooks`,
+`flow hooks report`); treat every "Required: Yes" as "required *for hook-derived
+features*", not as an adoption gate. A vendor with no hook channel is viable: it declares
+`supports_process_hooks = False` (Deep Agents does), loses the live trace gutter,
+`PermissionRequest` auto-approve and inline plan-path capture, and keeps status, history,
+usage and cancellation, which are transcript-derived.
 
 ### Hook delivery channel (HTTP webhook)
 - **Need:** Vendor must POST hook events to flowpad's `/api/v1/webhook/listen` endpoint (or equivalent IPC) so AgenticProcess can ingest them.
@@ -1197,32 +1333,32 @@ vendor with no hooks is viable — it just lands at the codex/copilot feature le
 
 ## 10. Driver Registration & Wiring
 
-The `WorkerDriver` Protocol keeps `agentic_process.py` free of vendor branches, but the
-worker **name** still has to appear in every registry that resolves behaviour by name.
-Each of these is a table row, never an `if` — a missing row fails silently (wrong parser,
-generic icon, Sonnet pricing) rather than loudly.
+The `WorkerDriver` Protocol keeps `agentic_process.py` free of vendor branches. Most
+name-keyed registries are now DERIVED from the `VENDORS` row (§0); what remains below is
+the hand-written residue. Each is a table row, never an `if` — a missing row fails silently
+(wrong parser, generic icon, Sonnet pricing) rather than loudly.
 
 ### Worker type enum
 - **Need:** One wire name for the vendor, spelled identically everywhere.
-- **Claude/Codex/Copilot:** `WorkerType` in `flow_sdk/flowpad_types/enums/worker_enums.py`; a second, driver-facing `WorkerType` in `flow_sdk/builtin/worker_history.py` carries only the three CLI workers.
+- **All vendors:** `Vendor.worker_type` in `flowpad_types/vendors.py` is authoritative; it must also be a member of `WorkerType` in `flow_sdk/flowpad_types/enums/worker_enums.py`, and `Vendor.key` a member of the driver-facing `WorkerType` in `flow_sdk/builtin/worker_history.py` (exactly the vendor keys). `tests/unit/test_vendors_table.py` fails until all three agree.
 - **Required:** Yes
-- **Vendor must expose:** nothing — this is a FlowPad-side edit, but both enums must be updated together.
+- **Vendor must expose:** nothing — a FlowPad-side edit of three places that one test keeps in step.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
 - **Effort if missing:** S
 
 ### Driver + options resolution
 - **Need:** `AgenticProcess.driver` resolves a driver from a worker_type value; persisted `cli_config` rehydrates into the right options class.
-- **Claude/Codex/Copilot:** `get_driver(worker_type)` registry + alias map, and `factory(cli_json, worker_type)` string keys — both in `cli_worker_base_driver.py`. `FLOWPAD_DEFAULT_WORKER` selects the default when worker_type is None.
+- **All vendors:** no registry, no alias map. `get_driver(worker_type)` → `vendor_or_none()` → `<Vendor.package>.driver.DRIVER()`; `factory(cli_json, worker_type)` → `<Vendor.package>.cli.AGENT_OPTIONS.from_json()` (§0). Aliases are `Vendor.aliases`. `FLOWPAD_DEFAULT_WORKER` selects the default when worker_type is None (`default_vendor()`).
 - **Required:** Yes
-- **Vendor must expose:** a stable lowercase name; add its aliases (if the enum spells it differently) to `get_driver`.
+- **Vendor must expose:** a stable lowercase name that is a valid Python package name.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
 - **Effort if missing:** S
 
 ### Model tiers
 - **Need:** `sm`/`md`/`lg` must resolve to a valid selection for this vendor, so prompts/tests stay portable.
-- **Claude/Codex:** `CLAUDE_MODEL_TIERS` (haiku/sonnet/opus) and `CODEX_MODEL_TIERS` (concrete GPT models). **Native Copilot:** `COPILOT_MODEL_TIERS` maps all tiers to vendor auto (`None`, omitting `--model`) because device-account availability is vendor-managed. All maps live in `agentic_process/model_tiers.py`, preserve the raw persisted tier, and resolve only when the command is emitted.
+- **Claude/Codex:** `CLAUDE_MODEL_TIERS` (haiku/sonnet/opus) and `CODEX_MODEL_TIERS` (concrete GPT models). **Native Copilot:** `COPILOT_MODEL_TIERS` maps all tiers to vendor auto (`None`, omitting `--model`) because device-account availability is vendor-managed. **OpenCode:** `OPENCODE_MODEL_TIERS` (`openrouter/<slug>` — it addresses models as `provider/model`). **Deep Agents:** `DEEPAGENTS_MODEL_TIERS` (bare OpenRouter slugs). All maps live in `agentic_process/model_tiers.py`, preserve the raw persisted tier, and resolve only when the command is emitted. Separately, an `ApiAuthSpec.tier_models` (§11) must hold three DISTINCT slugs — a collapsed `md == lg` is a silent no-op tier and `tests/unit/test_llm_source_resolution.py` rejects it.
 - **Required:** Yes
 - **Vendor must expose:** three valid tier outcomes: concrete model names or an explicit vendor-auto/no-flag outcome. An empty map means pass-through only, and every tier-valued config breaks.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
@@ -1231,17 +1367,17 @@ generic icon, Sonnet pricing) rather than loudly.
 
 ### Transcript format, parser, resolver, streamer
 - **Need:** Four independent lookups agree on how this vendor's JSONL is found and read.
-- **Claude/Codex/Copilot:** `TranscriptFormat` members (`transcript_analyzer/formats.py` — codex and copilot each need TWO: the canonical rollout/events file and the stdout tee); parser module + `PARSERS` map (`transcript_analyzer/parsers/`); `_resolve_<vendor>` + the worker→record-type map (`transcript_analyzer/resolver.py`); the path sniff in `transcript_streamer/registry.py::_infer_worker_type` (which keys off the vendor's dot-dir name, so an unrecognised path raises).
+- **Claude/Codex/Copilot:** `TranscriptFormat` members (`transcript_analyzer/formats.py` — codex and copilot each need TWO: the canonical rollout/events file and the stdout tee); parser module + `PARSERS` map (`transcript_analyzer/parsers/`); `_resolve_<vendor>` (`transcript_analyzer/resolver.py`). The path sniff is no longer vendor work: `transcript_streamer/registry.py` delegates to `vendor_for_path`, which reads `Vendor.dot_dir`, else `Vendor.transcript_stems` — an unrecognised path still raises, so a vendor with no dot-dir MUST declare its stems. The live converter (`<vendor>/event_to_flowdata.py`) wraps the same parser, so live frames and replayed history cannot disagree (`transcript_analyzer` may not import `builtin`).
 - **Required:** Yes
-- **Vendor must expose:** a transcript whose location is distinguishable by path, plus a documented line schema (see §3).
+- **Vendor must expose:** a transcript whose location is distinguishable by path, plus a documented line schema (see §3). A vendor whose event stream is OURS (Deep Agents' runner) documents that schema in its own package.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
 - **Effort if missing:** L
 
 ### Pricing registration
 - **Need:** Cost math dispatches on the worker key; an unregistered vendor inherits Claude's default table and reports wrong dollars.
-- **Claude/Codex:** `transcript_analyzer/pricing/<vendor>.py` exporting `<VENDOR>_PRICING` + `pricing_for`, wired into `pricing/__init__.py`.
-- **Required:** Yes
+- **Claude/Codex/OpenCode:** `transcript_analyzer/pricing/<vendor>.py` exporting `<VENDOR>_PRICING` + `pricing_for`, wired into `pricing/__init__.py`, dispatched on `Vendor.model_prefixes`. **Copilot / Deep Agents:** no table — `model_prefixes=()` falls back to the claude table (the documented fallback; dollars are then indicative only).
+- **Required:** Optional
 - **Vendor must expose:** published $/MTok rates per model (see §8).
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
@@ -1249,8 +1385,8 @@ generic icon, Sonnet pricing) rather than loudly.
 
 ### Session entity + indexer
 - **Need:** Vendor sessions become browsable/searchable entities, not just files.
-- **Claude/Codex/Copilot:** `EntityType.<VENDOR>_SESSION` (`schema/types.py`); `schema/type_info/<vendor>_session_type_info.py` (also the home of the entity's `icon` name); an indexer function under `fs_store/indexer/functions/`, imported in `indexer/registrations.py` and registered with `add_function` in `indexer/builtin.py`. Vendor sessions expand under `USER_HOME_FOLDER`, not under a project (`indexer/roots.py`).
-- **Required:** Yes
+- **Claude/Codex/Copilot:** `EntityType.<VENDOR>_SESSION` (`schema/types.py`); `schema/type_info/<vendor>_session_type_info.py` (also the home of the entity's `icon` name); an indexer function under `fs_store/indexer/functions/`, imported in `indexer/registrations.py` and registered with `add_function` in `indexer/builtin.py`. Vendor sessions expand under `USER_HOME_FOLDER`, not under a project (`indexer/roots.py`). **OpenCode / Deep Agents:** none — `Vendor.session_entity_type = None` because sessions live in a store (SQLite), not per-session files; history is projected from the store by `<vendor>/session_history.py`.
+- **Required:** Only when the vendor writes per-session FILES worth browsing
 - **Vendor must expose:** a per-session file (or dir) with a stable identity key derivable from its path.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
@@ -1258,7 +1394,7 @@ generic icon, Sonnet pricing) rather than loudly.
 
 ### Asset placement harness
 - **Need:** Skills/agents/instructions written for this worker land in the directory convention it actually reads.
-- **Claude/Codex/Copilot:** `_WORKER_NAME_TO_TYPE` + `WORKER_PREFIX` in `fs_store/placement.py` — claude speaks `.claude`, codex speaks the `.agents` standard, copilot speaks `.github`.
+- **All vendors:** `Vendor.harness` names a `HarnessType` in `flow_sdk/assets/placement.py`; `coerce_harness` resolves any vendor spelling through the `VENDORS` table (there is no name→type map to edit). `WORKER_PREFIX` there holds the dot-dir per harness — claude speaks `.claude`, codex/opencode/deepagents speak the `.agents` standard, copilot speaks `.github`.
 - **Required:** Yes
 - **Vendor must expose:** which of the three existing conventions it reads (or a fourth prefix, which is a larger change).
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
@@ -1271,9 +1407,9 @@ generic icon, Sonnet pricing) rather than loudly.
 
 ### Install discovery / capability
 - **Need:** FlowPad must know whether the CLI is installed, and prepend its bin folder to the spawn PATH (workers do not inherit the user's shell PATH — nvm shims in particular are absent).
-- **Claude/Codex/Copilot:** `CapabilityKind.<VENDOR>_CLI` (`core/capabilities/models.py`), a `CapabilitySpec` (display name, `icon`, `homepage_url`, optional `install_prompt`) in `get_default_capability_specs`, and a `CliCapabilityRunner(executable=…, worker_type=…)` registration — all in `core/capabilities/registry.py`. The driver layer reads it through `worker_capability_kind` → `harness.<vendor>.cli`, `worker_bin_folder`, `worker_path_env`.
+- **Claude/Codex/Copilot:** `CapabilityKind.<VENDOR>_CLI` (`core/capabilities/models.py`), a `CapabilitySpec` (display name, `icon`, `homepage_url`, optional `install_prompt`) in `get_default_capability_specs`, with per-platform `install_commands` — in `core/capabilities/registry.py`. The runner registration is NOT hand-written: `_build_default_registry` loops `VENDORS` and builds a `CliCapabilityRunner(executable=vendor.key, worker_type=vendor.worker_type)`, or a `PythonModuleCapabilityRunner` when `Vendor.python_module` is set (installed ⇔ the distribution is importable; executable = `sys.executable`; the `--version` probe must answer from package metadata, never by importing a heavy harness inside the probe budget). The driver layer reads it through `worker_capability_kind` → `harness.<vendor>.cli`, `worker_bin_folder`, `worker_path_env`.
 - **Required:** Yes
-- **Vendor must expose:** a single discoverable executable (`shutil.which`-resolvable) and a stable install story.
+- **Vendor must expose:** a single discoverable executable (`shutil.which`-resolvable) OR an importable Python distribution, and a stable install story.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
 - **Effort if missing:** M
@@ -1283,7 +1419,8 @@ generic icon, Sonnet pricing) rather than loudly.
 - **Claude:** `claude auth status` prints JSON — decided on the `loggedIn` field, never the exit code (which is 0 either way); `verified`.
 - **Codex:** `codex login status` — exit 0 = logged in; `verified`.
 - **Copilot:** no status subcommand. Heuristic only: `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`, else a past-login marker in `~/.copilot/config.json` — never `verified`.
-- All three live in `cli_drivers/auth_probe.py`, which is deliberately stdlib-only (importable by file path inside a bare container) and surfaces through `WorkerDriver.auth_probe()`.
+- **OpenCode / Deep Agents:** answer from the driver's own `auth_probe()` — there is no vendor account to be logged into (Deep Agents is funded only by an LLM endpoint, so it reports `UNKNOWN` with that reason).
+- The claude/codex/copilot probes live in `cli_drivers/auth_probe.py`, which is deliberately stdlib-only (importable by file path inside a bare container) and surfaces through `WorkerDriver.auth_probe()`. Known debt: `probe_worker_auth` there is still an explicit `if worker_type ==` ladder — the last vendor branch in the layer; a vendor that needs it adds a branch, one that does not answers from its driver.
 - **Required:** Yes
 - **Vendor must expose:** a non-interactive, machine-readable auth-state check. "Couldn't tell" must map to `UNKNOWN`, never `LOGGED_OUT`.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
@@ -1306,8 +1443,11 @@ generic icon, Sonnet pricing) rather than loudly.
 - **Claude:** `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` + blank `ANTHROPIC_API_KEY`, thinking off, slug via `--model`.
 - **Codex:** `OPENROUTER_API_KEY` + `-c model_providers.openrouter.*` (`wire_api=responses`), slug via `-m`.
 - **Copilot:** `COPILOT_ENABLE_ALT_PROVIDERS=1` + `COPILOT_PROVIDER_*`, slug in `COPILOT_*MODEL*` env (no GitHub token needed).
-- Declared as an `ApiAuthSpec` per driver and applied by `resolve_worker_api_auth` (`cli_drivers/api_auth.py`) when `Capability.auth_mode == "api"`. A missing key raises `WorkerSpawnError` — it must never silently fall back to the device-login picker.
-- **Required:** Optional
+- **OpenCode:** a generated provider block in the per-process `opencode.json`. **Deep Agents:** `FLOWPAD_DEEPAGENTS_BASE_URL` / `FLOWPAD_DEEPAGENTS_API_KEY` read by our own runner (OpenAI wire).
+- Declared as an `ApiAuthSpec` per vendor — a `<VENDOR>_API_AUTH_SPEC` literal plus a row in `_SPECS` (`cli_drivers/api_auth.py`): `token_env_var`, `base_env`, `tier_models` (three DISTINCT slugs), `supported_providers`, `model_env_vars`, `prompt_model_env_vars`, the user-config pointer fields (`pointer_env`, `pointer_is_dir`, `user_config_path`, `user_config_fmt`, `config_filename`, `user_config_note`), `hub_endpoint_binding` and `has_device_login`.
+- **Funding is one resolver, three sources** (`cli_drivers/llm_source.py`): the vendor's device login, a stored provider key, or a hub `LLMEndpoint`. A vendor reachable from a hub endpoint supplies `_<vendor>_hub_binding(url)`; `HUB_ENDPOINT_HARNESSES` is derived from `_SPECS`. A vendor with NO account of its own sets `has_device_login=False` — otherwise an unproven rank-0 device login outranks real funding and the worker spawns with no credentials.
+- Applied by `resolve_worker_api_auth` via `apply_worker_secret_env` into the transient spawn env. Everything explicit is HARD: a missing key raises `WorkerSpawnError` — it must never silently fall back to the device-login picker.
+- **Required:** Optional for a vendor with its own login; REQUIRED for one without
 - **Vendor must expose:** env-var (or config) overrides for base URL, key, and model slug.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
@@ -1330,14 +1470,14 @@ generic icon, Sonnet pricing) rather than loudly.
 
 ### Process-local transcript path
 - **Need:** When the vendor's own store is unusable (ephemeral mode, no rollout yet), the worker tees its stdout to a process-owned file so history and status still work.
-- **Codex:** `codex_transcript_path_for_process(process.id)`; **Copilot:** `copilot_transcript_path_for_process(process.id)`. `transcript_descriptor` prefers the canonical vendor file and falls back to the tee — the tee has assistant output but no user-message entry, so a tee-only descriptor yields empty `prompts`.
+- **All tee vendors:** the shared `transcript_path_for_process(vendor_key, process_id)` (`cli_drivers/session_paths.py`) — there are no per-vendor helpers. The file stem must be one `vendor_for_path` recognises (`Vendor.transcript_stems` for a vendor with no dot-dir). `transcript_descriptor` prefers the canonical vendor file and falls back to the tee — the tee has assistant output but no user-message entry, so a tee-only descriptor yields empty `prompts`.
 - **Required:** Yes when the vendor store isn't resolvable from `session_id` alone
 - **Vendor must expose:** stdout that is a complete-enough event log to stand alone.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
 - **Maps to:** _____________________
 - **Effort if missing:** M
 
-### Generated instruction assets (the four dialects)
+### Generated instruction assets (one dialect per vendor)
 - **Need:** One instruction body, written in every vendor's discovery format, under the process's own asset dir — never inlined into the user prompt.
 - **Flowpad mechanism:** `ProcessAssets` composes instructions under `<record_dir>/execution/assets/`; `WorkerDriver.prepare_instruction_assets()` writes the canonical `CLAUDE.md` prompt plus its own discovery file (`AGENTS.md` for Codex/OpenCode, `.github/instructions/flowpad.instructions.md` for Copilot). Files are written only for nonempty text; `resolved_add_dirs` includes the mount whenever process assets are active.
 - **Claude:** consumes `CLAUDE.md` via `--append-system-prompt-file`; **Codex:** `-c developer_instructions=<text>`; **Copilot:** `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets dir>` → the `.github/instructions/` file.
@@ -1349,7 +1489,7 @@ generic icon, Sonnet pricing) rather than loudly.
 
 ### Skills root
 - **Need:** Materialized skill folders must land where this worker discovers them, without the orchestrator branching on vendor.
-- **Claude:** `assets_dir/.claude/skills`; **Copilot:** `assets_dir/.github/skills` (both mounted via `--add-dir` — copilot loads a mounted dir's `.github/skills`, not claude's dot-dir); **OpenCode:** `assets_dir/.opencode/skills`, registered in the generated `opencode.json` because it has no `--add-dir`; **Codex:** `$CODEX_HOME/skills` — global, not per-process, so codex skills are not isolated between processes.
+- **Claude:** `assets_dir/.claude/skills`; **Copilot:** `assets_dir/.github/skills` (both mounted via `--add-dir` — copilot loads a mounted dir's `.github/skills`, not claude's dot-dir); **OpenCode:** `assets_dir/.claude/skills`, registered in the generated `opencode.json` because it has no `--add-dir` (NOT `.opencode/skills` — its `**/SKILL.md` scan skips dot-dirs of its own name); **Deep Agents:** `assets_dir/.claude/skills`, handed to the runner as a skills source (its loader reads the `<name>/SKILL.md` layout natively); **Codex:** `$CODEX_HOME/skills` — global, not per-process, so codex skills are not isolated between processes.
 - Routed through `WorkerDriver.skills_root(process, assets_dir)`.
 - **Required:** Yes
 - **Vendor must expose:** a documented skill/extension discovery directory, ideally one that honours mounted dirs.
@@ -1374,6 +1514,8 @@ generic icon, Sonnet pricing) rather than loudly.
 - **Need:** Deliver a prompt into the vendor's interactive TUI without losing it or firing it twice.
 - **Claude:** `pty_submits_on_paste = True` — a pasted prompt ending in `\r` submits itself.
 - **Codex / Copilot:** `False` — the trailing `\r` is literal text; the prompt needs a discrete Enter once the paste settles (`Shell.write_then_submit`).
+- **Headless-only vendor (Deep Agents):** `Vendor.interactive = False` — this whole section is N/A; there is no interactive launch command and `pty_mode` is coerced off at open.
+- **Interrupt key:** `pty_interrupt_sequence` — Ctrl-C by default; OpenCode's TUI wants `ESC` (`b"\x1b"`).
 - **Required:** Yes (if interactive mode is supported)
 - **Vendor must expose:** deterministic paste semantics in its TUI.
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
@@ -1416,6 +1558,7 @@ generic icon, Sonnet pricing) rather than loudly.
 
 | Section | Supported | Partial | Not supported | N/A | Effort |
 |---|---|---|---|---|---|
+| 0. VENDORS row & driver package | | | | | |
 | 1. CLI Invocation & Switches | | | | | |
 | 2. Headless Mode + JSON Stream | | | | | |
 | 3. Transcript on Disk | | | | | |

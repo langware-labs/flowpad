@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ExternalLink, Loader2, Plus, Trash2, Zap } from 'lucide-react';
+import { ExternalLink, Loader2, Plus, Zap } from 'lucide-react';
 import { QueryRequest, Wizard, type WizardIssue, type WizardValidation } from '@sdk';
 
 import { Button } from '@src/components/ui/button';
@@ -11,21 +11,18 @@ import { DockPointer } from '@src/navigation/DockPointer';
 
 import { CommitField, IssueList, WizardStepForm } from './WizardStepForm';
 import {
-  blankInputName,
   blankStep,
   duplicateStepIds,
   issuesByLoc,
   namesInScope,
   orphanIssues,
   removeIn,
-  renameInput,
   setIn,
   setStepKind,
   shapeFromText,
   shapeToText,
   type StepKind,
   type WizardDoc,
-  type WizardInputDoc,
 } from './wizard-doc';
 
 /**
@@ -73,7 +70,6 @@ export function WizardForm({
         .sort(),
     [wizardRows, wizard.name],
   );
-  const inputNames = useMemo(() => Object.keys(doc.inputs ?? {}), [doc.inputs]);
   const duplicates = useMemo(() => duplicateStepIds(steps), [steps]);
 
   const byLoc = issuesByLoc(validation?.issues);
@@ -123,20 +119,6 @@ export function WizardForm({
         />
       </label>
 
-      <InputsSection
-        inputs={doc.inputs}
-        readOnly={readOnly}
-        issuesAt={issuesAt}
-        onSet={set}
-        onRemove={remove}
-        onRename={(from, to) => void commit((previous) => renameInput(previous, from, to))}
-        onAdd={() =>
-          void commit((previous) =>
-            setIn(previous, ['inputs', blankInputName(previous.inputs)], { shape: 'string' }),
-          )
-        }
-      />
-
       <label className="grid grid-cols-[5.5rem_1fr] items-center gap-2">
         <span className="text-xs uppercase tracking-wider text-muted-foreground">
           <Trans>Returns</Trans>
@@ -169,9 +151,7 @@ export function WizardForm({
             onToggle={() => setExpanded(expanded === step.id ? null : step.id)}
             onSet={set}
             onRemove={remove}
-            refOptions={
-              step.kind === 'ask' ? inputNames : step.kind === 'wizard' ? wizardNames : []
-            }
+            refOptions={step.kind === 'wizard' ? wizardNames : []}
             scope={namesInScope(doc, index)}
             duplicateId={duplicates.has(step.id)}
             onSetKind={(kind: StepKind) =>
@@ -223,139 +203,6 @@ export function WizardForm({
       )}
       {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
     </div>
-  );
-}
-
-/**
- * The wizard's PARAMETERS — declared once for the whole document, not per step.
- *
- * The map key IS the name, which is what an `ask` step refs and what an `args`
- * value may pass along, so renaming one is a key rename rather than a field
- * edit — see `renameInput`, which keeps the map's order because that is the
- * order a run asks in.
- */
-export function InputsSection({
-  inputs,
-  readOnly,
-  issuesAt,
-  onSet,
-  onRemove,
-  onRename,
-  onAdd,
-}: {
-  inputs: Record<string, WizardInputDoc> | undefined;
-  readOnly: boolean;
-  issuesAt: (path: (string | number)[]) => WizardIssue[];
-  onSet: (path: (string | number)[], value: unknown) => void;
-  onRemove: (path: (string | number)[]) => void;
-  onRename: (from: string, to: string) => void;
-  onAdd: () => void;
-}) {
-  const { t } = useLingui();
-  const entries = Object.entries(inputs ?? {});
-
-  return (
-    <section className="flex flex-col gap-1" data-testid="wizard-inputs">
-      <span className="text-xs uppercase tracking-wider text-muted-foreground">
-        <Trans>Takes</Trans>
-      </span>
-
-      {entries.length === 0 ? (
-        <p className="text-[11px] text-muted-foreground" data-testid="wizard-no-inputs">
-          <Trans>Nothing — this wizard runs with no parameters.</Trans>
-        </p>
-      ) : null}
-
-      {entries.map(([name, input]) => (
-        <div
-          key={name}
-          className="flex flex-col gap-1 rounded-md border border-border p-2"
-          data-testid={`wizard-input-row-${name}`}
-        >
-          <div className="flex items-center gap-1.5">
-            <div className="w-44 shrink-0">
-              <CommitField
-                mono
-                readOnly={readOnly}
-                value={name}
-                testId={`wizard-input-name-${name}`}
-                onCommit={(next) => next.trim() && onRename(name, next.trim())}
-              />
-            </div>
-            <div className="min-w-0 flex-1">
-              <CommitField
-                mono
-                readOnly={readOnly}
-                value={shapeToText(input.shape)}
-                testId={`wizard-input-shape-${name}`}
-                placeholder={t`string, or a JSON shape`}
-                onCommit={(next) => {
-                  const shape = shapeFromText(next);
-                  if (shape === undefined) onRemove(['inputs', name, 'shape']);
-                  else onSet(['inputs', name, 'shape'], shape);
-                }}
-              />
-            </div>
-            <label
-              className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground"
-              title={t`An absent optional value does not park the run`}
-            >
-              <input
-                type="checkbox"
-                disabled={readOnly}
-                checked={Boolean(input.optional)}
-                data-testid={`wizard-input-optional-${name}`}
-                onChange={(e) =>
-                  e.target.checked
-                    ? onSet(['inputs', name, 'optional'], true)
-                    : onRemove(['inputs', name, 'optional'])
-                }
-              />
-              <Trans>optional</Trans>
-            </label>
-            {!readOnly && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 shrink-0 p-0"
-                onClick={() => onRemove(['inputs', name])}
-                title={t`Remove this input`}
-                data-testid={`wizard-input-delete-${name}`}
-              >
-                <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-              </Button>
-            )}
-          </div>
-          <CommitField
-            readOnly={readOnly}
-            value={input.label ?? ''}
-            testId={`wizard-input-label-${name}`}
-            placeholder={t`what the form asks`}
-            onCommit={(next) =>
-              next.trim()
-                ? onSet(['inputs', name, 'label'], next)
-                : onRemove(['inputs', name, 'label'])
-            }
-          />
-          <IssueList issues={issuesAt(['inputs', name])} />
-        </div>
-      ))}
-
-      {!readOnly && (
-        <div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1.5 px-1.5 text-[11px]"
-            data-testid="wizard-add-input"
-            onClick={onAdd}
-          >
-            <Plus className="h-3 w-3" />
-            <Trans>Add input</Trans>
-          </Button>
-        </div>
-      )}
-    </section>
   );
 }
 

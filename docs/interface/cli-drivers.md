@@ -39,7 +39,7 @@ gates in the switch context) and
 [docs/agent-management/claude-session-manager.md](../agent-management/claude-session-manager.md)
 (lifecycle ownership, restart detection, per-CLI differences). This page is the interface
 reference; it cross-links rather than duplicates. Flow walkthroughs live in
-[./flows.md](./flows.md). **Adding a fourth vendor** is governed by
+[./flows.md](./flows.md). **Adding a vendor** is governed by
 `flow_sdk/builtin/agentic_process/worker_spec/AgenticWorkerSpec.md` (what FlowPad needs
 from the candidate CLI, per capability) and its companion `worker_check_list.md` (how to
 prove it before writing code) — this page describes the seam those two land on.
@@ -158,11 +158,14 @@ inputs that would light up a phantom "restart required" glow:
 - `get_driver(worker_type) -> WorkerDriver` (~:1368) — the resolver `AgenticProcess.driver`
   uses. Accepts the `WorkerType` enum, its string value, or `None` (→
   `FLOWPAD_DEFAULT_WORKER` env, `claude` if unset — the hook that lets the UI vitest run the
-  suite under any backend). Aliases (`claude_code`, `claude_code_cli` → `claude`) map to
-  registry keys; result cached per name in `_DRIVER_CACHE`.
+  suite under any backend). There is no registry dict: the name resolves through the
+  `VENDORS` table (`flowpad_types/vendors.py` — `Vendor.aliases` carries `claude_code`,
+  `claude_code_cli`, …) and the driver is `<Vendor.package>.driver.DRIVER()`; result cached
+  per `vendor.key` in `_DRIVER_CACHE`.
 - `factory(cli_json, worker_type) -> AgentOptions` (~:1099) — legacy CLI-options factory,
-  dispatches the string keys `"claude"`/`"codex"`/`"copilot"` (the stable wire form in
-  serialised `cli_config`) to the vendor options class's `from_json`.
+  resolves the vendor the same way and calls `<Vendor.package>.cli.AGENT_OPTIONS.from_json`
+  (the vendor key is the stable wire form in serialised `cli_config`). The module-level
+  `DRIVER` and `AGENT_OPTIONS` aliases are the whole registration handshake.
 
 ---
 
@@ -184,7 +187,9 @@ a new vendor plugs in by implementing the Protocol, with no edits to `agentic_pr
 | `pins_resume_cwd` | `bool` | True iff, on resume/fork, the worker's launch cwd (`CLAUDE_PROJECT_DIR` + `workdir`) is pinned to the source session's recorded cwd (claude only) |
 | `device_login_spec` | `DeviceLoginSpec` | How this CLI runs its link(+code) login flow — consumed by the generic engine in `device_login.py`, so no orchestration code branches on vendor |
 
-**Methods (15).** Grouped as declared in the Protocol:
+**Methods.** Grouped as declared in the Protocol (the authoritative list, including the
+process-hook, process-MCP, naming and asset-inventory groups, is §0 of
+`worker_spec/AgenticWorkerSpec.md`):
 
 | Group | Method | Contract |
 | --- | --- | --- |
@@ -360,7 +365,7 @@ edit in each renderer.
 
 ---
 
-## Wiring a fourth vendor
+## Wiring a new vendor
 
 The Protocol keeps `agentic_process.py` free of vendor branches, but a worker type is
 still a name that several registries have to agree on. These are the seams — each one is
@@ -369,14 +374,15 @@ a lookup keyed by the wire name, so "add the vendor" means "add a row", never "a
 
 | Layer | Where | What to add |
 | --- | --- | --- |
-| Worker type | `flow_sdk/flowpad_types/enums/worker_enums.py` (`WorkerType`), plus the driver-side `WorkerType` in `flow_sdk/builtin/worker_history.py` | the wire name |
-| Driver resolution | `get_driver` registry + alias map, and `factory()`'s string keys (`cli_worker_base_driver.py`) | name → driver / options class |
-| Install discovery | `CapabilityKind.<VENDOR>_CLI` (`core/capabilities/models.py`), a `CapabilitySpec` (name, `icon`, `homepage_url`) in `get_default_capability_specs`, and a `CliCapabilityRunner(executable=…, worker_type=…)` in `_build_default_registry` (`core/capabilities/registry.py`) | `harness.<vendor>.cli`, which is what `worker_capability_kind`/`worker_path_env` resolve the spawn PATH from |
+| Vendor row | `VENDORS` in `flow_sdk/flowpad_types/vendors.py` | THE registration: key, `worker_type`, aliases, harness, capability kind, dot-dir, session entity type, model prefixes, and the facts `hidden` / `interactive` / `python_module` / `transcript_stems`. Driver resolution, the capability-runner loop, placement and the transcript path sniff all derive from it |
+| Worker type | `flow_sdk/flowpad_types/enums/worker_enums.py` (`WorkerType`), plus the driver-side `WorkerType` in `flow_sdk/builtin/worker_history.py` | the wire name (`tests/unit/test_vendors_table.py` keeps all three in step) |
+| Driver package | `cli_drivers/<key>/driver.py` exporting `DRIVER`, `cli_drivers/<key>/cli.py` exporting `AGENT_OPTIONS` | what `get_driver` / `factory` import — no registry to edit |
+| Install discovery | `CapabilityKind.<VENDOR>_CLI` (`core/capabilities/models.py`), a `CapabilitySpec` (name, `icon`, `homepage_url`) in `get_default_capability_specs`, with `install_commands` (`core/capabilities/registry.py`). The runner itself is built by the `VENDORS` loop in `_build_default_registry` — a `PythonModuleCapabilityRunner` when `Vendor.python_module` is set | `harness.<vendor>.cli`, which is what `worker_capability_kind`/`worker_path_env` resolve the spawn PATH from |
 | Model tiers | `<VENDOR>_MODEL_TIERS` in `agentic_process/model_tiers.py` | `sm`/`md`/`lg` → concrete models or vendor auto/no flag, consumed via the options class's `MODEL_TIERS` |
-| Transcript parsing | `TranscriptFormat` members (`transcript_analyzer/formats.py`), a parser module + the `PARSERS` map (`transcript_analyzer/parsers/`), `_resolve_<vendor>` and the worker→record-type map (`transcript_analyzer/resolver.py`), and the path sniff in `transcript_streamer/registry.py::_infer_worker_type` | one format per canonical shape (a rollout/events file and a stdout tee usually need two) |
-| Pricing | `transcript_analyzer/pricing/<vendor>.py` (`<VENDOR>_PRICING` + `pricing_for`) wired into `pricing/__init__.py` | else the model silently inherits the Sonnet default table |
+| Transcript parsing | `TranscriptFormat` members (`transcript_analyzer/formats.py`), a parser module + the `PARSERS` map (`transcript_analyzer/parsers/`), `_resolve_<vendor>` (`transcript_analyzer/resolver.py`); the path sniff is derived (`vendor_for_path` reads `Vendor.dot_dir`, else `Vendor.transcript_stems`) | one format per canonical shape (a rollout/events file and a stdout tee usually need two) |
+| Pricing | `transcript_analyzer/pricing/<vendor>.py` (`<VENDOR>_PRICING` + `pricing_for`) wired into `pricing/__init__.py` | optional — a vendor with empty `model_prefixes` (copilot, deepagents) deliberately inherits the claude table |
 | Session entity | `EntityType.<VENDOR>_SESSION` (`schema/types.py`), `schema/type_info/<vendor>_session_type_info.py` (this is where the entity's `icon` name lives), an indexer function under `fs_store/indexer/functions/`, its import in `indexer/registrations.py` and `add_function` call in `indexer/builtin.py` | vendor sessions expand under `USER_HOME_FOLDER`, not under a project (`indexer/roots.py`) |
-| Asset placement | `_WORKER_NAME_TO_TYPE` and `WORKER_PREFIX` in `assets/placement.py` | which harness dir convention the vendor speaks (`.claude` / `.agents` / `.github`) |
+| Asset placement | `Vendor.harness` + `WORKER_PREFIX` in `assets/placement.py` (`coerce_harness` resolves through `VENDORS`) | which harness dir convention the vendor speaks (`.claude` / `.agents` / `.github`) |
 | Vendor dirs | `InstanceSettings` (`flow_sdk/instance_settings/base_settings.py`) | home + sessions/config paths, so tests can redirect them. Claude, Codex, and Copilot all resolve their roots here; new vendors should do the same |
 
 ### Logo / icon

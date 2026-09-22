@@ -129,8 +129,12 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
     registry = get_capability_registry()
     rows = {row.kind: row for row in await Capability.get_all() if row.scope_type is None and row.scope_id is None}
 
+    from flow_sdk.flowpad_types.vendors import HIDDEN_CAPABILITY_KINDS
+
     accesses: list[CapabilityAccess] = []
     for kind in registry.kinds():
+        if kind in HIDDEN_CAPABILITY_KINDS:
+            continue  # a hidden vendor is a real capability nobody is ever offered (the Capabilities window)
         spec = registry.get(kind).spec
         row = rows.get(kind)
         intent = kind.split(".")[0]

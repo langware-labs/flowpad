@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.blocks import RunOutput, _AgentRunner
+from flow_sdk.blocks import PromptResult, _AgentRunner
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -29,14 +30,28 @@ class _Persona:
         self.output, self.name = output, name
 
 
-def _runner(output=None) -> _AgentRunner:
-    return _AgentRunner(_Persona(output))
+EXECUTOR = "agentic_process-00000000-0000-4000-8000-000000000001"
+
+
+class _Runner:
+    """``_output`` with the process it answered for already named."""
+
+    def __init__(self, output=None):
+        self._inner = _AgentRunner(_Persona(output))
+
+    def _output(self, text: str) -> PromptResult:
+        return self._inner._output(text, EXECUTOR)
+
+
+def _runner(output=None) -> _Runner:
+    return _Runner(output)
 
 
 def test_a_persona_that_declares_nothing_gets_exactly_what_it_got_before():
     out = _runner()._output("just a sentence")
-    assert out == RunOutput(text="just a sentence", files=[])
-    assert out.value is None and out.detail == ""
+    assert isinstance(out, PromptResult) and out.ok
+    assert out.text == "just a sentence"
+    assert out.value is None and out.executor == EXECUTOR
 
 
 def test_a_declared_shape_is_parsed_out_of_the_reply():
@@ -44,7 +59,7 @@ def test_a_declared_shape_is_parsed_out_of_the_reply():
     # A declared shape compiles to a real DataSpec, so the value is a TYPED
     # object — that is the whole point. A dict would just be prose with braces.
     assert out.value.port == 8080
-    assert out.detail == ""
+    assert out.exit_code is ExitCode.OK
     assert out.text.startswith("Picked one."), "the prose survives alongside the value"
 
 
@@ -60,6 +75,7 @@ def test_the_last_fence_wins_when_a_model_shows_its_working():
 def test_a_reply_that_does_not_match_the_shape_reports_instead_of_passing_it_on():
     out = _runner({"port": "int"})._output('```json\n{"port": "not-a-number"}\n```')
     assert out.value is None, "a value that fails its declared shape is not a value"
+    assert out.exit_code is ExitCode.NOT_YET and out.ran, "the turn ran; it did not reach its shape"
     assert "declared output" in out.detail and "probe" in out.detail
     assert out.text, "the turn still happened; the prose is its only account"
 
@@ -71,7 +87,7 @@ def test_a_scalar_shape_takes_the_prose_itself():
 def test_the_value_is_read_the_same_way_on_a_replayed_turn():
     """``run`` answers a redelivered message from a record, not a fresh turn.
 
-    That path used to build its own ``RunOutput``; if it still did, a replay
+    That path used to build its own result; if it still did, a replay
     would return the text without the value and a binding would break on the
     second delivery only — the worst kind of bug to find.
     """

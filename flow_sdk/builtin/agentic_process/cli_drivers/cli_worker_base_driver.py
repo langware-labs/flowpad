@@ -1178,6 +1178,11 @@ def worker_bin_folder(worker_type: str) -> str | None:
     return str(folder) if folder else None
 
 
+def worker_is_installed(worker_type: str) -> bool:
+    """Is this worker's harness installed — the sync form of the one install gate."""
+    return worker_bin_folder(worker_type) is not None
+
+
 def worker_path_env(worker_type: str) -> dict[str, str] | None:
     """PATH override for spawning this worker, from the discovered capability.
 
@@ -1252,14 +1257,26 @@ def worker_executable(worker_type: str) -> str | None:
     Disk-verified against the DISCOVERED bin folder (same shape as
     ``CliCapabilityRunner.test``): a stale discovered folder — CLI uninstalled
     after discovery — answers ``None`` here rather than surfacing as a spawn
-    error later. The executable name IS the worker type (claude/codex/copilot),
-    so callers must pass the DRIVER name.
+    error later. The executable name is the capability runner's (the vendor key for
+    a CLI on PATH; this interpreter for a ``python -m`` harness), so callers must
+    pass the DRIVER name.
 
     Ask this when the question is "is it installed"; ``resolve_worker_probe_context``
     is the same answer plus the env a subprocess needs.
     """
     folder = worker_bin_folder(worker_type)
-    return shutil.which(worker_type, path=folder) if folder is not None else None
+    return shutil.which(_worker_executable_name(worker_type), path=folder) if folder is not None else None
+
+
+def _worker_executable_name(worker_type: str) -> str:
+    """The executable's file name, as the vendor's registered capability runner declares it."""
+    from flow_sdk.core.capabilities.registry import CliCapabilityRunner, get_capability_registry
+
+    try:
+        runner = get_capability_registry().get(worker_capability_kind(worker_type))
+    except KeyError:
+        return worker_type
+    return runner.executable if isinstance(runner, CliCapabilityRunner) else worker_type
 
 
 def resolve_worker_probe_context(worker_type: str) -> tuple[str, dict[str, str]] | None:
@@ -1326,9 +1343,11 @@ def no_worker_message(worker_type: str) -> str:
     # ``resolve_capability_value``), so a caller retrying a broken install
     # re-probes each time. That is the price of letting an install done outside
     # Flowpad be noticed without a restart.
-    installed = [v.key for v in VENDORS if worker_bin_folder(v.key) is not None]
+    # A hidden vendor is never something a person is told to go and install or pick.
+    offered = [v for v in VENDORS if not v.hidden]
+    installed = [v.key for v in offered if worker_is_installed(v.key)]
     if not installed:
-        known = ", ".join(v.key for v in VENDORS)
+        known = ", ".join(v.key for v in offered)
         return (
             f"no harness is installed — none of {known} was found on PATH or "
             f"recorded by capability discovery. Install one, then retry."
@@ -1455,6 +1474,9 @@ def interactive_launch_command(worker_type: str, workdir: str | None = None) -> 
     ``flow`` on PATH). A terminal launched from this line is a FRESH session in
     that folder, not a rehydration of a Flowpad worker.
     """
+    vendor = vendor_or_none(worker_type)
+    if vendor is not None and not vendor.interactive:
+        raise ValueError(f"{vendor.label} is a headless worker: it has no interactive TUI to launch")
     options = factory({"workdir": workdir or "", "json_stream": False, "print_mode": False}, worker_type)
     return options.to_shell_string()
 

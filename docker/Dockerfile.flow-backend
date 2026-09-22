@@ -8,7 +8,7 @@
 # sessions, alice and bob collapse onto the same identity. Containers give
 # each backend its own filesystem + keyring → identity isolation by
 # construction.
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates git gnupg \

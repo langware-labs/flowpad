@@ -31,6 +31,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions, CodexDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions, CopilotDriver
+from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.driver import DeepAgentsDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.opencode import OpenCodeAgentOptions, OpenCodeDriver
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
@@ -222,6 +223,7 @@ def test_codex_and_copilot_do_not_support_plan_mode():
     # OpenCode ships a built-in ``plan`` agent, but not the ExitPlanMode tool
     # contract FlowPad's plan flow needs to surface ``plan_path``.
     assert OpenCodeDriver().supports_plan_mode(_process(WorkerType.OPENCODE, session_id="x")) is False
+    assert DeepAgentsDriver().supports_plan_mode(_process(WorkerType.DEEPAGENTS, session_id="x")) is False
 
 
 def test_codex_and_copilot_do_not_pin_resume_cwd():
@@ -229,6 +231,7 @@ def test_codex_and_copilot_do_not_pin_resume_cwd():
     assert CodexDriver.pins_resume_cwd is False
     assert CopilotDriver.pins_resume_cwd is False
     assert OpenCodeDriver.pins_resume_cwd is False
+    assert DeepAgentsDriver.pins_resume_cwd is False
 
 
 def test_codex_never_emits_fork_session_flag():
@@ -260,13 +263,13 @@ _AGENTS = {
 }
 
 
-@pytest.mark.parametrize("driver", [ClaudeDriver(), CodexDriver(), CopilotDriver(), OpenCodeDriver()])
+@pytest.mark.parametrize("driver", [ClaudeDriver(), CodexDriver(), CopilotDriver(), OpenCodeDriver(), DeepAgentsDriver()])
 def test_compose_prompt_passthrough_without_agents(driver):
     assert driver.compose_prompt("just do it", None) == "just do it"
     assert driver.compose_prompt("just do it", {}) == "just do it"
 
 
-@pytest.mark.parametrize("driver", [ClaudeDriver(), CodexDriver(), CopilotDriver(), OpenCodeDriver()])
+@pytest.mark.parametrize("driver", [ClaudeDriver(), CodexDriver(), CopilotDriver(), OpenCodeDriver(), DeepAgentsDriver()])
 def test_compose_prompt_passthrough_with_agents(driver):
     composed = driver.compose_prompt("use the reviewer agent", _AGENTS)
 
@@ -298,6 +301,7 @@ def test_codex_and_copilot_omit_report_event():
     assert not hasattr(CodexDriver, "report_event")
     assert not hasattr(CopilotDriver, "report_event")
     assert not hasattr(OpenCodeDriver, "report_event")
+    assert not hasattr(DeepAgentsDriver, "report_event")
 
 
 # ── opencode ─────────────────────────────────────────────────────────────────

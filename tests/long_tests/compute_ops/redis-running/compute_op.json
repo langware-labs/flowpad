@@ -3,22 +3,15 @@
   "name": "redis-running",
   "label": "redis",
   "description": "A local redis answers PING.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "linux": "apt-get install -y redis-server && redis-server --daemonize yes"
+    }
+  },
   "completion_check": {
     "commands": {
       "linux": "redis-cli ping"
     }
-  },
-  "attempts": [
-    {
-      "kind": "command",
-      "commands": {
-        "linux": "apt-get install -y redis-server && redis-server --daemonize yes"
-      }
-    },
-    {
-      "kind": "agent",
-      "agent": "provisioner",
-      "prompt": "Reach this goal on this machine."
-    }
-  ]
+  }
 }

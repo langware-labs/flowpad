@@ -79,8 +79,7 @@ vi.mock('@src/components/terminal/interactive-terminal/use-process-surface', () 
 vi.mock('@src/hooks/use-agentic-process-stream', () => ({ useAgenticProcessStream: () => [] }));
 vi.mock('@src/hooks/flow-hooks', () => ({
   useViewerStore: (sel: (s: { setCurrentContext: () => void }) => unknown) => sel({ setCurrentContext: () => {} }),
-  useProcessWebApp: () => ({ host: null }),
-  useAppDisplay: () => ({ runtime: null, available: [], src: '', port: null, microApp: null, setRuntime: vi.fn() }),
+  useAppDisplay: () => ({ runtime: null, available: [], src: '', endpoint: null, setRuntime: vi.fn() }),
 }));
 
 // The transcript UI is a collaborator, not where the bug lives. Render the

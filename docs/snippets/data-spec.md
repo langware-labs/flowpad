@@ -105,8 +105,10 @@ author must stay free to write it.
 
 ## 3. What a call returns
 
-One shape for an agent, a ComputeOp and a Wizard — a caller reads the answer
-without knowing what it called.
+One answer for every call — a caller reads it without knowing what it called.
+Each kind of work answers with its own subclass (`CliResult`, `PromptResult`,
+`AskResult`, `WizardResult`); the whole contract, checked fence by fence, is
+[call-returns](call-returns.md).
 
 ```python
 async def bind(port: int) -> ReturnedValue:
@@ -124,6 +126,10 @@ answer.ok            # True
 | `exit_code: ExitCode` | why it ended — the same enum `flow op` exits with |
 | `value: Any` | what it produced |
 | `detail: str` | one sentence for a person |
+| `ran: bool` | whether anything executed (`False`: already held, refused, busy, never started) |
+| `timed_out: bool` | the wait ended before the work did |
+| `executor: str \| None` | the process or shell that ran it |
+| `check: CliResult \| None` | the completion check that decided it |
 
 ```python
 ExitCode.OK              # 0  done
@@ -133,10 +139,12 @@ ExitCode.NOT_FOUND       # 4  no such thing
 ExitCode.REFUSED         # 7  not approved here
 ```
 
-A callee declares the shape it returns, in the authoring form of [§2](#2-a-shape-written-in-a-document):
+A callee declares the KIND it returns — a registered shape from [§2](#2-a-shape-written-in-a-document),
+or a primitive:
 
 ```json
-{"name": "pick-port", "output": {"host": "string", "port": "int"}}
+{"name": "pick-port", "subkind": "cli", "exe_data": {"commands": {"linux": "./pick-port"}},
+ "output_spec_kind": "net.endpoint"}
 ```
 
 The caller then reads `answer.value` and it is already that shape — no parsing,
@@ -144,7 +152,7 @@ no re-validation. A value that does NOT match is a failure, not a warning:
 
 ```python
 answer.exit_code   # ExitCode.NOT_YET
-answer.detail      # "… returned a value that does not match this op's declared output …"
+answer.detail      # "… returned a value that is not a net.endpoint — …"
 ```
 
 Otherwise a caller binds a broken value into the next call, and the breakage

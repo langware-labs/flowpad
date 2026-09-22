@@ -173,9 +173,10 @@ describe('flow show — agent-declared display focus reaches proc.onShow', () =>
 
     expect(received.length, 'expected at least one show payload').toBeGreaterThan(0);
     const payload = received[0];
-    expect(payload.kind, 'show payload kind').toMatch(/^(entity|vfs|webapp)$/);
-    if (payload.kind === 'webapp') {
-      expect(payload.port, 'webapp show carries the port').toBeTruthy();
+    expect(payload.kind, 'show payload kind').toMatch(/^(entity|vfs|app)$/);
+    if (payload.kind === 'app') {
+      // A dev server is shown by the endpoint registered for it, never by port.
+      expect(String(payload.typeid), 'app show carries its endpoint').toMatch(/^service_endpoint-/);
     } else {
       // entity | vfs — the target must be addressable: a typeid or a path.
       expect(payload.typeid ?? payload.path, 'show target (typeid or path)').toBeTruthy();

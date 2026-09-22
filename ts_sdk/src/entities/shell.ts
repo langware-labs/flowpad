@@ -8,6 +8,7 @@ import { TargetedDock } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { PtyConnection } from '../services/shell/ptyConnection';
 import { ViewType } from '../utils/ui/view-types';
+import type { CliResult } from '../models/ReturnedValue';
 
 export const ShellStatus = {
   IDLE: 'idle',
@@ -18,12 +19,6 @@ export const ShellStatus = {
 } as const;
 
 export type ShellStatus = (typeof ShellStatus)[keyof typeof ShellStatus];
-
-export interface ShellResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}
 
 export interface IShellConnectionOptions {
   /** When provided, attach asserts this size on the PTY (real xterm size only —
@@ -333,13 +328,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
     }
   }
 
-  async run(command: string): Promise<ShellResult> {
-    const result = await this.post<any>('run', { command });
-    return {
-      stdout: result?.stdout ?? '',
-      stderr: result?.stderr ?? '',
-      exitCode: result?.exit_code ?? -1,
-    };
+  /** Run `command` in a subprocess. The answer is the command's `CliResult`:
+   *  `returncode` is its own exit, `exit_code` the verdict. */
+  async run(command: string): Promise<CliResult> {
+    return await this.post<CliResult>('run', { command });
   }
 
   async setEnv(vars: Record<string, string>): Promise<void> {

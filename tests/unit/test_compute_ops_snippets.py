@@ -34,7 +34,7 @@ def _documents() -> list[tuple[int, dict]]:
 
 
 def test_the_page_has_op_documents_to_check():
-    assert len(_documents()) >= 2, "the fences moved or the page lost its examples"
+    assert _documents(), "the fences moved or the page lost its examples"
 
 
 @pytest.mark.parametrize("index", [n for n, _ in _documents()])

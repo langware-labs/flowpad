@@ -13,21 +13,31 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
 from flow_sdk.core.compute.ask import open_questions
-from flow_sdk.core.wizard.runner import COMPLETED, Resolved, run_wizard
+from flow_sdk.core.wizard.runner import Resolved, run_wizard
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+from flow_sdk.schema.data_spec.returned_value_spec import AskResult, ExitCode, WizardResult
+from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 pytestmark = pytest.mark.timeout(60)  # do not increase timeout without approval
 
+
+class ApiToken(DataSpec):
+    spec_kind: ClassVar[str] = "test.wizard_ask.api_token"
+    token: str
+
+
 ASK_OP = ComputeOpSpec.model_validate({
     "name": "get-api-key",
     "label": "API token",
-    "attempts": [{"kind": "ask", "prompt": "Service X API token"}],
-    "output": {"token": "string"},
+    "subkind": "ask",
+    "exe_data": {"prompt": "Service X API token"},
+    "output_spec_kind": "test.wizard_ask.api_token",
 })
 
 WIZARD = WizardSpec.model_validate({
@@ -68,11 +78,13 @@ async def test_a_wizard_step_asks_and_binds_what_the_person_typed(client, tmp_pa
     await _answer_over_http(client, {"token": "typed-into-the-window"})
     result = await run
 
-    assert result.status == COMPLETED, result.message
-    assert result.ok is True
-    # `bind` is what makes an answer reusable by a LATER step — the whole reason
-    # a wizard was the only way to move a value between two units of work.
-    assert result.outputs["key"].token == "typed-into-the-window"
+    assert isinstance(result, WizardResult)
+    assert result.exit_code is ExitCode.OK, result.detail
+    # The step's answer IS the ask op's own result.
+    assert isinstance(result.steps["key"], AskResult)
+    # `bind` is what makes an answer reusable by a LATER step; the wizard's
+    # value is every step's value by step id.
+    assert result.value["key"].token == "typed-into-the-window"
 
 
 async def test_a_cancelled_step_stops_the_wizard_without_a_value(client, tmp_path):
@@ -93,4 +105,5 @@ async def test_a_cancelled_step_stops_the_wizard_without_a_value(client, tmp_pat
     result = await run
 
     assert result.ok is False, "a declined question must not read as a completed wizard"
-    assert "key" not in (result.outputs or {})
+    assert result.steps["key"].cancelled is True
+    assert "key" not in (result.value or {})

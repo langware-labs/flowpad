@@ -48,7 +48,7 @@ The agent's `flow show` targets accumulate on
 a JSON list — no new APIField, `context_data` is already persisted + broadcast.
 
 - Each entry is a resolved display **target** flattened, plus a server timestamp:
-  `{kind, typeid?, type?, id?, path?, port?, shown_at}` (ISO 8601 UTC). Newest last.
+  `{kind, typeid?, type?, id?, path?, endpoint_id?, shown_at}` (ISO 8601 UTC). Newest last.
 - `context_data["last_shown"]` mirrors the **newest target** (no `shown_at`) for
   back-compat readers (standard-mode viewer).
 - Capped at `DISPLAY_STACK_CAP = 50`; a **consecutive identical target** refreshes
@@ -168,19 +168,16 @@ no weaker than what it replaced (the pane restored `last_shown` on EVERY mount).
 `flow show` reloads the PREVIOUS address — the display no longer re-derives itself
 from `last_shown` on every mount, which is what used to hide that race.
 
-### The pane still owns one case
+### Every app is an address
 
-A BARE port (`webapp` with no artifact) has no identity but the port, and
-`/dock/web-app?port=` folds every port into one tab, so it is still pinned in pane
-state. Both the show path (`openActiveDisplay`) and the restore path
-(`restoreDisplayRedirect`) must refuse it: `dockForDisplayTarget` will happily hand
-back that dock, and following it walks the user out of the workspace to a
-chrome-less web-app dock with no chat beside it.
+There is no pane-pinned case left. A bare dev server is registered as a
+`ServiceEndpoint` the moment it is shown (`flow show webapp --port N`), so it is
+addressed like any app — `ViewType.APP`, `/dock/app/service_endpoint-<uuid>`. An app
+built from source is addressed by its artifact, `/dock/app/artifact-<uuid>`, and a
+webapp asset by its definition, `/dock/app/micro_app-<uuid>`:
 
-An artifact-backed app IS addressed — `ViewType.APP`, `/dock/app/artifact-<uuid>`:
-
-* the **artifact** is the pointer, because `_app_payload` derives the runtime from
-  its Deployment/MicroApp companions. A dev server that dies or a build that lands
+* the **artifact** is the pointer, because `_app_payload` derives the endpoint shown
+  from the artifact's endpoints. A dev server that dies or a build that lands
   changes what you see without changing where you are; a port in the address would
   make a dead server the app's identity.
 * **`?runtime=dev|served`** is the user's PREFERENCE, not a fact —
@@ -263,11 +260,10 @@ The URL is the first tier now, so most of the old ladder is gone:
 
 1. **The URL** — on a child/display address, `ContentPanel minimalChrome` renders the
    target under a `DisplayToolbar` (promote, annotate, history).
-2. **A pinned bare port** — the one target with no address (see §3).
-3. **`focus`** — the last involuntary per-write focus off the process stream
+2. **`focus`** — the last involuntary per-write focus off the process stream
    (`useVibeFocus`): diff. Stream-derived and changing many times per turn, so it is
    deliberately NOT a URL — it would spam navigation.
-4. **`preview` / starter chips** — the artifact-driven `WebappViewer` fallback, or
+3. **`preview` / starter chips** — the artifact-driven `WebappViewer` fallback, or
    the starter prompts when there is genuinely nothing yet. The history popover stays
    mounted whenever the stack is non-empty: it is workspace chrome, not viewer chrome,
    so stepping back to the Display home must not lose the way back into the stack.

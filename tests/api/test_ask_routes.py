@@ -22,7 +22,7 @@ async def test_a_question_can_be_read_and_answered(client):
     got = await client.get(f"/api/v1/ask/{question.id}")
     assert got.status_code == 200
     assert got.json()["data"]["prompt"] == "Service X API token"
-    assert got.json()["data"]["shape"] == {"token": "string"}
+    assert got.json()["data"]["fields"] == {"token": "string"}, "what the window draws"
 
     sent = await client.post(f"/api/v1/ask/{question.id}/answer",
                              json={"value": {"token": "sk-live-1"}})

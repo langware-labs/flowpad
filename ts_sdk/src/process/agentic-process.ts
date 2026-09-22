@@ -535,13 +535,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Entity type for AgenticProcess */
   static type: string = 'agentic_process';
 
-  /** Backend redirect URL for the process's live web-app port. */
-  getWebAppHostUrl(port: string): string {
-    const action = new ActionInfo('get-host', AgenticProcess.type, this.id);
-    action.queryParameters = { port };
-    return action.fullActionUrl;
-  }
-
   /**
    * Spawn a visible AgenticProcess tab and (optionally) send an initial
    * prompt. Mirrors the `Start Claude` / `Start Codex` openers in
