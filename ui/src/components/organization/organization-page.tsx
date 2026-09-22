@@ -136,7 +136,7 @@ export function OrganizationPage() {
     >
       <div className="flex flex-col gap-4" data-testid="org-list">
         {organizations.map((org) => (
-          <OrgUnit key={org.id} orgId={org.id} onDeleted={() => void refetch()} />
+          <OrgUnit key={org.id} orgId={org.id} name={org.name} onDeleted={() => void refetch()} />
         ))}
       </div>
     </Shell>

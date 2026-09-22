@@ -188,8 +188,8 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   frozen `DataSpec` covering all three funding paths — a vendor **device login**, a stored
   **api_key**, or a hub **endpoint**. It is NOT `DataSource` (a system of record we ingest from),
   NOT `MessageSource` (a `DataSource` that can also reply), NOT `SourceItem` (a record one produces), and — the collision that actually bites — NOT the hub's
-  `source_llmendpoint` relationship, which is the fallback chain an `LLMEndpoint` allocation draws
-  *from*, one layer down and unrelated. An `LLMSource` names a way to pay; a `source_llmendpoint`
+  `partof` (endpoint → endpoint) relationship, which is the fallback chain an `LLMEndpoint` allocation draws
+  *from*, one layer down and unrelated. An `LLMSource` names a way to pay; a `partof` (endpoint → endpoint)
   names a budget upstream of another budget. `resolve_llm_source` picks one per spawn, and its
   `reason` field is what both the picker and the spawn error render.
 * **public endpoint** — ours. A hub `LLMEndpoint` its admin opened (the `public` action) to

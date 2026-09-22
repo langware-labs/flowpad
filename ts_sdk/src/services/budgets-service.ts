@@ -107,12 +107,6 @@ export interface MemberBudget {
   limit_usd: number | null;
   spent_usd: number;
   spent_tokens: number;
-  /**
-   * True for the hub's own per-user default. Its cap is editable like any other, but deleting it
-   * is pointless — the token plan mints it again on that user's next read — so the screen offers
-   * no remove on these.
-   */
-  system_default: boolean;
   /** May the caller change this person's allowance? The `update` question, asked of one allowance. */
   can_configure: boolean;
 }
