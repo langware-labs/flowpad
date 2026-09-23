@@ -82,3 +82,13 @@ async def test_a_placed_message_stays_in_its_thread_and_a_backfill_ends_nothing(
 
     assert replayed[1] == first.id, "re-projecting never moves a message into the newer thread"
     assert late.id == after.id
+
+
+def test_a_changed_timeout_restarts_the_loop_that_holds_the_source():
+    from flow_sdk.builtin.agent_serve import serving_key
+
+    source = DataSource(provider="agent", channel="telegram", name="chat")
+    before = serving_key(source)
+    source.thread_timeout_seconds = 600
+
+    assert serving_key(source) != before, "the loop's copy of the source would keep the old timeout"
