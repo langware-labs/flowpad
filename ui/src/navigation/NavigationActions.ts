@@ -1054,6 +1054,11 @@ export class NavigationActions {
     this.openDock(pointer);
   }
 
+  /** Open the table behind one home counter (see `DockPointer.forAssetList`). */
+  openAssetList(group: string, counter: string): void {
+    this.openDock(DockPointer.forAssetList(group, counter));
+  }
+
   /**
    * Open record search view
    * @param query - Optional initial query string

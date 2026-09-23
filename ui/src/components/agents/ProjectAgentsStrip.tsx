@@ -5,7 +5,7 @@ import { AgentIntroCard } from '@src/components/agents/AgentIntroCard';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
-import { useProjectAgents } from '@src/hooks/use-project-agents';
+import { MAX_HOME_AGENTS, useProjectAgents } from '@src/hooks/use-project-agents';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useLingui } from '@lingui/react/macro';
@@ -34,7 +34,7 @@ export function ProjectAgentsStrip({ projectId, className }: { projectId?: strin
   // `undefined` resolves the active one. No memo on the TypeId — `useEntity`
   // keys on its type/id STRINGS, not object identity.
   const { project } = useProject(projectId ? new TypeId(Project.type, projectId) : null);
-  const { agents } = useProjectAgents(project);
+  const agents = useProjectAgents(project).agents.slice(0, MAX_HOME_AGENTS);
   const { launch, busyId } = useAgentLauncher();
 
   if (agents.length === 0) return null;
