@@ -1,5 +1,6 @@
 """The curation seam over HTTP: a dataset bound to a source takes its items as
 examples (``promote``) and gold labels (``annotate``); counts follow the disk."""
+
 from __future__ import annotations
 
 import json
@@ -8,23 +9,63 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("fresh_user_scope")]
 
 SHAPE = {"examples": [{"input": "ingest.source_item", "output": {"sentiment": "string"}}]}
 
 
+@pytest.fixture
+def fresh_user_scope(tmp_path, monkeypatch):
+    """The user scope rooted at ``tmp_path/home`` for one test. NON-autouse.
+
+    Mirrors ``tests/unit/conftest.py``'s fixture of the same name: ``_source_with_items`` below
+    creates a ``DataSource`` with no project context, so it resolves under ``Scope.USER`` and
+    would otherwise land in the real repo checkout instead of an isolated directory.
+    """
+    import flow_sdk.builtin.asset_placement as placement
+    from flow_sdk.assets.placement import Scope
+
+    real = placement.root_for_scope
+    home = tmp_path / "home"
+
+    def root_for_scope(scope, *, project_mount=None):
+        return home if scope == Scope.USER else real(scope, project_mount=project_mount)
+
+    monkeypatch.setattr(placement, "root_for_scope", root_for_scope)
+    return home
+
+
 async def _project(client, tmp_path) -> str:
-    resp = await client.post("/api/v1/graph/project", json={"type": "project", "name": "curate", "fs_storage_mount_path": str(tmp_path)})
+    resp = await client.post(
+        "/api/v1/graph/project", json={"type": "project", "name": "curate", "fs_storage_mount_path": str(tmp_path)}
+    )
     assert resp.json().get("status") == "SUCCESS", resp.text
     return resp.json()["data"]["id"]
 
 
 async def _source_with_items(client, n: int = 2) -> str:
-    resp = await client.post("/api/v1/graph/data_source", json={"name": f"feed {uuid.uuid4().hex[:8]}", "provider": "rss", "kind": "content.feed", "config": {"feed_url": "http://127.0.0.1:1/x"}})
+    resp = await client.post(
+        "/api/v1/graph/data_source",
+        json={
+            "name": f"feed {uuid.uuid4().hex[:8]}",
+            "provider": "rss",
+            "kind": "content.feed",
+            "config": {"feed_url": "http://127.0.0.1:1/x"},
+        },
+    )
     assert resp.json().get("status") == "SUCCESS", resp.text
     sid = resp.json()["data"]["id"]
-    items = [{"data_source_id": sid, "provider": "rss", "kind": "content.feed.item",
-              "external_id": f"e{i}", "name": f"Post {i}", "body": f"body {i}"} for i in range(n)]
+    items = [
+        {
+            "data_source_id": sid,
+            "provider": "rss",
+            "kind": "content.feed.item",
+            "external_id": f"e{i}",
+            "name": f"Post {i}",
+            "body": f"body {i}",
+        }
+        for i in range(n)
+    ]
     resp = await client.post("/api/v1/ingest/items", json={"items": items})
     assert resp.status_code == 200, resp.text
     return sid
@@ -36,7 +77,15 @@ async def _items(client, sid: str) -> list[dict]:
 
 
 async def _dataset(client, pid: str, sid: str, **extra) -> dict:
-    body = {"type": "dataset", "name": "labels", "title": "Labels", "data_layout": "io_folder", "source_id": sid, "spec": SHAPE, **extra}
+    body = {
+        "type": "dataset",
+        "name": "labels",
+        "title": "Labels",
+        "data_layout": "io_folder",
+        "source_id": sid,
+        "spec": SHAPE,
+        **extra,
+    }
     resp = await client.post(f"/api/v1/graph/project/{pid}/dataset", json=body)
     assert resp.json().get("status") == "SUCCESS", resp.text
     return resp.json()["data"]
@@ -61,14 +110,21 @@ async def test_promote_then_annotate_lands_on_disk_and_in_counts(bootstrapped_cl
     item_doc = json.loads((folder / "examples" / "0001" / "input" / "item.json").read_text())
     assert item_doc["external_id"] == items[0]["external_id"] and item_doc["body"] == items[0]["body"]
 
-    resp = await client.post(f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": eid, "ground_truth": {"sentiment": "positive"}})
+    resp = await client.post(
+        f"/api/v1/graph/dataset/{ds['id']}/annotate",
+        json={"example_id": eid, "ground_truth": {"sentiment": "positive"}},
+    )
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["num_annotated"] == 1
-    assert json.loads((folder / "examples" / "0001" / "ground_truth" / "label.json").read_text()) == {"sentiment": "positive"}
+    assert json.loads((folder / "examples" / "0001" / "ground_truth" / "label.json").read_text()) == {
+        "sentiment": "positive"
+    }
 
     row = (await client.get(f"/api/v1/graph/dataset/{ds['id']}")).json()["data"]
     assert row["num_examples"] == 1 and row["num_annotated"] == 1
-    listed = (await client.get("/api/v1/graph/dataset", params={"filter": json.dumps({"source_id": sid})})).json()["data"]
+    listed = (await client.get("/api/v1/graph/dataset", params={"filter": json.dumps({"source_id": sid})})).json()[
+        "data"
+    ]
     assert [d["id"] for d in listed] == [ds["id"]]
 
 
@@ -78,11 +134,17 @@ async def test_shape_and_layout_are_enforced(bootstrapped_client, user, tmp_path
     sid = await _source_with_items(client, 1)
     ds = await _dataset(client, pid, sid)
     [item] = await _items(client, sid)
-    [eid] = (await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [item["id"]]})).json()["data"]["example_ids"]
+    [eid] = (
+        await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [item["id"]]})
+    ).json()["data"]["example_ids"]
 
-    bad = await client.post(f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": eid, "ground_truth": {"mood": "x"}})
+    bad = await client.post(
+        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": eid, "ground_truth": {"mood": "x"}}
+    )
     assert bad.status_code == 400 and "schema" in bad.json()["data"], bad.text
-    missing = await client.post(f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": "nope", "ground_truth": {"sentiment": "p"}})
+    missing = await client.post(
+        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": "nope", "ground_truth": {"sentiment": "p"}}
+    )
     assert missing.status_code == 404
 
     csv_ds = await _dataset(client, pid, sid, name="csvset", data_layout="csv")
@@ -100,9 +162,13 @@ async def test_examples_listing_reports_promoted_items_and_gold(bootstrapped_cli
     sid = await _source_with_items(client, 2)
     ds = await _dataset(client, pid, sid)
     items = await _items(client, sid)
-    [eid] = (await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})).json()["data"]["example_ids"]
+    [eid] = (
+        await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})
+    ).json()["data"]["example_ids"]
     listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/examples")).json()["data"]["examples"]
     assert listed == [{"example_id": eid, "item_id": items[0]["id"], "kind": "train", "annotated": False}]
-    await client.post(f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": eid, "ground_truth": {"sentiment": "neutral"}})
+    await client.post(
+        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"example_id": eid, "ground_truth": {"sentiment": "neutral"}}
+    )
     listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/examples")).json()["data"]["examples"]
     assert listed[0]["annotated"] is True

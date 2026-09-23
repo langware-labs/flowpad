@@ -20,7 +20,10 @@ from flow_sdk.ingest.driver_runtime import SendOutcome, SendStatus
 from flow_sdk.tags import on_tag
 from tests.utils.fake_source import scripted_provider
 
-pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+pytestmark = [
+    pytest.mark.timeout(30),  # do not increase timeout without approval
+    pytest.mark.usefixtures("fresh_user_scope"),
+]
 
 ME = "me@scripted.test"
 
@@ -87,16 +90,17 @@ async def test_a_crash_between_send_and_record_never_resends_when_the_copy_turns
         name = _name()
         driver.push({"body": "hi", "external_id": "<m1>", "thread_key": "t1"})
         async with workflow(name):
-            m = await _one(stream_inbox)                       # handed out; we "send" and die
+            m = await _one(stream_inbox)  # handed out; we "send" and die
             position = await ConsumerPosition.ensure_for(name, str(src.id))
             position.replying_to = str(m._row.id)
             from datetime import datetime, timezone
+
             position.replying_started_at = datetime.now(timezone.utc)
             await position.commit()
         # The provider did send it; its next page carries our own copy.
         driver.push({"body": "hello back", "author": ME, "thread_key": "t1", "reply_to_external_id": "<m1>"})
 
-        async with workflow(name):                      # restart
+        async with workflow(name):  # restart
             again = await _one(stream_inbox)
             assert again.redelivered
             outcome = await again.reply(EmailMessageSpec.reply_to(again, body="hello back"))
@@ -117,6 +121,7 @@ async def test_a_crash_with_no_copy_to_be_found_acks_with_needs_review_and_says_
                 position = await ConsumerPosition.ensure_for(name, str(src.id))
                 position.replying_to = str(m._row.id)
                 from datetime import datetime, timezone
+
                 position.replying_started_at = datetime.now(timezone.utc)
                 await position.commit()
             async with workflow(name):
@@ -185,9 +190,10 @@ async def test_the_fallback_lookup_matches_a_thread_when_the_driver_stamps_no_re
             position = await ConsumerPosition.ensure_for(name, str(src.id))
             position.replying_to = str(m._row.id)
             from datetime import datetime, timedelta, timezone
+
             position.replying_started_at = datetime.now(timezone.utc) - timedelta(seconds=1)
             await position.commit()
-        driver.push({"body": "reply", "author": ME, "thread_key": "t9"})   # no reply_to_external_id
+        driver.push({"body": "reply", "author": ME, "thread_key": "t9"})  # no reply_to_external_id
         async with workflow(name):
             again = await _one(stream_inbox)
             outcome = await again.reply(EmailMessageSpec.reply_to(again, body="reply"))
