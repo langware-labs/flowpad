@@ -292,8 +292,10 @@ export class Agent extends APIEntity<Agent> {
    * `environment` is the placement's credential environment — `production`
    * when omitted. One cloud machine per environment.
    */
-  async deploy(environment?: string): Promise<AgentDeployResult> {
-    return (await this.post('deploy', environment ? { environment } : undefined)) as AgentDeployResult;
+  /** Deploy to a cloud machine (the default), or `provider: 'local'` — this computer. */
+  async deploy(environment?: string, provider?: 'local'): Promise<AgentDeployResult> {
+    const body = { ...(environment ? { environment } : {}), ...(provider ? { provider } : {}) };
+    return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
   }
 
   /** Every place this agent runs on — this computer first — with what each owns. */

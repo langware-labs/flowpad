@@ -126,17 +126,23 @@ async def test_without_channel_loops_only_the_chat_endpoint_is_kept(mail_db, loo
     assert loops == []
 
 
-async def test_an_agent_that_owns_a_channel_is_served_here_without_being_placed_first(mail_db, loops):
-    """The app answers an agent's channel with nothing of the owner's running — not even a
-    placement made beforehand: owning the source is what puts the agent on this machine."""
+async def test_owning_a_channel_places_nothing_its_local_deployment_serves_it(mail_db, loops):
+    """This computer is a deployment only once the agent was deployed here: owning a source puts
+    nothing on the machine, and the agent's channel is served from its local deployment."""
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
     agent = await _agent()
     source = await _channel(agent)
     server = AgentServer(serve_channels=True)
     try:
         await server.reconcile()
         await asyncio.sleep(0)
+        assert server.serving() == {}
+        assert await Deployment.get_all({"match": {"parent_type_id": str(agent.typeid)}}) == []
 
-        placement = await agent.local_deployment()
+        placement = await agent.deploy("local")
+        await server.reconcile()
+        await asyncio.sleep(0)
         assert server.serving()[str(placement.id)] == {str(source.id)}
     finally:
         await server.stop()

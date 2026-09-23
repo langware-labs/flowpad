@@ -157,6 +157,19 @@ async def test_places_list_this_computer_first_with_what_each_owns(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_listing_places_creates_none_and_deploying_here_is_idempotent(tmp_path):
+    agent = await _agent(tmp_path, "places-none")
+    assert await list_places(agent) == []
+    assert await agent.deployments() == [], "looking at an agent's places deploys it nowhere"
+
+    first = await agent.deploy("local")
+    again = await agent.deploy("local")
+    assert first.id == again.id
+    rows = await list_places(agent)
+    assert [(r["deployment"].id, r["is_local"], r["answers_email"]) for r in rows] == [(first.id, True, True)]
+
+
+@pytest.mark.asyncio
 async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
     from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.builtin.data_source import DataSource, SourceStatus

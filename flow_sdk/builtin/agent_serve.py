@@ -663,7 +663,7 @@ class AgentServer:
         async with self._reconciling:
             await self._sync_chiefs_of_staff()
             owned = await self._channels_by_agent()
-            wanted = await self._placements(owned)
+            wanted = await self._placements()
             if self.serve_channels and not self._stopped:
                 await self._converge(wanted, owned)
 
@@ -713,32 +713,22 @@ class AgentServer:
                 owned.setdefault(owner.id, []).append(source)
         return owned
 
-    async def _placements(self, owned: dict[str, list]) -> dict[str, tuple]:
+    async def _placements(self) -> dict[str, tuple]:
         """Every local agent placement whose agent is enabled there — each with its ``chat`` endpoint.
 
-        An agent that owns a channel answers it from this machine unless told otherwise,
-        so it has a placement here — made on first need, as ``local_deployment`` always has.
+        Only placements that exist: an agent runs on this machine once it was deployed here, and
+        owning a channel does not deploy it (a channel is served by the agent's local placement).
         """
         from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
         from flow_sdk.builtin.deployment import KIND_AGENT, Deployment  # noqa: PLC0415
         from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
 
-        agents: dict[str, Any] = {}
-
-        async def agent_of(agent_id: str):
-            if agent_id not in agents:
-                agents[agent_id] = await Agent.get_by_id(agent_id) if agent_id else None
-            return agents[agent_id]
-
-        for agent_id in owned:
-            agent = await agent_of(agent_id)
-            if agent is not None:
-                await agent.local_deployment()
         wanted: dict[str, tuple] = {}
         for deployment in await Deployment.get_all({"match": {"kind": KIND_AGENT}}):
             if not kind_matches(KIND_AGENT, deployment.kind) or not deployment.is_local:
                 continue
-            agent = await agent_of(str(deployment.parent_type_id or "").partition("-")[2])
+            agent_id = str(deployment.parent_type_id or "").partition("-")[2]
+            agent = await Agent.get_by_id(agent_id) if agent_id else None
             if agent is None or not agent.enabled_on(deployment.id):
                 continue
             try:

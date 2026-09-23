@@ -155,15 +155,16 @@ async def list_places(agent: "Agent") -> list[dict[str, Any]]:
     from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
     from flow_sdk.schema.data_spec.trigger_types import TriggerType  # noqa: PLC0415
 
-    local, placed, triggers = await asyncio.gather(
-        agent.local_deployment(),
+    # Listing places never creates one: this computer is a deployment only once it was launched here.
+    placed, triggers = await asyncio.gather(
         agent.deployments(),
         Trigger.get_all({"match": {"parent_type_id": str(agent.typeid)}}),
     )
-    deployments = [local] + [d for d in placed if d.id != local.id]
+    local = next((d for d in placed if d.is_local), None)
+    deployments = ([local] if local is not None else []) + [d for d in placed if d is not local]
     schedules = [t for t in triggers if t.trigger_type == TriggerType.SCHEDULE]
     # Unset keeps the legacy rule, reported as this computer: the machine asking is the one polling.
-    answering = agent.email_place or local.id
+    answering = agent.email_place or (local.id if local is not None else None)
     published = str(getattr(agent.origin, "head_commit", "") or "")
     cloud = [d for d in deployments if not d.is_local]
     repo = await asyncio.to_thread(_agent_repo, agent) if cloud and published else None
