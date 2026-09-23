@@ -1,5 +1,5 @@
 import apiClient from '@sdk/client';
-import { ConnectionManager, PrefKey, type TypeId } from '@sdk';
+import { ConnectionManager, PrefKey, isOk, type CliResult, type TypeId } from '@sdk';
 import { useFileWatch } from '@sdk/react/hooks';
 import { usePreference } from '@src/hooks/use-preference';
 import { Button } from '@src/components/ui/button';
@@ -37,15 +37,11 @@ interface SnippetRead {
   error_code?: string;
 }
 
-interface SnippetRunResult {
-  returncode: number | null;
-  stdout: string;
-  stderr: string;
-  timed_out: boolean;
-  duration_s: number;
-  /** One sentence about how the run ended, when there is one to say — "The run was stopped." */
-  detail?: string;
-}
+/** The run's answer, and whether THIS view stopped it. A stop is a fact the
+ *  view knows — it pressed the button — not something to infer from the answer:
+ *  reading "any detail means stopped" labelled every failed run "stopped", since
+ *  the backend writes a sentence for every run that does not succeed. */
+type SnippetOutcome = CliResult & { stopped: boolean };
 
 /** The one caller of the stop route: the button and the unmount both go through here. */
 const stopRun = (runId: string) => apiClient.post<{ stopped?: boolean }>('/api/v1/snippet/stop', { run_id: runId });
@@ -87,9 +83,10 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   const [notice, setNotice] = useState('');
   const error = readError || notice;
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<SnippetRunResult | null>(null);
+  const [result, setResult] = useState<SnippetOutcome | null>(null);
   // The run in flight, by the id the backend knows it by — what Stop names.
   const runIdRef = useRef<string | null>(null);
+  const stopRequestedRef = useRef(false);
   // Editors mount only once the shared shiki themes exist (see shikiMonaco.ts).
   const [themed, setThemed] = useState(false);
 
@@ -229,6 +226,7 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
     if (runIdRef.current) return;
     const runId = crypto.randomUUID();
     runIdRef.current = runId;
+    stopRequestedRef.current = false;
     setRunning(true);
     try {
       // Run what is on screen: flush unsaved edits first.
@@ -237,15 +235,15 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
         return region ? save(region) : null;
       });
       await Promise.all([...flushing, ...inflightRef.current]);
-      setResult(
-        // The connection id ends the run if this tab closes mid-run (no unmount runs then).
-        await apiClient.post<SnippetRunResult>('/api/v1/snippet/run', {
-          path,
-          timeout_seconds: timeoutSeconds,
-          run_id: runId,
-          connection_id: ConnectionManager.getInstance().id,
-        }),
-      );
+      // The connection id ends the run if this tab closes mid-run (no unmount runs then).
+      const answer = await apiClient.post<CliResult>('/api/v1/snippet/run', {
+        path,
+        timeout_seconds: timeoutSeconds,
+        run_id: runId,
+        connection_id: ConnectionManager.getInstance().id,
+      });
+      // A run that finished cleanly as Stop landed was not stopped.
+      setResult({ ...answer, stopped: stopRequestedRef.current && !isOk(answer) });
     } catch (reason) {
       setNotice(errorMessage(reason, t`Could not run the snippet`));
     } finally {
@@ -258,6 +256,7 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   const stop = useCallback(async () => {
     const runId = runIdRef.current;
     if (!runId) return;
+    stopRequestedRef.current = true;
     try {
       await stopRun(runId);
     } catch (reason) {
@@ -337,11 +336,12 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
             <div className="mt-1 text-muted-foreground" data-testid="snippet-status">
               {result.timed_out
                 ? t`timed out after ${timeoutSeconds}s — killed`
-                : result.detail
-                  ? t`stopped — killed after ${result.duration_s.toFixed(2)}s`
-                  : result.returncode === null
-                  ? t`did not run`
-                  : t`exit ${result.returncode} · ${result.duration_s.toFixed(2)}s`}
+                : result.stopped
+                  ? t`stopped — killed after ${(result.duration_s ?? 0).toFixed(2)}s`
+                  : result.returncode == null
+                    ? // Never started: no such file, no runner for it. The answer says which.
+                      result.detail || t`did not run`
+                    : t`exit ${result.returncode} · ${(result.duration_s ?? 0).toFixed(2)}s`}
             </div>
           </div>
         )}

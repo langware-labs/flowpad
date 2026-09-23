@@ -13,6 +13,7 @@ import type { ComputeNode } from '../entities/compute-node/compute-node';
 import { perfTime } from '../utils/perf';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
+import { isOk, type PromptResult } from '../models/ReturnedValue';
 import { IEntity } from '../IEntity';
 import { FSRef, type FSRefJson } from '../fs/FSRef';
 import { ClaudeAgentOptions, factory as cliOptionsFactory } from '../cli_workers';
@@ -2783,7 +2784,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     actionInfo.bodyParameters = { instruction, ...(workerSessionId ? { worker_session_id: workerSessionId } : {}) };
 
     try {
-      await dataManager.callAction(actionInfo);
+      // The turn's PromptResult. A turn the backend could not take is a 200
+      // carrying NOT_YET (only `busy` is a 409, which throws) — so the answer is
+      // READ: waiting for a completion that will never come would hang here.
+      const answer = await dataManager.callAction<Record<string, unknown>, PromptResult>(actionInfo);
+      if (answer && answer.exit_code !== undefined && !isOk(answer)) {
+        throw new Error(answer.detail || 'The turn was not taken');
+      }
     } catch (error) {
       // No backend turn was accepted, so do not leave the local pending latch
       // masking the process's last authoritative status.

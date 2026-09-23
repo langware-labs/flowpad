@@ -180,6 +180,8 @@ describe('inspecting a step', () => {
         step={STEP}
         outcome={{
           step_id: 'container',
+          // As on the wire: a step's answer is Tagged, so it names its own class.
+          spec_kind: 'compute.returned.cli',
           exit_code: 0,
           command: 'docker run waha',
           returncode: 0,
@@ -205,5 +207,29 @@ describe('inspecting a step', () => {
 
     expect(screen.queryByTestId('wizard-probes')).toBeNull();
     expect(screen.getByText('the agent said so')).toBeTruthy();
+  });
+
+  it('shows what a nested wizard did, step by step', () => {
+    render(
+      <WizardStepInspector
+        step={STEP}
+        outcome={{
+          step_id: 'container',
+          spec_kind: 'compute.returned.wizard',
+          exit_code: 1,
+          steps: {
+            fetch: { spec_kind: 'compute.returned.cli', exit_code: 0, ran: true },
+            build: { spec_kind: 'compute.returned.cli', exit_code: 1, ran: true, detail: 'The command exited 2.' },
+          },
+        }}
+      />,
+    );
+
+    const nested = screen.getByTestId('wizard-step-nested').textContent ?? '';
+    expect(nested).toContain('fetch');
+    expect(nested).toContain('build');
+    expect(nested).toContain('The command exited 2.');
+    // A nested wizard is not a process record: no command rows for it.
+    expect(screen.queryByTestId('wizard-probes')).toBeNull();
   });
 });

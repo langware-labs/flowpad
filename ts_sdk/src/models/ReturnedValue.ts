@@ -71,3 +71,25 @@ export interface WizardResult extends ReturnedValue {
   /** Each step's own answer, by step id. A step never reached is absent. */
   steps?: Record<string, ReturnedValue & Partial<CliResult & PromptResult & AskResult & WizardResult>>;
 }
+
+/**
+ * The `spec_kind` a NESTED answer (a wizard step's, a check's) carries on the
+ * wire — the one way a reader tells which class it holds. Mirrors the
+ * `spec_kind`s in `returned_value_spec.py`.
+ */
+export const ANSWER_KIND = {
+  cli: 'compute.returned.cli',
+  prompt: 'compute.returned.prompt',
+  ask: 'compute.returned.ask',
+  wizard: 'compute.returned.wizard',
+} as const;
+
+/** Is this answer a process record? Read from its kind — not inferred from
+ *  whichever field happens to be present (`command` is empty on a record that
+ *  never started, and a future answer class may carry one too). */
+export const isCliResult = (answer: Pick<ReturnedValue, 'spec_kind'> | null | undefined): answer is CliResult =>
+  answer?.spec_kind === ANSWER_KIND.cli;
+
+/** Is this answer a nested wizard's own result? */
+export const isWizardResult = (answer: Pick<ReturnedValue, 'spec_kind'> | null | undefined): answer is WizardResult =>
+  answer?.spec_kind === ANSWER_KIND.wizard;

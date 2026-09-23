@@ -91,9 +91,10 @@ export class ShellOutputFlowData extends JsonFlowData<ShellOutput> {
   /**
    * Mark command as complete with exit code
    */
-  markComplete(exitCode: number): void {
+  markComplete(exitCode?: number): void {
+    // `undefined` is "the command never reported one" — kept unknown, not 0.
     this.data.exitCode = exitCode;
-    this.attributes[FlowDataAttribute.EXIT_CODE] = exitCode.toString();
+    if (exitCode !== undefined) this.attributes[FlowDataAttribute.EXIT_CODE] = exitCode.toString();
   }
 
   /**
