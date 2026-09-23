@@ -84,12 +84,15 @@ class ComputeNodeCommandExecutor:
             return CliResult.of_process(command, None, timed_out=True, duration_s=time.monotonic() - started)
         except Exception as exc:  # noqa: BLE001 — a provider failure is an answer, not a crash
             return CliResult.of_process(command, None, "", f"{type(exc).__name__}: {exc}")
+        # cap=None: GitRepo reads file content, diffs and status through here and
+        # parses them; the tail-only default would hand back a file's last 8 KB.
         return CliResult.of_process(
             command,
             cli_command.exit_code,
             cli_command.all_stdout or "",
             cli_command.all_stderr or "",
             duration_s=time.monotonic() - started,
+            cap=None,
         )
 
     async def exists(self, path: str) -> bool:
