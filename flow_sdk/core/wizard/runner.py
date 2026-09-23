@@ -72,6 +72,19 @@ class Resolved:
     trusted: bool = False
 
 
+def wizard_refused(name: Optional[str]) -> WizardResult:
+    """The one refusal a wizard answers, however it was reached.
+
+    The runner's own gate and the entity's (``Wizard.run``) both say this; a
+    person should not meet two spellings of one sentence depending on which way
+    the wizard was started. ``compute_op.runner.refused_for`` is the op's twin.
+    """
+    return WizardResult.refused(
+        f"{name or 'This wizard'} is not shipped with Flowpad. It runs commands "
+        "on this machine, so it must be approved before it can run."
+    )
+
+
 #: Resolve a step's ``ref``. Injected: the runner does not know what an index is.
 OpResolver = Callable[[str], Awaitable[Optional[Resolved]]]
 WizardResolver = Callable[[str], Awaitable[Optional[Resolved]]]
@@ -129,9 +142,7 @@ async def run_wizard(
     bound ``args``, or a person's own call.
     """
     if not trusted:
-        return WizardResult.refused(
-            "This wizard runs commands on the machine and has not been approved."
-        )
+        return wizard_refused(spec.name)
 
     from flow_sdk.activity import Activity  # noqa: PLC0415 — keeps this module entity-free at import
 
@@ -286,7 +297,13 @@ async def _resolve(run: _Run, step: WizardStepSpec, resolver: Optional[OpResolve
     if found is None:
         return ReturnedValue.not_found(f"there is no {noun} named {step.ref!r}")
     if not found.trusted and not run.approved:
-        return ReturnedValue.refused(
+        # In the CALLEE's own answer class — a refused op step is the op's
+        # CliResult / PromptResult / AskResult, a refused wizard step a
+        # WizardResult — so a reader of `steps` never meets a base ReturnedValue
+        # for a callee whose kind is known. (A callee NOT found has no spec, so
+        # the base class is all that can be said about it.)
+        answer = WizardResult if isinstance(found.spec, WizardSpec) else found.spec.exe_data.ANSWER
+        return answer.refused(
             f"step {step.id!r} calls the {noun} {step.ref!r}, which this instance does not ship. "
             "Approve the run to allow it."
         )

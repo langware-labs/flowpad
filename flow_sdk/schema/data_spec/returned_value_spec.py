@@ -35,13 +35,40 @@ The decisions, one problem at a time: ``docs/snippets/call-returns.md``.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Optional
+from typing import Annotated, Any, ClassVar, Optional
 
+from pydantic import BeforeValidator, WrapSerializer
 from typing_extensions import Self
 
 from enum import IntEnum
 
-from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
+from flow_sdk.schema.data_spec.spec import DataSpec, Tagged, _by_kind, _with_kind
+
+
+def _value_by_kind(value: Any) -> Any:
+    """Restore a value's DataSpec class from its ``spec_kind`` — leniently.
+
+    ``Tagged`` for a field that may ALSO hold a primitive, a list or a plain dict.
+    A kind nobody registered stays a dict: an unreadable value must not make the
+    whole answer (a ``run.json``) unreadable.
+    """
+    if isinstance(value, dict) and "spec_kind" in value:
+        try:
+            return _by_kind(value)
+        except ValueError:
+            return value
+    return value
+
+
+def _value_with_kind(value: Any, handler: Any, info: Any) -> Any:
+    """Tag a DataSpec value with its kind on the way out; anything else as usual."""
+    return _with_kind(value, info) if isinstance(value, DataSpec) else handler(value)
+
+
+#: A value that comes back as the class it went out as. Without it a DataSpec
+#: value — an op's declared output — read back from ``run.json`` as a plain dict,
+#: so "an instance of output_spec_kind" held only until the first save.
+TaggedValue = Annotated[Any, BeforeValidator(_value_by_kind), WrapSerializer(_value_with_kind)]
 
 #: What a process record keeps of each stream. A command that prints a megabyte
 #: is reporting about its own noise, not its outcome.
@@ -89,7 +116,8 @@ class ReturnedValue(DataSpec):
 
     exit_code: ExitCode = ExitCode.OK
     #: What the call produced, validated against the callee's ``output_spec_kind``.
-    value: Any = None
+    #: A DataSpec value round-trips as its own class (``TaggedValue``).
+    value: TaggedValue = None
     #: One sentence for a person. Never a code, never a stack, never a paragraph.
     detail: str = ""
     #: Did anything actually execute? ``False`` means nothing did: the goal
