@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "requires": {},
+  "ns": "flowpad_oss",
   "entries": [
     {
       "typeid": "markdown-965060ed-45d0-4d0b-9ff5-74d397d68ea3",
