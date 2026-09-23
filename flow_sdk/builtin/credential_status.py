@@ -143,6 +143,8 @@ async def credentials_status(
                 description=spec.description or "",
                 icon_name=spec.icon_name or "",
                 help_url=spec.help_url or "",
+                setup_wiki=getattr(spec, "setup_wiki", "") or "",
+                setup=getattr(spec, "setup", "") or "",
                 scope=scope.scope,
                 project_id=scope.project_id,
                 environment=environment,

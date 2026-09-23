@@ -205,3 +205,18 @@ async def test_with_no_tab_the_window_opens_on_this_backend(tmp_path, monkeypatc
     question = open_question("get-api-key", "token", "test.ask.api_token")
     assert await ask_window._open_a_window(question) is True
     assert opened.read_text().strip() == f"http://127.0.0.1:6123/win/ask/{question.id}"
+
+
+async def test_a_secret_ask_says_so_to_whoever_draws_the_field(tmp_path):
+    """An API key is masked where it is typed: the question carries ``secret``, and its payload too."""
+    spec = _spec(tmp_path, exe_data={"prompt": "Service X API token", "secret": True})
+    run = asyncio.create_task(_run(spec, tmp_path, timeout=5))
+    for _ in range(200):
+        if open_questions():
+            break
+        await asyncio.sleep(0.01)
+    (question,) = open_questions()
+
+    assert question.secret is True and question.to_payload()["secret"] is True
+    answer(question.id, {"token": "sk-live-1"})
+    assert (await run).ok

@@ -55,6 +55,8 @@ export interface CredentialStatusRow {
   description: string;
   icon_name: string;
   help_url: string;
+  setup_wiki: string;
+  setup: string;
   scope: CredentialScopeName;
   project_id: string | null;
   /** The environment these presences were read for. */
@@ -127,6 +129,8 @@ export interface CredentialManifestInput {
   icon_name?: string;
   help_url?: string;
   setup_wiki?: string;
+  /** How an agent obtains and stores the values. Required when saving. */
+  setup?: string;
   value_store?: CredentialValueStore;
   lm_provider?: string;
   vars: Record<string, CredentialManifestVar>;

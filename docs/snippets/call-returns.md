@@ -44,6 +44,7 @@ class AgentOp(ExeData):                       # compute_op.agent — a harness w
 
 class AskOp(ExeData):                         # compute_op.ask — a person
     prompt: str
+    secret: bool                              # masked where it is typed (an API key)
 
 class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     name: str

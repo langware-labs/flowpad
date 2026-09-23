@@ -42,6 +42,7 @@ async def database(in_project):
             "name": "database",
             "vars": {"DATABASE_URL": {"label": "Database URL"}},
             "environments": {"production": {"value_store": "vault"}},
+            "setup": "Store it: `flow credentials set database DATABASE_URL=...`.",
         },
         values={"DATABASE_URL": "postgres://localhost:54322/dev"},
     )

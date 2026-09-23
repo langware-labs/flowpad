@@ -58,13 +58,16 @@ class AskRequest(BaseModel):
     #: Already the op's shortest deadline; this route waits exactly that long.
     timeout: float
     label: str
+    #: The answer is a secret: the window masks it.
+    secret: bool = False
 
 
 @router.post("")
 async def ask_for_another_process(body: AskRequest):
     """Raise the question here, wait the caller's bounded time, answer with the
     ``AskResult``. The answer routes below resolve it like any local question."""
-    said = await ask_person(body.op, body.prompt, body.shape, timeout=body.timeout, label=body.label)
+    said = await ask_person(body.op, body.prompt, body.shape, timeout=body.timeout, label=body.label,
+                            secret=body.secret)
     return ApiSuccessResponse(data=said.model_dump(mode="json"))
 
 

@@ -30,7 +30,7 @@ async def _declare(project, *env_vars, values=None):
     return await save_credential(
         scope="project",
         project_id=str(project.id),
-        manifest={"name": "pack", "vars": {v: {"label": v} for v in env_vars}},
+        manifest={"name": "pack", "vars": {v: {"label": v} for v in env_vars}, "setup": "Test pack."},
         values=values or {},
     )
 

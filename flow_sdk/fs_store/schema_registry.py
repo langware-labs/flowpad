@@ -165,6 +165,14 @@ class TypeInfo:
                 and self.asset_hash_fn.func is entity_document_fingerprint
             ):
                 self.asset_hash_fn = partial(entity_document_fingerprint, self)
+        elif getattr(self.shape, "main", None):
+            # Any other asset with a main file is fresh by that file too, not by its folder alone.
+            from flow_sdk.assets.identity import manifest_fingerprint  # noqa: PLC0415
+
+            if self.asset_hash_fn is None or (
+                isinstance(self.asset_hash_fn, partial) and self.asset_hash_fn.func is manifest_fingerprint
+            ):
+                self.asset_hash_fn = partial(manifest_fingerprint, self)
 
     @property
     def is_entity_document(self) -> bool:

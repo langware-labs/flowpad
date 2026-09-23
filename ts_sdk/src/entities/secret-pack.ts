@@ -48,6 +48,8 @@ export interface ISecretPack extends IEntity {
   icon_name?: string;
   help_url?: string;
   setup_wiki?: string;
+  /** How an agent obtains and stores the values (`flow project setup`'s AI setup). */
+  setup?: string;
   value_store?: 'env' | 'vault';
   /** The LLM API provider this credential's single key funds, if any. */
   lm_provider?: string;
@@ -71,6 +73,7 @@ export class SecretPack extends APIEntity<SecretPack> implements ISecretPack {
   icon_name: string = '';
   help_url: string = '';
   setup_wiki: string = '';
+  setup: string = '';
   value_store: 'env' | 'vault' = 'env';
   lm_provider: string = '';
   vars: Record<string, CredentialVar> = {};
