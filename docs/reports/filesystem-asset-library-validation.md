@@ -1,3 +1,6 @@
+---
+id: 2081b872-dbd0-4a71-86ce-658c2a60592e
+---
 # Filesystem asset library consolidation — 2026-09-13
 
 The public filesystem library is `flow_sdk/assets`. Application code selects and

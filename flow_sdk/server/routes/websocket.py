@@ -3,6 +3,7 @@
 Handles WebSocket connections and message routing following the original FlowPad pattern.
 """
 
+import asyncio
 import contextvars
 import json
 import logging
@@ -59,6 +60,9 @@ class ConnectionInfo:
     focused: bool = True
     last_presence_at: float = field(default_factory=time.monotonic)
     browser_context: dict = field(default_factory=dict)
+    #: Whether `app.tab.ready` was already emitted for this connection — its first
+    #: `browser_context` frame is the moment; every later one is just a navigation.
+    tab_ready_announced: bool = False
 
 
 # Store active connections (id -> ConnectionInfo).
@@ -258,6 +262,52 @@ async def send_entity_notification(entity_type: str, entity_id: str, op: str, en
         logger.error(f"Error sending entity notification: {e}", exc_info=True)
 
 
+_tab_ready_tasks: "set[asyncio.Task]" = set()
+
+
+def _announce_tab_ready(connection_id: str, info: ConnectionInfo) -> None:
+    """Emit `app.tab.ready` for a connection the first time it reports a context.
+
+    `browser_context` is the right frame, not `presence`: `presence` goes out the
+    instant the socket opens, while `browser_context` carries the current URL and
+    is re-sent on every navigation (`App.tsx`) — so the first one means a route
+    has actually loaded, not merely that the app started mounting.
+
+    Detached: the emit waits for the system content index (`system_content_ready`),
+    which may still be running for the first tab of a boot, and the socket loop
+    must not stall behind it.
+    """
+    if info.tab_ready_announced:
+        return
+    info.tab_ready_announced = True
+    task = asyncio.get_running_loop().create_task(_emit_tab_ready(connection_id))
+    _tab_ready_tasks.add(task)  # a task nobody references can be collected mid-flight
+    task.add_done_callback(_tab_ready_tasks.discard)
+
+
+async def _emit_tab_ready(connection_id: str) -> None:
+    try:
+        from flow_sdk.server.routes.bootstrap import system_content_ready
+        from flow_sdk.tags import target_of
+        from flow_sdk.tags.bus import make_tag_event, publish_tag
+        from flow_sdk.utils.machine_id import local_entity_id
+
+        await system_content_ready.wait()
+        info = _active_connections.get(connection_id)
+        if info is None:
+            return  # the tab went away while the index was still landing
+        event = publish_tag(
+            make_tag_event(
+                "app.tab.ready",
+                target_of("compute_node", local_entity_id("compute_node")),
+                {"connection_id": connection_id, "url": str(info.browser_context.get("url") or "")},
+            )
+        )
+        logger.info("[app.tab.ready] emitted event_id=%s connection=%s", event.id, connection_id)
+    except Exception:
+        logger.exception("app.tab.ready signal failed")
+
+
 async def handle_binary_message(connection_id: str, websocket: WebSocket, data: bytes) -> None:
     """Handle incoming binary WebSocket message (STREAM_MSG).
 
@@ -338,6 +388,7 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
                 ctx = message_data.get("context")
                 if isinstance(ctx, dict):
                     info.browser_context = ctx
+                    _announce_tab_ready(connection_id, info)
                     # Mirror remote entities in this context to hub watches so
                     # the hub fans their updates back to us (cross-user live
                     # updates). Cloud-facing + best-effort; never breaks the WS.
@@ -592,9 +643,13 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
                             "pty",
                             "ws_slow_message connection=%s type=%s action=%s sub_path=%s shell=%s "
                             "ms=%.0f slow_in_window=%s",
-                            connection_id, message_data.get("message_type"),
-                            message_data.get("action"), message_data.get("sub_path"), shell_id,
-                            handle_ms, slow_since_log,
+                            connection_id,
+                            message_data.get("message_type"),
+                            message_data.get("action"),
+                            message_data.get("sub_path"),
+                            shell_id,
+                            handle_ms,
+                            slow_since_log,
                         )
                         slow_since_log = 0
             if not continue_loop:

@@ -1,0 +1,21 @@
+{
+  "type": "compute_op",
+  "id": "5540594f-b20b-4322-ac76-398cafb88155",
+  "name": "ask-install-git",
+  "label": "Install Git?",
+  "description": "Asks the person whether to install Git, only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "Git is not installed. Install Git for you?",
+    "until_answered": true
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "git --version >/dev/null 2>&1 && echo '{}'",
+      "linux": "git --version >/dev/null 2>&1 && echo '{}'",
+      "win32": "git --version *> $null; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  },
+  "output_spec_kind": "confirm"
+}

@@ -1,0 +1,21 @@
+{
+  "type": "compute_op",
+  "id": "6e7ef02b-0a2a-4b93-af7e-e992ed488fa1",
+  "name": "ask-install-npm",
+  "label": "Install npm?",
+  "description": "Asks the person whether to install npm, only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "npm is not installed. Install npm for you?",
+    "until_answered": true
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "npm --version >/dev/null 2>&1 && echo '{}'",
+      "linux": "npm --version >/dev/null 2>&1 && echo '{}'",
+      "win32": "npm.cmd --version *> $null; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  },
+  "output_spec_kind": "confirm"
+}

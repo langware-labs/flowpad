@@ -1,3 +1,6 @@
+---
+id: fc323111-4a95-483e-8c72-64c6687bc409
+---
 # Filesystem asset refactor validation
 
 Date: 2026-09-11.

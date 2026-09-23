@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "id": "fae14377-04ba-4a9b-8c55-425e95dcfe09",
+  "name": "npm-on-path",
+  "label": "npm",
+  "description": "npm is on the PATH and runnable.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "brew install node",
+      "linux": "apt-get update && apt-get install -y npm",
+      "win32": "winget install --id OpenJS.NodeJS.LTS --silent"
+    },
+    "timeout_seconds": 600
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "npm --version >/dev/null 2>&1",
+      "linux": "npm --version >/dev/null 2>&1",
+      "win32": "npm.cmd --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  }
+}

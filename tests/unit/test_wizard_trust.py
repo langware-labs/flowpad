@@ -8,6 +8,7 @@ projects from third-party repos and `repo_assets_fn` indexes everything under
 thing the rest of the codebase refuses (``CapabilitySpec.install_commands`` is
 display-only for the same reason).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,7 +21,7 @@ pytestmark = pytest.mark.timeout(5)
 
 
 def _wizard_at(root: Path) -> Wizard:
-    return Wizard(name="w", asset_ref=str(root / "agentic-assets" / "wizard" / "dev-toolchain"))
+    return Wizard(name="w", asset_ref=str(root / "agentic-assets" / "wizard" / "llm-setup"))
 
 
 def test_a_shipped_wizard_is_trusted(tmp_path):
@@ -43,15 +44,16 @@ def test_a_wizard_with_no_asset_ref_is_not_trusted():
     assert Wizard(name="w", asset_ref="").is_system() is False
 
 
-def test_the_shipped_dev_toolchain_wizard_is_trusted_where_it_actually_lives():
+def test_the_shipped_llm_setup_wizard_is_trusted_where_it_actually_lives():
     """Guards the real path, so moving the asset cannot silently un-trust it."""
     from flow_sdk.config import system_projects_root
 
-    ref = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "dev-toolchain"
-    assert Wizard(name="dev-toolchain", asset_ref=str(ref)).is_system() is True
+    ref = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    assert Wizard(name="llm-setup", asset_ref=str(ref)).is_system() is True
 
 
 # ── refusal and busy are ANSWERS; only the HTTP edge turns them into codes ───
+
 
 def _folder_wizard(tmp_path, monkeypatch):
     import json
@@ -64,9 +66,9 @@ def _folder_wizard(tmp_path, monkeypatch):
     monkeypatch.setattr(wizard_execute, "run_dir", lambda wid: tmp_path / "runs" / wid)
     folder = tmp_path / "project" / "agentic-assets" / "wizard" / "demo"
     folder.mkdir(parents=True)
-    (folder / "wizard.json").write_text(json.dumps(
-        {"name": "demo", "steps": [{"id": "a", "kind": "compute", "ref": "nothing-by-this-name"}]}
-    ))
+    (folder / "wizard.json").write_text(
+        json.dumps({"name": "demo", "steps": [{"id": "a", "kind": "compute", "ref": "nothing-by-this-name"}]})
+    )
     return Wizard(name="demo", asset_ref=str(folder))
 
 

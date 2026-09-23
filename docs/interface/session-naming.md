@@ -1,3 +1,6 @@
+---
+id: f0d3d1f4-a35d-4443-a6a1-e8ef67d77301
+---
 # Worker session names
 
 `AgenticProcess.name` is the canonical display name. The backend naming service

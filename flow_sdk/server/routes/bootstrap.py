@@ -854,9 +854,7 @@ async def _get_or_create_local(cls, *, name: str, owner: Optional[Entity]):
                 return existing
         raise save_error
     await entity.set_visitor_role("owner")
-    logging.info(
-        "Created @local %s: %s with owner: %s", entity_type, entity.id, owner.id if owner else "None"
-    )
+    logging.info("Created @local %s: %s with owner: %s", entity_type, entity.id, owner.id if owner else "None")
     return entity
 
 
@@ -1788,6 +1786,14 @@ _BOOTSTRAP_CACHE_TTL = 30.0  # seconds
 # fires within a few hundred ms; the deferral only reorders background work.
 first_bootstrap_served: asyncio.Event = asyncio.Event()
 
+#: Set once the system-content index has landed and the wizard triggers are
+#: reconciled — i.e. once a tag emitted NOW would find its subscribers armed.
+#: `app.ready` waits for the same thing (`_app_ready_signal`); `app.tab.ready`
+#: waits on this event directly, because it is emitted per TAB, long after that
+#: coroutine has finished. The bus has no durability: an unarmed subscriber at
+#: emit time never hears the event at all.
+system_content_ready: asyncio.Event = asyncio.Event()
+
 
 def invalidate_bootstrap_cache(*, reset_local_entities: bool = False) -> None:
     """Refresh responses; only a database replacement resets lifecycle identity."""
@@ -1960,12 +1966,18 @@ async def initialize_bootstrap() -> BootstrapInfo:
             info_available=True,
             types=build_all_type_payloads(),
             icon_packs=icon_registry.payload(),
-            user=entity_to_dict(user), domain=None, visitor=None,
+            user=entity_to_dict(user),
+            domain=None,
+            visitor=None,
             default_project=project_to_dict(project),
             default_workspace=entity_to_dict(workspace),
             default_compute_node=entity_to_dict(compute_node),
-            env=EnvInfo(env_name="desktop", cloud_api_url=settings.cloud_api_url,
-                        version=__version__, instance_name=settings.instance_name),
+            env=EnvInfo(
+                env_name="desktop",
+                cloud_api_url=settings.cloud_api_url,
+                version=__version__,
+                instance_name=settings.instance_name,
+            ),
             desktop_info=get_desktop_bootstrap_info(),
             records_root=str(settings.records_root),
             supported_locales=get_supported_locales(),
@@ -2078,9 +2090,13 @@ async def _build_info() -> DeferredInfo:
         _optional_info("sniffer", _sniffer_status(user)),
         _optional_info("stream inbox repair", recompute_unread("info", user.typeid)),
     )
-    fields = dict(desktop_info=desktop, scan_info=scan, harness_state=harness,
-                  capabilities_summary=capabilities.model_dump(mode="json") if capabilities is not None else None,
-                  notice=notice)
+    fields = dict(
+        desktop_info=desktop,
+        scan_info=scan,
+        harness_state=harness,
+        capabilities_summary=capabilities.model_dump(mode="json") if capabilities is not None else None,
+        notice=notice,
+    )
     if sandbox is not None:
         available, node = sandbox
         fields.update(sandbox_available=available, sandbox_compute_node=entity_to_dict(node) if node else None)

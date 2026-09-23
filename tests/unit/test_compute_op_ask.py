@@ -8,18 +8,20 @@ what the HTTP action does in production.
 guard `flow start` uses. A question nobody was shown still registers and still
 times out, which is the honest outcome and the one these tests assert.
 """
+
 from __future__ import annotations
 
 import asyncio
 import sys
 from pathlib import Path
 from typing import ClassVar
+from unittest.mock import AsyncMock
 
 import pytest
 
 from flow_sdk.core.compute.ask import answer, cancel, open_questions
 from flow_sdk.core.compute_op import run_op
-from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+from flow_sdk.schema.data_spec.compute_op_spec import ASK_TIMEOUT_SECONDS, ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import AskResult, ExitCode
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -69,8 +71,7 @@ def _spec(tmp: Path, **over) -> ComputeOpSpec:
 
 
 async def _run(spec, tmp_path, *, timeout=BRIEF):
-    return await run_op(spec, trusted=True, workdir=Path(tmp_path),
-                        platform=sys.platform, ask_timeout=timeout)
+    return await run_op(spec, trusted=True, workdir=Path(tmp_path), platform=sys.platform, ask_timeout=timeout)
 
 
 async def _answer_when_asked(reply, *, via=answer) -> None:
@@ -153,6 +154,147 @@ async def test_an_answer_of_the_wrong_shape_is_not_a_value(tmp_path):
 async def test_an_ask_op_must_declare_what_it_is_asking_for():
     """Caught when the document is read, not with a person already waiting."""
     with pytest.raises(ValueError, match="nothing to ask the person FOR"):
-        ComputeOpSpec.model_validate({
-            "name": "get-api-key", "subkind": "ask", "exe_data": {"prompt": "Token?"},
-        })
+        ComputeOpSpec.model_validate(
+            {
+                "name": "get-api-key",
+                "subkind": "ask",
+                "exe_data": {"prompt": "Token?"},
+            }
+        )
+
+
+def test_until_answered_and_timeout_seconds_together_is_refused():
+    """`until_answered` would win at runtime either way (see the runner) —
+    refusing the document is better than an author's explicit budget being
+    silently dropped with nothing to say why the wait outlived it."""
+    with pytest.raises(ValueError, match="cannot set both"):
+        ComputeOpSpec.model_validate(
+            {
+                "name": "get-api-key",
+                "subkind": "ask",
+                "exe_data": {"prompt": "Token?", "until_answered": True, "timeout_seconds": 30},
+                "output_spec_kind": "test.ask.api_token",
+            }
+        )
+
+
+def _until_answered_spec(tmp: Path, **over) -> ComputeOpSpec:
+    return _spec(tmp, exe_data={"prompt": "Service X API token", "until_answered": True}, **over)
+
+
+#: The "full budget" caller timeout — `ask_timeout >= ASK_TIMEOUT_SECONDS` is
+#: exactly the condition the runner checks to grant `until_answered` its
+#: unbounded wait. `min()` in a shorter number here does NOT simulate a longer
+#: wait; it does the opposite (see the failed first draft of these tests) —
+#: these must pass the real constant, never a patched one.
+FULL_BUDGET = ASK_TIMEOUT_SECONDS
+
+
+async def test_until_answered_reaches_wait_for_with_no_deadline(tmp_path, monkeypatch):
+    """The whole point, proven without waiting out a real 60s: a caller that
+    allows the full budget (no explicit SHORTER `ask_timeout`) gets no deadline
+    at all passed to the waiter, not just a longer one."""
+    from flow_sdk.core.compute import ask as ask_module
+    from flow_sdk.core.compute import ask_window
+
+    # A live tab from the first attempt: nothing here is testing the presence
+    # grace (that is `test_nobody_to_show_it_to_...` / `test_a_tab_that_...`),
+    # so skip straight past it into the wait this test actually asserts on.
+    monkeypatch.setattr(ask_window, "raise_question", AsyncMock(return_value=True))
+    deadlines = []
+    real_wait = ask_module.wait_for
+
+    async def spy(question, *, timeout):
+        deadlines.append(timeout)
+        return await real_wait(question, timeout=timeout)
+
+    monkeypatch.setattr(ask_module, "wait_for", spy)
+    spec = _until_answered_spec(tmp_path)
+
+    run = asyncio.create_task(_run(spec, tmp_path, timeout=FULL_BUDGET))
+    await _answer_when_asked({"token": "sk-live-1"})
+    said = await run
+
+    assert said.ok is True and said.value.token == "sk-live-1"
+    assert deadlines == [None]
+
+
+async def test_a_shorter_caller_deadline_still_bounds_an_until_answered_op(tmp_path):
+    """`until_answered` widens the DEFAULT; it does not override a caller that
+    explicitly asks for less — "a caller may pass a shorter deadline" still
+    holds for this op like any other."""
+    spec = _until_answered_spec(tmp_path)
+    said = await _run(spec, tmp_path, timeout=BRIEF)
+
+    assert said.exit_code is ExitCode.NOT_YET
+    assert said.timed_out is True
+    assert open_questions() == []
+
+
+async def test_nobody_to_show_it_to_gives_up_after_the_presence_grace(tmp_path, monkeypatch):
+    """No live tab and `FLOWPAD_NO_BROWSER` (this file's fixture): the op does
+    not hang forever holding its caller — it gives the boot-race window a
+    chance (`PRESENCE_GRACE_SECONDS`) and then reports precisely that: nobody
+    was there, nothing ran, and the question is gone rather than orphaned."""
+    from flow_sdk.core.compute_op import runner as op_runner
+
+    monkeypatch.setattr(op_runner, "PRESENCE_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr(op_runner, "PRESENCE_POLL_SECONDS", 0.01)
+    spec = _until_answered_spec(tmp_path)
+
+    said = await _run(spec, tmp_path, timeout=FULL_BUDGET)
+
+    assert said.exit_code is ExitCode.NOT_YET
+    assert said.ran is False
+    assert open_questions() == []
+
+
+async def test_a_tab_that_connects_during_the_grace_window_still_gets_asked(tmp_path, monkeypatch):
+    """The boot race this grace window exists for: `app.ready` can fire before
+    the app's own tab finishes its WS handshake. A tab a moment late must still
+    see the question, not lose it to an instant give-up."""
+    from flow_sdk.core.compute import ask_window
+    from flow_sdk.core.compute_op import runner as op_runner
+
+    monkeypatch.setattr(op_runner, "PRESENCE_GRACE_SECONDS", 0.3)
+    monkeypatch.setattr(op_runner, "PRESENCE_POLL_SECONDS", 0.02)
+    attempts: list[bool] = []
+
+    async def flaky_push(question) -> bool:
+        attempts.append(True)
+        return len(attempts) >= 3  # "connects" on the third look
+
+    monkeypatch.setattr(ask_window, "_push_to_live_tab", flaky_push)
+    spec = _until_answered_spec(tmp_path)
+
+    run = asyncio.create_task(_run(spec, tmp_path, timeout=FULL_BUDGET))
+    await _answer_when_asked({"token": "sk-live-1"})
+    said = await run
+
+    assert said.ok is True
+    assert said.value.token == "sk-live-1"
+    assert len(attempts) >= 3
+
+
+async def test_the_browser_fallback_is_tried_once_not_once_per_poll(tmp_path, monkeypatch):
+    """A window that failed to open once (headless, `FLOWPAD_NO_BROWSER`) must
+    not be retried on every presence poll — that would spam a fresh tab every
+    `PRESENCE_POLL_SECONDS` instead of failing the same way every time."""
+    from flow_sdk.core.compute import ask_window
+    from flow_sdk.core.compute_op import runner as op_runner
+
+    monkeypatch.setattr(op_runner, "PRESENCE_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr(op_runner, "PRESENCE_POLL_SECONDS", 0.01)
+    window_calls = []
+
+    async def counted_window(_q) -> bool:
+        window_calls.append(1)
+        return False
+
+    monkeypatch.setattr(ask_window, "_open_a_window", counted_window)
+    spec = _until_answered_spec(tmp_path)
+
+    said = await _run(spec, tmp_path, timeout=FULL_BUDGET)
+
+    assert said.exit_code is ExitCode.NOT_YET and said.ran is False
+    assert len(window_calls) == 1

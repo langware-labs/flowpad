@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "id": "17d6c3c2-34a5-4949-bb54-aaa72c5e3cdc",
+  "name": "python-on-path",
+  "label": "Python 3",
+  "description": "Python 3 is runnable — as python3 or python on Unix, as py -3 or python on Windows.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "brew install python3",
+      "linux": "apt-get update && apt-get install -y python3",
+      "win32": "winget install --id Python.Python.3 --silent"
+    },
+    "timeout_seconds": 600
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "for c in python3 python; do v=$($c --version 2>&1) && case \"$v\" in \"Python 3\"*) exit 0;; esac; done; exit 1",
+      "linux": "for c in python3 python; do v=$($c --version 2>&1) && case \"$v\" in \"Python 3\"*) exit 0;; esac; done; exit 1",
+      "win32": "foreach ($c in @('py','python')) { if (Get-Command $c -ErrorAction SilentlyContinue) { $a = @(); if ($c -eq 'py') { $a = @('-3') }; $v = & $c @a --version 2>&1; if ($LASTEXITCODE -eq 0 -and \"$v\" -match '^Python 3') { exit 0 } } }; exit 1"
+    },
+    "timeout_seconds": 30
+  }
+}

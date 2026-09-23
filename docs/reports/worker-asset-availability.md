@@ -1,3 +1,6 @@
+---
+id: fee45c79-2108-4b40-9ae0-517c24ac2059
+---
 # Worker asset availability validation
 
 Date: 2026-09-10. Status: implementation in progress; full live-worker parity is not yet certified.

@@ -1,0 +1,12 @@
+{
+  "name": "LLM setup (app.tab.ready)",
+  "description": "Runs the LLM setup wizard every time a UI tab finishes loading — every app start, reload or new window: checks Python 3, Git, Node.js and npm, and asks before installing any that is missing. Nothing is asked when everything is installed. Deliberately NOT fire_once: a tool removed later, or a question cancelled, is asked about again on the next load.",
+  "tag": {
+    "on": "app.tab.ready"
+  },
+  "actions": [
+    {
+      "run_wizard": ""
+    }
+  ]
+}

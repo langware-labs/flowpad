@@ -33,15 +33,21 @@ def ask_url(base: str, question_id: str) -> str:
     return f"{base.rstrip('/')}/{WIN_LAYOUT}/{ASK_VIEW}/{question_id}"
 
 
-async def raise_question(question) -> bool:
+async def raise_question(question, *, try_window: bool = True) -> bool:
     """Show *question* to a person. True when something was actually raised.
 
     Never raises: the caller is mid-attempt and a window that failed to open is
     a reason to time out, not an exception to unwind a run with.
+
+    ``try_window=False`` skips the browser fallback — for a caller RETRYING the
+    live-tab push after an earlier ``raise_question`` already tried both: a
+    window that failed to open once (no display, or ``FLOWPAD_NO_BROWSER``,
+    which the desktop app always sets) would open a fresh tab on every retry
+    otherwise, instead of failing the same way every time.
     """
     if await _push_to_live_tab(question):
         return True
-    return await _open_a_window(question)
+    return await _open_a_window(question) if try_window else False
 
 
 async def _push_to_live_tab(question) -> bool:
