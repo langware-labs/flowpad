@@ -932,7 +932,13 @@ class SchemaRegistry:
     #: marker's name for anyone else's. Never chosen by how a kind is SPELLED.
     #: Called SYNCHRONOUSLY from ``kind_type``, so it may not await.
     _kind_loader: ClassVar[Optional[Callable[[Optional[str]], Any]]] = None
-    _kind_of_shape: ClassVar[dict[int, str]] = {}   # id(shape) → kind; the O(1) inverse
+    #: id(shape) → (shape, kind); the O(1) inverse. The SHAPE is kept beside its
+    #: kind, and read back only when it is still that same object: a shape is not
+    #: always hashable (``list[str]``) so the key must be its address, and an
+    #: address is reused once the object dies — a collected class handed its kind
+    #: to whatever was allocated there next (a parametrization once read as
+    #: ``test.triage``). Holding the shape also stops that reuse.
+    _kind_of_shape: ClassVar[dict[int, tuple[Any, str]]] = {}
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
     #: Run when an entity class first binds to a type (see ``on_entity_bound``).
@@ -1033,9 +1039,9 @@ class SchemaRegistry:
             )
         cls._kinds[kind] = shape
         if derived:
-            cls._kind_of_shape.setdefault(id(shape), kind)
+            cls._kind_of_shape.setdefault(id(shape), (shape, kind))
         else:
-            cls._kind_of_shape[id(shape)] = kind
+            cls._kind_of_shape[id(shape)] = (shape, kind)
         # Registering IS naming: the class carries the name it was bound under, so a
         # dump writes the key a read looks up. Stamped HERE rather than at the call
         # site because this is the only writer of the binding — a registration made
@@ -1050,7 +1056,8 @@ class SchemaRegistry:
     def kind_for(cls, shape: Any) -> "str | None":
         """The kind a class is registered under, or None. Inverse of ``kind_type``."""
         cls._ensure_loaded()
-        return cls._kind_of_shape.get(id(shape))
+        known, kind = cls._kind_of_shape.get(id(shape), (None, None))
+        return kind if known is shape else None
 
     @classmethod
     def kind_type(cls, kind: str) -> Any:

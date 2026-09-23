@@ -51,7 +51,9 @@ export function runningRows(projectRows: AgentRow[]): AgentRow[] {
 
 function useAgentCounters(): AssetCounter<AgentRow>[] {
   const { project } = useProject(null);
-  const { agents: projectAgents, isLoading: projectLoading } = useProjectAgents(project, { limit: null });
+  // No limit to ask for: the hook returns every agent under the project's roots,
+  // and it is the strip that slices for display.
+  const { agents: projectAgents, isLoading: projectLoading } = useProjectAgents(project);
   const { data: allAgents = [], isLoading: allLoading } = useEntitiesQuery<Agent>(ALL_AGENTS);
   const { data: deployments = [], isLoading: deploymentsLoading } = useEntitiesQuery<Deployment>(AGENT_DEPLOYMENTS);
 

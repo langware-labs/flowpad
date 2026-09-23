@@ -2019,7 +2019,7 @@ export class DockPointer implements IDockPointer {
    * (`agents`), `counter` one of its counters (`running`). Both live in the
    * query, so the table the user sees IS the URL.
    */
-  static forAssetList(group: string, counter: string, layout: Layout = Layout.DOCK): DockPointer {
+  static forCounterAssets(group: string, counter: string, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(ViewType.ASSET_LIST, undefined, { group, counter }, layout);
   }
 

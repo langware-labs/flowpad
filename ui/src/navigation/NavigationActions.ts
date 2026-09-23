@@ -1054,9 +1054,9 @@ export class NavigationActions {
     this.openDock(pointer);
   }
 
-  /** Open the table behind one home counter (see `DockPointer.forAssetList`). */
+  /** Open the table behind one home counter (see `DockPointer.forCounterAssets`). */
   openAssetList(group: string, counter: string): void {
-    this.openDock(DockPointer.forAssetList(group, counter));
+    this.openDock(DockPointer.forCounterAssets(group, counter));
   }
 
   /**
