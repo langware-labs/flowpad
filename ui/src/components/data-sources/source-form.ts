@@ -32,6 +32,8 @@ export interface SourceDraft {
   enabled: boolean;
   poll_interval_seconds: number;
   window_days: number;
+  /** Quiet this long ends a thread; the next message starts a new one. Null = never. */
+  thread_timeout_seconds: number | null;
   /** Raw strings straight off the inputs; `buildConfig` types them. */
   fields: Record<string, string>;
   /**
@@ -77,6 +79,7 @@ export function emptyDraft(spec?: DataDriver): SourceDraft {
     enabled: true,
     poll_interval_seconds: 300,
     window_days: 7,
+    thread_timeout_seconds: null,
     // A manifest `default` is what a new source starts with, not a hint the user must retype —
     // rendered the way an edited source's stored value is, so create and edit show the same text.
     fields: Object.fromEntries(
@@ -283,6 +286,9 @@ export function validateDraft(draft: SourceDraft, spec?: DataDriver): string[] {
     );
   }
   if (draft.window_days < 1) problems.push('Window must be at least 1 day.');
+  if (draft.thread_timeout_seconds !== null && !(draft.thread_timeout_seconds >= 60)) {
+    problems.push('Thread timeout must be at least 1 minute — or empty, for threads that never time out.');
+  }
 
   return problems;
 }
