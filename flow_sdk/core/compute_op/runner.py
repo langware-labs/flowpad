@@ -168,8 +168,11 @@ async def run_op(
 
     if spec.completion_check is None or not exe.RECHECKED:
         # No re-check: an op with no check has only the call's own word, and a
-        # person's valid answer IS the verdict of an ask.
-        return _with_value(spec, call) if call.ok else call
+        # person's valid answer IS the verdict of an ask. A call that never ran
+        # (NOT_APPLICABLE is `ok` too) produced no value, so there is nothing to
+        # hold to the declared kind — doing so would demote "not this machine's
+        # problem" to a failure.
+        return _with_value(spec, call) if call.ok and call.ran else call
 
     if not call.ran:
         # The call never happened — no command for this box, no harness to run
