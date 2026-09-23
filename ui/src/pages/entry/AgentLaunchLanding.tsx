@@ -7,6 +7,7 @@ import { CheckCircle, Loader2, LogIn } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useAuth } from '@sdk/react/hooks';
+import { useLaunchTracker, useSetupStepTracking } from './launch-analytics';
 import { useLaunchTarget } from './launch-target';
 
 /**
@@ -28,6 +29,8 @@ import { useLaunchTarget } from './launch-target';
  * Same redirect `OpenSandboxLanding` makes: the hub's `open-service` owns readiness.
  *
  * `?name=` overrides the project name, as on a repo link.
+ *
+ * Every stage reports to the GA4 launch funnel (`launch-analytics.ts`).
  */
 export default function AgentLaunchLanding({ params }: { params: URLSearchParams }) {
   const { t } = useLingui();
@@ -36,6 +39,8 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
   const { gitOrigin, agent, agentLoading, agentProblem, agentError } = useLaunchTarget(params, signedIn);
   const { createSandbox, launchSandbox, steps } = useSandboxes();
   const [failure, setFailure] = useState<string | null>(null);
+  const tracker = useLaunchTracker(params.get('agent')?.trim() || undefined, signedIn);
+  useSetupStepTracking(tracker, steps);
 
   // Share of the setup rows `launchSandbox` has finished. Whole steps only: a row in
   // flight counts for nothing, so the number never claims work that has not landed.
@@ -52,17 +57,21 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
     if (started.current || !signedIn || !gitOrigin) return;
     started.current = true;
     const sandboxProject = { gitOrigin, name };
+    tracker.setupStart();
     void (async () => {
       try {
         const created = await createSandbox({ name, sandboxProject });
         const node = created ? await launchSandbox(created, { sandboxProject }) : null;
         if (!node) throw new Error(t`Couldn't set up the sandbox.`);
+        tracker.setupComplete();
+        tracker.enterMachine();
         window.location.assign(workspaceServiceUrl(node.id));
       } catch (e) {
+        tracker.setupError();
         setFailure(errorMessage(e, t`Couldn't set up the sandbox.`));
       }
     })();
-  }, [signedIn, gitOrigin, name, createSandbox, launchSandbox, t]);
+  }, [signedIn, gitOrigin, name, createSandbox, launchSandbox, t, tracker]);
 
   const agentProblemMessage =
     agentProblem === 'unavailable'
@@ -72,6 +81,12 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
         : agentProblem === 'failed'
           ? errorMessage(agentError, t`Couldn't load this agent.`)
           : null;
+
+  // A link that can't be launched ends the funnel here; reported once per distinct problem.
+  const agentErrorReason = agentProblem ?? (signedIn && agent && !gitOrigin ? 'no-repo' : null);
+  useEffect(() => {
+    if (agentErrorReason) tracker.agentError(agentErrorReason);
+  }, [agentErrorReason, tracker]);
 
   const errorClass = 'mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs';
   // One title style for both halves of the page: signing in changes the words, nothing else.
@@ -96,7 +111,10 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
             </p>
             <Button
               size="sm"
-              onClick={() => void cloudManager.login({ refresh: 'session' })}
+              onClick={() => {
+                tracker.signInStart();
+                void cloudManager.login({ refresh: 'session' });
+              }}
               className="w-full gap-1.5"
               data-testid="launch-sign-in"
             >
