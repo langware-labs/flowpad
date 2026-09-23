@@ -5,7 +5,6 @@ import { Agent, config, DataSource, Markdown, Mcp, Skill, type AssetDescriptor }
 import apiClient from '@sdk/client';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import {
-  AssetRow,
   assetScope,
   basename,
   descriptorKey,
@@ -18,13 +17,15 @@ import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal'
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
+import { sourceIcon } from '@src/components/data-sources/source-icon';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useContext } from '@src/hooks/useContext';
 import type { ChildSection } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useStagedAssets } from './useStagedAssets';
-import { Empty, IconButton } from './parts';
+import { Empty, IconButton, ResourceRow } from './parts';
 import { AgentSchedulesSection } from './AgentSchedulesSection';
 import { useQuickCreatePick } from '@src/components/quick-create';
 
@@ -120,10 +121,8 @@ export function AgentResourcesBody() {
   // Every row opens NESTED in the agent editor (see DockPointer.child): the item replaces the
   // agent's body in the same tab, the chain reads in the URL and the breadcrumbs, and this menu
   // stays. A click only navigates; which row is open is read back from the URL.
-  const openChild = (section: ChildSection, typeid: string) => ({
-    label: t`Open`,
-    run: () => currentDock && navigation.openDock(currentDock.withChild(section, typeid)),
-  });
+  const openChild = (section: ChildSection, typeid: string) => () =>
+    currentDock && navigation.openDock(currentDock.withChild(section, typeid));
   const isOpen = (typeid: string) => currentDock?.child?.typeId === typeid;
 
   // Scoped to the agent this panel is open for — the same field `bind_channel`
@@ -176,25 +175,22 @@ export function AgentResourcesBody() {
   }, [sourceRows, specFor]);
   const renderSourceRows = (rows: typeof sourceRows, section: ChildSection) =>
     rows.map((row) => (
-      <div key={row.key} className="flex items-center gap-1">
-        <div className="min-w-0 flex-1">
-          <AssetRow
-            descriptor={row.d}
-            scope={row.scope}
-            label={row.label}
-            selected={isOpen(row.key)}
-            improvable={false}
-            busy={false}
-            openAction={openChild(section, row.key)}
+      <ResourceRow
+        key={row.key}
+        icon={sourceIcon(specFor(row.source.provider), row.source.channel)}
+        label={row.label}
+        selected={isOpen(row.key)}
+        onOpen={openChild(section, row.key)}
+        testId={`agent-resource-row-${row.key}`}
+        action={
+          <IconButton
+            icon={Trash2}
+            label={t`Delete ${row.label}`}
+            onClick={() => setDeleting(row.source)}
+            testId={`agent-resource-delete-data-source-${row.source.id}`}
           />
-        </div>
-        <IconButton
-          icon={Trash2}
-          label={t`Delete ${row.label}`}
-          onClick={() => setDeleting(row.source)}
-          testId={`agent-resource-delete-data-source-${row.source.id}`}
-        />
-      </div>
+        }
+      />
     ));
 
   const mcpAssetRows = useMemo(
@@ -325,25 +321,22 @@ export function AgentResourcesBody() {
         }
       >
         {mcpAssetRows.map((row) => (
-          <div key={row.key} className="flex items-center gap-1">
-            <div className="min-w-0 flex-1">
-              <AssetRow
-                descriptor={row.d}
-                scope={row.scope}
-                label={row.label}
-                selected={isOpen(row.d.typeid)}
-                improvable={false}
-                busy={false}
-                openAction={openChild('mcp', row.d.typeid)}
+          <ResourceRow
+            key={row.key}
+            icon={iconForType(parseTypeid(row.d.typeid).type)}
+            label={row.label}
+            selected={isOpen(row.d.typeid)}
+            onOpen={openChild('mcp', row.d.typeid)}
+            testId={`agent-resource-row-${row.d.typeid}`}
+            action={
+              <IconButton
+                icon={Trash2}
+                label={t`Delete ${row.label}`}
+                onClick={() => onDeleteMcp(row)}
+                testId={`agent-resource-delete-mcp-${parseTypeid(row.d.typeid).id}`}
               />
-            </div>
-            <IconButton
-              icon={Trash2}
-              label={t`Delete ${row.label}`}
-              onClick={() => onDeleteMcp(row)}
-              testId={`agent-resource-delete-mcp-${parseTypeid(row.d.typeid).id}`}
-            />
-          </div>
+            }
+          />
         ))}
       </NavigatorSection>
 
@@ -369,15 +362,13 @@ export function AgentResourcesBody() {
         }
       >
         {skillRows.map((row) => (
-          <AssetRow
+          <ResourceRow
             key={row.key}
-            descriptor={row.d}
-            scope={row.scope}
+            icon={iconForType(parseTypeid(row.d.typeid).type)}
             label={row.label}
             selected={isOpen(row.d.typeid)}
-            improvable={false}
-            busy={false}
-            openAction={openChild('skill', row.d.typeid)}
+            onOpen={openChild('skill', row.d.typeid)}
+            testId={`agent-resource-row-${row.d.typeid}`}
           />
         ))}
       </NavigatorSection>
@@ -404,15 +395,13 @@ export function AgentResourcesBody() {
         }
       >
         {docRows.map((row) => (
-          <AssetRow
+          <ResourceRow
             key={row.key}
-            descriptor={row.d}
-            scope={row.scope}
+            icon={iconForType(parseTypeid(row.d.typeid).type)}
             label={row.label}
             selected={isOpen(row.d.typeid)}
-            improvable={false}
-            busy={false}
-            openAction={openChild('doc', row.d.typeid)}
+            onOpen={openChild('doc', row.d.typeid)}
+            testId={`agent-resource-row-${row.d.typeid}`}
           />
         ))}
       </NavigatorSection>
