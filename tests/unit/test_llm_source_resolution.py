@@ -287,6 +287,28 @@ async def test_a_process_endpoint_rules_every_other_source_out_with_a_reason(env
     assert all("this process requires" in s.reason for s in others)
 
 
+async def test_a_process_pinned_to_a_local_key_endpoint_spends_that_key(env, monkeypatch) -> None:
+    """The pin names an ENDPOINT, and a stored key is one. Matching only hub rows sent this
+    process to ``<hub>/llm_endpoint/<the key row's id>/invoke`` -- a budget the hub never
+    heard of, answered 403 ``target_not_found`` at the first turn."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    _bind(monkeypatch)
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+    key = await LLMEndpoint.ensure_for_secret(LMApiProvider.OPENROUTER.value)
+    process = _process(endpoint=str(key.typeid))
+
+    endpoint, chosen = await resolve_llm_endpoint(process)
+    assert str(endpoint.kind) == "api_key" and chosen.endpoint_typeid == str(key.typeid)
+    assert str(chosen.origin) == "process"
+
+    auth = await resolve_worker_api_auth(process)
+    assert auth is not None and auth.env.get("ANTHROPIC_BASE_URL") == "https://openrouter.ai/api"
+
+
 async def test_a_project_endpoint_constrains_every_process_in_it(env, monkeypatch) -> None:
     """The project rung. A process that names its own endpoint still wins over it -- most
     specific first -- which is what keeps the override per-process rather than a way to

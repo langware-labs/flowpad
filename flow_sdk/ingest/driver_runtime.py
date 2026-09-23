@@ -455,6 +455,13 @@ class DriverRuntime:
             # A push-only source (a webhook is its only delivery): a poll finds nothing.
             return Pass(cursor=position.cursor, manifest=dict(position.manifest), unchanged=True)
         source = await self.open(row)
+        if isinstance(source, Identified) and await self._stamp(row, source):
+            # Before the FIRST pass, not only at setup or on a send. A source with no setup step
+            # otherwise projects its first items not knowing who it is (our own messages land as
+            # a stranger's), and the account it later learns re-scopes every origin after it --
+            # the same message would ingest under a second key. Reopened because the binding
+            # reads the account it was opened with.
+            source = await self.open(row)
         cls = type(source)
         async with source:
             cursor = position.cursor if cls.durable_cursor else None
@@ -684,17 +691,20 @@ class DriverRuntime:
             await self._stamp(row, source)
         return verdict
 
-    async def _stamp(self, row: Any, source: Source) -> None:
-        """Record who the source reads and posts as, once."""
+    async def _stamp(self, row: Any, source: Source) -> bool:
+        """Record who the source reads and posts as, once. True when this call wrote it."""
         if identity_stamped(row):
-            return
+            return False
         try:
             profiles = await source.whoami()  # type: ignore[attr-defined]
-            if profiles:
-                identities = [p.origin.key for p in profiles] + [p.name for p in profiles if p.name]
-                await stamp_identity(row, account_key=profiles[0].name or profiles[0].origin.key, identities=identities)
+            if not profiles:
+                return False
+            identities = [p.origin.key for p in profiles] + [p.name for p in profiles if p.name]
+            await stamp_identity(row, account_key=profiles[0].name or profiles[0].origin.key, identities=identities)
+            return True
         except Exception:  # noqa: BLE001 — identity is a nicety; it never fails what asked for it
             logger.debug("[ingest] %s identity stamp failed", self.provider, exc_info=True)
+            return False
 
     async def choices(self, row: Any, field: str) -> list:
         """What the credential can see for one config field. Raises like a fetch; the one caller

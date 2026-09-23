@@ -5,6 +5,7 @@ objects through ``identity_reader`` and persist/refelect the returned decisions.
 """
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -160,6 +161,25 @@ def stored_asset_occurrences(
         )
         stored.synthetic_keys.add(key)
     return stored
+
+
+async def resolved_collision(type_name: str, entity_id: str, incumbent: Any, candidates: list[Any]) -> Any:
+    """The indexer's collision decision for one id across resolved ``candidates``
+    and ``incumbent``'s stored occurrences (none when there is no row yet).
+
+    The single-asset form of the index pass's policy, for the targeted paths
+    (reparse, install) that must agree with it. None when no decision names the id.
+    """
+    from flow_sdk.fs_store.indexer.index_function import resolve_collisions  # noqa: PLC0415
+
+    stored = stored_asset_occurrences(type_name, {
+        entity_id: (str(incumbent.asset_ref), incumbent.scope, incumbent.project_id,
+                    incumbent.asset_occurrences, incumbent.created_date)
+    }) if incumbent is not None else {}
+    decisions = await asyncio.to_thread(
+        resolve_collisions, candidates, stored, lambda item: (item.type_name, item.id, str(item.root))
+    )
+    return next((d for d in decisions if d.entity_id == entity_id), None)
 
 
 def _coerce_occurrence(value: AssetOccurrence | Mapping[str, Any]) -> AssetOccurrence:

@@ -221,7 +221,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
 
 
 @pytest.fixture(autouse=True)
-def _real_home_for_cli_subprocess_tests(request):
+async def _real_home_for_cli_subprocess_tests(request):
     """Restore real ``$HOME`` for tests that spawn real worker CLI subprocesses.
 
     Scope of this fixture is **subprocess auth only**: the CLI inherits the
@@ -240,16 +240,26 @@ def _real_home_for_cli_subprocess_tests(request):
     the CLI subprocess inherits working auth. All other long tests keep the
     sandbox HOME from the parent conftest so the indexer doesn't walk the
     real projects tree.
+
+    Swapping HOME swaps which vendor logins exist, so the harness login verdicts
+    already in the session DB describe the OTHER home and are dropped on both
+    edges. An earlier sandbox-HOME test that booted the app ran the capability
+    sweep, which probed ``claude auth status``, got "logged out" and saved
+    ``login_state=idle``; the spawn resolver honours that verdict, so this
+    module's worker was refused as "claude is signed out" while the real HOME was
+    signed in (and passed in isolation).
     """
     module_stem = request.path.stem
     if module_stem in _REAL_HOME_TEST_MODULES:
         os.environ["HOME"] = _REAL_HOME
         os.environ["USERPROFILE"] = _REAL_HOME
+        await _forget_login_verdicts()
         try:
             yield
         finally:
             os.environ["HOME"] = _SANDBOX_HOME
             os.environ["USERPROFILE"] = _SANDBOX_USERPROFILE
+            await _forget_login_verdicts()
     else:
         yield
 

@@ -128,6 +128,7 @@ export function DataSourceDialog({
   // asks to add the source — before that the red box reads as a broken dialog, not as guidance.
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Seed the form once per opening, keyed on WHAT is being edited. `specFor`
   // changes identity on every live `DataDriver` emission, and depending on it
@@ -283,7 +284,18 @@ export function DataSourceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent
+        ref={contentRef}
+        className="max-h-[85vh] overflow-y-auto sm:max-w-lg"
+        // Every provider tile is a tooltip trigger, and a tooltip opens on focus: auto-focusing
+        // the first tile popped its description over the row below it, where it sat on top of
+        // the tiles a person was about to click. The dialog itself takes focus instead.
+        onOpenAutoFocus={(e) => {
+          if (editing) return;
+          e.preventDefault();
+          contentRef.current?.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{editing ? t`Edit data source` : t`Add a data source`}</DialogTitle>
           <DialogDescription>

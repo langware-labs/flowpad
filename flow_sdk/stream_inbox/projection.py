@@ -33,6 +33,7 @@ driver's own report is empty.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any, Optional
@@ -922,15 +923,39 @@ async def _on_item(event) -> None:
         logger.exception("[stream-inbox] projection failed for source_item %s", entity_id)
 
 
+#: Per loop: source id → "a sync completed while its sweep was running".
+_sweeps = new_registry()
+
+
 async def _on_sync(event) -> None:
+    """One sweep per source at a time; a sync that completes during it buys ONE more round.
+
+    Every pass ends in a `sync.completed`, and a backfill takes longer than the next pass: run
+    concurrently, each sweep re-walked the same unplaced backlog oldest-first. A desk's first pass
+    of 53 messages piled up 20 sweeps that each re-projected the whole backlog, which took 3.5
+    minutes to settle, and the newest ticket was placed last. The extra round still covers an item
+    that lands after the running sweep read its batch.
+    """
     source_id = str((event.data or {}).get("source_id") or "")
     if not source_id:
         return
+    pending = _sweeps.setdefault(asyncio.get_running_loop(), {})
+    if source_id in pending:
+        pending[source_id] = True
+        return
+    pending[source_id] = False
     try:
-        if await reconcile_source(source_id):
-            _touch()
-    except Exception:  # noqa: BLE001
-        logger.exception("[stream-inbox] reconcile failed for source %s", source_id)
+        while True:
+            try:
+                if await reconcile_source(source_id):
+                    _touch()
+            except Exception:  # noqa: BLE001
+                logger.exception("[stream-inbox] reconcile failed for source %s", source_id)
+            if not pending[source_id]:
+                return
+            pending[source_id] = False
+    finally:
+        pending.pop(source_id, None)
 
 
 def _touch() -> None:

@@ -268,6 +268,15 @@ async def test_a_disabled_vault_blocks_the_save_and_creates_no_folder(home, proj
     assert not (home / "agentic-assets").exists()
 
 
+async def test_a_second_credential_with_the_same_name_is_refused_as_existing(home, project):
+    await save_credential(scope="user", manifest=_manifest("personal", "QA_USER"))
+
+    with pytest.raises(CredentialError, match="already exists") as excinfo:
+        await save_credential(scope="user", manifest=_manifest("personal", "QA_OTHER"))
+
+    assert excinfo.value.code == "exists"
+
+
 async def test_a_value_for_an_undeclared_variable_is_refused(home, project):
     with pytest.raises(CredentialError, match="not a variable"):
         await save_credential(scope="user", manifest=_manifest("personal", "QA_USER"), values={"OTHER": "x"})

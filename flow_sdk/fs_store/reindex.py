@@ -102,7 +102,32 @@ async def reparse_entity(entity, *, fallback: str = "", write: bool = True):
     except NotAnAsset as reason:
         logger.debug("reparse %s: %s", target, reason)
         return None
-    return await index_one(resolved, notify=True, scope=getattr(entity, "scope", None), project_id=getattr(entity, "project_id", None))
+    record = await index_one(resolved, notify=True, scope=getattr(entity, "scope", None), project_id=getattr(entity, "project_id", None))
+    if record is not None and len(getattr(entity, "asset_occurrences", None) or []) > 1:
+        await _reflect_surviving_occurrences(entity, resolved)
+    return record
+
+
+async def _reflect_surviving_occurrences(entity, resolved) -> None:
+    """Re-resolve a collided asset's occurrence set after a targeted reparse.
+
+    A duplicate copy has no row of its own — only the primary's
+    ``asset_occurrences`` names it — so deleting one reaches nothing through the
+    path lookups above, and only a full index pass used to drop it: the
+    collision badge kept counting a file that was gone. The stored side is
+    re-validated read-only by the indexer's own ``resolve_collisions`` (a path
+    counts only while it exists and still carries this id). A decision that
+    would move the PRIMARY is left to the full index, which owns re-pointing
+    ``asset_ref``; here only the projection is refreshed.
+    """
+    from flow_sdk.fs_store.asset_occurrences import resolved_collision  # noqa: PLC0415
+
+    decision = await resolved_collision(entity.type, str(entity.id), entity, [resolved])
+    if decision is None or decision.primary_path != str(resolved.root):
+        return
+    fresh = await type(entity).get_one({"id": entity.id})
+    if fresh is not None:
+        await fresh.reflect_asset_occurrences(decision.occurrences, notify=True)
 
 
 async def reindex_paths(

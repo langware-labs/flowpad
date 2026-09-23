@@ -76,12 +76,17 @@ test('thinking expansion is retained when switching between two chat tabs', asyn
   await dismissSetup(page);
   await page.route('**/api/v1/workers/codex/*/transcript', fulfillTranscript);
   await page.goto(withViewMode('/dock/home', 'advanced'));
-  const projectId = await page.evaluate(
-    () =>
-      (window as unknown as { dataContext: { project?: { id?: string } | null } })
-        .dataContext.project?.id ?? null,
-  );
-  expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+  // Home adopts the default project in its route loader, which settles after
+  // the document 'load' goto waits for — read it once it has landed, not at
+  // whatever instant goto returned.
+  const readProjectId = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { dataContext?: { project?: { id?: string } | null } })
+          .dataContext?.project?.id ?? null,
+    );
+  await expect.poll(readProjectId, { message: 'home adopts the default project' }).toMatch(/^[0-9a-f-]{36}$/);
+  const projectId = await readProjectId();
   if (!projectId) throw new Error('The default project did not load');
   await page.goto(
     withViewMode(

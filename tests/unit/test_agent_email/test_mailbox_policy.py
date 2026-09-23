@@ -197,21 +197,36 @@ class _HiddenAgentHub:
         }
 
 
-async def _agent_that_cannot_publish(monkeypatch, hub):
+async def _absorbed_share(self):
+    """The real `share()` on a 409: `idempotent=True` swallows it and flips remote."""
+    self.remote = True
+
+
+async def _refused_share(self):
+    """A publish the hub refuses outright — `_unwrap`'s untyped ValueError."""
+    raise ValueError('API returned status 409: {"detail":"A conflicting record already exists"}')
+
+
+# Both shapes of "the hub already holds this id": the absorbed one is what the
+# real `share()` does today; the refused one is what it did before 8621c5d33.
+# Only the absorbed one went red against the real hub — the fake had kept the
+# old shape, so this file stayed green while production lost the reason.
+_CONFLICTING_SHARES = pytest.mark.parametrize("conflicting_share", [_absorbed_share, _refused_share], ids=["absorbed", "refused"])
+
+
+async def _agent_that_cannot_publish(monkeypatch, hub, conflicting_share):
     """A local agent the hub already holds under someone else: `share()` conflicts."""
     agent = Agent(name=f"ada-hidden-{mint_uuid()[:8]}")
     await agent.save()
     hub._agent_typeid = str(agent.typeid)
-
-    async def conflicting_share(self):
-        raise ValueError('API returned status 409: {"detail":"A conflicting record already exists"}')
 
     monkeypatch.setattr(Agent, "share", conflicting_share)
     _patch(monkeypatch, hub, wire_source=True)
     return agent
 
 
-async def test_an_agent_owned_by_someone_else_says_so(mail_db, monkeypatch):
+@_CONFLICTING_SHARES
+async def test_an_agent_owned_by_someone_else_says_so(mail_db, monkeypatch, conflicting_share):
     """The failure a person can act on, not the database's word for it.
 
     Publishing is the right answer to "no such agent" and guaranteed to conflict
@@ -222,7 +237,7 @@ async def test_an_agent_owned_by_someone_else_says_so(mail_db, monkeypatch):
     from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError, AgentMailboxErrorCode
 
     hub = _HiddenAgentHub(visible_after_publish=False)
-    agent = await _agent_that_cannot_publish(monkeypatch, hub)
+    agent = await _agent_that_cannot_publish(monkeypatch, hub, conflicting_share)
 
     with pytest.raises(AgentMailboxError) as raised:
         await agent.allocate_mailbox()
@@ -236,11 +251,12 @@ async def test_an_agent_owned_by_someone_else_says_so(mail_db, monkeypatch):
     assert agent.remote is False, "a failed adoption must not leave the agent marked published"
 
 
-async def test_an_agent_published_from_another_instance_is_adopted(mail_db, monkeypatch):
+@_CONFLICTING_SHARES
+async def test_an_agent_published_from_another_instance_is_adopted(mail_db, monkeypatch, conflicting_share):
     """The same 409, the other meaning: the row is OURS, published elsewhere.
     Re-probing after the conflict is what tells the two apart."""
     hub = _HiddenAgentHub(visible_after_publish=True)
-    agent = await _agent_that_cannot_publish(monkeypatch, hub)
+    agent = await _agent_that_cannot_publish(monkeypatch, hub, conflicting_share)
 
     mailbox = await agent.allocate_mailbox()
 

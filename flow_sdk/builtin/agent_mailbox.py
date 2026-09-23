@@ -41,6 +41,7 @@ their tests changing: only the constructors do.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
@@ -418,11 +419,12 @@ class AgentMailbox(Entity):
         reading and guaranteed to fail on the second, so this asks rather than
         assumes.
 
-        Publishing an agent the hub already holds answers 409. That is not a
-        failure to report as-is — it is the ambiguity resolving itself: the agent
-        IS on the hub, we simply could not see it. So we adopt it and probe once
-        more. If the mailbox is now readable the agent was ours all along (a row
-        published from another instance); if it still is not, the agent belongs
+        Publishing an agent the hub already holds answers 409, and ``share()``
+        absorbs that 409 as "already there" — so a publish that RETURNS proves
+        nothing about whose row it is. Only the probe after it can tell: we adopt
+        the agent and probe once more. If the mailbox is now readable the agent
+        was ours all along (a row published from another instance, or one this
+        publish just created); if it still is not, the agent belongs
         to someone else, and THAT is the sentence worth showing — not the hub's
         "a conflicting record already exists", which describes a database
         constraint rather than anything the reader can act on.
@@ -432,8 +434,6 @@ class AgentMailbox(Entity):
             AgentMailboxErrorCode,
         )
 
-        try:
-            await agent.share()
         # Narrow on purpose. `share()` reports a refused publish as a ValueError
         # (`FlowpadClient._unwrap` raises one for any non-200) and a missing login
         # as a RuntimeError; a transport failure raises httpx's own, and that must
@@ -442,20 +442,24 @@ class AgentMailbox(Entity):
         # error this whole change replaced. The real fix is a typed `HubError` out
         # of `_unwrap`; that is a cross-cutting change to every FlowpadClient
         # caller, so it stays a follow-up.
-        except (ValueError, RuntimeError):
-            agent.remote = True
-            try:
-                return await driver.get_mailbox(agent.id)
-            except AgentMailboxError as still_hidden:
-                agent.remote = False
-                raise AgentMailboxError(
-                    403,
-                    "this agent already exists on the hub under another account, so its "
-                    "mailbox cannot be allocated from here — allocate it from the account "
-                    "that owns the agent, or use an agent of your own",
-                    code=AgentMailboxErrorCode.FOREIGN_TARGET,
-                ) from still_hidden
-        return None
+        with contextlib.suppress(ValueError, RuntimeError):
+            await agent.share()
+        agent.remote = True
+        try:
+            return await driver.get_mailbox(agent.id)
+        except AgentMailboxError as still_hidden:
+            agent.remote = False
+            # Only the masked answer means "someone else's". A 503 or a 401 here
+            # is its own failure and must reach the caller as itself.
+            if still_hidden.code != AgentMailboxErrorCode.TARGET_NOT_FOUND:
+                raise
+            raise AgentMailboxError(
+                403,
+                "this agent already exists on the hub under another account, so its "
+                "mailbox cannot be allocated from here — allocate it from the account "
+                "that owns the agent, or use an agent of your own",
+                code=AgentMailboxErrorCode.FOREIGN_TARGET,
+            ) from still_hidden
 
     async def disable(self) -> "AgentMailbox":
         """Turn the mailbox off, keeping the address and the source's cursor.

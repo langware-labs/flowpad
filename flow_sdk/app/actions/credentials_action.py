@@ -84,7 +84,12 @@ async def credentials_action() -> ApiResponse:
                 return ApiSuccessResponse(data=await delete_credential(payload.get("typeid") or ""))
         return ApiFailResponse(message=f"Unknown {method} credentials/{sub_path}")
     except CredentialError as e:
-        return ApiFailResponse(message=str(e), data={"error_code": e.code} if e.code else None)
+        # A refusal is the caller's to fix — never a server error.
+        return ApiFailResponse(
+            message=str(e),
+            data={"error_code": e.code} if e.code else None,
+            status_code=409 if e.code == "exists" else 400,
+        )
     except Exception as e:
         logger.error("credentials action error [%s %s]: %s", method, sub_path, e)
         return ApiFailResponse(message=str(e))

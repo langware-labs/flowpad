@@ -88,7 +88,7 @@ test('C02-C16: transport switching stays one URL-first process with busy and acc
   expect(modeSwitch).toContain('aria-label={LABELS[m]}');
   expect(modeSwitch).toContain('aria-checked={active}');
   expect(sdk).toContain('_pendingTransport');
-  expect(sdk).toContain('async switchMode(mode: WorkerMode');
+  expect(sdk).toMatch(/async switchMode\(\s*mode: WorkerMode\b/);
   expect(backend).toContain('@action.post(action_name="switch-mode")');
   expect(backend).toContain('message="a turn is in flight"');
 });

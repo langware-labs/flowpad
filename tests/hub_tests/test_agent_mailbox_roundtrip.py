@@ -15,6 +15,7 @@ from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.ingest.driver_registry import asset_module
+from tests.hub_tests._hub_agent import mailbox_capability_required
 
 CloudEmailSource = asset_module("cloud_email").CloudEmailSource
 
@@ -39,7 +40,8 @@ async def test_agent_enables_email_once():
         logged_in = True
         assert login["status"] == "logged_in"
 
-        mailbox = await agent.allocate_mailbox()
+        with mailbox_capability_required():
+            mailbox = await agent.allocate_mailbox()
         assert isinstance(mailbox, AgentMailbox)
         assert agent.mailbox is mailbox
         assert mailbox.agent_typeid == agent.typeid

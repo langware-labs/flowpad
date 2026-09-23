@@ -50,7 +50,9 @@ elements exist in the current codebase (`AssetsPage.tsx`, `AssetListView.tsx`).
 - [browser] wait for page to load
 - [browser] validate the text "Assets" is visible (page title)
 - [browser] validate NO element matching `[aria-label*="hierarchy"], [aria-label*="list mode"], button:has(svg.lucide-layout-list), button:has(svg.lucide-network)` exists
-- [browser] validate the element with data-testid="rebuild-index" exists (the PackageSearch refresh button) OR a button with title "Refresh search data"
+- [browser] validate the header shows the search button (data-testid="navigator-search-open") — scanning belongs to each type row, there is no page-level rebuild button any more
+- [browser] validate the scope selector shows "All assets (user + every project)", "User assets only" and "Pick specific projects…"
+- [browser] validate the Project scope option reads "No current project" and is not selected — an explicit `scope-mode=all` never inherits a default project, and a fresh browser remembers none
 
 ### test 3: Navigate to /dock/assets/list/skill — AssetListView renders
 - [browser] navigate to {APP_URL}/dock/assets/list/skill

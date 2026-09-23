@@ -1504,6 +1504,12 @@ _COMPOSER_SCAN_WINDOW = 65536
 # then residual C0 controls (keep \t\n\r as separators is unnecessary — the
 # markers are single-line, so drop them all except nothing).
 _OSC_RE = re.compile(rb"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+# A TUI may paint the gap between words as a horizontal cursor jump instead of
+# a space: Claude Code renders ``Try "fix lint errors"`` as
+# ``Try\x1b[7G"fix\x1b[12Glint…`` on most boots. Dropping the jump would glue
+# the words together and hide a marker that IS on screen, so a cursor-forward
+# (CUF) or cursor-to-column (CHA) move reads as one space.
+_CURSOR_GAP_RE = re.compile(rb"\x1b\[[0-9]*[CG]")
 _CSI_RE = re.compile(rb"\x1b\[[0-9;:?<>=!]*[ -/]*[@-~]")
 _ESC_RE = re.compile(rb"\x1b[@-_=>]?")
 _CTRL_RE = re.compile(rb"[\x00-\x08\x0b-\x1f\x7f]")
@@ -1512,13 +1518,14 @@ _CTRL_RE = re.compile(rb"[\x00-\x08\x0b-\x1f\x7f]")
 def strip_pty_controls(data: bytes) -> str:
     """Reduce raw PTY output to its printable text (best-effort).
 
-    Removes OSC/CSI/ESC escape sequences and C0 controls, then decodes as
-    UTF-8 with replacement. Good enough for marker *search* — it does not
+    Removes OSC/CSI/ESC escape sequences and C0 controls (a horizontal cursor
+    jump becomes one space), then decodes as UTF-8 with replacement. Good enough for marker *search* — it does not
     reconstruct screen layout (a TUI that paints word-by-word yields the words
     concatenated in paint order), so patterns must match text the TUI paints
     contiguously (e.g. the codex ``>_ OpenAI Codex`` banner).
     """
     data = _OSC_RE.sub(b"", data)
+    data = _CURSOR_GAP_RE.sub(b" ", data)
     data = _CSI_RE.sub(b"", data)
     data = _ESC_RE.sub(b"", data)
     data = _CTRL_RE.sub(b"", data)

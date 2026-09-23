@@ -20,10 +20,10 @@ Two workflows, one design system:
 
 1. **Build a deck template** — a reusable design language: one isolated HTML
    component per slide layout + shared design tokens. Stored at
-   `<project root>/assets/deck-templates/<template name>/` and indexed as a
+   `<project root>/agentic-assets/deck_template/<template name>/` and indexed as a
    first-class `deck_template` entity.
 2. **Generate a deck** — pick a template, map the narrative onto layouts, fill
-   slots, assemble. Output at `<project root>/assets/decks/<deck name>/` (a
+   slots, assemble. Output at `<project root>/agentic-assets/deck/<deck name>/` (a
    plain folder: the deck HTML + its regenerable `deck.json` build record).
 
 `<project root>` is the session's current working directory. The user may name
@@ -120,7 +120,7 @@ this file (six exemplar layouts, tokens, vendored Reveal 5.2.0, the
 1. **Copy the scaffold verbatim:**
 
    ```bash
-   cp -R "<this skill's directory>/template/." "<project root>/assets/deck-templates/<template name>/"
+   cp -R "<this skill's directory>/template/." "<project root>/agentic-assets/deck_template/<template name>/"
    ```
 
    Do NOT hand-scaffold the folder or re-download Reveal. The scaffold is an
@@ -131,7 +131,7 @@ this file (six exemplar layouts, tokens, vendored Reveal 5.2.0, the
 
    ```bash
    S="<this skill's directory>/styles/<style slug>"
-   T="<project root>/assets/deck-templates/<template name>/common"
+   T="<project root>/agentic-assets/deck_template/<template name>/common"
    cp "$S/tokens.css" "$T/tokens.css"
    cp "$S/style.css"  "$T/style.css"
    ```
@@ -153,8 +153,8 @@ this file (six exemplar layouts, tokens, vendored Reveal 5.2.0, the
    flow record index "<project root>"
    ```
 
-   Index the **project root** (whose `assets/deck-templates/` is a direct
-   child), NOT the template folder — the walker scans `<root>/assets/deck-templates/`,
+   Index the **project root** (whose `agentic-assets/deck_template/` sits directly
+   under it), NOT the template folder — the walker scans `<root>/agentic-assets/deck_template/`,
    so indexing the template folder itself finds nothing.
    The template appears as a `deck_template` entity (verify with
    `flow schema info deck_template` / record search). Keep the copied
@@ -168,7 +168,7 @@ If the target folder already contains a template (`template.json` +
 
 Follow [references/generating-decks.md](references/generating-decks.md):
 narrative → page types → layouts → slot fills → `tools/build_deck.py` →
-`assets/decks/<deck name>/<deck name>.html`.
+`agentic-assets/deck/<deck name>/<deck name>.html`.
 
 **IMPORTANT — index and show the deck to the user.** A deck is a first-class
 `deck` entity. Once the deck HTML exists, persist it and present it via the
@@ -177,7 +177,7 @@ provenance link):
 
 ```bash
 flow record index "<project root>"                          # persist the deck entity
-flow show file "<project root>/assets/decks/<deck name>"    # the FOLDER, not the .html
+flow show file "<project root>/agentic-assets/deck/<deck name>"    # the FOLDER, not the .html
 ```
 
 Showing the deck **folder** resolves to the `deck` entity (via its `deck.json`

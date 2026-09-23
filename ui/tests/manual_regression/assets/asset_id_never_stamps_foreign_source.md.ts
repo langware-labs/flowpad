@@ -13,12 +13,15 @@
  * `AssetEditorRouter`'s VFS branch then labels the file with the editor's
  * primary record type without ever consulting the path — the same route
  * `vfs_files_tree_selection.md.ts` drives for a real `.md`. Routing through it
- * is what the app does; the loader, `useEntityByPath`, its `discover` fallback
- * and `TypeInfo.mint_entity_id` all run for real.
+ * is what the app does; the loader, `useEntityByPath` and its resolve fallback
+ * (`GET /api/v1/assets/resolve?path=…` — THE path → asset resolver since
+ * e5f3b5cf7, which replaced the old `/fs-records/<type>/discover` call) all run
+ * for real.
  *
  * The load-bearing part is `waitForResponse`: without it a green result would
- * only prove that nothing happened. Waiting for the `discover` round-trip
- * proves the mint path actually ran and THEN asserts the bytes survived it.
+ * only prove that nothing happened. Waiting for the resolve round-trip proves
+ * the resolve/mint seam actually ran to completion for THIS file and THEN
+ * asserts the bytes survived it.
  *
  * Against a fixed backend this passes. Against one without the fix it fails
  * with the frontmatter header in the diff — that is the control, not a flake.
@@ -52,17 +55,15 @@ test('opening a .py under the markdown editor never stamps an id into it', async
 
   try {
     const vfs = `compute_node-@local/${file.replace(/^\/+/, '').replace(/\\/g, '/')}`;
-    // Arm BEFORE navigating: this REQUEST is the proof the mint seam was
-    // reached, and it is issued before any assertion below would run.
-    //
-    // The request, deliberately, and not the response. `mint_entity_id` runs at
-    // the top of `discover_record_by_path`; the route only replies much later,
-    // after a Pass-2b scoped re-index that blocks on the folder-indexing consent
-    // prompt no headless browser answers (`index_folder_consent`) — measured at
-    // >240s with no reply. Awaiting the response would make this test hostage to
-    // an unrelated gate, and raising a timeout to ride past it is exactly the
-    // move that is never allowed here.
-    const discoverIssued = page.waitForRequest((r) => r.url().includes('/fs-records/markdown/discover'));
+    // Arm BEFORE navigating: the resolver's RESPONSE for this file is the proof
+    // the seam ran to completion. It answers (404: a .py with no manifest is not
+    // an asset) — unlike the retired discover route, which never replied for a
+    // path its type could not extract.
+    const resolved = page.waitForResponse(
+      (r) =>
+        r.url().includes('/api/v1/assets/resolve?') &&
+        (new URL(r.url()).searchParams.get('path') ?? '').endsWith('crm-mcp/server.py'),
+    );
     await page.goto(
       `/dock/assets/editor/markdown/vfs/${vfs}?editorMode=view&viewMode=standard&scope-mode=project&scope-activeProjectId=${projectId}`,
     );
@@ -70,28 +71,12 @@ test('opening a .py under the markdown editor never stamps an id into it', async
     // The editor really mounted on THIS file — an absent symptom means nothing
     // if the surface never rendered the target.
     await expect(page.getByTestId('top-nav-crumb-details-trigger')).toContainText('server.py');
-    await discoverIssued;
+    await resolved;
     await expect(page.getByText('from fastmcp import FastMCP')).toBeVisible();
 
-    // KNOWN LIMITATION — read before trusting this as a regression guard.
-    //
-    // This asserts the bytes after the UI has ISSUED discover, which proves the
-    // surface reaches the seam but does NOT prove the server finished minting.
-    // The browser's call is fire-and-forget and can sit queued, so a pass here
-    // is not proof of the fix. Measured, not assumed: against an unfixed prod
-    // backend this test PASSED while a direct call to the very same endpoint
-    // prepended `---\nid: …\n---` to the file.
-    //
-    // Making it sensitive needs a defined completion point, and the obvious one
-    // is unavailable: `POST /fs-records/<type>/discover` never responds for a
-    // path its type cannot extract — Pass-2b's scoped re-index blocks on the
-    // folder-index consent prompt (`index_folder_consent`), measured at >240s
-    // with no reply. Bounding that wait would be adding a timeout to ride past
-    // a hang, which this repo forbids. Fix the non-responding route first, then
-    // await the response here and delete this note.
     const after = await fs.readFile(file, 'utf8');
     expect(after.startsWith('---'), `an id was stamped into the source:\n${after}`).toBe(false);
-    expect(after, 'discover rewrote a source it does not own').toBe(SERVER_PY);
+    expect(after, 'resolve rewrote a source it does not own').toBe(SERVER_PY);
   } finally {
     await request.delete(`${API}/api/v1/graph/project/${projectId}`).catch(() => undefined);
     await fs.rm(root, { recursive: true, force: true });

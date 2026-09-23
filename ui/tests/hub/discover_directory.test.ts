@@ -53,14 +53,18 @@ beforeAll(async () => {
   const dst = await postApi(dev1.apiUrl, '/graph/project', { type: 'project', name: path.basename(targetRoot), fs_storage_mount_path: targetRoot });
   sourceId = src.data.id;
   targetId = dst.data.id;
-  // The hub row the desk reflects into — created BEFORE publishing.
-  await hubJson(token, '/graph/project', { type: 'project', id: sourceId, name: path.basename(sourceRoot) });
 
   // A skill in the source project, created through the desk so it is indexed
-  // at its placement (`<source>/.claude/skills/<name>/SKILL.md`).
+  // at its placement (`<source>/.claude/skills/<name>/SKILL.md`). Created
+  // BEFORE the hub row: once the hub's membership op marks the desk project
+  // linked, a skill created in it is pushed to the hub as an entity, and the
+  // row this test pins (`install`, `not_on_hub`) would read `in_use` instead
+  // — depending only on which of the two landed first.
   const skill = await dev1.sdk.Skill.createInProject({ typeId: new dev1.sdk.TypeId('project', sourceId) }, skillName);
   skillId = skill.id;
   if (!skillId) throw new Error('skill create failed');
+  // The hub row the desk reflects into — created BEFORE publishing.
+  await hubJson(token, '/graph/project', { type: 'project', id: sourceId, name: path.basename(sourceRoot) });
   const pub = await postApi(dev1.apiUrl, `/graph/skill/${skillId}/set-published`, { published: true, project_id: sourceId });
   if (pub.status !== 'SUCCESS') throw new Error(`publish failed: ${JSON.stringify(pub).slice(0, 200)}`);
 
@@ -101,8 +105,7 @@ describe('published_directory: the hub-wide Discover list', () => {
     expect(row.source_project_name).toBe(path.basename(sourceRoot));
     expect(row.origin?.kind).toBe('local');
     expect(row.state).toBe('install');
-    expect(row.body_supported).toBe(true);
-    expect(row.body_available).toBe(false);
+    expect(row.body_ref).toBeNull();
     expect(row.body_reason).toBe('not_on_hub');
 
     const one = await hub.sdk.Project.getPublishedDirectory({ typeid });

@@ -128,11 +128,10 @@ export function useSessionSurface(): SessionSurface | null {
 }
 
 const viewModeOverrideListeners = new Set<() => void>();
-// Since the URL's viewMode is also adopted into the persisted preference on load
-// (useDockViewModeOverrideSync), this transient override normally equals the pref.
-// Its remaining purpose is to pin the displayed mode against externally-originated
-// pref changes (e.g. a cross-device backend reconcile) while a viewMode-carrying
-// dock URL is mounted.
+// The mode a viewMode-carrying dock URL displays. Loading such a URL does NOT
+// save it into the persisted preference — only a switch does
+// (useDockViewModeOverrideSync) — so this can differ from the pref, and anything
+// that acts on "the current mode" must read getEffectiveViewMode(), not the pref.
 let dockViewModeOverride: ViewMode | null = null;
 let flickerTimer: number | undefined;
 

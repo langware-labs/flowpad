@@ -355,7 +355,7 @@ async def _agent(spec: ComputeOpSpec, *, workdir: Path, platform: str, executor:
     # BEFORE the launch, always: a previous run's receipt read as this run's
     # result reports the last run's success for a call that did nothing.
     clear_receipt(path)
-    prompt = spec.exe_data.prompt if executor else _prompt_for(spec, platform=platform)
+    prompt = spec.exe_data.prompt if executor else _prompt_for(spec, platform=platform, workdir=workdir)
     if spec.output_spec_kind is not None:
         prompt += result_contract(path, VALUE_KEY, fields_of_kind(spec.output_spec_kind))
     said = await launch(
@@ -380,15 +380,25 @@ async def _agent(spec: ComputeOpSpec, *, workdir: Path, platform: str, executor:
     return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary})
 
 
-def _prompt_for(spec: ComputeOpSpec, *, platform: str) -> str:
-    """The goal, how a person does it by hand, what is asked, and the bar."""
+def _prompt_for(spec: ComputeOpSpec, *, platform: str, workdir: Path) -> str:
+    """The goal, how a person does it by hand, what is asked, and the bar.
+
+    The bar names the directory it is judged in. Every launched agent is also
+    told to write the files it produces to its run's output folder, and an agent
+    that read "here" as that folder made its own copy of the check pass there
+    while the re-check, run in ``workdir``, still failed.
+    """
     check = spec.completion_check.command_for(platform) if spec.completion_check is not None else None
+    bar = (
+        f"You are done only when this exits 0, run from `{workdir}` — the caller "
+        f"runs it there after you stop, so the goal lands there, not in your output folder:\n\n    {check}"
+    )
     parts = [
         f"Goal: {spec.display_label}." if spec.display_label else "",
         spec.description,
         spec.exe_data.prompt,
         f"How this is done by hand:\n\n{spec.setup}" if spec.setup else "",
-        f"You are done only when this exits 0:\n\n    {check}" if check else "",
+        bar if check else "",
     ]
     return "\n\n".join(part.strip() for part in parts if part and part.strip())
 
