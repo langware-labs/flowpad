@@ -255,9 +255,11 @@ def _can_administer(row: dict) -> bool | None:
 
 
 def _allowance_ids(body) -> set[str]:
-    """The typeids out of a ``token_plan/allowances`` answer; empty when the call failed."""
-    data = body.get("data") if isinstance(body, dict) else None
-    ids = data.get("allowances") if isinstance(data, dict) else None
+    """The typeids out of a ``token_plan/allowances`` answer; empty when the call failed.
+
+    ``hub_get`` has already stripped the ``{"status", "data"}`` envelope, so the answer is the bare
+    ``{"allowances": [...]}``. Looking for ``data`` again found nothing on every real hub."""
+    ids = body.get("allowances") if isinstance(body, dict) else None
     return {str(typeid) for typeid in ids} if isinstance(ids, list) else set()
 
 

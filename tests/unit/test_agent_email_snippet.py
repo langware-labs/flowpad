@@ -19,7 +19,10 @@ from tests.utils.fake_source import scripted_provider
 from tests.utils.mock_worker import MockDriver
 from tests.utils.snippets import compile_fence, doc, fences, run_fence_until
 
-pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+pytestmark = [
+    pytest.mark.timeout(30),  # do not increase timeout without approval
+    pytest.mark.usefixtures("fresh_user_scope"),
+]
 
 
 async def test_the_agent_email_program_runs_verbatim(monkeypatch, tmp_path):
@@ -31,12 +34,10 @@ async def test_the_agent_email_program_runs_verbatim(monkeypatch, tmp_path):
 
     monkeypatch.setattr(flow_sdk.auth, "login", login)
 
-    allocation = SimpleNamespace(
-        address="pirate@hub.test", allowed_senders=["captain@gmail.com"]
-    )
+    allocation = SimpleNamespace(address="pirate@hub.test", allowed_senders=["captain@gmail.com"])
 
     async def allocate_mailbox(self, **_options):
-        object.__setattr__(self, "_mailbox", allocation)   # `mailbox` is a read-only view of it
+        object.__setattr__(self, "_mailbox", allocation)  # `mailbox` is a read-only view of it
         return allocation
 
     monkeypatch.setattr(Agent, "allocate_mailbox", allocate_mailbox)
@@ -50,7 +51,9 @@ async def test_the_agent_email_program_runs_verbatim(monkeypatch, tmp_path):
 
     try:
         with scripted_provider("cloud_email") as mail:
-            mail.push({"name": "Ahoy", "body": "where is the treasure?", "author": "captain@gmail.com", "thread_key": "t1"})
+            mail.push(
+                {"name": "Ahoy", "body": "where is the treasure?", "author": "captain@gmail.com", "thread_key": "t1"}
+            )
             source, verbs = fences(doc("agent-email.md"))
             source = source.replace('name="pirate"', f'name="{agent_name}"')
             ns = await run_fence_until(source, {}, mail.settled, filename="agent-email.md")

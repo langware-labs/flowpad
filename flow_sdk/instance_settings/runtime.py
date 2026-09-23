@@ -36,6 +36,7 @@ keychain prompt.
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from urllib.request import Request, urlopen
 
@@ -141,6 +142,29 @@ def own_sandbox_id() -> str | None:
         # Callers fall back to the loopback answer -- what they would have used
         # anyway. Not raised: a preview url is not worth failing bootstrap over.
         return None
+
+
+_COMPUTE_NODE_KEY = "compute_node_typeid"
+_COMPUTE_NODE_RE = re.compile(r"^compute_node-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def get_assigned_compute_node() -> str | None:
+    """The hub ComputeNode this instance runs as, or ``None`` on a local install.
+
+    Assigned by the hub alongside the runtime kind (``flow auth set-compute-node``)
+    and read by the keep-alive loop, which names this node when it tells the hub
+    the machine is in use. Not memoized: it is read once a minute, not per request.
+    """
+    raw = app_config.get_config(_COMPUTE_NODE_KEY)
+    return raw if isinstance(raw, str) and _COMPUTE_NODE_RE.match(raw) else None
+
+
+def set_assigned_compute_node(typeid: str) -> str:
+    """Persist which hub ComputeNode this instance is. Raises ``ValueError`` on a malformed id."""
+    if not _COMPUTE_NODE_RE.match(typeid):
+        raise ValueError(f"not a compute node typeid: {typeid!r}")
+    app_config.set_config(_COMPUTE_NODE_KEY, typeid)
+    return typeid
 
 
 def reset_cache() -> None:

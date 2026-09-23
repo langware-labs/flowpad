@@ -16,7 +16,10 @@ from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
 
-pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+pytestmark = [
+    pytest.mark.timeout(30),  # do not increase timeout without approval
+    pytest.mark.usefixtures("fresh_user_scope"),
+]
 
 
 def _name() -> str:
@@ -32,8 +35,11 @@ async def _source() -> DataSource:
 
 async def _item(src: DataSource, n: int, *, created: datetime | None = None) -> SourceItem:
     item = SourceItem(
-        data_source_id=str(src.id), external_id=f"e{n}",
-        provider="rss", name=f"item {n}", body=f"body {n}",
+        data_source_id=str(src.id),
+        external_id=f"e{n}",
+        provider="rss",
+        name=f"item {n}",
+        body=f"body {n}",
     )
     await item.save(notify=False)
     if created is not None:
