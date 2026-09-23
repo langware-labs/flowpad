@@ -113,7 +113,10 @@ export function ChatActivityLine({ process, trailing }: ChatActivityLineProps) {
   // resumed session hydrates with before the new turn reports in. Rendering it
   // verbatim printed "Complete" under a live pulse. Fall back to the neutral
   // in-flight word until the worker says something that can be true right now.
-  const label = isTerminalStatus(workerStatus)
+  // No worker status at all is the same case: a turn run by another process (a local deployment's
+  // loop) leaves the row busy with nothing reported here, and the lifecycle fallback would read the
+  // process at rest — "Idle" under a live pulse.
+  const label = !workerStatus || isTerminalStatus(workerStatus)
     ? WORKER_STATUS_LABEL[WorkerStatus.WORKING]
     : getStatusLabel({
         status: process.status,

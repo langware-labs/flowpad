@@ -51,8 +51,8 @@ function userMessage(): FlowData {
 
 /** Minimal AgenticProcess stand-in: a real stream plus the fields the line and
  *  `useTurnActivity` actually read. */
-function fakeProcess(opts: { busy?: boolean; frames?: FlowData[] } = {}) {
-  const { busy = true, frames = [] } = opts;
+function fakeProcess(opts: { busy?: boolean; frames?: FlowData[]; workerStatus?: WorkerStatus | null } = {}) {
+  const { busy = true, frames = [], workerStatus = WorkerStatus.TOOL_CALL } = opts;
   const stream = new FlowDataStream('chat-activity-line-test');
   if (frames.length) stream.ingestBatch(frames);
   const listeners = new Map<string, Set<(...a: unknown[]) => void>>();
@@ -61,7 +61,7 @@ function fakeProcess(opts: { busy?: boolean; frames?: FlowData[] } = {}) {
     session_id: 's-1',
     status: 'running',
     busy,
-    workerStatus: WorkerStatus.TOOL_CALL,
+    workerStatus: workerStatus ?? undefined,
     isPrompting: false,
     flowDataStream: stream,
     on(evt: string, cb: (...a: unknown[]) => void) {
@@ -111,6 +111,15 @@ describe('ChatActivityLine sources its own events', () => {
   it('renders nothing when no turn is in flight', () => {
     renderLine(fakeProcess({ busy: false, frames: [userMessage(), liveSkillCall('rca')] }));
     expect(screen.queryByTestId('chat-activity-line')).toBeNull();
+  });
+
+  it('says Working while a turn runs that has reported no worker status yet', () => {
+    // A deployment's turn runs in its own process: the row is busy, but nothing here has a worker
+    // status for it. The line is up because a turn is in flight, so the process at rest ("Idle",
+    // the RUNNING lifecycle's label) cannot be what it is doing.
+    renderLine(fakeProcess({ frames: [userMessage()], workerStatus: null }));
+
+    expect(screen.getByTestId('chat-activity-label').textContent).toBe('Working');
   });
 
   it('falls back to the phase label when no operation is the current story', () => {
