@@ -15,6 +15,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from flow_sdk.cloud_client.auth_status import LogoutReason
 from flow_sdk.server.routes import auth as auth_route
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -64,13 +65,13 @@ def _callback(client, **params):
 def test_different_user_triggers_purge_before_finalize(client, finalize_login, clear_user_data):
     """user-1 is signed in; user-2's key arrives — purge user-1 first, then finalize as user-2."""
     calls: list[str] = []
-    clear_user_data.side_effect = lambda: calls.append("purge")
+    clear_user_data.side_effect = lambda *_a, **_k: calls.append("purge")
     finalize_login.side_effect = lambda *_a, **_k: calls.append("finalize")
 
     with _validate_returns("user-2"), _current_user("user-1"):
         _callback(client)
 
-    clear_user_data.assert_awaited_once()
+    clear_user_data.assert_awaited_once_with(reason=LogoutReason.SWITCHED_OUT)
     finalize_login.assert_awaited_once()
     assert calls == ["purge", "finalize"], "the outgoing user must be cleared before the new login finalizes"
 

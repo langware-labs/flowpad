@@ -219,13 +219,14 @@ async def login_callback(
         incoming_id = user_info.get("id") if isinstance(user_info, dict) else None
         if current_user and incoming_id and current_user.get("id") != incoming_id:
             from flow_sdk.cli.auth.cloud_login import clear_user_data
+            from flow_sdk.cloud_client.auth_status import LogoutReason
 
             logger.info(
                 "login_callback: switching logged-in user (%s -> %s), clearing previous session",
                 current_user.get("id"),
                 incoming_id,
             )
-            await clear_user_data()
+            await clear_user_data(reason=LogoutReason.SWITCHED_OUT)
 
         await _finalize_login(
             LoginData(

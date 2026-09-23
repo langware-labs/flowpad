@@ -30,6 +30,7 @@ import {
   HubLoginStatus,
   LocalConnectionStatus,
   LoginSlot,
+  LogoutReason,
   isHubConnected,
   makeConnectionSlot,
   makeLoginSlot,
@@ -156,6 +157,17 @@ function legacyConnectionStatus(d: Partial<DesktopInfoSeed | CloudWsControlResul
 class CloudManager extends EventEmitter {
   private _login: LoginSlot<HubLoginStatus> = makeLoginSlot<HubLoginStatus>('logged_out');
   private _currentUser: User | null = null;
+  /**
+   * STICKY — unlike `_login`, which the very next broadcast (the incoming
+   * person's LOGGED_IN) overwrites within milliseconds. A tab left open
+   * through a switch (FLOWPAD-2151) must keep blocking through that
+   * transition, not just for the instant `_login.reason` happens to read
+   * `LogoutReason.SwitchedOut`. Cleared only by `login()` starting a LOCALLY
+   * initiated login (`_applyLoginStatus('logging_in', ...)`, below) — a
+   * remote switch never produces that status on this tab, so this can't be
+   * cleared by someone else's login racing in.
+   */
+  private _takenOver = false;
   private _cloudUrl = '';
   private _cloudAppUrl = '';
   private _connection: ConnectionSlot<HubConnectionStatus> = makeConnectionSlot<HubConnectionStatus>('disconnected');
@@ -472,6 +484,11 @@ class CloudManager extends EventEmitter {
    *   the page stuck behind a window it did not expect.
    */
   async login(opts?: { popup?: boolean; refresh?: 'reload' | 'session' }): Promise<CloudLoginResult | void> {
+    // Any locally-initiated login attempt — including a click on
+    // `SessionTakenOverOverlay`'s own button — dismisses the sticky
+    // takeover block immediately, regardless of which branch below runs or
+    // whether the attempt ultimately succeeds.
+    this._takenOver = false;
     if (isHubOnly()) {
       // Popup first, so a sign-in started by a click keeps the tab the user is
       // looking at. Only `'blocked'` falls through to the navigation: a popup
@@ -644,6 +661,10 @@ class CloudManager extends EventEmitter {
   get loginSlot(): Readonly<LoginSlot<HubLoginStatus>> {
     return this._login;
   }
+  /** See `_takenOver` — sticky across the incoming person's LOGGED_IN, unlike `loginSlot`. */
+  get takenOver(): boolean {
+    return this._takenOver;
+  }
   get connectionStatus(): HubConnectionStatus {
     return this._connection.status;
   }
@@ -771,20 +792,31 @@ class CloudManager extends EventEmitter {
     return cloudUser;
   }
 
-  private async _setLoggedOut() {
+  private async _setLoggedOut(reason: string | null = null) {
     this._currentUser = null;
     const ctx = await _dataContext();
     await ctx.setContextEntityTypeId(await _currentUserKey(), null);
     ctx.setCloudLoggedIn?.(false);
-    this._applyLoginStatus('logged_out', null, null);
-    // DIAGNOSTIC BISECT (temporary, do not merge): commented out to test
-    // whether this is what breaks tests/headless/agent_auto_launch.test.tsx
-    // in CI. See FLOWPAD-2151 discussion.
-    // const dm = await _dataManager();
-    // dm.adoptReadScope('anonymous');
+    this._applyLoginStatus('logged_out', null, reason);
+    this._takenOver = reason === LogoutReason.SwitchedOut;
+    // Only a real cross-account switch on a shared sandbox (FLOWPAD-2151)
+    // warrants dropping every cached entity/query — Task, Project, Agent,
+    // everything, not just the outgoing account's hub-derived rows. Every
+    // OTHER path here (a plain "no cloud user yet" bootstrap, an explicit
+    // self-logout) must NOT do this: it doesn't just clear stale cloud data,
+    // it wipes the whole app's local cache mid-render, which is exactly what
+    // broke tests/headless/agent_auto_launch.test.tsx — the test's local,
+    // never-cloud-logged-in backend hit this path on plain boot and lost the
+    // Project/Agent it had just fetched. A prior commit worked around the CI
+    // failure by disabling this call outright (do not resurrect that — it
+    // silently brings back the stale-UI half of the FLOWPAD-2151 bug).
+    if (reason === LogoutReason.SwitchedOut) {
+      const dm = await _dataManager();
+      dm.adoptReadScope('anonymous');
+    }
     // Connection state is owned by its own channel; logout-driven
     // DISCONNECTED arrives via cloud_connection_status_msg.
-    this.emit('logout_complete');
+    this.emit('logout_complete', { reason });
   }
 
   /** Apply a new login slot value. Emits login_status_changed + cloud_status_changed. */
@@ -873,7 +905,7 @@ class CloudManager extends EventEmitter {
     if (status === 'logged_in' && user) {
       await this._setLoggedIn(user);
     } else if (status === 'logged_out') {
-      await this._setLoggedOut();
+      await this._setLoggedOut(reason);
     } else if (status === 'login_failed') {
       this._applyLoginStatus('login_failed', null, reason);
       this.emit('login_failed', { message: reason ?? 'Login failed' });

@@ -31,8 +31,11 @@ The same Flowpad app, but running inside a cloud sandbox (an E2B machine)
 provisioned for you by the hub — for example when you open a cloud desktop
 from the hub's home page. It looks and behaves like the desktop app, with two
 differences: the files and compute live in the sandbox (not on your laptop),
-and the sandbox pauses when unused. Anything you want to keep should be shared
-or pushed to git before the sandbox is torn down.
+and the sandbox pauses when unused — about 5 minutes after it starts if nobody
+uses it, and 5–10 minutes after your last click or keystroke (or after an agent
+in it finishes its turn). Coming back wakes it in a second or two, with
+everything as you left it. Anything you want to keep should be shared or pushed
+to git before the sandbox is torn down.
 
 ## Agent — purple banner
 
