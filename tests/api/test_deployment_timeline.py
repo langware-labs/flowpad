@@ -64,6 +64,29 @@ async def _chat(client, chat, text: str) -> dict:
     return resp.json()
 
 
+async def _chat_answered(client, chat, text: str) -> dict:
+    """Post *text* and return once the loop's reply COPY exists.
+
+    The chat response is the reply; its row on the channel is written on the loop's
+    next pass, and `reply_sent` is announced then. A timeline read that races that
+    pass sees the turn but not the reply — which is what a loaded CI runner did. The
+    wait is on the landing itself, not on a clock; the file's timeout bounds it.
+    """
+    landed = asyncio.Event()
+
+    async def on(event):
+        if event.data.get("source_id") == chat.backend.data_source_id:
+            landed.set()
+
+    unsubscribe = event_bus.on("stream_inbox.*.message.projected", on)
+    try:
+        answer = await _chat(client, chat, text)
+        await landed.wait()
+        return answer
+    finally:
+        unsubscribe()
+
+
 async def _timeline(client, deployment, **params) -> dict:
     resp = await client.get(f"/api/v1/graph/deployment/{deployment.id}/timeline", params=params)
     assert resp.status_code == 200, resp.text
@@ -72,7 +95,7 @@ async def _timeline(client, deployment, **params) -> dict:
 
 async def test_a_message_answered_on_the_deployment_is_its_timeline(deployed, bootstrapped_client, timeline_tags):
     _agent, deployment, chat = deployed
-    await _chat(bootstrapped_client, chat, "hello there")
+    await _chat_answered(bootstrapped_client, chat, "hello there")
 
     page = await _timeline(bootstrapped_client, deployment)
     kinds = [e["kind"] for e in page["events"]]
@@ -107,8 +130,8 @@ async def test_the_reply_is_announced_when_it_lands_on_the_channel(deployed, boo
 
 async def test_the_timeline_pages_back(deployed, bootstrapped_client):
     _agent, deployment, chat = deployed
-    await _chat(bootstrapped_client, chat, "first")
-    await _chat(bootstrapped_client, chat, "second")
+    await _chat_answered(bootstrapped_client, chat, "first")
+    await _chat_answered(bootstrapped_client, chat, "second")
 
     newest = await _timeline(bootstrapped_client, deployment, limit=3)
     assert [e["kind"] for e in newest["events"]] == ["reply_sent", "turn_started", "message_in"]
