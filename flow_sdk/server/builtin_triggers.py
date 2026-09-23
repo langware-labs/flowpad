@@ -95,12 +95,16 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
         dict(
             uname="builtin_daily_usage_analysis",
             name="Last day usage analysis",
-            description="Every day at 7am (local): fires the daily-analysis "
-                        "flow — analyze (function) → publish — which posts a usage "
-                        "report to the Home Feed. Manually runnable like any trigger.",
+            description="Disabled by default. When enabled, every day at 7am "
+                        "(local) fires the daily-analysis flow — analyze (function) "
+                        "→ publish — which posts a usage report to the Home Feed.",
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="0 7 * * *",
+            # Off by default, and FORCED off: the upsert re-applies every spec
+            # key on each boot, so existing installs flip off on restart and a
+            # user who enables it is reset on the next one.
+            enabled=False,
             # No direct action: the daily-analysis GraphWorkflow (service_graph_workflows)
             # routes this trigger's `fired` through analyze → publish —
             # a direct action here would double-fire the report.
