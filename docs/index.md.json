@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "39a5d4f7dc8155e79ee6c7fe0470b25a7335c59998cf4c3c90d872ec543cc03a",
+  "inputs_hash": "6114b6de098faeb61b2f8af4c86c4a7397c0614cbf6cf41828daa7339d1d6beb",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -65,14 +65,6 @@
       "summary": "Capability entities describing local features like CLI harnesses and browser access: the hierarchical kind ontology, prefix matching, and dynamic MCP-server capabilities.",
       "content_hash": "1dfeade3515dfb094fdfbfa1215323c4deaba3e8a9960ebab980b7c8c0a9871c",
       "size_bytes": 7632
-    },
-    {
-      "name": "claude_pty_scroll.md",
-      "rel_path": "claude_pty_scroll.md",
-      "title": "Claude Code PTY scrolling — why the terminal scrollbar disappears",
-      "summary": "Why the terminal scrollbar vanishes under Claude Code fullscreen rendering, why one cannot be synthesized inside it, and leaving that mode as the fix.",
-      "content_hash": "9ce72feabd1d4f2573eb68063647297cd2657ae5dee68fd68a52e9b4d41654b9",
-      "size_bytes": 4876
     },
     {
       "name": "compute_node_action_audit.md",
@@ -275,6 +267,14 @@
       "size_bytes": 10430
     },
     {
+      "name": "pty-scroll.md",
+      "rel_path": "pty-scroll.md",
+      "title": "Terminal scrolling and the mouse wheel — issues, fixes, worker behavior",
+      "summary": "How a wheel tick scrolls a Flowpad terminal, a log of every wheel failure with its proof and fix, and per-worker terminal behavior (Claude Code fullscreen rendering).",
+      "content_hash": "06eb050198178788364f7d53755166cb915a19731bf40286aeee8058ddd59796",
+      "size_bytes": 13898
+    },
+    {
       "name": "pty-sync.md",
       "rel_path": "pty-sync.md",
       "title": "PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)",
@@ -287,8 +287,8 @@
       "rel_path": "pty-terminal-spec.md",
       "title": "PTY / xterm Terminal System Specification",
       "summary": "The PTY terminal system across OS process, backend sessions, WebSocket transport and xterm.js: the byte paths both ways, attach-time history replay, and the two renderers.",
-      "content_hash": "6a6cb4eb670a7b08cfe5f19d00e00b462ff8ddce1e1adfc326b2567ea753820a",
-      "size_bytes": 53643
+      "content_hash": "aa69cc029bec17e7c3ce1e7f1df91672e45f082bd62a1025e16adcca64128472",
+      "size_bytes": 55086
     },
     {
       "name": "renderable-fences.md",

@@ -970,3 +970,15 @@ Any Playwright test whose duration exceeds 60s is reported as **timeout** — a 
   flagged; read the rollout's `turn_context model=` and `task_complete.error` before debugging a codex turn.
 - **A skill that names a repo-relative source path is unreachable from the worker's cwd** (a temp docs tree);
   the agent then runs `find /` and blows the budget. Give a cwd-independent command instead.
+
+## Learnings — 2026-09-23 full cycle (halted by circuit breaker)
+- Run from a frozen detached worktree when peer sessions edit the main tree (run#1 voided: a driver source.py rewritten mid-run → content-hash re-import → "kind already bound").
+- Session env: an inherited LOCAL_SERVER_PORT=9007 is PROD — always `env -u LOCAL_SERVER_PORT`.
+- Session env: nvm's bin is not on PATH, so CLI rows skip as "not installed".
+- Session env: a copied .env.local points FLOWPAD_HUB_URL at the PROD hub, and `flow instance reset` (full) relaunches with it.
+- Hub tiers: pin ALICE/BOB/FLOWPAD_CLOUD_USER_* to fresh instance accounts (alice@local.test holds 2313 leaked hub conversations).
+- Hub tiers: no `-p no:cacheprovider` for tests/hub_tests; vitest hub needs FLOW_INSTANCE ∈ SHARE_INST_1/2.
+- Concurrency: overlapping P10 + P11 + agent sub-instances drove load to 182 and the Mac crash-reset. One instance-heavy phase at a time, ≤1 debug agent then.
+
+### Testing environment — 2026-09-23
+- Cycle 2026-09-22/23: worktree ../flowpad-qa-2026-09-23 @bfe66853e (Python 3.11 venv); owned instances qa-cycle :6005/:5005, qa-react-9 :6010, qa-l1-7 :6011, qa-l2-8 :6012; local hub :8093 (../test_flowpad/FlowPad @aec5d163c, AGENT_MAILBOX disabled, no dummyauth); host 14 cores, load 5–38 typical, 182 peak before crash. Results: ui/tests/manual_regression/_results/2026-09-22T20-52-28Z/.

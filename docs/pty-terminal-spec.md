@@ -741,6 +741,19 @@ first retained frame (resize frames folded in as they are dropped). A torn
 final line (crash mid-write) is dropped by the reader. The writer caches the
 file size in memory, so the hot output path performs no `stat()` per chunk.
 
+**Modes survive the cut, and a new process starts without the dead one's.**
+The private modes a program sets once at startup — alternate screen, mouse
+tracking and encoding, cursor keys, focus reporting, bracketed paste, cursor
+visibility — are exactly what front-truncation would drop, and replay rebuilds
+the terminal from what is left. So `_truncate_front` computes the modes still in
+force at the cut and carries them in a first output frame, and a respawn into
+the same file calls `PtyStreamFile.mark_new_generation()`, which appends a frame
+turning them off before the new process writes (a classic-renderer process must
+not inherit a fullscreen screen). Neither frame carries a seq, so
+generation-scoped readers never see them. Keep both rules when editing
+`pty_stream_file.py`: without them the wheel has nothing to scroll
+([pty-scroll.md](pty-scroll.md#issue-log), issues 2 and 4).
+
 ### 10.4 Lifecycle
 
 - **Created**: lazily on first write (header + first frame).
@@ -876,6 +889,7 @@ content written at width A and reflowed to B equals content written at B.
 | xterm.js drops a multi-byte UTF-8 char when a `write(Uint8Array)` split leaves a `0x80` continuation byte in interim decoder state (`Utf8ToUtf32.decode` counts interim bytes by value-truthiness; `0x80 & 0x3F === 0`) | chars like `—` `›` ZWJ vanish at unlucky chunk boundaries | string-decode discipline (§13.3.1) | [xtermjs/xterm.js#6003](https://github.com/xtermjs/xterm.js/issues/6003) · `tests/pty_fuzz/xterm-utf8-split-repro.mjs` |
 | `@xterm/headless` 6.0.0 declares `module: lib/xterm.mjs` but ships `lib-headless/xterm-headless.mjs` — bundlers preferring `module` (Vite) cannot resolve the package | frontend build fails | vite alias in `ui/vite.config.ts` pointing at the shipped `.mjs` | `tests/pty_fuzz/xterm-headless-module-entry-repro.mjs` |
 | `SerializeAddon` loses the leading blank cells of a wrapped continuation row (+1 adjacent cell at exact-fit boundaries); such rows arise from reflow gaps when a resize lands mid-soft-wrapped-line | rare cosmetic loss inside one historical wrapped line | none (bounded-loss oracle documents it in `pty-replay-production.test.ts`) | `tests/pty_fuzz/serialize-wrapped-blank-repro.mjs` |
+| `SerializeAddon` writes the mouse *tracking* mode (`?1003h`) but never the *encoding* (`?1006h`), so a restored terminal has tracking on and xterm's default X10 encoding — and xterm emits X10 reports on `onBinary`, which nothing forwards | after a re-attach, every wheel tick and click in a fullscreen TUI is dropped in the browser | `replayPtyStream` tracks the program's encoding switches and appends the last one | [pty-scroll.md#3](pty-scroll.md#3--replay-dropped-the-mouse-encoding) · `ui/tests/unit/pty-replay-mouse-encoding.test.ts` |
 
 ### 13.5 Validation
 
