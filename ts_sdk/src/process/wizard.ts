@@ -1,12 +1,17 @@
 import { APIEntity } from '../APIEntity';
 import { AgenticProcess } from './agentic-process';
+import type { WizardResult } from '../models/ReturnedValue';
 
 export type WizardStatus = 'done' | 'cancel' | 'error';
 
 export interface WizardProcessResult<T = unknown> {
+  /** The agent's own word — keeps a cancel apart from an error for the person. */
   status: WizardStatus;
   data: T | null;
   errorStr?: string | null;
+  /** The same close as the answer every wizard run gives. Present when the
+   *  backend closed it; absent for a close the UI made up locally. */
+  answer?: WizardResult;
 }
 
 export interface WizardData {
@@ -71,6 +76,7 @@ export function normalizeWizardResult<T = unknown>(
     status,
     data: (obj.data ?? null) as T | null,
     errorStr: typeof obj.errorStr === 'string' ? obj.errorStr : null,
+    ...(obj.answer && typeof obj.answer === 'object' ? { answer: obj.answer as WizardResult } : {}),
   };
 }
 
