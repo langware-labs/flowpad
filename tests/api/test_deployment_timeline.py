@@ -139,3 +139,24 @@ def test_everything_relayed_reaches_the_apps_clients():
     for pattern in RELAYED_TAG_PATTERNS:
         example = pattern.replace("*", "x")
         assert any(tag_matches(f, example) for f in FORWARDED_TAG_PATTERNS), pattern
+
+
+async def test_each_conversation_is_one_thread_with_its_own_events(deployed, bootstrapped_client):
+    _agent, deployment, chat = deployed
+    await _chat(bootstrapped_client, chat, "first question")
+    await _chat(bootstrapped_client, chat, "second question")
+
+    resp = await bootstrapped_client.get(f"/api/v1/graph/deployment/{deployment.id}/threads")
+    assert resp.status_code == 200, resp.text
+    threads = resp.json()["data"]["threads"]
+    assert len(threads) == 2, "two chats, two threads"
+    assert all(t["status"] == "idle" and t["messages"] == 2 and t["turns"] == 1 for t in threads), threads
+    assert [t["last_text"].startswith("Mock reply") for t in threads] == [True, True]
+    assert all(t["channel"] == "http_chat" and t["process_id"] for t in threads)
+
+    # The thread's id is the Conversation row's (the chat's own `conversation_id` is its channel thread key).
+    one = next(t["conversation_id"] for t in threads if t["title"].startswith("first question"))
+    page = await _timeline(bootstrapped_client, deployment, conversation=one)
+    assert {e["conversation_id"] for e in page["events"]} == {one}, "only that thread's events"
+    assert [e["kind"] for e in page["events"]] == ["reply_sent", "turn_started", "message_in"]
+    assert page["events"][-1]["text"] == "first question"

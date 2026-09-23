@@ -1,24 +1,27 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Settings2 } from 'lucide-react';
-import { AgenticProcess, Deployment, isBusy, TypeId, type Agent } from '@sdk';
+import { Deployment, TypeId, type Agent, type DeploymentThread } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
-import { SimpleChatPane } from '@src/components/terminal/interactive-terminal/SimpleChatPane';
-import { RUN_PARAM, TRANSCRIPT_TIME_PARAM } from '@src/navigation/DockPointer';
+import { TRANSCRIPT_TIME_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { cn } from '@src/lib/utils';
 import { AgentPlaceCard } from '../AgentPlaceCard';
 import { usePlaceDisplay } from '../use-place-display';
 import { useAgentPlaces } from '../use-agent-places';
-import { DeploymentTimeline, eventKey } from './DeploymentTimeline';
-import { useDeploymentTimeline } from './use-deployment-timeline';
+import { DeploymentThreads } from './DeploymentThreads';
+import { ThreadPane, type ThreadView } from './ThreadPane';
+import { useDeploymentThreads } from './use-deployment-threads';
+
+/** Which thread is open, and how (`agent` = its process's chat, opened at `t`), are the URL's. */
+const THREAD_OPTION = 'conversation';
+const VIEW_OPTION = 'pane';
 
 /**
  * A deployment's own page, nested in its agent (`…/agent-<id>/child/deployment/deployment-<id>`):
- * the deployment's live timeline on the left — what reached it, what it ran, what it answered —
- * and, on the right, the process a selected event belongs to, its chat following the turn live.
- * Which event is selected is the URL's (`run` + `t`); nothing is selected → the newest event.
+ * on the left its threads — one per conversation, a whole phone call included, the active ones first
+ * with what is happening in them now — and on the right the selected thread's events as they happen,
+ * or the agent's side of it (its process's chat). Nothing selected → the first thread.
  */
 export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; deploymentId: string }) {
   const { t } = useLingui();
@@ -28,26 +31,46 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
   const place = places?.find((p) => p.deployment.id === deploymentId) ?? null;
   const display = usePlaceDisplay();
   const [settings, setSettings] = useState(false);
-  const { events, error, hasOlder, loadOlder } = useDeploymentTimeline(deployment);
+  const { threads, error } = useDeploymentThreads(deployment);
 
-  const runParam = currentDock?.options?.[RUN_PARAM] ?? null;
-  const timeParam = currentDock?.options?.[TRANSCRIPT_TIME_PARAM] ?? null;
-  // Nothing chosen: the newest event that belongs to a process.
-  const fallback = useMemo(() => (events ?? []).find((e) => e.process_id) ?? null, [events]);
-  const processId = runParam ?? fallback?.process_id ?? null;
-  const focusAt = runParam ? timeParam : null;
-  const selectedKey = runParam && timeParam ? eventKey({ process_id: runParam, at: timeParam }) : fallback ? eventKey(fallback) : null;
+  const options = currentDock?.options ?? {};
+  const selectedId = options[THREAD_OPTION] ?? threads?.[0]?.conversation_id ?? null;
+  const selected = threads?.find((th) => th.conversation_id === selectedId) ?? null;
+  const view: ThreadView = options[VIEW_OPTION] === 'agent' ? 'agent' : 'events';
+  const focusAt = view === 'agent' ? (options[TRANSCRIPT_TIME_PARAM] ?? null) : null;
 
-  const select = (event: { process_id: string; at: string }) =>
+  const open = (thread: DeploymentThread) =>
     currentDock &&
-    navigation.openDock(currentDock.withOption(RUN_PARAM, event.process_id).withOption(TRANSCRIPT_TIME_PARAM, event.at));
+    navigation.openDock(
+      currentDock.withOption(THREAD_OPTION, thread.conversation_id).withOption(VIEW_OPTION, null).withOption(TRANSCRIPT_TIME_PARAM, null),
+    );
+  const setView = (next: ThreadView, at: string | null = null) =>
+    currentDock &&
+    selected &&
+    navigation.openDock(
+      currentDock
+        .withOption(THREAD_OPTION, selected.conversation_id)
+        .withOption(VIEW_OPTION, next === 'agent' ? 'agent' : null)
+        .withOption(TRANSCRIPT_TIME_PARAM, next === 'agent' ? at : null),
+    );
 
   const label = place ? display(place).label : (deployment?.name ?? '');
+  const active = (threads ?? []).filter((th) => th.status === 'live' || th.status === 'working').length;
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="agent-deployment-page">
       <header className="flex flex-wrap items-center gap-3 border-b px-6 py-3.5">
         <h1 className="text-lg font-semibold">{label}</h1>
-        {place && <StatePill enabled={place.enabled} />}
+        {place && (
+          <span
+            className={
+              place.enabled
+                ? 'inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:text-green-400'
+                : 'rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground'
+            }
+          >
+            {place.enabled ? <Trans>On</Trans> : <Trans>Off</Trans>}
+          </span>
+        )}
         <span className="text-xs text-muted-foreground">
           {[agent.name, place?.overrides?.worker_type ?? agent.worker_type, place?.overrides?.model ?? agent.model]
             .filter(Boolean)
@@ -63,77 +86,36 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
           <AgentPlaceCard agent={agent} place={place} onChanged={reload} />
         </div>
       )}
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(20rem,0.9fr)_minmax(0,1.1fr)]">
-        <section className="flex min-h-0 flex-col" aria-labelledby="deployment-timeline-title">
-          <header className="flex h-11 items-center border-b px-5">
-            <h2 id="deployment-timeline-title" className="text-[13px] font-semibold">
-              <Trans>Timeline</Trans>
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
+        <section className="flex min-h-0 flex-col" aria-labelledby="deployment-threads-title">
+          <header className="flex h-11 items-center gap-2 border-b px-5">
+            <h2 id="deployment-threads-title" className="text-[13px] font-semibold">
+              <Trans>Threads</Trans>
             </h2>
+            {active > 0 && (
+              <span className="text-[11.5px] text-muted-foreground">
+                <Trans>{active} active</Trans>
+              </span>
+            )}
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {error ? (
               <p className="px-5 py-6 text-sm text-destructive">{error}</p>
-            ) : events === null ? null : (
-              <DeploymentTimeline
-                events={events}
-                selectedKey={selectedKey}
-                selectedProcess={processId}
-                onSelect={select}
-                hasOlder={hasOlder}
-                onLoadOlder={() => void loadOlder()}
-              />
+            ) : threads === null ? null : (
+              <DeploymentThreads threads={threads} selected={selected?.conversation_id ?? null} onSelect={open} />
             )}
           </div>
         </section>
-        <section className="flex min-h-0 flex-col border-t lg:border-s lg:border-t-0" aria-label={t`Process`}>
-          {processId ? <ProcessPane processId={processId} focusAt={focusAt} /> : <EmptyProcess />}
+        <section className="flex min-h-0 flex-col border-t lg:border-s lg:border-t-0" aria-label={t`Thread`}>
+          {deployment && selected ? (
+            <ThreadPane deployment={deployment} thread={selected} view={view} focusAt={focusAt} onView={setView} />
+          ) : (
+            <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+              <Trans>Select a thread to see what happened in it.</Trans>
+            </div>
+          )}
         </section>
       </div>
-    </div>
-  );
-}
-
-function StatePill({ enabled }: { enabled: boolean }) {
-  return enabled ? (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:text-green-400">
-      <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      <Trans>On</Trans>
-    </span>
-  ) : (
-    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-      <Trans>Off</Trans>
-    </span>
-  );
-}
-
-/** The selected process: its name and state, and its chat — live while a turn runs. */
-function ProcessPane({ processId, focusAt }: { processId: string; focusAt: string | null }) {
-  const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId), { watch: true });
-  if (!process) return null;
-  const busy = isBusy(process);
-  return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="deployment-process-pane">
-      <header className="flex h-11 items-center gap-2 border-b px-5">
-        <h2 className="truncate text-[13px] font-semibold">{process.name}</h2>
-        <span
-          className={cn(
-            'rounded-full px-2 py-0.5 text-[11px] font-medium',
-            busy ? 'bg-blue-500/12 text-blue-700 dark:text-blue-400' : 'bg-muted text-muted-foreground',
-          )}
-          data-testid="deployment-process-state"
-        >
-          {busy ? <Trans>Working</Trans> : <Trans>Idle</Trans>}
-        </span>
-      </header>
-      <SimpleChatPane key={process.id} process={process} focusAt={focusAt} className="min-h-0 flex-1" />
-    </div>
-  );
-}
-
-function EmptyProcess() {
-  return (
-    <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
-      <Trans>Select an event to see the process that handled it.</Trans>
     </div>
   );
 }

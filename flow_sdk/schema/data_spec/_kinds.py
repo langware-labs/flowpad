@@ -65,7 +65,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.cli`` / ``compute_op.prompt`` / ``compute_op.agent`` / ``compute_op.ask``
     import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
     import flow_sdk.schema.data_spec.dataset_spec  # noqa: F401  — self-registering leaves
-    import flow_sdk.schema.data_spec.deployment_timeline_spec  # noqa: F401  — registers ``deployment.timeline`` / ``deployment.timeline_event``
+    import flow_sdk.schema.data_spec.deployment_timeline_spec  # noqa: F401  — registers ``deployment.timeline`` / ``deployment.timeline_event`` / ``deployment.thread(s)``
     import flow_sdk.schema.data_spec.folder_change_spec  # noqa: F401  — registers ``ingest.folder_change``
     import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
     import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``

@@ -10,7 +10,8 @@ of channel to the system:
    stored the same way on every channel (``content.message.chat`` carrying ``ingest.message.voice``);
 3. what the caller asked reached the agent as an ordinary turn in THAT conversation's session, and the
    agent's answer is what the voice said back;
-4. while it happens the caller's words are announced live (``voice.call.partial``) on a live line.
+4. while it happens the caller's words are announced live (``voice.call.partial``) on a live line;
+5. on the deployment the whole call is one thread, which reads ``ended`` once the line is down.
 
 Providers are data here, never branches: what differs per channel the ``Double`` says.
 """
@@ -158,6 +159,12 @@ async def test_a_call_on_any_voice_channel_is_one_conversation_the_agent_answers
             # 3. the caller's request reached the agent, in that conversation's session
             assert len(asked.bodies) == 1 and UTTERANCE in asked.bodies[0], asked.bodies
             assert asked.sessions == [f"conversation-{conversation_id}"], asked.sessions
+
+            # 5. on the deployment the whole call is ONE thread, ended once the line is down
+            from flow_sdk.builtin.deployment_timeline import threads  # noqa: PLC0415
+
+            (thread,) = [t for t in (await threads(await agent.local_deployment())).threads if t.conversation_id == conversation_id]
+            assert (thread.status, thread.channel, thread.messages) == ("ended", "voice", len(expected)), thread
             if double.greets:
                 assert double.fake.answers == [answer], "the voice was not handed the agent's answer"
                 assert not double.fake.asked_to_speak_early, "the answer was pushed over a response still being spoken"

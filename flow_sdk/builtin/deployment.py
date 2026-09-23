@@ -588,10 +588,9 @@ class Deployment(Entity):
 
     @action.get(action_name="timeline")
     async def timeline_action(self):
-        """`GET /deployment/<id>/timeline?limit=&before=` — what reached it, what it ran, what it answered.
-
-        Newest first, read from the rows (``builtin/deployment_timeline``); ``before`` (an ISO time,
-        the previous page's ``before``) pages back.
+        """`GET /deployment/<id>/timeline?limit=&before=&conversation=` — what reached it, what it
+        ran, what it answered. Newest first, read from the rows (``builtin/deployment_timeline``);
+        ``conversation`` narrows it to one thread; ``before`` (the previous page's) pages back.
         """
         from flow_sdk.builtin.deployment_timeline import timeline  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
@@ -607,8 +606,18 @@ class Deployment(Entity):
                 before = datetime.fromisoformat(raw_before.replace("Z", "+00:00"))
             except ValueError:
                 return ApiFailResponse(message=f"before={raw_before!r} is not an ISO time", status_code=400)
-        page = await timeline(self, limit=limit, before=before)
+        conversation = str((request_info.get_param("conversation") if request_info else None) or "").strip() or None
+        page = await timeline(self, limit=limit, before=before, conversation=conversation)
         return ApiSuccessResponse(data=page.model_dump(mode="json"))
+
+    @action.get(action_name="threads")
+    async def threads_action(self):
+        """`GET /deployment/<id>/threads` — the conversations it holds (a chat, a whole phone call),
+        the active ones first, each with its status now (``live`` / ``working`` / ``ended`` / ``idle``)."""
+        from flow_sdk.builtin.deployment_timeline import threads  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=(await threads(self)).model_dump(mode="json"))
 
     @action.get(action_name="runs")
     async def runs_action(self):
