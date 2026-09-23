@@ -312,6 +312,8 @@ async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], 
         spec.exe_data.prompt or spec.display_label,
         spec.output_spec_kind,
         detail=spec.exe_data.detail,
+        submit_label=spec.exe_data.submit_label,
+        cancel_label=spec.exe_data.cancel_label,
     )
     say(f"{spec.display_label}: waiting for you…")
     shown = await raise_question(question)

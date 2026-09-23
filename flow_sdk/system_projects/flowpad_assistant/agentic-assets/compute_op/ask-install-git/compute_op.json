@@ -6,7 +6,10 @@
   "description": "Asks the person whether to install Git, only when it is missing.",
   "subkind": "ask",
   "exe_data": {
-    "prompt": "Git is not installed. Install Git for you?",
+    "prompt": "Git is required to continue",
+    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
     "until_answered": true
   },
   "completion_check": {

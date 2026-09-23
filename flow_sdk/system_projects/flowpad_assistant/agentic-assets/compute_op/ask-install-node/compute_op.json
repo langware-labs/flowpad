@@ -6,7 +6,10 @@
   "description": "Asks the person whether to install Node.js, only when it is missing.",
   "subkind": "ask",
   "exe_data": {
-    "prompt": "Node.js is not installed. Install Node.js for you?",
+    "prompt": "Node.js is required to continue",
+    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
     "until_answered": true
   },
   "completion_check": {

@@ -2,8 +2,9 @@
 
 The shape of an ``ask`` op that asks permission rather than a value. It has no
 fields ON PURPOSE: the ask window draws one input per field, so an empty kind
-draws none. The window recognises the kind by name and labels the two buttons
-Yes and No. Yes answers ``{}``; No is the ask op's own ``cancelled`` answer.
+draws none, leaving only the two buttons — worded by the op's
+``submit_label`` / ``cancel_label`` (default Send / Cancel). Send answers ``{}``;
+Cancel is the ask op's own ``cancelled`` answer.
 There is no ``yes: bool`` field, because a field would be a text box a person
 could type ``false`` into and still send.
 """
