@@ -33,8 +33,10 @@ await save_credential(
 
 ## 2. Variant A — the app answers
 
-The agent owns the source; the app answers it. Owning a channel gives the agent a placement on this
-machine, and that placement's **serve loop** (`flow_sdk/builtin/agent_serve.py`) drains every channel
+The agent owns the source; the app answers it from wherever the agent is **deployed**. Owning a
+channel places the agent nowhere — deploy it on this machine (`agent.deploy("local")`, the
+"This computer" choice under New deployment), and that deployment's **serve loop**
+(`flow_sdk/builtin/agent_serve.py`) drains every channel
 it answers — one durable position per source, so a restart resumes after the last answer — turns
 each message from an allowed sender into a turn in that conversation's process, and sends the
 answer back on the channel. Nothing of yours keeps running.
@@ -46,6 +48,7 @@ from flow_sdk.builtin.data_driver import DataDriver
 agent = Agent(name="support-bot", worker_type="claude",
               system_prompt="You answer WhatsApp messages for Acme support. One short paragraph.")
 await agent.save()
+await agent.deploy("local")                    # runs on this machine; its serve loop answers
 
 whatsapp = await DataDriver.get("whatsapp")
 source = whatsapp.create_source(

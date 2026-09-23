@@ -881,6 +881,9 @@ class Agent(Entity):
     async def deploy_action(self):
         """`POST /agent/<id>/deploy` — publish, then boot a box for this agent.
 
+        ``{"provider": "local"}`` deploys it on THIS computer instead: the idempotent local placement,
+        no hub and no publish — the one way "This computer" becomes a deployment.
+
         One round trip for the UI's one button. Long by nature (E2B create +
         boot + health is tens of seconds); if that becomes a timeout in
         practice the fix is 202-and-poll on the node's ``ops/status``, which
@@ -891,6 +894,13 @@ class Agent(Entity):
 
         if not self.enabled:
             return ApiFailResponse(message=f"agent {self.name!r} is disabled")
+        body = await self._body()
+        provider = str(body.get("provider") or "").strip()
+        if provider == "local":
+            deployment = await self.deploy("local")
+            return ApiSuccessResponse(data={"agent_id": self.id, "deployment": deployment.model_dump(mode="json")})
+        if provider:
+            return ApiFailResponse(message=f"unknown provider {provider!r}: 'local', or none for a cloud machine", status_code=400)
         request_info = get_current_request_info()
         actor = request_info.someone_typeid if request_info else None
         if not actor:
@@ -898,7 +908,7 @@ class Agent(Entity):
         from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
         from flow_sdk.schema.data_spec.credential_contract import is_valid_environment  # noqa: PLC0415
 
-        environment = str((await self._body()).get("environment") or "").strip() or None
+        environment = str(body.get("environment") or "").strip() or None
         if environment is not None and not is_valid_environment(environment):
             return ApiFailResponse(message=f"{environment!r} is not a valid environment name", status_code=400)
         try:
