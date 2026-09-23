@@ -68,12 +68,17 @@ frames `["r", [cols, rows]]`. Every winsize change (including the attach-time
 jiggle) is recorded so replay interprets output at the correct width. Rolling cap
 is **30 MB on-disk** (~22.5 MB raw after base64), truncated **at frame
 boundaries** from the front (never splitting an escape sequence), rewriting the
-header to the winsize in effect at the first retained frame.
+header to the winsize in effect at the first retained frame and prepending an
+output frame with the private modes still in force at the cut (alternate screen,
+mouse tracking and encoding, cursor keys, focus reporting, bracketed paste,
+cursor visibility) — a program sets those once at startup, which is exactly what
+front-truncation drops.
 
 | Method | Semantics |
 | --- | --- |
 | `write(data, seq=None)` | Append an output frame (from the PTY read thread); creates file + header on first write. |
 | `write_resize(cols, rows)` | Append a resize frame (from the event loop). |
+| `mark_new_generation()` | Append a frame turning those same modes OFF — called on respawn into the same file, so a new (e.g. classic-renderer) process never inherits the dead one's fullscreen screen. |
 | `read_frames()` | `{"v","cols","rows","events"}` or `None`. Legacy raw files → v0 (size `None`); salvages framed tails of chimera files. |
 | `max_seq()` | Highest persisted output-frame seq (0 if none) — used to reseed `seq` on respawn. |
 | `read_all()` | Concatenated raw output bytes (resize frames excluded) — forensics/tests only. |
@@ -209,6 +214,10 @@ running; reattach repaints).
 so seqs never regress across a server-process epoch. This underwrites the
 frontend's replay-vs-live dedup (`chunk.seq <= replay.lastSeq` is dropped) — a
 regressed seq makes the terminal "look dead after a server restart."
+
+The two synthetic mode frames (the truncation carry-over and
+`mark_new_generation`) deliberately carry **no seq**, so `max_seq()` and
+`read_output_after_seq` never see them.
 
 ---
 
