@@ -289,6 +289,9 @@ class RunScriptActionHandler(TriggerActionHandler):
     One subprocess per fire (i.e. per debounce batch), not per event. The full
     batch is delivered via CHANGES_JSON_PATH; FIRST_* env vars give quick access
     to the head of the batch for simple scripts.
+
+    Always answers a ``CliResult`` — never ``None``: a script that is not where
+    the trigger says is NOT_FOUND, a call with no action NOT_APPLICABLE.
     """
 
     async def execute(
@@ -297,10 +300,18 @@ class RunScriptActionHandler(TriggerActionHandler):
         action: Optional["TriggerAction"] = None,
         changes: Optional[list["ChangeEvent"]] = None,
         timeout_seconds: float = _DEFAULT_SCRIPT_TIMEOUT_S,
-    ) -> "Optional[CliResult]":
+    ) -> "CliResult":
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
+        name = getattr(trigger, "name", "?")
+
+        def missing(message: str, command: str = "") -> "CliResult":
+            _log.warning("RUN_SCRIPT on %s: %s", name, message)
+            return CliResult.not_found(message, command=command)
+
         if action is None:
-            _log.warning("RUN_SCRIPT on %s: no action supplied", getattr(trigger, "name", "?"))
-            return None
+            _log.warning("RUN_SCRIPT on %s: no action supplied", name)
+            return CliResult.not_applicable("No action was supplied, so there is no script to run.")
 
         # Resolution mode 1: external script path (preferred if it exists on disk).
         if action.script_path:
@@ -315,31 +326,17 @@ class RunScriptActionHandler(TriggerActionHandler):
         if action.script_filename:
             data_dir = getattr(trigger, "data_dir", None)
             if data_dir is None:
-                _log.warning(
-                    "RUN_SCRIPT on %s: script_filename set but trigger has no data_dir",
-                    getattr(trigger, "name", "?"),
-                )
-                return None
+                return missing(f"script {action.script_filename} is named but the trigger has no data folder.")
             embedded = Path(data_dir) / action.script_filename
             if not embedded.exists():
-                _log.warning(
-                    "RUN_SCRIPT on %s: embedded script %s does not exist in %s",
-                    getattr(trigger, "name", "?"),
-                    action.script_filename,
-                    data_dir,
-                )
-                return None
+                return missing(f"embedded script {action.script_filename} does not exist in {data_dir}.", str(embedded))
             # Ensure +x before exec (embedded files won't have it from write_file).
             _ensure_executable(embedded)
             return await _exec_script(
                 embedded, trigger, changes, timeout_seconds=timeout_seconds
             )
 
-        _log.warning(
-            "RUN_SCRIPT on %s: no script_path on disk and no script_filename",
-            getattr(trigger, "name", "?"),
-        )
-        return None
+        return missing("no script_path on disk and no script_filename.", action.script_path or "")
 
 
 class RunAgentActionHandler(TriggerActionHandler):

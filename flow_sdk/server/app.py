@@ -52,7 +52,6 @@ from .routes import (
     assets_router,
     auth_router,
     capabilities_router,
-    chat_router,
     cloud_router,
     data_source_webhook_router,
     debug_router,
@@ -731,7 +730,6 @@ server.add_router(auth_router)
 server.add_router(cloud_router)
 server.add_router(privacy_router)
 server.add_router(hooks_router)
-server.add_router(chat_router)
 server.add_router(directory_router)
 server.add_router(detection_router)
 server.add_router(search_router)
