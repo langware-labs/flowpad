@@ -1,3 +1,6 @@
+---
+id: aa640578-a177-4c25-ad4a-d07f00265128
+---
 # Desktop install — test scenarios
 
 Manual and scripted scenarios for the three changes that came out of the

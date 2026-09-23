@@ -1,3 +1,6 @@
+---
+id: c898a6d8-5c36-40cf-98b3-58660a4cbdfb
+---
 # Data Sources UI (Frontend)
 
 The Data Sources screen (`ViewType.DATA_SOURCES`, rail entry in
