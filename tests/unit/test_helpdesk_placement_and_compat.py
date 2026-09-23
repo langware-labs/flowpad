@@ -322,6 +322,12 @@ async def test_refresh_reports_a_missing_checkout_instead_of_raising() -> None:
     assert "not set up" in (resp.message or "")
 
 
+def _synced(changed: bool, said: str):
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+
+    return CliResult.of_process("git reset --hard origin/main", 0, detail=said, value=changed)
+
+
 @pytest.mark.asyncio
 async def test_refresh_reports_whether_the_pull_moved_anything() -> None:
     """`updated` drives whether the caller re-indexes.
@@ -333,7 +339,7 @@ async def test_refresh_reports_whether_the_pull_moved_anything() -> None:
     target = HelpdeskTarget(DESK_ID, "https://example.test/portal.git")
 
     async def _sync_unchanged(_path):
-        return True, False, "Already up to date."
+        return _synced(False, "Already up to date.")
 
     with (
         patch.object(hda, "_require_target", AsyncMock(return_value=target)),
@@ -345,7 +351,7 @@ async def test_refresh_reports_whether_the_pull_moved_anything() -> None:
     assert resp.data["updated"] is False
 
     async def _sync_moved(_path):
-        return True, True, "Updated."
+        return _synced(True, "Updated.")
 
     with (
         patch.object(hda, "_require_target", AsyncMock(return_value=target)),
@@ -357,7 +363,7 @@ async def test_refresh_reports_whether_the_pull_moved_anything() -> None:
 
     # The message is for humans only — `updated` must not follow it.
     async def _sync_moved_quiet(_path):
-        return True, True, "Already up to date."
+        return _synced(True, "Already up to date.")
 
     with (
         patch.object(hda, "_require_target", AsyncMock(return_value=target)),

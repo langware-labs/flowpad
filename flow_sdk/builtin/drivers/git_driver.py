@@ -66,9 +66,9 @@ class GitOriginDriver:
                 candidates.append(local)
             for candidate in candidates:
                 if origin.branch:
-                    ok, msg = await git_pull(str(candidate), branch=origin.branch)
-                    if not ok:
-                        logger.info("[git] pull failed for %s: %s", candidate, msg)
+                    pulled = await git_pull(str(candidate), branch=origin.branch)
+                    if not pulled.ok:
+                        logger.info("[git] pull failed for %s: %s", candidate, pulled.detail)
                 asset_root = safe_join(candidate, origin.rel_path or ".")
                 if asset_root is not None and asset_root.exists():
                     return await resolved(candidate)
@@ -76,9 +76,9 @@ class GitOriginDriver:
         clone_target = preferred_root if clone_here else await asyncio.to_thread(origin.next_clone_target)
         if has_content(clone_target) and origin.matches_checkout(clone_target):
             return await resolved(clone_target)
-        ok, msg = await git_clone(origin.clone_url(), str(clone_target), branch=origin.branch or None, token=token)
-        if not ok:
-            raise RuntimeError(msg)
+        cloned = await git_clone(origin.clone_url(), str(clone_target), branch=origin.branch or None, token=token)
+        if not cloned.ok:
+            raise RuntimeError(cloned.detail)
         return await resolved(clone_target)
 
     def matches(self, origin: FSOrigin, local_path: Path) -> bool:
