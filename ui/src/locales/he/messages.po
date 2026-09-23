@@ -20341,6 +20341,11 @@ msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפ
 msgid "The wizard could not run"
 msgstr ""
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "The wizard did not run"
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "The wizard reported an error."
 msgstr "קוסם הניקיון דיווח על שגיאה."
