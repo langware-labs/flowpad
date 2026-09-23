@@ -23,9 +23,10 @@
  *   B. loadDockPointer: a project-pinned scope on a browse dock loads that
  *      project into context (delegation to `loadProject`).
  */
-import { ContextEntitiesEnum, dataContext, Tab, tabManager, TypeId, type TabRow } from '@sdk';
+import { ContextEntitiesEnum, dataContext, Tab, tabManager, TypeId, type Project, type TabRow } from '@sdk';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { NavigationActions } from '@src/navigation/NavigationActions';
 import { dockForGlobalEntry, dockForProjectEntry, leaveProjectScope } from '@src/tabs/project-entry';
 import { ViewType } from '@src/types/ViewType';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,6 +44,8 @@ vi.mock('@src/routes/loaders/load-asset', () => ({ loadAssetRoute: vi.fn().mockR
 const PROJECT_P = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const MARKDOWN_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const PROC_ID = '22222222-2222-4222-8222-222222222222';
+/** The project the user is leaving. */
+const OTHER_PROJECT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 function row(overrides: Partial<TabRow>): TabRow {
   return {
@@ -90,10 +93,25 @@ function unstampedTabs(): Tab[] {
   ];
 }
 
+/** A process tab in PROJECT_P that WAS activated — the one project entry resumes. */
+function stampedProcTab(): Tab {
+  return new Tab(
+    row({
+      id: '90000000-0000-4000-8000-000000000003',
+      pointer: DockPointer.forShell(`agentic_process-${PROC_ID}`).toJSON() ?? '',
+      target_type: 'agentic_process',
+      target_id: PROC_ID,
+      project_id: PROJECT_P,
+      tab_order: 20,
+      last_active_at: 1784000000000,
+    }),
+  );
+}
+
 describe('dockForScopeEntry — unknown last tab is never guessed (A)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    tabManager.adoptGlobal([]);
+    tabManager.resetForTests();
   });
 
   it('falls back to the project landing (not the lowest-order browse tab) when no tab is stamped', async () => {
@@ -148,21 +166,43 @@ describe('dockForScopeEntry — unknown last tab is never guessed (A)', () => {
   });
 
   it('resumes the stamped (known last-active) tab when one exists', async () => {
-    const stamped = new Tab(
-      row({
-        id: '90000000-0000-4000-8000-000000000003',
-        pointer: DockPointer.forShell(`agentic_process-${PROC_ID}`).toJSON() ?? '',
-        target_type: 'agentic_process',
-        target_id: PROC_ID,
-        tab_order: 20,
-        last_active_at: 1784000000000,
-      }),
-    );
+    const stamped = stampedProcTab();
     vi.spyOn(Tab, 'listAll').mockResolvedValue([...unstampedTabs(), stamped]);
 
     const dock = await dockForProjectEntry(PROJECT_P);
 
     expect(dock.viewType).toBe(ViewType.SHELL);
+    expect(dock.pointer).toContain(PROC_ID);
+  });
+
+  it('openDock seeds a session with ITS project scope, not the one being left', () => {
+    // The stored shell tab carries no scope. Seeded from the current project, the
+    // URL named the project being LEFT, the loader's scope reconcile redirected,
+    // and the whole loader ran a second time on every project switch.
+    tabManager.adoptGlobal([stampedProcTab()]);
+    window.history.pushState({}, '', '/');
+    vi.spyOn(dataContext, 'getContextEntity').mockImplementation((key) =>
+      key === ContextEntitiesEnum.CurrentProjectTypeId ? ({ id: OTHER_PROJECT } as Project) : null,
+    );
+    const navigate = vi.fn();
+    const navigation = new NavigationActions(navigate, null);
+
+    navigation.openDock(DockPointer.forShell(`agentic_process-${PROC_ID}`));
+
+    const url = String(navigate.mock.calls.at(-1)?.[0] ?? '');
+    expect(url).toContain(PROJECT_P);
+    expect(url).not.toContain(OTHER_PROJECT);
+    NavigationActions.resetPendingNavigationForTests();
+  });
+
+  it('resolves from the loaded tab list without a round trip', async () => {
+    const stamped = stampedProcTab();
+    tabManager.adoptGlobal([...unstampedTabs(), stamped]);
+    const listAll = vi.spyOn(Tab, 'listAll');
+
+    const dock = await dockForProjectEntry(PROJECT_P);
+
+    expect(listAll).not.toHaveBeenCalled();
     expect(dock.pointer).toContain(PROC_ID);
   });
 });

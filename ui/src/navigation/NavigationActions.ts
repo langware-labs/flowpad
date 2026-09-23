@@ -17,6 +17,7 @@ import {
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
+import { isValidIdentifier } from '@sdk/models/TypeId';
 import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
 import { getViewMode, rememberedDockViewMode, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
@@ -99,6 +100,25 @@ let pendingDockNavigation: PendingDockNavigation | null = null;
 // URL — the ChatsNavigator reads currentDock.scopeFilter to filter history, exactly
 // like assets/explorer/triggers (SHELL's tabHash ignores scope, so the open
 // session's identity is unaffected).
+/**
+ * The project a session dock BELONGS to, when it is already known without a
+ * fetch: its open tab's project, else the cached process's. A session opened
+ * from another project (a project switch, a chat link, spotlight) must carry its
+ * own project's scope — seeding the one being left made the loader's scope
+ * reconcile redirect, so the whole loader ran a second time.
+ */
+function ownerProjectId(dock: DockPointer): string | null {
+  if (dock.viewType !== ViewType.SHELL) return null;
+  const tab = tabForDockKey(tabManager.getSnapshot(), dock.tabHash);
+  if (tab) return tab.project_id ?? null;
+  const processId = DockPointer.isAgenticProcessPointer(dock.pointer ?? '')
+    ? DockPointer.extractAgenticProcessId(dock.pointer ?? '')
+    : null;
+  // A malformed id (a hand-typed or legacy link) must not throw out of openDock.
+  if (!processId || !isValidIdentifier(processId)) return null;
+  return AgenticProcess.getByIdFromCache<AgenticProcess>(processId)?.project_id ?? null;
+}
+
 export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
   // Events (+ its aliases): ONE ScopeFilter drives both halves of the screen —
@@ -538,7 +558,7 @@ export class NavigationActions {
       dock.scopeFilter === null &&
       !isContentAssetDock(dock)
     ) {
-      const projectId = dataContext.project?.id ?? null;
+      const projectId = ownerProjectId(dock) ?? dataContext.project?.id ?? null;
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
