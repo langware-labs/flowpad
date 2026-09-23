@@ -21,13 +21,13 @@ interface AgentPlacesColumnProps {
 /**
  * The agent's deployments — this computer (always there, listed first) and every cloud machine —
  * as one plain list under a single "New deployment" button. Channels, schedules and the other
- * resources live in the menu on the left; a row opens the deployment's own page (WorldView,
- * focused on it) and says when it was last active. On the hub there is no local deployment and
+ * resources live in the menu on the left; a row opens the deployment's own page, nested in the
+ * agent (its live timeline and processes), and says when it was last active. On the hub there is no local deployment and
  * no deploy.
  */
 export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnProps) {
   const { t } = useLingui();
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const display = usePlaceDisplay();
   const { places, reload } = useAgentPlaces(agent);
   const [deployOpen, setDeployOpen] = useState(false);
@@ -35,8 +35,9 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
 
   // The server lists this computer first.
   const visible = (places ?? []).filter((place) => !hub || !place.is_local);
-  // A deployment's page is WorldView's deployment view, focused on it — the Deployment's own pointer.
-  const openPage = (place: AgentPlace) => navigation.openDock(new Deployment(place.deployment).dockPointer);
+  // A deployment's page opens nested in the agent — project › agent › Deployments › it — in this tab.
+  const openPage = (place: AgentPlace) =>
+    currentDock && navigation.openDock(currentDock.withChild('deployment', `deployment-${place.deployment.id}`));
 
   return (
     <section className="flex flex-col gap-3" aria-labelledby="agent-deployments" data-testid="agent-places">

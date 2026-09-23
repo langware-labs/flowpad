@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
-import { DataSource, editorForType, Trigger, TypeId } from '@sdk';
+import { DataSource, editorForType, Trigger, TypeId, type Agent } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DataSourceDetail } from '@src/components/data-sources/DataSourceDetail';
 import { ScheduleTriggerEditor } from '@src/components/triggers-view/ScheduleTriggerEditor';
@@ -9,6 +9,7 @@ import type { ChildSection } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AssetEditorRouter } from '../AssetEditorRouter';
 import { NestedHostContext, type NestedHost } from '../nested-host';
+import { AgentDeploymentPage } from './deployment/AgentDeploymentPage';
 
 function Missing() {
   return (
@@ -41,7 +42,7 @@ function ScheduleChild({ typeId, onDone }: { typeId: TypeId; onDone: () => void 
  * editor — in the agent's tab, with the agent's resources still on the left. Closing it (a
  * delete, Cancel) returns to the agent, never to some other screen.
  */
-export function AgentChildView({ section, typeIdString }: { section: ChildSection; typeIdString: string }) {
+export function AgentChildView({ agent, section, typeIdString }: { agent: Agent; section: ChildSection; typeIdString: string }) {
   const { navigation, currentDock } = useDockNavigation();
   const typeId = useMemo(() => {
     try {
@@ -58,7 +59,9 @@ export function AgentChildView({ section, typeIdString }: { section: ChildSectio
   if (!typeId) return <Missing />;
 
   let body;
-  if (section === 'channel' || section === 'data_source') {
+  if (section === 'deployment') {
+    body = <AgentDeploymentPage agent={agent} deploymentId={typeId.id} />;
+  } else if (section === 'channel' || section === 'data_source') {
     body = <SourceChild typeId={typeId} onGone={host.close} />;
   } else if (section === 'schedule') {
     body = <ScheduleChild typeId={typeId} onDone={host.close} />;

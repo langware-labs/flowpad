@@ -1,7 +1,7 @@
 /**
  * Deployments: one plain list — this computer first, then every cloud machine — under a single
  * "New deployment" button. A row says its state and when it was last active, and opens the
- * deployment's own page (WorldView, focused on it) by navigating.
+ * deployment's own page nested in the agent by navigating.
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -9,9 +9,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent, type AgentPlace } from '@sdk';
 
 const nav = vi.hoisted(() => ({ openDock: vi.fn(), hub: false }));
-vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: nav }),
-}));
+const { AGENT_URL } = vi.hoisted(() => ({ AGENT_URL: '/dock/assets/editor/agent/typeid/agent-33333333-3333-4333-8333-333333333333' }));
+vi.mock('@src/navigation/useDockNavigation', async () => {
+  const { DockPointer } = await import('@src/navigation/DockPointer');
+  const currentDock = DockPointer.fromUrl(AGENT_URL);
+  return { useDockNavigation: () => ({ navigation: nav, currentDock }) };
+});
 vi.mock('@sdk/utils/hub-runtime', () => ({ isHubOnly: () => nav.hub }));
 vi.mock('@src/components/assets/editor/agent-profile/NewDeploymentDialog', () => ({
   NewDeploymentDialog: () => <div data-testid="mock-new-deployment" />,
@@ -73,13 +76,13 @@ describe('Deployments', () => {
     expect(screen.getByTestId('mock-new-deployment')).toBeInTheDocument();
   });
 
-  it('a row opens the deployment’s own page — WorldView focused on it — and only navigates', async () => {
+  it('a row opens the deployment’s own page nested in the agent — and only navigates', async () => {
     renderColumn([place(LOCAL_ID, true), place(CLOUD_ID, false)]);
     fireEvent.click(await screen.findByTestId(`agent-place-row-${CLOUD_ID}`));
     expect(nav.openDock).toHaveBeenCalledTimes(1);
-    const pointer = nav.openDock.mock.calls[0][0] as { options?: Record<string, string> };
-    expect(pointer.options?.selected).toBe(`deployment-${CLOUD_ID}`);
-    expect(pointer.options?.focus).toBe(`deployment-${CLOUD_ID}`);
+    const pointer = nav.openDock.mock.calls[0][0] as { child: unknown; toUrl(): string };
+    expect(pointer.child).toEqual({ section: 'deployment', typeId: `deployment-${CLOUD_ID}` });
+    expect(pointer.toUrl()).toContain(`${AGENT_URL}/child/deployment/deployment-${CLOUD_ID}`);
   });
 
   it('on the hub there is no local deployment and no New deployment', async () => {

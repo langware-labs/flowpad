@@ -40,3 +40,26 @@ describe.each([
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
   });
 });
+
+describe('useObservedTurn — under StrictMode (the dev app)', () => {
+  it('keeps an observation open after the effect runs, is cleaned up, and runs again', async () => {
+    // StrictMode mounts, cleans up and re-runs every effect. The cleanup aborts the first
+    // observation; the re-run must open another — measured live: it found the slot still marked
+    // "observing" (only the aborted call's `finally` cleared it, too late) and opened nothing, so a
+    // running turn never streamed into the chat.
+    const ap = new AgenticProcess({ id: PROC_ID, pty_mode: false, busy: true, visible: false });
+    dataManager.register_new_entity(PROC_TYPEID, ap);
+    const signals: AbortSignal[] = [];
+    vi.spyOn(ap, 'observeTurn').mockImplementation(
+      (ctrl?: AbortController) =>
+        new Promise<void>((_resolve, reject) => {
+          signals.push(ctrl!.signal);
+          ctrl!.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        }),
+    );
+
+    renderHook(() => useObservedTurn(ap), { reactStrictMode: true });
+
+    await waitFor(() => expect(signals.some((s) => !s.aborted)).toBe(true));
+  });
+});
