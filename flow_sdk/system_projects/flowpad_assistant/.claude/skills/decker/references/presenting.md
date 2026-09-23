@@ -4,7 +4,7 @@
 
 ```bash
 flow record index "<project root>"
-flow show file "<project root>/assets/decks/<deck name>"   # the FOLDER
+flow show file "<project root>/agentic-assets/deck/<deck name>"   # the FOLDER
 ```
 
 Run `show` once — exit 0 means the display is now rendering the deck. Because the
@@ -46,5 +46,5 @@ presenter view, and hash navigation all work — the file is fully portable
 Registering is additive (results list), not the display driver:
 
 ```
-<flow-result name="<Deck title>" path="assets/decks/<deck name>/<deck name>.html" ref_type="FILE" type="report" description="Slide deck built from <template name>"/>
+<flow-result name="<Deck title>" path="agentic-assets/deck/<deck name>/<deck name>.html" ref_type="FILE" type="report" description="Slide deck built from <template name>"/>
 ```

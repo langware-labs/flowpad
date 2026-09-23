@@ -54,6 +54,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from tests.hub_tests._assignment import assert_auto_assigned_sync
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -194,9 +195,13 @@ def _build_shared(c, env, stamp):
     os.makedirs(docs, exist_ok=True)
     md_path = os.path.join(docs, f"comment-sync-{stamp}.md")
     body = "# Shared doc\n\nLine 2\nLine 3\nLine 4\n"
-    Path(md_path).write_text(body)
-    md_id = _u(c.post(f"{alice}/api/v1/graph/markdown", json={"title": f"Doc {stamp}", "asset_ref": md_path}))["id"]
+    # The file carries its id BEFORE the create names it: a create adopts a carrier only
+    # when the identity in it matches (``assert_create_target_available``); an id-less
+    # file already on disk is someone else's bytes and answers 409.
+    md_id = mint_uuid()
     Path(md_path).write_text(f"---\nid: {md_id}\n---\n\n{body}")
+    created = _u(c.post(f"{alice}/api/v1/graph/markdown", json={"id": md_id, "title": f"Doc {stamp}", "asset_ref": md_path}))
+    assert created["id"] == md_id, created
     md_ref = f"markdown-{md_id}"
     conv_obj = _u(
         c.post(

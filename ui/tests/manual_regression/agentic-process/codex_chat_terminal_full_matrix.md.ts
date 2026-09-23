@@ -194,7 +194,7 @@ test.describe('Codex durable transcript projection', () => {
       'utf8',
     );
 
-    expect(sdk).toContain('async switchMode(mode: WorkerMode');
+    expect(sdk).toMatch(/async switchMode\(\s*mode: WorkerMode\b/);
     expect(sdk).toContain('_pendingTransport');
     expect(sdk).toContain('loadHistory({ force: true })');
     expect(backend).toContain('@action.post(action_name="switch-mode")');

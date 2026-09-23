@@ -166,11 +166,13 @@ async function deliverAndSync(channel: Channel, sourceId: string, nonce: string)
 let cell = 0;
 for (const owner of OWNERS) {
   for (const channel of CHANNELS) {
-    const na = NOT_APPLICABLE.some(([o, c]) => o === owner && c === channel);
-    cell += na ? 0 : 1;
-    const title = na ? `n/a. ${owner} × ${channel}` : `${cell}. ${owner} × ${channel}`;
+    // An n/a cell is not a test in the .md (an agent email address is an agent's by
+    // definition; a user has no cloud_email source), so it is not one here either —
+    // a generated-then-skipped test would report a skip for a check that doesn't exist.
+    if (NOT_APPLICABLE.some(([o, c]) => o === owner && c === channel)) continue;
+    cell += 1;
+    const title = `${cell}. ${owner} × ${channel}`;
     test(title, async ({ page }) => {
-      test.skip(na, 'an agent email address is an agent\'s by definition; a user has no cloud_email source');
       const nonce = Math.random().toString(36).slice(2, 8);
       const sourceId = await sourceFor(owner, channel);
       await deliverAndSync(channel, sourceId, nonce);

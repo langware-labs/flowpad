@@ -124,8 +124,10 @@ class ClaudeDriver:
     # the composer rule (2.1.220+). The welcome banner and echoed user prompts
     # match neither form, so they cannot release typed delivery prematurely.
     # Accept either the regular or non-breaking space Claude paints after the
-    # prompt glyph.
-    pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+(?:Try "|─{3,})')
+    # prompt glyph. The rule sits on the NEXT row: 2.1.220 moves there with a
+    # cursor-down (stripped to nothing), 2.1.280's full resume repaint with a
+    # real ``\r\r\n`` — so one line break may separate the two.
+    pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+(?:Try "|\n?─{3,})')
     pins_resume_cwd = True  # pins CLAUDE_PROJECT_DIR + workdir to the source session's cwd
 
     # ── CLI shape ────────────────────────────────────────────────────────────

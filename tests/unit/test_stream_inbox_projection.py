@@ -366,3 +366,48 @@ class TestProjectedAnnounce:
         await _on_item(SimpleNamespace(tag="ingest.telegram.item.created", data={"entity_id": str(item.id)}))
 
         assert announced == [str(item.id)], f"announced {len(announced)} times for one placement"
+
+
+class TestSweepPerSource:
+    """Every pass ends in `sync.completed`, and a backfill sweep outlives the next pass. Run
+    concurrently, each sweep re-walked the same unplaced backlog: a help desk's first pass piled up
+    20 of them and the live ticket missed its turn (helpdesk_ten_turns turn 1)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_syncs_during_a_sweep_coalesce_into_one_more_round(self, monkeypatch):
+        import asyncio
+
+        import flow_sdk.stream_inbox.projection as projection
+
+        running: dict[str, int] = {}
+        overlap = 0
+        rounds: list[str] = []
+        release = asyncio.Event()
+
+        async def sweep(source_id):
+            nonlocal overlap
+            running[source_id] = running.get(source_id, 0) + 1
+            overlap = max(overlap, running[source_id])
+            rounds.append(source_id)
+            if len(rounds) == 1:
+                await release.wait()
+            running[source_id] -= 1
+            return 0
+
+        monkeypatch.setattr(projection, "reconcile_source", sweep)
+        sync = lambda sid: projection._on_sync(SimpleNamespace(data={"source_id": sid}))  # noqa: E731
+
+        first = asyncio.ensure_future(sync("a"))
+        await asyncio.sleep(0)
+        # Five passes complete while the first sweep runs; another source is not held up.
+        await asyncio.gather(*(sync("a") for _ in range(5)), sync("b"))
+        release.set()
+        await first
+
+        assert overlap == 1, "two sweeps of one source ran at once"
+        assert rounds.count("b") == 1
+        assert rounds.count("a") == 2, f"one sweep plus ONE catch-up round, got {rounds.count('a')}"
+
+        await sync("a")  # the table is released: a later sync sweeps again
+        assert rounds.count("a") == 3

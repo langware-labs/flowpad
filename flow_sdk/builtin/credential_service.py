@@ -203,7 +203,7 @@ async def save_credential(
             raise CredentialError("credentials cannot be created in this scope")
         folder = destination_in(family, SchemaRegistry.get(EntityType.SECRET_PACK), parsed.name)
         if folder.exists():
-            raise CredentialError(f"a credential named {parsed.name!r} already exists in this scope")
+            raise CredentialError(f"a credential named {parsed.name!r} already exists in this scope", code="exists")
         spec.asset_ref = str(folder)
         spec.scope = target_scope.scope
         spec.project_id = target_scope.project_id

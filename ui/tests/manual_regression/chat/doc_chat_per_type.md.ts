@@ -11,6 +11,9 @@
  * textarea also proves target resolved.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { dismissSetupModal } from './helpers';
 import { apiBase, apiContext } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
@@ -36,13 +39,14 @@ const TEXTAREA = '[data-testid="entity-execution-input"]';
 // via a Chat side-tab; covered structurally by the markdown-editor tests and
 // not re-driven here because the headless side-tab activation is unreliable.
 //
-// SELF-PROVISIONED: beforeAll writes both fixtures into the user's real
-// ~/.claude/{agents,skills} (the editors resolve vfs paths there), afterAll
-// fully purges them (entity row + shadow dir + source file) via the
-// fs-records DELETE endpoint. Never assume these files pre-exist — squatting
-// fixtures in global dirs are indistinguishable from test leaks and get
-// wiped by cleanups.
-const FIXTURE_SKILL = 'qa-docchat-skill-fixture';
+// SELF-PROVISIONED — never assume a fixture pre-exists; squatting fixtures in
+// shared dirs are indistinguishable from test leaks.
+// The skill is seeded into a FRESH temp project (created in beforeAll, deleted
+// with its folder in afterAll) under a per-run name. The bootstrap default
+// project's mount is the user's real workspace, shared by every instance on the
+// machine: a fixture written there outlives a DB clear, and the next run's
+// create then fails 409 "already exists in this scope".
+const FIXTURE_SKILL = `qa-docchat-skill-${Date.now().toString(36)}`;
 // Project-SCOPED fixtures: the asset editors resolve a vfs path under the vault
 // root (the project mount), so a user-scope ~/.claude doc is NOT vfs-addressable
 // and its chat panel never mounts. Each entry's `machinePath` (the vault-relative
@@ -52,7 +56,8 @@ const DOCS: Array<{ type: string; editor: string; name: string; machinePath: str
 ];
 
 let PROJECT_ID = '';
-// Scoped-create one asset under the default project, index it, and return its
+let PROJECT_ROOT = '';
+// Scoped-create one asset under the seeded temp project, index it, and return its
 // machine path (asset_ref) + entity id. The chat panel only resolves a target
 // when the doc is opened under its project scope (see vfsUrl).
 async function seedScoped(rq: any, projectId: string, type: string, name: string): Promise<{ vfs: string; id: string }> {
@@ -110,9 +115,12 @@ async function readPanelTarget(page: Page): Promise<string | null> {
 test.describe('doc-chat per type', () => {
   test.beforeAll(async () => {
     const rq = await apiContext();
-    const boot = (await (await rq.get(`${API}/api/v1/graph/bootstrap`)).json()).data;
-    const dp = boot.default_project;
-    PROJECT_ID = typeof dp === 'string' ? dp : dp.id;
+    PROJECT_ROOT = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'flowpad-docchat-')));
+    const created = await rq.post(`${API}/api/v1/graph/project`, {
+      data: { name: path.basename(PROJECT_ROOT), fs_storage_mount_path: PROJECT_ROOT },
+    });
+    if (!created.ok()) throw new Error(`seed project failed: ${created.status()} ${await created.text()}`);
+    PROJECT_ID = (await created.json()).data.id;
     // Scoped-create each fixture under the project + index it, so its asset_ref
     // is vfs-addressable and useEntityByPath resolves the chat target.
     for (const doc of DOCS) {
@@ -128,6 +136,8 @@ test.describe('doc-chat per type', () => {
     for (const doc of DOCS) {
       if (doc.id) await rq.delete(`${API}/api/v1/graph/${doc.type}/${doc.id}`).catch(() => {});
     }
+    if (PROJECT_ID) await rq.delete(`${API}/api/v1/graph/project/${PROJECT_ID}`).catch(() => {});
+    if (PROJECT_ROOT) await fs.rm(PROJECT_ROOT, { recursive: true, force: true });
     await rq.dispose();
   });
 

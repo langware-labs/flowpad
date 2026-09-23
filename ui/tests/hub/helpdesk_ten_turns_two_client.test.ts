@@ -119,7 +119,11 @@ const fromRequester = (m: any): boolean => [requesterUserId, `helpdesk:${request
 
 let source: any = null;
 afterAll(async () => {
-  if (source && !KEEP) await source.delete();
+  if (KEEP) return;
+  if (source) await source.delete();
+  // A settled ticket leaves the desk's queue. An open one stays in every later run's first pass,
+  // which backfills the whole queue before turn 1's ticket is placed.
+  if (convId) await hubJson(helperToken, `/graph/conversation/${convId}/close`, {});
 });
 
 /** Shared across the turn tests: one ticket, one helper source. Each turn

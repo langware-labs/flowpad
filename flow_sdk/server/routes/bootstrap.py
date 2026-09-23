@@ -1787,11 +1787,18 @@ def project_to_dict(project) -> dict:
     runs, so a project that must never become CURRENT has to say so here —
     without it, the compact dict looks like an ordinary project and the app
     opens in it.
+
+    ``fs_storage_mount_path`` is the third: the SDK caches this dict as the
+    expanded project, so a "start a session in this project" that resolves the
+    workdir off the cached row got nothing until some later list/activate call
+    happened to overwrite it — a launch clicked in that window silently did
+    nothing (no request, no error).
     """
     return {
         **entity_to_dict(project),
         "locale": getattr(project, "locale", None),
         "hidden": bool(getattr(project, "hidden", False)),
+        "fs_storage_mount_path": getattr(project, "fs_storage_mount_path", None),
     }
 
 

@@ -53,6 +53,17 @@ export function CrumbDetailsPopover({
    *  outside the card) has already flipped `open` to false by then, and
    *  toggling THAT would re-open the card the press meant to close. */
   const openAtPointerDown = useRef(false);
+  /** Set when the card is dismissed, cleared by the next real hover. Radix arms
+   *  its hover-open timer on pointerenter and does not cancel it when the card
+   *  is opened by a click and then dismissed — so a hover-then-click-then-Escape
+   *  inside `openDelay` had the stale timer re-open the card ~100ms later, with
+   *  no new pointer or focus event. Only a fresh pointerenter may open it again. */
+  const hoverOpenSuppressed = useRef(false);
+  const onOpenChange = useCallback((next: boolean) => {
+    if (next && hoverOpenSuppressed.current) return;
+    if (!next) hoverOpenSuppressed.current = true;
+    setOpen(next);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -78,9 +89,12 @@ export function CrumbDetailsPopover({
   const canReveal = !!fsRef.localComputeNodeId;
 
   return (
-    <HoverCard open={open} onOpenChange={setOpen} openDelay={200} closeDelay={100}>
+    <HoverCard open={open} onOpenChange={onOpenChange} openDelay={200} closeDelay={100}>
       <HoverCardTrigger
         asChild
+        onPointerEnter={() => {
+          hoverOpenSuppressed.current = false;
+        }}
         onPointerDownCapture={() => {
           openAtPointerDown.current = open;
         }}

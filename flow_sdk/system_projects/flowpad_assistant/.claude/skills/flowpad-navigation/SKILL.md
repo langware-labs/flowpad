@@ -30,16 +30,21 @@ Key on the **intent**, not on the mode and not on who authored the file:
   pins the display pane; in any other mode it opens the target as a tab right after
   your process and marks your chip. A background agent therefore cannot interrupt
   anyone. **This is the default, and it is what a bare "open it" means.**
-- **"Take me there"** — the user explicitly asks to jump to / go to / be taken to
-  something → **`flow navigate`**. It moves the tab the user is looking at, so use it
-  only when being moved is what they asked for.
+- **"Take me there"** — the user explicitly asks to navigate to / jump to / go to /
+  be taken to something → **`flow navigate`**. The word "navigate" in the request is
+  itself that explicit ask. It moves the tab the user is looking at, so use it only
+  when being moved is what they asked for.
 
 When in doubt, `flow show` — the failure mode of showing is a tab the user ignores;
 the failure mode of navigating is yanking them out of their work.
 
 ## You have a file path
 
-This is "open it" after writing or discussing a file. No TypeId, no indexing needed:
+Apply the decision rule above to the user's words first — having a path does not
+make it a `flow show`.
+
+"Open it" / "show it" after writing or discussing a file → show it. No TypeId, no
+indexing needed:
 
 ```bash
 flow show file <absolute-path>
@@ -47,8 +52,8 @@ flow show file <absolute-path>
 
 Exit 0 = shown, done.
 
-Only if the user explicitly asked to be *taken* to it does the file need an entity
-first. Two commands, no research:
+"Navigate to it" / "take me to it" → the file needs an entity first. Two commands,
+no research:
 
 ```bash
 flow record index <absolute-path> --types markdown   # returns data.typeid

@@ -48,7 +48,7 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItem
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.schema.data_spec import DataSpec
-from tests.hub_tests._hub_agent import create_hub_agent
+from tests.hub_tests._hub_agent import create_hub_agent, mailbox_capability_required
 from tests.hub_tests._local_login import login_as
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]
@@ -84,7 +84,8 @@ async def mailboxes(hub_base_url, hub_login_payload):
 
     allocated: list[str] = []
     try:
-        agent_box = await driver.create_mailbox(agent_id)
+        with mailbox_capability_required():
+            agent_box = await driver.create_mailbox(agent_id)
         allocated.append(agent_id)
         outsider_box = await driver.create_mailbox(outsider_id)
         allocated.append(outsider_id)
@@ -391,7 +392,8 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
         await flow_sdk.auth.login()
         # The allowlist is the mailbox's, declared in the one call that makes it —
         # the same shape docs/snippets/agent-email.md advertises.
-        mailbox = await pirate.allocate_mailbox(allowed_senders=[gmail.account_key])
+        with mailbox_capability_required():
+            mailbox = await pirate.allocate_mailbox(allowed_senders=[gmail.account_key])
         if mailbox.provider != "agentmail":
             pytest.skip(
                 "Gmail delivery requires the local Hub to run with "

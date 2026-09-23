@@ -79,6 +79,25 @@ describe('the crumb details popover', () => {
     expect(await screen.findByTestId('top-nav-crumb-details')).toBeTruthy();
   });
 
+  it('stays closed after Escape when it was hovered and then clicked open', async () => {
+    // Radix arms its hover-open timer on pointerenter; a click inside openDelay
+    // opens the card first, and the stale timer used to re-open it right after
+    // Escape dismissed it — no new hover, no new focus.
+    const user = userEvent.setup();
+    const trigger = mount();
+    await user.hover(trigger);
+    fireEvent.click(trigger);
+    expect(screen.getByTestId('top-nav-crumb-details')).toBeTruthy();
+    await armDismissal();
+
+    await user.keyboard('{Escape}');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+
+    expect(screen.queryByTestId('top-nav-crumb-details')).toBeNull();
+  });
+
   it('opens a FOLDER crumb in Files as itself, and reveals it without selecting', () => {
     const folder = { filename: null, path: '/Users/me/Flowpad workspace/proj', directory: true };
     open(folder);

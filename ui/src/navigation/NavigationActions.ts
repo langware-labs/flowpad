@@ -217,6 +217,15 @@ export class NavigationActions {
     }
   }
 
+  /** Stamp a mode-less target: its own remembered dock mode, else the live mode
+   *  on screen (`liveMode`, read only when there is no memory). An entry must
+   *  state its mode, or it re-resolves through the stored preference. */
+  private static withTargetViewMode(target: DockPointer, liveMode: () => ViewMode | null): DockPointer {
+    if (target.viewMode !== null) return target;
+    const mode = rememberedDockViewMode(target) ?? liveMode();
+    return mode ? target.withViewMode(mode) : target;
+  }
+
   private static clearCommittedPendingNavigation(): void {
     if (!pendingDockNavigation) return;
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
@@ -312,6 +321,9 @@ export class NavigationActions {
     // A backend-driven navigate onto workspace content stays in the workspace.
     const carriedHost = hostToCarry(here, target);
     if (carriedHost) target = target.withHost(carriedHost);
+    // ...and in the mode on screen, as `openDock` does: otherwise an agent's
+    // navigate repaints the user out of the mode they were looking at.
+    target = NavigationActions.withTargetViewMode(target, () => here?.viewMode ?? null);
     const url = target.toUrl(window.location.pathname);
     if (here?.equals(target)) return;
     NavigationActions.logTabSwitchStart('detached', target);
@@ -553,14 +565,10 @@ export class NavigationActions {
     // DISPLAYS that mode — memory is minted by `VIEW_MODE_STORE`, not by opening.
     // Cache-only: a cold deep link has no entity to read here, and the shell
     // loader redirects a session onto its remembered mode instead.
-    if (dock.viewMode === null) {
-      const liveViewMode =
-        rememberedDockViewMode(dock) ??
-        NavigationActions.currentBrowserViewMode() ??
-        this.currentDock?.viewMode ??
-        null;
-      if (liveViewMode) dock = dock.withViewMode(liveViewMode);
-    }
+    dock = NavigationActions.withTargetViewMode(
+      dock,
+      () => NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null,
+    );
 
     if (this.currentDock?.equals(dock)) {
       toplog.log('navigation', 'openDock no-op (currentDock equals target)', {

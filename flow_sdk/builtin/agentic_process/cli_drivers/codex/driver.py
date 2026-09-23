@@ -433,10 +433,14 @@ class CodexDriver:
         if process.session_id:
             path = find_codex_session_jsonl(process.session_id)
         if path is None:
-            path = find_latest_codex_session_jsonl(
-                cwd=process.workdir,
-                started_at=self._worker_started_at(process),
-            )
+            # BOUNDED by this worker's own launch, like copilot and opencode: a
+            # process that never launched a worker owns no rollout, and the newest
+            # one for its cwd is another process's — adopting it streamed that
+            # turn's ``turn.completed`` and ended before this prompt was typed.
+            started_at = self._worker_started_at(process)
+            if started_at is None:
+                return None
+            path = find_latest_codex_session_jsonl(cwd=process.workdir, started_at=started_at)
         if path is None or not path.exists():
             return None
         meta = read_codex_rollout_meta(path)

@@ -4,6 +4,8 @@
 
 1. Open an agent whose project folder is **not** a git repository
    (`GET /api/v1/graph/agent/<id>/git_share_preflight` → `code: not-in-repo`).
+   The test seeds one: a project in a fresh temp folder (not a git repo) with
+   an agent created in it (`POST /api/v1/graph/project/<id>/agent`).
 2. Deploy tab → "Before you can deploy" → **Git repository ready** → **Set up**.
 3. The `git-context-folder` wizard popup opens and runs the setup agent.
 
@@ -20,6 +22,13 @@
 - The popup auto-closes with `status: done` ("Git is set up" toast) while the
   folder is still `not-in-repo`.
 
+## Live-only
+
+Success needs the wizard's real Claude agent to run the setup to completion,
+and "set up" means a supported origin — the agent must create or link a hosted
+(GitHub) repository. That is a live-Claude run with an outward-facing side
+effect, so the test is skipped unless `QA_DEPLOY_LIVE_GIT=1` is set.
+
 ## Run
 
 From `ui/`, against a running backend + frontend:
@@ -30,4 +39,5 @@ LOCAL_SERVER_PORT=6004 VITE_PORT=4098 npx playwright test \
   tests/manual_regression/assets/deploy_git_setup_false_success.md.ts
 ```
 
-`QA_DEPLOY_AGENT_ID` selects the agent (default `002c95c3-…`).
+`QA_DEPLOY_LIVE_GIT=1` opts into the live run. `QA_DEPLOY_AGENT_ID` selects an
+existing agent instead of seeding one.

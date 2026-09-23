@@ -67,18 +67,25 @@ async def test_the_hub_masks_someone_elses_agent_as_target_not_found(hub_login_p
 async def test_publishing_someone_elses_agent_really_conflicts(hub_login_payload, bobs_agent_id):
     """The second premise: publishing an id the hub already holds is refused.
 
-    The whole fix rests on a failed publish MEANING "the row exists and is not
-    ours". If the hub ever started accepting that POST, allocation would sail
-    past the recovery and fail somewhere less legible.
+    ``share()`` itself cannot show it — it posts ``idempotent=True`` and absorbs
+    the 409 as "already there" (8621c5d33), which is exactly why allocation has
+    to probe AFTER publishing rather than trust the publish. So this sends the
+    request ``share()`` sends — same client, path and body — without that
+    absorption. If the hub ever started accepting it, alice's publish would
+    succeed on bob's id and the probe would be answering a different question.
     """
+    from flow_sdk.cli.auth.credentials import load_credentials
+    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
+    from flow_sdk.core.urls.service_urls import build_hub_url
+
     login_as(hub_login_payload)
     agent = Agent(id=bobs_agent_id, name=f"foreign-publish-{bobs_agent_id[:8]}")
     await agent.save()
 
-    with pytest.raises(Exception) as refused:  # noqa: B017 — see the module note on _unwrap's untyped raise
-        await agent.share()
+    async with FlowpadClient(ApiConfig.from_env(), api_key=load_credentials().api_key) as client:
+        response = await client.request("POST", build_hub_url(agent.get_type()), json=agent._hub_body())
 
-    assert "409" in str(refused.value), f"publishing a foreign agent was not refused: {refused.value}"
+    assert response.status_code == 409, f"publishing a foreign agent was not refused: {response.status_code} {response.text[:200]}"
 
 
 async def test_a_mailbox_on_someone_elses_agent_names_the_reason(hub_login_payload, bobs_agent_id):

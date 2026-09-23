@@ -310,6 +310,7 @@ fix = ComputeOpSpec(name="marker-agent", subkind="agent",
 
 first = await run_op(fix, trusted=True, workdir=tmp)
 type(first) is PromptResult               # True
+first.exit_code                           # ExitCode.OK — the agent made the check hold
 first.executor.startswith("agentic_process-")   # True
 
 # A follow-up has no completion check: with one that already holds, nothing

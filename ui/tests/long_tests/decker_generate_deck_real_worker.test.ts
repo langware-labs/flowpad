@@ -4,7 +4,7 @@
  * A real Claude worker, with the flowpad_assistant skills available (global
  * default), is asked to use the `decker` skill to generate a small deck from a
  * pre-seeded template. Asserts the full stitch:
- *   - the agent assembles the self-contained deck HTML under assets/decks/<name>/
+ *   - the agent assembles the self-contained deck HTML under agentic-assets/deck/<name>/
  *   - discovering that folder mints a `deck` entity (the walker + extractor run)
  *
  * A template is pre-seeded (the shipped scaffold copied into the workdir) so the
@@ -131,7 +131,7 @@ describe('decker — real agent generates a deck from a template → deck entity
   it('assembles the deck HTML and the folder discovers as a deck entity', async (context: any) => {
     const workdir = path.join(tmpRoot, 'proj');
     // Pre-seed a template so the turn only does deck generation (bounded).
-    const tplDir = path.join(workdir, 'assets', 'deck-templates', 'basic');
+    const tplDir = path.join(workdir, 'agentic-assets', 'deck_template', 'basic');
     await fs.mkdir(path.dirname(tplDir), { recursive: true });
     await fs.cp(SCAFFOLD, tplDir, { recursive: true });
 
@@ -139,21 +139,21 @@ describe('decker — real agent generates a deck from a template → deck entity
     await worker.watch();
     await worker.prompt(
       'Use the decker skill to generate a SMALL 2-slide deck from the existing ' +
-        "'basic' template (assets/deck-templates/basic): a cover-centered slide " +
+        "'basic' template (agentic-assets/deck_template/basic): a cover-centered slide " +
         "titled 'Coffee' and a closing-centered slide titled 'Thanks'. Write it to " +
-        'assets/decks/coffee/ (deck.json + the assembled coffee.html via ' +
+        'agentic-assets/deck/coffee/ (deck.json + the assembled coffee.html via ' +
         'tools/build_deck.py), then index the project root. Keep it minimal.',
     );
 
     const chat = chatContent(worker.flowDataStream.items, sdk.FlowElementTypes);
     if (isClaudeUnavailable(chat)) context.skip(`Claude unavailable: ${chat.slice(0, 200)}`);
 
-    // The agent must have assembled a deck HTML under assets/decks/.
-    const decksDir = path.join(workdir, 'assets', 'decks');
+    // The agent must have assembled a deck HTML under agentic-assets/deck/.
+    const decksDir = path.join(workdir, 'agentic-assets', 'deck');
     const htmls = await findDeckHtml(decksDir);
     console.log('[decker-gen] chat:', chat.slice(0, 300));
     console.log('[decker-gen] deck htmls:', htmls);
-    expect(htmls.length, 'agent must assemble a deck HTML under assets/decks/').toBeGreaterThan(0);
+    expect(htmls.length, 'agent must assemble a deck HTML under agentic-assets/deck/').toBeGreaterThan(0);
 
     // The deck folder must discover as a `deck` entity (walker + extractor run).
     const deckDir = path.dirname(htmls[0]);

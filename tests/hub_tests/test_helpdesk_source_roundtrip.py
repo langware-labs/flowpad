@@ -218,19 +218,24 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
     people nobody listed. Same triage as the mailbox test — no process at all is
     our wiring broken; a process that said nothing is the CLI's availability."""
     from flow_sdk.builtin.agent import Agent
+    from flow_sdk.builtin.agent_serve import AgentServer
     from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.schema.types import EntityType
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user
     from flow_sdk.stream_inbox import start_stream_inbox
     from flow_sdk.stream_inbox.agent_scope import resolve_agent_stream_inbox_scope
     from tests.hub_tests._hub_agent import create_hub_agent, delete_hub_agent
-    from tests.hub_tests.test_agent_email_conversation import _ran_a_turn
+    from tests.hub_tests.test_agent_email_conversation import _ran_a_turn, _served
 
     base, token = hub_session["base_url"], hub_session["api_key"]
     await get_or_create_local_user()
-    # The SAME call `server/app.py` makes: arms the projection lanes and the
-    # agent runner, so a projected inbound message runs the turn.
+    # The SAME two calls `server/app.py` makes: the projection lanes, and the
+    # agent server whose placement serve loops answer a channel's arrivals (the
+    # tag-bus runner that used to answer on projection is gone — 22d2137b1). The
+    # test tier turns channel loops off by default; this test IS one, so it asks.
     start_stream_inbox()
+    server = AgentServer(serve_channels=True)
+    await server.start()
 
     agent_id = await create_hub_agent(base, token, f"desk-agent-{uuid.uuid4().hex[:8]}")
     agent = Agent(
@@ -245,12 +250,15 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
     source = await agent.bind_channel(provider="helpdesk", channel=desk)
     assert source.provider == "helpdesk" and not (source.inbound_allowed_senders or [])
     assert str(source.owner) == str(TypeId(type=EntityType.AGENT.value, id=agent_id))
+    # Served BEFORE the ticket exists: the loop holds its position first, so the
+    # ticket is an arrival it answers rather than history it skips.
+    await _served(server, agent, source)
 
     nonce = f"okra{uuid.uuid4().hex[:8]}"
     ticket = await _open_ticket(base, bob_token, desk, f"Reply with exactly this word and nothing else: {nonce}")
     guest_id = str((await _hub_messages(base, token, ticket))[0].get("sender_id") or "")
     try:
-        # One poll drives the chain: pool → ingest → project → announce → turn → reply.
+        # One poll ingests the ticket; the placement's serve loop drains it → turn → reply.
         await _poll(source)
         reply = await _await_hub_message(base, token, ticket, containing=nonce, not_from=guest_id)
         if reply is None:
@@ -265,6 +273,7 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
         scope = await resolve_agent_stream_inbox_scope(agent_id)
         assert ticket in scope.conversation_ids, "the ticket is in the agent's stream inbox, not the user's"
     finally:
+        await server.stop()
         await source.delete()
         await agent.delete()
         assert await delete_hub_agent(base, token, agent_id) < 400, f"LEAKED agent {agent_id}"

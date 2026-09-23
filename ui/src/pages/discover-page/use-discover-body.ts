@@ -10,16 +10,11 @@ import type { DiscoverItem } from './discover-model';
  * desk the exact occurrence projected by the backend. `fsRef` is null when there is nothing to
  * read here, and the caller says why with `bodyCopyKey`.
  */
-export function useDiscoverBody(item: DiscoverItem | null, mode: 'hub' | 'desk') {
+export function useDiscoverBody(item: DiscoverItem | null) {
   const fsRef = useMemo(() => {
-    if (!item) return null;
-    if (mode === 'hub') {
-      const ref = item.body?.body_available ? item.body.body_ref : null;
-      return ref ? new FSRef(ref.path, new TypeId(ref.type_id), 'file', true) : null;
-    }
-    const ref = item.bodyRef;
+    const ref = item?.bodyRef;
     return ref ? new FSRef(ref.path, new TypeId(ref.type_id), 'file', true) : null;
-  }, [item, mode]);
+  }, [item]);
   // Read-only presentation uses the fs reader also served by the hub.
   const reader = useMemo(() => fsRef ? { path: fsRef.vpath, read: () => fsRef.read(),
     write: () => Promise.reject(new Error('Discover is read-only')) } : null, [fsRef]);
