@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import weakref
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional
 
@@ -40,6 +42,9 @@ logger = logging.getLogger(__name__)
 
 TURNS = "turns"
 STARTED, DONE = "started", "done"
+#: On a STARTED record: the OS process running the turn. Another process (the app, reading the
+#: row) tells a turn in flight from one abandoned by a dead loop by whether that pid is alive.
+OWNER_PID = "pid"
 #: Records kept per session. A redelivery is always of a RECENT message; older records are noise.
 TURNS_KEPT = 200
 
@@ -58,6 +63,11 @@ async def stamp_turn(ap, key: str, entry: dict) -> None:
         for stale in list(turns)[: len(turns) - TURNS_KEPT]:
             turns.pop(stale, None)
     await _write_turns(ap, turns)
+
+
+def started_record() -> dict:
+    """The record of a turn taking place now, in THIS OS process (see ``OWNER_PID``)."""
+    return {"status": STARTED, OWNER_PID: os.getpid(), "at": datetime.now(timezone.utc).isoformat()}
 
 
 async def _forget_turn(ap, key: str) -> None:
@@ -218,7 +228,7 @@ class TurnEngine:
                     yield TurnEvent("done", text)
                     return
             start = len(transcript_entries(ap)) if stream else 0
-            await stamp_turn(ap, turn.key, {"status": STARTED})
+            await stamp_turn(ap, turn.key, started_record())
             taken = await ap.send_turn(turn.body)
             if not taken.ok:
                 # Nothing ran, so nothing is recorded: a STARTED stamp left behind would
