@@ -25,7 +25,6 @@ subfolder_count: 14
 - [API Routing Specification](api-routing.md) — API routing specification: graph URL structure, parsing algorithm, implicit action mapping, request flow and RequestInfo across backend and frontend.
 - [Server Boot & Bootstrap Flows](boot.md) — How the backend gets from process start to serving requests: startup flows, what runs inline versus detached, and the sub-100ms bootstrap budget.
 - [Capabilities](capabilities.md) — Capability entities describing local features like CLI harnesses and browser access: the hierarchical kind ontology, prefix matching, and dynamic MCP-server capabilities.
-- [Claude Code PTY scrolling — why the terminal scrollbar disappears](claude_pty_scroll.md) — Why the terminal scrollbar vanishes under Claude Code fullscreen rendering, why one cannot be synthesized inside it, and leaving that mode as the fix.
 - [ComputeNode action surface — pre-refactor STATUS](compute_node_action_audit.md) — Pre-refactor audit of the hub ComputeNode action surface: clean delegations, envelope problems, provider-bound actions and the planned migration steps.
 - [Contributing to Flowpad](contributing.md) — Getting a Flowpad dev environment running: prerequisites, backend and frontend startup, repository layout, and the contribution workflow.
 - [cookie-gate](cookie-gate.md) — Cookie-gate: an optional pre-shared secret locking an instance to invited callers — arming rules, the gate exchange endpoint and cookie attributes.
@@ -52,6 +51,7 @@ subfolder_count: 14
 - [Playwright MCP — Usage & Debug](playwright-usage.md) — Using the Playwright MCP server: its .mcp.json config, the checks required before every use, common errors, and the operating rules.
 - [Prompt Library — managed prompts, foldered, one click to queue](prompt-library.md) — The prompt record type and its foldered library in the terminal ribbon: markdown layout, entity-group folders, and one-click enqueue onto the prompt queue.
 - [Prompt Queue](prompt_queue.md) — The prompt queue: on-disk format, components, launch and follow-up drain flows, UI reflection, the readiness decision, entry lifecycle, and concurrency.
+- [Terminal scrolling and the mouse wheel — issues, fixes, worker behavior](pty-scroll.md) — How a wheel tick scrolls a Flowpad terminal, a log of every wheel failure with its proof and fix, and per-worker terminal behavior (Claude Code fullscreen rendering).
 - [PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)](pty-sync.md) — The PTY line-synchronization model — PtySyncSession, VirtualTerminal, XtermAdapter — and the annotation gutter's absolute buffer-row coordinates.
 - [PTY / xterm Terminal System Specification](pty-terminal-spec.md) — The PTY terminal system across OS process, backend sessions, WebSocket transport and xterm.js: the byte paths both ways, attach-time history replay, and the two renderers.
 - [Renderable code fences](renderable-fences.md) — How a code fence opts into being drawn: the render-only NodeView over Milkdown code blocks, the renderer registry, and why markdown stays byte-identical.
