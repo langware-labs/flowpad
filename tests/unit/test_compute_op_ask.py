@@ -127,6 +127,36 @@ async def test_the_person_answers(tmp_path):
     assert open_questions() == []
 
 
+async def test_the_op_words_its_own_buttons(tmp_path):
+    """`submit_label` / `cancel_label` reach the window's payload as written."""
+    exe = {"prompt": "Install Git?", "submit_label": "Install", "cancel_label": "Skip"}
+    run = asyncio.create_task(_run(_spec(tmp_path, exe_data=exe), tmp_path, timeout=5))
+    for _ in range(200):
+        if open_questions():
+            break
+        await asyncio.sleep(0.01)
+    payload = open_questions()[0].to_payload()
+    cancel(payload["id"])
+    await run
+
+    assert payload["submit_label"] == "Install"
+    assert payload["cancel_label"] == "Skip"
+
+
+async def test_unworded_buttons_leave_the_defaults_to_the_window(tmp_path):
+    """Empty labels: the window draws its own Send / Cancel."""
+    run = asyncio.create_task(_run(_spec(tmp_path), tmp_path, timeout=5))
+    for _ in range(200):
+        if open_questions():
+            break
+        await asyncio.sleep(0.01)
+    payload = open_questions()[0].to_payload()
+    cancel(payload["id"])
+    await run
+
+    assert payload["submit_label"] == "" and payload["cancel_label"] == ""
+
+
 async def test_a_stored_answer_is_read_off_the_check_and_nobody_is_asked(tmp_path):
     """The check decides whether to ask at all. Once something stored the value,
     the op answers from what the check prints — ``ran=False``."""

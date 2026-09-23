@@ -46,6 +46,10 @@ class Question:
     prompt: str
     #: A plain-language paragraph shown under the prompt (`AskOp.detail`).
     detail: str = ""
+    #: The button words (`AskOp.submit_label` / `cancel_label`). Empty: the
+    #: window's defaults, Send / Cancel.
+    submit_label: str = ""
+    cancel_label: str = ""
     #: The op's ``output_spec_kind`` — the kind the answer is held to. There is
     #: exactly one declaration; this is it.
     shape: Any = None
@@ -61,9 +65,9 @@ class Question:
             "op": self.op_name,
             "prompt": self.prompt,
             "detail": self.detail,
-            # The declared kind by NAME, when it is one. The window decides its
-            # buttons from this — "confirm" is answered Yes / No — rather than
-            # guessing from "there happen to be no fields".
+            "submit_label": self.submit_label,
+            "cancel_label": self.cancel_label,
+            # The declared kind by NAME, when it is one.
             "kind": self.shape if isinstance(self.shape, str) else None,
             "fields": self.fields,
         }
@@ -75,7 +79,15 @@ class Question:
 _PENDING: "dict[str, Question]" = {}
 
 
-def open_question(op_name: str, prompt: str, shape: Any, detail: str = "") -> Question:
+def open_question(
+    op_name: str,
+    prompt: str,
+    shape: Any,
+    detail: str = "",
+    *,
+    submit_label: str = "",
+    cancel_label: str = "",
+) -> Question:
     """Register a question and return it. The caller then awaits ``wait_for``."""
     from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
 
@@ -84,6 +96,8 @@ def open_question(op_name: str, prompt: str, shape: Any, detail: str = "") -> Qu
         op_name=op_name,
         prompt=prompt,
         detail=detail,
+        submit_label=submit_label,
+        cancel_label=cancel_label,
         shape=shape,
         # A kind string alone would render as one unnamed box.
         fields=fields_of_kind(shape) if isinstance(shape, str) else shape,

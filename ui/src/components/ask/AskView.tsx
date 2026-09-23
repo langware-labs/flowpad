@@ -28,6 +28,11 @@ interface Question {
   id: string;
   op: string;
   prompt: string;
+  /** Why it is asked and what each answer does. Empty: the op's name instead. */
+  detail?: string;
+  /** The op's words for the two buttons. Empty: the defaults, Send / Cancel. */
+  submit_label?: string;
+  cancel_label?: string;
   /** The declared kind opened one level: `{field: form}`, or the kind itself for a scalar. */
   fields: Shape;
 }
@@ -60,7 +65,7 @@ export default function AskView() {
       // A question that is gone is the NORMAL end: the op timed out, or someone
       // else answered. Say so rather than showing a form that resolves nothing.
       if (!res) setSettled(_(msg`This question is no longer waiting.`));
-      else setQuestion(res as Question);
+      else setQuestion(res);
     })();
     return () => {
       alive = false;
@@ -89,9 +94,7 @@ export default function AskView() {
   const submit = useCallback(() => {
     const names = fieldsOf(question?.fields ?? null);
     const value =
-      names.length === 1 && names[0] === ''
-        ? values['']
-        : Object.fromEntries(names.map((n) => [n, values[n] ?? '']));
+      names.length === 1 && names[0] === '' ? values[''] : Object.fromEntries(names.map((n) => [n, values[n] ?? '']));
     return send('/answer', { value });
   }, [question, values, send]);
 
@@ -118,7 +121,13 @@ export default function AskView() {
         <h1 className="text-base font-medium" data-testid="ask-prompt">
           {question.prompt}
         </h1>
-        <p className="text-xs text-muted-foreground">{question.op}</p>
+        {question.detail ? (
+          <p className="mt-1 text-sm text-muted-foreground" data-testid="ask-detail">
+            {question.detail}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">{question.op}</p>
+        )}
       </div>
 
       {fieldsOf(question.fields).map((name) => (
@@ -149,15 +158,10 @@ export default function AskView() {
 
       <div className="flex gap-2">
         <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
-          <Trans>Send</Trans>
+          {question.submit_label || <Trans>Send</Trans>}
         </Button>
-        <Button
-          variant="ghost"
-          data-testid="ask-cancel"
-          disabled={busy}
-          onClick={() => void send('/cancel')}
-        >
-          <Trans>Cancel</Trans>
+        <Button variant="ghost" data-testid="ask-cancel" disabled={busy} onClick={() => void send('/cancel')}>
+          {question.cancel_label || <Trans>Cancel</Trans>}
         </Button>
       </div>
     </div>

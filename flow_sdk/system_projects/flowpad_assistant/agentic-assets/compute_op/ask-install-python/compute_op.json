@@ -6,7 +6,10 @@
   "description": "Asks the person whether to install Python 3, only when it is missing.",
   "subkind": "ask",
   "exe_data": {
-    "prompt": "Python 3 is not installed. Install Python 3 for you?",
+    "prompt": "Python is required to continue",
+    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
     "until_answered": true
   },
   "completion_check": {

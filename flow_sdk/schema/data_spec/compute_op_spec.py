@@ -176,6 +176,12 @@ class AskOp(ExeData):
     #: what each answer does. Not the op's `description` — that one is written for
     #: whoever reads the document, this one for whoever is looking at the window.
     detail: str = ""
+    #: The words on the two buttons, for a question whose answer is a choice
+    #: rather than a value ("Install" / "Skip"). Empty means the window's own
+    #: defaults, Send / Cancel. Cancel keeps its meaning whatever it is called:
+    #: the op's ``cancelled`` answer.
+    submit_label: str = ""
+    cancel_label: str = ""
     #: Wait for the person with NO deadline. For install-time infrastructure —
     #: a missing toolchain the app cannot run without — where giving up after a
     #: minute only means asking again on the next boot. Safe only because a
