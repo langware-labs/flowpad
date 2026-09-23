@@ -67,7 +67,7 @@ async def test_messages_arriving_together_each_get_their_own_turn(monkeypatch):
     monkeypatch.setattr(engine, "process_for", lambda *_, **__: _async(worker))
     monkeypatch.setattr("flow_sdk.app.actions.execute_prompt._capture_assistant_reply", lambda _ap: worker.finish())
 
-    results = await asyncio.gather(*(answer(engine, source, _Message(n, sent)) for n in range(1, 4)))
+    results = await asyncio.gather(*(answer(engine, _Message(n, sent), source=source) for n in range(1, 4)))
 
     assert results == [True, True, True]
     assert sent == [f"reply to burst {n} (quoting burst {n})" for n in range(1, 4)]

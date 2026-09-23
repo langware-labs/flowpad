@@ -98,7 +98,7 @@ async def test_staff_that_resolve_nowhere_are_never_offered(project, monkeypatch
 
 async def test_the_tasks_channel_follows_the_checkbox_and_writes_only_on_change(project, monkeypatch):
     agent = await _agent(project, chief_of_staff=True)
-    server = AgentServer(serve_channels=False)
+    server = AgentServer(run_processes=False)
 
     await server._sync_chiefs_of_staff()  # noqa: SLF001
     channel = await sync_tasks_channel(agent)
@@ -120,5 +120,5 @@ async def test_the_tasks_channel_follows_the_checkbox_and_writes_only_on_change(
     await agent.save()
     await server._sync_chiefs_of_staff()  # noqa: SLF001 — a fresh server would do the same: read, not remembered
     assert (await DataSource.get_one({"id": channel.id})).status == SourceStatus.DISABLED.value
-    await AgentServer(serve_channels=False)._sync_chiefs_of_staff()  # noqa: SLF001
+    await AgentServer(run_processes=False)._sync_chiefs_of_staff()  # noqa: SLF001
     assert saves == [channel.id], "paused once"

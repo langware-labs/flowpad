@@ -33,13 +33,13 @@ await save_credential(
 
 ## 2. Variant A — the app answers
 
-The agent owns the source; the app answers it from wherever the agent is **deployed**. Owning a
-channel places the agent nowhere — deploy it on this machine (`agent.deploy("local")`, the
-"This computer" choice under New deployment), and that deployment's **serve loop**
-(`flow_sdk/builtin/agent_serve.py`) drains every channel
-it answers — one durable position per source, so a restart resumes after the last answer — turns
-each message from an allowed sender into a turn in that conversation's process, and sends the
-answer back on the channel. Nothing of yours keeps running.
+The agent owns the source; it is answered from wherever the agent is **deployed**. Owning a
+channel places the agent nowhere — run it on this machine (`agent.run_locally()`, the "This
+computer" choice under New deployment). That deployment is a **process** the app starts and keeps
+running (`flow_sdk/builtin/agent_loop.py`): its loop drains every channel it answers — one durable
+position per source, so a restart resumes after the last answer — turns each message from an
+allowed sender into a turn in that conversation's process, and sends the answer back on the
+channel. Nothing of yours keeps running.
 
 ```python
 from flow_sdk.builtin.agent import Agent
@@ -48,7 +48,7 @@ from flow_sdk.builtin.data_driver import DataDriver
 agent = Agent(name="support-bot", worker_type="claude",
               system_prompt="You answer WhatsApp messages for Acme support. One short paragraph.")
 await agent.save()
-await agent.deploy("local")                    # runs on this machine; its serve loop answers
+await agent.run_locally()                      # a process on this machine runs its loop and answers
 
 whatsapp = await DataDriver.get("whatsapp")
 source = whatsapp.create_source(
@@ -92,6 +92,10 @@ async with workflow("whatsapp-support"):
 `box.listen()` polls the source through the poller's slot and drains what landed in ingest order;
 `m.reply` sends through the channel in the channel's own shape and acks only after the send is
 recorded. `senders` is the loop's allowlist: the loop acks (never answers) anyone else.
+
+To choose which of the agent's channels to listen to, or to route some messages to another agent
+or to one session per customer, see `agent-deployment.md` §6 — the same loop over
+`support.channel("whatsapp")` and `answer(engine, m, session=...)`, with every gate kept.
 
 ## 4. How to use it
 

@@ -14,9 +14,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 vi.mock('@sdk/utils/hub-runtime', () => ({ isHubOnly: () => nav.hub }));
 vi.mock('@src/components/assets/editor/agent-profile/NewDeploymentDialog', () => ({
-  NewDeploymentDialog: (props: { hasLocal: boolean }) => (
-    <div data-testid="mock-new-deployment" data-has-local={String(props.hasLocal)} />
-  ),
+  NewDeploymentDialog: () => <div data-testid="mock-new-deployment" />,
 }));
 
 import { AgentPlacesColumn } from '@src/components/assets/editor/agent-profile/AgentPlacesColumn';
@@ -72,7 +70,7 @@ describe('Deployments', () => {
     expect(screen.queryByTestId('mock-new-deployment')).toBeNull();
     expect(screen.getByTestId('agent-new-deployment')).toHaveTextContent('New deployment');
     fireEvent.click(screen.getByTestId('agent-new-deployment'));
-    expect(screen.getByTestId('mock-new-deployment')).toHaveAttribute('data-has-local', 'true');
+    expect(screen.getByTestId('mock-new-deployment')).toBeInTheDocument();
   });
 
   it('a row opens the deployment’s own page — WorldView focused on it — and only navigates', async () => {
@@ -96,6 +94,6 @@ describe('Deployments', () => {
     renderColumn([]);
     expect(await screen.findByTestId('agent-places-empty')).toHaveTextContent('Not deployed yet');
     fireEvent.click(screen.getByTestId('agent-new-deployment'));
-    expect(screen.getByTestId('mock-new-deployment')).toHaveAttribute('data-has-local', 'false');
+    expect(screen.getByTestId('mock-new-deployment')).toBeInTheDocument();
   });
 });

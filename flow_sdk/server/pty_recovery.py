@@ -159,17 +159,31 @@ async def reconcile_orphaned_workers() -> None:
         logger.exception("reconcile: failed to enumerate processes")
         return
 
+    running_elsewhere = await _deployments_running_their_own_process()
     for proc in procs:
         try:
             if proc.pty_mode:
                 continue  # PTY transport → run_pty_recovery (respawn) / _on_pty_exit
             if proc.status not in live:
                 continue
+            if str(getattr(proc, "deployment_id", "") or "") in running_elsewhere:
+                continue  # a running deployment's loop process owns it, and outlived this restart
             proc.status = ProcessStatus.STOPPED.value
             await proc.save()  # emits data_op → reactive correction in connected UIs
             logger.info("reconcile: stopped orphaned headless worker %s", proc.id)
         except Exception:
             logger.exception("reconcile: failed on %s", getattr(proc, "id", "?"))
+
+
+async def _deployments_running_their_own_process() -> set[str]:
+    """Ids of the agent deployments whose loop process is alive — their workers are not orphans."""
+    try:
+        from flow_sdk.builtin.agent_serve import running_deployments
+
+        return {str(d.id) for d in await running_deployments()}
+    except Exception:
+        logger.exception("reconcile: could not read the running deployments")
+        return set()
 
 
 def _watched_keys() -> set[str]:
