@@ -69,6 +69,26 @@ def test_a_tool_turn_prints_the_whole_protocol(tmp_path):
     assert events[-1]["is_error"] is False and events[-1]["subtype"] == "success" and events[-1]["num_turns"] == 2
 
 
+@pytest.mark.long  # ~1.7s — a real subprocess
+@pytest.mark.parametrize("finish_reason", ["error", "stop"])
+def test_a_turn_cut_short_upstream_ends_as_an_error_not_a_success(tmp_path, finish_reason):
+    """A provider failure delivered inside a 200 — an empty message, no tool calls — ends the graph
+    normally. It used to print ``subtype=success``: a task cut off mid-way read as done. Judged on
+    the shape, so an empty completion that says ``stop`` is caught too."""
+    events, proc = _run(
+        tmp_path,
+        [
+            {"tool_calls": [{"name": "execute", "args": {"command": "echo step-one"}}]},
+            {"text": "", "finish_reason": finish_reason},
+        ],
+        "install it",
+    )
+    assert proc.returncode == 1, proc.stderr[-2000:]
+    error = next(e for e in events if e["type"] == "error")
+    assert error["kind"] == "incomplete" and repr(finish_reason) in error["message"]
+    assert events[-1]["type"] == "result" and events[-1]["subtype"] == "error" and events[-1]["is_error"] is True
+
+
 @pytest.mark.long  # 1.63s
 def test_what_the_agent_executes_never_sees_the_funding_token(tmp_path):
     """The token is the MODEL's. The runner drops it from its own env before the shell backend
