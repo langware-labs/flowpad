@@ -8,6 +8,19 @@
  */
 
 export type HubLoginStatus = 'logged_out' | 'logging_in' | 'logged_in' | 'login_failed';
+
+/**
+ * The one `reason` value on a LOGGED_OUT status this SDK pattern-matches on.
+ * `reason` stays free text for everything else (human-readable expiry/
+ * rejection explanations, mirrors the backend's `LogoutReason` in
+ * `flow_sdk/cloud_client/auth_status.py`) — this only names the value that
+ * means "someone else just took this machine" (FLOWPAD-2151), so
+ * `_setLoggedOut` drops the entity cache and `SessionTakenOverOverlay` shows,
+ * instead of a quiet sign-out.
+ */
+export enum LogoutReason {
+  SwitchedOut = 'switched_out',
+}
 export type HubConnectionStatus =
   | 'disconnected'
   | 'connecting'

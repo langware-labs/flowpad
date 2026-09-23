@@ -8,7 +8,7 @@ import { trackEvent } from '@src/utils/analytics';
  * Full-viewport block for a tab left open through a shared-sandbox login
  * switch (FLOWPAD-2151): `/auth/login_callback` finding a DIFFERENT person's
  * key than whoever is signed in purges the outgoing session and broadcasts
- * `logged_out` with `reason: "switched_out"` (`clear_user_data`,
+ * `logged_out` with `reason: LogoutReason.SwitchedOut` (`clear_user_data`,
  * `flow_sdk/cli/auth/cloud_login.py`). Without this, an already-open,
  * still-connected tab just quietly re-renders as the new person's account —
  * same WS broadcast that already updates the avatar chip — with no signal to
@@ -16,16 +16,22 @@ import { trackEvent } from '@src/utils/analytics';
  * (mounted once in `App.tsx`, not per-surface like `LoginRequiredOverlay`)
  * and blocks interaction until they either close the tab or sign back in.
  *
+ * Keys off `takenOver` (`CloudManager._takenOver`), NOT `login.status ===
+ * 'logged_out'` directly — measured live, the incoming person's LOGGED_IN
+ * broadcast lands ~50ms after the switched-out one, so a plain status check
+ * renders for a single animation frame and is gone before anyone can read
+ * it, let alone click it. `takenOver` stays true across that transition and
+ * is cleared only by a LOCALLY-initiated login (see `login()`), so the
+ * block persists exactly until this person acts.
+ *
  * "Log in" reuses the normal `cloudManager.login()` entry point — inside a
  * sandbox that already resolves to the personal, per-sandbox PKCE reclaim
  * flow (`start_sandbox_login`), not the delegated auto-login key, so this is
- * a real re-authentication, not a stale-credential replay. A successful login
- * flips `login.status` back to `logged_in`, which makes the overlay's own
- * condition false and it unmounts — no separate dismiss state to manage.
+ * a real re-authentication, not a stale-credential replay.
  */
 export function SessionTakenOverOverlay() {
-  const { login } = useCloudStatus();
-  if (login.status !== 'logged_out' || login.reason !== 'switched_out') return null;
+  const { takenOver } = useCloudStatus();
+  if (!takenOver) return null;
 
   const handleLogin = () => {
     trackEvent({ event: 'login_clicked', event_source: 'session_taken_over_overlay' });

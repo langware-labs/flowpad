@@ -363,12 +363,12 @@ async def clear_user_data(reason: str | None = None) -> None:
     actually go, not just their session pointer: an explicit logout (no reason —
     the person asked), and ``/auth/login_callback`` finding a DIFFERENT person's
     key than whoever is currently signed in on a shared sandbox (``reason=
-    "switched_out"``) — see ``flow_sdk/server/routes/auth.py``. ``reason`` rides
-    the LOGGED_OUT broadcast so the frontend can tell "you logged out" from
-    "someone else just took this machine" — the latter is the only case where it
-    also drops the local entity cache (``ts_sdk/src/services/cloud_login.ts``,
-    ``_setLoggedOut``) and shows ``SessionTakenOverOverlay`` instead of a quiet
-    sign-out.
+    LogoutReason.SWITCHED_OUT``, ``flow_sdk/cloud_client/auth_status.py``) — see
+    ``flow_sdk/server/routes/auth.py``. ``reason`` rides the LOGGED_OUT broadcast
+    so the frontend can tell "you logged out" from "someone else just took this
+    machine" — the latter is the only case where it also drops the local entity
+    cache (``ts_sdk/src/services/cloud_login.ts``, ``_setLoggedOut``) and shows
+    ``SessionTakenOverOverlay`` instead of a quiet sign-out.
 
     Credentials go first: they are the security-relevant half, and the purge is
     best-effort on top. A row that refuses to delete must never be the reason
