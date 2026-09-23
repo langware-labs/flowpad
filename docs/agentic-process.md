@@ -255,8 +255,14 @@ caller awaits launchWizard(name, data)
   status: 'done' | 'cancel' | 'error'
   data: T | null
   errorStr?: string | null
+  answer?: WizardResult   // the same close, as every wizard run answers
 }
 ```
+
+`status` is the agent's own word and keeps a cancel apart from an error for the
+person. `answer` is the backend's `WizardResult` for the same close: `OK` with
+`data` as its value when done, `NOT_YET` with the reason otherwise — absent only
+for a result the UI made up locally (a failed prompt, a second wizard).
 
 There are two equivalent completion paths. The modal footer calls
 `completeWizard(process, result)`, which posts the generic `entity-event`
