@@ -482,7 +482,7 @@ async def test_the_listing_unions_the_catalog_so_the_global_root_is_offered(env,
         if action is None:
             return {"data": [mine]}
         if action == "allowances":
-            return {"data": {"allowances": []}}
+            return {"allowances": []}
         return [globalroot, mine]  # the catalog repeats rows the caller has a role on
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
@@ -697,7 +697,7 @@ async def test_the_listing_marks_the_callers_own_allowances_by_the_hubs_holder_e
             return {"data": [mine, theirs]}
         if action == "allowances":
             assert entity_type == "token_plan"
-            return {"data": {"allowances": [f"llm_endpoint-{mine_id}"]}}
+            return {"allowances": [f"llm_endpoint-{mine_id}"]}  # what hub_get hands back, unwrapped
         return []
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
@@ -707,6 +707,65 @@ async def test_the_listing_marks_the_callers_own_allowances_by_the_hubs_holder_e
     assert by_name["mine"].can_administer is True, "an admin may edit their own allowance; it is still theirs"
     assert by_name["theirs"].holder_typeid is None
     assert by_name["mine"].to_wire()["holder_typeid"] == "user-99999999-2222-4333-8444-555555555555"
+
+
+async def test_the_callers_own_allowance_survives_the_real_hub_envelope(env, monkeypatch) -> None:
+    """The same promise as above, read through the REAL ``hub_get`` against a hub speaking HTTP.
+
+    ``hub_get`` strips the ``{"status", "data"}`` envelope before any caller sees the answer, so
+    ``token_plan/allowances`` arrives as a bare ``{"allowances": [...]}``. A reader that looks for
+    the envelope again finds nothing, every row loses its holder, and an admin -- who administers
+    every row -- is shown none of them on LLM Sources. The fake ``hub_get`` above answers the
+    wrapped shape the real one never returns, which is how that slipped through.
+    """
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from urllib.parse import urlparse
+
+    from flow_sdk.cloud_client.transport.hub_http import close_hub_client
+    from flow_sdk.config import default_service_config
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
+
+    mine_id = "11111111-2222-4333-8444-555555555555"
+    theirs_id = "22222222-2222-4333-8444-555555555555"
+    admin = {"expand": {"allowed_actions": ["read", "update"]}}
+    answers = {
+        "/api/v1/graph/llm_endpoint": [
+            {"id": mine_id, "type": "llm_endpoint", "name": "mine", **admin},
+            {"id": theirs_id, "type": "llm_endpoint", "name": "theirs", **admin},
+        ],
+        "/api/v1/graph/llm_endpoint/catalog": [],
+        # Byte-for-byte what app.flowpad.ai answered for this read.
+        "/api/v1/graph/token_plan/allowances": {"allowances": [f"llm_endpoint-{mine_id}"]},
+    }
+
+    class _Hub(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 -- http.server's name
+            data = answers.get(urlparse(self.path).path)
+            body = json.dumps({"status": "SUCCESS", "message": "success", "data": data}).encode()
+            self.send_response(200 if data is not None else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    hub = HTTPServer(("127.0.0.1", 0), _Hub)
+    threading.Thread(target=hub.serve_forever, daemon=True).start()
+    monkeypatch.setattr(default_service_config, "flowpad_hub_url", f"http://127.0.0.1:{hub.server_port}")
+    _login()
+    try:
+        by_name = {e.name: e for e in await fetch_hub_llm_endpoints()}
+    finally:
+        await close_hub_client()
+        hub.shutdown()
+
+    assert set(by_name) == {"mine", "theirs"}, "the listing itself must come through"
+    assert by_name["mine"].holder_typeid == "user-99999999-2222-4333-8444-555555555555"
+    assert by_name["theirs"].holder_typeid is None
 
 
 async def test_a_hub_that_sends_no_expansion_leaves_the_answer_unknown(env, monkeypatch) -> None:
