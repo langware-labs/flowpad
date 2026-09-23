@@ -90,7 +90,7 @@ async def test_prompt_refusal_is_checked_before_reply_capture(mail_db, monkeypat
         must_not_capture,
     )
 
-    assert await answer(TurnEngine(agent, await agent.local_deployment()), source, _Delivered(item)) is False
+    assert await answer(TurnEngine(agent, await agent.local_deployment()), _Delivered(item), source=source) is False
 
 
 class _Delivered:

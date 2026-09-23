@@ -235,10 +235,15 @@ def test_the_two_egress_seams_now_agree():
             # Task is the ONLY type declaring TypeInfo.local_fields.
             # `git_origin`: re-declared PRIVATE here, so this type keeps the
             # pre-2259df26 answer while the base now shares it.
-            ["origin", "my_process_id", "project_name", "project_root"],
+            # `placement`: where THIS machine keeps the row (repo folder vs instance-only) — a receiver decides its own.
+            ["origin", "my_process_id", "project_name", "project_root", "placement"],
             BASE_LOCAL_ONLY,
             [
                 "artifacts",
+                # A delegated task's ledger numbers (Optional[int|float]) — ordinary shared fields.
+                "budget_turns",
+                "budget_usd",
+                "cost_usd",
                 "env_vars",
                 "expand",
                 "fs_storage_provider",

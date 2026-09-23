@@ -75,13 +75,28 @@ class Cell:
         return self.agent.typeid if self.owner_kind == "user" else self.user
 
 
+class _Serving:
+    """A local deployment's loop (``agent_serve.serve``), run here as a task in place of its process."""
+
+    def __init__(self, task: "asyncio.Task") -> None:
+        self.task = task
+
+    async def reconcile(self) -> None:
+        """Nothing to do: the loop reads its sources' state itself, every pass."""
+
+    async def stop(self) -> None:
+        from flow_sdk.builtin.agent_serve import stop_serving  # noqa: PLC0415
+
+        await stop_serving(self.task)  # between cycles, as the process's own SIGTERM does
+
+
 async def served(provider: str, double, monkeypatch, syncs: "list | None" = None, *, allowed: "list | None" = None, **fields):
-    """An agent owning *provider*'s source over *double*, and the app's supervisor serving it.
+    """An agent owning *provider*'s source over *double*, launched here: its deployment's loop serving it.
 
     *allowed* is the source's allowlist (the double's sender by default; ``[]`` admits whoever the
     driver lets in). *syncs* is emptied the moment before the loop starts: every poll from then on
     counts."""
-    from flow_sdk.builtin.agent_serve import AgentServer  # noqa: PLC0415
+    from flow_sdk.builtin.agent_serve import answered_sources, serve  # noqa: PLC0415
 
     agent = Agent(name=f"served {provider} {uuid.uuid4().hex[:6]}", worker_type="claude", system_prompt="Be brief.")
     await agent.save()
@@ -95,9 +110,9 @@ async def served(provider: str, double, monkeypatch, syncs: "list | None" = None
     await sync_source(source)  # its first position: what the double holds now is history
     if syncs is not None:
         syncs.clear()
-    server = AgentServer(serve_channels=True)
-    await server.reconcile()
-    assert str(source.id) in server.serving().get(str((await agent.local_deployment()).id), frozenset())
+    deployment = await agent.run_locally()  # holds its position on each channel before the loop starts
+    assert str(source.id) in {str(s.id) for s in await answered_sources(agent, deployment)}
+    server = _Serving(asyncio.get_running_loop().create_task(serve(agent, deployment, poll_every=0.05)))
     return agent, source, server
 
 

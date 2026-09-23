@@ -5,7 +5,7 @@ import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatAct
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
 import { useObservedTurn } from '@src/components/entity-execution-panel/hooks/useObservedTurn';
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
-import { useTurnGroups } from '@src/components/floating-chat/groupTurnEvents';
+import { useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { AgentIntroMessage, useAgentIntro } from '@src/components/agents/AgentIntroMessage';
@@ -13,7 +13,7 @@ import { useViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { cn } from '@src/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { PlanInteractionBar } from './PlanInteractionBar';
 import { useTurnCompletionReconcile } from './useTurnCompletionReconcile';
 
@@ -21,6 +21,28 @@ interface SimpleChatPaneProps {
   /** The interactive tab's live PTY AgenticProcess. */
   process: AgenticProcess;
   className?: string;
+  /**
+   * A moment (ISO time) to show instead of the latest turn: the pane opens scrolled to the
+   * message nearest it — a timeline event opening its process.
+   */
+  focusAt?: string | null;
+}
+
+/** The message group whose time is nearest *at*, or null. */
+function nearestGroup(groups: readonly TurnGroup[], at: string | null | undefined): number | null {
+  if (!at) return null;
+  const target = Date.parse(at);
+  let best: number | null = null;
+  let bestGap = Infinity;
+  groups.forEach((g, i) => {
+    if (g.kind !== 'message' || !g.flowData.timestamp) return;
+    const gap = Math.abs(Date.parse(g.flowData.timestamp) - target);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = i;
+    }
+  });
+  return best;
 }
 
 /**
@@ -37,7 +59,7 @@ interface SimpleChatPaneProps {
  * never resets the terminal: the xterm stays mounted underneath, this pane
  * overlays it.
  */
-export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
+export function SimpleChatPane({ process, className, focusAt = null }: SimpleChatPaneProps) {
   // Idempotent — the tab's trace-gutter hook usually got here first.
   // Its settling is also the chat's cold `tab_switch` ready point: the history
   // is in the stream, and the next frame paints it. (A warm return to a mounted
@@ -90,12 +112,21 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   const hasRows = turnGroups.length > 0 || !!intro;
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
+  const anchorIndex = useMemo(() => nearestGroup(turnGroups, focusAt), [turnGroups, focusAt]);
+  const paneRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    scrollRef.current?.scrollToBottom();
-  }, [turnGroups.length, activity.active]);
+    if (anchorIndex === null) scrollRef.current?.scrollToBottom();
+  }, [turnGroups.length, activity.active, anchorIndex]);
+  // Focused: open at the moment asked for, once per moment — a live turn appending below must not
+  // yank the reader back to it.
+  useEffect(() => {
+    if (anchorIndex === null) return;
+    paneRef.current?.querySelector('[data-chat-anchor]')?.scrollIntoView({ block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per focused moment
+  }, [focusAt, anchorIndex !== null]);
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="simple-chat-pane">
+    <div ref={paneRef} className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="simple-chat-pane">
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {!hasRows ? (
           // A turn can be in flight with nothing rendered yet — the pane mounted
@@ -125,6 +156,7 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
               showTurnFiles={viewMode === ViewMode.Standard}
               process={process}
               turnActive={activity.active}
+              anchorIndex={anchorIndex}
             />
             <ChatActivityLine process={process} />
           </div>

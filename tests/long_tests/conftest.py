@@ -377,6 +377,13 @@ def live_backend(initialize_test_db, allocate_ports, tmp_path, monkeypatch):
     name = f"live-e2e-{uuid.uuid4().hex[:8]}"
     flow_home = tmp_path / "flow-home"
 
+    # The instance's vault, keyed the headless way unless the test named a key: the backend, every
+    # process it starts (they inherit its environment) and this test all read one store, so a
+    # credential saved through the API is what the backend and its processes resolve.
+    if not os.environ.get("SOD_ENC_KEY"):
+        from cryptography.fernet import Fernet
+
+        monkeypatch.setenv("SOD_ENC_KEY", Fernet.generate_key().decode())
     env = {
         **os.environ,
         "FLOW_INSTANCE": name,
@@ -409,6 +416,21 @@ def live_backend(initialize_test_db, allocate_ports, tmp_path, monkeypatch):
         import asyncio  # noqa: PLC0415
 
         asyncio.get_event_loop().run_until_complete(_forget_login_verdicts())
+
+
+@pytest.fixture
+def runs_deployments(monkeypatch, tmp_path):
+    """Before ``live_backend`` boots: it starts running agent deployments as processes, looks again
+    every second, and their loops (``tests/utils/mock_agent_loop.py``) run on the mock worker."""
+    monkeypatch.setenv("AGENT_RUN_DEPLOYMENTS", "true")
+    monkeypatch.setenv("AGENT_WATCH_SECONDS", "1")
+    monkeypatch.setenv("MOCK_TRANSCRIPTS", str(tmp_path / "mock-transcripts"))
+
+
+@pytest.fixture
+def deployments_backend(runs_deployments, live_backend):
+    """The URL of a real backend that runs agent deployments as processes."""
+    return f"http://127.0.0.1:{live_backend}"
 
 
 async def _forget_login_verdicts() -> None:

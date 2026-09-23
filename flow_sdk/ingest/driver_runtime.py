@@ -135,6 +135,11 @@ class Pass:
 # ── identity and provenance ────────────────────────────────────────────────────
 
 
+#: Rows ``DriverRuntime.identify`` already asked this process — once is enough to ask a source that
+#: may not know who it is.
+_IDENTIFY_ASKED: set[str] = set()
+
+
 def identity_stamped(row: Any) -> bool:
     """Whether ``row`` already knows which account it reads as."""
     return bool(getattr(row, "account_key", "") or getattr(row, "account_identities", None))
@@ -642,8 +647,6 @@ class DriverRuntime:
         # Whoever calls this: the route hands over case-insensitive headers, an in-process caller a plain
         # dict — a class that checks a signature reads them lowercased either way.
         headers = {str(k).lower(): v for k, v in dict(headers or {}).items()}
-        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
-
         credentials = await self.credentials_for(row)
         authentic = getattr(self.cls, "webhook_authentic", None)
         if authentic is not None and not authentic(headers or {}, raw, credentials):
@@ -651,6 +654,18 @@ class DriverRuntime:
         source = await self.open(row, credentials=credentials)
         async with source:
             events = source.events_from_webhook(payload)  # type: ignore[attr-defined]
+            # A source people talk to live rings its calls here too; the caller hands them to whoever answers.
+            calls = list(source.calls_from_webhook(payload)) if hasattr(source, "calls_from_webhook") else []
+        result = await self.ingest_events(row, events)
+        if calls:
+            result["calls"] = calls
+        return result
+
+    async def ingest_events(self, row: Any, events: Any) -> dict:
+        """Events a source produced outside a traversal (a webhook, a live call) through the one ingestion
+        chokepoint: ``{"ingested", "created", "ids"}`` — ``ids`` the stored rows, in event order."""
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+
         items = [
             envelope_of(event.item, data_source_id=str(row.id), provider=self.provider)
             for event in events
@@ -659,7 +674,11 @@ class DriverRuntime:
         if not items:
             return {"ingested": 0}
         report = await ingest_items(items)
-        return {"ingested": len(items), "created": getattr(report, "created", 0)}
+        return {
+            "ingested": len(items),
+            "created": getattr(report, "created", 0),
+            "ids": [o.entity_id for o in getattr(report, "outcomes", [])],
+        }
 
     async def find_reply(self, row: Any, external_id: str) -> Any:
         """The reply to ``external_id`` as an envelope, or ``None`` — one look."""
@@ -690,6 +709,22 @@ class DriverRuntime:
         if (verdict.ready or verdict.pending) and isinstance(source, Identified):
             await self._stamp(row, source)
         return verdict
+
+    async def identify(self, row: Any) -> None:
+        """Record who the source reads as, if it does not know yet — before its first sync lands a
+        record, so a row only ever synced (never verified, never sent from) still tells our own
+        posts from a stranger's. Asked once per row per process: a source that cannot say is not
+        re-asked on every poll (``send`` and ``verify`` still stamp it)."""
+        key = str(getattr(row, "id", "") or "")
+        if identity_stamped(row) or not issubclass(self.cls, Identified) or key in _IDENTIFY_ASKED:
+            return
+        _IDENTIFY_ASKED.add(key)
+        try:
+            source = await self.open(row)
+        except Rejected:
+            return  # the sync that follows reports the refusal
+        async with source:
+            await self._stamp(row, source)
 
     async def _stamp(self, row: Any, source: Source) -> bool:
         """Record who the source reads and posts as, once. True when this call wrote it."""

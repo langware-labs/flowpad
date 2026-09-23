@@ -8,7 +8,8 @@
  * Clicking a mark FILTERS the list to that kind; while a filter is on, the
  * two controls give way to one × that shows everything again.
  *
- * At rest the line carries two controls: + adds a source owned by this owner,
+ * At rest the line carries two controls — plus a call control for each channel that takes calls
+ * (`CallControls`, from the driver's `calls`): + adds a source owned by this owner,
  * and the details button opens every channel with its on/off switch and a
  * delete — the settings-list pattern. On/off is the ONE pause/resume verb
  * (`useSourceToggle`); the marks themselves never toggle.
@@ -39,6 +40,7 @@ import { sourceIcon } from '@src/components/data-sources/source-icon';
 import { isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { useSourceToggle } from '@src/components/data-sources/use-source-toggle';
+import { CallControls } from '@src/components/voice/CallControls';
 import { ownerOf } from './channel-owner';
 
 const EMPTY: DataSource[] = [];
@@ -153,6 +155,7 @@ export function AttachedChannelsBar({ owner, rows, specFor, selected, onSelected
         </Button>
       ) : (
         <>
+          <CallControls rows={rows} specFor={specFor} />
           <Button variant="ghost" size="icon" className={CONTROL} onClick={() => setAddOpen(true)} aria-label={t`Add a source`} data-testid="attached-channels-add">
             <Plus />
           </Button>

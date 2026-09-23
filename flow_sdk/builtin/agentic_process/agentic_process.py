@@ -3285,6 +3285,8 @@ class AgenticProcess(Entity):
         )
 
         deadline = time.monotonic() + timeout
+        # A driver whose worker writes synchronously can say how often looking is worth it.
+        poll_interval = min(poll_interval, float(getattr(self.driver, "transcript_poll_seconds", poll_interval)))
 
         # Wait until the driver can locate a transcript (worker has been
         # spawned and produced — or pre-touched — a session JSONL).
@@ -3308,7 +3310,10 @@ class AgenticProcess(Entity):
         # soft-terminal so heavy multi-tool turns finish within 28 s, but
         # leave enough room for a follow-up ``tool_use`` to grow the file
         # and reset the timer.
-        _settle_seconds = 2.0
+        # A driver whose worker writes its whole turn before it unregisters (nothing can land after
+        # the marker) declares a shorter settle as ``transcript_settle_seconds``; the lag is a fact
+        # about the vendor's CLI, so the vendor says it.
+        _settle_seconds = float(getattr(self.driver, "transcript_settle_seconds", 2.0))
         _post_tool_settle_seconds = 8.0
         # ERROR is an abnormal END (the CLI gave up — retries mid-turn are API_ERROR), so it ends a turn too.
         _terminal_states = {_WS.COMPLETE, _WS.INTERRUPTED, _WS.INACTIVE, _WS.ERROR}
@@ -3425,6 +3430,8 @@ class AgenticProcess(Entity):
             now = time.monotonic()
 
             if _terminal:
+                if _settle_seconds <= 0:
+                    return  # nothing can land after the marker: no settle to wait out
                 if _terminal_since is None or _terminal_size != cur_size:
                     _terminal_since = now
                     _terminal_size = cur_size
@@ -4465,7 +4472,7 @@ class AgenticProcess(Entity):
         )
 
     @action.post(action_name="observe-turn")
-    async def observe_turn(self, after_entry_id: str | None = None) -> Any:
+    async def observe_turn(self, after_entry_id: str | None = None, from_start: bool = False) -> Any:
         """Stream an IN-FLIGHT turn's transcript entries to a client that did
         NOT start it.
 
@@ -4473,7 +4480,8 @@ class AgenticProcess(Entity):
         transcript entry; send me what follows it". Omit it and the stream
         watermarks at open, which is the historical behaviour — see the
         watermark block below for why that default is wrong for a client that
-        learns about a turn late.
+        learns about a turn late. *from_start* is the position of a client that
+        holds no entry at all: everything on disk is sent.
 
         A turn's content reaches the client that sent it through that client's
         own ``prompt`` response stream. Nobody else has a source: a turn typed
@@ -4578,7 +4586,11 @@ class AgenticProcess(Entity):
         # today, never flood a pane with the whole session.
         entries_at_open = _read_entries(path) if path is not None and path.exists() else []
         emitted = len(entries_at_open)
-        if after_entry_id:
+        if from_start:
+            # The client holds NOTHING of this session — it mounted before the transcript existed,
+            # or on a session another process runs — so everything on disk is news to it.
+            emitted = 0
+        elif after_entry_id:
             # Scan from the tail: the client's position is far likelier to be
             # recent, and the last match wins if an id somehow repeats.
             for index in range(len(entries_at_open) - 1, -1, -1):
@@ -6654,7 +6666,13 @@ class AgenticProcess(Entity):
         explicit = str((self.context_data or {}).get("instructions") or "").strip()
         summary = (await self.resolve_context_summary()) or ""
         always = self._resolve_always_use_skills_block()
-        return "\n\n".join(p for p in (explicit, summary, always) if p) or None
+        # A Chief of Staff reads its open tasks every turn — resolved now, not at launch.
+        tasks = ""
+        if (self.context_data or {}).get("chief_of_staff"):
+            from flow_sdk.tasks.cos import open_tasks_block  # noqa: PLC0415
+
+            tasks = await open_tasks_block(self)
+        return "\n\n".join(p for p in (explicit, summary, always, tasks) if p) or None
 
     def _resolve_always_use_skills_block(self) -> str:
         """The project's ``always_use_skills`` as a system-prompt directive.

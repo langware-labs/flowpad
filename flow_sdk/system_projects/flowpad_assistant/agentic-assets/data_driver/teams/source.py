@@ -77,6 +77,8 @@ class TeamsConfig(SourceConfig):
     retired_list = ("channels", "channel")
 
     channel: Union[Annotated[str, StringConstraints(pattern=r"^[^/\s]+/19:[^/\s]+$")], ChoiceEntry]
+    #: Where Graph is. Empty means Microsoft's own host; a test names a loopback double. Never a secret.
+    base_url: str = ""
 
 
 class TeamsSource(Source):
@@ -332,7 +334,8 @@ class TeamsSource(Source):
         """One Graph call; Graph's own sentence rides the error."""
         if self.credentials.token is None:
             raise AccessDenied("No Microsoft credential on this machine. Connect Microsoft, then verify the source.")
-        url = path if path.startswith("http") else f"{GRAPH_API_BASE}/{path}"
+        base = str(self.config.get("base_url") or GRAPH_API_BASE).rstrip("/")
+        url = path if path.startswith("http") else f"{base}/{path}"
         headers = {"Authorization": f"Bearer {self.credentials.token.get_secret_value()}"}
         refused = (400, 401, 403, 404)
         if self._client is not None:

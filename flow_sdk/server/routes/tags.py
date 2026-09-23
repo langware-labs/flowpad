@@ -154,3 +154,21 @@ async def tag_context(request: Request):
             "mentions": await _mentions(header) if "mentions" in parts else [],
         }
     )
+
+
+@router.post("/api/v1/tags/relay")
+async def relay_tag(request: Request):
+    """A tag another process of this instance emitted, for the app's clients (``tags/relay.py``).
+
+    A local agent deployment runs in its own process with its own bus; the app is the only
+    process with clients. Only tags the app forwards anyway are taken.
+    """
+    from flow_sdk.tags.relay import emit_relayed  # noqa: PLC0415
+
+    try:
+        emit_relayed(await request.json())
+    except ValueError as exc:
+        from fastapi.responses import JSONResponse  # noqa: PLC0415
+
+        return JSONResponse(ApiFailResponse(message=str(exc), status_code=400).model_dump(mode="json"), status_code=400)
+    return ApiSuccessResponse(data={"relayed": True})

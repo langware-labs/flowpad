@@ -33,7 +33,11 @@ export function useObservedTurn(process: AgenticProcess | null | undefined): voi
   // One observation per turn. Without this the effect would re-open the stream
   // on every unrelated re-render while `busy` stays true — and a re-open
   // re-watermarks the transcript, so anything written in the gap is skipped.
-  const observing = useRef(false);
+  // It holds the controller of the observation in flight, so the effect's own
+  // cleanup can release it: a cleanup that aborts (StrictMode's double run, a
+  // new `process` object) must also let the next run open — the aborted call's
+  // `finally` lands too late, and only clears the slot if it is still its own.
+  const observing = useRef<AbortController | null>(null);
 
   useEffect(() => {
     // `process` (not `reflected`) is the acting instance: it owns the
@@ -43,8 +47,8 @@ export function useObservedTurn(process: AgenticProcess | null | undefined): voi
     // next `busy` render. One wasted round trip, no lost rows — the retry
     // re-watermarks against a transcript nothing was streamed from.
     if (!process || !busy || process.isPrompting || observing.current) return;
-    observing.current = true;
     const ctrl = new AbortController();
+    observing.current = ctrl;
     void process
       .observeTurn(ctrl)
       .catch((err) => {
@@ -52,12 +56,15 @@ export function useObservedTurn(process: AgenticProcess | null | undefined): voi
         console.debug('[useObservedTurn] observation ended', err);
       })
       .finally(() => {
-        observing.current = false;
+        if (observing.current === ctrl) observing.current = null;
       });
     // Cleanup runs on unmount AND when `busy` flips false — which is exactly
     // how the observation ends for a turn whose provider never wrote a turn-end
     // marker (a killed or crashed worker). The client owns the stop decision
     // because it is the one that knows whether it still cares.
-    return () => ctrl.abort();
+    return () => {
+      ctrl.abort();
+      if (observing.current === ctrl) observing.current = null;
+    };
   }, [process, busy]);
 }

@@ -48,6 +48,7 @@ import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
+import { ConversationLiveActivity } from './ConversationLiveActivity';
 import { mostRecentProcess } from '@src/utils/process-recency';
 import { sessionRole, useConversationSessions } from '@src/hooks/useConversationSessions';
 
@@ -768,6 +769,10 @@ export function ConversationView({
           })}
         </div>
       )}
+
+      {/* A channel's conversation is answered by the owning agent's run, not by this pane —
+          so show that run working, and a caller mid-sentence, while it happens. */}
+      {channel && <ConversationLiveActivity conversationId={conversationId} run={convRun} messageCount={pointers.length} />}
 
       {showSoloNotice && (
         <p data-testid="solo-participant-notice" className="text-[11px] italic text-muted-foreground/70">

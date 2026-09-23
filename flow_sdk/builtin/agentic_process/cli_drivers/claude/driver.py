@@ -117,6 +117,9 @@ class ClaudeDriver:
     supports_process_hooks = True
     process_hooks_use_assets = True
     preassign_interactive_session_id = True
+    #: The worker can run a subagent itself (``--agents`` → Claude's Agent tool). A vendor without
+    #: it gets its embedded agents as prompt text; a Chief of Staff on it delegates through tasks.
+    spawns_subagents = True
     pty_submits_on_paste = True
     # Real Claude Code PTY captures expose two grounded blank-composer frames:
     # a fresh boot paints the rotating ``Try "…"`` placeholder (2.1.207+),

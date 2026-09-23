@@ -8,7 +8,7 @@ import { TooltipProvider } from '@src/components/ui/tooltip';
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentScheduleSection', () => ({ AgentScheduleSection: () => null }));
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({ AgentPlacesColumn: () => null }));
-vi.mock('@src/components/assets/editor/agent-profile/AgentMcpField', () => ({ AgentMcpField: () => null }));
+vi.mock('@src/components/assets/editor/agent-profile/use-agent-mcp-sync', () => ({ useAgentMcpSync: () => undefined }));
 vi.mock('@sdk/react/hooks', async (original) => ({ ...(await original<object>()), useProject: () => ({ project: null }) }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -45,5 +45,16 @@ describe('Agent profile document adapter', () => {
     fireEvent.blur(title);
     await waitFor(() => expect(f.update).toHaveBeenCalledTimes(1));
     expect(f.update).toHaveBeenCalledWith({expected_revision: 'first', set_fields: {title: 'My title'}});
+  });
+});
+
+describe('Chief of Staff checkbox', () => {
+  it('writes chief_of_staff to the card and only then offers the staff roster', async () => {
+    const f = fixture();
+    const toggle = await screen.findByRole('switch', { name: 'Chief of Staff' });
+    expect(screen.queryByText(/Staff \(sub-agents/)).toBeNull();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(f.update).toHaveBeenCalledWith({ expected_revision: 'first', set_fields: { chief_of_staff: true } }));
+    await screen.findByText(/Staff \(sub-agents/);
   });
 });

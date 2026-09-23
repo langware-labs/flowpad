@@ -12,7 +12,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render as rtlRender, screen } from '@testing-library/react';
 import type React from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { TypeId } from '@sdk';
 
 const h = vi.hoisted(() => ({
@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   confirmDialogProps: [] as Array<{ open: boolean; onConfirm: () => void }>,
 }));
 
+vi.mock('@src/components/agent-resources/AgentSchedulesSection', () => ({ AgentSchedulesSection: () => null }));
 vi.mock('@src/hooks/useContext', () => ({
   useContext: () => ({ activeEntityTypeId: h.activeEntityTypeId }),
 }));
@@ -87,12 +88,18 @@ afterEach(() => {
   h.confirmDialogProps = [];
 });
 
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
 describe('AgentResourcesBody — deleting a data source (FLOWPAD-2092)', () => {
   it('offers a delete control on each source row that hands the row\'s own source to the delete hook', () => {
     h.activeEntityTypeId = new TypeId('agent', 'agent-123');
     const owned = makeSource('src-1', new TypeId('agent', 'agent-123').toString());
     h.sources = [owned];
     render(<AgentResourcesBody />);
+    // Sections start closed (and remember being opened): open this one.
+    fireEvent.click(screen.getByTestId('navigator-section-data-sources'));
 
     fireEvent.click(screen.getByTestId('agent-resource-delete-data-source-src-1'));
 
@@ -104,6 +111,8 @@ describe('AgentResourcesBody — deleting a data source (FLOWPAD-2092)', () => {
     h.activeEntityTypeId = new TypeId('agent', 'agent-123');
     h.sources = [makeSource('src-1', new TypeId('agent', 'agent-123').toString())];
     render(<AgentResourcesBody />);
+    // Sections start closed (and remember being opened): open this one.
+    fireEvent.click(screen.getByTestId('navigator-section-data-sources'));
 
     const lastProps = h.confirmDialogProps.at(-1);
     expect(lastProps).toBeTruthy();

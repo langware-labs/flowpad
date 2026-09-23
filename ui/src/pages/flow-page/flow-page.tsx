@@ -11,7 +11,7 @@ import { VibeWorkspace } from './vibe-workspace';
 import { VibeNewChat } from './vibe-new-chat';
 import { VibeNoProcessWorkspace } from './vibe-no-process-workspace';
 import { useVibeWorkspaceSession } from './use-vibe-workspace-session';
-import { isContentAssetDock, isPreviewAssetDock } from '@src/navigation/content-asset-dock';
+import { isContentAssetDock, isOwnChatAssetDock, isPreviewAssetDock } from '@src/navigation/content-asset-dock';
 import { AssetVibeWorkspace } from './asset-vibe-workspace';
 
 export default function FlowPage() {
@@ -67,7 +67,9 @@ export default function FlowPage() {
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex-1 overflow-hidden">
             {isAssetContent ? (
-              <AssetVibeWorkspace isVibe={isVibe} session={vibeSession} />
+              // An asset with its own chat (an agent) is not a Vibe surface: no Vibe chat beside it,
+              // and its normal chrome (tabs + its navigator) instead of the chrome-less canvas.
+              <AssetVibeWorkspace isVibe={isVibe && !isOwnChatAssetDock(currentDock)} session={vibeSession} />
             ) : isVibe && !hubMode ? (
               vibeSession ? (
                 <VibeWorkspace session={vibeSession} />

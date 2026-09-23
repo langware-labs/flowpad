@@ -5,7 +5,8 @@ needs what the graph dispatcher does not offer: the request body unread and a
 WebSocket route. What it does depends on where the endpoint lives:
 
 * **here** (a local row) — ``static`` serves files from ``backend.root``;
-  ``proxy`` relays to ``127.0.0.1:<port>``. On a cloud box this is where the hub's
+  ``proxy`` relays to ``127.0.0.1:<port>``; ``channel`` makes the request a message on a
+  channel and answers with its reply (``routes/service_channel.py``). On a cloud box this is where the hub's
   hop lands: the hub addresses the box's own row at the same id, gate attached.
 * **elsewhere** (``remote`` — a hub row this desktop adopted) — forwarded to the
   hub's ``service`` route, which reaches the machine it runs on.
@@ -112,10 +113,10 @@ async def service_http(request: Request, endpoint_id: str, sub_path: str = "") -
         return await _via_hub(request, endpoint, path)
     if endpoint.backend.type == "static":
         return await _serve_static(request, endpoint, sub_path)
-    if endpoint.backend.type == "agent":
-        from flow_sdk.server.routes.agent_chat import agent_chat_http  # noqa: PLC0415
+    if endpoint.backend.type == "channel":
+        from flow_sdk.server.routes.service_channel import channel_http  # noqa: PLC0415
 
-        return await agent_chat_http(request, endpoint, sub_path, _verified_user(request.headers))
+        return await channel_http(request, endpoint, sub_path, _verified_user(request.headers))
     return await _proxy_http(request, endpoint, path)
 
 

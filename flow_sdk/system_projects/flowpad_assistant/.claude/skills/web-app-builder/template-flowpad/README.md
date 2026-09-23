@@ -117,7 +117,7 @@ rest of the app: it lags, and it fights the cache.
 
 | Entity | Notes |
 |---|---|
-| `sdk.Task` | `title`, `status` (`to_do` \| `in_progress` \| `done`), `description`, `due_at`, `start_date`, `assignee` |
+| `sdk.Task` | `title`, `status` (`to_do` \| `in_progress` \| `done`; a delegated task also `submitted` \| `working` \| `input_required` \| `failed` \| `canceled` — the ledger writes those), `description`, `due_at`, `start_date`, `assignee`, `owner`, `result` |
 | `sdk.Project` | the user's projects |
 | `sdk.Markdown` | documents |
 

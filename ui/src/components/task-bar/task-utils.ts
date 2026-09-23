@@ -13,7 +13,54 @@ export const TaskStatus = {
   TO_DO: 'to_do',
   IN_PROGRESS: 'in_progress',
   DONE: 'done',
+  // A delegated task's lifecycle — written by the task ledger (flow_sdk/tasks), never by a click.
+  SUBMITTED: 'submitted',
+  WORKING: 'working',
+  INPUT_REQUIRED: 'input_required',
+  FAILED: 'failed',
+  CANCELED: 'canceled',
 } as const;
+
+/** The three buckets every task surface shows (New / In progress / Done). */
+export type TaskStatusFamily = typeof TaskStatus.TO_DO | typeof TaskStatus.IN_PROGRESS | typeof TaskStatus.DONE;
+
+/** Where each status sits on the three-bucket board — mirrors `STATUS_FAMILY` in
+ *  `flow_sdk/schema/data_spec/task_spec.py`. */
+const STATUS_FAMILY: Record<string, TaskStatusFamily> = {
+  [TaskStatus.TO_DO]: TaskStatus.TO_DO,
+  [TaskStatus.SUBMITTED]: TaskStatus.TO_DO,
+  [TaskStatus.IN_PROGRESS]: TaskStatus.IN_PROGRESS,
+  [TaskStatus.WORKING]: TaskStatus.IN_PROGRESS,
+  [TaskStatus.INPUT_REQUIRED]: TaskStatus.IN_PROGRESS,
+  [TaskStatus.DONE]: TaskStatus.DONE,
+  [TaskStatus.FAILED]: TaskStatus.DONE,
+  [TaskStatus.CANCELED]: TaskStatus.DONE,
+};
+
+/** The bucket a status belongs to; an unknown (or legacy `open`) one reads as New. */
+export function statusFamily(status?: string | null): TaskStatusFamily {
+  return STATUS_FAMILY[status ?? ''] ?? TaskStatus.TO_DO;
+}
+
+/** The bucket statuses — what a person sets by hand. */
+export const STATUS_FAMILIES: readonly TaskStatusFamily[] = [TaskStatus.TO_DO, TaskStatus.IN_PROGRESS, TaskStatus.DONE];
+
+/** Every stored status, in lifecycle order — what a filter offers. */
+export const ALL_TASK_STATUSES: readonly string[] = [
+  TaskStatus.TO_DO,
+  TaskStatus.SUBMITTED,
+  TaskStatus.IN_PROGRESS,
+  TaskStatus.WORKING,
+  TaskStatus.INPUT_REQUIRED,
+  TaskStatus.DONE,
+  TaskStatus.FAILED,
+  TaskStatus.CANCELED,
+];
+
+/** A delegated task: the ledger owns its status (a subagent or an agent is its owner). */
+export function isDelegatedTask(task: Pick<Task, 'owner'> | null | undefined): boolean {
+  return !!task?.owner;
+}
 
 export const TaskType = {
   TASK: 'Task',

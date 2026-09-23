@@ -80,8 +80,11 @@ export function TurnGroupsList({
   showTurnFiles = false,
   process,
   turnActive = false,
+  anchorIndex = null,
 }: {
   groups: TurnGroup[];
+  /** Mark this group (an index into `groups`) with a `data-chat-anchor` a pane can scroll to. */
+  anchorIndex?: number | null;
   worker?: string;
   /** The Agent the process runs as — signs assistant turns (avatar + name). */
   agent?: Agent | null;
@@ -142,6 +145,7 @@ export function TurnGroupsList({
         return (
           <Fragment key={key}>
             {i > 0 && <TurnDivider />}
+            {anchorIndex !== null && groups[anchorIndex] === g && <span data-chat-anchor className="block scroll-mt-16" />}
             {/* TurnGroupRow stays memoized — that memo is what keeps a live
                 frame from re-rendering the whole history (QA D10). The chip row
                 is a sibling, and it sits BEFORE the next divider so it reads as

@@ -34,6 +34,13 @@ RECENT_WINDOW = 25
 _INFLIGHT: "set[asyncio.Task]" = set()
 
 
+async def settle() -> None:
+    """Wait for every reply accepted so far to finish sending and recording — a shutdown's (or a
+    test's) barrier."""
+    while _INFLIGHT:
+        await asyncio.gather(*list(_INFLIGHT), return_exceptions=True)
+
+
 class ChannelSendUnavailable(Exception):
     """This conversation cannot be replied to through a channel."""
 

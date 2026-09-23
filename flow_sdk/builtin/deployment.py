@@ -50,7 +50,7 @@ from flow_sdk.worldview.models import (
     DeploymentStatus,
     DeploymentTarget,
 )
-from flow_sdk.worldview.ontology import KindStr, normalize_kind
+from flow_sdk.worldview.ontology import KindStr, kind_matches, normalize_kind
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agent import Agent
@@ -198,6 +198,15 @@ class Deployment(Entity):
         description="Credential environment: development (this computer) or a named one (production, staging, ...)",
     )
 
+    #: Which of an element's deployments on one provider this is: ``""`` the default one, else a
+    #: short name ("2", "3", …). How one agent runs in several places on this computer.
+    slot: str = APIField(default="", description="Which of the element's deployments on this provider ('' = the default)")
+    #: A local agent deployment that RUNS: a subprocess on this machine running its loop
+    #: (``builtin/agent_loop``). A placement processes are only spawned through does not.
+    serving: bool = APIField(default=False, description="A local deployment that runs its own agent loop process")
+    #: The Python file that process runs instead of the stock loop; ``None`` runs the stock loop.
+    snippet: str | None = APIField(default=None, description="The loop this deployment runs, when not the stock one")
+
     #: The deployed element, when the caller already had it. Not just a cache: a
     #: SHIPPED agent resolved off disk on a cold instance is never persisted, so
     #: reading it back by ``parent_type_id`` would find nothing at all.
@@ -222,6 +231,7 @@ class Deployment(Entity):
         *,
         kind: str | None = None,
         environment: str | None = None,
+        slot: str = "",
     ) -> Optional["Deployment"]:
         """The placement of *parent_type_id* on *provider* (in *environment*, when given), or None.
 
@@ -251,6 +261,10 @@ class Deployment(Entity):
             # of the same element on the same provider are two rows.
             if environment is not None and (row.environment or DEFAULT_ENVIRONMENT) != environment:
                 continue
+            # Several deployments of one element on one provider are told apart by their slot;
+            # the default one has none.
+            if (row.slot or "") != (slot or ""):
+                continue
             return row
         return None
 
@@ -263,6 +277,7 @@ class Deployment(Entity):
         kind: str,
         payload: dict[str, Any],
         element: Optional[Entity] = None,
+        slot: str = "",
     ) -> "Deployment":
         """Create the placement, or update it in place when something changed.
 
@@ -277,8 +292,8 @@ class Deployment(Entity):
         ``NotImplemented`` — so the guard was True on 100% of calls and every
         resolve wrote.
         """
-        body = {**payload, "kind": normalize_kind(kind), "parent_type_id": str(parent_type_id)}
-        existing = await cls.find_existing(parent_type_id, provider, kind=kind)
+        body = {**payload, "kind": normalize_kind(kind), "parent_type_id": str(parent_type_id), "slot": slot}
+        existing = await cls.find_existing(parent_type_id, provider, kind=kind, slot=slot)
         if existing is None:
             body.setdefault("status", {}).setdefault("observed_at", datetime.now(UTC).isoformat())
             deployment = cls(**body)
@@ -445,11 +460,34 @@ class Deployment(Entity):
         bridge like any other hub update, so this doesn't write the status
         locally in that case; doing both would race the push.
         """
+        if self._runs_here():
+            return await self._set_serving(False)
         return await self._set_node_state("pause", "paused")
 
     async def resume(self) -> bool:
         """Start a paused machine again. The counterpart of :meth:`pause`, same routing."""
+        if self._runs_here():
+            return await self._set_serving(True)
         return await self._set_node_state("resume", "running")
+
+    def _runs_here(self) -> bool:
+        """An agent deployment on this machine: it runs as a process here, so pausing it stops that
+        process (``serving``) — never the machine under it."""
+        return not self.remote and self.is_local and kind_matches(KIND_AGENT, self.kind)
+
+    async def _set_serving(self, serving: bool) -> bool:
+        """Stop (or start) this deployment's process. Stopping ends it now — and, not serving, the
+        app's supervisor will not start it again; starting is the supervisor's (``serving``)."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+
+        self.serving = serving
+        self.status = self.status.model_copy(update={"provider_state": "running" if serving else "paused"})
+        await self.save()
+        if not serving and deployment_process.alive(self):
+            await asyncio.to_thread(deployment_process.stop, self)
+        return True
 
     async def _set_node_state(self, verb: str, provider_state: str) -> bool:
         """Pause or resume the machine: through the hub for a remote placement, else on the node here."""
@@ -547,6 +585,30 @@ class Deployment(Entity):
     async def update_action(self):
         """`POST /deployment/<id>/update` — bring a cloud machine to the published definition."""
         return await self._answer("update", self.update)
+
+    @action.get(action_name="timeline")
+    async def timeline_action(self):
+        """`GET /deployment/<id>/timeline?limit=&before=` — what reached it, what it ran, what it answered.
+
+        Newest first, read from the rows (``builtin/deployment_timeline``); ``before`` (an ISO time,
+        the previous page's ``before``) pages back.
+        """
+        from flow_sdk.builtin.deployment_timeline import timeline  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        raw_limit = str((request_info.get_param("limit") if request_info else None) or "")
+        raw_before = str((request_info.get_param("before") if request_info else None) or "")
+        limit = min(int(raw_limit), 200) if raw_limit.isdigit() and int(raw_limit) > 0 else 50
+        before = None
+        if raw_before:
+            try:
+                before = datetime.fromisoformat(raw_before.replace("Z", "+00:00"))
+            except ValueError:
+                return ApiFailResponse(message=f"before={raw_before!r} is not an ISO time", status_code=400)
+        page = await timeline(self, limit=limit, before=before)
+        return ApiSuccessResponse(data=page.model_dump(mode="json"))
 
     @action.get(action_name="runs")
     async def runs_action(self):
@@ -650,6 +712,14 @@ class Deployment(Entity):
                 p for p in (agent.system_prompt.strip(), existing) if p
             )
         context_data.setdefault("launched_by_agent", agent.name)
+        # Chief of Staff mode — CoS.md, the skill, the native staff roster. Off: nothing changes.
+        from flow_sdk.tasks.cos import apply_to_launch, staff_dir  # noqa: PLC0415
+
+        cli_config = opts.to_json()
+        cos_options = apply_to_launch(
+            agent, context_data=context_data, cli_config=cli_config, worker_type=worker_override or agent.worker_type,
+            project_dir=await staff_dir(agent) if getattr(agent, "chief_of_staff", False) else None,
+        )
 
         # Declared -> attached, BEFORE the folder is read below. ``mcp_servers``
         # on agent.json is the authored intent; ``mcp_assets()`` is the structural
@@ -669,7 +739,7 @@ class Deployment(Entity):
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
             worker_type=worker_type_value(worker_override or agent.worker_type),
             project_id=options.pop("project_id", None) or agent.project_id,
-            load_flowpad_assistant=agent.load_flowpad_assistant,
+            load_flowpad_assistant=cos_options.get("load_flowpad_assistant", agent.load_flowpad_assistant),
             additional_dirs=list(agent.additional_dirs or []),
             # The agent's MCP assets, resolved from its folder. Set on the
             # constructor rather than via ``process.add_mcp`` because this verb
@@ -678,7 +748,7 @@ class Deployment(Entity):
             # Reads the folder AFTER the attach above, which is what puts the
             # editor's declared ids there.
             mcp_servers=await _place_mcp_specs(agent, place_mcp),
-            cli_config=opts.to_json(),
+            cli_config=cli_config,
             instruction_content=prompt,
             context_data=context_data,
             deployment_id=self.id,
