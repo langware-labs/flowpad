@@ -33,7 +33,9 @@ async def _fake_git_clone(clone_url: str, target_dir: str, branch=None, token=No
     last_clone.update(clone_url=clone_url, target_dir=target_dir, branch=branch, token=token)
     Path(target_dir).mkdir(parents=True, exist_ok=False)
     (Path(target_dir) / "README.md").write_text(f"cloned from {clone_url}")
-    return True, "Cloned successfully."
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+
+    return CliResult.of_process("git clone", 0, detail="Cloned successfully.")
 
 
 # do not increase timeout without approval
@@ -225,7 +227,10 @@ async def test_create_project_from_git_clone_failure(bootstrapped_client):
     cn_id = _cn_id(bootstrap.json())
 
     async def _failing_clone(*_a, **_kw):
-        return False, "fatal: repository not found"
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+
+        return CliResult.of_process("git clone", 128, "", "fatal: repository not found",
+                                    detail="Git clone failed: fatal: repository not found")
 
     leaf = "does-not-exist"
     # Make sure the slot is free so we reach the clone call.
