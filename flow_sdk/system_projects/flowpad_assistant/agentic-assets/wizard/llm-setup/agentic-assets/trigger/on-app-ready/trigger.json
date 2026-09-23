@@ -1,0 +1,13 @@
+{
+  "name": "LLM setup (app.ready)",
+  "description": "Runs the LLM setup wizard the first time this machine is opened: checks Python 3, Git, Node.js and npm, and asks before installing any that is missing. Each question waits until answered — see the wizard's ask ops' `until_answered`.",
+  "fire_once": true,
+  "tag": {
+    "on": "app.ready"
+  },
+  "actions": [
+    {
+      "run_wizard": ""
+    }
+  ]
+}

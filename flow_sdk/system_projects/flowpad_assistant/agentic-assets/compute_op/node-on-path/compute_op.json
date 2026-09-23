@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "id": "a2cfade7-2a2f-4f00-9a72-e9bee027f033",
+  "name": "node-on-path",
+  "label": "Node.js",
+  "description": "node is on the PATH and runnable.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "brew install node",
+      "linux": "apt-get update && apt-get install -y nodejs",
+      "win32": "winget install --id OpenJS.NodeJS.LTS --silent"
+    },
+    "timeout_seconds": 600
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "node --version >/dev/null 2>&1",
+      "linux": "node --version >/dev/null 2>&1",
+      "win32": "node --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  }
+}

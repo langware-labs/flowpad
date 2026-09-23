@@ -1,0 +1,37 @@
+{
+  "name": "llm-setup-node",
+  "description": "Asks whether to install Node.js when it is missing and installs it only if the person agrees, then does the same for npm — checked AFTER Node.js on purpose, so declining Node.js is never followed by a second, orphaned question about npm.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "ask",
+      "label": "Install Node.js?",
+      "kind": "compute",
+      "ref": "ask-install-node",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install",
+      "label": "Node.js",
+      "kind": "compute",
+      "ref": "node-on-path",
+      "on_fail": "abort"
+    },
+    {
+      "id": "ask_npm",
+      "label": "Install npm?",
+      "kind": "compute",
+      "ref": "ask-install-npm",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install_npm",
+      "label": "npm",
+      "kind": "compute",
+      "ref": "npm-on-path",
+      "on_fail": "abort"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "type": "compute_op",
+  "id": "f0f857d7-1f36-49f6-beb5-66feacb4b809",
+  "name": "ask-install-node",
+  "label": "Install Node.js?",
+  "description": "Asks the person whether to install Node.js, only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "Node.js is not installed. Install Node.js for you?",
+    "until_answered": true
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "node --version >/dev/null 2>&1 && echo '{}'",
+      "linux": "node --version >/dev/null 2>&1 && echo '{}'",
+      "win32": "node --version *> $null; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  },
+  "output_spec_kind": "confirm"
+}

@@ -32,6 +32,7 @@ Three properties the tests pin:
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
@@ -160,8 +161,16 @@ async def run_op(
     say(f"{spec.display_label}: {spec.subkind}")
     started = time.monotonic()
     call = await _CALLS[type(exe)](
-        spec, workdir=workdir, platform=platform, env=env, executor=executor,
-        subject=subject, ask_timeout=ask_timeout, shell=shell, launch=launch, say=say,
+        spec,
+        workdir=workdir,
+        platform=platform,
+        env=env,
+        executor=executor,
+        subject=subject,
+        ask_timeout=ask_timeout,
+        shell=shell,
+        launch=launch,
+        say=say,
     )
     if not call.duration_s:
         call = call.model_copy(update={"duration_s": time.monotonic() - started})
@@ -173,18 +182,27 @@ async def run_op(
 
     after = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
     if after.exit_code is ExitCode.OK:
-        done = call.model_copy(update={
-            "exit_code": ExitCode.OK, "check": after, "detail": f"{spec.display_label}: done.",
-        })
+        done = call.model_copy(
+            update={
+                "exit_code": ExitCode.OK,
+                "check": after,
+                "detail": f"{spec.display_label}: done.",
+            }
+        )
         return _with_value(spec, done, said=after)
-    return call.model_copy(update={
-        "exit_code": ExitCode.NOT_YET, "value": None, "check": after,
-        "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.",
-    })
+    return call.model_copy(
+        update={
+            "exit_code": ExitCode.NOT_YET,
+            "value": None,
+            "check": after,
+            "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.",
+        }
+    )
 
 
 def _say(on_status: Optional[Callable[[str], None]]) -> Callable[[str], None]:
     """Progress reporting is never fatal."""
+
     def say(text: str) -> None:
         if on_status is None or not text:
             return
@@ -192,6 +210,7 @@ def _say(on_status: Optional[Callable[[str], None]]) -> Callable[[str], None]:
             on_status(text)
         except Exception:  # noqa: BLE001 — reporting must never fail a producer
             pass
+
     return say
 
 
@@ -208,7 +227,8 @@ def _already(spec: ComputeOpSpec, said: CliResult) -> ReturnedValue:
         # return — the document disagreeing with itself. Say so.
         return answer.not_yet(
             f"{spec.display_label}: the check holds, but what it printed is not a {spec.output_spec_kind} — {error}",
-            ran=False, check=said,
+            ran=False,
+            check=said,
         )
     return done.model_copy(update={"value": value})
 
@@ -230,10 +250,13 @@ def _with_value(spec: ComputeOpSpec, answer: ReturnedValue, *, said: Optional[Cl
     try:
         value = to_declared(raw, spec.output_spec_kind)
     except DeclaredShapeError as error:
-        return answer.model_copy(update={
-            "exit_code": ExitCode.NOT_YET, "value": None,
-            "detail": f"{spec.display_label}: returned a value that is not a {spec.output_spec_kind} — {error}",
-        })
+        return answer.model_copy(
+            update={
+                "exit_code": ExitCode.NOT_YET,
+                "value": None,
+                "detail": f"{spec.display_label}: returned a value that is not a {spec.output_spec_kind} — {error}",
+            }
+        )
     return answer.model_copy(update={"value": value})
 
 
@@ -241,33 +264,69 @@ def _with_value(spec: ComputeOpSpec, answer: ReturnedValue, *, said: Optional[Cl
 # does not need, so the dispatch is a table and not a branch. ─────────────────
 
 
-async def _cli(spec: ComputeOpSpec, *, platform: str, workdir: Path, env: Optional[dict],
-               shell: Shell, **_: Any) -> CliResult:
+async def _cli(
+    spec: ComputeOpSpec, *, platform: str, workdir: Path, env: Optional[dict], shell: Shell, **_: Any
+) -> CliResult:
     command = spec.exe_data.command_for(platform)
     if not command:
         return CliResult.not_applicable(f"{spec.display_label}: no command for this platform.")
     said = await shell(
-        command, timeout_seconds=spec.exe_data.timeout(),
-        workdir=workdir, extra_env=env or {}, platform=platform,
+        command,
+        timeout_seconds=spec.exe_data.timeout(),
+        workdir=workdir,
+        extra_env=env or {},
+        platform=platform,
     )
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 
 
-async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], None], **_: Any) -> AskResult:
-    """Put the op's declared output to a person and wait a bounded time.
+#: How long an `until_answered` op keeps checking for SOMEONE to show the
+#: question to before it concludes nobody is there at all. This is presence,
+#: not an answer — the boot race it exists for: `app.ready` fires once its own
+#: index walk finishes (`_app_ready_signal`), which the app's own tab is racing
+#: to have a live WS connection ready for. A wide-open desktop window usually
+#: wins that race easily; a genuinely headless box (a sandbox, a CI runner)
+#: never will, and gives up here rather than never.
+PRESENCE_GRACE_SECONDS = 15.0
+PRESENCE_POLL_SECONDS = 1.0
 
-    A cancel and a timeout are both "no value" — ``NOT_YET`` — and differ in
-    ``cancelled`` / ``timed_out``, which is what a caller branches on.
+
+async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], None], **_: Any) -> AskResult:
+    """Put the op's declared output to a person and wait for the answer.
+
+    A bounded time, unless the op is ``until_answered``. A cancel and a timeout
+    are both "no value" — ``NOT_YET`` — and differ in ``cancelled`` /
+    ``timed_out``, which is what a caller branches on.
     """
-    from flow_sdk.core.compute.ask import Cancelled, open_question, wait_for  # noqa: PLC0415
+    from flow_sdk.core.compute.ask import Cancelled, forget, open_question, wait_for  # noqa: PLC0415
     from flow_sdk.core.compute.ask_window import raise_question  # noqa: PLC0415
 
     # The person gets the SHORTEST of: what the op asks for, what the caller
-    # allows, and the product default. Nothing here lengthens it.
-    timeout = min(spec.exe_data.timeout(), ask_timeout, ASK_TIMEOUT_SECONDS)
+    # allows, and the product default. Nothing here lengthens it — except an
+    # `until_answered` op, which has no deadline unless a caller imposes one.
+    timeout: Optional[float] = min(spec.exe_data.timeout(), ask_timeout, ASK_TIMEOUT_SECONDS)
+    if spec.exe_data.until_answered and ask_timeout >= ASK_TIMEOUT_SECONDS:
+        timeout = None
     question = open_question(spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind)
     say(f"{spec.display_label}: waiting for you…")
-    await raise_question(question)
+    shown = await raise_question(question)
+    if timeout is None and not shown:
+        # No deadline: give a live tab the presence grace window before
+        # concluding nobody is there — see `PRESENCE_GRACE_SECONDS`.
+        # `try_window=False`: the one browser-open attempt already happened
+        # above (or was skipped, e.g. `FLOWPAD_NO_BROWSER`); retrying it here
+        # would spam a fresh tab on every poll instead of failing the same way
+        # every time.
+        elapsed = 0.0
+        while not shown and elapsed < PRESENCE_GRACE_SECONDS:
+            await asyncio.sleep(PRESENCE_POLL_SECONDS)
+            elapsed += PRESENCE_POLL_SECONDS
+            shown = await raise_question(question, try_window=False)
+    if timeout is None and not shown:
+        # No deadline and nobody to answer is a run that never ends. Nothing
+        # was asked, so nothing ran; the next attempt asks again.
+        forget(question.id)
+        return AskResult.not_yet(f"{spec.display_label}: nobody could be shown the question.", ran=False)
     try:
         value = await wait_for(question, timeout=timeout)
     except Cancelled:
@@ -282,7 +341,8 @@ async def _prompt(spec: ComputeOpSpec, **_: Any) -> PromptResult:
     endpoint = await _box_llm()
     if endpoint is None:
         return PromptResult.not_yet(
-            f"{spec.display_label}: this box has no LLM source that can answer a prompt.", ran=False,
+            f"{spec.display_label}: this box has no LLM source that can answer a prompt.",
+            ran=False,
         )
     system = "\n\n".join(p.strip() for p in (spec.description, spec.setup) if p and p.strip())
     user = spec.exe_data.prompt
@@ -320,8 +380,17 @@ async def _box_llm() -> Any:
     return chosen.endpoint if chosen is not None else None
 
 
-async def _agent(spec: ComputeOpSpec, *, workdir: Path, platform: str, executor: Optional[str],
-                 subject: str, launch: Launch, say: Callable[[str], None], **_: Any) -> PromptResult:
+async def _agent(
+    spec: ComputeOpSpec,
+    *,
+    workdir: Path,
+    platform: str,
+    executor: Optional[str],
+    subject: str,
+    launch: Launch,
+    say: Callable[[str], None],
+    **_: Any,
+) -> PromptResult:
     """A spawned harness with tools. Its value comes through a receipt it writes.
 
     With ``executor``, the SAME process gets a further turn in its session —
@@ -349,10 +418,12 @@ async def _agent(spec: ComputeOpSpec, *, workdir: Path, platform: str, executor:
         return said
     receipt = read_step_result(path, output=VALUE_KEY)
     if not receipt.ok:
-        return said.model_copy(update={
-            "exit_code": ExitCode.NOT_YET,
-            "detail": f"{spec.display_label}: {receipt.error or 'the agent reported a failure'}",
-        })
+        return said.model_copy(
+            update={
+                "exit_code": ExitCode.NOT_YET,
+                "detail": f"{spec.display_label}: {receipt.error or 'the agent reported a failure'}",
+            }
+        )
     return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary})
 
 

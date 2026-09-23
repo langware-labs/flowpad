@@ -241,3 +241,17 @@ if __name__ == "__main__":
     status = get_machine_status()
     print(json.dumps(status))
 """
+
+
+def python_command(script_path: str, os_type: str) -> str:
+    """The shell command that runs ``script_path`` under Python 3 on a node.
+
+    ``os_type`` is the node's (``ComputeNodeInfo.os_type``), not this process's:
+    a sandbox is Linux whatever the backend runs on. On Windows ``python3`` is
+    the Store alias stub, which fails even with Python installed, and the
+    provider's shell there is cmd.exe — so try the ``py`` launcher (what
+    python.org and winget install), else python.exe.
+    """
+    if os_type == "Windows":
+        return f'where py >nul 2>nul & if errorlevel 1 (python "{script_path}") else (py -3 "{script_path}")'
+    return f"python3 {script_path}"

@@ -44,6 +44,7 @@ class AgentOp(ExeData):                       # compute_op.agent — a harness w
 
 class AskOp(ExeData):                         # compute_op.ask — a person
     prompt: str
+    until_answered: bool                       # no deadline — refuses alongside timeout_seconds
 
 class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     name: str
