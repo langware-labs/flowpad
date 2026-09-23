@@ -105,6 +105,7 @@ export enum ViewType {
   SIGNALS = 'signals', // Alias of EVENTS (was: global event-bus monitor + injector)
   DATA_SOURCES = 'data-sources', // Configured ingestion sources — /dock/data-sources
   RAG = 'rag', // Search indexes and the folders they cover — /dock/rag
+  ASSET_LIST = 'asset-list', // One home counter's assets as a table — /dock/asset-list?group=<g>&counter=<c>
   PROCESS_RUNS = 'process-runs', // AgenticProcess execution history — /dock/process-runs[/<processId>]
   PLAN = 'plan', // Plan viewer with Milkdown editor
   CRON = 'cron', // Scheduled cron jobs manager
