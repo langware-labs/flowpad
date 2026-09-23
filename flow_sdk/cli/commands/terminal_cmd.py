@@ -63,8 +63,15 @@ EXIT_CONNECTION_ERROR = 5
 _PROCESS_HELP = "Target AgenticProcess id (defaults to the calling process via FLOWPAD_EXECUTION_SCOPE)."
 
 
-def _post_terminal(process_opt: Optional[str], action: str, body: dict) -> None:
-    """POST a terminal action for the resolved process and exit-map the outcome."""
+#: How much longer the HTTP call waits than the command it carries. The server
+#: returns when the command finishes OR its own ``timeout`` ends, so the client
+#: must outwait that — a client that gave up first reported a still-running
+#: command as a connection error and lost the answer.
+_HTTP_MARGIN_S = 15.0
+
+
+def _post_terminal(process_opt: Optional[str], action: str, body: dict, *, http_timeout: float = 10) -> dict:
+    """POST a terminal action for the resolved process; the response data."""
     process_id = _resolve_process_id(process_opt)
     port = _discover_port()
     url = f"http://127.0.0.1:{port}/api/v1/graph/agentic_process/{process_id}/{action}"
@@ -77,8 +84,8 @@ def _post_terminal(process_opt: Optional[str], action: str, body: dict) -> None:
             _fail(EXIT_INVALID_ARG, "INVALID_ARG", message)
         _fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", message)
 
-    data = _post_graph_json(url, body, timeout=10, on_error=_on_error)
-    _ok({"process_id": process_id, **data})
+    data = _post_graph_json(url, body, timeout=http_timeout, on_error=_on_error)
+    return {"process_id": process_id, **(data or {})}
 
 
 @terminal_app.command(
@@ -101,7 +108,7 @@ def terminal_open(
         body["cwd"] = cwd.strip()
     if command and command.strip():
         body["command"] = command.strip()
-    _post_terminal(process, "terminal", body)
+    _ok(_post_terminal(process, "terminal", body))
 
 
 @terminal_app.command(
@@ -128,4 +135,8 @@ def terminal_run(
     body: dict = {"command": command.strip(), "timeout": timeout}
     if shell and shell.strip():
         body["shell_id"] = shell.strip()
-    _post_terminal(process, "terminal-input", body)
+    answer = _post_terminal(process, "terminal-input", body, http_timeout=timeout + _HTTP_MARGIN_S)
+    _ok(answer)
+    # The answer's own exit code, like `flow op run`: 0 the command succeeded,
+    # 1 it did not (or is still running — see `timed_out`), 4 no terminal.
+    raise typer.Exit(int(answer.get("exit_code", 1)))
