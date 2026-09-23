@@ -48,7 +48,7 @@ describe('agent counters', () => {
 
 describe('asset list pointer', () => {
   it('round-trips group and counter through the URL', () => {
-    const url = DockPointer.forAssetList('agents', 'running').toUrl();
+    const url = DockPointer.forCounterAssets('agents', 'running').toUrl();
     expect(url).toContain('/dock/asset-list');
     const back = DockPointer.fromUrl(url);
     expect(back.viewType).toBe(ViewType.ASSET_LIST);

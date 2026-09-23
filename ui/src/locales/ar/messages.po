@@ -17,6 +17,10 @@ msgstr ""
 msgid " — not set"
 msgstr ""
 
+#: src/components/asset-counters/agent-counters.tsx
+msgid " · paused"
+msgstr ""
+
 #. placeholder {0}: me.role
 #: src/components/organization/org-detail-panel.tsx
 msgid " · you are {0}"
@@ -1681,6 +1685,7 @@ msgstr ""
 msgid "agent"
 msgstr "وكيل"
 
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/types/ViewType.ts
@@ -1767,6 +1772,10 @@ msgstr "وكلاء"
 #: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr "الوكلاء"
+
+#: src/components/asset-counters/agent-counters.tsx
+msgid "Agents in {projectName} with a deployment"
+msgstr ""
 
 #: src/components/ai-config-view/ai-config-view.tsx
 #: src/types/ViewType.ts
@@ -2539,6 +2548,7 @@ msgstr "asset_ref لم يُعيّن — هل تم بناء MarkdownIndex من ق
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/pages/hub-project/HubProjectPage.tsx
+#: src/types/ViewType.ts
 #: src/types/ViewType.ts
 msgid "Assets"
 msgstr "الأصول"
@@ -3819,6 +3829,7 @@ msgstr "مسح مرشح المجلد"
 msgid "Clear Index"
 msgstr "مسح الفهرس"
 
+#: src/components/asset-counters/AssetListView.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear search"
@@ -6515,6 +6526,7 @@ msgstr "تفاصيل النشر"
 msgid "Deployment WorldView"
 msgstr "العرض الشامل للنشر"
 
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
 #: src/i18n/type-labels.ts
 msgid "Deployments"
@@ -6804,6 +6816,7 @@ msgstr "تعطيل قياس الاستخدام والتحليلات"
 msgid "disabled"
 msgstr "معطّل"
 
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
@@ -7457,6 +7470,7 @@ msgstr "تفعيل العزل المتداخل الأضعف"
 msgid "Enable/Disable hook"
 msgstr "تفعيل/تعطيل الخطاف"
 
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
@@ -7721,6 +7735,14 @@ msgstr ""
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Every {scopeType} row has a source file on disk."
 msgstr "كل صف من {scopeType} له ملف مصدر على القرص."
+
+#: src/components/asset-counters/agent-counters.tsx
+msgid "Every agent {projectName} can launch"
+msgstr ""
+
+#: src/components/asset-counters/agent-counters.tsx
+msgid "Every agent on this machine"
+msgstr ""
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
@@ -12854,6 +12876,10 @@ msgstr "لا توجد نتائج مطابقة"
 msgid "No matches"
 msgstr "لا توجد نتائج مطابقة"
 
+#: src/components/asset-counters/AssetListView.tsx
+msgid "No matches for “{query}”."
+msgstr ""
+
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "No matches found in the Flowpad known-issues database."
 msgstr "لم يتم العثور على تطابقات في قاعدة بيانات Flowpad للمشاكل المعروفة."
@@ -13594,6 +13620,7 @@ msgstr ""
 msgid "Nothing here yet — use the + below to add one."
 msgstr "لا شيء هنا بعد — يمكن استخدام + أدناه لإضافة عنصر واحد."
 
+#: src/components/asset-counters/AssetListView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Nothing here yet."
 msgstr "لا شيء هنا بعد."
@@ -15294,6 +15321,7 @@ msgid "project"
 msgstr "مشروع"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -15788,6 +15816,11 @@ msgstr "الرسائل في قائمة الانتظار"
 #: src/components/quick-create/DesktopSurface.tsx
 msgid "Quick create"
 msgstr "الإنشاء السريع"
+
+#: src/components/asset-counters/AssetListView.tsx
+#: src/components/asset-counters/AssetListView.tsx
+msgid "Quick search"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Radial layout"
@@ -17109,6 +17142,7 @@ msgstr ""
 msgid "running"
 msgstr "قيد التشغيل"
 
+#: src/components/asset-counters/agent-counters.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "قيد التشغيل"
@@ -19015,6 +19049,7 @@ msgid "Sound"
 msgstr "الصوت"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Source"
@@ -19299,6 +19334,7 @@ msgid "Stats"
 msgstr "الإحصائيات"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/connections-manager.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -21227,6 +21263,7 @@ msgstr ""
 msgid "total"
 msgstr "الإجمالي"
 
+#: src/components/asset-counters/agent-counters.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/ui/bulk-confirm-dialog.tsx
@@ -21495,6 +21532,10 @@ msgstr "خطأ غير معروف."
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Unknown Lens Type"
 msgstr "نوع Lens غير معروف"
+
+#: src/components/asset-counters/AssetListView.tsx
+msgid "Unknown list"
+msgstr ""
 
 #. placeholder {0}: draft.provider
 #: src/components/data-sources/source-form.ts
