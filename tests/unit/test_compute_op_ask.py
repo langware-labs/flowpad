@@ -38,6 +38,10 @@ class ApiToken(DataSpec):
 @pytest.fixture(autouse=True)
 def _no_browser(monkeypatch):
     monkeypatch.setenv("FLOWPAD_NO_BROWSER", "1")
+    # The answers below are delivered in THIS process, so it plays the backend.
+    from flow_sdk.core.compute_op import ask
+
+    monkeypatch.setattr(ask, "_SERVED_HERE", True)
 
 
 @pytest.fixture(autouse=True)
@@ -156,3 +160,48 @@ async def test_an_ask_op_must_declare_what_it_is_asking_for():
         ComputeOpSpec.model_validate({
             "name": "get-api-key", "subkind": "ask", "exe_data": {"prompt": "Token?"},
         })
+
+
+async def test_outside_the_backend_the_question_goes_to_the_backend(tmp_path, monkeypatch):
+    """A process that does not serve the answer routes must not hold the question:
+    no answer could ever reach it. It asks through the backend instead — and
+    with no backend to ask through, it says so rather than waiting out a
+    question nobody can answer."""
+    from contextlib import asynccontextmanager
+
+    from flow_sdk.core.compute_op import ask
+    from flow_sdk.core.connections import service
+
+    monkeypatch.setattr(ask, "_SERVED_HERE", False)
+
+    @asynccontextmanager
+    async def no_backend():
+        raise service.FlowServiceError("not_running", "instance 'test' is not running")
+        yield
+
+    monkeypatch.setattr(service, "flow_service", no_backend)
+    said = await _run(_spec(tmp_path), tmp_path)
+
+    assert said.exit_code is ExitCode.NOT_YET and said.ran is False
+    assert "no Flowpad backend" in said.detail
+    assert open_questions() == [], "the question was held where no answer can land"
+
+
+async def test_with_no_tab_the_window_opens_on_this_backend(tmp_path, monkeypatch):
+    """The window points at the process holding the question — never a backend it
+    had to start and would then stop under the person answering."""
+    from flow_sdk import config
+    from flow_sdk.core.compute_op.ask import open_question
+    from flow_sdk.core.compute_op import ask_window
+
+    opened = tmp_path / "urls.txt"
+    recorder = tmp_path / "record.sh"
+    recorder.write_text(f'#!/bin/sh\necho "$1" >> {opened}\n', encoding="utf-8")
+    recorder.chmod(0o755)
+    monkeypatch.delenv("FLOWPAD_NO_BROWSER")
+    monkeypatch.setenv("BROWSER", f"{recorder} %s")
+    monkeypatch.setattr(config, "load_server_info", lambda: {"port": 6123})
+
+    question = open_question("get-api-key", "token", "test.ask.api_token")
+    assert await ask_window._open_a_window(question) is True
+    assert opened.read_text().strip() == f"http://127.0.0.1:6123/win/ask/{question.id}"

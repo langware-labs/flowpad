@@ -50,6 +50,12 @@ The op raises the question and waits a bounded time. A live tab is sent to
 listening, a window is opened at the same address. `ASK_TIMEOUT_SECONDS` is 60;
 a caller may pass a shorter deadline, never a longer one.
 
+The question is held by the backend, because that is where the answer arrives.
+An op run anywhere else — a script, a worker — hands the question to the backend
+(`POST /api/v1/ask`) and keeps its lease on it until the person has answered or
+the deadline has passed. With no backend to ask through, it answers `NOT_YET`
+with `ran=False` and says so.
+
 `approved=True` is not optional. An op that is not a system op answers
 `REFUSED` unapproved — before it puts a question to anyone.
 

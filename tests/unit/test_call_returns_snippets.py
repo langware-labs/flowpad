@@ -115,6 +115,10 @@ FAST = [f for f in fences("python") if not f.lstrip().startswith(LONG_TIER)]
 def _no_browser(monkeypatch):
     # The §7 question is answered by `_person_answers`, never by a window.
     monkeypatch.setenv("FLOWPAD_NO_BROWSER", "1")
+    # ...in THIS process, so this process is where answers arrive: it plays the backend.
+    from flow_sdk.core.compute_op import ask
+
+    monkeypatch.setattr(ask, "_SERVED_HERE", True)
 
 
 def test_the_page_has_its_fences():
