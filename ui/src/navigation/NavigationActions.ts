@@ -784,6 +784,16 @@ export class NavigationActions {
     }
   }
 
+  /** The link as a tab of `process`'s vibe workspace — the process opens in vibe mode showing it. */
+  async openLinkInVibe(link: string, source: Shell | null, process: AgenticProcess): Promise<void> {
+    try {
+      const dock = placeDockInProject(await this.resolveLinkDock(link, source), process.project_id ?? source?.project_id);
+      this.openDock(dock.withViewMode(ViewMode.Vibe).withHost(process.typeId.toString()));
+    } catch (error) {
+      notifyLinkError(error);
+    }
+  }
+
   /** The system browser: a web URL as itself, anything else as the Flowpad view that presents it. */
   async openLinkInBrowser(link: string, source: Shell | null): Promise<void> {
     try {

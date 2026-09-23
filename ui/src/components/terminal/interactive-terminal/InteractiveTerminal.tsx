@@ -218,7 +218,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const ptySyncSnapshot = usePtySyncSession(ptySyncRef.current);
 
   const shellRef = useRef<Shell | null>(null);
-  const terminalLinks = useTerminalLinks(shellRef);
+  const terminalLinks = useTerminalLinks(shellRef, process);
   const firstPromptBufferRef = useRef('');
   const firstPromptReportedRef = useRef(false);
 

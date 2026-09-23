@@ -1,6 +1,6 @@
-import type { Shell } from '@sdk';
+import type { AgenticProcess, Shell } from '@sdk';
 import { t } from '@lingui/core/macro';
-import { Copy, ExternalLink, PanelTop } from 'lucide-react';
+import { Copy, ExternalLink, PanelTop, Sparkles } from 'lucide-react';
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   DropdownMenu,
@@ -23,26 +23,35 @@ export interface TerminalLinks {
 }
 
 interface LinkMenuHandle {
-  open: (link: string, x: number, y: number) => void;
+  open: (link: string, x: number, y: number, host: AgenticProcess | null) => void;
 }
 
-/** Click opens a link in Flowpad; right-click offers copy / open in Flowpad / open in browser. */
-export function useTerminalLinks(source: RefObject<Shell | null>): TerminalLinks {
+/**
+ * Click opens a link in Flowpad; right-click offers copy / open in Flowpad / open in browser, and — when the
+ * terminal belongs to a process — Vibe: that process in vibe mode with the link as a tab.
+ */
+export function useTerminalLinks(source: RefObject<Shell | null>, process?: AgenticProcess | null): TerminalLinks {
   const { navigation } = useDockNavigation();
-  // Read the current navigation/source without retaining a terminal render's closure.
+  // Read the current navigation/source/process without retaining a terminal render's closure.
   const navRef = useRef(navigation);
   navRef.current = navigation;
+  const processRef = useRef(process ?? null);
+  processRef.current = process ?? null;
   const menuRef = useRef<LinkMenuHandle>(null);
 
   return useMemo(() => {
     const open = (link: string) => void navRef.current.openLink(link, source.current);
     const openInBrowser = (link: string) => void navRef.current.openLinkInBrowser(link, source.current);
+    const openInVibe = (link: string, host: AgenticProcess) =>
+      void navRef.current.openLinkInVibe(link, source.current, host);
     return {
       handlers: {
         activate: (_event, link) => open(link),
-        openMenu: (link, x, y) => menuRef.current?.open(link, x, y),
+        openMenu: (link, x, y) => menuRef.current?.open(link, x, y, processRef.current),
       },
-      menu: <TerminalLinkMenu ref={menuRef} onOpen={open} onOpenInBrowser={openInBrowser} />,
+      menu: (
+        <TerminalLinkMenu ref={menuRef} onOpen={open} onOpenInBrowser={openInBrowser} onOpenInVibe={openInVibe} />
+      ),
     };
   }, [source]);
 }
@@ -58,16 +67,26 @@ function copyLink(link: string): void {
 /** Owns the menu state, so opening and closing re-renders only this. */
 const TerminalLinkMenu = forwardRef<
   LinkMenuHandle,
-  { onOpen: (link: string) => void; onOpenInBrowser: (link: string) => void }
->(function TerminalLinkMenu({ onOpen, onOpenInBrowser }, ref) {
+  {
+    onOpen: (link: string) => void;
+    onOpenInBrowser: (link: string) => void;
+    onOpenInVibe: (link: string, host: AgenticProcess) => void;
+  }
+>(function TerminalLinkMenu({ onOpen, onOpenInBrowser, onOpenInVibe }, ref) {
   // `id` remounts the menu so a right-click on another link re-anchors it.
-  const [state, setState] = useState<{ link: string; x: number; y: number; id: number } | null>(null);
+  const [state, setState] = useState<{
+    link: string;
+    x: number;
+    y: number;
+    host: AgenticProcess | null;
+    id: number;
+  } | null>(null);
   useImperativeHandle(ref, () => ({
-    open: (link, x, y) => setState((prev) => ({ link, x, y, id: (prev?.id ?? 0) + 1 })),
+    open: (link, x, y, host) => setState((prev) => ({ link, x, y, host, id: (prev?.id ?? 0) + 1 })),
   }), []);
 
   if (!state) return null;
-  const { link, x, y, id } = state;
+  const { link, x, y, host, id } = state;
   return (
     <DropdownMenu key={id} open modal={false} onOpenChange={(open) => !open && setState(null)}>
       <DropdownMenuTrigger asChild>
@@ -86,6 +105,12 @@ const TerminalLinkMenu = forwardRef<
           <PanelTop className="mr-2 h-4 w-4" />
           {t`Open in Flowpad`}
         </DropdownMenuItem>
+        {host && (
+          <DropdownMenuItem onSelect={() => onOpenInVibe(link, host)} data-testid="terminal-link-menu-vibe">
+            <Sparkles className="mr-2 h-4 w-4" />
+            {t`Vibe`}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={() => onOpenInBrowser(link)}>
           <ExternalLink className="mr-2 h-4 w-4" />
           {t`Open in browser`}

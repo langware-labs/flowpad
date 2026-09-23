@@ -1360,6 +1360,8 @@ async def test_active_display_stays_a_workspace_child() -> None:
     assert _pointer_is_adoptable_child(_active_display_ptr(host, "assets", ""))
     # An artifact-addressed app is workspace content too (addressable-screen rule).
     assert _pointer_is_adoptable_child(_active_display_ptr(host, "app", f"artifact-{uuid.uuid4()}"))
+    # So is a web page — a terminal link opened in Vibe (frontend `isAdoptableChildDock` lists both).
+    assert _pointer_is_adoptable_child(_jptr("web-app", "url/aHR0cHMlM0ElMkYlMkZleGFtcGxlLmNvbQ"))
 
 
 @pytest.mark.asyncio
