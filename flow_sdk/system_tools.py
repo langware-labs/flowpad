@@ -421,6 +421,17 @@ def validate_db(db_path: Path | None = None) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _drop_process_caches() -> None:
+    """Forget every in-memory view of the rows a clear/restore just replaced. The cached
+    project list is one of them: a stale entry keeps a gone project in scope resolution."""
+    from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache  # noqa: PLC0415
+
+    entity_cache.clear()
+    uname_cache.clear()
+    invalidate_projects_cache()
+
+
 async def clear_all_data() -> ClearAllResult:
     """Backup, wipe the SQLite DB, clear the index, reinitialize.
 
@@ -460,10 +471,8 @@ async def clear_all_data() -> ClearAllResult:
         logger.warning(f"clear_all_data: clear_index failed (continuing with wipe): {e}")
 
     # 5. Drop in-memory caches
-    from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
 
-    entity_cache.clear()
-    uname_cache.clear()
+    _drop_process_caches()
 
     # Capability system rows are wiped along with the DB below. No seed-guard
     # reset is needed: Capability._seeded_dbs is keyed on the live driver
@@ -653,7 +662,6 @@ async def restore(backup_path: str) -> RestoreResult:
 
     db_path = get_db_path()
 
-    from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
     from flow_sdk.db.drivers.db_driver import db_lifecycle_guard, remove_db_sidecars  # noqa: PLC0415
 
@@ -671,8 +679,7 @@ async def restore(backup_path: str) -> RestoreResult:
             remove_db_sidecars(db_path)
             logger.info(f"Database restored from: {src}")
 
-            entity_cache.clear()
-            uname_cache.clear()
+            _drop_process_caches()
 
             await init_db()
 

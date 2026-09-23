@@ -111,6 +111,8 @@ def ensure_project_namespace(project) -> None:
         return
     if not is_valid_project_cwd(mount):
         return
+    if not mount.is_dir():  # seeding names a folder; it must never CREATE one
+        return
     try:
         spec = ensure_namespace(mount, namespace_seed(mount))
     except OSError as exc:  # a read-only or vanished checkout is not a startup failure

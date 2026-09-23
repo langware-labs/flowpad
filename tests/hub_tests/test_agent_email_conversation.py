@@ -220,7 +220,6 @@ async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
         name=f"Mailbot {mailboxes['agent_id'][:8]}",
         worker_type="claude",
         system_prompt="You answer email. Reply in one short sentence.",
-        email_allowed_senders=allow,
     )
     await agent.save()
 
@@ -230,6 +229,7 @@ async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
         channel="email",
         config={"agent_id": mailboxes["agent_id"], "address": mailboxes["agent_address"]},
         account_key=mailboxes["agent_address"],
+        inbound_allowed_senders=allow,  # the serve loop's gate (`agent_serve.admits`) reads the source
     )
     await source.save()
     await _served(server, agent, source)

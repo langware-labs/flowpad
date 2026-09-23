@@ -24,7 +24,6 @@ async def _agent(name: str) -> Agent:
         worker_type="claude",
         model="haiku",
         permission_mode="bypassPermissions",
-        email_allowed_senders=["alice@example.com"],
     )
     await agent.save()
     return agent

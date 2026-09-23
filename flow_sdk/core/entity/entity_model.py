@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import inspect
 import logging
 import os
@@ -60,6 +61,7 @@ from flow_sdk.db.db_entity import EntityExpansion
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.db.drivers.db_driver import RelationshipDirection
 from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
+from flow_sdk.db.load_context import lenient_entity_load, lenient_load_active
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
 from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
 from flow_sdk.fs_store.exceptions import AssetRefLookupError
@@ -122,6 +124,17 @@ def remote_reflection():
         yield
     finally:
         _REMOTE_REFLECTION.reset(token)
+
+
+@functools.cache
+def _declared_fields(cls: type) -> frozenset[str]:
+    """Every name a constructor may pass for ``cls``: fields, computed fields, aliases. Fixed per class."""
+    fields = cls.model_fields.values()
+    return frozenset(
+        {*cls.model_fields, *cls.model_computed_fields}
+        | {f.alias for f in fields if f.alias}
+        | {f.validation_alias for f in fields if isinstance(f.validation_alias, str)}
+    )
 
 
 @dataclass
@@ -577,7 +590,16 @@ class Entity(DBEntity):
         description="Owning project id, when applicable. Stamped at index time from the FSRef walk.",
     )
 
+    # A strict type rejects constructor kwargs it does not declare. pydantic's
+    # extra="ignore" otherwise drops them, so a caller still passing a removed field
+    # keeps "working" while the value it meant to set exists nowhere.
+    _strict_init: ClassVar[bool] = False
+
     def __init__(self, **kwargs):
+        if type(self)._strict_init and not lenient_load_active():
+            unknown = sorted(kwargs.keys() - _declared_fields(type(self)))
+            if unknown:
+                raise TypeError(f"{type(self).__name__}() got unexpected field(s): {unknown}")
         super().__init__(**kwargs)
         if self.env_vars is None:
             self.env_vars = EntityEnvVars[EnvVar]()
@@ -1144,7 +1166,9 @@ class Entity(DBEntity):
             create_kwargs.update(record_domain)
             create_kwargs.update(stamp)
             try:
-                entity = entity_cls(**create_kwargs)
+                # The carrier on disk may name a field its type has since dropped.
+                with lenient_entity_load():
+                    entity = entity_cls(**create_kwargs)
             except Exception:
                 entity = Entity(**create_kwargs)
             if _asset_mtime is not None:
@@ -2445,7 +2469,8 @@ class Entity(DBEntity):
             # ``flow_message_action`` → ``merge_hub_payload``): hub-owned fields
             # move, locally-authoritative ones stay.
             sanitized = cls.merge_hub_payload(existing, sanitized)
-        ent = cls.model_validate(sanitized)
+        with lenient_entity_load():
+            ent = cls.model_validate(sanitized)
         if "remote" in cls.model_fields:
             ent.remote = True
         await ent.save(someone_typeid, notify=notify)

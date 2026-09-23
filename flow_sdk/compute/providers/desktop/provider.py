@@ -272,6 +272,16 @@ def get_set_env_cmd(name: str, value: str | None) -> str:
         )
 
 
+async def _terminate_pty(process: Any) -> None:
+    """Force-terminate a live PTY in a thread: terminate(force=True) sleeps between HUP/INT/KILL (~0.4s)."""
+
+    def _terminate() -> None:
+        if process.isalive():
+            process.terminate(force=True)
+
+    await asyncio.to_thread(_terminate)
+
+
 class LocalComputeProvider(ComputeProvider):
     def __init__(self):
         super().__init__()
@@ -1020,12 +1030,11 @@ class LocalComputeProvider(ComputeProvider):
             process = pty_info.get("process")  # type: ignore[assignment]
             if process:
                 try:
-                    if process.isalive():
-                        process.terminate(force=True)
+                    await _terminate_pty(process)
                 except Exception:
                     pass
 
-            del self._pty_processes[pty_key]
+            self._pty_processes.pop(pty_key, None)
 
     async def _fail_dead_pty(
         self, pty_key: tuple[str, str], log_msg: str, reason: str, raise_msg: str, *, warn: bool = False
@@ -1294,14 +1303,13 @@ class LocalComputeProvider(ComputeProvider):
             process = pty_info.get("process")  # type: ignore[assignment]
             if process:
                 try:
-                    if process.isalive():
-                        process.terminate(force=True)
+                    await _terminate_pty(process)
                 except Exception as e:
                     message = str(e)
                     if "there was no child process" not in message and "waitpid" not in message:
                         logger.warning(f"Error terminating PTY process: {message}")
 
-            del self._pty_processes[pty_key]
+            self._pty_processes.pop(pty_key, None)
 
     def list_pty_sessions(self, cn_id: str) -> list[dict]:
         """Return [{shell_id, connection_id, name}] for all active sessions on this node."""

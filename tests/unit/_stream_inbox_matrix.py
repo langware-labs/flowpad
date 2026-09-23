@@ -116,8 +116,7 @@ async def make_cell(owner_kind: str, provider: str, double, monkeypatch) -> Cell
     """The owner (the local user or a fresh Agent), the other owner, and a saved source of the
     channel owned by the former, with credentials answered by the double."""
     user = await local_user_typeid()
-    agent = Agent(name=f"matrix {provider} {uuid.uuid4().hex[:6]}", worker_type="claude", system_prompt="Be brief.",
-                  email_allowed_senders=[double.sender])
+    agent = Agent(name=f"matrix {provider} {uuid.uuid4().hex[:6]}", worker_type="claude", system_prompt="Be brief.")
     await agent.save()
     owner = user if owner_kind == "user" else agent.typeid
 

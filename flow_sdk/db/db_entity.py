@@ -26,6 +26,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, 
 from flow_sdk.db.drivers.db_driver import DBDriver, LazyDBDriver
 from flow_sdk.db.drivers.path_model import NodesPath
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.db.relationship_model import (
     InvitedThroughRelationship,
     Relationship,
@@ -201,7 +202,9 @@ class DBEntity(DBBaseRecord):
                 raise ValueError(
                     f"Can not serialize form json : Model not found for db_entity type {entity_json['type']}"
                 )
-            return entity_model(**entity_json)
+
+            with lenient_entity_load():  # a wire payload may carry fields this build dropped
+                return entity_model(**entity_json)
         except Exception as e:
             raise e
 
@@ -242,9 +245,12 @@ class DBEntity(DBBaseRecord):
                 fields["expand"] = EntityExpansion(**fields["expand"])  # Convert dict to EntityExpansion
             elif not isinstance(fields["expand"], EntityExpansion):
                 fields["expand"] = EntityExpansion()  # Fallback if value is None or invalid
+
         updated_dump = self.model_dump()
         updated_dump.update(fields)
-        updated_model = self.model_validate(updated_dump)
+        # Only declared fields are applied below; the rest of a client's PUT is dropped, not an error.
+        with lenient_entity_load():
+            updated_model = self.model_validate(updated_dump)
         for k in fields.keys():
             # Computed fields ride every outbound payload, so clients echo them
             # back on a full-entity PUT (e.g. Project.include_dirs) — they have
