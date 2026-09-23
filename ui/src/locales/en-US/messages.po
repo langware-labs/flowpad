@@ -20341,6 +20341,11 @@ msgstr "The value is stored in your operating system keychain and never readable
 msgid "The wizard could not run"
 msgstr "The wizard could not run"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "The wizard did not run"
+msgstr "The wizard did not run"
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "The wizard reported an error."
 msgstr "The wizard reported an error."
