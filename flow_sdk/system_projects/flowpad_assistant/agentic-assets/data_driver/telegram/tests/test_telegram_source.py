@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from urllib.parse import parse_qs
@@ -72,7 +73,7 @@ class _Bot:
             return self._ok([u for u in self.updates if u["update_id"] >= offset][:limit])
         if str(body.get("chat_id")) not in self.chats:
             return 400, json.dumps({"ok": False, "error_code": 400, "description": "Bad Request: chat not found"}).encode(), {}
-        sent = {"message_id": self.mint_id(), "date": 1756700100, "chat": {"id": int(body["chat_id"]), "type": "private"},
+        sent = {"message_id": self.mint_id(), "date": int(time.time()), "chat": {"id": int(body["chat_id"]), "type": "private"},
                 "from": {"id": 777, "username": "my_bot", "is_bot": True}, "text": body["text"]}
         if body.get("reply_to_message_id"):
             sent["reply_to_message"] = {"message_id": body["reply_to_message_id"]}

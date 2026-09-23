@@ -45,8 +45,12 @@ def _saved_channel() -> str:
     return "C0" + uuid.uuid4().hex[:9].upper()
 
 
-def _source(**config) -> DataSource:
-    return DataSource(provider="slack", name=f"Slack test {uuid.uuid4().hex[:8]}", config={"channel": CHANNEL, "base_url": BASE, **config})
+def _source(*, identified: bool = True, **config) -> DataSource:
+    """A source that already knows who it reads as (as a verified one does), so a traverse goes
+    straight to the channel instead of asking ``auth.test`` first; ``identified=False`` for one
+    that does not know yet."""
+    return DataSource(provider="slack", name=f"Slack test {uuid.uuid4().hex[:8]}", account_key="@flowpad-bot" if identified else "",
+                      config={"channel": CHANNEL, "base_url": BASE, **config})
 
 
 def _view(cursor: str | None = None, window_start: str | None = None):
@@ -370,7 +374,7 @@ async def test_send_stamps_the_bots_own_identity_once(serve):
     from flow_sdk.stream_inbox.projection import is_self_address
 
     serve([{"ok": True, "ts": "1.1"}, {"ok": True, "user_id": "UBOT", "bot_id": "B1", "user": "flowpad"}])
-    source = _source(channel=_saved_channel())
+    source = _source(identified=False, channel=_saved_channel())
     await source.save()
     await DataDriver.loaded("slack").send(source, thread_key="", to=CHANNEL, text="hi")
     assert source.account_key == "@flowpad"

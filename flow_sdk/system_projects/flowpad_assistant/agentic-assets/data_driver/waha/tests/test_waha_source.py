@@ -162,10 +162,12 @@ class _Waha:
         if method == "POST" and path == "/api/sessions":
             self.exists, self.hooks, self.status = True, body["config"]["webhooks"], "SCAN_QR_CODE"
             return self._json(201, self._session())
-        if method == "PUT" and path == f"/api/sessions/{SESSION}":
+        # Any session's own routes: a caller names its session (the Double's is this run's own).
+        named = path.split("?")[0].startswith("/api/sessions/")
+        if method == "PUT" and named:
             self.hooks = body["config"]["webhooks"]
             return self._json(200, self._session())
-        if path == f"/api/sessions/{SESSION}":
+        if named:
             return self._json(200, self._session()) if self.exists else self._json(404, {"message": "Session not found"})
         return self._json(404, {"message": "no route"})
 

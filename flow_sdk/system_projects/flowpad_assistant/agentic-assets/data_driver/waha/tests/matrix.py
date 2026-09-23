@@ -73,6 +73,10 @@ class Double:
     async def credentials(self, _row) -> Credentials:
         return Credentials(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in self.secrets.items()})
 
+    def pair(self) -> None:
+        """The phone scans the QR that verify left the session waiting on: the session is WORKING."""
+        self.waha.status = "WORKING"
+
     def deliver(self, text: str, *, sender: str, thread=None) -> dict:
         """A message from ``sender`` arriving now; the caller POSTs ``body`` with ``headers`` to ``path``."""
         self._delivered += 1
