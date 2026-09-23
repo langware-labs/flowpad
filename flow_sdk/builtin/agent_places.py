@@ -171,6 +171,8 @@ async def list_places(agent: "Agent") -> list[dict[str, Any]]:
     counts = await asyncio.gather(*(asyncio.to_thread(behind_count, d.source_revision, published, repo) for d in cloud))
     behind = dict(zip((d.id for d in cloud), counts))
 
+    last_active = dict(zip((d.id for d in deployments), await asyncio.gather(*(_last_active(d) for d in deployments))))
+
     rows = []
     for deployment in deployments:
         place = agent.place_for(deployment.id)
@@ -187,9 +189,24 @@ async def list_places(agent: "Agent") -> list[dict[str, Any]]:
                 ),
                 "answers_email": answering == deployment.id,
                 "behind": behind.get(deployment.id),
+                "last_active": last_active.get(deployment.id),
             }
         )
     return rows
+
+
+async def _last_active(deployment) -> str | None:
+    """When this place last did something: its newest run here, else the last time the machine was
+    seen (a cloud place's runs live on its own box). ISO time, or ``None`` when it never has."""
+    if deployment.is_local:
+        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        newest = await AgenticProcess.local_rows(
+            {"match": {"deployment_id": deployment.id}, "order_by": {"updated_date": "desc"}, "limit": 1}
+        )
+        stamp = getattr(newest[0], "updated_date", None) if newest else None
+        return stamp.isoformat() if hasattr(stamp, "isoformat") else (str(stamp) if stamp else None)
+    return getattr(deployment.status, "observed_at", None) or None
 
 
 async def email_answers_here(agent_id: str) -> bool:

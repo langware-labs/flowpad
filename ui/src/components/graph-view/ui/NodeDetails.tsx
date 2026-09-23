@@ -5,9 +5,10 @@
  * header, shared with every other tab, so they are not repeated here.
  */
 import { Trans } from '@lingui/react/macro';
-import { Agent, TypeId } from '@sdk';
+import { Agent, Deployment, isTypeId, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { AgentDeploymentsSection } from '@src/components/assets/editor/agent-profile/AgentDeploymentsSection';
+import { AgentDeploymentPanel } from '@src/components/assets/editor/agent-profile/AgentDeploymentPanel';
 import { EntityIcon } from './EntityIcon';
 import type { NodeData } from '../graph/graphModel';
 import { paletteForTheme, type EdgeKind } from '../graph/themeColors';
@@ -44,9 +45,21 @@ function AgentDeploymentControls({ id }: { id: string }) {
   );
 }
 
+/** The agent a deployment node places, when it places one — its parent, as `Deployment.agentTypeId` reads it. */
+function placedAgentId(node: NodeData): string | null {
+  if (node.type !== Deployment.type) return null;
+  const parent = node.properties?.parent_type_id;
+  if (typeof parent !== 'string') return null;
+  if (!isTypeId(parent)) return null;
+  const typeId = new TypeId(parent);
+  return typeId.type === Agent.type ? typeId.id : null;
+}
+
 export function NodeDetails({ node, showWorldViewProperties = false, onNeighborClick }: Props) {
+  const agentId = placedAgentId(node);
   return (
     <>
+      {agentId && <AgentDeploymentPanel agentId={agentId} deploymentId={node.id} />}
       <div className="section">
         <h3>
           <Trans>Identity</Trans>
