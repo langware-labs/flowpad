@@ -33,7 +33,7 @@ from flow_sdk.fs_store.indexer.progress_table import (
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
 from flow_sdk.fs_store.path_owners import PathOwnerIndex
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.server.search_filters import SCOPED_RECORD_TYPES, ScopeFilter
+from flow_sdk.server.search_filters import PROJECT_LIKE_SCOPES, SCOPED_RECORD_TYPES, ScopeFilter
 
 # DFS waypoints the walker visits to reach leaf record types. Either they
 # don't materialize records at all (USER_HOME_FOLDER, SYSTEM_ROOT, FOLDER,
@@ -286,6 +286,22 @@ def _is_async_walker(fn: Any) -> bool:
 _SCOPE_UNREADABLE: tuple[None, None] = (None, None)
 
 
+def _read_disk_metadata(type_name: str, eid: str) -> dict | None:
+    """A record home's metadata.json as a dict, or ``None`` when it is missing /
+    unreadable / not a dict."""
+    import json  # noqa: PLC0415
+
+    from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
+
+    try:
+        blob = json.loads((shadow_dir_for(type_name, eid) / "metadata.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(blob, dict):
+        return None
+    return blob["data"] if isinstance(blob.get("data"), dict) else blob
+
+
 def _read_disk_record_scope(
     type_name: str,
     eid: str,
@@ -298,24 +314,9 @@ def _read_disk_record_scope(
     match a narrowing filter (safer for DELETE: corrupt metadata can't bleed
     cross-scope).
     """
-    import json  # noqa: PLC0415
-
-    from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
-
-    _META_JSON = "metadata.json"
-
-    path = shadow_dir_for(type_name, eid) / _META_JSON
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except (FileNotFoundError, OSError):
+    data = _read_disk_metadata(type_name, eid)
+    if data is None:
         return _SCOPE_UNREADABLE
-    try:
-        blob = json.loads(raw)
-    except json.JSONDecodeError:
-        return _SCOPE_UNREADABLE
-    if not isinstance(blob, dict):
-        return _SCOPE_UNREADABLE
-    data = blob.get("data", blob) if isinstance(blob.get("data"), dict) else blob
     return (str(data.get("scope") or ""), str(data.get("project_id") or ""))
 
 
@@ -352,7 +353,7 @@ def _scope_filter_keeps(
         return False
     if scope == "user":
         return sf.user
-    if scope == "project":
+    if scope in PROJECT_LIKE_SCOPES:
         record_projects = tuple(getattr(sf, "record_projects", ()) or ())
         return pid in set((*sf.projects, *record_projects))
     # Genuinely-empty scope (scope == "" or other falsy).
@@ -501,34 +502,40 @@ def _same_path_dupe_groups(
     return out
 
 
-def _db_missing_orphans(
+def _source_gone_orphans(
+    type_name: str,
+    candidates: set[str],
     db_rows: dict[str, tuple],
-    seen: set[str],
-    disk_ids: set[str],
 ) -> set[str]:
-    """DB-row orphan candidates among ``db_rows``.
+    """The orphans among ``candidates`` — ids this walk did not see.
 
-    Obeys the strict orphan definition (``FSRecord.orphan``): a DECLARED
-    source (asset_ref) that no longer exists. Rows without an asset_ref
-    aren't file-backed → never orphan. Rows under an UNREACHABLE root (an
-    unmounted volume) are excluded too — absence there is not deletion. Rows
-    whose asset_ref still exists are
-    alive even when the walk derived a different id for that file (e.g. an
-    API-minted v4 row beside a path-minted v5 twin) — id-set arithmetic alone
-    would misclassify those as orphan. Stat-per-row — callers run this
-    off-loop via ``asyncio.to_thread``.
+    Not seeing a record is not the same as its source being gone: a walk covers
+    the roots it was given, and a record under any other root (the shipped
+    system project, a project outside the scope) goes unseen with its file
+    right where it was. So every candidate, whether it has a record home on
+    disk or only a DB row, obeys the strict orphan definition
+    (``FSRecord.orphan``): a DECLARED source (asset_ref) that no longer
+    exists. The declaration is read from the row, else from the record home's
+    metadata.json. A record that declares no source isn't file-backed → never
+    orphan. A source under an UNREACHABLE root (an unmounted volume) is not
+    gone either — absence there is not deletion. Stat-per-candidate — callers
+    run this off-loop via ``asyncio.to_thread``.
     """
     from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
 
+    def _declared_source(eid: str) -> str:
+        row = db_rows.get(eid)
+        if row:
+            return str(row[0] or "")
+        return str((_read_disk_metadata(type_name, eid) or {}).get("asset_ref") or "")
+
     return {
         eid
-        for eid, source in db_rows.items()
-        if (aref := source[0] if source else None)
-        and eid not in seen
-        and eid not in disk_ids
-        and not Path(str(aref)).exists()
+        for eid in candidates
+        if (aref := _declared_source(eid))
+        and not Path(aref).exists()
         # An unreachable root is not a deletion — see ``source_unreachable``.
-        and not source_unreachable(str(aref))
+        and not source_unreachable(aref)
     }
 
 
@@ -556,7 +563,7 @@ def _scope_filtered_orphans(
         scope, pid = row[1], row[2]
         if scope == "user":
             return sf.user
-        if scope == "project":
+        if scope in PROJECT_LIKE_SCOPES:
             return str(pid or "") in sf_projects
         # Empty/None scope.
         return _empty_scope_keeps(type_name)
@@ -1225,7 +1232,7 @@ class FSIndexer:
         # Nominating needs no parse: an id equal to what the OLD path-derived
         # rule would mint for this very path is, by construction, that rule's
         # residue. It cannot be confused with the API-minted v4 twin that
-        # `_db_missing_orphans` deliberately keeps alive — those are random.
+        # `_source_gone_orphans` deliberately keeps alive — those are random.
         # And the `- seen_ids` subtraction below is the safety net: on a type
         # still keyed by path that id IS the live one, lands in `seen_ids`
         # (a fresh-skip counts), and is protected without a special case.
@@ -1337,16 +1344,17 @@ class FSIndexer:
             disk_ids = disk_ids_per_type.get(type_name, set())
             db_rows = db_rows_per_type.get(type_name, {})
             seen = seen_ids.get(rt, set())
-            # DB-only candidates per ``_db_missing_orphans`` (strict orphan
-            # definition). Stat-per-row work — off the loop with the other
-            # disk probes.
-            db_missing = await asyncio.to_thread(
-                _db_missing_orphans,
-                db_rows,
-                seen,
-                disk_ids,
+            # Unseen is only a candidate; ``_source_gone_orphans`` keeps the
+            # ones whose declared source is gone (strict orphan definition).
+            # Stat-per-candidate work — off the loop with the other disk probes.
+            missing = sorted(
+                await asyncio.to_thread(
+                    _source_gone_orphans,
+                    type_name,
+                    (disk_ids | db_rows.keys()) - seen,
+                    db_rows,
+                )
             )
-            missing = sorted((disk_ids - seen) | db_missing)
             if not missing:
                 continue
 
