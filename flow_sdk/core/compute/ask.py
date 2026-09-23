@@ -1,15 +1,19 @@
-"""Asking a person for a value, and waiting a bounded time for the answer.
+"""Asking a person for a value, and waiting for the answer.
 
 One pending question at a time per id, held in memory with an
 ``asyncio.Future``. The answer arrives through an HTTP action and resolves the
-future; nothing is persisted, because the whole wait is bounded and a restart
-ends it either way.
+future; nothing is persisted, because a restart ends the wait either way — the
+future, and whatever awaits it, both live in this process and die with it.
 
-**The wait is bounded, and that is the difference from a wizard.** A wizard's
-ask does not block — it returns ``pending`` and releases its caller, and a
-parked run waits for as long as the person likes. An op cannot do that: a
-caller holding a `ReturnedValue` needs an answer or a reason, so the question
-gets a deadline and the op answers ``NOT_YET`` when it passes.
+**The wait is USUALLY bounded, and that is the difference from a wizard.** A
+wizard's ask does not block — it returns ``pending`` and releases its caller,
+and a parked run waits for as long as the person likes. An op cannot normally
+do that: a caller holding a `ReturnedValue` needs an answer or a reason, so
+the question gets a deadline and the op answers ``NOT_YET`` when it passes.
+The one exception is an op declared ``until_answered`` (`compute_op_spec.py`)
+— install-time infrastructure the app cannot proceed without — which waits
+with NO deadline, on the same terms a wizard's own parked run does: forever,
+until answered, cancelled, or the process restarts.
 
 **Same process, on purpose.** The future lives where ``run_op`` is running, so
 the answer must reach that process — which means the backend, the one that
@@ -40,6 +44,8 @@ class Question:
     id: str
     op_name: str
     prompt: str
+    #: A plain-language paragraph shown under the prompt (`AskOp.detail`).
+    detail: str = ""
     #: The op's ``output_spec_kind`` — the kind the answer is held to. There is
     #: exactly one declaration; this is it.
     shape: Any = None
@@ -50,7 +56,17 @@ class Question:
 
     def to_payload(self) -> dict:
         """What a UI needs to draw the field. Never the future."""
-        return {"id": self.id, "op": self.op_name, "prompt": self.prompt, "fields": self.fields}
+        return {
+            "id": self.id,
+            "op": self.op_name,
+            "prompt": self.prompt,
+            "detail": self.detail,
+            # The declared kind by NAME, when it is one. The window decides its
+            # buttons from this — "confirm" is answered Yes / No — rather than
+            # guessing from "there happen to be no fields".
+            "kind": self.shape if isinstance(self.shape, str) else None,
+            "fields": self.fields,
+        }
 
 
 #: Questions waiting for an answer, by id. Empty between asks: a question is
@@ -59,12 +75,16 @@ class Question:
 _PENDING: "dict[str, Question]" = {}
 
 
-def open_question(op_name: str, prompt: str, shape: Any) -> Question:
+def open_question(op_name: str, prompt: str, shape: Any, detail: str = "") -> Question:
     """Register a question and return it. The caller then awaits ``wait_for``."""
     from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
 
     question = Question(
-        id=str(uuid.uuid4()), op_name=op_name, prompt=prompt, shape=shape,
+        id=str(uuid.uuid4()),
+        op_name=op_name,
+        prompt=prompt,
+        detail=detail,
+        shape=shape,
         # A kind string alone would render as one unnamed box.
         fields=fields_of_kind(shape) if isinstance(shape, str) else shape,
         _future=asyncio.get_event_loop().create_future(),
@@ -113,8 +133,14 @@ def cancel(question_id: str) -> bool:
     return _settle(question_id, lambda future: future.set_exception(Cancelled()))
 
 
-async def wait_for(question: Question, *, timeout: float = ASK_TIMEOUT_SECONDS) -> Any:
-    """The answer, or ``TimeoutError``/``Cancelled``.
+def forget(question_id: str) -> None:
+    """Drop a question nobody will wait for — one that was never shown."""
+    _PENDING.pop(question_id, None)
+
+
+async def wait_for(question: Question, *, timeout: Optional[float] = ASK_TIMEOUT_SECONDS) -> Any:
+    """The answer, or ``TimeoutError``/``Cancelled``. ``timeout=None`` waits
+    until the person answers or cancels.
 
     The question is forgotten on every exit, so a late answer to a question
     nobody is waiting for is refused rather than silently dropped into a future

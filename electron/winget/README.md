@@ -1,3 +1,6 @@
+---
+id: d8492ea3-e0cc-4ac4-94b1-b09b83a07fef
+---
 # winget — submitted by CI, every production release
 
 `winget install Langware.Flowpad` gives a one-line install and automatic version bumps.

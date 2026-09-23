@@ -47,6 +47,14 @@ The op raises the question and waits a bounded time. A live tab is sent to
 listening, a window is opened at the same address. `ASK_TIMEOUT_SECONDS` is 60;
 a caller may pass a shorter deadline, never a longer one.
 
+An op that is install-time infrastructure — the machine cannot proceed without
+it, and giving up only means asking again next boot — sets
+`"until_answered": true` in its `exe_data` and waits with no deadline. The
+price of that is one rule: a question that could not be shown to anyone (no
+live tab, no browser — a headless sandbox) is dropped at once and answers
+`NOT_YET` with `ran=False`, because an unbounded wait with nobody to answer
+never ends.
+
 `approved=True` is not optional. An op that is not a system op answers
 `REFUSED` unapproved — before it puts a question to anyone.
 
@@ -88,7 +96,10 @@ and it does nothing:
 
 A wizard sequences them (`on_fail: continue` on the first), or Python does. An
 agent's answer names its process in `executor`; a caller that wants a second
-turn in the SAME session runs the next op with `executor=answer.executor`. A turn
+turn in the SAME session runs the next op through `run_op(spec, …,
+executor=answer.executor)` (`flow_sdk/core/compute_op/runner.py`) — the entity's
+`ComputeOp.run()` takes no `executor`. See
+[call-returns](call-returns.md) for the worked retry. A turn
 that ran out of time is `timed_out` — that process is busy, not done, so it is
 not prompted again on top of itself.
 

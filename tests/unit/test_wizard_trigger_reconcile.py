@@ -16,6 +16,7 @@ about derivation:
 Plus one new thing: the legacy prune, which retires the positional
 `wizard_<slug>_<n>` rows older installs derived.
 """
+
 import json
 
 import pytest
@@ -30,15 +31,20 @@ from flow_sdk.server.builtin_triggers import (
     _upsert_one,
     reconcile_wizard_triggers,
 )
-from tests.pytest_plugin import async_context
 from tests.fixtures.identity import index_path
+from tests.pytest_plugin import async_context
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
 DOC = {
     "name": "Developer toolchain",
-    "steps": [{"id": "python3", "precondition": {"commands": {"linux": "have python3"}},
-               "process": {"prompt": "install python"}}],
+    "steps": [
+        {
+            "id": "python3",
+            "precondition": {"commands": {"linux": "have python3"}},
+            "process": {"prompt": "install python"},
+        }
+    ],
 }
 
 
@@ -64,11 +70,13 @@ async def _trigger_for(wizard: Wizard, *, uname: str = "wizard_test_0") -> Trigg
         trigger_type=TriggerType.TAG,
         tag_pattern="app.ready",
         fire_once=True,
-        actions=[TriggerAction(
-            action_type=ActionType.CALLBACK,
-            callback_name="builtin_run_wizard",
-            target_type_id=str(wizard.typeid),
-        )],
+        actions=[
+            TriggerAction(
+                action_type=ActionType.CALLBACK,
+                callback_name="builtin_run_wizard",
+                target_type_id=str(wizard.typeid),
+            )
+        ],
     )
     await trigger.save()
     return trigger
@@ -85,13 +93,16 @@ async def _cleanup(*entities):
 
 # ── arming ───────────────────────────────────────────────────────────────────
 
+
 @async_context
 async def test_a_tag_trigger_created_after_the_boot_sweep_is_armed_immediately(tmp_path):
     """`start_tag_triggers` runs once at boot. Anything created afterwards — an
     indexed asset, a seeded row — has to arm itself, or it waits for an event
     that has already gone past."""
     spec = dict(
-        uname="wizard_armed_0", name="armed", trigger_type=TriggerType.TAG,
+        uname="wizard_armed_0",
+        name="armed",
+        trigger_type=TriggerType.TAG,
         tag_pattern="app.ready",
         actions=[TriggerAction(action_type=ActionType.CALLBACK, callback_name="builtin_run_wizard")],
     )
@@ -106,13 +117,16 @@ async def test_a_tag_trigger_created_after_the_boot_sweep_is_armed_immediately(t
 
 # ── the legacy prune ─────────────────────────────────────────────────────────
 
+
 @async_context
 async def test_the_derived_namespace_is_retired(tmp_path):
     """Older installs hold `wizard_<slug>_<n>` rows this used to derive. They are
     superseded by child assets, and an armed row whose declaration no longer
     exists would fire for a wizard nothing points at."""
     stale = Trigger(
-        uname="wizard_dev_toolchain_0", name="derived", trigger_type=TriggerType.TAG,
+        uname="wizard_dev_toolchain_0",
+        name="derived",
+        trigger_type=TriggerType.TAG,
         tag_pattern="app.ready",
     )
     await stale.save()
@@ -130,7 +144,9 @@ async def test_the_prune_spares_a_user_authored_trigger(tmp_path):
     """The `wizard_` prefix is what makes deleting rows safe: those unames were
     minted by us, so nothing a person wrote can land in the namespace."""
     mine = Trigger(
-        uname="user_app_ready", name="mine", trigger_type=TriggerType.TAG,
+        uname="user_app_ready",
+        name="mine",
+        trigger_type=TriggerType.TAG,
         tag_pattern="app.ready",
     )
     await mine.save()
@@ -142,6 +158,7 @@ async def test_the_prune_spares_a_user_authored_trigger(tmp_path):
 
 
 # ── what a fired trigger does ────────────────────────────────────────────────
+
 
 @async_context
 async def test_a_trigger_fired_run_reports_at_instance_scope_not_entity_scope(tmp_path, monkeypatch):
@@ -167,10 +184,7 @@ async def test_a_trigger_fired_run_reports_at_instance_scope_not_entity_scope(tm
 
     # The REAL shipped wizard: the callback refuses an unattended run of anything
     # outside a system project, so a fixture wizard would never reach the runner.
-    shipped = (
-        system_projects_root() / "flowpad_assistant"
-        / "agentic-assets" / "wizard" / "dev-toolchain"
-    )
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
     record = await index_path("wizard", shipped, write=False)
     wizard = await Wizard.get_by_id(record.id)
     trigger = await _trigger_for(wizard)
@@ -183,7 +197,7 @@ async def test_a_trigger_fired_run_reports_at_instance_scope_not_entity_scope(tm
             "never sees it — the run is correct and invisible"
         )
         # ONE SEGMENT: each wizard is its own activity ROOT.
-        assert seen.get("activity_path") == "wizard-dev-toolchain"
+        assert seen.get("activity_path") == "wizard-llm-setup"
         assert seen.get("trusted") is True, "a shipped wizard runs unprompted"
     finally:
         await _cleanup(wizard, trigger)

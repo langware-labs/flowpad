@@ -1,3 +1,6 @@
+---
+id: dab5dd36-f488-4f69-bd58-90d5838c1752
+---
 # Session naming across browsers
 
 `worker_session_name_observers.md.ts` runs two independent Chromium contexts

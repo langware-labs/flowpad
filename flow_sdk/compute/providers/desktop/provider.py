@@ -156,6 +156,70 @@ def _python_fallback_path(existing_path: str | None) -> str | None:
     return os.pathsep.join([*real, str(bin_dir), *store])
 
 
+#: Defines `python3` for the interactive PTY session it opens — ONLY when it
+#: does not already resolve. A stock Windows ships `python3` as the Store
+#: alias stub (opens the Store, never runs code) even with a real Python
+#: installed as `python`/`py`; every terminal this app opens goes through
+#: `get_or_create_pty_session`, which is the one place that reaches all of
+#: them.
+#:
+#: A real FILE on PATH, not a shell alias — proven the hard way (on a real
+#: Windows 11 box) to be the only form that actually works here:
+#:
+#: * A PowerShell `Set-Alias` only resolves bare commands typed at THAT
+#:   session's own prompt. It does nothing for a child process the session
+#:   spawns (`npm run build` calling `python3` internally sees no alias at
+#:   all) — an alias does not cross a process boundary; a PATH entry does.
+#: * `cmd.exe`'s equivalent, a `doskey` macro, is worse: it expands ONLY for
+#:   interactively typed input, never for a batch file — confirmed live: the
+#:   exact `doskey python3=python $*` sequence, run then used inside one
+#:   `.cmd` file, left `python3` "not recognized". A shim file has no such
+#:   distinction; `/k <command>` vs. typing has never mattered to it.
+#:
+#: `_python3_shim_dir` builds this dir once and reuses it; the win32 spawn
+#: path prepends it to `env["PATH"]` — nothing shell-specific left to inject.
+_PYTHON3_SHIM_DIRNAME = "flowpad-python3-shim"
+
+
+def _python3_shim_dir(
+    path: str | None,
+    *,
+    platform: str = "",
+    which: Callable[..., str | None] = shutil.which,
+) -> str | None:
+    """A directory holding a `python3.cmd` shim, or ``None`` when there is
+    nothing to do — `python3` already resolves on *path*, or nothing does.
+
+    *path* is the PTY's own spawn PATH, not this process's: resolve against
+    what the child will actually see, the same rule `find_command` follows.
+    Idempotent — the file is written once and reused by every later session.
+
+    *platform* and *which* are injected seams, not knobs for production —
+    the defaults ARE production. `shutil.which`'s own win32 branch calls into
+    `_winapi`, a Windows-only extension module that is absent everywhere
+    else, so a test proving this off Windows must inject both rather than
+    monkeypatch `sys.platform` and crash on that exact line.
+    """
+    if (platform or sys.platform) != PLATFORM_WIN32:
+        return None
+    if which("python3", path=path):
+        return None
+    real_python = which("python", path=path)
+    if real_python is None:
+        return None
+    shim_dir = Path(tempfile.gettempdir()) / _PYTHON3_SHIM_DIRNAME
+    shim = shim_dir / "python3.cmd"
+    try:
+        shim_dir.mkdir(exist_ok=True)
+        if not shim.exists():
+            # `%*` forwards every argument verbatim; `@` suppresses cmd.exe's
+            # own command-echo, so this shim is silent like the real thing.
+            shim.write_text("@python %*\r\n")
+    except OSError:
+        return None  # a read-only or missing temp dir: no shim, no crash
+    return str(shim_dir)
+
+
 def find_command(command: str, path: str | None = None) -> str | None:
     """Cross-platform executable lookup for PTY spawns — ``None`` = not found.
 
@@ -721,6 +785,14 @@ class LocalComputeProvider(ComputeProvider):
         if pty_key not in self._pty_processes:
             env = _build_interactive_pty_env(session_id, extra_env)
 
+            # python3 aliased in for every PTY this reaches — shell or a
+            # direct CLI spawn alike, since PATH (unlike a shell alias)
+            # reaches a spawned child's own children too. See
+            # `_python3_shim_dir`.
+            shim_dir = _python3_shim_dir(env.get("PATH"))
+            if shim_dir:
+                env["PATH"] = shim_dir + os.pathsep + (env.get("PATH") or "")
+
             if spawn_args is not None:
                 # Direct spawn: caller provides exact argv (e.g. Claude CLI directly)
                 final_spawn_args = spawn_args
@@ -771,7 +843,9 @@ class LocalComputeProvider(ComputeProvider):
 
                 # Configure spawn arguments (command + flags) based on shell type
                 if sys.platform == PLATFORM_WIN32:
-                    # Windows: PowerShell or cmd.exe
+                    # Windows: PowerShell or cmd.exe. python3 is aliased in via
+                    # `env["PATH"]` above (a shim dir), not a shell flag here —
+                    # neither shell needs to know.
                     if shell_cmd and ("powershell" in shell_cmd.lower() or "pwsh" in shell_cmd.lower()):
                         final_spawn_args = [shell_cmd, "-NoProfile", "-NoLogo"]
                     else:
@@ -900,8 +974,14 @@ class LocalComputeProvider(ComputeProvider):
                 toplog.log(
                     "pty",
                     "spawn session=%s pid=%s backend_pid=%s argv0=%s size=%sx%s cwd=%s spawn_ms=%.0f",
-                    session_id, pty_process.pid, os.getpid(), final_spawn_args[0] if final_spawn_args else None,
-                    cols, rows, pty_working_dir, (time.monotonic() - spawn_t0) * 1000,
+                    session_id,
+                    pty_process.pid,
+                    os.getpid(),
+                    final_spawn_args[0] if final_spawn_args else None,
+                    cols,
+                    rows,
+                    pty_working_dir,
+                    (time.monotonic() - spawn_t0) * 1000,
                 )
 
                 pty_session_running = {"value": True}
@@ -959,8 +1039,12 @@ class LocalComputeProvider(ComputeProvider):
                         except Exception:
                             pass
                         toplog.log(
-                            "pty", "reader_exit session=%s pid=%s exit_code=%s stopped=%s",
-                            session_id, pty_process.pid, exit_code, not pty_session_running["value"],
+                            "pty",
+                            "reader_exit session=%s pid=%s exit_code=%s stopped=%s",
+                            session_id,
+                            pty_process.pid,
+                            exit_code,
+                            not pty_session_running["value"],
                         )
                         if on_exit is not None:
                             try:

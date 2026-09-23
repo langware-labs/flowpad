@@ -1,6 +1,6 @@
 """The whole chain, in one process:
 
-    trigger.json -> indexed row -> armed -> app.ready -> fire -> wizard runs
+    trigger.json -> indexed row -> armed -> app.tab.ready -> fire -> wizard runs
 
 Each link is separately covered elsewhere; this asserts they are actually joined.
 It is the test that fails if the extractor stops flattening the document, if
@@ -8,11 +8,14 @@ arming stops happening for a trigger that arrives by INDEXING rather than by
 seeding, or if the callback stops resolving the wizard from the action that
 names it — three wiring bugs that every per-link test would still pass.
 
-The wizard used is the REAL shipped one, and its steps run for real. On a
-developer machine python3 and git are already present, so every step's check
-holds, nothing runs and no installer is spawned — which is exactly the shape the
-"already provisioned" half of the container proof takes.
+The wizard used is the REAL shipped one (`llm-setup`). Its shell is a double on
+which every check holds — the "already provisioned" shape — so nothing is asked,
+nothing runs, and the result does not depend on which of python, git, node and
+npm this machine happens to have (a Mac without node is a normal developer
+machine). What a check prints and how a missing tool is asked about is
+`test_llm_setup_wizard.py`'s job.
 """
+
 import asyncio
 
 import pytest
@@ -23,23 +26,52 @@ from flow_sdk.builtin.wizard import Wizard
 from flow_sdk.config import system_projects_root
 from flow_sdk.server.builtin_triggers import WIZARD_TRIGGER_UNAME_PREFIX
 from flow_sdk.tags import emit_tag, target_of
-from tests.pytest_plugin import async_context
 from tests.fixtures.identity import index_path
+from tests.pytest_plugin import async_context
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
-SHIPPED = (
-    system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "dev-toolchain"
-)
-#: The ops its steps call. A step names one; the row has to be indexed for the
-#: resolver to find it, exactly as it is on a real machine.
+ASSETS = system_projects_root() / "flowpad_assistant" / "agentic-assets"
+SHIPPED = ASSETS / "wizard" / "llm-setup"
+#: The wizards its steps call, and the ops THOSE call. A step names one; the row
+#: has to be indexed for the resolver to find it, exactly as it is on a real
+#: machine.
+SUB_WIZARDS = [ASSETS / "wizard" / name for name in ("llm-setup-python", "llm-setup-git", "llm-setup-node")]
 OPS = [
-    system_projects_root() / "flowpad_assistant" / "agentic-assets" / "compute_op" / name
-    for name in ("python3-on-path", "python3-on-path-agent", "git-on-path", "git-on-path-agent")
+    ASSETS / "compute_op" / name
+    for name in (
+        "python-on-path",
+        "git-on-path",
+        "node-on-path",
+        "npm-on-path",
+        "ask-install-python",
+        "ask-install-git",
+        "ask-install-node",
+        "ask-install-npm",
+    )
 ]
 #: The shipped wizard's trigger, as a child asset — the standard shape.
-SHIPPED_TRIGGER = SHIPPED / "agentic-assets" / "trigger" / "on-app-ready"
-UNAME = f"{WIZARD_TRIGGER_UNAME_PREFIX}dev_toolchain_0"
+SHIPPED_TRIGGER = SHIPPED / "agentic-assets" / "trigger" / "on-tab-ready"
+UNAME = f"{WIZARD_TRIGGER_UNAME_PREFIX}llm_setup_0"
+
+
+@pytest.fixture(autouse=True)
+def _never_wait_for_a_person(monkeypatch):
+    """On a machine missing one of the four tools the wizard would ask, and a
+    test process has no tab. The runner then gives up after its presence grace;
+    shrinking that grace keeps the run from sitting in it. It shortens a wait —
+    the caps stay as they are."""
+    from flow_sdk.core.compute_op import runner
+
+    monkeypatch.setattr(runner, "PRESENCE_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr(runner, "PRESENCE_POLL_SECONDS", 0.01)
+
+
+async def _everything_is_installed(command: str, **_):
+    """Every check passes, printing the empty confirm an ask op's check echoes."""
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+
+    return CliResult.of_process(command, 0, "{}\n")
 
 
 async def _index_trigger(wizard) -> Trigger:
@@ -65,6 +97,8 @@ async def _index_trigger(wizard) -> Trigger:
     await trigger.save()
     await arm_trigger(trigger)
     return trigger
+
+
 _MAX_DRAIN_ROUNDS = 50
 
 
@@ -91,7 +125,7 @@ async def _cleanup(wizard):
 
 
 @async_context
-async def test_app_ready_runs_the_shipped_wizard_through_its_declared_trigger():
+async def test_a_ready_tab_runs_the_shipped_wizard_through_its_declared_trigger():
     # 1. INDEXED — stand in for the detached system-content walk, which is the
     #    only thing that discovers a wizard shipped inside the wheel.
     record = await index_path("wizard", SHIPPED, write=False)
@@ -102,26 +136,33 @@ async def test_app_ready_runs_the_shipped_wizard_through_its_declared_trigger():
         # 2. THE TRIGGER ASSET, indexed and armed — no derivation, no restart.
         trigger = await _index_trigger(wizard)
         assert trigger is not None, "the wizard's trigger asset produced no row"
-        assert trigger.tag_pattern == "app.ready"
-        assert trigger.fire_once is True
+        assert trigger.tag_pattern == "app.tab.ready"
+        assert trigger.fire_once is False
         assert trigger.id in tag_triggers._subscriptions, (
             "the trigger exists but is not armed — the event would be lost, and "
             "nothing anywhere would say why the wizard never ran"
         )
 
         # 3. THE EVENT.
-        emit_tag("app.ready", target_of("compute_node", "n-1"), {"version": "test"})
+        emit_tag("app.tab.ready", target_of("compute_node", "n-1"), {"connection_id": "c-1"})
         await _settle()
 
         # 4. IT FIRED.
         fired = await Trigger.get_by_id(trigger.id)
-        assert fired.counter == 1, "app.ready did not reach the wizard's trigger"
+        assert fired.counter == 1, "app.tab.ready did not reach the wizard's trigger"
         assert fired.last_run is not None
 
-        # 5. AND IT IS SPENT — a second boot must not re-run it.
+        # 5. AND IT IS NOT SPENT — a reload, a new window or a restart is another
+        #    tab, and a tool removed since must be asked about again.
+        emit_tag("app.tab.ready", target_of("compute_node", "n-1"), {"connection_id": "c-2"})
+        await _settle()
+        assert (await Trigger.get_by_id(trigger.id)).counter == 2
+
+        # 6. AND IT DOES NOT LISTEN TO THE OLD TAG. `app.ready` fires before any
+        #    tab exists, which is the whole reason this moved.
         emit_tag("app.ready", target_of("compute_node", "n-1"), {"version": "test"})
         await _settle()
-        assert (await Trigger.get_by_id(trigger.id)).counter == 1
+        assert (await Trigger.get_by_id(trigger.id)).counter == 2
     finally:
         await _cleanup(wizard)
 
@@ -141,23 +182,28 @@ async def test_the_run_reports_through_the_activity_tree():
         # whether a callee is trusted here, so it supplies the resolvers.
         from flow_sdk.core.wizard.execute import _resolve_op, _resolve_wizard
 
+        for folder in SUB_WIZARDS:
+            await index_path("wizard", folder, write=False)
         for folder in OPS:
             await index_path("compute_op", folder, write=False)
 
         result = await run_wizard(
-            spec, subject_entity=str(wizard.typeid), activity_path="wizard/chain-check",
-            trusted=True, workdir=SHIPPED.parent,
-            resolve_op=_resolve_op, resolve_wizard=_resolve_wizard,
+            spec,
+            subject_entity=str(wizard.typeid),
+            activity_path="wizard/chain-check",
+            trusted=True,
+            workdir=SHIPPED.parent,
+            shell=_everything_is_installed,
+            resolve_op=_resolve_op,
+            resolve_wizard=_resolve_wizard,
         )
-        assert list(result.steps) == ["python3", "python3-agent", "git", "git-agent"]
-        # This machine is a developer machine, so both are already there.
+        assert list(result.steps) == ["python", "git", "node"]
         assert result.ok, f"the shipped wizard failed here: {result.detail}"
         assert not any(step.ran for step in result.steps.values()), (
-            "python3 and git are present on this machine, so every step's check "
-            f"must hold and nothing run; got {[(k, v.exit_code, v.ran) for k, v in result.steps.items()]}"
+            "every check holds on this shell, so nothing may run; got {[(k, v.exit_code, v.ran) for k, v in result.steps.items()]}"
         )
         root = Activity.get("wizard/chain-check", subject_entity=str(wizard.typeid)).spec()
-        assert root.total == 4 and root.skipped == 4 and root.errors_count == 0
+        assert root.total == 3 and root.skipped == 3 and root.errors_count == 0
     finally:
         await _cleanup(wizard)
 

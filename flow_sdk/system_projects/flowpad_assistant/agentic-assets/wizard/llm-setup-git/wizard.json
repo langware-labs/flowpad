@@ -1,0 +1,23 @@
+{
+  "name": "llm-setup-git",
+  "description": "Asks whether to install Git when it is missing, and installs it only if the person agrees.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "ask",
+      "label": "Install Git?",
+      "kind": "compute",
+      "ref": "ask-install-git",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install",
+      "label": "Git",
+      "kind": "compute",
+      "ref": "git-on-path",
+      "on_fail": "abort"
+    }
+  ]
+}

@@ -1,3 +1,6 @@
+---
+id: bd2a2eb5-e9d9-436e-a237-13f7b5364386
+---
 # Agent help desk
 
 Give an Agent a hub help desk to answer. A desk is a hub project with
