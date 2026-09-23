@@ -771,20 +771,30 @@ class CloudManager extends EventEmitter {
     return cloudUser;
   }
 
-  private async _setLoggedOut() {
+  private async _setLoggedOut(reason: string | null = null) {
     this._currentUser = null;
     const ctx = await _dataContext();
     await ctx.setContextEntityTypeId(await _currentUserKey(), null);
     ctx.setCloudLoggedIn?.(false);
-    this._applyLoginStatus('logged_out', null, null);
-    // DIAGNOSTIC BISECT (temporary, do not merge): commented out to test
-    // whether this is what breaks tests/headless/agent_auto_launch.test.tsx
-    // in CI. See FLOWPAD-2151 discussion.
-    // const dm = await _dataManager();
-    // dm.adoptReadScope('anonymous');
+    this._applyLoginStatus('logged_out', null, reason);
+    // Only a real cross-account switch on a shared sandbox (FLOWPAD-2151)
+    // warrants dropping every cached entity/query — Task, Project, Agent,
+    // everything, not just the outgoing account's hub-derived rows. Every
+    // OTHER path here (a plain "no cloud user yet" bootstrap, an explicit
+    // self-logout) must NOT do this: it doesn't just clear stale cloud data,
+    // it wipes the whole app's local cache mid-render, which is exactly what
+    // broke tests/headless/agent_auto_launch.test.tsx — the test's local,
+    // never-cloud-logged-in backend hit this path on plain boot and lost the
+    // Project/Agent it had just fetched. A prior commit worked around the CI
+    // failure by disabling this call outright (do not resurrect that — it
+    // silently brings back the stale-UI half of the FLOWPAD-2151 bug).
+    if (reason === 'switched_out') {
+      const dm = await _dataManager();
+      dm.adoptReadScope('anonymous');
+    }
     // Connection state is owned by its own channel; logout-driven
     // DISCONNECTED arrives via cloud_connection_status_msg.
-    this.emit('logout_complete');
+    this.emit('logout_complete', { reason });
   }
 
   /** Apply a new login slot value. Emits login_status_changed + cloud_status_changed. */
@@ -873,7 +883,7 @@ class CloudManager extends EventEmitter {
     if (status === 'logged_in' && user) {
       await this._setLoggedIn(user);
     } else if (status === 'logged_out') {
-      await this._setLoggedOut();
+      await this._setLoggedOut(reason);
     } else if (status === 'login_failed') {
       this._applyLoginStatus('login_failed', null, reason);
       this.emit('login_failed', { message: reason ?? 'Login failed' });
