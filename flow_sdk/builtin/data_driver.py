@@ -28,6 +28,7 @@ from flow_sdk.ingest.driver_runtime import DRIVERS, DriverRuntime
 from flow_sdk.schema.data_spec.data_driver_spec import (
     CURRENT_SCHEMA,
     AuthSpec,
+    CallStart,
     DataDriverSpec,
     FieldHints,
     Runtime,
@@ -72,6 +73,8 @@ class DataDriver(DriverRuntime, Entity):
     config: dict[str, FieldHints] = APIField(default_factory=dict)
     listed: bool = APIField(default=True)
     provisioned: bool = APIField(default=False)
+    #: How a person starts a call on it: ``webrtc`` | ``clip`` | ``dial``; blank takes no calls.
+    calls: CallStart = APIField(default=CallStart.NONE)
 
     #: DERIVED from the folder by the extractor (``DataDriverSpec.runtime_for_folder``), never
     #: authored; mirrored to the shadow.

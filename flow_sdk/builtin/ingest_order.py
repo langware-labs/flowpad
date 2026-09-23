@@ -38,13 +38,15 @@ def bind(stamp: datetime) -> datetime:
     return stamp
 
 
-async def newest_for(cls: type[T], data_source_id: str) -> Optional[T]:
-    """The last row ingested for a source — a fresh listener's baseline."""
-    rows = await cls.get_all(QueryFilter(
-        match=ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", data_source_id]),
-        order_by=[{"created_date": "desc"}, {"id": "desc"}],
-        limit=1,
-    ))
+async def newest_for(cls: type[T], data_source_id: str, *, at_or_before: Optional[datetime] = None) -> Optional[T]:
+    """The last row ingested for a source — a fresh listener's baseline; *at_or_before* moves that
+    moment into the past (everything after it is still to come)."""
+    match = ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", data_source_id])
+    if at_or_before is not None:
+        match = ExpressionNode(op=QueryOp.AND, operands=[
+            match, ExpressionNode(op=QueryOp.LE, operands=["created_date", bind(at_or_before)]),
+        ])
+    rows = await cls.get_all(QueryFilter(match=match, order_by=[{"created_date": "desc"}, {"id": "desc"}], limit=1))
     return rows[0] if rows else None
 
 

@@ -12,14 +12,16 @@ resolves the `local` one — the seam for choosing another is `deployment=`.
     Agent.deploy(provider)  -> Deployment        kind "runtime.agent"
     Deployment.launch(...)  -> PromptResult      executor: the AgenticProcess
 
-A placement is also where the agent ANSWERS. The app's agent server keeps every local
-placement serving: its standard `chat` endpoint (`service-endpoints.md` §6) and one serve
-loop over the channels it answers (`agents-on-channels.md` §2) — a source's `answer_place`
-names the placement that answers it; a source that names none is answered where it is held.
-Both go through one turn engine (`flow_sdk/builtin/agent_serve.py`): one process per
-conversation, one turn at a time, a redelivered message answered from its record.
+A deployment is also where the agent ANSWERS. A running local deployment **is a process on this
+machine running the agent loop** (`python -m flow_sdk.builtin.agent_loop`, §7): plain SDK code in the
+same instance, pulling from the channels it answers and replying on them — its `chat` endpoint
+(`service-endpoints.md` §6) is one more channel. A source's `answer_place` names the deployment that
+answers it; a source that names none is the default local deployment's. Every turn goes through one
+turn engine (`flow_sdk/builtin/agent_serve.py`): one process per conversation, one turn at a time, a
+redelivered message answered from its record. The app only keeps those processes running.
 
-Pinned by `tests/unit/agent/test_agent_deployment_contract.py` (placement) and
+§1, §3, §4, §6 and §7 are run as written by `tests/unit/test_agent_deployment_snippets.py`;
+the contract is pinned by `tests/unit/agent/test_agent_deployment_contract.py` (placement) and
 `tests/unit/agent/test_agent_run_dispatch.py` (routing). The spawn itself needs
 a real CLI and is the `tests/long_tests/test_process_mcp_multi_vendor.py` leg.
 
@@ -37,8 +39,8 @@ agent = Agent(
 )
 await agent.save()
 
-here = await agent.local_deployment()          # get-or-create, provider "local"
-again = await agent.local_deployment()
+here = await agent.deploy("local")             # "This computer" — nothing is placed until you ask
+again = await agent.deploy("local")
 assert again.id == here.id                     # converges by lookup, never a derived id
 
 assert here.kind == "runtime.agent"
@@ -107,24 +109,29 @@ from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
 d = await Deployment.find_existing(str(agent.typeid), "local", kind=KIND_AGENT)
 await d.agent()                                # the placed Agent, or None
 d.compute_node_id                              # the machine, for a node-backed provider
-d.host_url                                     # where a human reaches it, if anywhere
+await d.endpoints()                            # where it is reached: one ServiceEndpoint per service (service-endpoints.md)
 await d.runs(limit=10)                         # its processes, newest first
 ```
 
 `runs()` bounds and orders in the query — a long-lived placement would
 otherwise hydrate everything it ever produced to hand back ten.
 
-## 4. Stop the machine, keep the row
+## 4. Stop it, keep the row
 
 ```python
-paused = await here.pause()                    # False when there is no machine to stop
+paused = await here.pause()                    # on this computer: its process stops, the row stays
+assert paused and not here.serving
+await here.resume()                            # the app starts its process again
 ```
 
 Terminate is a pause, not a delete: the row carries the placement's cost and
-activity observations. A `remote` row is paused by the hub and comes back down
-the bridge; nothing is written locally in that case.
+activity observations. On this computer a pause stops the deployment's process (§7),
+never the machine; a cloud row pauses its machine, and a `remote` one is paused by the
+hub and comes back down the bridge — nothing is written locally in that case.
 
 ## 5. A machine of its own
+
+Live only — it needs a hub login and publishes through git; no test runs this fence.
 
 ```python
 import flow_sdk
@@ -138,6 +145,91 @@ would be passable from anywhere." The hub mints the ComputeNode, provisions the
 Identity, logs the box in as the agent, and the returned row is adopted **at
 the hub's id** (`Deployment.adopt_from_hub`) — never re-minted. Live only; the
 unit tier stops at the refusal in §2.
+
+## 6. Serve it your way — you pick the channels and the routing
+
+A running local deployment (§7) answers every channel the agent owns, each message in its own
+conversation. When you want to choose — only some channels, a second agent for some messages, one
+session per customer rather than per chat — run the loop yourself over the same pieces:
+
+```python
+from flow_sdk.blocks import StreamInbox, workflow
+from flow_sdk.blocks.merge import listen
+from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.agent_serve import TurnEngine, answer
+
+support = await Agent.by_name("support-bot")
+billing = await Agent.by_name("billing-bot")
+
+# 1. The channels: the agent's own, by kind
+whatsapp = await support.channel("whatsapp")
+telegram = await support.channel("telegram")
+
+# 2. The routing: which agent, and which session (= process), answers
+desk    = TurnEngine(support, await support.deploy("local"))
+finance = TurnEngine(billing, await billing.deploy("local"))
+
+def route(m):
+    if "invoice" in m.body.lower():
+        return finance, f"customer/{m.author_external_id}"   # one billing session per customer
+    return desk, None                                         # None: the chat's own conversation
+
+# 3. The loop
+async with workflow("acme-support"):                          # names the durable cursor
+    async for m in listen(StreamInbox.of(whatsapp), StreamInbox.of(telegram)):
+        engine, session = route(m)
+        await answer(engine, m, session=session)              # gates → turn → reply on m's channel
+```
+
+- **`support.channel(kind)`** is the agent's one channel of that kind. It raises when there is
+  none, or more than one; then pick from `await support.channels()` yourself.
+- **A session is a process.** `TurnEngine` keeps one process per session string on its
+  placement and finds it again after a restart, so no routing table lives in your script.
+  `answer(engine, m, process=p)` runs the turn on a live process you already hold instead.
+- **The routing is yours; the gates are not.** `answer` still drops the agent's own echoes,
+  senders the source does not admit, empty and quiet messages, and leaves a
+  `replies_explicitly` channel to reply by itself. A message it does not answer is acked; a turn
+  the process refused is not.
+- **`workflow(name)` is the cursor.** A restart resumes after the last acked message; without it
+  the position lives only as long as the loop.
+- **One loop per channel.** A running local deployment of the agent also answers these channels —
+  point each source's `answer_place` at the deployment this loop runs as, or don't also run the agent
+  here, or two replies go out.
+
+## 7. Run it on this computer — a process per deployment
+
+"This computer" under New deployment is `run_locally()`: one more local deployment, each its own
+process. The first takes the default slot and answers every channel that names no place; the next
+ones (`"2"`, `"3"`, …) answer only what names them. Each gets its `chat` endpoint — an HTTP message
+channel — at launch.
+
+```python
+from flow_sdk.builtin.service_endpoint import ServiceEndpoint
+
+first = await agent.run_locally()               # a process on this computer running the agent loop
+second = await agent.run_locally()              # one more — its own process, its own chat
+assert (first.slot, second.slot) == ("", "2") and first.serving and second.serving
+
+chat = await ServiceEndpoint.find_existing(str(second.typeid), "chat")
+assert chat.backend.type == "channel"           # POST v1/chat/completions → a message → its loop answers
+```
+
+The app starts each process (`FLOW_DEPLOYMENT_ID` names the deployment; `FLOW_INSTANCE` is inherited),
+records it on the row, adopts it alive after an app restart, starts it again if it dies, and stops it
+when the deployment stops serving or the agent is switched off. What the process runs is the whole
+loop — this, kept running (`flow_sdk/builtin/agent_loop.py`):
+
+```python
+deployment = await Deployment.get_by_id(os.environ["FLOW_DEPLOYMENT_ID"])
+agent = await deployment.agent()
+await serve(agent, deployment, sources=await answered_sources(agent, deployment))
+```
+
+— re-read every few seconds (a channel added is served from when it was added, never swallowed as
+history), started again after a failure, ended when the deployment is. `run_locally(snippet=path)`
+runs that Python file instead of the stock loop. A real process is proven by
+`tests/long_tests/test_local_deployment_process.py`: two deployments, two processes, each answering
+its own chat over HTTP, and stopping one ends only its process.
 
 ## From TypeScript and HTTP
 

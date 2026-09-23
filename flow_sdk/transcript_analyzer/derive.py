@@ -68,6 +68,7 @@ _FLOW_VERBS = frozenset(
         "status",
         "stop",
         "tag",
+        "task",
         "terminal",
         "trace",
         "upgrade",

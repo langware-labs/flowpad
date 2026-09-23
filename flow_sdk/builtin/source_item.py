@@ -195,6 +195,19 @@ class HelpdeskMessageSpec(ChannelMessageSpec):
         )
 
 
+class VoiceMessageSpec(MessageSpec):
+    """Outbound on a voice channel: something said TO a person — a call placed with ``body`` as its
+    purpose, a line spoken on their live call, or a reply clip. The person IS the thread (their
+    number, their name), so ``to`` and ``thread_key`` carry the same address; a spoken reply quotes nothing.
+    """
+
+    @classmethod
+    def reply_to(cls, m, *, body: str, attachments=()) -> "VoiceMessageSpec":
+        """A reply to inbound sentence ``m`` — a pure constructor, no I/O: said to whoever said it."""
+        thread_key = str(getattr(m, "thread_key", "") or "")
+        return cls(to=[thread_key], body=body, thread_key=thread_key, attachments=list(attachments))
+
+
 class WhatsAppMessageSpec(MessageSpec):
     """Outbound WhatsApp message: the generic shape, person-targeted replies.
 
@@ -323,9 +336,9 @@ class SourceItem(Entity):
         return self.sent_by_us or is_self_address(source, self.author_external_id or "")
 
     @classmethod
-    async def newest_for(cls, data_source_id: str) -> Optional["SourceItem"]:
-        """The last row ingested for a source — a fresh listener's baseline."""
-        return await ingest_order.newest_for(cls, data_source_id)
+    async def newest_for(cls, data_source_id: str, *, at_or_before: Optional[datetime] = None) -> Optional["SourceItem"]:
+        """The last row ingested for a source (as of *at_or_before*, when given) — a listener's baseline."""
+        return await ingest_order.newest_for(cls, data_source_id, at_or_before=at_or_before)
 
     @classmethod
     async def page_after(

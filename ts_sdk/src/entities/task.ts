@@ -97,6 +97,17 @@ export interface ITask extends IEntity {
   task_type_label?: string | null;
   team_space_id?: string | null;
   worker_session_id?: string | null;
+  // A delegated task (the task ledger): who asked, who does it, what came of it, where it lives.
+  creator?: string | null;
+  owner?: string | null;
+  origin_conversation?: string | null;
+  origin_session?: string | null;
+  budget_usd?: number | null;
+  budget_turns?: number | null;
+  cost_usd?: number | null;
+  result?: string | null;
+  /** `repo` — a folder asset in the project (git); `instance` — this machine only, until kept. */
+  placement?: string | null;
 }
 
 // `implements ITask` only checks the class; it contributes no members, so every
@@ -160,6 +171,17 @@ export class Task extends APIEntity<Task> implements ITask {
   task_type_label?: string | null;
   team_space_id?: string | null;
   worker_session_id?: string | null;
+  // A delegated task (the task ledger): who asked, who does it, what came of it, where it lives.
+  creator?: string | null;
+  owner?: string | null;
+  origin_conversation?: string | null;
+  origin_session?: string | null;
+  budget_usd?: number | null;
+  budget_turns?: number | null;
+  cost_usd?: number | null;
+  result?: string | null;
+  /** `repo` — a folder asset in the project (git); `instance` — this machine only, until kept. */
+  placement?: string | null;
 
   static type: string = 'task';
 
@@ -218,6 +240,15 @@ export class Task extends APIEntity<Task> implements ITask {
     this.task_type_label = entity.task_type_label;
     this.team_space_id = entity.team_space_id;
     this.worker_session_id = entity.worker_session_id;
+    this.creator = entity.creator;
+    this.owner = entity.owner;
+    this.origin_conversation = entity.origin_conversation;
+    this.origin_session = entity.origin_session;
+    this.budget_usd = entity.budget_usd;
+    this.budget_turns = entity.budget_turns;
+    this.cost_usd = entity.cost_usd;
+    this.result = entity.result;
+    this.placement = entity.placement;
   }
 
   /** Default open target: the generic task asset editor (URL-first). */

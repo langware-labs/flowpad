@@ -180,10 +180,11 @@ async def test_behind_counts_published_commits_the_machine_lacks(tmp_path):
     assert behind_count(deployed, published, None) is None, "not in a checkout here: unknown"
 
     cloud = await _cloud_place(agent, source_revision=deployed)
+    local = await agent.deploy("local")
     object.__setattr__(agent, "origin", SimpleNamespace(kind="git", head_commit=published))
     rows = {row["deployment"].id: row for row in await list_places(agent)}
     assert rows[cloud.id]["behind"] == 1
-    assert rows[(await agent.local_deployment()).id]["behind"] is None
+    assert rows[local.id]["behind"] is None
 
 
 # ── on this computer: relayed verbs ───────────────────────────────────────

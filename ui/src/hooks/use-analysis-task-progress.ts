@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AgenticProcess, ProcessStatus, isProcessActive, type Task } from '@sdk';
 import { useProcessState } from './use-process-state';
 import { useProcessProgressInfo } from './use-process-progress-info';
-import { hasStatusAnalysis, isActionTask, TaskType } from '@src/components/task-bar/task-utils';
+import { hasStatusAnalysis, isActionTask, statusFamily, TaskType } from '@src/components/task-bar/task-utils';
 
 interface AnalysisTaskProgress {
   isRunning: boolean;
@@ -66,8 +66,8 @@ export function useAnalysisTaskProgress(task: Task | null): AnalysisTaskProgress
   const processState = useProcessState(process);
   const taskStatus = task?.status;
 
-  const taskIsDone = taskStatus === 'done';
-  const taskIsRunning = taskStatus === 'in_progress';
+  const taskIsDone = statusFamily(taskStatus) === 'done';
+  const taskIsRunning = statusFamily(taskStatus) === 'in_progress';
 
   const processRunning = isProcessActive(processState.status);
   const processComplete = processState.status === ProcessStatus.STOPPED;

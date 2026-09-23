@@ -90,8 +90,9 @@ async def test_the_same_message_twice_prompts_once_and_answers_the_same(runner):
 async def test_the_record_is_on_the_process_and_persisted(runner):
     r, process = runner
     await r.run(_message())
-    turns = process.context_data["turns"]
-    assert turns["src:mail:s:<m1>"] == {"status": "done", "text": "answer #1"}
+    record = process.context_data["turns"]["src:mail:s:<m1>"]
+    assert (record["status"], record["text"]) == ("done", "answer #1")
+    assert record["at"] <= record["ended_at"], "when it began and ended — a deployment's timeline shows both"
     assert process.saves >= 2, "stamped before the prompt, recorded after"
 
 

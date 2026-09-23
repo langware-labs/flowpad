@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 from typing import AsyncIterator
 
 
@@ -36,10 +37,45 @@ async def arrivals(source_id: str) -> AsyncIterator[asyncio.Event]:
         unsubscribe()
 
 
-async def until(landed: asyncio.Event, cadence: float) -> None:
-    """Until *landed* is set, or *cadence* seconds — whichever is first."""
-    with contextlib.suppress(asyncio.TimeoutError):
-        await asyncio.wait_for(landed.wait(), cadence)
+#: The stop a drain obeys, carried in its context — tasks a drain starts (a merge's pumps) inherit it.
+#: Set, a drain ends at its next wait between cycles: the one point where ending interrupts nothing
+#: (no poll, no page read, no turn is half done). See :func:`stopping`.
+_STOP: "contextvars.ContextVar[asyncio.Event | None]" = contextvars.ContextVar("drain_stop", default=None)
 
 
-__all__ = ["arrivals", "until"]
+@contextlib.contextmanager
+def stoppable(stop: asyncio.Event):
+    """Drains started inside this block end at their next wait once *stop* is set."""
+    token = _STOP.set(stop)
+    try:
+        yield stop
+    finally:
+        _STOP.reset(token)
+
+
+def stopping() -> bool:
+    """Whether the drain this code runs in has been asked to end."""
+    stop = _STOP.get()
+    return stop is not None and stop.is_set()
+
+
+async def until(landed: asyncio.Event, cadence: float) -> bool:
+    """Until *landed* is set, or *cadence* seconds — whichever is first. ``False`` when the drain
+    has been asked to end (:func:`stoppable`) — the caller returns instead of cycling again."""
+    stop = _STOP.get()
+    if stop is None:
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(landed.wait(), cadence)
+        return True
+    if stop.is_set():
+        return False
+    waiters = [asyncio.ensure_future(landed.wait()), asyncio.ensure_future(stop.wait())]
+    try:
+        await asyncio.wait(waiters, timeout=cadence, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for waiter in waiters:
+            waiter.cancel()
+    return not stop.is_set()
+
+
+__all__ = ["arrivals", "stoppable", "stopping", "until"]

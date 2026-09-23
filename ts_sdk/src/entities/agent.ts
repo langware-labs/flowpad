@@ -79,6 +79,8 @@ export class Agent extends APIEntity<Agent> {
   subagents: string[];
   additional_dirs: string[];
   load_flowpad_assistant: boolean;
+  /** Chief of Staff mode: answers fast and delegates long work to its subagents as tasks. */
+  chief_of_staff: boolean;
   /** Vendor-specific launch keys the schema does not enumerate (e.g. Claude's
    *  `chrome: true`). Nested by nature — which is why this type must never be
    *  round-tripped through the markdown frontmatter editor. */
@@ -134,6 +136,7 @@ export class Agent extends APIEntity<Agent> {
     this.subagents = entity.subagents || [];
     this.additional_dirs = entity.additional_dirs || [];
     this.load_flowpad_assistant = entity.load_flowpad_assistant ?? false;
+    this.chief_of_staff = entity.chief_of_staff ?? false;
     this.cli_options = entity.cli_options || {};
 
     this.enabled = entity.enabled ?? true;
@@ -292,8 +295,10 @@ export class Agent extends APIEntity<Agent> {
    * `environment` is the placement's credential environment — `production`
    * when omitted. One cloud machine per environment.
    */
-  async deploy(environment?: string): Promise<AgentDeployResult> {
-    return (await this.post('deploy', environment ? { environment } : undefined)) as AgentDeployResult;
+  /** Deploy to a cloud machine (the default), or `provider: 'local'` — this computer. */
+  async deploy(environment?: string, provider?: 'local'): Promise<AgentDeployResult> {
+    const body = { ...(environment ? { environment } : {}), ...(provider ? { provider } : {}) };
+    return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
   }
 
   /** Every place this agent runs on — this computer first — with what each owns. */
@@ -536,6 +541,8 @@ export interface AgentPlace {
   behind: number | null;
   /** Whether the agent runs on this place: its own switch, else the definition's `enabled`. */
   enabled: boolean;
+  /** When it last did something (ISO): its newest run here, else when a cloud machine was last seen. */
+  last_active?: string | null;
 }
 
 /** `GET /agent/<id>/version` — what this computer has that the published version lacks. */

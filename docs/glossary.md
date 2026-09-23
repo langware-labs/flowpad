@@ -200,22 +200,26 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   enumerable. See [llm-endpoints §7](snippets/llm-endpoints.md).
 * **`ServiceEndpoint`** — ours. One service a `Deployment` EXPOSES, a child of it: `protocol` (a
   tagged kind — `web.app`, `api.rest`, `api.chat.openai`, `api.mcp`, `flowpad.workspace`, or a
-  `--ns--` one), `backend` (`static` files, a `proxy` to a loopback port, or an `agent` answered
-  in-process — every agent placement's `chat`) and
+  `--ns--` one), `backend` (`static` files, a `proxy` to a loopback port, or a `channel` — each
+  request a message on a message channel, its recorded reply the answer: every agent deployment's
+  `chat`) and
   `supports_direct_access` (a hint to clients, never a grant). Reached through its `service`
   action — a pure proxy, any method, WebSockets too — and `direct-url`, resolved when asked and
   never stored. INBOUND traffic to a placement; not an `LLMEndpoint`, which is OUTBOUND spend to a
   model provider and meters it. A `web.*` endpoint gets an origin of its own on the hub. See
   [service-endpoints](snippets/service-endpoints.md).
-* **serve loop / `TurnEngine` / `AgentServer`** — ours (`flow_sdk/builtin/agent_serve.py`). How an
-  agent ANSWERS on a placement. The `TurnEngine` runs one message as a turn: one headless process
-  per (placement, conversation), one turn at a time, a redelivery answered from the turn's record.
-  The serve loop is one durable drain over the channels a placement answers (a source's
-  `answer_place`) — a consumer, never a poller: it reads what ingest lands and holds the sources'
-  fast-lane lease (`DataSource.note_attention`); the placement's `chat` endpoint drives the same
-  engine directly. The
-  `AgentServer` keeps every local placement serving. Not Claude Code's `Workflow`, and not the
-  bus: nothing answers a channel by reacting to the projection's tags.
+* **serve loop / agent loop / `TurnEngine` / `AgentServer`** — ours (`flow_sdk/builtin/agent_serve.py`,
+  `agent_loop.py`). How an agent ANSWERS where it is deployed. The `TurnEngine` runs one message as a
+  turn: one headless process per (deployment, conversation), one turn at a time, a redelivery answered
+  from the turn's record. The serve loop is one durable drain over the channels a deployment answers (a
+  source's `answer_place`; a source naming none is the default local deployment's) — a consumer, never
+  a poller: it reads what ingest lands and holds the sources' fast-lane lease
+  (`DataSource.note_attention`). A running local
+  deployment IS a process on the machine running that loop — the **agent loop**
+  (`python -m flow_sdk.builtin.agent_loop`, plain SDK code in the same instance) — and its `chat`
+  endpoint is one more channel of it. The `AgentServer`, in the app, only keeps those processes
+  running. Not Claude Code's `Workflow`, and not the bus: nothing answers a channel by reacting to the
+  projection's tags.
 * **`KindRegistry`** — ours. The one register-by-kind table (`flow_sdk/utils/kind_registry.py`) behind the FSOrigin, agent-mailbox, serializer, ingest-provider and reflect-mode registries.
 * **`SecretPack`** — ours. A named set of environment variables (a "secret pack") and the ONLY way a secret is declared: a folder asset at `agentic-assets/secret_pack/<name>/` in **user** or **project** scope; the shipped ones are **templates** (`system` scope). Not an OAuth connection, and not an `ApiKey` (an inbound Flowpad token). The file is `secret_pack.json`, its shape `CredentialSpec` (value-free); the row is `SecretPack` (type `secret_pack`, formerly `credential_spec`). The UI still says **Credentials**. See [secret_share](secret_share.md).
 * **`SecretStore`** — ours (was *value store*). A place secret values live, keyed by environment variable name: a type plus its config (`flow_sdk/secrets`). Three ship: `env_file` (a dotenv file; a credential's `value_store` spells it `env`, the scope root's `.env.local` by default), `vault` (the per-instance encrypted store, `sodot` on disk) and `gcp_secret_manager` (a Google Cloud Secret Manager project, read through a bound `google` connection). A credential names its store per environment; a `DataSource` instance binds one (`set_secret_store`). Not a `Connection`, which is an account that hands out a token. See [secret-stores](snippets/secret-stores.md).
@@ -298,3 +302,21 @@ built to replace in phase 2.
 Verb casing is deliberately per-language: `inc_success` in Python, `incSuccess` in
 TypeScript, `inc-success` from a shell. The route accepts all three, so it stays one
 vocabulary rather than three APIs.
+
+## Chief of Staff (2026-09-22)
+
+**All ours, none a provider mirror.** The pattern is the orchestrator–worker one (A2A's task
+states for the lifecycle), but no provider owns these nouns. Claude Code's own **subagent**
+is what our `SubAgent` mirrors; a Chief of Staff uses it natively for short jobs, and as the
+*owner* of a task for long ones.
+
+| Ours | One place | Notes |
+|---|---|---|
+| **Chief of Staff** (the mode) | `Agent.chief_of_staff`, `flow_sdk/tasks/cos.py` | A checkbox on the Agent. On: CoS.md joins its instructions, the Flowpad assistant (and its `task-management` skill) is mounted, its staff are registered natively where the harness spawns (`driver.spawns_subagents`), and each turn carries its open tasks. Off: the launch is byte-for-byte what it was. Not a separate entity and not an `Agent` kind. |
+| **staff** | `Agent.subagents` + `general-worker` | The SubAgents a chief may hand work to — the ones that resolve (the agent's project, the user's, the system's). `general-worker` is always there. |
+| **task ledger** | `flow_sdk/tasks/ledger.py` | The ONE writer of a delegated task's lifecycle: the row, a Comment and a `task.<event>` bus tag together. Refuses an event out of turn or by a stranger. Not a queue and not the Task board — the board shows its rows. |
+| **delegated task** | `Task` with `owner` set | A task a principal (`agent:<id>`) handed to an owner (`subagent:<name>`). `placement="instance"`: it lives in the DB + records shadow, never in the project's git tree, until a person **keeps** it (`flow task keep` → a `task.md` folder asset). Authored configuration may live in the repo; runtime state never does. |
+| **task run** | `AgenticProcess` with `context_data.task_id` | The headless worker that works one task as its owner, in `records_data/task/<id>/work/`. It may act only on that task. |
+| **Tasks channel** | `data_driver/task_manager` | A principal's view of the ledger as a message source (`principal_channel`, bus-fed on `task.*`). One per chief; follows the checkbox. The machinery finds it by what it declares, never by name. |
+| `created · started · note · asked · replied · done · failed · canceled · stalled` | `TaskEvent` | Ledger events. Statuses: `submitted → working ⇄ input_required → done \| failed \| canceled` (A2A), each on the three-bucket board via `status_family`. |
+

@@ -23,6 +23,7 @@ verbatim and are never absorbed here.
 import asyncio
 import collections
 import functools
+import itertools
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Optional
@@ -197,11 +198,17 @@ class Agent(Entity):
         default_factory=list,
         description="SubAgent NAMES this agent may delegate to. Names, not TypeIds, because a "
         "shipped agent.json is authored before the SubAgent it references has ever been indexed. "
-        "DECLARED ONLY — nothing projects these into --agents yet; wire through "
-        "AgenticProcess.load_embedded_subagent(name) when a caller needs it.",
+        "With chief_of_staff on these are its STAFF: registered natively (--agents) on a harness "
+        "that spawns subagents, and offered as task owners (subagent:<name>) on every harness.",
     )
     additional_dirs: list[str] = APIField(default_factory=list)
     load_flowpad_assistant: bool = APIField(default=False)
+    chief_of_staff: bool = APIField(
+        default=False,
+        description="Chief of Staff mode: answer fast, run quick jobs on native subagents, delegate long "
+        "ones as tasks to its staff (subagents) and follow up. Everything the mode does hangs off this "
+        "one flag — off, the agent is exactly as it was (flow_sdk/tasks/cos.py).",
+    )
     cli_options: dict = APIField(
         default_factory=dict,
         description="Vendor-specific launch keys the schema does not enumerate (e.g. Claude's "
@@ -541,10 +548,21 @@ class Agent(Entity):
 
         return _respond_to(self, source)
 
+    @classmethod
+    async def by_name(cls, name: str) -> "Agent":
+        """The agent called *name* — the registry's lookup (this machine's rows, then the
+        shipped agents) — or ``LookupError``: a script that names an agent means that one."""
+        from flow_sdk.builtin.agent_registry import get_agent  # noqa: PLC0415
+
+        agent = await get_agent(str(name or "").strip())
+        if agent is None:
+            raise LookupError(f"no agent named {name!r}")
+        return agent
+
     # ── deployment ────────────────────────────────────────────────────────
 
-    async def deploy(self, provider: str = "local") -> Deployment:
-        """Idempotent upsert of this agent's placement on *provider*.
+    async def deploy(self, provider: str = "local", *, slot: str = "") -> Deployment:
+        """Idempotent upsert of this agent's placement on *provider* (its *slot* of them: ``""`` the default).
 
         Converges through ``Deployment.find_existing`` rather than a derived id:
         the row keeps whatever v4 it was first minted with, forever, on every
@@ -559,8 +577,9 @@ class Agent(Entity):
             provider=provider,
             kind=KIND_AGENT,
             element=self,
+            slot=slot,
             payload={
-                "name": f"{self.name or self.id} ({provider})",
+                "name": f"{self.name or self.id} ({provider}{f' {slot}' if slot else ''})",
                 "target": {
                     "provider": provider,
                     "scope": self.project_id or "machine",
@@ -587,6 +606,31 @@ class Agent(Entity):
     async def local_deployment(self) -> Deployment:
         """Get-or-create the placement that runs this agent on THIS machine."""
         return await self.deploy("local")
+
+    async def run_locally(self, *, snippet: Optional[str] = None) -> Deployment:
+        """Launch one more local deployment of this agent: a process on this computer running its loop.
+
+        The first takes the default slot (and answers the channels that name no place); each
+        next one is ``2``, ``3``, … . The app's supervisor starts the process
+        (``builtin/deployment_process``) and keeps it running while the deployment is ``serving``.
+        *snippet* runs that Python file instead of the stock loop (``builtin/agent_loop``). Its
+        ``chat`` endpoint — an HTTP message channel — is made here.
+        """
+        from flow_sdk.builtin.agent_serve import answered_sources, ensure_chat_channel, hold_positions  # noqa: PLC0415
+
+        running = {d.slot for d in await self.deployments() if d.target.provider == "local" and d.serving}
+        # The first slot not running: a paused one is launched again rather than a new one minted.
+        slot = next(s for s in itertools.chain([""], map(str, itertools.count(2))) if s not in running)
+        deployment = await self.deploy("local", slot=slot)
+        # Everything it runs over exists BEFORE it is marked serving — the supervisor (in the app,
+        # another process) acts on `serving`, and must find a deployment that is ready to run.
+        await ensure_chat_channel(self, deployment)
+        # Its position on each channel it answers is taken NOW: what lands from here on is its to
+        # answer, even before its process has made its first pass.
+        await hold_positions(deployment, await answered_sources(self, deployment))
+        deployment.serving, deployment.snippet = True, snippet
+        await deployment.save()
+        return deployment
 
     async def deployments(self) -> list[Deployment]:
         rows = await Deployment.get_all({"match": {"parent_type_id": str(self.typeid)}})
@@ -712,6 +756,26 @@ class Agent(Entity):
             source.inbound_allowed_senders = senders
             await source.save_runtime()
         return source
+
+    async def channels(self) -> "list[DataSource]":
+        """Every message channel this agent owns — a source on a channel whose driver can send."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
+
+        return [s for s in await DataSource.find_owned(self.typeid) if is_message_source(s)]
+
+    async def channel(self, kind: str) -> "DataSource":
+        """This agent's one channel of *kind* (``"whatsapp"``, ``"telegram"``, ``"email"``, …).
+
+        Raises rather than picking: none means the agent is not on that channel, and
+        two (say, two WhatsApp numbers) is a choice the caller makes over
+        :meth:`channels`, never one made here by row order.
+        """
+        kind = str(kind or "").strip()
+        found = [s for s in await self.channels() if (s.channel or "").strip() == kind]
+        if len(found) != 1:
+            raise LookupError(f"{self.name or self.id} has {len(found)} {kind!r} channels; expected one")
+        return found[0]
 
     @action.post(action_name="bind_channel")
     @_mailbox_failures("bind a channel")
@@ -878,6 +942,9 @@ class Agent(Entity):
     async def deploy_action(self):
         """`POST /agent/<id>/deploy` — publish, then boot a box for this agent.
 
+        ``{"provider": "local"}`` deploys it on THIS computer instead: the idempotent local placement,
+        no hub and no publish — the one way "This computer" becomes a deployment.
+
         One round trip for the UI's one button. Long by nature (E2B create +
         boot + health is tens of seconds); if that becomes a timeout in
         practice the fix is 202-and-poll on the node's ``ops/status``, which
@@ -888,6 +955,13 @@ class Agent(Entity):
 
         if not self.enabled:
             return ApiFailResponse(message=f"agent {self.name!r} is disabled")
+        body = await self._body()
+        provider = str(body.get("provider") or "").strip()
+        if provider == "local":
+            deployment = await self.run_locally()
+            return ApiSuccessResponse(data={"agent_id": self.id, "deployment": deployment.model_dump(mode="json")})
+        if provider:
+            return ApiFailResponse(message=f"unknown provider {provider!r}: 'local', or none for a cloud machine", status_code=400)
         request_info = get_current_request_info()
         actor = request_info.someone_typeid if request_info else None
         if not actor:
@@ -895,7 +969,7 @@ class Agent(Entity):
         from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
         from flow_sdk.schema.data_spec.credential_contract import is_valid_environment  # noqa: PLC0415
 
-        environment = str((await self._body()).get("environment") or "").strip() or None
+        environment = str(body.get("environment") or "").strip() or None
         if environment is not None and not is_valid_environment(environment):
             return ApiFailResponse(message=f"{environment!r} is not a valid environment name", status_code=400)
         try:

@@ -191,26 +191,26 @@ class ProxyBackend(DataSpec):
     health: str = "/"
 
 
-class AgentBackend(DataSpec):
-    """An agent, answered by the FlowPad app that holds the placement.
+class ChannelBackend(DataSpec):
+    """A message channel: each request is a message on ``data_source_id`` and its reply is the answer.
 
-    No port and no folder: the app itself takes the request and runs the agent's
-    turn on this placement (``builtin/agent_serve``). A deployed agent's ``chat``
-    endpoint is one — reached through the hub like any other, never directly.
+    No port and no folder: the app takes the request, pushes it into the channel, and answers
+    with the reply the channel records — whoever answers the channel (an agent deployment's
+    loop) is not the endpoint's business. A deployed agent's ``chat`` endpoint is one.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    type: Literal["agent"] = "agent"
-    agent_id: str
+    type: Literal["channel"] = "channel"
+    data_source_id: str
 
 
-Backend = Annotated[Union[StaticBackend, ProxyBackend, AgentBackend], Field(discriminator="type")]
+Backend = Annotated[Union[StaticBackend, ProxyBackend, ChannelBackend], Field(discriminator="type")]
 
 
 __all__ = [
-    "AgentBackend",
     "Backend",
+    "ChannelBackend",
     "ChatOpenAIProtocol",
     "ExternalProtocol",
     "McpProtocol",

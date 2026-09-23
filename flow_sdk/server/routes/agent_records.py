@@ -42,7 +42,7 @@ _CREATION_HINTS: dict[str, dict] = {
         "manifest_fields": {
             "task_id": "uuid v4 (you generate it; this becomes the entity id)",
             "name": "human-readable title",
-            "status": "to_do | in_progress | done (default: to_do)",
+            "status": "to_do | in_progress | done (default: to_do). A task handed to a subagent is not made here — use `flow task create`; its status (submitted · working · input_required · done · failed · canceled) is the task ledger's to write",
             "task_type": "Task | analysis | skill_creation (default: Task)",
             "description": "free-text description (optional)",
             "objective": "free-text objective (optional)",

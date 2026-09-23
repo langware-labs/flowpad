@@ -1,22 +1,24 @@
-"""Which channels an agent placement serves, and the supervisor that keeps each serving.
+"""Which channels a deployment answers, and the supervisor that keeps each running deployment's process up.
 
-An agent answers a channel from exactly one place: the source's ``answer_place``
-names it, and a source that names none is answered wherever it is held. The
-``AgentServer`` runs one serve loop per placement over precisely those sources —
-restarted when the set changes (a channel bound later is served), cancelled when
-the placement stops being one this machine answers on.
+An agent answers a channel from exactly one place: the source's ``answer_place`` names it, and a
+source that names none is the DEFAULT local deployment's (slot ``""``) — never a second one's, or
+two processes would answer it. A running local deployment is a process (``builtin/agent_loop``);
+the ``AgentServer`` starts it, adopts it alive after a restart, and stops it when the deployment
+stops serving or its agent is switched off. The process itself is faked here
+(``deployment_process.start/alive/stop``); ``tests/long_tests/test_local_deployment_process.py``
+runs real ones.
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 import pytest
 
-import flow_sdk.builtin.agent_serve as agent_serve
+from flow_sdk.builtin import deployment_process
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agent_serve import AgentServer, answered_sources
+from flow_sdk.builtin.agent_serve import AgentServer, answered_sources, polled_by_a_deployment
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.deployment import Deployment
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -46,7 +48,7 @@ def _ids(sources) -> set[str]:
     return {str(s.id) for s in sources}
 
 
-async def test_a_source_is_served_where_its_answer_place_says(mail_db):
+async def test_a_source_is_answered_where_its_answer_place_says(mail_db):
     agent = await _agent()
     here = await agent.local_deployment()
     anywhere = await _channel(agent)
@@ -59,113 +61,156 @@ async def test_a_source_is_served_where_its_answer_place_says(mail_db):
     assert str(elsewhere.id) not in served
 
 
+async def test_a_second_local_deployment_answers_only_what_names_it(mail_db):
+    agent = await _agent()
+    first = await agent.run_locally()
+    second = await agent.run_locally()
+    unplaced = await _channel(agent)
+    pinned = await _channel(agent, answer_place=second.id)
+
+    assert (first.slot, second.slot) == ("", "2")
+    assert str(unplaced.id) in _ids(await answered_sources(agent, first))
+    assert _ids(s for s in await answered_sources(agent, second) if s.provider == "slack") == {str(pinned.id)}
+
+
 @pytest.fixture
-def loops(monkeypatch):
-    """The serve loop replaced by one that records what it was given and waits to be cancelled."""
-    started: list[set[str]] = []
+def processes(monkeypatch):
+    """The deployment process faked: ``alive`` is whatever ``start`` started and ``stop`` did not stop."""
+    running: dict[str, int] = {}
+    started: list[str] = []
 
-    async def serve(agent, deployment, *, sources=None, poll_every=None):
-        started.append(_ids(sources))
-        await asyncio.Event().wait()
+    def start(deployment):
+        started.append(str(deployment.id))
+        running[str(deployment.id)] = len(started)
+        return {"flowpad.process.pid": str(len(started))}
 
-    monkeypatch.setattr(agent_serve, "serve", serve)
-    return started
+    def alive(deployment):
+        return str(deployment.id) in running
+
+    def stop(deployment):
+        running.pop(str(deployment.id), None)
+        return True
+
+    monkeypatch.setattr(deployment_process, "start", start)
+    monkeypatch.setattr(deployment_process, "alive", alive)
+    monkeypatch.setattr(deployment_process, "stop", stop)
+    return running, started
 
 
-async def test_each_placement_serves_its_sources_and_a_new_channel_restarts_it(mail_db, loops):
+async def test_a_running_deployment_gets_its_process_once(mail_db, processes):
+    running, started = processes
     agent = await _agent()
-    deployment = await agent.local_deployment()
-    first = await _channel(agent)
-    server = AgentServer(serve_channels=True)
-    try:
-        await server.reconcile()
-        await asyncio.sleep(0)
-        assert server.serving()[str(deployment.id)] == {str(first.id)}
+    deployment = await agent.run_locally()
+    server = AgentServer()
 
-        await server.reconcile()  # nothing changed: the running loop is kept
-        await asyncio.sleep(0)
-        assert len(loops) == 1
+    await server.reconcile()
+    await server.reconcile()  # alive: kept, never a twin
 
-        second = await _channel(agent)
-        await server.reconcile()
-        await asyncio.sleep(0)
-        assert server.serving()[str(deployment.id)] == {str(first.id), str(second.id)}
-        assert loops[-1] == {str(first.id), str(second.id)}
-    finally:
-        await server.stop()
+    assert started == [str(deployment.id)] and server.running() == {str(deployment.id)}
+    assert deployment_process.recorded(await Deployment.get_by_id(deployment.id)).pid == 1, "recorded on the deployment"
 
 
-async def test_a_placement_switched_off_stops_serving(mail_db, loops):
+async def test_a_process_left_by_a_previous_app_is_adopted_not_doubled(mail_db, processes):
+    running, started = processes
     agent = await _agent()
-    deployment = await agent.local_deployment()
-    await _channel(agent)
-    server = AgentServer(serve_channels=True)
-    try:
-        await server.reconcile()
-        assert str(deployment.id) in server.serving()
+    deployment = await agent.run_locally()
+    running[str(deployment.id)] = 99  # alive before this server existed
 
-        agent.enabled = False
-        await agent.save()
-        await server.reconcile()
-        await asyncio.sleep(0)
+    server = AgentServer()
+    await server.reconcile()
 
-        assert str(deployment.id) not in server.serving()
-    finally:
-        await server.stop()
+    assert started == [] and server.running() == {str(deployment.id)}
 
 
-async def test_without_channel_loops_only_the_chat_endpoint_is_kept(mail_db, loops):
+async def test_a_process_that_died_is_started_again(mail_db, processes):
+    running, started = processes
+    agent = await _agent()
+    deployment = await agent.run_locally()
+    server = AgentServer()
+    await server.reconcile()
+
+    running.clear()  # it died on its own
+    await server.reconcile()
+
+    assert started == [str(deployment.id), str(deployment.id)]
+
+
+async def test_stopping_serving_or_switching_the_agent_off_stops_the_process(mail_db, processes):
+    running, _started = processes
+    agent = await _agent()
+    first = await agent.run_locally()
+    second = await agent.run_locally()
+    server = AgentServer()
+    await server.reconcile()
+    assert set(running) == {str(first.id), str(second.id)}
+
+    first.serving = False
+    await first.save()
+    await server.reconcile()
+    assert set(running) == {str(second.id)}
+
+    agent.enabled = False
+    await agent.save()
+    await server.reconcile()
+    assert running == {} and server.running() == set()
+
+
+async def test_a_placement_that_does_not_run_gets_no_process(mail_db, processes):
+    """``local_deployment()`` is where processes are spawned through; it runs no loop of its own."""
+    _running, started = processes
     agent = await _agent()
     await agent.local_deployment()
     await _channel(agent)
-    server = AgentServer(serve_channels=False)
 
-    await server.reconcile()
+    await AgentServer().reconcile()
 
-    assert server.serving() == {}
-    assert loops == []
+    assert started == []
 
 
-async def test_an_agent_that_owns_a_channel_is_served_here_without_being_placed_first(mail_db, loops):
-    """The app answers an agent's channel with nothing of the owner's running — not even a
-    placement made beforehand: owning the source is what puts the agent on this machine."""
+async def test_in_the_test_tier_no_process_is_started_but_the_chat_is_made(mail_db, processes):
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint
+
+    _running, started = processes
     agent = await _agent()
-    source = await _channel(agent)
-    server = AgentServer(serve_channels=True)
-    try:
-        await server.reconcile()
-        await asyncio.sleep(0)
+    deployment = await agent.deploy("local")
+    deployment.serving = True
+    await deployment.save()
 
-        placement = await agent.local_deployment()
-        assert server.serving()[str(placement.id)] == {str(source.id)}
-    finally:
-        await server.stop()
+    await AgentServer(run_processes=False).reconcile()
+
+    assert started == []
+    assert await ServiceEndpoint.find_existing(str(deployment.typeid), "chat") is not None
 
 
-async def test_a_polls_runtime_write_is_not_news_but_a_pause_is(mail_db, loops):
-    """Every poll writes the source's runtime fields; reconciling on each would run the
-    supervisor every few seconds per channel. Only what serving depends on counts."""
+async def test_the_app_does_not_poll_what_a_running_deployment_polls(mail_db, processes):
+    running, _started = processes
     agent = await _agent()
-    source = await _channel(agent)
-    server = AgentServer(serve_channels=True)
-    try:
-        await server.reconcile()
-        ran = []
+    deployment = await agent.run_locally()
+    mine = await _channel(agent)
+    other_agent = await _agent()
+    theirs = await _channel(other_agent)
 
-        async def counted():
-            ran.append(1)
+    assert await polled_by_a_deployment([mine, theirs]) == set(), "no process alive: the app polls both"
+    running[str(deployment.id)] = 1
+    assert await polled_by_a_deployment([mine, theirs]) == {str(mine.id)}
 
-        server.reconcile = counted
-        source.next_poll_at = None
-        await source.save_runtime()
-        server._touch("data_source", str(source.id))
-        await server._pending
-        assert ran == []
 
-        source.status = "disabled"
-        await source.save()
-        server._touch("data_source", str(source.id))
-        await server._pending
-        assert ran == [1]
-    finally:
-        await server.stop()
+async def test_an_agent_mailbox_is_answered_by_one_deployment_never_two(mail_db):
+    """A mailbox with no place of its own is the default deployment's — or the agent's email place's.
+    Two processes answering it would mail the outsider twice."""
+    agent = await _agent()
+    first = await agent.run_locally()
+    second = await agent.run_locally()
+    mailbox = DataSource(name="mailbox", provider="cloud_email", channel="email", owner=agent.typeid,
+                         config={"agent_id": agent.id, "address": f"{agent.name}@agentmail.to"},
+                         account_key=f"{agent.name}@agentmail.to")
+    await mailbox.save()
+
+    async def answering():
+        return [d.slot for d in (first, second) if str(mailbox.id) in _ids(await answered_sources(agent, d))]
+
+    assert await answering() == [""], "the default deployment, alone"
+
+    agent.email_place = second.id
+    await agent.save()
+    assert await answering() == ["2"], "the agent's email place, alone"

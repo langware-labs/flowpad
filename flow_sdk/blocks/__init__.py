@@ -544,12 +544,16 @@ class StreamInbox:
                         redelivered = in_flight_at_start is not None and key <= in_flight_at_start
                         # Place it in its conversation regardless of the filters below — the
                         # stream inbox UI shows everything; the LOOP only acts on what passes.
+                        # Placed silently (an import's storm must not wake a turn per item) — except
+                        # our OWN outgoing copy: nothing answers it, and whoever watches the
+                        # conversation is waiting to see the reply land.
+                        own = item.is_ours(source)
                         try:
-                            await project_source_item(item, source=source, announce=False)
+                            await project_source_item(item, source=source, announce=own)
                         except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
                             logger.exception("blocks: projection failed for %s", item.id)
                         sender = str(item.author_external_id or "").strip().lower()
-                        if item.is_ours(source) or (
+                        if own or (
                             self.senders and sender not in self.senders
                         ):
                             # Acked now while nothing in this page has been handed over — an ack is an
@@ -569,7 +573,8 @@ class StreamInbox:
                     if position.mark_in_flight(rows[-1]):
                         await position.commit()
                     yield page
-                await until(arrived, cadence)
+                if not await until(arrived, cadence):
+                    return
 
     async def listen(
         self,
