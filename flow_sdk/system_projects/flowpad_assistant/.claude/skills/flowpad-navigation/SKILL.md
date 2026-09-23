@@ -150,6 +150,7 @@ opens a different screen and reports success.
 | --- | --- | --- |
 | AI Configuration | `ai-config` | ai config, llm apis, models, clis |
 | Artifacts | `artifacts` | deliverables |
+| Asset list | `asset-list` | counter assets |
 | Assets | `assets` | library, docs tree |
 | Assistance | `assistance` | expert assistance |
 | Capabilities | `capabilities` | checks, system checks |

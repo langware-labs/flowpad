@@ -420,7 +420,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         aliases=("embeddings", "knowledge index", "vector index"),
     ),
     # The counter it came from is a query pair (?group=&counter=), not a pointer.
-    ViewType.ASSET_LIST: _m(_NONE, label="Assets"),
+    # Labelled apart from `assets` (the tree): this is one counter's table.
+    ViewType.ASSET_LIST: _m(_NONE, label="Asset list", aliases=("counter assets",)),
     ViewType.PROCESS_RUNS: _m(_OPT, label="Runs", aliases=("history",)),
     ViewType.PLAN: _m(_REQ, label="Plan"),
     ViewType.CRON: _m(_NONE, label="Events", aliases=("schedule", "scheduled jobs")),
