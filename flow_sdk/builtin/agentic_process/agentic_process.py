@@ -2990,13 +2990,20 @@ class AgenticProcess(Entity):
         if not command:
             return ApiFailResponse(message="command is required", status_code=400)
 
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
         shell_id = str(body.get("shell_id") or "").strip()
         shell = await Shell.get_one({"id": shell_id}) if shell_id else await self._current_terminal()
         if shell is None:
-            return ApiFailResponse(
-                message="No open terminal — run `flow terminal open` first",
-                status_code=404,
+            # An ANSWER, not a transport error: there is no terminal to run in —
+            # NOT_FOUND, which `flow terminal run` already exits as 4 — and the
+            # caller reads why from the same place it reads every other outcome.
+            missing = CliResult.not_found(
+                f"There is no terminal {shell_id!r}." if shell_id
+                else "No open terminal — run `flow terminal open` first.",
+                command=command,
             )
+            return ApiSuccessResponse(data=missing.model_dump(mode="json"))
 
         try:
             timeout = float(body.get("timeout") or 120.0)
@@ -3107,7 +3114,12 @@ class AgenticProcess(Entity):
         executor = str(self.typeid)
         taken = await self.prompt(instruction)
         if isinstance(taken, ApiFailResponse):
-            return PromptResult.not_yet(taken.message or "The turn was not taken.", ran=False, executor=executor)
+            detail = taken.message or "The turn was not taken."
+            if taken.status_code == 409:
+                # Another turn is in flight: the slot is held — try later.
+                return PromptResult.held(detail, executor=executor)
+            # The worker could not take it at all — retrying changes nothing.
+            return PromptResult.not_yet(detail, ran=False, executor=executor)
         return PromptResult.satisfied("The turn was accepted.", executor=executor)
 
     async def _is_live_pty(self) -> bool:
@@ -3459,19 +3471,23 @@ class AgenticProcess(Entity):
         instruction: str | None = None,
         session_id: str | None = None,
     ) -> ApiSuccessResponse | ApiFailResponse:
-        """Execute an instruction on this process.
+        """Execute an instruction on this process — the turn's ``PromptResult``.
 
-        Called by the TS SDK's executeInstruction(). Delegates to prompt()
-        which handles both fresh-start and send-to-running-process cases.
+        Called by the TS SDK's executeInstruction(). Goes through ``send_turn``,
+        so the answer is the same one a Python caller holds: OK means the turn
+        was ACCEPTED (it runs in the background), NOT_YET means it was not. Only
+        ``busy`` — another turn in flight — is HTTP's 409; everything else is the
+        dump with a 200, like every other call in the system.
         """
         if not instruction:
             return ApiFailResponse(message="instruction is required")
         if session_id:
             self.session_id = session_id
-        result = await self.prompt(instruction)
-        if isinstance(result, ApiFailResponse):
-            return result
-        return result if isinstance(result, ApiSuccessResponse) else ApiSuccessResponse(data={"status": "ok"})
+        answer = await self.send_turn(instruction)
+        payload = answer.model_dump(mode="json")
+        if answer.busy:
+            return ApiFailResponse(message=answer.detail, status_code=409, data=payload)
+        return ApiSuccessResponse(data=payload)
 
     # ── Print-mode streaming prompt ──────────────────────────────────────────
     #

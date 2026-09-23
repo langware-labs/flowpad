@@ -205,7 +205,7 @@ async def _exec_script(
     tempfile (cross-platform via tempfile.NamedTemporaryFile) and its path
     passed via CHANGES_JSON_PATH so scripts that need the batch can read it.
 
-    Captures stdout/stderr (the last ``OUTPUT_CAP`` of each). Kills the
+    Captures stdout/stderr whole. Kills the
     process at `timeout_seconds`. Cleans up the tempfile after the subprocess.
     """
     import json
@@ -271,8 +271,6 @@ async def _exec_script(
             proc.returncode,
             stdout.decode(errors="replace") if stdout else "",
             stderr.decode(errors="replace") if stderr else "",
-            # cap=OUTPUT_CAP by default: the END of each stream, where the error
-            # is, bounded so a TriggerLogRecord stays small.
             timed_out=timed_out,
             duration_s=time.monotonic() - t0,
         )

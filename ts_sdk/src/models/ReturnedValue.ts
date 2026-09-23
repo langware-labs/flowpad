@@ -39,6 +39,9 @@ export interface ReturnedValue {
   ran?: boolean;
   /** The wait ended before the work did — it may still be running. */
   timed_out?: boolean;
+  /** Something else holds the slot this call needs — a wizard's lock, a turn
+   *  in flight. The one NOT_YET worth retrying later; never-started is not busy. */
+  busy?: boolean;
   duration_s?: number;
   /** Typed id of what ran it: `agentic_process-<id>` or `shell-<id>`. */
   executor?: string | null;

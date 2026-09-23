@@ -126,16 +126,13 @@ class _LocalCommandExecutor:
         except subprocess.TimeoutExpired as exc:
             return CliResult.of_process(
                 command, None, _as_text(exc.stdout), _as_text(exc.stderr),
-                timed_out=True, duration_s=time.monotonic() - started, cap=None,
+                timed_out=True, duration_s=time.monotonic() - started,
             )
         except (OSError, ValueError) as exc:
             return CliResult.of_process(command, None, "", f"{type(exc).__name__}: {exc}")
-        # cap=None: callers PARSE this output (`git show` is a whole file, and
-        # module_rpc reads JSON) — the tail-only default is for records a person
-        # reads, and would hand them a file's last 8 KB as if it were the file.
         return CliResult.of_process(
             command, completed.returncode, completed.stdout or "", completed.stderr or "",
-            duration_s=time.monotonic() - started, cap=None,
+            duration_s=time.monotonic() - started,
         )
 
     async def run(

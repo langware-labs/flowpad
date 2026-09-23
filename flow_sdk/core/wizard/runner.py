@@ -164,7 +164,7 @@ async def run_wizard(
         if claimed:
             raise
         # The address is a slot, and another run holds it: nothing ran, try later.
-        return WizardResult.not_yet(f"{spec.name or activity_path} is already running: {busy}", ran=False)
+        return WizardResult.held(f"{spec.name or activity_path} is already running: {busy}")
 
 
 async def _steps(run: _Run, root: Any) -> WizardResult:

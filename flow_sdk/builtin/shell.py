@@ -801,12 +801,12 @@ class Shell(Entity):
             if match:
                 return CliResult.of_process(
                     command, int(match.group(1)), _sentinel_body(tail, marker, match.start()),
-                    duration_s=loop.time() - started, executor=executor, cap=None,
+                    duration_s=loop.time() - started, executor=executor,
                 )
             if loop.time() >= deadline:
                 return CliResult.of_process(
                     command, None, _sentinel_body(tail, marker, len(tail)),
-                    timed_out=True, duration_s=loop.time() - started, executor=executor, cap=None,
+                    timed_out=True, duration_s=loop.time() - started, executor=executor,
                 )
             await asyncio.sleep(poll_interval)
 
@@ -1270,7 +1270,6 @@ class Shell(Entity):
             stderr.decode("utf-8", errors="replace"),
             duration_s=time.monotonic() - started,
             executor=str(self.typeid),
-            cap=None,  # the caller asked for this command's output: all of it
         )
         return ApiSuccessResponse(data=answer.model_dump(mode="json"))
 

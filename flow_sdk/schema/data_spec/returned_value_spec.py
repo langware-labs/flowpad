@@ -104,6 +104,14 @@ class ReturnedValue(DataSpec):
     #: be running (an agent turn, a command in a terminal), so it is NOT_YET and
     #: must not be re-run on top of itself.
     timed_out: bool = False
+    #: Something else holds the slot this call needs — a wizard's lock, an
+    #: Activity address, a turn already in flight. NOT_YET and ``ran=False``, and
+    #: the one case a caller should simply retry later. A FIELD for the same
+    #: reason ``ran`` is one: "busy" and "never started" were both NOT_YET with
+    #: ``ran=False``, told apart only by the sentence, so an HTTP edge guessing
+    #: from ``ran`` sent a wizard that called itself — and a box with no agent
+    #: harness — to 409 as if they were merely busy.
+    busy: bool = False
     duration_s: float = 0.0
     #: The typed id of what ran it — ``agentic_process-<id>`` or ``shell-<id>``.
     #: ``None`` for a plain subprocess, or when nothing ran. A STRING, because a
@@ -123,6 +131,27 @@ class ReturnedValue(DataSpec):
         """
         return self.exit_code in (ExitCode.OK, ExitCode.NOT_APPLICABLE)
 
+    def trimmed(self, limit: int = OUTPUT_CAP) -> "Self":
+        """A copy fit to PERSIST: every stream and reply kept to its last
+        ``limit`` characters — here, the check, and every nested step.
+
+        The one place output is cut. A result a program reads arrives whole; one
+        written to disk (``run.json``) or shown to a person (the snippet view)
+        goes through this, so a command that printed a megabyte does not become a
+        megabyte on every save, or in every editor.
+        """
+        update: dict[str, Any] = {}
+        for name in ("stdout", "stderr", "text"):
+            value = getattr(self, name, None)
+            if isinstance(value, str) and len(value) > limit:
+                update[name] = capped(value, limit)
+        if self.check is not None:
+            update["check"] = self.check.trimmed(limit)
+        steps = getattr(self, "steps", None)
+        if isinstance(steps, dict):
+            update["steps"] = {key: step.trimmed(limit) for key, step in steps.items()}
+        return self.model_copy(update=update) if update else self
+
     def raise_for_status(self) -> "ReturnedValue":
         """Opt-in: raise ``OpNotReached`` unless ``ok``. Returns self when it is.
 
@@ -141,6 +170,13 @@ class ReturnedValue(DataSpec):
     @classmethod
     def not_yet(cls, detail: str = "", **fields: Any) -> "Self":
         return cls(exit_code=ExitCode.NOT_YET, detail=detail, **fields)
+
+    @classmethod
+    def held(cls, detail: str = "", **fields: Any) -> "Self":
+        """Busy: the slot this call needs is held by something else. Nothing ran,
+        and trying again later is the right move. (Not named ``busy`` — that is
+        the field, and a pydantic field and a method of one name collide.)"""
+        return cls(exit_code=ExitCode.NOT_YET, detail=detail, **{"ran": False, "busy": True, **fields})
 
     @classmethod
     def not_applicable(cls, detail: str = "", **fields: Any) -> "Self":
@@ -182,7 +218,7 @@ class CliResult(ReturnedValue):
         timed_out: bool = False,
         duration_s: float = 0.0,
         detail: str = "",
-        cap: Optional[int] = OUTPUT_CAP,
+        cap: Optional[int] = None,
         **fields: Any,
     ) -> "CliResult":
         """THE way a process record becomes an answer.
@@ -191,7 +227,12 @@ class CliResult(ReturnedValue):
         derived from the raw exit in exactly one place: ``OK`` only when the
         process exited 0 inside its budget. Built any other way, ``exit_code``
         would default to ``OK`` and a failed command would read as ``.ok``.
-        Each stream keeps its END, up to ``cap`` (``None`` keeps it whole).
+        Output arrives WHOLE by default: a caller may parse it (a file from
+        ``git show``, JSON, an op's declared value), and a record cut to its last
+        8 KB reads as if it were the whole thing. Trimming belongs where a result
+        is PERSISTED or SHOWN TO A PERSON — see ``trimmed()`` — never where a
+        program reads it. ``cap`` keeps each stream's END, where the error is,
+        for a caller that wants that.
         """
         if cap is not None:
             stdout, stderr = capped(stdout, cap), capped(stderr, cap)

@@ -74,7 +74,7 @@ async def execute_wizard(
     try:
         lock.acquire(blocking=False)
     except Timeout:
-        return WizardResult.not_yet(f"{spec.name or wizard_id} {ALREADY_RUNNING}", ran=False)
+        return WizardResult.held(f"{spec.name or wizard_id} {ALREADY_RUNNING}")
 
     try:
         result = await run_wizard(
