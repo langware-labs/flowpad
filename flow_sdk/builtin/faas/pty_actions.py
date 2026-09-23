@@ -429,6 +429,9 @@ class PtyActionsMixin:
             persisted_max = pty_stream_file.max_seq()
             if persisted_max > session_state.seq:
                 session_state.seq = persisted_max
+            # A previous process may have died fullscreen (alternate screen,
+            # mouse capture on); replay must not hand that canvas to this one.
+            pty_stream_file.mark_new_generation()
             session_state.generation_start_seq = session_state.seq
             toplog.log(
                 "pty", "session_start shell=%s pid=%s persisted_max_seq=%s start_seq=%s size=%sx%s",
