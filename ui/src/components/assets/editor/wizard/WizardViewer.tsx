@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
-import { ActionInfo, dataManager, FSRef, TypeId, Wizard } from '@sdk';
+import { ActionInfo, dataManager, FSRef, TypeId, Wizard, isOk, type WizardResult } from '@sdk';
 import {
   CheckCircle2,
   Circle,
@@ -149,8 +149,15 @@ function WizardViewerBody({
       try {
         const info = new ActionInfo(action, Wizard.type, wizard.id, 'POST');
         info.bodyParameters = body;
-        await dataManager.callAction<Record<string, unknown>, unknown>(info);
+        // Every answer is a 200 carrying the WizardResult — refused, disabled and
+        // not-applicable included — so the verdict is READ here, not inferred
+        // from a thrown status. A run that ran shows in the run panel; one that
+        // never started would otherwise vanish without a word.
+        const answer = await dataManager.callAction<Record<string, unknown>, WizardResult>(info);
         await refresh();
+        if (answer && !isOk(answer) && answer.ran === false) {
+          notify.error({ title: t`The wizard did not run`, message: answer.detail || t`The wizard did not run` });
+        }
       } catch (e) {
         notify.error({ title: t`The wizard could not run`, message: errorMessage(e, t`The wizard could not run`) });
       } finally {

@@ -73,6 +73,7 @@ class ReturnedValue(DataSpec):                # compute.returned
     detail: str                               # ONE sentence for a person
     ran: bool                                 # False ⇒ nothing executed
     timed_out: bool                           # the wait ended before the work did
+    busy: bool                                # a held slot turned it away — retry later
     duration_s: float
     executor: str | None                      # 'agentic_process-<id>' | 'shell-<id>'
     check: CliResult | None                   # the last completion-check run
@@ -196,8 +197,8 @@ carried.returncode                        # 2 — the exception CARRIES the resu
 | what happened | `exit_code` | `ran` | how a caller tells |
 | --- | --- | --- | --- |
 | not approved | `REFUSED` | False | never retry |
-| someone else is running it (a wizard's lock, a turn in flight) | `NOT_YET` | False | nothing ran — try later |
-| never started (no harness, spawn failed) | `NOT_YET` | False | `detail` says why |
+| someone else is running it (a wizard's lock, a turn in flight) | `NOT_YET` | False | `busy` — try later; the only case an edge answers 409 |
+| never started (no harness, spawn failed) | `NOT_YET` | False | not `busy` — `detail` says why; retrying changes nothing |
 | still running when the wait ended | `NOT_YET` | True | `timed_out` — do not re-run on top of it |
 | ended in error / interrupted | `NOT_YET` | True | the process, via `executor` |
 | a reply that is not the declared kind | `NOT_YET` | True | `text` keeps the reply |

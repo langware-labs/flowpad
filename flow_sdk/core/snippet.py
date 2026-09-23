@@ -300,11 +300,15 @@ async def run_snippet(
         env_path = await asyncio.to_thread(_terminal_path)
     path = Path(path).expanduser().resolve()
     if not path.is_file():
-        return CliResult.of_process(str(path), None, stderr=f"snippet file not found: {path}")
+        # Nothing by that name — NOT_FOUND, told apart from a run that failed.
+        message = f"snippet file not found: {path}"
+        return CliResult.not_found(message, command=str(path), stderr=message)
     template = RUNNERS.get(path.suffix.lower())
     if template is None:
+        # A file this machine has no runner for: not this box's problem to run.
         known = ", ".join(sorted(RUNNERS))
-        return CliResult.of_process(str(path), None, stderr=f"no runner for '{path.suffix}' files (runnable: {known})")
+        message = f"no runner for '{path.suffix}' files (runnable: {known})"
+        return CliResult.not_applicable(message, command=str(path), stderr=message)
     stop = asyncio.Event()
     # Registered under the caller's run id when it has one, else a key of its own:
     # ``stop_runs_of`` finds it by owner, and ``stop_snippet`` only knows real run ids.
@@ -313,13 +317,16 @@ async def run_snippet(
     try:
         with tempfile.TemporaryDirectory(prefix="flowpad-snippet-build-") as build:
             command = template.format(file=shlex.quote(str(path)), out=shlex.quote(str(Path(build) / "snippet")))
-            return await run_shell(
+            said = await run_shell(
                 command,
                 timeout_seconds=timeout_seconds,
                 workdir=path.parent,
                 extra_env={"PATH": env_path},
                 stop=stop,
             )
+            # Shown to a PERSON under the editor, never parsed — so this is a
+            # boundary where output is trimmed, like a record written to disk.
+            return said.trimmed()
     finally:
         _RUNNING.pop(key, None)
 
