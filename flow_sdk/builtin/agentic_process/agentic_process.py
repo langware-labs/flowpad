@@ -4372,7 +4372,7 @@ class AgenticProcess(Entity):
         )
 
     @action.post(action_name="observe-turn")
-    async def observe_turn(self, after_entry_id: str | None = None) -> Any:
+    async def observe_turn(self, after_entry_id: str | None = None, from_start: bool = False) -> Any:
         """Stream an IN-FLIGHT turn's transcript entries to a client that did
         NOT start it.
 
@@ -4380,7 +4380,8 @@ class AgenticProcess(Entity):
         transcript entry; send me what follows it". Omit it and the stream
         watermarks at open, which is the historical behaviour — see the
         watermark block below for why that default is wrong for a client that
-        learns about a turn late.
+        learns about a turn late. *from_start* is the position of a client that
+        holds no entry at all: everything on disk is sent.
 
         A turn's content reaches the client that sent it through that client's
         own ``prompt`` response stream. Nobody else has a source: a turn typed
@@ -4485,7 +4486,11 @@ class AgenticProcess(Entity):
         # today, never flood a pane with the whole session.
         entries_at_open = _read_entries(path) if path is not None and path.exists() else []
         emitted = len(entries_at_open)
-        if after_entry_id:
+        if from_start:
+            # The client holds NOTHING of this session — it mounted before the transcript existed,
+            # or on a session another process runs — so everything on disk is news to it.
+            emitted = 0
+        elif after_entry_id:
             # Scan from the tail: the client's position is far likelier to be
             # recent, and the last match wins if an id somehow repeats.
             for index in range(len(entries_at_open) - 1, -1, -1):

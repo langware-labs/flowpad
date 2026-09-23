@@ -70,6 +70,12 @@ def started_record() -> dict:
     return {"status": STARTED, OWNER_PID: os.getpid(), "at": datetime.now(timezone.utc).isoformat()}
 
 
+def done_record(started: Optional[dict], text: str) -> dict:
+    """The record of a turn that ended with *text* — keeping when it began (a timeline shows both)."""
+    began = (started or {}).get("at")
+    return {"status": DONE, "text": text, **({"at": began} if began else {}), "ended_at": datetime.now(timezone.utc).isoformat()}
+
+
 async def _forget_turn(ap, key: str) -> None:
     """Drop one turn's record — a turn that was never taken has none."""
     turns = dict(turns_of(ap))
@@ -224,11 +230,12 @@ class TurnEngine:
                 # Died mid-turn. Did the agent finish? The transcript knows.
                 text = await _capture_assistant_reply(ap)
                 if text:
-                    await stamp_turn(ap, turn.key, {"status": DONE, "text": text})
+                    await stamp_turn(ap, turn.key, done_record(prior, text))
                     yield TurnEvent("done", text)
                     return
             start = len(transcript_entries(ap)) if stream else 0
             await stamp_turn(ap, turn.key, started_record())
+            _announce(self.deployment, "turn_started", process_id=str(getattr(ap, "id", "") or ""))
             taken = await ap.send_turn(turn.body)
             if not taken.ok:
                 # Nothing ran, so nothing is recorded: a STARTED stamp left behind would
@@ -242,7 +249,7 @@ class TurnEngine:
                 text = _last_turn_assistant_text(transcript_entries(ap)[start:]) or await _capture_assistant_reply(ap)
             else:
                 text = await _capture_assistant_reply(ap)
-            await stamp_turn(ap, turn.key, {"status": DONE, "text": text or ""})
+            await stamp_turn(ap, turn.key, done_record(turns_of(ap).get(turn.key), text or ""))
             yield TurnEvent("done", text or "")
 
 
@@ -595,7 +602,9 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
         return await _skip(message)
     if not admits(source, author):
         logger.info("agent %s: not answering an unlisted sender on %s", agent.name or agent.id, source.id)
+        _announce(engine.deployment, "refused", data_source_id=str(source.id))
         return await _skip(message)
+    _announce(engine.deployment, "message_in", data_source_id=str(source.id))
     if not body:
         return await _skip(message)
     # Three facts a source may declare about its messages (the driver class says; nothing here names one):
@@ -632,6 +641,15 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
         return True
     await message.reply(await message.reply_spec(body=outcome.text))
     return True
+
+
+def _announce(deployment, kind: str, **data) -> None:
+    """Say *deployment*'s timeline moved (``deployment_timeline.announce``) — an engine run with no
+    deployment (a program driving turns itself) has no timeline to move."""
+    from flow_sdk.builtin.deployment_timeline import announce  # noqa: PLC0415
+
+    if deployment is not None:
+        announce(str(deployment.id), kind, **data)
 
 
 async def _skip(message) -> bool:

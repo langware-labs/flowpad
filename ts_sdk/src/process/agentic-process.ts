@@ -2631,8 +2631,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     // pane mounted just now, and wrong for a turn we learn about late (a
     // queue-drained prompt), where the turn's own head is already written by
     // the time `busy` reaches us. Derived by default so callers need no
-    // change; `opts.afterEntryId` overrides. Omitted entirely when we hold no
-    // transcript entry, which is exactly when the old default is right.
+    // change; `opts.afterEntryId` overrides.
     const afterEntryId = opts?.afterEntryId ?? this.lastHeldTranscriptEntryId();
 
     const actionInfo = new ActionInfo(
@@ -2644,7 +2643,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       true, // streaming
       ctrl.signal,
     );
+    // Holding nothing at all (the pane mounted before this session had a transcript — a turn run
+    // by another process, say), everything already on disk is news: ask for it from the start.
     if (afterEntryId) actionInfo.bodyParameters = { after_entry_id: afterEntryId };
+    else if (!this.flowDataStream.items.length) actionInfo.bodyParameters = { from_start: true };
 
     const response = await dataManager.callAction<unknown, Response>(actionInfo);
     if (!response || !response.body) return; // nothing in flight — not an error
