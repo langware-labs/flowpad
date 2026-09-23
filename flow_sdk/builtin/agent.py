@@ -4,7 +4,7 @@ An Agent answers *who*; a ``Deployment`` answers *where and how*; an
 ``AgenticProcess`` records *what happened on one run*::
 
     Agent.deploy()       -> Deployment        (kind ``runtime.agent``)
-    Deployment.launch()  -> AgenticProcess
+    Deployment.launch()  -> PromptResult      (executor: the AgenticProcess)
 
 Folder layout (``AssetClass.REPO``, like Spec/Task/Deck)::
 
@@ -424,8 +424,9 @@ class Agent(Entity):
 
     async def launch(
         self, prompt: str, *, deployment: "Deployment | None" = None, wait: bool = False, **options
-    ) -> "AgenticProcess":
-        """``create_process`` + save + run the first turn.
+    ) -> "PromptResult":
+        """``create_process`` + save + run the first turn — a ``PromptResult``
+        whose ``executor`` names the process. Never raises for an outcome.
 
         Goes through ``dispatch_agent_run`` rather than ``Deployment.launch``
         directly: that function owns the run lifecycle events and the refusal to
@@ -918,9 +919,9 @@ class Agent(Entity):
         """Run this agent once. `POST /agent/<id>/run  {"prompt": "..."}`
 
         The UI's entry point. Deliberately a command that ACKNOWLEDGES rather
-        than a bare bus emission: the caller needs the process id to navigate
-        to the run, and a fire-and-forget emit with no registered handler would
-        be a silent no-op. The lifecycle is emitted as node-addressed events
+        than a bare bus emission: the caller needs the process to navigate to
+        (the answer's ``executor``), and a fire-and-forget emit with no
+        registered handler would be a silent no-op. The lifecycle is emitted as node-addressed events
         alongside — see ``agent_run.dispatch_agent_run``, which owns the
         local/remote routing.
         """
@@ -933,26 +934,14 @@ class Agent(Entity):
         if not prompt:
             return ApiFailResponse(message="prompt is required")
 
-        # Resolved here and passed in: the response payload names it, so letting
-        # ``launch`` resolve its own would be a second get-or-create round trip.
-        deployment = await self.local_deployment()
-        if not self.enabled_on(deployment.id):
-            return ApiFailResponse(message=f"agent {self.name!r} is disabled on this computer")
-        try:
-            process = await self.launch(prompt, deployment=deployment)
-        except NotImplementedError as exc:
-            return ApiFailResponse(message=str(exc))
-        except Exception as exc:
-            return ApiFailResponse(message=f"run failed: {exc}")
-
-        return ApiSuccessResponse(
-            data={
-                "process_id": process.id,
-                "process_typeid": str(process.typeid),
-                "deployment_id": deployment.id,
-                "compute_node_id": deployment.compute_node_id,
-            }
-        )
+        # Every outcome — disabled here, placed remotely, busy, accepted — is the
+        # launch's own answer, and the body of every response is that answer
+        # (``executor`` names the process to navigate to). Only ``busy`` is 409.
+        answer = await self.launch(prompt, deployment=await self.local_deployment())
+        payload = answer.model_dump(mode="json")
+        if answer.busy:
+            return ApiFailResponse(message=answer.detail, status_code=409, data=payload)
+        return ApiSuccessResponse(data=payload)
 
     # ── places (HTTP) — see ``agent_places`` ──────────────────────────────
 

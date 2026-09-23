@@ -227,11 +227,12 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         await activate_flows_for_trigger(trigger_id, entity.name or trigger_id, trigger=entity)
         results = await dispatch_trigger_actions(entity, changes=[])
 
-        # A RUN_AGENT action hands back the process it started — the log entry's
-        # handle on the run, same field the legacy spawn below fills.
-        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess as _Process
+        # A RUN_AGENT action answers with the run it started — its ``executor``
+        # is the log entry's handle on the run, same field the legacy spawn below
+        # fills.
+        from flow_sdk.builtin.agent_run import process_id_of  # noqa: PLC0415
 
-        process_id: Optional[str] = next((r.id for r in results if isinstance(r, _Process)), None)
+        process_id: Optional[str] = next((pid for pid in map(process_id_of, results) if pid), None)
 
         # Legacy back-compat: schedule triggers with ``instruction`` set spawn
         # an AgenticProcess. Pre-dates the actions list; kept so existing

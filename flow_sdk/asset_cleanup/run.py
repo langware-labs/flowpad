@@ -117,7 +117,7 @@ async def run_asset_cleanup(
     agent asset is missing or the worker reply carries no parseable report.
     """
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
-    from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
     from flow_sdk.builtin.subagent_loading import load_subagent  # noqa: PLC0415
 
     deployment = await get_agent_local_deployment("asset-cleanup")
@@ -182,15 +182,15 @@ async def run_asset_cleanup(
     # can inspect under the flowpad_assistant project. Headless one-shot —
     # pty=False routes prompt() to the print-mode driver (no PTY/Shell) and
     # wait=True polls the transcript to a terminal state.
-    proc = await deployment.launch(
+    result = await deployment.launch(
         instruction,
         wait=True,
         name="Asset cleanup scan",
         workdir=workdir or root_strs[0],
     )
-    result = _build_run_result(proc)
-    session_id = proc.session_id or ""
-    if not result.ok:
+    proc = await AgenticProcess.get_by_typeid(result.executor) if result.executor else None
+    session_id = (proc.session_id if proc is not None else "") or ""
+    if not result.ok or proc is None:
         raise RuntimeError(f"asset_cleanup worker: {result.detail} (session {session_id})")
 
     text = result.text or ""

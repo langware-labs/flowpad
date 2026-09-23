@@ -52,9 +52,10 @@ from flow_sdk.worldview.models import (
 )
 from flow_sdk.worldview.ontology import KindStr, normalize_kind
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 #: What is placed. The ``compute.node`` kind is a desktop — a machine placed for
 #: a human rather than for an agent; from inside the box the two are identical
@@ -679,19 +680,32 @@ class Deployment(Entity):
         _prepare_output_folder(process)
         return process
 
-    async def launch(self, prompt: str, *, wait: bool = False, **options) -> "AgenticProcess":
-        """``create_process`` + save + run the first turn. The convenience shape.
+    async def launch(self, prompt: str, *, wait: bool = False, **options) -> "PromptResult":
+        """``create_process`` + save + run the first turn — answered as a
+        ``PromptResult`` whose ``executor`` names the process. Never raises for
+        an outcome.
 
-        ``wait=True`` polls to a terminal state.
+        Without ``wait``, OK means the turn was ACCEPTED (it runs on in the
+        background) — the answer ``send_turn`` gives. With ``wait=True`` it is
+        the RUN's answer once the worker settles, read the way
+        ``AgenticProcess.run`` reads it. Not taken is NOT_YET (``busy`` when a
+        turn is in flight); a disabled agent is REFUSED, a missing one NOT_FOUND.
+        A caller that needs the process resolves it from ``executor``.
         """
-        proc = await self.create_process(prompt, **options)
+        from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+        try:
+            proc = await self.create_process(prompt, **options)
+        except AgentUnavailable as gone:
+            make = PromptResult.refused if gone.exit_code is ExitCode.REFUSED else PromptResult.not_found
+            return make(str(gone))
         await proc.save()
         taken = await proc.send_turn(prompt)
-        if not taken.ok:
-            raise RuntimeError(f"launch failed — {taken.detail}")
-        if wait:
-            await proc.wait()
-        return proc
+        if not taken.ok or not wait:
+            return taken
+        await proc.wait()
+        return _build_run_result(proc)
 
     async def use(self, *, owner=None, **options) -> "AgenticProcess":
         """Open a session AS this agent: a visible, headless Chat process, saved,
