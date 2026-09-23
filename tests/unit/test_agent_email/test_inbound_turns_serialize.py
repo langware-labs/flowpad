@@ -40,6 +40,13 @@ class _Worker:
     async def save(self) -> None:
         pass
 
+    def fetch_worker_status(self):
+        """How the worker ended — the engine reads it the way AgenticProcess.run
+        does, so an errored turn is never answered as a success. This one idles."""
+        from flow_sdk.transcript_analyzer.worker_status import WorkerStatus  # noqa: PLC0415
+
+        return WorkerStatus.IDLE
+
 
 class _Message:
     """A delivered channel message: its reply goes back on the channel it came from."""

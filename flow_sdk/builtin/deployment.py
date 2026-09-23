@@ -41,6 +41,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (
     ArtifactLinkSource,
@@ -77,6 +78,19 @@ KIND_NODE = "compute.node"
 NODE_PROVIDERS = frozenset({"local", "local_machine", "e2b", "docker", "gcp_vm", "user_machine"})
 
 logger = logging.getLogger(__name__)
+
+
+class AgentUnavailable(RuntimeError):
+    """The placed agent is missing (``NOT_FOUND``) or disabled (``REFUSED``).
+
+    Raised by the process primitive; a boundary that forms an answer turns it
+    into one with ``exit_code`` — the two cases are different answers, and a
+    bare ``RuntimeError`` left a caller no way to tell them apart.
+    """
+
+    def __init__(self, message: str, exit_code: ExitCode):
+        super().__init__(message)
+        self.exit_code = exit_code
 
 
 class DeploymentActionError(RuntimeError):
@@ -561,13 +575,21 @@ class Deployment(Entity):
         )
 
     async def _require_agent(self) -> "Agent":
-        """The placed Agent, or a loud error — a launch site naming a missing or
-        disabled agent is a bug we want to see, not a silent no-op."""
+        """The placed Agent, or ``AgentUnavailable`` — a launch site naming a
+        missing or disabled agent is a bug we want to see, not a silent no-op.
+
+        Raised, because ``create_process`` is a primitive that hands back a
+        process. A boundary that forms an ANSWER (a turn, a launch) catches it
+        and answers with ``exit_code`` instead."""
         agent = await self.agent()
         if agent is None:
-            raise RuntimeError(f"deployment {self.id}: agent {self.parent_type_id!r} not found")
+            raise AgentUnavailable(
+                f"deployment {self.id}: agent {self.parent_type_id!r} not found", ExitCode.NOT_FOUND,
+            )
         if not agent.enabled_on(self.id):
-            raise RuntimeError(f"agent {agent.name!r} is disabled on {self.name or self.id}")
+            raise AgentUnavailable(
+                f"agent {agent.name!r} is disabled on {self.name or self.id}", ExitCode.REFUSED,
+            )
         return agent
 
     async def create_process(self, prompt: str = "", **options) -> "AgenticProcess":

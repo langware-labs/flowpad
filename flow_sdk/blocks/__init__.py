@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
 
 from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SlackMessageSpec, TelegramMessageSpec
 from flow_sdk.schema.data_spec.dataset_spec import FileRef
-from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, PromptResult
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 from .arrivals import arrivals, until
@@ -94,6 +94,14 @@ async def workflow(name: str):
         yield
     finally:
         current_workflow.reset(token)
+
+
+class SessionsExhausted(RuntimeError):
+    """Every session slot of a runner is taken — ``max_processes`` is reached.
+
+    Raised by the spawn primitive; ``_AgentRunner.run`` answers it as ``busy``:
+    nothing ran, and a slot frees when a session closes.
+    """
 
 
 class _AgentRunner:
@@ -153,7 +161,7 @@ class _AgentRunner:
         if existing is not None:
             return existing
         if len(self.processes) >= self.max_processes:
-            raise RuntimeError(
+            raise SessionsExhausted(
                 f"max_processes={self.max_processes} live sessions reached; key {key!r} would exceed the budget"
             )
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
@@ -183,22 +191,32 @@ class _AgentRunner:
         from the record, never by a second turn.
         """
         from flow_sdk.builtin.agent_serve import Turn, TurnEngine, turn_key  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import AgentUnavailable  # noqa: PLC0415
 
-        ap = await self.process_for(m)
+        try:
+            ap = await self.process_for(m)
+        except SessionsExhausted as full:
+            # Every session slot is taken: busy, and it frees when one closes.
+            return PromptResult.held(str(full))
+        except AgentUnavailable as gone:
+            make = PromptResult.refused if gone.exit_code is ExitCode.REFUSED else PromptResult.not_found
+            return make(str(gone))
         executor = str(ap.typeid)
         turn = Turn(session=str(ap.typeid), key=turn_key(m), body=m.body or m.name or "")
         outcome = await TurnEngine(self.agent, None).run(turn, process=ap)
-        if outcome.kind == "refused":
-            return PromptResult.not_yet(outcome.text, ran=False, executor=executor)
-        return self._output(outcome.text, executor)
+        if not outcome.ok:
+            # Not taken, busy, errored or out of time — the engine's own answer,
+            # with ``busy``, ``timed_out`` and ``executor`` intact.
+            return outcome
+        return self._output(outcome.text, executor).model_copy(update={"ran": outcome.ran})
 
     def _output(self, text: str, executor: str) -> PromptResult:
         """The turn's reply as a value, held to the persona's declared shape.
 
-        Both value-bearing returns go through here, and ``TurnEngine`` hands
-        back one ``TurnEvent`` whether the turn was live or replayed from a
+        The one value-bearing return goes through here, and ``TurnEngine``
+        answers the same way whether the turn was live or replayed from a
         record — so the two produce the same shape, not merely the same text. A
-        refusal returns before this: it has no reply to shape.
+        turn that was not answered returns before this: it has no reply to shape.
         """
         from flow_sdk.core.compute.declared_value import (  # noqa: PLC0415
             DeclaredShapeError,
@@ -286,6 +304,11 @@ async def _respond_to(agent: "AgentRef", source: MessageBlock):
                 try:
                     async for message in messages:
                         answer = await _process_message(agent, message)
+                        if not answer.ok or not answer.text:
+                            # Not taken, errored or out of time: nothing to say.
+                            # Replying `answer.text` anyway sent an empty message.
+                            logger.info("agent: no reply to a message (%s)", answer.detail)
+                            continue
                         try:
                             await message.reply(answer.text)
                         except _MessageRequestExpired:

@@ -33,6 +33,14 @@ class _Process:
         self.prompts.append(text)
         return PromptResult.satisfied("The turn was accepted.", executor=self.typeid)
 
+    #: How the worker ended (None: it idled, the way a good run ends).
+    worker = None
+
+    def fetch_worker_status(self):
+        from flow_sdk.transcript_analyzer.worker_status import WorkerStatus  # noqa: PLC0415
+
+        return self.worker or WorkerStatus.IDLE
+
 
 
 @pytest.mark.asyncio
@@ -84,3 +92,28 @@ async def test_a_turn_that_runs_out_of_time_says_so(monkeypatch, tmp_path):
     # process is still running — and must not be prompted on top of itself.
     assert result.timed_out and result.exit_code is ExitCode.NOT_YET
     assert result.executor == "agentic_process-proc-1"
+
+
+
+@pytest.mark.asyncio
+async def test_an_agent_that_ended_in_error_is_not_reported_as_done(monkeypatch, tmp_path):
+    """`wait()` returns on any terminal state, FAILED included. The step used to
+    answer `satisfied` regardless, so an agent op with no completion check — a
+    continuation — reported a crashed agent as done."""
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.core.compute import process_step
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+    from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
+
+    process = _Process()
+    process.worker = WorkerStatus.ERROR
+
+    async def get_by_typeid(typeid):
+        return process
+
+    monkeypatch.setattr(AgenticProcess, "get_by_typeid", staticmethod(get_by_typeid))
+    answer = await process_step.launch_step_process(
+        agent="provisioner", prompt="do it", name="kafka", workdir=Path(tmp_path), executor=process.typeid,
+    )
+    assert answer.exit_code is ExitCode.NOT_YET, answer.detail
+    assert answer.executor == process.typeid

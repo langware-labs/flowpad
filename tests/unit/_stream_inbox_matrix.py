@@ -155,6 +155,11 @@ def _stub_the_turn(cell: Cell, monkeypatch) -> None:
         async def save(self):
             pass
 
+        def fetch_worker_status(self):
+            from flow_sdk.transcript_analyzer.worker_status import WorkerStatus  # noqa: PLC0415
+
+            return WorkerStatus.IDLE
+
     process = _Process()
 
     async def process_for(self, *_a, **_k):

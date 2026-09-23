@@ -26,14 +26,17 @@ import asyncio
 import logging
 import weakref
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 logger = logging.getLogger(__name__)
 
 # ── the turn record, on the process (durable, so a redelivery is answered from it) ──
 
 TURNS = "turns"
-STARTED, DONE = "started", "done"
+STARTED, DONE, FAILED = "started", "done", "failed"
 #: Records kept per session. A redelivery is always of a RECENT message; older records are noise.
 TURNS_KEPT = 200
 
@@ -105,17 +108,23 @@ class Turn:
 
 @dataclass(frozen=True)
 class TurnEvent:
-    """What a turn produced, as it is produced.
+    """What a turn produced, as it is produced — a STREAM event, not an answer.
 
     ``text`` — a message the agent wrote (whole: a transcript records messages,
     not tokens). ``tool`` — it used a tool (``name``). ``done`` — the turn is
-    over; ``text`` is the reply. ``refused`` — the turn was not taken
-    (``text`` says why); nothing ran.
+    over, whatever became of it: the LAST event, and the only one carrying
+    ``answer`` — the same ``PromptResult`` ``TurnEngine.run`` returns. A
+    streaming caller and a waiting one read ONE verdict from one place.
+
+    There used to be a fourth kind, ``refused``, meaning "not taken" — which
+    collided with ``ExitCode.REFUSED`` and dropped ``ran``, ``timed_out``,
+    ``busy`` and ``executor`` on the way out. Those are on ``answer`` now.
     """
 
     kind: str
     text: str = ""
     name: str = ""
+    answer: Optional["PromptResult"] = None
 
 
 # ── the engine ───────────────────────────────────────────────────────────────
@@ -175,19 +184,29 @@ class TurnEngine:
         await process.save()
         return process
 
-    async def run(self, turn: Turn, *, process=None) -> TurnEvent:
-        """The turn's outcome once it is over: ``done`` with the reply, or ``refused``.
+    async def run(self, turn: Turn, *, process=None) -> "PromptResult":
+        """The turn's answer once it is over — a ``PromptResult``, never a raise.
+
+        ``OK`` with ``text`` the reply; ``NOT_YET`` when it was not taken (``busy``
+        when another turn holds the session), ended in error, or ran out of time
+        (``timed_out`` — the process may still be working); ``REFUSED`` /
+        ``NOT_FOUND`` when the agent is disabled or gone. ``executor`` names the
+        process, so a caller can continue the same session.
 
         *process* runs the turn on a process the caller already routed (the block
         runner keeps its own per-session map); otherwise the session's process here.
         """
-        last = TurnEvent("refused", "the turn produced nothing")
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+        answer = None
         async for event in self._turn(turn, process, stream=False):
-            last = event
-        return last
+            if event.answer is not None:
+                answer = event.answer
+        return answer or PromptResult.not_yet("The turn produced nothing.", ran=False)
 
     async def run_stream(self, turn: Turn, *, process=None) -> AsyncIterator[TurnEvent]:
-        """Run *turn*, yielding what the agent writes as it writes it; the last event is ``done`` or ``refused``."""
+        """Run *turn*, yielding what the agent writes as it writes it; the last
+        event is ``done``, carrying the turn's ``answer``."""
         async for event in self._turn(turn, process, stream=True):
             yield event
 
@@ -197,19 +216,43 @@ class TurnEngine:
             _last_turn_assistant_text,
             conversation_turn_lock,
         )
+        from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import AgentUnavailable  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, PromptResult  # noqa: PLC0415
+
+        def done(answer: "PromptResult") -> TurnEvent:
+            return TurnEvent("done", answer.text or "", answer=answer)
 
         async with conversation_turn_lock(turn.session):
-            ap = process or await self.process_for(turn.session, name=turn.name, context=turn.context)
+            try:
+                ap = process or await self.process_for(turn.session, name=turn.name, context=turn.context)
+            except AgentUnavailable as gone:
+                make = PromptResult.refused if gone.exit_code is ExitCode.REFUSED else PromptResult.not_found
+                yield done(make(str(gone)))
+                return
+            executor = str(ap.typeid)
             prior = turns_of(ap).get(turn.key)
             if prior and prior.get("status") == DONE:
-                yield TurnEvent("done", prior.get("text", ""))
+                # Answered before — the same reply again, and nothing runs now.
+                yield done(PromptResult.satisfied(
+                    "The turn was answered before.", text=prior.get("text", ""), ran=False, executor=executor,
+                ))
+                return
+            if prior and prior.get("status") == FAILED:
+                # Ended in error before. Running it again could repeat what it did
+                # on the way down; a person decides that, not a redelivery.
+                yield done(PromptResult.not_yet(
+                    "An earlier attempt at this turn ended in error.", ran=False, executor=executor,
+                ))
                 return
             if prior and prior.get("status") == STARTED:
                 # Died mid-turn. Did the agent finish? The transcript knows.
                 text = await _capture_assistant_reply(ap)
                 if text:
                     await stamp_turn(ap, turn.key, {"status": DONE, "text": text})
-                    yield TurnEvent("done", text)
+                    yield done(PromptResult.satisfied(
+                        "The turn had finished.", text=text, ran=False, executor=executor,
+                    ))
                     return
             start = len(transcript_entries(ap)) if stream else 0
             await stamp_turn(ap, turn.key, {"status": STARTED})
@@ -218,16 +261,31 @@ class TurnEngine:
                 # Nothing ran, so nothing is recorded: a STARTED stamp left behind would
                 # make the redelivery read the transcript's latest reply — another turn's.
                 await _forget_turn(ap, turn.key)
-                yield TurnEvent("refused", taken.detail or "the turn was not taken")
+                yield done(taken)
                 return
-            if stream:
-                async for event in _follow(ap, start):
-                    yield event
-                text = _last_turn_assistant_text(transcript_entries(ap)[start:]) or await _capture_assistant_reply(ap)
+            try:
+                if stream:
+                    async for event in _follow(ap, start):
+                        yield event
+                    text = _last_turn_assistant_text(transcript_entries(ap)[start:]) or await _capture_assistant_reply(ap)
+                else:
+                    text = await _capture_assistant_reply(ap)
+            except TimeoutError:
+                # The wait ended, not necessarily the turn. The STARTED stamp stays:
+                # a redelivery reads the transcript to learn whether it finished.
+                yield done(PromptResult.not_yet(
+                    "The agent did not finish its turn in time.", timed_out=True, executor=executor,
+                ))
+                return
+            # How the WORKER ended, read the one way AgenticProcess.run reads it:
+            # an error or an interrupt is NOT_YET, whatever text it left behind.
+            answer = _build_run_result(ap).model_copy(update={"text": text or ""})
+            if answer.ok:
+                answer = answer.model_copy(update={"detail": "The turn was answered."})
+                await stamp_turn(ap, turn.key, {"status": DONE, "text": text or ""})
             else:
-                text = await _capture_assistant_reply(ap)
-            await stamp_turn(ap, turn.key, {"status": DONE, "text": text or ""})
-            yield TurnEvent("done", text or "")
+                await stamp_turn(ap, turn.key, {"status": FAILED, "text": text or ""})
+            yield done(answer)
 
 
 def transcript_entries(ap) -> list:
@@ -525,8 +583,8 @@ async def answer(engine: TurnEngine, source, message) -> bool:
             name=" · ".join(p for p in (agent.name, source.channel or source.provider, who) if p) or None,
         )
     )
-    if outcome.kind != "done" or not outcome.text:
-        logger.info("agent %s: no reply to %s (%s)", agent.name or agent.id, session, outcome.text or outcome.kind)
+    if not outcome.ok or not outcome.text:
+        logger.info("agent %s: no reply to %s (%s)", agent.name or agent.id, session, outcome.detail)
         return False
     await message.reply(await message.reply_spec(body=outcome.text))
     return True

@@ -34,8 +34,18 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 _LOCAL_CALLER = "local"
 
 
-def _fail(status: int, message: str, kind: str = "invalid_request_error") -> JSONResponse:
-    return JSONResponse(status_code=status, content={"error": {"message": message, "type": kind}})
+def _fail(status: int, message: str, kind: str = "invalid_request_error", *, answer=None) -> JSONResponse:
+    content: dict = {"error": {"message": message, "type": kind}}
+    if answer is not None:
+        # The turn's own verdict, for a Flowpad-aware client: which process, and
+        # whether it is still working (`timed_out`) or merely busy.
+        content["flowpad"] = {
+            "exit_code": int(answer.exit_code),
+            "executor": answer.executor,
+            "timed_out": answer.timed_out,
+            "busy": answer.busy,
+        }
+    return JSONResponse(status_code=status, content=content)
 
 
 async def agent_chat_http(request: Request, endpoint, sub_path: str, caller: Optional[str]) -> Response:
@@ -129,8 +139,12 @@ async def _completions(request: Request, agent, deployment, endpoint, caller: st
             headers={**headers, "Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
     outcome = await engine.run(turn)
-    if outcome.kind == "refused":
-        return _fail(409, outcome.text or "the agent did not take the turn", "turn_refused")
+    if not outcome.ok:
+        # An OpenAI client raises on a non-2xx and never reads our exit code, so
+        # here — unlike Flowpad's own edges — a turn that was not answered is a
+        # protocol error. The answer rides under `flowpad` for a client that does.
+        status, kind = _status_of(outcome)
+        return _fail(status, outcome.detail or "the agent did not answer", kind, answer=outcome)
     return JSONResponse(
         {
             "id": f"chatcmpl-{turn.key}",
@@ -140,10 +154,42 @@ async def _completions(request: Request, agent, deployment, endpoint, caller: st
             "choices": [
                 {"index": 0, "message": {"role": "assistant", "content": outcome.text}, "finish_reason": "stop"}
             ],
-            "flowpad": {"conversation_id": conversation_id},
+            "flowpad": _flowpad(conversation_id, outcome),
         },
         headers=headers,
     )
+
+
+def _flowpad(conversation_id: str, answer) -> dict:
+    """What a Flowpad-aware client reads beside the OpenAI shape: the turn's verdict
+    and the process that ran it, so it can continue the same session."""
+    return {
+        "conversation_id": conversation_id,
+        "exit_code": int(answer.exit_code),
+        "executor": answer.executor,
+        "timed_out": answer.timed_out,
+    }
+
+
+def _status_of(answer) -> "tuple[int, str]":
+    """A turn that was not answered, as the OpenAI protocol spells failure.
+
+    409 only for ``busy`` — another turn holds the conversation, try again.
+    REFUSED is the agent disabled here (403), NOT_FOUND the agent gone (404).
+    Every other NOT_YET — not taken, errored, out of time — is the agent behind
+    this endpoint failing its turn: 502, never a 200 with empty content.
+    """
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
+
+    if answer.busy:
+        return 409, "turn_busy"
+    if answer.exit_code is ExitCode.REFUSED:
+        return 403, "agent_disabled"
+    if answer.exit_code is ExitCode.NOT_FOUND:
+        return 404, "agent_not_found"
+    if answer.timed_out:
+        return 502, "turn_timed_out"
+    return 502, "turn_not_answered"
 
 
 async def _sse(events, model: str, conversation_id: str):
@@ -170,14 +216,18 @@ async def _sse(events, model: str, conversation_id: str):
             wrote = True
         elif event.kind == "tool":
             yield chunk({}, extra={"tool": event.name})
-        elif event.kind == "refused":
-            yield f"data: {json.dumps({'error': {'message': event.text, 'type': 'turn_refused'}})}\n\n"
-            break
         elif event.kind == "done":
+            answer = event.answer
+            if answer is not None and not answer.ok:
+                _status, kind = _status_of(answer)
+                error = {"message": answer.detail or "the agent did not answer", "type": kind}
+                yield f"data: {json.dumps({'error': error, 'flowpad': _flowpad(conversation_id, answer)})}\n\n"
+                break
             if not wrote and event.text:
                 # Answered from the record (a redelivery), or a turn whose text only the end reveals.
                 yield chunk({"content": event.text})
-            yield chunk({}, finish="stop")
+            extra = _flowpad(conversation_id, answer) if answer is not None else {}
+            yield chunk({}, finish="stop", extra={k: v for k, v in extra.items() if k != "conversation_id"})
     yield "data: [DONE]\n\n"
 
 
