@@ -38,13 +38,14 @@ export function isPlainShellDock(dock: DockPointer): boolean {
  */
 export function isAdoptableChildDock(dock: DockPointer, opts: { shown?: boolean } = {}): boolean {
   if (isContentAssetDock(dock) || isPlainShellDock(dock)) return true;
-  // A running app is workspace CONTENT, like a file or a terminal — it is the
-  // deliverable, not a navigation away from one. Listed explicitly rather than
+  // A running app or a web page is workspace CONTENT, like a file or a terminal —
+  // the deliverable, not a navigation away from one. Listed explicitly rather than
   // left to the `shown` widening below so a user who promotes a shown app to its
-  // own tab keeps it inside the workspace instead of ejecting it to the top level.
-  // The backend allows it through the addressable-screen fallback in
-  // `_pointer_is_adoptable_child`, so the two sides already agree.
-  if (dock.viewType === ViewType.APP) return !!dock.pointer?.trim();
+  // own tab, or opens a terminal link in Vibe, keeps it inside the workspace
+  // instead of ejecting it to the top level. The backend allows both through the
+  // addressable-screen fallback in `_pointer_is_adoptable_child`, so the two sides
+  // already agree.
+  if (dock.viewType === ViewType.APP || dock.viewType === ViewType.WEB_APP) return !!dock.pointer?.trim();
   // A dock the AGENT showed is workspace content by intent, even when it is a
   // navigation surface: `flow show view events` means "here is a screen for
   // this session", not "leave". A dock the USER navigated to keeps the narrower
