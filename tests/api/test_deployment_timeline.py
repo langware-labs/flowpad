@@ -166,8 +166,9 @@ def test_everything_relayed_reaches_the_apps_clients():
 
 async def test_each_conversation_is_one_thread_with_its_own_events(deployed, bootstrapped_client):
     _agent, deployment, chat = deployed
-    await _chat(bootstrapped_client, chat, "first question")
-    await _chat(bootstrapped_client, chat, "second question")
+    # Both replies' copies must exist: a thread counts the messages ON the channel.
+    await _chat_answered(bootstrapped_client, chat, "first question")
+    await _chat_answered(bootstrapped_client, chat, "second question")
 
     resp = await bootstrapped_client.get(f"/api/v1/graph/deployment/{deployment.id}/threads")
     assert resp.status_code == 200, resp.text
