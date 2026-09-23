@@ -779,7 +779,7 @@ def serving_key(source) -> tuple:
     """What a loop's copy of *source* must still say for the loop to keep serving it.
 
     A poll's runtime write (a cursor, a next-poll time) is not news; a new owner,
-    place, status or allowlist is — the loop holds its rows, so it restarts on them.
+    place, status, allowlist or thread timeout is — the loop holds its rows, so it restarts on them.
     """
     return (
         str(source.id),
@@ -789,6 +789,7 @@ def serving_key(source) -> tuple:
         str(getattr(source, "answer_place", "") or ""),
         str(getattr(source, "status", "") or ""),
         tuple(sorted(str(a) for a in (getattr(source, "inbound_allowed_senders", None) or []))),
+        getattr(source, "thread_timeout_seconds", None),
     )
 
 
