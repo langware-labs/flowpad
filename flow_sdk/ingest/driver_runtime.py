@@ -135,6 +135,11 @@ class Pass:
 # ── identity and provenance ────────────────────────────────────────────────────
 
 
+#: Rows ``DriverRuntime.identify`` already asked this process — once is enough to ask a source that
+#: may not know who it is.
+_IDENTIFY_ASKED: set[str] = set()
+
+
 def identity_stamped(row: Any) -> bool:
     """Whether ``row`` already knows which account it reads as."""
     return bool(getattr(row, "account_key", "") or getattr(row, "account_identities", None))
@@ -697,6 +702,22 @@ class DriverRuntime:
         if (verdict.ready or verdict.pending) and isinstance(source, Identified):
             await self._stamp(row, source)
         return verdict
+
+    async def identify(self, row: Any) -> None:
+        """Record who the source reads as, if it does not know yet — before its first sync lands a
+        record, so a row only ever synced (never verified, never sent from) still tells our own
+        posts from a stranger's. Asked once per row per process: a source that cannot say is not
+        re-asked on every poll (``send`` and ``verify`` still stamp it)."""
+        key = str(getattr(row, "id", "") or "")
+        if identity_stamped(row) or not issubclass(self.cls, Identified) or key in _IDENTIFY_ASKED:
+            return
+        _IDENTIFY_ASKED.add(key)
+        try:
+            source = await self.open(row)
+        except Rejected:
+            return  # the sync that follows reports the refusal
+        async with source:
+            await self._stamp(row, source)
 
     async def _stamp(self, row: Any, source: Source) -> None:
         """Record who the source reads and posts as, once."""
