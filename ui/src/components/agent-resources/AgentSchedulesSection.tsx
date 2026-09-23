@@ -13,9 +13,8 @@ import {
 import { useAgentPlaces } from '@src/components/assets/editor/agent-profile/use-agent-places';
 import { usePlaceDisplay } from '@src/components/assets/editor/agent-profile/use-place-display';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Empty, IconButton } from './parts';
+import { Empty, IconButton, ResourceRow } from './parts';
 
 /**
  * The agent's schedules, in the resources menu. A schedule belongs to one place (the machine it
@@ -64,30 +63,21 @@ export function AgentSchedulesSection({ agentTypeId }: { agentTypeId: TypeId }) 
       >
         {schedules.map((row) => {
           const place = placeOf(row);
+          const typeId = `${Trigger.type}-${row.id}`;
           return (
-            <button
+            <ResourceRow
               key={row.id}
-              type="button"
+              icon={CalendarClock}
+              label={row.name}
+              detail={[describeSchedule(row.expr, row.sched_trigger_type, row.timezone, labels), place && display(place).label]
+                .filter(Boolean)
+                .join(' · ')}
+              muted={!row.enabled}
+              selected={currentDock?.child?.typeId === typeId}
               // Opens nested in the agent editor (see DockPointer.child); a click only navigates.
-              onClick={() => currentDock && navigation.openDock(currentDock.withChild('schedule', `${Trigger.type}-${row.id}`))}
-              className={cn(
-                'flex w-full items-start gap-1.5 px-3 py-1 text-start hover:bg-muted/60',
-                currentDock?.child?.typeId === `${Trigger.type}-${row.id}` && 'bg-primary/5',
-              )}
-              title={place ? display(place).label : undefined}
-              data-testid={`agent-resource-schedule-${row.id}`}
-            >
-              <CalendarClock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-              <span className="flex min-w-0 flex-col">
-                <span className={row.enabled ? 'truncate text-xs' : 'truncate text-xs text-muted-foreground line-through'}>
-                  {row.name}
-                </span>
-                <span className="truncate text-[11px] text-muted-foreground">
-                  {describeSchedule(row.expr, row.sched_trigger_type, row.timezone, labels)}
-                  {place ? ` · ${display(place).label}` : ''}
-                </span>
-              </span>
-            </button>
+              onOpen={() => currentDock && navigation.openDock(currentDock.withChild('schedule', typeId))}
+              testId={`agent-resource-schedule-${row.id}`}
+            />
           );
         })}
       </NavigatorSection>
