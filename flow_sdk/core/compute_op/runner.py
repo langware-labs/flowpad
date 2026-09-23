@@ -195,9 +195,24 @@ async def run_op(
             "exit_code": ExitCode.NOT_YET,
             "value": None,
             "check": after,
-            "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.",
+            "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.{_why(call)}",
         }
     )
+
+
+def _why(call: Any) -> str:
+    """The call's own last word, for a log line that otherwise says only "failed".
+
+    An installer that exits at once (a refused agreement, an ambiguous package
+    id) is indistinguishable from one whose binary landed off the PATH unless
+    its exit code and last line of output travel with the verdict.
+    """
+    code = getattr(call, "returncode", None)
+    output = (getattr(call, "stderr", "") or "").strip() or (getattr(call, "stdout", "") or "").strip()
+    last = output.splitlines()[-1].strip() if output else ""
+    if code is None and not last:
+        return ""
+    return f" (exit {code}{': ' + last[:200] if last else ''})"
 
 
 def _say(on_status: Optional[Callable[[str], None]]) -> Callable[[str], None]:

@@ -16,7 +16,7 @@
     "commands": {
       "darwin": "git --version >/dev/null 2>&1 && echo '{}'",
       "linux": "git --version >/dev/null 2>&1 && echo '{}'",
-      "win32": "git --version *> $null; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); git --version *> $null; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
     },
     "timeout_seconds": 30
   },

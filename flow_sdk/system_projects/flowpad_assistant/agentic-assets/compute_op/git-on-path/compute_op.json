@@ -9,7 +9,7 @@
     "commands": {
       "darwin": "brew install git",
       "linux": "apt-get update && apt-get install -y git",
-      "win32": "winget install --id Git.Git --silent"
+      "win32": "winget install --id Git.Git -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity"
     },
     "timeout_seconds": 600
   },
@@ -17,7 +17,7 @@
     "commands": {
       "darwin": "git --version >/dev/null 2>&1",
       "linux": "git --version >/dev/null 2>&1",
-      "win32": "git --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); git --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
     },
     "timeout_seconds": 30
   }
