@@ -72,6 +72,8 @@ class SecretPack(Entity):
     manifest_schema: int = APIField(default=CURRENT_SCHEMA)
     help_url: str = APIField(default="")
     setup_wiki: str = APIField(default="")
+    #: How an agent obtains and stores the values (``CredentialSpec.setup``).
+    setup: str = APIField(default="")
     value_store: str = APIField(default=VALUE_STORE_ENV)
     lm_provider: str = APIField(default="")
     vars: dict[str, CredentialVarSpec] = APIField(default_factory=dict)

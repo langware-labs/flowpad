@@ -15,7 +15,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 def _manifest(name: str, *env_vars: str, **extra) -> dict:
-    return {"name": name, "vars": {v: {"label": v} for v in env_vars}, **extra}
+    return {"name": name, "vars": {v: {"label": v} for v in env_vars}, "setup": f"Store it: `flow credentials set {name} ...`.", **extra}
 
 
 async def test_the_current_projects_credential_wins_over_the_user_one(home, in_project):

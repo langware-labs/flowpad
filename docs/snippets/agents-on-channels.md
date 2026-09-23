@@ -25,6 +25,8 @@ from flow_sdk.builtin.credential_service import save_credential
 await save_credential(
     scope="user",
     manifest={"name": "whatsapp", "value_store": "vault",
+              "setup": "Meta app → WhatsApp → API Setup: the token; App settings → Basic: the app secret. "
+                       "Store them with `flow credentials set whatsapp FLOW_WHATSAPP_TOKEN=… FLOW_WHATSAPP_SECRET=…`.",
               "vars": {"FLOW_WHATSAPP_TOKEN": {"secret": True, "required": True},
                        "FLOW_WHATSAPP_SECRET": {"secret": True, "required": True}}},
     values={"FLOW_WHATSAPP_TOKEN": WHATSAPP_TOKEN, "FLOW_WHATSAPP_SECRET": WHATSAPP_APP_SECRET},

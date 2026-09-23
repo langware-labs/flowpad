@@ -41,7 +41,8 @@ describe('the Credentials quick-create entry', () => {
     expect(h.save).toHaveBeenCalledWith({
       scope: 'user',
       project_id: null,
-      manifest: { name: 'stripe-key', title: 'Stripe key', value_store: 'env', vars: { STRIPE_KEY: { label: 'Stripe key' } } },
+      manifest: { name: 'stripe-key', title: 'Stripe key', value_store: 'env', vars: { STRIPE_KEY: { label: 'Stripe key' } },
+        setup: 'Ask the person for their Stripe key and store it: `flow credentials set stripe-key STRIPE_KEY=<value>`.' },
     });
   });
 

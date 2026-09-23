@@ -156,3 +156,18 @@ async def test_an_ask_op_must_declare_what_it_is_asking_for():
         ComputeOpSpec.model_validate({
             "name": "get-api-key", "subkind": "ask", "exe_data": {"prompt": "Token?"},
         })
+
+
+async def test_a_secret_ask_says_so_to_whoever_draws_the_field(tmp_path):
+    """An API key is masked where it is typed: the question carries ``secret``, and its payload too."""
+    spec = _spec(tmp_path, exe_data={"prompt": "Service X API token", "secret": True})
+    run = asyncio.create_task(_run(spec, tmp_path, timeout=5))
+    for _ in range(200):
+        if open_questions():
+            break
+        await asyncio.sleep(0.01)
+    (question,) = open_questions()
+
+    assert question.secret is True and question.to_payload()["secret"] is True
+    answer(question.id, {"token": "sk-live-1"})
+    assert (await run).ok

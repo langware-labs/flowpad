@@ -73,6 +73,22 @@ def main_file_mtime(ref: Any, filename: str) -> float:
         return 0.0
 
 
+def manifest_fingerprint(info: Any, ref: Any) -> float:
+    """Freshness of an asset that declares a main file but is not an entity document: the asset's
+    own stat (what it was fresh by before — a file added or removed) PLUS its main file's.
+
+    Without the second term an edited ``secret_pack.json`` / ``data_driver.json`` inside an existing
+    folder never re-indexed: editing a file does not touch its folder's mtime."""
+    total = 0
+    for path in (ref._path, (ref._path if ref._path.is_dir() else ref._path.parent) / info.shape.main):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        total += stat.st_mtime_ns + stat.st_size
+    return float(total)
+
+
 def entity_document_fingerprint(info: Any, ref: Any) -> float:
     """Freshness of an ENTITY DOCUMENT folder: ``<type>.json`` and its body file
     (``system_prompt.md``). Editing either re-indexes; anything else beside them does not.

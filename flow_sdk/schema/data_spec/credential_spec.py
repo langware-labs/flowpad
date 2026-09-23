@@ -105,6 +105,11 @@ class CredentialSpec(DataSpec):
     manifest_schema: int = Field(default=0, alias="schema", validate_default=True)
     help_url: str = ""
     setup_wiki: str = ""
+    #: How to obtain the values and store them, written for an AGENT to follow (markdown): where the
+    #: key is created, what to click, and the ``flow credentials set <name> VAR=…`` that stores it.
+    #: Authoring requires it (``credential_service.save_credential``); a pack read from disk without
+    #: it still loads — ``flow project setup`` reports it, and offers no AI setup for it.
+    setup: str = ""
     #: Where this credential's values are read from and written to. Not
     #: ``store``: ``Entity.store`` is a method and a field would shadow it.
     value_store: str = VALUE_STORE_ENV
