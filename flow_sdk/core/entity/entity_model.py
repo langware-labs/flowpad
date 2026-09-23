@@ -75,6 +75,24 @@ EntityType = TypeVar("EntityType", bound="Entity")
 # disk→DB adopt path (``from_record``) so the source-of-truth file is never
 # rewritten. Override-agnostic: every ``save()`` override funnels through the
 # base ``save()`` which reads this, so no per-type signature change is needed.
+def _one_write():
+    """One writer transaction for everything a save writes — the row, its FTS
+    entry, the record's own rows.
+
+    Each driver write otherwise opens its own ``BEGIN IMMEDIATE``, and while an
+    index runs every one of them waits for the record the indexer holds: a save
+    of N writes waited N records (a cold-boot first prompt, seconds). Reuses a
+    caller's transaction (the indexer's batch) when there is one; announcements
+    wait for the commit (``DBEntity.save``).
+    """
+    from contextlib import nullcontext  # noqa: PLC0415
+
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+
+    driver = get_db_driver()
+    return driver.write_transaction() if hasattr(driver, "write_transaction") else nullcontext()
+
+
 _SUPPRESS_STORE: "ContextVar[bool]" = ContextVar("_suppress_store", default=False)
 
 # When set, the DB driver treats the write as a PURE REFLECTION of a hub-origin
@@ -2618,11 +2636,12 @@ class Entity(DBEntity):
                 # A DB-only type has no filesystem shadow and therefore no
                 # opposite disk→DB sync to serialize against. A searchable one
                 # feeds FTS straight from the row.
-                await DBEntity.save(self, user_id, notify=notify)
-                if type_info.fts_content:
-                    from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
+                async with _one_write():
+                    await DBEntity.save(self, user_id, notify=notify)
+                    if type_info.fts_content:
+                        from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
 
-                    await self._fts_write(FtsEntry.from_entity(self, info=type_info))
+                        await self._fts_write(FtsEntry.from_entity(self, info=type_info))
                 return
 
             from flow_sdk.fs_store.fs_record import record_sync_guard
@@ -2630,8 +2649,9 @@ class Entity(DBEntity):
             # Keep a normal DB write and its filesystem mirror indivisible with
             # respect to the opposite disk→DB path.  ``record_sync_guard`` is
             # explicitly same-task reentrant: ``FSRecord.sync_to_db`` owns it when
-            # it reaches this save through ``from_record``.
-            async with record_sync_guard(self.get_type(), self.id):
+            # it reaches this save through ``from_record``. The guard is taken
+            # BEFORE the writer, as it always was — the order every path uses.
+            async with record_sync_guard(self.get_type(), self.id), _one_write():
                 await DBEntity.save(self, user_id, notify=notify)
                 if not suppress_store:
                     # Sync metadata down to disk + upsert main_ref iff missing
