@@ -350,15 +350,25 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
     await set_connection_status(HubConnectionStatus.DISCONNECTED)
 
 
-async def clear_user_data() -> None:
-    """EXPLICIT logout: drop the credentials AND the hub's copy of the stream inbox.
+async def clear_user_data(reason: str | None = None) -> None:
+    """Drop the credentials AND the hub's copy of the stream inbox — a real purge,
+    not just a credential wipe.
 
     The purge deliberately does NOT live inside ``clear_cloud_credentials``,
     because ``invalidate_hub_login`` calls that one: a token expiring on
     wake-from-sleep, or a hub hiccup rejecting a socket, must clear credentials
-    without destroying local data. Only a user who asked to log out gets here —
-    which is why there is no ``reason`` to forward; a reason means the machine
-    decided, and the machine never purges.
+    without destroying local data.
+
+    Two callers reach this, both cases where the outgoing person's data must
+    actually go, not just their session pointer: an explicit logout (no reason —
+    the person asked), and ``/auth/login_callback`` finding a DIFFERENT person's
+    key than whoever is currently signed in on a shared sandbox (``reason=
+    LogoutReason.SWITCHED_OUT``, ``flow_sdk/cloud_client/auth_status.py``) — see
+    ``flow_sdk/server/routes/auth.py``. ``reason`` rides the LOGGED_OUT broadcast
+    so the frontend can tell "you logged out" from "someone else just took this
+    machine" — the latter is the only case where it also drops the local entity
+    cache (``ts_sdk/src/services/cloud_login.ts``, ``_setLoggedOut``) and shows
+    ``SessionTakenOverOverlay`` instead of a quiet sign-out.
 
     Credentials go first: they are the security-relevant half, and the purge is
     best-effort on top. A row that refuses to delete must never be the reason
@@ -366,7 +376,7 @@ async def clear_user_data() -> None:
     """
     from flow_sdk.stream_inbox.clear import clear_stream_inbox
 
-    await clear_cloud_credentials()
+    await clear_cloud_credentials(reason=reason)
     try:
         await clear_stream_inbox()
     except Exception:  # noqa: BLE001

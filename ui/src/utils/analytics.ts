@@ -4,11 +4,13 @@ export interface EventData {
   user_id?: string | null;
   event: string;
   event_source?: string;
+  /** Event parameters. GTM maps each one to GA4 through a Data Layer Variable of the same name. */
+  [param: string]: string | number | null | undefined;
 }
 
 declare global {
   interface Window {
-    dataLayer: EventData[];
+    dataLayer: Record<string, unknown>[];
   }
 }
 

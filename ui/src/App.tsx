@@ -22,11 +22,13 @@ import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
+import { SessionTakenOverOverlay } from '@src/components/session-taken-over-overlay';
 import { SnifferActiveNotice } from '@src/components/hooks/SnifferActiveNotice';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { RagRootsProvider } from '@src/hooks/use-rag-roots';
 import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
+import { useKeepAliveReporter } from '@src/hooks/use-keep-alive-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
 import { useShowTargetListener } from '@src/hooks/use-show-target-listener';
 import { useSyncOsBadge } from '@src/hooks/useStreamInboxManager';
@@ -68,6 +70,8 @@ import { AddAssetDialogRoot } from '@src/components/install/AddAssetDialog';
 const GlobalEvents = () => {
   void useGlobalEvents();
   usePresenceReporter();
+  // Holds a hub sandbox awake while a person is using it — see the hook.
+  useKeepAliveReporter();
   useUiCommandListener();
   // `flow show` outside vibe — mints the shown target as a tab beside the
   // calling process (never navigates). Vibe's own display surfaces own the
@@ -160,6 +164,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
         <MigrateLegacyKeychain />
+        <SessionTakenOverOverlay />
         <SnifferActiveNotice />
         <HarnessCapabilitiesProvider>
           <SnifferProvider>
