@@ -564,6 +564,30 @@ class Deployment(Entity):
         """`POST /deployment/<id>/update` — bring a cloud machine to the published definition."""
         return await self._answer("update", self.update)
 
+    @action.get(action_name="timeline")
+    async def timeline_action(self):
+        """`GET /deployment/<id>/timeline?limit=&before=` — what reached it, what it ran, what it answered.
+
+        Newest first, read from the rows (``builtin/deployment_timeline``); ``before`` (an ISO time,
+        the previous page's ``before``) pages back.
+        """
+        from flow_sdk.builtin.deployment_timeline import timeline  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        raw_limit = str((request_info.get_param("limit") if request_info else None) or "")
+        raw_before = str((request_info.get_param("before") if request_info else None) or "")
+        limit = min(int(raw_limit), 200) if raw_limit.isdigit() and int(raw_limit) > 0 else 50
+        before = None
+        if raw_before:
+            try:
+                before = datetime.fromisoformat(raw_before.replace("Z", "+00:00"))
+            except ValueError:
+                return ApiFailResponse(message=f"before={raw_before!r} is not an ISO time", status_code=400)
+        page = await timeline(self, limit=limit, before=before)
+        return ApiSuccessResponse(data=page.model_dump(mode="json"))
+
     @action.get(action_name="runs")
     async def runs_action(self):
         """`GET /deployment/<id>/runs?limit=` — the latest runs on a cloud machine; the hub bounds ``limit``."""

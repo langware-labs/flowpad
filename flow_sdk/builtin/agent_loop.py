@@ -118,6 +118,10 @@ def main() -> None:
         raise SystemExit(f"{DEPLOYMENT_ENV} is not set: which deployment should this process run?")
 
     async def _main() -> None:
+        from flow_sdk.tags.relay import start_relay_to_app  # noqa: PLC0415
+
+        # This process's bus has no clients; what it emits for them goes to the app's.
+        start_relay_to_app()
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):

@@ -60,6 +60,11 @@ logger = logging.getLogger(__name__)
 # note, asked, replied, done, failed, canceled, stalled) — written by people and runs, never a stream.
 # The Tasks board and a task's thread show its state move without polling.
 #
+# `deployment.timeline` says a deployment's timeline moved — a message reached one of its channels,
+# a turn started, a reply went out, a sender was refused. One frame per such fact; the timeline
+# itself is read from the rows (`deployment/<id>/timeline`). Emitted by the deployment's own
+# process and relayed to the app (`tags/relay.py`).
+#
 # `app.ready` is an exact tag, not a glob, and fires at most once per boot —
 # the cheapest possible entry on this list. It is forwarded because a client
 # that is up when the backend finishes starting should hear so directly rather
@@ -74,6 +79,7 @@ FORWARDED_TAG_PATTERNS: list[str] = [
     "agent.status",
     "voice.call.*",
     "task.*",
+    "deployment.timeline",
 ]
 
 #: Envelopes retained for the Signals feed's initial paint. Bounded because the
