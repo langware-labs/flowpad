@@ -1541,7 +1541,12 @@ class SQLiteDBDriver(DBDriver):
     async def after_commit(self, callback: Callable[[], Awaitable[None]]) -> None:
         from flow_sdk.request_context.methods import get_current_transaction
 
-        bound = get_current_transaction()
+        # Resolved like ``_session_ctx`` does, including its tolerance: a
+        # request context that carries no transaction means "none bound".
+        try:
+            bound = get_current_transaction()
+        except Exception:  # noqa: BLE001
+            bound = None
         if not isinstance(bound, AsyncSession):
             bound = _standalone_session_var.get()
         if bound is None:
