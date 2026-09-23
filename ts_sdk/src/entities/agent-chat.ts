@@ -19,17 +19,18 @@ export interface AgentChatMessage {
 /**
  * A deployed agent's `chat` endpoint, spoken the OpenAI way (`v1/chat/completions`).
  *
- * The endpoint belongs to one placement — this computer or a cloud box — and the
- * turn runs there; for a box, this backend forwards to the hub and the hub to the
- * box. Whoever may use the endpoint may chat. A conversation is the caller's own:
- * pass back the `conversationId` a turn answered with to continue it.
+ * The endpoint belongs to one deployment — on this computer or a cloud box — and is a
+ * message channel of it: the request is a message, the deployment's loop answers it,
+ * and the reply comes back as the response (for a box, via the hub). Whoever may use
+ * the endpoint may chat. A conversation is the caller's own: pass back the
+ * `conversationId` a turn answered with to continue it.
  */
 export class AgentChat {
   constructor(readonly endpoint: ServiceEndpoint) {}
 
   /** The `chat` endpoint of *deployment* — for a cloud placement, as the hub has it now. */
   static async forDeployment(deployment: Deployment): Promise<AgentChat | null> {
-    const endpoint = (await deployment.endpoints()).find((e) => e.name === 'chat' && e.backend.type === 'agent');
+    const endpoint = (await deployment.endpoints()).find((e) => e.name === 'chat' && e.backend.type === 'channel');
     return endpoint ? new AgentChat(endpoint) : null;
   }
 
@@ -41,7 +42,7 @@ export class AgentChat {
     const action = new ActionInfo('service', ServiceEndpoint.type, this.endpoint.id, 'POST', false, true, opts.signal ?? null);
     action.subpath = 'v1/chat/completions';
     action.bodyParameters = {
-      model: `agent-${this.endpoint.backend.type === 'agent' ? this.endpoint.backend.agent_id : ''}`,
+      model: `endpoint-${this.endpoint.id}`,
       stream: true,
       messages: [{ role: 'user', content: text }],
       ...(opts.conversationId ? { metadata: { conversation_id: opts.conversationId } } : {}),

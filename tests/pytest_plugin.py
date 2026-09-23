@@ -18,8 +18,8 @@ import pytest
 
 # Set environment variable for testing
 os.environ["TESTING"] = "true"
-# Agent channel serve loops poll their sources for the app's lifetime; a test starts `serve()` itself.
-os.environ["AGENT_SERVE_CHANNELS"] = "false"
+# A running agent deployment is a loop process the app starts; a test that needs one starts it itself.
+os.environ["AGENT_RUN_DEPLOYMENTS"] = "false"
 
 
 # -----------------------------------------------------------------------------

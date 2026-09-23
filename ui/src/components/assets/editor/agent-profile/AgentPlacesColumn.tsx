@@ -62,7 +62,6 @@ export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnPro
           agent={agent}
           open
           onOpenChange={setDeployOpen}
-          hasLocal={visible.some((place) => place.is_local)}
           onMachineSize={onMachineSize}
           onLaunched={reload}
         />

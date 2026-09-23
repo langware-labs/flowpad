@@ -15,8 +15,8 @@ placement ANSWERS on — one row per exposed service:
                                                                      with "shell-mcp" / "fs-mcp")
 
     Deployment (runtime.agent — an agent's placement)
-      └── ServiceEndpoint  "chat"       api.chat.openai  agent   → the agent's turns, answered
-                                                                     by the app holding the placement
+      └── ServiceEndpoint  "chat"       api.chat.openai  channel → a message on the deployment's
+                                                                     chat channel; its loop answers
 
 Everything a machine serves is one of these — there is no other serving path: no
 per-process port lookup, no `micro_app` view route, no hub services table.
@@ -126,24 +126,26 @@ are endpoints of `hub`-provider placements, read off the hub's disk; a custom do
 
 ## 6. An agent's `chat`
 
-Every agent placement has one standard endpoint, `chat` (`api.chat.openai`, backend
-`{type: agent, agent_id}`), made by the app's agent server for every local placement and
-reported by a box for its own. It is answered in-process by the FlowPad app holding the
-placement, through the same turn engine that answers the agent's channels — so a chat turn is
-the turn an email or a WhatsApp message gets. Whoever may use the endpoint may chat: the hub
-authorizes `service` by the endpoint's roles and vouches for the caller; on a desktop the
-caller is the person at it.
+Every running agent deployment has one standard endpoint, `chat` (`api.chat.openai`, backend
+`{type: channel, data_source_id}`), made when the deployment is launched and reported by a box for
+its own. It is a **message channel**: a request is pushed into the deployment's `http_chat`
+source as a message from the caller, the deployment's loop answers it like any other channel —
+the turn an email or a WhatsApp message gets — and the reply the channel records is the response
+(`flow_sdk/server/routes/service_channel.py`). Whoever may use the endpoint may chat: the hub
+authorizes `service` by the endpoint's roles and vouches for the caller; on a desktop the caller
+is the person at it.
 
 ```
 POST v1/chat/completions   {messages, stream?, metadata: {conversation_id?}}   # SSE when stream
-GET  v1/models                                                                  # the one model: the agent
+GET  v1/models                                                                  # the one model: the endpoint
 GET  v1/conversations/<id>                                                      # {messages}
 ```
 
-A conversation is the caller's own — the same id from someone else is a different
-conversation. `metadata.conversation_id` continues one; omitted, one is started and every
-answer names it (`flowpad.conversation_id` on each chunk). `direct-url` is refused: there is
-no port behind it. From the SDK:
+A conversation is the caller's own — the same id from someone else is a different thread.
+`metadata.conversation_id` continues one; omitted, one is started and every answer names it
+(`flowpad.conversation_id`, and the `X-Flowpad-Conversation` header). No reply within the
+request's deadline is a 504 `no_reply_yet` naming the conversation; the message stays in the
+channel for the loop. `direct-url` is refused: there is no port behind it. From the SDK:
 
 ```ts
 const chat = await AgentChat.forDeployment(deployment);        // its `chat` endpoint, here or on the hub
@@ -151,4 +153,5 @@ for await (const e of chat.send('hello', { conversationId })) { /* text | tool |
 const past = await chat.history(conversationId);
 ```
 
-Pinned by `tests/api/test_agent_chat_endpoint.py`.
+Pinned by `tests/api/test_http_chat_channel.py` (over the real app, the loop on a mock worker) and
+`tests/long_tests/test_local_deployment_process.py` (a real deployment process answering it).

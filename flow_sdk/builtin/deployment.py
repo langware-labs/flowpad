@@ -49,7 +49,7 @@ from flow_sdk.worldview.models import (
     DeploymentStatus,
     DeploymentTarget,
 )
-from flow_sdk.worldview.ontology import KindStr, normalize_kind
+from flow_sdk.worldview.ontology import KindStr, kind_matches, normalize_kind
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent import Agent
@@ -176,6 +176,15 @@ class Deployment(Entity):
         description="Credential environment: development (this computer) or a named one (production, staging, ...)",
     )
 
+    #: Which of an element's deployments on one provider this is: ``""`` the default one, else a
+    #: short name ("2", "3", …). How one agent runs in several places on this computer.
+    slot: str = APIField(default="", description="Which of the element's deployments on this provider ('' = the default)")
+    #: A local agent deployment that RUNS: a subprocess on this machine running its loop
+    #: (``builtin/agent_loop``). A placement processes are only spawned through does not.
+    serving: bool = APIField(default=False, description="A local deployment that runs its own agent loop process")
+    #: The Python file that process runs instead of the stock loop; ``None`` runs the stock loop.
+    snippet: str | None = APIField(default=None, description="The loop this deployment runs, when not the stock one")
+
     #: The deployed element, when the caller already had it. Not just a cache: a
     #: SHIPPED agent resolved off disk on a cold instance is never persisted, so
     #: reading it back by ``parent_type_id`` would find nothing at all.
@@ -200,6 +209,7 @@ class Deployment(Entity):
         *,
         kind: str | None = None,
         environment: str | None = None,
+        slot: str = "",
     ) -> Optional["Deployment"]:
         """The placement of *parent_type_id* on *provider* (in *environment*, when given), or None.
 
@@ -229,6 +239,10 @@ class Deployment(Entity):
             # of the same element on the same provider are two rows.
             if environment is not None and (row.environment or DEFAULT_ENVIRONMENT) != environment:
                 continue
+            # Several deployments of one element on one provider are told apart by their slot;
+            # the default one has none.
+            if (row.slot or "") != (slot or ""):
+                continue
             return row
         return None
 
@@ -241,6 +255,7 @@ class Deployment(Entity):
         kind: str,
         payload: dict[str, Any],
         element: Optional[Entity] = None,
+        slot: str = "",
     ) -> "Deployment":
         """Create the placement, or update it in place when something changed.
 
@@ -255,8 +270,8 @@ class Deployment(Entity):
         ``NotImplemented`` — so the guard was True on 100% of calls and every
         resolve wrote.
         """
-        body = {**payload, "kind": normalize_kind(kind), "parent_type_id": str(parent_type_id)}
-        existing = await cls.find_existing(parent_type_id, provider, kind=kind)
+        body = {**payload, "kind": normalize_kind(kind), "parent_type_id": str(parent_type_id), "slot": slot}
+        existing = await cls.find_existing(parent_type_id, provider, kind=kind, slot=slot)
         if existing is None:
             body.setdefault("status", {}).setdefault("observed_at", datetime.now(UTC).isoformat())
             deployment = cls(**body)
@@ -423,11 +438,27 @@ class Deployment(Entity):
         bridge like any other hub update, so this doesn't write the status
         locally in that case; doing both would race the push.
         """
+        if self._runs_here():
+            return await self._set_serving(False)
         return await self._set_node_state("pause", "paused")
 
     async def resume(self) -> bool:
         """Start a paused machine again. The counterpart of :meth:`pause`, same routing."""
+        if self._runs_here():
+            return await self._set_serving(True)
         return await self._set_node_state("resume", "running")
+
+    def _runs_here(self) -> bool:
+        """An agent deployment on this machine: it runs as a process here, so pausing it stops that
+        process (``serving``) — never the machine under it."""
+        return not self.remote and self.is_local and kind_matches(KIND_AGENT, self.kind)
+
+    async def _set_serving(self, serving: bool) -> bool:
+        """Stop (or start) this deployment's process: the app's supervisor acts on ``serving``."""
+        self.serving = serving
+        self.status = self.status.model_copy(update={"provider_state": "running" if serving else "paused"})
+        await self.save()
+        return True
 
     async def _set_node_state(self, verb: str, provider_state: str) -> bool:
         """Pause or resume the machine: through the hub for a remote placement, else on the node here."""

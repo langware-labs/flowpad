@@ -21,7 +21,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderDialog(hasLocal = false) {
+function renderDialog() {
   const agent = new Agent({ id: '33333333-3333-4333-8333-333333333333', name: 'brief', enabled: true });
   const deploy = vi.spyOn(agent, 'deploy').mockResolvedValue({ deployment: { id: 'dep-1' } } as never);
   const onMachineSize = vi.fn().mockResolvedValue(true);
@@ -32,7 +32,6 @@ function renderDialog(hasLocal = false) {
       agent={agent}
       open
       onOpenChange={onOpenChange}
-      hasLocal={hasLocal}
       onMachineSize={onMachineSize}
       onLaunched={onLaunched}
     />,
@@ -76,9 +75,9 @@ describe('New deployment', () => {
     expect(order).toEqual(['size', 'deploy']);
   });
 
-  it('this computer cannot be launched twice', () => {
-    renderDialog(true);
-    expect(screen.getByTestId('new-deployment-type-local')).toBeDisabled();
-    expect(screen.getByTestId('new-deployment-type-sm')).toHaveAttribute('aria-checked', 'true');
+  it('this computer can always be launched again — each launch is one more process here', () => {
+    renderDialog();
+    expect(screen.getByTestId('new-deployment-type-local')).toBeEnabled();
+    expect(screen.getByTestId('new-deployment-type-local')).toHaveAttribute('aria-checked', 'true');
   });
 });

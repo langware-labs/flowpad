@@ -26,8 +26,6 @@ interface NewDeploymentDialogProps {
   agent: Agent;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** This computer already runs the agent — it cannot be launched twice. */
-  hasLocal: boolean;
   /** Saves the cloud machine size into agent.json (the hub sizes the box from it). Resolves once written. */
   onMachineSize?: (size: string) => Promise<unknown>;
   /** Called with the new deployment's id once launched. */
@@ -39,9 +37,9 @@ interface NewDeploymentDialogProps {
  * what launching that type needs, and Launch. Only a cloud machine needs the publish checklist
  * (it runs the published definition) and a credential environment; this computer needs neither.
  */
-export function NewDeploymentDialog({ agent, open, onOpenChange, hasLocal, onMachineSize, onLaunched }: NewDeploymentDialogProps) {
+export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, onLaunched }: NewDeploymentDialogProps) {
   const { t } = useLingui();
-  const [type, setType] = useState<DeploymentType>(hasLocal ? AGENT_MACHINE_SIZES[0] : 'local');
+  const [type, setType] = useState<DeploymentType>('local');
   const [launching, setLaunching] = useState(false);
   // Tri-state from the checklist: `null` (still checking) never disables Launch.
   const [ready, setReady] = useState<boolean | null>(null);
@@ -49,14 +47,9 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, hasLocal, onMac
   const environmentValid = ENVIRONMENT_RE.test(environment) && !RESERVED_ENVIRONMENTS.has(environment);
   const cloud = type !== 'local';
 
-  const choices: { value: DeploymentType; label: string; hint: string; Icon: typeof Cloud; disabled?: boolean }[] = [
-    {
-      value: 'local',
-      label: t`This computer`,
-      hint: hasLocal ? t`Already deployed here` : t`Free · runs while this computer is awake`,
-      Icon: Laptop,
-      disabled: hasLocal,
-    },
+  const choices: { value: DeploymentType; label: string; hint: string; Icon: typeof Cloud }[] = [
+    // One more each time: every local deployment is its own process on this computer.
+    { value: 'local', label: t`This computer`, hint: t`Free · runs while this computer is awake`, Icon: Laptop },
     ...AGENT_MACHINE_SIZES.map((size) => ({
       value: size,
       label: t`Cloud machine`,
@@ -109,13 +102,13 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, hasLocal, onMac
         </DialogHeader>
 
         <div className="flex flex-col gap-1.5" role="radiogroup" aria-label={t`Deployment type`}>
-          {choices.map(({ value, label, hint, Icon, disabled }) => (
+          {choices.map(({ value, label, hint, Icon }) => (
             <button
               key={value}
               type="button"
               role="radio"
               aria-checked={type === value}
-              disabled={disabled || launching}
+              disabled={launching}
               onClick={() => setType(value)}
               className={cn(
                 'flex items-center gap-3 rounded-md border px-3 py-2 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-50',
@@ -158,7 +151,10 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, hasLocal, onMac
             </>
           ) : (
             <p className="text-xs text-muted-foreground" data-testid="new-deployment-local-details">
-              <Trans>Runs on this computer with your own credentials, only while it is awake. Nothing is published.</Trans>
+              <Trans>
+                Runs as a process on this computer with your own credentials, only while it is awake. Nothing is
+                published.
+              </Trans>
             </p>
           )}
         </div>

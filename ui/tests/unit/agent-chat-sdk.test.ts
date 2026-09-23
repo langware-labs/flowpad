@@ -6,7 +6,7 @@ const ENDPOINT = new ServiceEndpoint({
   name: 'chat',
   parent_type_id: 'deployment-7a1f9b3c-2d4e-4a6b-8c0d-1e2f3a4b5c6d',
   protocol: { spec_kind: 'api.chat.openai' },
-  backend: { type: 'agent', agent_id: 'a-1' },
+  backend: { type: 'channel', data_source_id: 'ds-1' },
 } as never);
 
 function sse(...events: unknown[]): ReadableStream<Uint8Array> {
@@ -29,8 +29,8 @@ function chunk(delta: object, flowpad: object = {}) {
 afterEach(() => vi.restoreAllMocks());
 
 describe('AgentChat', () => {
-  it('reads an agent backend', () => {
-    expect(ENDPOINT.backend).toEqual({ type: 'agent', agent_id: 'a-1' });
+  it('reads a channel backend', () => {
+    expect(ENDPOINT.backend).toEqual({ type: 'channel', data_source_id: 'ds-1' });
   });
 
   it('parses Server-Sent Events across arbitrary chunk boundaries', async () => {

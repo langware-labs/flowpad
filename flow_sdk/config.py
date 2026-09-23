@@ -798,11 +798,14 @@ class ServiceConfig(BaseSettings):
     deep_testing: bool = False
     manual_testing: bool = False
     load_flowpad_assistant: bool = True
-    #: Whether each agent placement on this machine runs its channel serve loop
-    #: (``builtin/agent_serve``). On for every real app; the test tier turns it off,
-    #: since a lifespan there would poll every agent-owned source in the shared DB —
-    #: a test that exercises the loop starts ``serve()`` itself.
-    agent_serve_channels: bool = True
+    #: Whether this app starts (and keeps running) the process of every running local agent
+    #: deployment (``builtin/agent_serve.AgentServer``). On for every real app; the test tier
+    #: turns it off, since a lifespan there would spawn a loop process for every running
+    #: deployment in the shared DB — a test that exercises one starts it itself.
+    agent_run_deployments: bool = True
+    #: How often that supervisor looks again without being told — a deployment written by
+    #: another process (the tag bus is per process), or a loop process that died on its own.
+    agent_watch_seconds: float = 10.0
 
     @field_validator("deep_testing", "manual_testing", mode="before")
     @classmethod

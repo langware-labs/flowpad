@@ -1,7 +1,7 @@
 """``docs/snippets/agents-on-channels.md``, run as written against the WhatsApp double.
 
-§1 declares the credential; §2 (variant A) leaves an agent-owned, verified source that the app's
-agent server answers on the channel; §3 (variant B) is the loop, driven by a mock worker until its first reply leaves through
+§1 declares the credential; §2 (variant A) leaves an agent-owned, verified source that the agent's
+running local deployment answers on the channel; §3 (variant B) is the loop, driven by a mock worker until its first reply leaves through
 the channel. The Docker proof of §3 is ``tests/long_tests/test_whatsapp_agent_in_docker.py``.
 """
 from __future__ import annotations
@@ -59,20 +59,24 @@ async def test_1_the_credential_is_declared_once(whatsapp):
 
 @pytest.mark.long  # 3.2s: a real turn on the mock worker waits out the transcript's 2s settle window
 async def test_2_variant_a_the_app_answers_on_the_channel(whatsapp, monkeypatch, tmp_path):
-    """Nothing of the owner's runs: the app's agent server serves the agent's source from its
-    placement here, and a customer's message is answered on the channel."""
-    from flow_sdk.builtin.agent_serve import AgentServer
+    """Nothing of the owner's runs: the deployment's loop (``builtin/agent_loop`` — in the app a
+    process of its own, here the same code as a task) answers a customer's message on the channel."""
+    from flow_sdk.builtin.agent_loop import run
+    from flow_sdk.builtin.deployment import Deployment
 
     worker = MockDriver(tmp_path / "mock-transcripts")
     monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process.get_driver", lambda _t: worker)
     ns = await run_fence(fence_under(doc(DOC), "2."), _names(whatsapp), filename=f"{DOC} §2")
     source, agent = ns["source"], ns["agent"]
-    server = AgentServer(serve_channels=True)  # what the app starts (the test tier turns it off)
+    (deployment,) = [d for d in await Deployment.get_all({"match": {"parent_type_id": str(agent.typeid)}}) if d.serving]
+    stop = asyncio.Event()
+    loop = asyncio.create_task(run(deployment.id, stop=stop))
     try:
         assert ns["verdict"]["ready"] is True and source.status == "active"
         assert str(source.owner) == str(agent.typeid) and source.inbound_allowed_senders == [whatsapp.sender]
-        await server.start()
-        await server.reconcile()  # the start's own runs in the background; this one is awaited
+        from flow_sdk.builtin.agent_serve import answered_sources
+
+        assert str(source.id) in {str(s.id) for s in await answered_sources(agent, deployment)}
         await _push(whatsapp, source, "is anyone there?")
         while not whatsapp.sent():
             await asyncio.sleep(0.05)
@@ -80,7 +84,8 @@ async def test_2_variant_a_the_app_answers_on_the_channel(whatsapp, monkeypatch,
         (reply,) = whatsapp.sent()
         assert reply["to"] == whatsapp.sender and reply["text"].startswith("Mock reply")
     finally:
-        await server.stop()
+        stop.set()  # what the process's SIGTERM does: the loop ends between turns
+        await loop
         await source.delete()
         await agent.delete()
 

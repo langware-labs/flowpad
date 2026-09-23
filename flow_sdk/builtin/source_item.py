@@ -325,9 +325,9 @@ class SourceItem(Entity):
         )
 
     @classmethod
-    async def newest_for(cls, data_source_id: str) -> Optional["SourceItem"]:
-        """The last row ingested for a source — a fresh listener's baseline."""
-        return await ingest_order.newest_for(cls, data_source_id)
+    async def newest_for(cls, data_source_id: str, *, at_or_before: Optional[datetime] = None) -> Optional["SourceItem"]:
+        """The last row ingested for a source (as of *at_or_before*, when given) — a listener's baseline."""
+        return await ingest_order.newest_for(cls, data_source_id, at_or_before=at_or_before)
 
     @classmethod
     async def page_after(

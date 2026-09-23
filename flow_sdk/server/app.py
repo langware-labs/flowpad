@@ -398,18 +398,21 @@ async def _prune_retired_type_rows() -> None:
         logging.getLogger(__name__).exception("Retired entity types: prune failed")
 
 
-#: The one supervisor of agent placements on this machine (``builtin/agent_serve``).
+#: The one supervisor of the agent deployments running on this machine (``builtin/agent_serve``).
 _AGENT_SERVER = None
 
 
 async def _start_agent_server() -> None:
-    """Every agent placement here serves: its ``chat`` endpoint, and its channels' serve loop."""
+    """Every running local agent deployment's process runs (and its ``chat`` channel exists)."""
     global _AGENT_SERVER
     try:
         from flow_sdk.builtin.agent_serve import AgentServer
         from flow_sdk.config import default_service_config
 
-        _AGENT_SERVER = AgentServer(serve_channels=default_service_config.agent_serve_channels)
+        _AGENT_SERVER = AgentServer(
+            run_processes=default_service_config.agent_run_deployments,
+            watch_seconds=default_service_config.agent_watch_seconds,
+        )
         await _AGENT_SERVER.start()
     except Exception:
         logging.getLogger(__name__).exception("Agent server: start failed")
