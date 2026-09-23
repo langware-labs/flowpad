@@ -613,13 +613,13 @@ class LocalComputeProvider(ComputeProvider):
                 try:
                     stdout_data, stderr_data = await process.communicate()
                     if stdout_data:
-                        cmd.append_stdout(stdout_data.decode())
+                        cmd.append_stdout(stdout_data.decode(errors="replace"))
                     if stderr_data:
-                        cmd.append_stderr(stderr_data.decode())
-                    cmd.mark_complete(process.returncode or 0)
+                        cmd.append_stderr(stderr_data.decode(errors="replace"))
+                    cmd.mark_complete(process.returncode)
                 except Exception as e:
                     logger.error(f"Error running foreground command: {str(e)}")
-                    cmd.mark_complete(-1)
+                    cmd.mark_complete(None)
                 return cmd
 
             # Background mode: stream output line by line
@@ -627,7 +627,7 @@ class LocalComputeProvider(ComputeProvider):
                 """Read from a stream and append to command output."""
                 if stream is not None:
                     async for line in stream:
-                        append_func(line.decode())
+                        append_func(line.decode(errors="replace"))
 
             # Read stdout and stderr concurrently
             stdout_task = asyncio.create_task(
@@ -652,7 +652,7 @@ class LocalComputeProvider(ComputeProvider):
                     cmd.mark_complete(return_code)
                 except Exception as e:
                     logger.error(f"Error handling command output on local compute: {str(e)}")
-                    cmd.mark_complete(-1)
+                    cmd.mark_complete(None)
                 finally:
                     # Clean up completed stream tasks
                     if provider_node_id in self._stream_tasks:
@@ -674,7 +674,7 @@ class LocalComputeProvider(ComputeProvider):
             return cmd
         except Exception as e:
             logger.error(f"Error running command: {str(e)}")
-            cmd.mark_complete(-1)
+            cmd.mark_complete(None)
             return cmd
 
     async def get_or_create_pty_session(

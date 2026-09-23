@@ -16,6 +16,13 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 
+def _exit_code_attr(cmd) -> dict[str, str]:
+    """The final chunk's ``exit-code``, only when there is one. A command whose
+    end was lost has none, and ``str(None)`` put the word ``None`` on the wire,
+    which a client parsed as NaN."""
+    return {} if cmd.exit_code is None else {"exit-code": str(cmd.exit_code)}
+
+
 class OpsActionsMixin:
     """ops dispatcher and command execution implementation for ComputeNode.
 
@@ -239,7 +246,7 @@ class OpsActionsMixin:
                     "element-type": FlowElementType.SHELL_OUTPUT,
                     "data-type": FlowDataType.TEXT,
                     "group-id": group_id,
-                    "exit-code": str(cmd.exit_code),
+                    **_exit_code_attr(cmd),
                     "stdout": cmd.all_stdout,  # Fallback for clients
                     "stderr": cmd.all_stderr,  # Fallback for clients
                     "final": "true",  # Flag indicating group completion
@@ -307,7 +314,7 @@ class OpsActionsMixin:
                     "element-type": FlowElementType.SHELL_OUTPUT,
                     "data-type": FlowDataType.TEXT,
                     "group-id": group_id,
-                    "exit-code": str(cmd.exit_code),
+                    **_exit_code_attr(cmd),
                     "final": "true",  # Flag indicating group completion
                 },
             )
