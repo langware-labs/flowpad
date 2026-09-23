@@ -181,7 +181,8 @@ the git setup wizard and retries with the wizard's local checkout result.
 The generic `share` action (`types="all"`). It loads the authoritative local row
 named by the URL (`entity_model.get_one`). For a `Conversation` it calls
 `Conversation.share(recipients=…, recipient_user_ids=…)` (`:160-161`) — the
-hub-invite sequence in §3. Otherwise it calls `entity.share(recipients=…)` or
+hub-invite sequence in §3. For a `Project` it calls `Project.share(invitees=…)`,
+each a `ShareInvitee` (`email`/`user_id` + optional `role`). Otherwise it calls
 plain `entity.share()` (`:163-165`).
 
 After `share()` returns it persists `remote=True` on the local row when it is not
