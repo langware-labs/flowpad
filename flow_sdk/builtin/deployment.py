@@ -93,6 +93,13 @@ class AgentUnavailable(RuntimeError):
         super().__init__(message)
         self.exit_code = exit_code
 
+    def answer(self) -> "PromptResult":
+        """This as the answer a launch gives: refused, or no such agent."""
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+        make = PromptResult.refused if self.exit_code is ExitCode.REFUSED else PromptResult.not_found
+        return make(str(self))
+
 
 class DeploymentActionError(RuntimeError):
     """A placement verb the caller has to fix. ``status_code`` rides to HTTP."""
@@ -693,13 +700,11 @@ class Deployment(Entity):
         A caller that needs the process resolves it from ``executor``.
         """
         from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
 
         try:
             proc = await self.create_process(prompt, **options)
         except AgentUnavailable as gone:
-            make = PromptResult.refused if gone.exit_code is ExitCode.REFUSED else PromptResult.not_found
-            return make(str(gone))
+            return gone.answer()
         await proc.save()
         taken = await proc.send_turn(prompt)
         if not taken.ok or not wait:

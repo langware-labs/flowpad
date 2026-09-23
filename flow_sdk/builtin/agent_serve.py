@@ -218,7 +218,7 @@ class TurnEngine:
         )
         from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
         from flow_sdk.builtin.deployment import AgentUnavailable  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, PromptResult  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
 
         def done(answer: "PromptResult") -> TurnEvent:
             return TurnEvent("done", answer.text or "", answer=answer)
@@ -227,8 +227,7 @@ class TurnEngine:
             try:
                 ap = process or await self.process_for(turn.session, name=turn.name, context=turn.context)
             except AgentUnavailable as gone:
-                make = PromptResult.refused if gone.exit_code is ExitCode.REFUSED else PromptResult.not_found
-                yield done(make(str(gone)))
+                yield done(gone.answer())
                 return
             executor = str(ap.typeid)
             prior = turns_of(ap).get(turn.key)
