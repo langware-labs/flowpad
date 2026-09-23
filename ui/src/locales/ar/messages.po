@@ -20341,6 +20341,11 @@ msgstr "تُخزَّن القيمة في نظام Keychain الخاص بنظام
 msgid "The wizard could not run"
 msgstr ""
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "The wizard did not run"
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "The wizard reported an error."
 msgstr "أبلغ المعالج عن خطأ."
