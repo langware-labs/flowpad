@@ -433,11 +433,13 @@ class CodexDriver:
         if process.session_id:
             path = find_codex_session_jsonl(process.session_id)
         if path is None:
-            # BOUNDED by this worker's own launch, like copilot and opencode: a
-            # process that never launched a worker owns no rollout, and the newest
-            # one for its cwd is another process's — adopting it streamed that
-            # turn's ``turn.completed`` and ended before this prompt was typed.
-            started_at = self._worker_started_at(process)
+            # BOUNDED, like copilot and opencode: the newest rollout for a cwd is
+            # another process's unless it is newer than this one — adopting it
+            # streamed that turn's ``turn.completed`` and ended before this prompt
+            # was typed. This worker's launch is the bound when Flowpad launched it;
+            # a session the user typed into a terminal has no launch, so its own
+            # process start is the bound. Unbounded is what must not happen.
+            started_at = self._worker_started_at(process) or self._process_started_at(process)
             if started_at is None:
                 return None
             path = find_latest_codex_session_jsonl(cwd=process.workdir, started_at=started_at)
@@ -456,6 +458,13 @@ class CodexDriver:
         context = process.context_data or {}
         value = context.get(AgenticProcessContextKey.WORKER_STARTED_AT.value)
         return str(value) if value else None
+
+    def _process_started_at(self, process: "AgenticProcess") -> str | None:
+        """When this process itself began — the bound for a session nobody launched."""
+        created = getattr(process, "created_date", None)
+        if created is None:
+            return None
+        return created.isoformat() if hasattr(created, "isoformat") else str(created)
 
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         return codex_tail_status(transcript_path)
