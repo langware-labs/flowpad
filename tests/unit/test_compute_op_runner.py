@@ -315,3 +315,20 @@ async def test_a_value_that_is_not_the_declared_kind_fails_the_op(tmp_path):
 def test_an_unknown_output_kind_is_refused_at_read():
     with pytest.raises(ValueError, match="unknown kind"):
         _spec(output_spec_kind="test.runner.prot")
+
+
+@pytest.mark.asyncio
+async def test_a_call_silent_on_this_platform_with_a_declared_kind_stays_not_applicable(tmp_path):
+    """No check, a declared output kind, and no command for this platform.
+
+    NOT_APPLICABLE is `ok`, so the no-check path used to hold its (absent) value
+    to the declared kind — and demote "not this machine's problem" to NOT_YET
+    with "returned a value that is not an int". Nothing ran; there is no value
+    to hold to anything.
+    """
+    spec = _spec(exe_data={"commands": {"darwin": "echo 8080"}}, completion_check=None,
+                 output_spec_kind="int")
+    answer = await _run_op(spec, _shell(lambda _c: 0), tmp_path=tmp_path)
+
+    assert answer.exit_code is ExitCode.NOT_APPLICABLE
+    assert "no command for this platform" in answer.detail
