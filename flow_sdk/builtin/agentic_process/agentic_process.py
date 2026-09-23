@@ -3035,7 +3035,14 @@ class AgenticProcess(Entity):
         The event is re-emitted as ``wizard.closed`` so the frontend promise
         registered by ``launchWizard`` can resolve through the same entity-event
         channel as other AgenticProcess control events.
+
+        ``status`` is the agent's own three-way word — it keeps "cancel" apart
+        from "error" for the person, which no exit code does. ``answer`` is the
+        same close as the ``WizardResult`` every other wizard run answers with:
+        ``OK`` with the data as its value when done, ``NOT_YET`` otherwise.
         """
+        from flow_sdk.schema.data_spec.returned_value_spec import WizardResult  # noqa: PLC0415
+
         status = str(payload.get("status") or "").strip().lower()
         if status not in {"done", "cancel", "error"}:
             status = "error"
@@ -3046,6 +3053,13 @@ class AgenticProcess(Entity):
             "errorStr": payload.get("errorStr"),
             "wizardId": payload.get("wizardId") or (self.context_data or {}).get("wizard", {}).get("id") or self.id,
         }
+        if status == "done":
+            answer = WizardResult.satisfied("The wizard is done.", value=result["data"])
+        elif status == "cancel":
+            answer = WizardResult.not_yet("The wizard was cancelled.")
+        else:
+            answer = WizardResult.not_yet(result["errorStr"] or "The wizard reported an error.")
+        result["answer"] = answer.model_dump(mode="json")
         await self.emit_entity_event("wizard.closed", result)
         return result
 
