@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "6114b6de098faeb61b2f8af4c86c4a7397c0614cbf6cf41828daa7339d1d6beb",
+  "inputs_hash": "6cf4b7747b2a5108822bd15d054fa716fe9f47aed983dbd21ce95f1334414f1a",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -22,9 +22,9 @@
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess Architecture",
-      "summary": "AgenticProcess architecture: the durable entity behind an agent run, and why execution routes on pty_mode while tab visibility routes on visible.",
-      "content_hash": "d92066210973d3dd9b71852a250a452056b40745f180a3cd3febc26ced70cb91",
-      "size_bytes": 19469
+      "summary": "AgenticProcess architecture: the durable entity behind an agent run, execution routing on pty_mode versus tab visibility on visible, wizard runtime, status, reconnect and replay.",
+      "content_hash": "76c1c4ce6de5cfa4a6664f9ed8943a7fbb92190652c8ee6fa851db3b2cd15f67",
+      "size_bytes": 19857
     },
     {
       "name": "agentic_process_outputs.md",
@@ -46,9 +46,9 @@
       "name": "api-routing.md",
       "rel_path": "api-routing.md",
       "title": "API Routing Specification",
-      "summary": "API routing specification: graph URL structure, parsing algorithm, implicit action mapping, request flow and RequestInfo across backend and frontend.",
-      "content_hash": "e05a08010b404bf926524e6dd277a699641bf9f29d4474a531f9d6b9a36793d7",
-      "size_bytes": 19316
+      "summary": "API routing specification: graph URL structure, parsing algorithm, implicit action mapping, action registry, dedicated routes, RequestInfo and frontend ActionInfo/DataManager routing.",
+      "content_hash": "45a81e0bd419a7b8ff49bbcaf1fbe56a9a3f34160f02f1dd32d621e61d5f15a7",
+      "size_bytes": 19252
     },
     {
       "name": "boot.md",
@@ -105,6 +105,14 @@
       "summary": "Setting up debugMCP: launching Chrome Canary with CDP, the debugMcp server, the standard Playwright MCP server, and the usage rules.",
       "content_hash": "21ebbacc7febace74827d22373e37b6ae7388ad1f92f2a3c93881b97c667965a",
       "size_bytes": 3388
+    },
+    {
+      "name": "desktop-install-test-scenarios.md",
+      "rel_path": "desktop-install-test-scenarios.md",
+      "title": "Desktop install — test scenarios",
+      "summary": "Desktop install test scenarios: Python pin read from pyproject, retryable failed-install panel, clean-room uv tool install release gate, and post-release regression checks.",
+      "content_hash": "481a59e78b8ff9a57ec686885323fe26892a686bae8c55c58fd25702bd92ecf6",
+      "size_bytes": 13727
     },
     {
       "name": "dev_setup.md",
@@ -182,9 +190,9 @@
       "name": "glossary.md",
       "rel_path": "glossary.md",
       "title": "Glossary — our nouns vs. the ecosystem's",
-      "summary": "Cross-walk of our nouns against Claude Code's and OpenClaw's: provider mirrors versus ours, the three contexts, type·subkind·kind, and naming rules.",
-      "content_hash": "ac07e92754cc7c186bab39bac91d0ce39e2cd2979c10f992d6f6648ca66959da",
-      "size_bytes": 36382
+      "summary": "Cross-walk of our nouns against Claude Code's and OpenClaw's: provider mirrors versus ours, the three contexts, type·subkind·kind, naming rules and capability fields.",
+      "content_hash": "5f1547fe1bf8165e1a4e04f6585097f8d9324fe8d5d944b7e19b600218436a9c",
+      "size_bytes": 36406
     },
     {
       "name": "icons.md",
@@ -270,7 +278,7 @@
       "name": "pty-scroll.md",
       "rel_path": "pty-scroll.md",
       "title": "Terminal scrolling and the mouse wheel — issues, fixes, worker behavior",
-      "summary": "How a wheel tick scrolls a Flowpad terminal, a log of every wheel failure with its proof and fix, and per-worker terminal behavior (Claude Code fullscreen rendering).",
+      "summary": "How a wheel tick scrolls a Flowpad terminal, a log of every wheel failure with its proof and fix, and per-worker terminal behavior like Claude Code fullscreen.",
       "content_hash": "06eb050198178788364f7d53755166cb915a19731bf40286aeee8058ddd59796",
       "size_bytes": 13898
     },
@@ -286,7 +294,7 @@
       "name": "pty-terminal-spec.md",
       "rel_path": "pty-terminal-spec.md",
       "title": "PTY / xterm Terminal System Specification",
-      "summary": "The PTY terminal system across OS process, backend sessions, WebSocket transport and xterm.js: the byte paths both ways, attach-time history replay, and the two renderers.",
+      "summary": "PTY terminal system across OS process, backend sessions, WebSocket transport and xterm.js: byte paths, framed stream persistence, attach-time replay, resize alignment and the two renderers.",
       "content_hash": "aa69cc029bec17e7c3ce1e7f1df91672e45f082bd62a1025e16adcca64128472",
       "size_bytes": 55086
     },
@@ -334,9 +342,9 @@
       "name": "system_agents.md",
       "rel_path": "system_agents.md",
       "title": "System Agents",
-      "summary": "System agents: shipped SubAgent prompt assets, their architecture and components, and how they load — distinct from the launchable Agent entity.",
-      "content_hash": "598e8608f0c1391485d78bd495f6b96f0b73faa723332b901c1a108f20ab74f7",
-      "size_bytes": 13117
+      "summary": "System agents: shipped SubAgent prompt assets, their loading and embedding into an AgenticProcess, and steps for adding one — distinct from the launchable Agent entity.",
+      "content_hash": "6ce2f1a034538d77c6c0fc410bbe9e5bb09b03d5694fb0053fe5ab044f0f52d3",
+      "size_bytes": 13179
     },
     {
       "name": "tab-management.md",
@@ -440,7 +448,7 @@
       "rel_path": "agent-management",
       "self_summary": "Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.",
       "child_typeid": "markdown_index-19ec5c4d-9a34-5922-9864-878be1f4d806",
-      "child_inputs_hash": "67a4a8ddb8780a10b156ce1d6b83be41879790d2e56b55a35fa8f37d61d8eab7"
+      "child_inputs_hash": "ee9034286475990565951ddad74dc00252bdb6ecdfd06bdad402237b642e8f43"
     },
     {
       "name": "breadcrumbs",
@@ -482,7 +490,7 @@
       "rel_path": "interface",
       "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
       "child_typeid": "markdown_index-034a266f-b952-5882-b474-c3d9a15d4816",
-      "child_inputs_hash": "e76b5016cd714f025292120f4a12daa45a494c6a1816ed301a9292fc897a6c96"
+      "child_inputs_hash": "caf3c134b17ab97dc65f8b7cdda33d507e829f1ad14e233b243559ac351ac9a8"
     },
     {
       "name": "mockups",
@@ -517,7 +525,7 @@
       "rel_path": "snippets",
       "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
       "child_typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
-      "child_inputs_hash": "321c8dc8fa3d9fddbc3d571ee0b0a22ba386abaec4ed926b8666442e2f2fdb43"
+      "child_inputs_hash": "6c5406a16ecdccb19bf2c22c22a1f9d96c97884af4e1cb426e97bd628fe5419a"
     },
     {
       "name": "tabs",
@@ -527,6 +535,6 @@
       "child_inputs_hash": "ca533fab86503809f37a9360c1517505abf503b1b0f9dab6950e9d54f2943730"
     }
   ],
-  "generated_at": "2026-09-22T21:26:04.526492+00:00",
+  "generated_at": "2026-09-23T19:02:12Z",
   "latest_process_ref": ""
 }

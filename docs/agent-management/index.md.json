@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent-management",
   "folder_name": "agent-management",
-  "inputs_hash": "67a4a8ddb8780a10b156ce1d6b83be41879790d2e56b55a35fa8f37d61d8eab7",
+  "inputs_hash": "ee9034286475990565951ddad74dc00252bdb6ecdfd06bdad402237b642e8f43",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.",
@@ -22,9 +22,9 @@
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess",
-      "summary": "AgenticProcess, the entity behind one worker-backed agent session: the orthogonal pty_mode transport and visible UI axes, and the WorkerDriver delegation.",
-      "content_hash": "e0a4e614f088516fb31382f681a7f7827e743a2e4df42f4df2479656cb55ea17",
-      "size_bytes": 64302
+      "summary": "AgenticProcess entity reference: orthogonal pty_mode transport and visible axes, WorkerDriver delegation, wizard runtime with WizardResult close, statuses, config, backend and TypeScript APIs.",
+      "content_hash": "93757271d476b7cabd9e2f2db903b0fe5338c66609145ce6fe51dcd74d735a38",
+      "size_bytes": 64603
     },
     {
       "name": "claude-session-manager.md",
@@ -68,6 +68,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-19T23:43:14.381921+00:00",
+  "generated_at": "2026-09-23T19:02:04Z",
   "latest_process_ref": ""
 }
