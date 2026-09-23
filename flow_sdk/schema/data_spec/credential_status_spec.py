@@ -43,6 +43,9 @@ class CredentialStatusRowSpec(DataSpec):
     description: str = ""
     icon_name: str = ""
     help_url: str = ""
+    setup_wiki: str = ""
+    #: How an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI setup.
+    setup: str = ""
     scope: str
     project_id: Optional[str] = None
     #: The environment these presences were read for.

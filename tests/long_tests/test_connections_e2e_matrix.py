@@ -64,3 +64,20 @@ def test_the_sdk_connects_requires_tests_and_reads_the_issued_token(backend, liv
     assert result["connected"] is True and result["ok"] is True
     assert result["identity"] == "dummyuser"
     assert result["token_sha256"] == hashlib.sha256(dummy.latest_token.encode()).hexdigest()
+
+
+def test_connections_test_is_a_setup_check_it_exits_on_the_verdict(backend, live_backend, dummy):
+    """``flow connections test`` is the completion check of ``flow project setup``'s connect step:
+    exit 1 before the connection exists and for a scope the grant lacks, 0 once it holds — and it
+    never prints the token."""
+    before = connections_cli(os.environ, "test", TEST_LOOPBACK, "--json")
+    assert before.returncode == 1, before.stdout + before.stderr
+
+    assert connections_cli(os.environ, "connect", TEST_LOOPBACK, "--json").returncode == 0
+    after = connections_cli(os.environ, "test", TEST_LOOPBACK, "--json")
+    assert after.returncode == 0, after.stdout + after.stderr
+    assert last_json(after.stdout)["ok"] is True
+    assert dummy.latest_token not in after.stdout + after.stderr
+
+    wider = connections_cli(os.environ, "test", TEST_LOOPBACK, "--scope", "never-granted", "--json")
+    assert wider.returncode == 1 and last_json(wider.stdout)["missing_scopes"] == ["never-granted"]

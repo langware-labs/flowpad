@@ -29,7 +29,7 @@ async def _project_with_values(tmp_path, **secrets):
         await save_credential(
             scope="project",
             project_id=str(project.id),
-            manifest={"name": "pack", "vars": {k: {"label": k} for k in secrets}},
+            manifest={"name": "pack", "vars": {k: {"label": k} for k in secrets}, "setup": "Test pack."},
             values=secrets,
         )
     return project
@@ -67,7 +67,7 @@ async def test_an_unfilled_variable_is_skipped_not_fatal(tmp_path, sod_env):
     await save_credential(
         scope="project",
         project_id=str(project.id),
-        manifest={"name": "empty", "vars": {"NEVER_PROVIDED": {"label": "x"}}},
+        manifest={"name": "empty", "vars": {"NEVER_PROVIDED": {"label": "x"}}, "setup": "Test pack."},
     )
 
     resolved = await resolve_project_secrets(project)

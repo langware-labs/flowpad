@@ -234,6 +234,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
           title,
           value_store: 'env',
           vars: { [toEnvVarName(title) || 'API_KEY']: { label: title } },
+          setup: `Ask the person for their ${title} and store it: \`flow credentials set ${slugify(title)} ${toEnvVarName(title) || 'API_KEY'}=<value>\`.`,
         },
       });
       return {

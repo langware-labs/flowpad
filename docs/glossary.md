@@ -320,3 +320,13 @@ is what our `SubAgent` mirrors; a Chief of Staff uses it natively for short jobs
 | **Tasks channel** | `data_driver/task_manager` | A principal's view of the ledger as a message source (`principal_channel`, bus-fed on `task.*`). One per chief; follows the checkbox. The machinery finds it by what it declares, never by name. |
 | `created · started · note · asked · replied · done · failed · canceled · stalled` | `TaskEvent` | Ledger events. Statuses: `submitted → working ⇄ input_required → done \| failed \| canceled` (A2A), each on the three-bucket board via `status_family`. |
 
+## Project setup (2026-09-24)
+
+**Ours.** The wizard is the stock `WizardSpec` + ComputeOps; nothing here mirrors a provider.
+
+| Ours | One place | Notes |
+|---|---|---|
+| **setup requirement** | `SetupRequirementSpec` (`project.setup.requirement`), `builtin/project_setup.py` | One thing a project needs a person to provide: `oauth` (a connection, scopes unioned over its requesters), `pack` (a credential and its missing development values) or `gap` (a name nothing declares — reported, never run). Collected read-only from the project's credentials and its data sources' driver `auth`. |
+| **setup** (on a credential) | `CredentialSpec.setup` | How to obtain the values and store them, for an agent to follow. Required when authoring; its absence means "no AI setup". Not `setup_wiki` (a page title) and not `ComputeOpSpec.setup` — though the AI rung passes it there. |
+| **AI setup** | the `ai-<credential>` step | The `provisioner` agent op following a credential's `setup`, sharing the key step's check. Never for a connection. |
+
