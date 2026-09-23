@@ -304,7 +304,9 @@ async def project_source_item(
             data_source_id=str(source.id),
             title=subject or _thread_title(item) or key,
             conversation_id=str(getattr(item, "conversation_id", "") or ""),
-            timeout_seconds=source.thread_timeout_seconds,
+            # Our own message (the agent's answer, a reply sent from here) answers the thread it is in,
+            # however long the turn took: only the other side's message after a quiet spell ends one.
+            timeout_seconds=None if item.sent_by_us else source.thread_timeout_seconds,
             at=iso_to_utc(item.occurred_at),
         )
     thread_id = str(thread.id)

@@ -569,9 +569,16 @@ async def polled_by_a_deployment(sources=None) -> set[str]:
     process; the app's heartbeat polling the same source at the same moment would race its cursor
     (the in-flight guard is per process). A dead deployment's channels are polled here as ever.
     *sources* narrows the answer to those.
+
+    Held means held by ANOTHER process: asked from inside a deployment's own process
+    (``FLOW_DEPLOYMENT_ID``), that deployment's channels are this process's to poll — counting
+    them as held left them polled by nobody.
     """
+    own = os.environ.get(deployment_process.DEPLOYMENT_ENV, "").strip()
     held: set[str] = set()
     for deployment in await running_deployments():
+        if str(deployment.id) == own:
+            continue
         agent = await deployment.agent()
         if agent is not None:
             held.update(str(s.id) for s in await answered_sources(agent, deployment))
