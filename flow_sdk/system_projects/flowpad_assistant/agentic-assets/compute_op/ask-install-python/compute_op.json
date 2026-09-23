@@ -16,7 +16,7 @@
     "commands": {
       "darwin": "for c in python3 python; do v=$($c --version 2>&1) && case \"$v\" in \"Python 3\"*) echo '{}'; exit 0;; esac; done; exit 1",
       "linux": "for c in python3 python; do v=$($c --version 2>&1) && case \"$v\" in \"Python 3\"*) echo '{}'; exit 0;; esac; done; exit 1",
-      "win32": "foreach ($c in @('py','python')) { if (Get-Command $c -ErrorAction SilentlyContinue) { $a = @(); if ($c -eq 'py') { $a = @('-3') }; $v = & $c @a --version 2>&1; if ($LASTEXITCODE -eq 0 -and \"$v\" -match '^Python 3') { '{}'; exit 0 } } }; exit 1"
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); foreach ($c in @('py','python')) { if (Get-Command $c -ErrorAction SilentlyContinue) { $a = @(); if ($c -eq 'py') { $a = @('-3') }; $v = & $c @a --version 2>&1; if ($LASTEXITCODE -eq 0 -and \"$v\" -match '^Python 3') { '{}'; exit 0 } } }; exit 1"
     },
     "timeout_seconds": 30
   },
