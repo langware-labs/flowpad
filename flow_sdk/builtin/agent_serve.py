@@ -603,9 +603,31 @@ async def hold_positions(deployment, sources) -> None:
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
 
     for source in sources:
-        since = max(filter(None, (deployment.created_date, source.created_date)), key=ingest_order.bind, default=None)
+        since = bound_at(deployment, source)
         baseline = await SourceItem.newest_for(str(source.id), at_or_before=since)
         await ConsumerPosition.ensure_for(consumer_of(deployment), str(source.id), baseline=baseline)
+
+
+def bound_at(deployment, source) -> Optional[datetime]:
+    """When *deployment* took *source*: the later of their creations (UTC), or None."""
+    stamps = [_utc(s) for s in (getattr(deployment, "created_date", None), getattr(source, "created_date", None)) if s]
+    return max(stamps, default=None)
+
+
+def is_history(message, since: Optional[datetime]) -> bool:
+    """Whether *message* was written before its channel was bound (*since*) — the backlog a new
+    source's first read lands AFTER the binding in ingest order, which the position alone cannot
+    tell from an arrival. Judged by the message's own time, floored to the second: a provider that
+    stamps whole seconds (Telegram) must not turn a message of the binding's second into history."""
+    from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
+
+    row = getattr(message, "_row", None) or message
+    at = iso_to_utc(getattr(row, "occurred_at", None))
+    return since is not None and at is not None and at < since.replace(microsecond=0)
+
+
+def _utc(stamp: datetime) -> datetime:
+    return stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp.astimezone(timezone.utc)
 
 
 #: How often a serving loop renews its sources' attention lease — the UI's own rate
@@ -637,6 +659,7 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
     if not sources:
         return
     by_id = {str(s.id): s for s in sources}
+    bound = {str(s.id): bound_at(deployment, s) for s in sources}
     engine = TurnEngine(agent, deployment)
     stop = asyncio.Event()
     task = asyncio.current_task()
@@ -651,6 +674,9 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
                         continue  # unacked: the next loop on this placement is handed it again
                     source = by_id[page.source_id]
                     for message in page:
+                        if is_history(message, bound[page.source_id]):
+                            await _skip(message)  # the backlog the channel held when it was bound
+                            continue
                         await answer(engine, message, source=source)
                     await page.ack()
     finally:
