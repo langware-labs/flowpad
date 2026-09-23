@@ -5,8 +5,10 @@ Two ways in, tried in order, and neither is a new surface:
 1. **A live browser tab** — a targeted ``ui_command`` sends it to ``win/``, the
    chrome-less focus layout that already exists (``FocusLayout``: "no sidebars,
    no footer, no tab strip, no app chrome"). The routed view IS the window.
-2. **No tab** — borrow or start a backend through ``flow_service()`` and open a
-   browser at the same ``win/`` URL.
+2. **No tab** — open a browser at the same ``win/`` URL on THIS backend. A
+   question is only ever raised in the process that serves the answer routes
+   (``ask.ask_person``), so the window points back at the one place its answer
+   can land.
 
 Degrading to nothing is a legitimate outcome, not a failure: a headless box, a
 test, or ``FLOWPAD_NO_BROWSER`` all mean the question is registered and nobody
@@ -73,7 +75,7 @@ async def _push_to_live_tab(question) -> bool:
 
 
 async def _open_a_window(question) -> bool:
-    """Ensure a backend, then open a browser at the question."""
+    """Open a browser at the question on this backend's own port."""
     if os.environ.get("FLOWPAD_NO_BROWSER"):
         # The same guard `flow start` uses: Electron has its own window, and a
         # test has no business spawning browsers.
@@ -82,11 +84,13 @@ async def _open_a_window(question) -> bool:
         import asyncio  # noqa: PLC0415
         import webbrowser  # noqa: PLC0415
 
-        from flow_sdk.core.connections.service import flow_service  # noqa: PLC0415
+        from flow_sdk.config import load_server_info  # noqa: PLC0415
 
-        async with flow_service() as lease:
-            url = ask_url(f"http://127.0.0.1:{lease.port}", question.id)
-            return bool(await asyncio.to_thread(webbrowser.open, url))
-    except Exception:  # noqa: BLE001 — headless, no display, no server we may own
+        port = load_server_info().get("port")
+        if not port:
+            return False
+        url = ask_url(f"http://127.0.0.1:{port}", question.id)
+        return bool(await asyncio.to_thread(webbrowser.open, url))
+    except Exception:  # noqa: BLE001 — headless, no display
         _log.debug("ask: could not open a window for the question", exc_info=True)
         return False

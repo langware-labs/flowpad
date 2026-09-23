@@ -280,25 +280,20 @@ async def _cli(spec: ComputeOpSpec, *, platform: str, workdir: Path, env: Option
 async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], None], **_: Any) -> AskResult:
     """Put the op's declared output to a person and wait a bounded time.
 
-    A cancel and a timeout are both "no value" — ``NOT_YET`` — and differ in
-    ``cancelled`` / ``timed_out``, which is what a caller branches on.
+    Asked here when this process is the backend the answer reaches; handed to
+    the backend otherwise (``ask.ask_through_backend``).
     """
-    from flow_sdk.core.compute_op.ask import Cancelled, open_question, wait_for  # noqa: PLC0415
-    from flow_sdk.core.compute_op.ask_window import raise_question  # noqa: PLC0415
+    from flow_sdk.core.compute_op.ask import ask_person, ask_through_backend, served_here  # noqa: PLC0415
 
     # The person gets the SHORTEST of: what the op asks for, what the caller
     # allows, and the product default. Nothing here lengthens it.
     timeout = min(spec.exe_data.timeout(), ask_timeout, ASK_TIMEOUT_SECONDS)
-    question = open_question(spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind)
     say(f"{spec.display_label}: waiting for you…")
-    await raise_question(question)
-    try:
-        value = await wait_for(question, timeout=timeout)
-    except Cancelled:
-        return AskResult.not_yet(f"{spec.display_label}: cancelled.", cancelled=True)
-    except TimeoutError:
-        return AskResult.not_yet(f"{spec.display_label}: no answer within {timeout:g}s.", timed_out=True)
-    return AskResult.satisfied(f"{spec.display_label}: answered.", value=value)
+    ask = ask_person if served_here() else ask_through_backend
+    return await ask(
+        spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind,
+        timeout=timeout, label=spec.display_label,
+    )
 
 
 async def _prompt(spec: ComputeOpSpec, **_: Any) -> PromptResult:
