@@ -3,7 +3,7 @@
 One pair of helpers — the single way anything gets from a name to a launch::
 
     dep = await get_agent_local_deployment("asset-cleanup")
-    proc = await dep.launch("clean up this project")
+    answer = await dep.launch("clean up this project")   # a PromptResult; executor names the process
 
 Accepts a bare name (``"asset-cleanup"``), a ``TypeId`` or its string form
 (``"agent-<uuid>"``), so call sites don't have to know which they hold.

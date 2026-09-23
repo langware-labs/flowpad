@@ -1,6 +1,7 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
+import type { PromptResult } from '../models/ReturnedValue';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { mainFileForType } from '../models/asset-editor';
@@ -225,8 +226,10 @@ export class Agent extends APIEntity<Agent> {
    * remote deployment fails loudly here rather than quietly running on the
    * server.
    */
-  async run(prompt: string): Promise<AgentRunResult> {
-    return (await this.post('run', { prompt })) as AgentRunResult;
+  async run(prompt: string): Promise<PromptResult> {
+    // The launch's own answer: `executor` names the process to navigate to;
+    // `exit_code` says whether the first turn was accepted (and, when not, why).
+    return (await this.post('run', { prompt })) as PromptResult;
   }
 
   /**
@@ -474,10 +477,14 @@ export interface AgentDeployResult {
   agent_definition_error?: string;
 }
 
-/** What `POST /agent/<id>/use` hands back — the session opened as the agent. */
-export type AgentUseResult = Omit<AgentRunResult, 'compute_node_id'>;
+/** What `POST /agent/<id>/use` hands back — the session opened as the agent.
+ *  Not a call answer: opening a session runs nothing, so it names the process. */
+export interface AgentUseResult {
+  process_id: string;
+  process_typeid: string;
+  deployment_id: string;
+}
 
-/** What `POST /agent/<id>/run` hands back. */
 /** The fields a schedule manages — `POST /agent/<id>/add_schedule` and friends
  *  (`flow_sdk/builtin/agent_schedule.py`). Omitted fields are left as they are. */
 export interface AgentScheduleFields {
@@ -539,9 +546,4 @@ export interface AgentVersionState {
   pending_changes: number;
 }
 
-export interface AgentRunResult {
-  process_id: string;
-  process_typeid: string;
-  deployment_id: string;
-  compute_node_id: string;
-}
+

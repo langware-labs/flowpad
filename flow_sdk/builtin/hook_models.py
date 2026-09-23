@@ -354,7 +354,11 @@ class RunAgentActionHandler(TriggerActionHandler):
     Deliberately no unattended trust gate (``_run_wizard_trigger`` has one): an
     enabled trigger on an indexed agent runs, on whichever machine indexed it.
 
-    Returns the started ``AgenticProcess`` so the fire can log its id.
+    Answers the launch's ``PromptResult`` — its ``executor`` is how the fire
+    logs the run — and never ``None``: another machine's place is
+    NOT_APPLICABLE, a place switched off REFUSED. A missing prompt, or no agent
+    to run, is a broken trigger document, and raises (reported as
+    ``trigger.failed``).
     """
 
     async def execute(
@@ -365,6 +369,7 @@ class RunAgentActionHandler(TriggerActionHandler):
     ) -> Any:
         from flow_sdk.builtin.agent import Agent  # noqa: PLC0415 — entity layer imports this module
         from flow_sdk.builtin.agent_serve import workdir_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
 
         prompt = str(getattr(action, "prompt", "") or "").strip()
         if not prompt:
@@ -378,6 +383,8 @@ class RunAgentActionHandler(TriggerActionHandler):
                 if agent is not None:
                     break
         if agent is None:
+            # The document names nothing runnable — a broken trigger, like a
+            # missing prompt; raising is what reports it as `trigger.failed`.
             raise LookupError(f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: no agent to run")
 
         from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
@@ -388,31 +395,43 @@ class RunAgentActionHandler(TriggerActionHandler):
 
             deployment = await place_of(agent, runs_on, local=True)
             if deployment is None:
-                _log.info("RUN_AGENT on %s: place %s is not this agent's place on this machine; not running",
-                          getattr(trigger, "name", "?"), runs_on)
-                return None
+                return PromptResult.not_applicable(
+                    f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: place {runs_on} is not "
+                    "this agent's place on this machine."
+                )
         else:
             # Resolved once here and handed to `launch`, which would otherwise resolve it again.
             deployment = await agent.local_deployment()
-        # A place can be switched off on its own; a schedule on it is then a quiet no-op, not an error.
+        # A place can be switched off on its own; a schedule on it is then a QUIET
+        # refusal, checked here before `launch` — which would refuse too, but only
+        # after announcing a run: every tick of a schedule on a switched-off place
+        # would emit `agent.run.requested` / `failed`.
         if not agent.enabled_on(deployment.id):
-            _log.info("RUN_AGENT on %s: agent %r is disabled on place %s; not running",
-                      getattr(trigger, "name", "?"), agent.name, deployment.id)
-            return None
-        process = await agent.launch(
+            return PromptResult.refused(
+                f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: agent {agent.name!r} is disabled "
+                f"on place {deployment.id}."
+            )
+        answer = await agent.launch(
             prompt,
             deployment=deployment,
             name=f"{getattr(trigger, 'name', '') or agent.name} · scheduled",
             workdir=await workdir_for(agent),
             context_data={"trigger_id": str(getattr(trigger, "id", "") or "")},
         )
+        if not answer.ok:
+            _log.info("RUN_AGENT on %s: %s", getattr(trigger, "name", "?"), answer.detail)
+            return answer
         # A launched run is never finished by anyone: `launch` returns at
         # scheduling time and the lifecycle stays RUNNING forever, so the run
         # history showed every scheduled run as still running. Supervise it to
         # its end — detached, because a "Run now" fires inside a request whose
         # transaction is gone by the time the turn ends.
-        create_detached_task(_finish_agent_run(process), name=f"run-agent-finish-{str(process.id)[:8]}")
-        return process
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        process = await AgenticProcess.get_by_typeid(answer.executor)
+        if process is not None:
+            create_detached_task(_finish_agent_run(process), name=f"run-agent-finish-{str(process.id)[:8]}")
+        return answer
 
 
 async def _finish_agent_run(process: Any) -> None:

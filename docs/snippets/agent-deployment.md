@@ -10,7 +10,7 @@ start a session (`run`, `use`) go through a placement, and today every caller
 resolves the `local` one — the seam for choosing another is `deployment=`.
 
     Agent.deploy(provider)  -> Deployment        kind "runtime.agent"
-    Deployment.launch(...)  -> AgenticProcess
+    Deployment.launch(...)  -> PromptResult      executor: the AgenticProcess
 
 A placement is also where the agent ANSWERS. The app's agent server keeps every local
 placement serving: its standard `chat` endpoint (`service-endpoints.md` §6) and one serve
@@ -62,21 +62,26 @@ assert there.is_local is False                 # ...and never claims to be here
 ## 2. Start a session on a placement
 
 ```python
-proc = await agent.launch("Find three sources on X.", wait=True)     # local by default
-proc = await agent.launch("...", deployment=here, wait=True)         # the same, explicit
+answer = await agent.launch("Find three sources on X.", wait=True)   # local by default
+answer = await agent.launch("...", deployment=here, wait=True)       # the same, explicit
+proc = await AgenticProcess.get_by_typeid(answer.executor)           # the process, when you need it
 ```
 
 `launch` is `create_process` + save + first turn, routed through
 `dispatch_agent_run`: `agent.run.requested` / `started` / `failed` fire
-addressed to the placement's node, and a placement that is not on this machine
-is **refused** rather than quietly run here.
+addressed to the placement's node. It answers a `PromptResult` like every other
+call (call-returns): without `wait`, OK means the turn was accepted; with it,
+the run's own verdict. A placement that is not on this machine is **not run
+here** — an answer, not an exception:
 
 ```python
-try:
-    await agent.launch("...", deployment=there)
-except NotImplementedError as e:
-    ...                                        # "deployed on compute node …, cannot be reached from here yet"
+answer = await agent.launch("...", deployment=there)
+answer.exit_code                               # ExitCode.NOT_APPLICABLE — "deployed on compute node …"
+answer.ran                                     # False — nothing ran here
 ```
+
+A disabled agent answers `REFUSED`, a turn already in flight `NOT_YET` with
+`busy`.
 
 `use` opens the interactive shape — visible, `process_type=chat`, stream-json,
 no first turn — keyed to the agent through `target_typeid_str`:

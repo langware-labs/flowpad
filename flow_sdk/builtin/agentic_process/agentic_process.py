@@ -960,13 +960,24 @@ class AgenticProcess(Entity):
         """One-shot: create → start → send → wait → answer → stop.
 
         Answers with a ``PromptResult`` — ``text`` is the reply, ``executor``
-        the process. An error or interrupted end is ``NOT_YET``, never a raise.
+        the process. An error or interrupted end is ``NOT_YET``, never a raise —
+        and so is a worker that never started: the context manager discarded
+        ``start_pty``'s failure, so ``send`` raised "No shell linked" instead.
         """
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
         proc = cls(workdir=workdir, **kwargs)
-        async with proc:
+        started = await proc.start_pty()
+        if isinstance(started, ApiFailResponse):
+            return PromptResult.not_yet(
+                started.message or "The agent could not start.", ran=False, executor=str(proc.typeid),
+            )
+        try:
             await proc.send(instruction)
             await proc.wait()
             return _build_run_result(proc)
+        finally:
+            await proc.exit()
 
     @classmethod
     async def is_installed(cls, worker_type: "WorkerType | str | None" = None) -> bool:
