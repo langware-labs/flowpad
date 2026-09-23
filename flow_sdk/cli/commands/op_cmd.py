@@ -28,7 +28,7 @@ from typing import Any, NoReturn, Optional
 import typer
 from typing_extensions import Annotated
 
-from flow_sdk.schema.data_spec.compute_op_spec import AGENT_TIMEOUT
+from flow_sdk.schema.data_spec.compute_op_spec import AGENT_TIMEOUT, CHECK_TIMEOUT
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 from flow_sdk.cli.commands._common import (
@@ -56,11 +56,34 @@ EXIT_NOT_FOUND = int(ExitCode.NOT_FOUND)
 #: ExitCode: a bad document or a 500 is not a refusal.
 EXIT_REQUEST_FAILED = 2
 
-#: The longest a single op may legitimately take (an agent call), taken from the
-#: one place that defines it rather than re-spelled here. The client waits as
-#: long as the server may, so a run still in progress is never reported as a
-#: failure.
+#: The longest a single op may legitimately take by default (an agent call),
+#: taken from the one place that defines it rather than re-spelled here.
 RUN_TIMEOUT_SECONDS = int(AGENT_TIMEOUT)
+#: What the client waits beyond the op's own budget — the server answers when
+#: the op does, and a client that gave up first reported a still-running op as
+#: a connection error (exit 5) and lost its answer.
+_HTTP_MARGIN_S = 15.0
+
+
+def _wait_for(row: dict) -> float:
+    """How long ``run`` waits: as long as THIS op may take, never less.
+
+    An op may declare a longer ``timeout_seconds`` than the default, and a run is
+    check + call + re-check — so the client outwaits all three.
+    """
+    exe = row.get("exe_data") if isinstance(row.get("exe_data"), dict) else {}
+    check = row.get("completion_check") if isinstance(row.get("completion_check"), dict) else {}
+    call = max(float(exe.get("timeout_seconds") or 0), float(RUN_TIMEOUT_SECONDS))
+    per_check = float(check.get("timeout_seconds") or CHECK_TIMEOUT)
+    return call + 2 * per_check + _HTTP_MARGIN_S
+
+
+def _exit_with(returned: Optional[dict]) -> NoReturn:
+    """Exit the answer's own code. A 200 carrying no answer is a broken server,
+    not a verdict — exit 2, never a made-up NOT_YET."""
+    if not isinstance(returned, dict) or "exit_code" not in returned:
+        fail(EXIT_REQUEST_FAILED, "NO_ANSWER", "The server returned no answer.")
+    raise typer.Exit(int(returned["exit_code"]))
 
 
 def _on_error(not_found: str = ""):
@@ -113,9 +136,9 @@ def list_ops() -> None:
 @op_app.command("check", help="Ask whether the goal already holds. Makes no call.")
 def check(name: Annotated[str, typer.Argument(help="The op's name.")]) -> None:
     row = _find(name)
-    returned = get_graph_json(_url(f"compute_op/{row['id']}/check"), on_error=_on_error()) or {}
-    ok({"op": name, "returned": returned})
-    raise typer.Exit(int(returned.get("exit_code", EXIT_NOT_YET)))
+    returned = get_graph_json(_url(f"compute_op/{row['id']}/check"), on_error=_on_error())
+    ok({"op": name, "returned": returned or {}})
+    _exit_with(returned)
 
 
 @op_app.command("run", help="Make the goal hold: check, make the one call, then prove.")
@@ -127,9 +150,8 @@ def run(
     returned: Optional[dict] = post_graph_json(
         _url(f"compute_op/{row['id']}/run"),
         {"approved": approved},
-        timeout=RUN_TIMEOUT_SECONDS,
+        timeout=_wait_for(row),
         on_error=_on_error(f"Compute op not found: {name}"),
     )
-    returned = returned or {}
-    ok({"op": name, "returned": returned})
-    raise typer.Exit(int(returned.get("exit_code", EXIT_NOT_YET)))
+    ok({"op": name, "returned": returned or {}})
+    _exit_with(returned)

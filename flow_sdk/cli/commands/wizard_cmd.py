@@ -1,12 +1,13 @@
-"""`flow wizard ...` CLI subgroup — complete interactive wizard processes.
+"""`flow wizard ...` — run a wizard, or close a conversational one.
 
-Agents running inside a wizard close it by emitting a typed result:
-
+    flow wizard run <name> [--approved]      — run it; exit its answer's exit_code
     flow wizard <agentic_process_id> close '{"status":"done","data":{}}'
 
-The command posts to the generic entity-event action. The AgenticProcess
-handler re-emits ``wizard.closed`` to resolve the frontend ``launchWizard``
-promise.
+``run`` exits exactly as ``flow op run`` does — the answer's own ``ExitCode``
+(0 done, 1 not yet, 3 not applicable, 4 no such wizard, 7 refused), 2 when the
+request itself failed, 5 when the server could not be reached. ``close`` posts
+to the generic entity-event action; the AgenticProcess handler re-emits
+``wizard.closed`` to resolve the frontend ``launchWizard`` promise.
 """
 
 from __future__ import annotations
@@ -34,8 +35,15 @@ from flow_sdk.cli.commands._common import (
 from flow_sdk.cli.commands._common import (
     post_graph_json as _post_graph_json,
 )
+from flow_sdk.cli.commands._common import (
+    get_graph_json as _get_graph_json,
+)
+from flow_sdk.schema.data_spec.compute_op_spec import AGENT_TIMEOUT
 
-EXIT_ACTION_FAILED = 7
+#: The request itself failed (a server error, a bad response) — never an
+#: ExitCode. 7 used to be spent here, and 7 IS ExitCode.REFUSED: a script could
+#: not tell "the server broke" from "not approved".
+EXIT_REQUEST_FAILED = 2
 
 
 # A value that opens like a Windows drive path. Deliberately does NOT require a
@@ -137,7 +145,7 @@ def _close_from_args(wizard_id: Optional[str], args: list[str]) -> None:
 
     def _on_error(status_code: int, body: dict):
         _fail(
-            EXIT_ACTION_FAILED if status_code != 0 else EXIT_CONNECTION_ERROR,
+            EXIT_REQUEST_FAILED if status_code != 0 else EXIT_CONNECTION_ERROR,
             str(body.get("error_code") or "ACTION_FAILED"),
             str(body.get("message") or body.get("error") or f"HTTP {status_code}"),
         )
@@ -151,6 +159,49 @@ def _close_from_args(wizard_id: Optional[str], args: list[str]) -> None:
     _ok({"process_id": process_id, "result": data.get("result") or data})
 
 
+def _run_from_args(args: list[str]) -> None:
+    """``flow wizard run <name> [--approved]`` — run it, exit its exit_code."""
+    rest = [a for a in args if a != "--approved"]
+    if not rest:
+        _fail(EXIT_INVALID_ARG, "INVALID_WIZARD_COMMAND", "Usage: flow wizard run <name> [--approved]")
+    name, approved = rest[0], "--approved" in args
+    port = _discover_port()
+    base = f"http://127.0.0.1:{port}/api/v1/graph/wizard"
+
+    def _on_request_error(status_code: int, body: dict):
+        _fail(
+            EXIT_REQUEST_FAILED if status_code != 0 else EXIT_CONNECTION_ERROR,
+            str(body.get("error_code") or "ACTION_FAILED"),
+            str(body.get("message") or body.get("error") or f"HTTP {status_code}"),
+        )
+
+    listed = _get_graph_json(base, on_error=_on_request_error) or {}
+    rows = listed.get("entities", listed) if isinstance(listed, dict) else listed
+    row = next((r for r in (rows or []) if isinstance(r, dict) and r.get("name") == name), None)
+    if row is None:
+        # NOT_FOUND is an answer, so it exits as one (4), like `flow op run`.
+        _fail(4, "WIZARD_NOT_FOUND", f"No wizard named {name!r}.")
+
+    def _on_answer(status_code: int, body: dict):
+        # 409 is the one status the edge spends — `busy` — and it still carries
+        # the answer, so exit ITS code rather than calling the request failed.
+        answer = body.get("data") if isinstance(body.get("data"), dict) else None
+        if status_code == 409 and answer is not None:
+            _ok({"wizard": name, "returned": answer})
+            raise typer.Exit(int(answer.get("exit_code", 1)))
+        _on_request_error(status_code, body)
+
+    returned = _post_graph_json(
+        f"{base}/{row['id']}/run", {"approved": approved},
+        timeout=AGENT_TIMEOUT, on_error=_on_answer,
+    )
+    if not isinstance(returned, dict) or "exit_code" not in returned:
+        # A 200 with no answer is a broken server, not a verdict.
+        _fail(EXIT_REQUEST_FAILED, "NO_ANSWER", "The server returned no answer.")
+    _ok({"wizard": name, "returned": returned})
+    raise typer.Exit(int(returned["exit_code"]))
+
+
 def wizard_command(
     ctx: typer.Context,
     wizard_id: Annotated[
@@ -158,5 +209,8 @@ def wizard_command(
         typer.Argument(help="Wizard AgenticProcess id or TypeId."),
     ] = None,
 ) -> None:
-    """Complete a wizard using ``flow wizard <agentic_process_id> close <json>``."""
+    """``flow wizard run <name>`` or ``flow wizard <agentic_process_id> close <json>``."""
+    if wizard_id == "run":
+        _run_from_args(list(ctx.args))
+        return
     _close_from_args(wizard_id, list(ctx.args))
