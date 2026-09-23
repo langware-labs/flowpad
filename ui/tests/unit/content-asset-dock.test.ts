@@ -1,7 +1,12 @@
 import { Layout, TypeId } from '@sdk';
 import { describe, expect, it } from 'vitest';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { contentAssetTargetForDock, isContentAssetDock, isPreviewAssetDock } from '@src/navigation/content-asset-dock';
+import {
+  contentAssetTargetForDock,
+  isContentAssetDock,
+  isOwnChatAssetDock,
+  isPreviewAssetDock,
+} from '@src/navigation/content-asset-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
@@ -99,3 +104,20 @@ describe('content asset dock classification', () => {
     });
   });
 });
+
+describe('own-chat asset docks', () => {
+  const agentDock = AssetDocPointer.forTypeId(AssetEditor.AGENT, new TypeId('agent', ID)).toDockPointer();
+  const markdownDock = AssetDocPointer.forTypeId(AssetEditor.MARKDOWN, new TypeId('markdown', ID)).toDockPointer();
+
+  it('an agent is talked to through its own Chat — no Vibe chat beside its editor', () => {
+    expect(isContentAssetDock(agentDock)).toBe(true);
+    expect(isOwnChatAssetDock(agentDock)).toBe(true);
+    expect(isOwnChatAssetDock(DockPointer.rebaseAssetsOntoProject(agentDock, PROJECT_ID))).toBe(true);
+  });
+
+  it('every other asset keeps the Vibe chat beside it', () => {
+    expect(isOwnChatAssetDock(markdownDock)).toBe(false);
+    expect(isOwnChatAssetDock(DockPointer.forProject(PROJECT_ID))).toBe(false);
+  });
+});
+

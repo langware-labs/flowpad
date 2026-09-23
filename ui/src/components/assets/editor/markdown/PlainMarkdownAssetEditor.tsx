@@ -19,6 +19,7 @@ import { useDocTranslations } from '@src/components/assets/editor/translations/u
 import { History } from 'lucide-react';
 import { AssetCollisionProvider } from '../AssetCollisionUI';
 import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
+import { useNestedHost } from '../nested-host';
 
 interface PlainMarkdownAssetEditorProps {
   /** FSRef to the .md file. */
@@ -95,11 +96,14 @@ export function PlainMarkdownAssetEditor({
   // No backing FsRecord entity (raw CLAUDE.md etc.) → no delete button. The
   // tree row + the file remain; user can still delete via the filesystem tools.
   const deletable = entity as unknown as { delete?: () => Promise<boolean>; name?: string } | null;
+  const nested = useNestedHost();
   const onDelete = useCallback(async () => {
     if (!deletable?.delete) return;
     await deletable.delete();
-    navigation.openDock(DockPointer.forAssetList(assetType));
-  }, [deletable, navigation, assetType]);
+    // Nested in another editor (a doc opened from the agent): back to it, not to the doc list.
+    if (nested) nested.close();
+    else navigation.openDock(DockPointer.forAssetList(assetType));
+  }, [deletable, navigation, assetType, nested]);
 
   // Run history is an advanced-only affordance, and its panel isn't mounted
   // until the Runs tab is opened — don't hold a process query + watch

@@ -48,11 +48,6 @@ export const AGENT_EFFORTS = ['low', 'medium', 'high'] as const;
  *  cannot be deployed. */
 export const AGENT_MACHINE_SIZES = Object.values(ComputeNodeSize);
 
-/** What an agent with no `machine_size` deploys onto — the hub's
- *  `DEFAULT_NODE_SIZE`. Shown as the selection so absent never reads as a
- *  different state from `sm`. */
-export const AGENT_DEFAULT_MACHINE_SIZE = ComputeNodeSize.SMALL;
-
 /**
  * The Deploy tab's own display text — `ComputeNodeSizeLabels` plus an
  * indicative hourly price. Owned HERE, not in the shared SDK entity: that

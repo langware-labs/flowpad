@@ -8,7 +8,7 @@ import { TooltipProvider } from '@src/components/ui/tooltip';
 
 vi.mock('@src/components/assets/editor/agent-profile/AgentScheduleSection', () => ({ AgentScheduleSection: () => null }));
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlacesColumn', () => ({ AgentPlacesColumn: () => null }));
-vi.mock('@src/components/assets/editor/agent-profile/AgentMcpField', () => ({ AgentMcpField: () => null }));
+vi.mock('@src/components/assets/editor/agent-profile/use-agent-mcp-sync', () => ({ useAgentMcpSync: () => undefined }));
 vi.mock('@sdk/react/hooks', async (original) => ({ ...(await original<object>()), useProject: () => ({ project: null }) }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 

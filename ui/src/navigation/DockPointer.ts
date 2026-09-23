@@ -138,6 +138,35 @@ const HOST_SEGMENT = 'process';
 const HOST_DISPLAY_SEGMENT = 'display';
 
 /**
+ * A view NESTED in an asset editor — the agent editor's resources (an MCP server, a skill, a doc,
+ * a channel, a data source, a schedule) opened in place of its body, in the same tab. Spelled as a
+ * path suffix so the chain reads in the URL (`…/agent-<id>/child/mcp/mcp-<id>`), carried as two
+ * options so the asset pointer every other reader parses is the parent's untouched — the same
+ * lift/embed as the workspace host. Options stay out of `tabHash`: a child never opens a tab.
+ */
+export const CHILD_PARAM = 'child';
+export const CHILD_SECTION_PARAM = 'child_section';
+const CHILD_SEGMENT = 'child';
+/** The sections a child can be opened from. */
+export const CHILD_SECTIONS = ['channel', 'data_source', 'schedule', 'mcp', 'skill', 'doc'] as const;
+export type ChildSection = (typeof CHILD_SECTIONS)[number];
+
+function isChildSection(value: string | undefined): value is ChildSection {
+  return !!value && (CHILD_SECTIONS as readonly string[]).includes(value);
+}
+
+/** Lift a trailing `child/<section>/<typeid>` off a pointer. Pointers without one pass through. */
+function liftChild(pointer: string | undefined): { pointer: string | undefined; section: ChildSection | null; child: string | null } {
+  if (!pointer) return { pointer, section: null, child: null };
+  const seg = pointer.split('/');
+  const at = seg.length - 3;
+  if (at < 1 || seg[at] !== CHILD_SEGMENT || !isChildSection(seg[at + 1]) || !seg[at + 2]) {
+    return { pointer, section: null, child: null };
+  }
+  return { pointer: seg.slice(0, at).join('/'), section: seg[at + 1] as ChildSection, child: seg[at + 2] };
+}
+
+/**
  * Marks a dock as the workspace's ACTIVE DISPLAY — the one surface the agent's
  * `flow show` pins, as opposed to a child the USER opened from inside the
  * workspace. Written only by the show→navigate path.
@@ -715,18 +744,30 @@ export class DockPointer implements IDockPointer {
     // Parse options from query params
     const options = searchParams ? parseQueryParams(searchParams) : {};
 
+    // A nested child view rides the END of an asset pointer (see CHILD_PARAM); lifted first so the
+    // host lift and every pointer parser below see the parent's pointer alone.
+    let parsedPointer = decodedPointer;
+    if (view === ViewType.ASSETS || view === ViewType.PROJECT) {
+      const lifted = liftChild(decodedPointer);
+      if (lifted.child && lifted.section) {
+        parsedPointer = lifted.pointer;
+        options[CHILD_PARAM] = lifted.child;
+        options[CHILD_SECTION_PARAM] = lifted.section;
+      }
+    }
+
     // The workspace host is spelled as PATH segments but carried as an option,
     // so it stays out of tab identity (see HOST_PARAM). Lifting here is what
     // keeps every downstream reader of a project sub-pointer — splitProjectPointer,
     // targetTypeId, the AssetsPage parsers — unaware that a host exists at all.
     if (view === ViewType.PROJECT) {
-      const lifted = liftHostFromProjectPointer(decodedPointer);
+      const lifted = liftHostFromProjectPointer(parsedPointer);
       if (lifted.hostProcessId) {
         return new DockPointer(view, lifted.pointer, { ...options, [HOST_PARAM]: lifted.hostProcessId }, layout, page);
       }
     }
 
-    return new DockPointer(view, decodedPointer, options, layout, page);
+    return new DockPointer(view, parsedPointer, options, layout, page);
   }
 
   /**
@@ -1985,6 +2026,23 @@ export class DockPointer implements IDockPointer {
     return this.options?.[AGENT_PARAM] ?? null;
   }
 
+  /** The view nested in this asset editor (see CHILD_PARAM), or null. */
+  get child(): { section: ChildSection; typeId: string } | null {
+    const typeId = this.options?.[CHILD_PARAM];
+    const section = this.options?.[CHILD_SECTION_PARAM];
+    return typeId && isChildSection(section) ? { section, typeId } : null;
+  }
+
+  /** This asset editor with `typeId` opened nested in it, from `section`. */
+  withChild(section: ChildSection, typeId: string): DockPointer {
+    return this.withOption(CHILD_PARAM, typeId).withOption(CHILD_SECTION_PARAM, section);
+  }
+
+  /** This asset editor with nothing nested in it — back to its own body. */
+  withoutChild(): DockPointer {
+    return this.withOption(CHILD_PARAM, null).withOption(CHILD_SECTION_PARAM, null);
+  }
+
   /**
    * Parse a conversation pointer string.
    *
@@ -2594,6 +2652,15 @@ export class DockPointer implements IDockPointer {
    * or content uses `pointer`.
    */
   private get urlParts(): { pointer?: string; options?: Record<string, string> } {
+    const withHost = this.hostUrlParts;
+    const child = this.child;
+    if (!child || !withHost.pointer) return withHost;
+    // The nested child goes last in the path, after the host (lifted first on the way back in).
+    const { [CHILD_PARAM]: _child, [CHILD_SECTION_PARAM]: _section, ...rest } = withHost.options ?? {};
+    return { pointer: `${withHost.pointer}/${CHILD_SEGMENT}/${child.section}/${child.typeId}`, options: rest };
+  }
+
+  private get hostUrlParts(): { pointer?: string; options?: Record<string, string> } {
     const host = this.hostProcessId;
     const embedded =
       host && this.viewType === ViewType.PROJECT ? embedHostInProjectPointer(this.pointer, host) : undefined;

@@ -1,18 +1,22 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 
 // The unit tier has no global RTL cleanup (unlike the react tier's setup file).
 afterEach(cleanup);
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
-function Section(props: { isLoading?: boolean; itemCount: number }) {
+function Section(props: { isLoading?: boolean; itemCount: number; id?: string; scope?: string }) {
   return (
     <NavigatorSection
-      id="demo"
+      id={props.id ?? 'demo'}
+      scope={props.scope ?? 'test-nav'}
       label="Demo"
       isLoading={props.isLoading}
       itemCount={props.itemCount}
@@ -23,68 +27,80 @@ function Section(props: { isLoading?: boolean; itemCount: number }) {
   );
 }
 
+const header = (id = 'demo') => screen.getByTestId(`navigator-section-${id}`);
+
 describe('NavigatorSection', () => {
-  it('opens when the data settles non-empty', async () => {
+  it('starts closed, however many rows it holds', () => {
     render(<Section itemCount={3} />);
-    await waitFor(() => expect(screen.getByText('a row')).toBeInTheDocument());
-    expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'true');
+    expect(header()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('a row')).not.toBeInTheDocument();
   });
 
-  it('stays collapsed when the data settles empty', async () => {
-    render(<Section itemCount={0} />);
-    await waitFor(() => expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'false'));
-    expect(screen.queryByText('nothing here')).not.toBeInTheDocument();
+  it('shows how many rows it holds while closed', () => {
+    render(<Section itemCount={42} />);
+    expect(screen.getByTestId('navigator-section-demo-count')).toHaveTextContent('42');
   });
 
-  it('shows the empty state once an empty section is expanded', async () => {
+  it('says a capped count is a floor', () => {
+    render(
+      <NavigatorSection id="demo" scope="test-nav" label="Demo" itemCount={1000} truncated>
+        <span>a row</span>
+      </NavigatorSection>,
+    );
+    expect(screen.getByTestId('navigator-section-demo-count')).toHaveTextContent('1000+');
+  });
+
+  it('shows no count while loading — never a false 0', () => {
+    render(<Section isLoading itemCount={0} />);
+    expect(screen.queryByTestId('navigator-section-demo-count')).not.toBeInTheDocument();
+  });
+
+  it('remembers a section the person opened, and one they closed again', async () => {
+    const first = render(<Section itemCount={2} />);
+    await userEvent.click(header());
+    expect(screen.getByText('a row')).toBeInTheDocument();
+    first.unmount();
+
+    const second = render(<Section itemCount={2} />);
+    expect(header()).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.click(header());
+    second.unmount();
+
+    render(<Section itemCount={2} />);
+    expect(header()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('remembers each section of each navigator apart', async () => {
+    const opened = render(<Section itemCount={1} id="docs" scope="agent-resources" />);
+    await userEvent.click(header('docs'));
+    opened.unmount();
+
+    render(
+      <>
+        <Section itemCount={1} id="docs" scope="agent-resources" />
+        <Section itemCount={1} id="skills" scope="agent-resources" />
+      </>,
+    );
+    expect(header('docs')).toHaveAttribute('aria-expanded', 'true');
+    expect(header('skills')).toHaveAttribute('aria-expanded', 'false');
+    cleanup();
+    render(<Section itemCount={1} id="docs" scope="another-nav" />);
+    expect(header('docs')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('shows the empty state once an empty section is opened', async () => {
     render(<Section itemCount={0} />);
-    await userEvent.click(screen.getByTestId('navigator-section-demo'));
+    await userEvent.click(header());
     expect(screen.getByText('nothing here')).toBeInTheDocument();
-  });
-
-  // The rule fires on SETTLE, not first render: a cold cache reports 0 for a
-  // frame, and deciding then would collapse every section permanently.
-  it('waits for isLoading to clear before deciding', async () => {
-    const { rerender } = render(<Section isLoading itemCount={0} />);
-    expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'false');
-
-    rerender(<Section isLoading={false} itemCount={5} />);
-    await waitFor(() => expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'true'));
-  });
-
-  it('does not re-collapse when a settled section later empties', async () => {
-    const { rerender } = render(<Section itemCount={2} />);
-    await waitFor(() => expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'true'));
-
-    rerender(<Section itemCount={0} />);
-    expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'true');
-  });
-
-  it('never overrides a manual toggle', async () => {
-    const { rerender } = render(<Section itemCount={2} />);
-    await waitFor(() => expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'true'));
-
-    await userEvent.click(screen.getByTestId('navigator-section-demo'));
-    expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'false');
-
-    rerender(<Section itemCount={7} />);
-    expect(screen.getByTestId('navigator-section-demo')).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('renders the children when empty and no emptyState is given', async () => {
     render(
-      <NavigatorSection id="demo" label="Demo" itemCount={0}>
+      <NavigatorSection id="demo" scope="test-nav" label="Demo" itemCount={0}>
         <span>own empty state</span>
       </NavigatorSection>,
     );
-    await userEvent.click(screen.getByTestId('navigator-section-demo'));
+    await userEvent.click(header());
     expect(screen.getByText('own empty state')).toBeInTheDocument();
-  });
-
-  it('renders no count badge', async () => {
-    render(<Section itemCount={42} />);
-    await waitFor(() => expect(screen.getByText('a row')).toBeInTheDocument());
-    expect(screen.queryByText('42')).not.toBeInTheDocument();
-    expect(screen.queryByText('(42)')).not.toBeInTheDocument();
   });
 });

@@ -42,6 +42,7 @@ import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AssetCollisionBadge, useAssetCollisionSideTab } from '../AssetCollisionUI';
+import { useNestedHost } from '../nested-host';
 
 export const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
 export type EditorMode = (typeof EDITOR_MODES)[number];
@@ -292,6 +293,7 @@ function MarkdownEditorContent({
 }) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
+  const nested = useNestedHost();
 
   // Standard vs Advanced (Advanced || Dev) skin gating. Standard hides the
   // power-user affordances (eval/worker buttons, the secondary file toolbar,
@@ -557,10 +559,11 @@ function MarkdownEditorContent({
 
       const dir = sourcePathStr.slice(0, sourcePathStr.lastIndexOf('/'));
       const resolvedPath = href.startsWith('/') ? href : `${dir}/${href}`;
-      const assetType = currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory';
+      // Nested in another editor the page pointer names the PARENT (e.g. `agent`), not this doc.
+      const assetType = nested ? 'markdown' : (currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory');
       navigation.openDock(DockPointer.forAssetEditor(assetType, resolvedPath));
     },
-    [sourcePathStr, currentDock, navigation, wikiLinkTarget],
+    [sourcePathStr, currentDock, navigation, wikiLinkTarget, nested],
   );
 
   // Deep-link scroll: when opened with a `fragment` (wiki anchor), scroll to the

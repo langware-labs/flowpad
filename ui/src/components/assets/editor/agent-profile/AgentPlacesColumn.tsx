@@ -1,138 +1,116 @@
-import { Agent, type AgentPlace } from '@sdk';
+import { Agent, Deployment, type AgentPlace } from '@sdk';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Cloud, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronRight, Loader2, Plus } from 'lucide-react';
 
 import { Button } from '@src/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
 
-import { AgentAddCloudMachine } from './AgentAddCloudMachine';
-import { AgentPlaceCard } from './AgentPlaceCard';
+import { NewDeploymentDialog } from './NewDeploymentDialog';
+import { useAgentPlaces } from './use-agent-places';
 import { usePlaceDisplay } from './use-place-display';
-
-/** Dock option naming the selected environment; absent = the first one listed. */
-export const PLACE_OPTION = 'place';
 
 interface AgentPlacesColumnProps {
   agent: Agent;
-  /** Default prompt for a new schedule. */
-  autoLaunchPrompt?: string;
-  /** Pending local changes, for the local environment's version pill. */
-  pendingChanges?: number;
+  /** Saves the size a new cloud machine is created at (`machine_size` in agent.json); resolves once written. */
+  onMachineSize?: (size: string) => Promise<unknown>;
 }
 
 /**
- * "Runs on" — one environment at a time, picked from a select: Development · local
- * (always there, listed first, so the default) and every cloud machine. Deploy sits next to it.
- *
- * Each environment is a Deployment and owns its config overrides and its schedules;
- * the definition on the left is shared. The selection lives in the URL. On the hub
- * there is no local environment and no deploy.
+ * The agent's deployments — this computer (always there, listed first) and every cloud machine —
+ * as one plain list under a single "New deployment" button. Channels, schedules and the other
+ * resources live in the menu on the left; a row opens the deployment's own page (WorldView,
+ * focused on it) and says when it was last active. On the hub there is no local deployment and
+ * no deploy.
  */
-export function AgentPlacesColumn({ agent, autoLaunchPrompt, pendingChanges = 0 }: AgentPlacesColumnProps) {
+export function AgentPlacesColumn({ agent, onMachineSize }: AgentPlacesColumnProps) {
   const { t } = useLingui();
-  const { navigation, currentDock } = useDockNavigation();
+  const { navigation } = useDockNavigation();
   const display = usePlaceDisplay();
-  const [places, setPlaces] = useState<AgentPlace[] | null>(null);
+  const { places, reload } = useAgentPlaces(agent);
   const [deployOpen, setDeployOpen] = useState(false);
   const hub = isHubOnly();
 
-  const agentRef = useRef(agent);
-  agentRef.current = agent;
-
-  const load = useCallback(async () => {
-    try {
-      setPlaces(await agentRef.current.listPlaces());
-    } catch {
-      setPlaces([]);
-    }
-  }, []);
-
-  // Re-read when this agent's place settings change (an override, a switch) —
-  // not on every save of the definition, which also rewrites agent.md.
-  const placesKey = JSON.stringify([agent.id, agent.enabled ?? null, agent.places ?? null, agent.email_place ?? null]);
-  useEffect(() => {
-    void load();
-  }, [load, placesKey]);
-
-  // The server lists this computer first, so the first visible place is the default.
+  // The server lists this computer first.
   const visible = (places ?? []).filter((place) => !hub || !place.is_local);
-  const wanted = currentDock?.options?.[PLACE_OPTION];
-  const selected = visible.find((place) => place.deployment.id === wanted) ?? visible[0];
-
-  const select = (id: string) => {
-    if (currentDock) navigation.openDock(currentDock.withOption(PLACE_OPTION, id));
-  };
-  const deployed = async (deploymentId?: string) => {
-    await load();
-    if (deploymentId) select(deploymentId);
-  };
+  // A deployment's page is WorldView's deployment view, focused on it — the Deployment's own pointer.
+  const openPage = (place: AgentPlace) => navigation.openDock(new Deployment(place.deployment).dockPointer);
 
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="agent-runs-on" data-testid="agent-places">
-      <div className="flex items-center gap-2">
-        <h2 id="agent-runs-on" className="shrink-0 text-sm font-semibold">
-          <Trans>Runs on</Trans>
+    <section className="flex flex-col gap-3" aria-labelledby="agent-deployments" data-testid="agent-places">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="agent-deployments" className="text-sm font-semibold">
+          <Trans>Deployments</Trans>
         </h2>
-        {places === null ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        ) : selected ? (
-          <Select value={selected.deployment.id} onValueChange={select}>
-            <SelectTrigger className="h-8 min-w-0 flex-1" aria-label={t`Environment`} data-testid="agent-place-select">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {visible.map((place) => {
-                const { label, Icon } = display(place);
-                return (
-                  <SelectItem
-                    key={place.deployment.id}
-                    value={place.deployment.id}
-                    data-testid={`agent-place-option-${place.deployment.id}`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      {label}
-                    </span>
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        ) : (
-          // Only on the hub, which lists no local environment.
-          <span className="flex-1 text-xs text-muted-foreground">
-            <Trans>No cloud machine yet.</Trans>
-          </span>
-        )}
         {!hub && (
           <Button
             size="sm"
-            variant={deployOpen ? 'secondary' : 'outline'}
+            variant="outline"
             className="h-8 shrink-0"
-            onClick={() => setDeployOpen((open) => !open)}
-            data-testid="agent-add-cloud-machine"
+            onClick={() => setDeployOpen(true)}
+            data-testid="agent-new-deployment"
           >
-            <Cloud className="me-1.5 h-3.5 w-3.5" />
-            <Trans>Deploy</Trans>
+            <Plus className="me-1.5 h-3.5 w-3.5" />
+            <Trans>New deployment</Trans>
           </Button>
         )}
       </div>
       {deployOpen && !hub && (
-        <AgentAddCloudMachine agent={agent} onClose={() => setDeployOpen(false)} onDeployed={deployed} />
-      )}
-      {selected && (
-        <AgentPlaceCard
-          key={selected.deployment.id}
+        <NewDeploymentDialog
           agent={agent}
-          place={selected}
-          autoLaunchPrompt={autoLaunchPrompt}
-          pendingChanges={pendingChanges}
-          onChanged={load}
+          open
+          onOpenChange={setDeployOpen}
+          hasLocal={visible.some((place) => place.is_local)}
+          onMachineSize={onMachineSize}
+          onLaunched={reload}
         />
+      )}
+      {places === null ? (
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      ) : visible.length === 0 ? (
+        <span className="text-xs text-muted-foreground" data-testid="agent-places-empty">
+          <Trans>Not deployed yet — it runs nowhere until you launch it.</Trans>
+        </span>
+      ) : (
+        <ul className="flex flex-col divide-y rounded-md border" data-testid="agent-places-list">
+          {visible.map((place) => {
+            const { label, Icon } = display(place);
+            return (
+              <li key={place.deployment.id}>
+                <button
+                  type="button"
+                  onClick={() => openPage(place)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-start hover:bg-muted/60"
+                  data-testid={`agent-place-row-${place.deployment.id}`}
+                >
+                  <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground" data-testid={`agent-place-state-${place.deployment.id}`}>
+                    {stateOf(place)}
+                  </span>
+                  <span
+                    className="w-20 shrink-0 text-end text-xs text-muted-foreground"
+                    title={place.last_active ? new Date(place.last_active).toLocaleString() : undefined}
+                    data-testid={`agent-place-last-active-${place.deployment.id}`}
+                  >
+                    {formatTimeAgo(place.last_active) ?? t`never`}
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground rtl:-scale-x-100" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </section>
   );
+
+  function stateOf(place: AgentPlace): string {
+    if (!place.enabled) return t`Off`;
+    if (new Deployment(place.deployment).status?.provider_state === 'paused') return t`Paused`;
+    if (place.behind) return t`Update available`;
+    return place.is_local ? t`On` : t`Running`;
+  }
 }

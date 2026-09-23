@@ -2,7 +2,7 @@ import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, type AgentVersionSta
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronRight, Loader2, UploadCloud } from 'lucide-react';
+import { ChevronRight, Loader2 } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
@@ -18,19 +18,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Button } from '@src/components/ui/button';
 
 import { AgentPlacesColumn } from './AgentPlacesColumn';
-import { AgentVisibilitySection } from './AgentVisibilitySection';
-import { AgentChoiceField, AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
-import { AgentMcpField } from './AgentMcpField';
+import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
+import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
-import {
-  AGENT_DEFAULT_MACHINE_SIZE,
-  AGENT_EFFORTS,
-  AGENT_MACHINE_SIZE_LABELS,
-  AGENT_MACHINE_SIZES,
-  AGENT_MODEL_TIERS,
-  AGENT_PERMISSION_MODES,
-  AGENT_WORKER_TYPES,
-} from './agent-vocabularies';
 import type { AgentDocumentPatch } from './agent-fields';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DocumentSaveNotice } from '../DocumentSaveNotice';
@@ -75,7 +65,6 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const autoLaunchPrompt = content.fields.auto_launch_prompt ?? '';
   const [avatarRevision, setAvatarRevision] = useState(0);
   const [version, setVersion] = useState<AgentVersionState | null>(null);
-  const [publishing, setPublishing] = useState(false);
 
   const loadVersion = useCallback(async () => {
     if (hub) return;
@@ -165,6 +154,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   );
 
   /** Commit a text field only when it actually changed, so blur is cheap. */
+  // Every MCP server in the project is attached (the temporary policy); the list itself is shown in
+  // the agent-resources menu, not here.
+  const commitMcp = useCallback((ids: string[]) => void save({ mcp_servers: ids }), [save]);
+  useAgentMcpSync(profile.mcp_servers, commitMcp);
+
   const commit = useCallback(
     <K extends keyof AgentDocumentPatch>(key: K, value: AgentDocumentPatch[K]) => {
       void save({ [key]: value } as AgentDocumentPatch);
@@ -172,21 +166,6 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
     [save],
   );
 
-  const publish = useCallback(async () => {
-    setPublishing(true);
-    try {
-      // Pending edits first: publishing must never push a stale file.
-      await writeQueueRef.current;
-      if (!(await contentRef.current.save())) return;
-      await agentRef.current.publish({ force: true });
-      notify.success({ title: t`Published` });
-      await loadVersion();
-    } catch (e) {
-      notify.error({ title: t`Could not publish`, message: errorMessage(e, t`Publish failed.`), forceToast: true });
-    } finally {
-      setPublishing(false);
-    }
-  }, [loadVersion, t]);
 
   const AgentIcon = iconForType(Agent.type);
   const avatarImageUrl =
@@ -280,24 +259,6 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             )}
           </div>
         </div>
-
-        <div className="flex shrink-0 items-center gap-3">
-          {!hub && (
-            <Button
-              size="sm"
-              disabled={publishing || !version?.has_repo || (version.published && pending === 0)}
-              onClick={() => void publish()}
-              data-testid="agent-publish"
-            >
-              {publishing ? (
-                <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <UploadCloud className="me-1.5 h-3.5 w-3.5" />
-              )}
-              <Trans>Publish</Trans>
-            </Button>
-          )}
-        </div>
       </div>
 
       {/* ── body: the definition on the left, where it runs on the right ── */}
@@ -332,54 +293,6 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 className="min-h-48 resize-y font-mono text-sm leading-relaxed"
               />
             </div>
-
-            <div>
-              <div className="mb-2 text-xs text-muted-foreground">
-                <Trans>Default config — a place can override any of these</Trans>
-              </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <AgentChoiceField
-                  label={t`Worker`}
-                  value={profile.worker_type}
-                  options={AGENT_WORKER_TYPES}
-                  onCommit={(v) => void save({ worker_type: v })}
-                />
-                <AgentSelectField
-                  label={t`Model`}
-                  value={profile.model}
-                  options={AGENT_MODEL_TIERS}
-                  placeholder={t`sm / md / lg`}
-                  onCommit={(v) => void save({ model: v })}
-                />
-                <AgentSelectField
-                  label={t`Permissions`}
-                  value={profile.permission_mode}
-                  options={AGENT_PERMISSION_MODES}
-                  onCommit={(v) => void save({ permission_mode: v })}
-                />
-                <AgentSelectField
-                  label={t`Effort`}
-                  value={profile.effort}
-                  options={AGENT_EFFORTS}
-                  onCommit={(v) => void save({ effort: v })}
-                />
-              </div>
-              {/* Read by the hub when it creates this agent's cloud box; a local
-                  launch ignores it. An absent key deploys at the hub's default
-                  (sm), so it shows as sm and there is no Unset to pick. */}
-              <div className="mt-3 max-w-xs" data-testid="agent-machine-size">
-                <AgentChoiceField
-                  label={t`Machine size`}
-                  value={profile.machine_size}
-                  options={AGENT_MACHINE_SIZES}
-                  labels={AGENT_MACHINE_SIZE_LABELS}
-                  defaultValue={AGENT_DEFAULT_MACHINE_SIZE}
-                  onCommit={(v) => void save({ machine_size: v })}
-                />
-              </div>
-            </div>
-
-            <AgentMcpField value={profile.mcp_servers} onCommit={(ids) => void save({ mcp_servers: ids })} />
 
             <details className="group rounded-md border border-border" data-testid="agent-more">
               <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium">
@@ -553,8 +466,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
         </section>
 
         <aside className="min-h-0 border-t border-border bg-muted/20 px-5 py-5 lg:overflow-y-auto lg:border-s lg:border-t-0">
-          <AgentPlacesColumn agent={agent} autoLaunchPrompt={autoLaunchPrompt} pendingChanges={pending} />
-          <AgentVisibilitySection agent={agent} version={version} />
+          <AgentPlacesColumn agent={agent} onMachineSize={(size) => save({ machine_size: size })} />
         </aside>
       </div>
     </div>

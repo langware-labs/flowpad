@@ -136,6 +136,15 @@ const PROJECT_HOME_CRUMB_LABEL = msg`Home`;
 const ORGANIZATION_CRUMB_LABEL = msg`Organization`;
 const GRAPH_CRUMB_LABEL = msg`Graph`;
 const STREAM_INBOX_CRUMB_LABEL = msg`Stream Inbox`;
+/** The agent-editor section a nested child was opened from — the middle segment of its address. */
+const CHILD_SECTION_CRUMB_LABELS = {
+  channel: msg`Channels`,
+  data_source: msg`Data sources`,
+  schedule: msg`Schedules`,
+  mcp: msg`MCP servers`,
+  skill: msg`Skills`,
+  doc: msg`Docs`,
+} as const;
 
 /** Basename of an `asset_ref`, trailing separators ignored. */
 function basename(ref: string | null): string | null {
@@ -172,7 +181,11 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
   // `hostProcessId` too: a file shown in a session's display is addressed
   // `project › process › file`, and the host is lifted out of `pointer`.
   const hostProcessId = dock?.hostProcessId ?? null;
-  const dockKey = dock ? `${dock.viewType ?? ''}|${dock.pointer ?? ''}|${dock.options?.focus ?? ''}|${hostProcessId ?? ''}` : null;
+  // The nested child too (see DockPointer.child): it is lifted out of `pointer`, like the host.
+  const nestedChild = dock?.child ?? null;
+  const dockKey = dock
+    ? `${dock.viewType ?? ''}|${dock.pointer ?? ''}|${dock.options?.focus ?? ''}|${hostProcessId ?? ''}|${nestedChild?.typeId ?? ''}`
+    : null;
 
   // Phase 0 — straight off the URL, no awaits, available on the first frame.
   const urlTargetTypeId = useMemo(() => dock?.targetTypeId ?? null, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -234,6 +247,14 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     }
   }, [hostProcessId]);
   const { data: hostProcess } = useEntity<AgenticProcess>(hostProcessTypeId);
+  const childTypeId = useMemo(() => {
+    try {
+      return nestedChild ? new TypeId(nestedChild.typeId) : null;
+    } catch {
+      return null;
+    }
+  }, [nestedChild?.typeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { data: childEntity } = useEntity<AnyEntity>(childTypeId);
 
   // The Wiki the page lives in, as its own crumb. `@local` is an alias for the
   // active project's default wiki rather than an id, so it takes the same
@@ -480,8 +501,35 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
           },
     );
 
+    // A view nested in this editor (an MCP server opened from the agent): the editor stops being
+    // the current segment and becomes the way back — `project › Dana › MCP servers › linear`.
+    if (nestedChild && childTypeId && dock) {
+      const parent = out[out.length - 1];
+      out[out.length - 1] = { ...parent, pointer: dock.withoutChild(), kind: 'ancestor', path: undefined, filename: undefined };
+      out.push({
+        key: `child-section-${nestedChild.section}`,
+        label: i18n._(CHILD_SECTION_CRUMB_LABELS[nestedChild.section]),
+        Icon: iconForType(childTypeId.type),
+        pointer: null,
+        kind: 'ancestor',
+      });
+      const childPath = (childEntity as { asset_ref?: string | null } | null)?.asset_ref ?? null;
+      out.push({
+        key: childTypeId.toString(),
+        label: childEntity ? entityLabel(childEntity, childTypeId) : labelForType(childTypeId.type),
+        Icon: iconForType(childTypeId.type),
+        pointer: null,
+        kind: 'current',
+        path: childPath,
+        filename: basename(childPath) || null,
+      });
+    }
+
     return out;
   }, [
+    nestedChild,
+    childTypeId,
+    childEntity,
     project,
     agentRoute,
     scopedAgentId,

@@ -1,11 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Agent, config, DataSource, Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
 import apiClient from '@sdk/client';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import {
-  ASSET_SCOPE_ORDER,
   AssetRow,
   assetScope,
   basename,
@@ -15,17 +14,18 @@ import {
   type AssetScope,
   type AssetScopeKind,
 } from '@src/components/asset-manager';
-import { cn } from '@src/lib/utils';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
-import { sourcesQuery } from '@src/components/data-sources/use-source-specs';
+import { isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useContext } from '@src/hooks/useContext';
+import type { ChildSection } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ViewType } from '@src/types/ViewType';
 import { useStagedAssets } from './useStagedAssets';
+import { Empty, IconButton } from './parts';
+import { AgentSchedulesSection } from './AgentSchedulesSection';
 import { useQuickCreatePick } from '@src/components/quick-create';
 
 /** Stable while loading — a fresh `[]` per render would re-run the row memo. */
@@ -39,142 +39,23 @@ function labelForAsset(d: AssetDescriptor): string {
   return label === d.typeid && d.posix_path ? basename(d.posix_path) : label;
 }
 
-/** Muted one-liner for a section with nothing in it. */
-function Empty({ children }: { children: ReactNode }) {
-  return <div className="px-3 py-2 text-xs italic text-muted-foreground">{children}</div>;
-}
-
-/** A section header's `+`. Sized not to grow the line it sits on; the label and
- *  caret set that height. */
-function IconButton({
-  icon: Icon,
-  label,
-  onClick,
-  testId,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  onClick: () => void;
-  testId: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-      title={label}
-      aria-label={label}
-      data-testid={testId}
-    >
-      <Icon className="h-3.5 w-3.5" />
-    </button>
-  );
-}
-
 type ScopedRow = { d: AssetDescriptor; key: string; label: string; scope: AssetScope };
 
-/** One scope's collapsible sub-group. Unlike `NavigatorSection` it shows a
- *  count — a scope header's job is to say how much lives there while closed. */
-function ScopeGroup({
-  kind,
-  label,
-  rows,
-  defaultOpen,
-  emptyState,
-}: {
-  kind: AssetScopeKind;
-  label: string;
-  rows: ScopedRow[];
-  defaultOpen: boolean;
-  emptyState?: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const Chevron = open ? ChevronDown : ChevronRight;
-  return (
-    <div className="flex flex-col">
-      <button
-        type="button"
-        className="flex w-full min-w-0 items-center gap-1.5 py-1 ps-5 pe-2 text-start hover:bg-muted/60"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        data-testid={`agent-resource-skill-scope-${kind}`}
-      >
-        <Chevron className={cn('h-3 w-3 flex-shrink-0 text-muted-foreground', !open && 'rtl:-scale-x-100')} />
-        <span className="min-w-0 truncate text-[11px] font-medium text-muted-foreground">{label}</span>
-        <span className="ms-auto flex-shrink-0 text-[11px] text-muted-foreground/70">{rows.length}</span>
-      </button>
-      {open &&
-        (rows.length === 0
-          ? emptyState
-          : rows.map((row) => (
-              <AssetRow
-                key={row.key}
-                descriptor={row.d}
-                scope={row.scope}
-                label={row.label}
-                selected={false}
-                improvable={false}
-                busy={false}
-              />
-            )))}
-    </div>
-  );
-}
+/** A section lists this PROJECT's items only — its own and the agent's (which lives in it) — never
+ *  the user-wide or system ones. */
+const PROJECT_SCOPES: ReadonlySet<AssetScopeKind> = new Set(['agent', 'project']);
 
-/** Skills bucketed by scope. The agent's own group is always shown and starts
- *  open; every other scope shows only when it has skills, and starts closed. */
-function SkillScopeGroups({ rows }: { rows: ScopedRow[] }) {
-  const { t } = useLingui();
-  const labels: Record<AssetScopeKind, string> = {
-    agent: t`This agent`,
-    project: t`Project`,
-    user: t`User`,
-    context: t`Context folders`,
-    folder: t`Folders`,
-    system: t`System`,
-    external: t`External`,
-  };
-  const byKind = useMemo(() => {
-    const groups = new Map<AssetScopeKind, ScopedRow[]>();
-    for (const row of rows) {
-      const group = groups.get(row.scope.kind);
-      if (group) group.push(row);
-      else groups.set(row.scope.kind, [row]);
-    }
-    return groups;
-  }, [rows]);
-
-  return (
-    <>
-      {ASSET_SCOPE_ORDER.map((kind) => {
-        const group = byKind.get(kind) ?? [];
-        const isAgent = kind === 'agent';
-        if (!isAgent && group.length === 0) return null;
-        return (
-          <ScopeGroup
-            key={kind}
-            kind={kind}
-            label={labels[kind]}
-            rows={group}
-            defaultOpen={isAgent}
-            emptyState={
-              isAgent && (
-                <Empty>
-                  <Trans>No skills in this agent</Trans>
-                </Empty>
-              )
-            }
-          />
-        );
-      })}
-    </>
-  );
+/** The project's rows of a descriptor list, labelled and scoped. */
+function projectRows(descriptors: readonly AssetDescriptor[]): ScopedRow[] {
+  return descriptors
+    .map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) }))
+    .filter((row) => PROJECT_SCOPES.has(row.scope.kind));
 }
 
 /**
- * The four-section body of the agent-resources navigator. A read-only inventory
- * of what an agent run in this project can draw on; each `+` creates a new
- * asset of that kind rather than attaching anything to the agent.
+ * The body of the agent-resources navigator: this project's channels, data sources, schedules,
+ * MCP servers, skills and docs, each a flat list with its count. A row opens the item nested in
+ * the agent editor (see `DockPointer.child`); each `+` creates a new one.
  */
 export function AgentResourcesBody() {
   const { t } = useLingui();
@@ -215,33 +96,35 @@ export function AgentResourcesBody() {
   const editingAgentId = activeEntityTypeId?.type === Agent.type ? activeEntityTypeId : null;
   const editingAgentKey = editingAgentId?.toString() ?? null;
 
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
 
   const [addSourceOpen, setAddSourceOpen] = useState(false);
+  const [addChannelOpen, setAddChannelOpen] = useState(false);
+  // One rule for "a channel" everywhere: a driver that SENDS is a message channel (the stream
+  // inbox's attached-channels bar and the Add channel dialog use the same predicate).
+  const { specFor } = useSourceSpecs();
   // Project home's own creation seam: `onPick(type)` opens the same name/scope
   // form. `dialogs` MUST be rendered or the trigger silently does nothing.
   const { panelProps, dialogs } = useQuickCreatePick();
 
-  // Every discoverable skill, one row per (typeid, source) — the chip is what
-  // tells those apart, so collapsing by typeid would hide the distinction.
   const skillRows = useMemo(
-    () => skillDescriptors.map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
+    () => projectRows(skillDescriptors),
     [skillDescriptors],
   );
 
   const docRows = useMemo(
-    () => docAssets.descriptors.map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
+    () => projectRows(docAssets.descriptors),
     [docAssets.descriptors],
   );
 
-  // A source row leads to the Data sources view — where a source is edited,
-  // replayed and deleted — because `data_source` has no asset editor to route
-  // to (`editorForType` returns none) and the derived route would dead-end in
-  // the markdown fallback.
-  const openInDataSources = useMemo(
-    () => ({ label: t`Open in Data sources`, run: () => navigation.openTab(ViewType.DATA_SOURCES) }),
-    [navigation, t],
-  );
+  // Every row opens NESTED in the agent editor (see DockPointer.child): the item replaces the
+  // agent's body in the same tab, the chain reads in the URL and the breadcrumbs, and this menu
+  // stays. A click only navigates; which row is open is read back from the URL.
+  const openChild = (section: ChildSection, typeid: string) => ({
+    label: t`Open`,
+    run: () => currentDock && navigation.openDock(currentDock.withChild(section, typeid)),
+  });
+  const isOpen = (typeid: string) => currentDock?.child?.typeId === typeid;
 
   // Scoped to the agent this panel is open for — the same field `bind_channel`
   // and this panel's own `owner={editingAgentId}` (above) stamp. Without an
@@ -285,8 +168,37 @@ export function AgentResourcesBody() {
     [ownedSources],
   );
 
+  const { channelRows, dataSourceRows } = useMemo(() => {
+    const channels: typeof sourceRows = [];
+    const data: typeof sourceRows = [];
+    for (const row of sourceRows) (isMessageDriverSpec(specFor(row.source.provider)) ? channels : data).push(row);
+    return { channelRows: channels, dataSourceRows: data };
+  }, [sourceRows, specFor]);
+  const renderSourceRows = (rows: typeof sourceRows, section: ChildSection) =>
+    rows.map((row) => (
+      <div key={row.key} className="flex items-center gap-1">
+        <div className="min-w-0 flex-1">
+          <AssetRow
+            descriptor={row.d}
+            scope={row.scope}
+            label={row.label}
+            selected={isOpen(row.key)}
+            improvable={false}
+            busy={false}
+            openAction={openChild(section, row.key)}
+          />
+        </div>
+        <IconButton
+          icon={Trash2}
+          label={t`Delete ${row.label}`}
+          onClick={() => setDeleting(row.source)}
+          testId={`agent-resource-delete-data-source-${row.source.id}`}
+        />
+      </div>
+    ));
+
   const mcpAssetRows = useMemo(
-    () => mcpAssets.descriptors.map((d) => ({ d, key: descriptorKey(d), label: labelForAsset(d), scope: assetScope(d) })),
+    () => projectRows(mcpAssets.descriptors),
     [mcpAssets.descriptors],
   );
 
@@ -315,10 +227,34 @@ export function AgentResourcesBody() {
           decoration. Same shape as the three sections below it: rows are what
           is available, `+` adds one more. */}
       <NavigatorSection
+        scope="agent-resources"
+        id="channels"
+        label={t`Channels`}
+        isLoading={sourcesLoading}
+        itemCount={channelRows.length}
+        action={
+          <IconButton
+            icon={Plus}
+            label={t`Add channel`}
+            onClick={() => setAddChannelOpen(true)}
+            testId="agent-resource-add-channel"
+          />
+        }
+        emptyState={
+          <Empty>
+            <Trans>Connect a channel people can reach this agent on</Trans>
+          </Empty>
+        }
+      >
+        {renderSourceRows(channelRows, 'channel')}
+      </NavigatorSection>
+
+      <NavigatorSection
+        scope="agent-resources"
         id="data-sources"
         label={t`Data sources`}
         isLoading={sourcesLoading}
-        itemCount={sourceRows.length}
+        itemCount={dataSourceRows.length}
         action={
           <IconButton
             icon={Plus}
@@ -333,36 +269,25 @@ export function AgentResourcesBody() {
           </Empty>
         }
       >
-        {sourceRows.map((row) => (
-          <div key={row.key} className="flex items-center gap-1">
-            <div className="min-w-0 flex-1">
-              <AssetRow
-                descriptor={row.d}
-                scope={row.scope}
-                label={row.label}
-                selected={false}
-                improvable={false}
-                busy={false}
-                openAction={openInDataSources}
-                cannotOpenReason={t`Configured in Data sources — no file on disk`}
-              />
-            </div>
-            <IconButton
-              icon={Trash2}
-              label={t`Delete ${row.label}`}
-              onClick={() => setDeleting(row.source)}
-              testId={`agent-resource-delete-data-source-${row.source.id}`}
-            />
-          </div>
-        ))}
+        {renderSourceRows(dataSourceRows, 'data_source')}
       </NavigatorSection>
+
+      {editingAgentId && <AgentSchedulesSection agentTypeId={editingAgentId} />}
 
       {/* The project's own add-source form, reused verbatim — `editing` unset
           is its create mode. Mounted here rather than behind a navigation so
           the pane never loses the agent being edited. `owner` stamps the
           created source onto the agent this panel is open for, same as
           `AttachedChannelsBar`'s call one view over. */}
-      <DataSourceDialog open={addSourceOpen} onOpenChange={setAddSourceOpen} owner={editingAgentId} />
+      <DataSourceDialog
+        open={addSourceOpen}
+        onOpenChange={setAddSourceOpen}
+        owner={editingAgentId}
+        only={(spec) => !isMessageDriverSpec(spec)}
+      />
+      {addChannelOpen && (
+        <DataSourceDialog open onOpenChange={setAddChannelOpen} owner={editingAgentId} only={isMessageDriverSpec} />
+      )}
 
       <ConfirmDialog
         open={!!deleting}
@@ -379,9 +304,11 @@ export function AgentResourcesBody() {
           list looked attachable and never was — it describes a definition site
           we do not own and cannot hand a worker. One list, one meaning. */}
       <NavigatorSection
+        scope="agent-resources"
         id="mcp-servers"
         label={t`MCP servers`}
         isLoading={mcpAssets.isLoading}
+        truncated={mcpAssets.truncated}
         itemCount={mcpAssetRows.length}
         action={
           <IconButton
@@ -404,9 +331,10 @@ export function AgentResourcesBody() {
                 descriptor={row.d}
                 scope={row.scope}
                 label={row.label}
-                selected={false}
+                selected={isOpen(row.d.typeid)}
                 improvable={false}
                 busy={false}
+                openAction={openChild('mcp', row.d.typeid)}
               />
             </div>
             <IconButton
@@ -420,9 +348,11 @@ export function AgentResourcesBody() {
       </NavigatorSection>
 
       <NavigatorSection
+        scope="agent-resources"
         id="skills"
         label={t`Skills`}
         isLoading={skillsLoading}
+        truncated={skillAssets.truncated}
         itemCount={skillRows.length}
         action={
           <IconButton
@@ -432,16 +362,32 @@ export function AgentResourcesBody() {
             testId="agent-resource-new-skill"
           />
         }
-        // No emptyState: the agent's own group renders even when empty, so the
-        // grouped view is its own empty state.
+        emptyState={
+          <Empty>
+            <Trans>No skills in this project yet</Trans>
+          </Empty>
+        }
       >
-        <SkillScopeGroups rows={skillRows} />
+        {skillRows.map((row) => (
+          <AssetRow
+            key={row.key}
+            descriptor={row.d}
+            scope={row.scope}
+            label={row.label}
+            selected={isOpen(row.d.typeid)}
+            improvable={false}
+            busy={false}
+            openAction={openChild('skill', row.d.typeid)}
+          />
+        ))}
       </NavigatorSection>
 
       <NavigatorSection
+        scope="agent-resources"
         id="docs"
         label={t`Docs`}
         isLoading={docAssets.isLoading}
+        truncated={docAssets.truncated}
         itemCount={docRows.length}
         action={
           <IconButton
@@ -463,9 +409,10 @@ export function AgentResourcesBody() {
             descriptor={row.d}
             scope={row.scope}
             label={row.label}
-            selected={false}
+            selected={isOpen(row.d.typeid)}
             improvable={false}
             busy={false}
+            openAction={openChild('doc', row.d.typeid)}
           />
         ))}
       </NavigatorSection>

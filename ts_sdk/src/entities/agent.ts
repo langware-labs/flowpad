@@ -534,6 +534,8 @@ export interface AgentPlace {
   behind: number | null;
   /** Whether the agent runs on this place: its own switch, else the definition's `enabled`. */
   enabled: boolean;
+  /** When it last did something (ISO): its newest run here, else when a cloud machine was last seen. */
+  last_active?: string | null;
 }
 
 /** `GET /agent/<id>/version` — what this computer has that the published version lacks. */
