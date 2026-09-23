@@ -12,9 +12,9 @@
  * API requests use the same explicit instance-aware backend origin as the app.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
@@ -151,8 +151,35 @@ async function restartOwnedInstance(instance: OwnedInstance): Promise<void> {
   }
 }
 
+/**
+ * A real folder a project can own. NOT under the OS temp dir: the backend's
+ * `is_valid_project_cwd` excludes temp descendants, so a temp-rooted project
+ * never surfaces as a switch target / current project the way a user's does.
+ * `~/.flowpad-qa-roots/<label>-<uuid>` is neither temp nor protected (a HOME
+ * descendant, outside flow_home) and never a user workspace.
+ *
+ * A test's own `rmSync` is not the last word: the backend can write
+ * `agentic-assets/project_manifest/` back into a deleted project's mount after
+ * it (7 roots came back over one --repeat-each=3 run), and a worker restarted
+ * after a failure forgets what its predecessor minted. So `afterAll` sweeps
+ * every `<label>-*` this suite mints, not just the paths this worker saw.
+ */
+const QA_ROOTS_DIR = path.join(homedir(), '.flowpad-qa-roots');
+const mintedRootLabels = new Set<string>();
 function disposableProjectRoot(label: string): string {
-  return mkdtempSync(path.join(tmpdir(), `flowpad-${label}-`));
+  const root = path.join(QA_ROOTS_DIR, `${label}-${globalThis.crypto.randomUUID()}`);
+  mkdirSync(root, { recursive: true });
+  mintedRootLabels.add(label);
+  return root;
+}
+
+function removeMintedProjectRoots(): void {
+  if (!existsSync(QA_ROOTS_DIR)) return;
+  for (const entry of readdirSync(QA_ROOTS_DIR)) {
+    if ([...mintedRootLabels].some((label) => entry.startsWith(`${label}-`))) {
+      rmSync(path.join(QA_ROOTS_DIR, entry), { recursive: true, force: true });
+    }
+  }
 }
 
 async function api(): Promise<APIRequestContext> {
@@ -394,6 +421,10 @@ async function commonValidation(page: Page) {
 test.describe('Interactive tabs / project filtering matrix', () => {
   test.beforeEach(async ({ page }) => {
     await dismissSetupModal(page);
+  });
+
+  test.afterAll(() => {
+    removeMintedProjectRoots();
   });
 
   // ---- A. Refresh & browse ----
@@ -827,9 +858,13 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const pa = await createProject(rq, 'Proj-A', '/tmp/regression/proj-a');
     const pb = await createProject(rq, 'Proj-B', '/tmp/regression/proj-b');
-    for (let i = 0; i < 2; i++) await createShell(rq, pa);
+    const aShells: string[] = [];
+    for (let i = 0; i < 2; i++) aShells.push(await createShell(rq, pa));
     for (let i = 0; i < 3; i++) await createShell(rq, pb);
-    await gotoDockShell(page);
+    // Land on a Proj-A shell explicitly: a bare /dock/shell resolves its own
+    // default tab, which may already be one of B's — then B has a last-active
+    // tab and the switch resumes it instead of landing on the project home.
+    await page.goto(`/dock/shell/shell-${aShells[0]}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     // Select Proj-B explicitly.
@@ -1008,15 +1043,16 @@ test.describe('Interactive tabs / project filtering matrix', () => {
       await expect(dialog.locator('[data-testid="switch-project-active-title"]')).toBeVisible();
       const recentTitle = dialog.locator('[data-testid="switch-project-recent-title"]');
       await expect(recentTitle).toBeVisible();
-      const targetRow = recentTitle.locator('xpath=following-sibling::button[1]');
+      // A row is a <div> holding the open button (plus the info control), so
+      // the first Recent row is the next sibling div's row button.
+      const targetRow = recentTitle.locator(
+        'xpath=following-sibling::div[1]//button[starts-with(@data-testid,"switch-project-row-")]',
+      );
       await expect(targetRow).toBeVisible();
+      const targetId = (await targetRow.getAttribute('data-testid'))!.replace('switch-project-row-', '');
       const targetName = (await targetRow.locator('span.font-medium').innerText()).trim();
       expect(targetName).not.toBe('');
-      const targetTitle = await targetRow.getAttribute('title');
-      expect(targetTitle).toBeTruthy();
-      const targetTitleParts = targetTitle!.split('\n');
-      expect(targetTitleParts.length).toBeGreaterThan(1);
-      const targetCwd = targetTitleParts.at(-1)!.trim();
+      const targetCwd = ((await dialog.getByTestId(`switch-project-path-${targetId}`).getAttribute('title')) ?? '').trim();
       expect(path.isAbsolute(targetCwd)).toBe(true);
       const canonicalPath = (value: string) =>
         value.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');

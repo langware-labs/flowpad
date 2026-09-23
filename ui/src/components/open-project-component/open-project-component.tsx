@@ -232,6 +232,7 @@ function CompactProjectSelectDialog({
         <button
           onClick={() => onProjectClick(project)}
           disabled={!!openingProjectId || isSubmitting}
+          data-testid={`switch-project-row-${project.id}`}
           className="flex min-w-0 flex-1 items-center gap-2 py-1 ps-3 text-start text-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isOpening ? (

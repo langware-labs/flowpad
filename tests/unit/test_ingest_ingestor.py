@@ -8,6 +8,7 @@ missing entity intermittently, under load, in production.
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import pytest
@@ -229,3 +230,18 @@ async def test_an_echo_that_beat_the_send_is_marked_and_announced_once():
     assert (echo.status, marked.status, again.status) == ("created", "updated", "unchanged")
     assert fired == ["ingest.rss.item.created", "ingest.rss.item.updated"]
     assert (await SourceItem.get_one({"id": echo.entity_id})).sent_by_us is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_two_concurrent_ingests_of_one_item_make_one_row():
+    """The poller, the attention lane and a reply sync can all bring the same record at once.
+    Each resolves the natural key, finds nothing and saves — two rows for one message — unless
+    resolve→save is serialized per source."""
+    external_id = f"ext-{uuid.uuid4().hex[:10]}"
+    item = _item(external_id=external_id)
+
+    await asyncio.gather(ingest_items([item]), ingest_items([item]))
+
+    rows = await SourceItem.get_all({"external_id": external_id})
+    assert len(rows) == 1, f"one record ingested concurrently made {len(rows)} rows"

@@ -36,6 +36,7 @@ from flow_sdk.db.drivers.db_driver import (
 )
 from flow_sdk.db.drivers.path_model import NodeConnection, NodesPath
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.flowpad_types.enums import RelationshipDirection
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -3112,7 +3113,10 @@ class SQLiteDBDriver(DBDriver):
             "updated_through": schema.updated_through,
             **data,
         }
-        return entity_class(**combined)
+
+        # A stored row may carry a field its type has since dropped.
+        with lenient_entity_load():
+            return entity_class(**combined)
 
     def _relationship_to_schema(self, rel: DBBaseRelationship) -> RelationshipSchema:
         """Convert relationship to schema."""

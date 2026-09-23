@@ -497,7 +497,7 @@ class Capability(Entity):
         session_key = self._login_session_key()
         session = get_device_login_session(session_key) if session_key else None
         if session is not None:
-            session.cancel()
+            await session.acancel()
         self._set_login_fields(state=None)
         await self.notify_updated()
         return ApiSuccessResponse(data={"cancelled": session is not None})

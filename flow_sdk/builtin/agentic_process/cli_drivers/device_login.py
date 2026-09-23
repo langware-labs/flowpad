@@ -228,6 +228,10 @@ class DeviceLoginSession:
         except Exception:
             logger.debug("device login reap-on-cancel failed", exc_info=True)
 
+    async def acancel(self) -> None:
+        """``cancel()`` off the event loop — its force-terminate sleeps between signals."""
+        await asyncio.to_thread(self.cancel)
+
     def to_json(self) -> dict[str, Any]:
         return {
             "state": self.state.value,
@@ -348,10 +352,11 @@ async def start_device_login(
     ``spec``+``probe_fn``, any spec-driven CLI keyed by that name)."""
     async with _SESSIONS_LOCK:
         old = _SESSIONS.get(worker_type)
-        if old is not None:
-            old.cancel()
         session = DeviceLoginSession(worker_type, on_change=on_change, spec=spec, probe_fn=probe_fn)
         _SESSIONS[worker_type] = session
+    # Outside the lock: the old login's teardown must not hold up other workers' starts.
+    if old is not None:
+        await old.acancel()
     await session.start()
     return session
 

@@ -32,6 +32,7 @@ from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
 from flow_sdk.fs_store.origin.git_origin import GitOrigin, as_git, fresh_clone_slot
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
@@ -1606,6 +1607,20 @@ class Project(Entity):
 
         await ensure_default_wiki(self)
         return self
+
+    # A deleted project leaves the scope cache too, or scope resolution keeps serving it
+    # (and startup seeding would write its namespace back into the removed folder).
+    # Both hooks: the HTTP delete goes through delete_by_id, never the instance delete().
+    async def delete(self):
+        result = await super().delete()
+        invalidate_projects_cache()
+        return result
+
+    @classmethod
+    async def delete_by_id(cls, eid: str):
+        result = await super().delete_by_id(eid)
+        invalidate_projects_cache()
+        return result
 
     async def _warn_if_mount_owned_elsewhere(self) -> None:
         """Log (never raise) when a brand-new project lands on a folder another

@@ -1639,6 +1639,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       };
     }
 
+    // XHR cannot outlive the page; the fetch adapter can (same client and interceptors).
+    if (actionInfo.keepalive) {
+      requestConfig = { ...(requestConfig ?? {}), adapter: 'fetch', fetchOptions: { keepalive: true } };
+    }
+
     // In-flight dedup for GETs: share a pending request with concurrent callers
     // (e.g. StrictMode double-invoke, or multiple components mounting at once).
     // Safe because GETs are idempotent. Mutations (POST/PUT/PATCH/DELETE) are never deduped.

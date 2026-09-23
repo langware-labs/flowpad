@@ -143,6 +143,8 @@ class Agent(Entity):
 
     type: str = APIField(default=EntityType.AGENT.value)
     _mailbox: AgentMailbox | None = PrivateAttr(default=None)
+    # A removed field passed by a caller was silently dropped (email_allowed_senders).
+    _strict_init: ClassVar[bool] = True
 
     # ── identity / presentation ───────────────────────────────────────────
     # `name` / `title` / `uname` come from Entity. `name` is the addressable

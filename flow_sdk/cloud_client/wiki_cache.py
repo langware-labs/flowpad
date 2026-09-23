@@ -14,6 +14,7 @@ from typing import Any
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
+from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -61,7 +62,8 @@ async def materialize_hub_entity(
     payload = _cache_payload(entity_cls, raw)
     existing = await entity_cls.get_one({"id": entity_id})
     if existing is None:
-        entity = entity_cls.model_validate(payload)
+        with lenient_entity_load():
+            entity = entity_cls.model_validate(payload)
     else:
         entity = existing
         for key, value in payload.items():

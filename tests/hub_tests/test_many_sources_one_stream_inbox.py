@@ -173,7 +173,7 @@ async def test_a_desk_and_a_mailbox_one_loop_attribution_resolves_by_channel_and
     base, alice = hub_session["base_url"], hub_session["user_id"]
     ts = uuid.uuid4().hex[:8]
     driver = get_agent_mailbox_driver()
-    agent = Agent(id=mailbox["agent_id"], name=f"Mailbot {ts}", worker_type="claude", email_allowed_senders=[mailbox["outsider_address"]])
+    agent = Agent(id=mailbox["agent_id"], name=f"Mailbot {ts}", worker_type="claude")
     await agent.save()
     sources: list[DataSource] = []
     try:
@@ -182,7 +182,7 @@ async def test_a_desk_and_a_mailbox_one_loop_attribution_resolves_by_channel_and
             await driver.send(mailbox["outsider_id"], {"to": mailbox["agent_address"], "subject": "Ping", "text": f"invoice question {ts}"})
 
             desk_box = StreamInbox(desk, provider="helpdesk")
-            mail_box = StreamInbox(mailbox["agent_address"], provider="cloud_email", owner=agent)
+            mail_box = StreamInbox(mailbox["agent_address"], provider="cloud_email", owner=agent, agent_id=mailbox["agent_id"])
             name = f"desk-and-mail-{mint_uuid()}"
             async with workflow(name):
                 got = await _take(pages(desk_box, mail_box, size=50, poll_every=0), 2)
