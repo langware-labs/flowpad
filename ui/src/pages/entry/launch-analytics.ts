@@ -12,7 +12,8 @@ import { useEffect, useRef } from 'react';
  *     → launch_enter_machine
  *
  * plus `launch_setup_error` when the setup fails, `launch_agent_error` when the link can't be
- * launched, and `launch_abandon` when the page goes away before the machine is entered.
+ * launched, and `launch_abandon` when the page goes away before the machine is entered (and
+ * before a failure — leaving a page that already shows an error is not a drop-off).
  *
  * GTM's `launch funnel events` trigger (`^launch_`) routes these to the `hub-launch-page-tag`
  * GA4 tag, which maps each param below through a Data Layer Variable of the same name. So the
@@ -182,10 +183,13 @@ export class LaunchTracker {
     this.push('launch_enter_machine');
   }
 
-  /** The page is going away. Reported unless the visitor made it into the machine. */
+  /**
+   * The page is going away. Reported unless the visitor made it into the machine, or the launch
+   * already failed: that visitor was not lost to the wait, the failure event already counts them.
+   */
   abandon(): void {
     // Once per page: a bfcache restore followed by a second hide must not count twice.
-    if (this.stage === 'entered' || this.abandonReported) return;
+    if (this.stage === 'entered' || this.stage === 'failed' || this.abandonReported) return;
     this.abandonReported = true;
     const step = this.currentStep;
     this.push(

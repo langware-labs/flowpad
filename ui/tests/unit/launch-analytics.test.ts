@@ -126,6 +126,21 @@ describe('LaunchTracker', () => {
     expect(launchPushes().filter((p) => p.event === 'launch_abandon')).toHaveLength(1);
   });
 
+  it('leaving after a failure is not an abandon: the failure already counts the visitor', () => {
+    const setupFailed = tracker();
+    setupFailed.setupStart();
+    setupFailed.step('clone', 4, 'started');
+    setupFailed.setupError();
+    setupFailed.abandon();
+
+    const badLink = tracker();
+    badLink.view(true);
+    badLink.agentError('unavailable');
+    badLink.abandon();
+
+    expect(launchPushes().some((p) => p.event === 'launch_abandon')).toBe(false);
+  });
+
   it('a failed setup names the step it failed in', () => {
     const t = tracker();
     t.setupStart();
