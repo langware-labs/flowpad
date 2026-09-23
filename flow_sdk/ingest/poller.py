@@ -203,12 +203,14 @@ async def dispatch_due_sources(
     *,
     now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     spawn: Optional[Callable] = None,
+    only: Optional[set[str]] = None,
 ) -> list[str]:
     """Select due sources and hand each to a background task.
 
     Returns the ids dispatched — for tests and for the log line. ``now_fn`` and
     ``spawn`` are injected so this is testable without sleeping or racing a
-    real event loop.
+    real event loop. ``only`` narrows it to those sources: a deployment's process
+    beats for the channels it answers, and for nothing else.
     """
     now = now_fn()
     spawn = spawn or asyncio.ensure_future
@@ -223,7 +225,7 @@ async def dispatch_due_sources(
         logger.debug("[ingest] could not list data sources", exc_info=True)
         return dispatched
 
-    due = [s for s in sources if s.id not in _inflight and s.is_due(now)]
+    due = [s for s in sources if s.id not in _inflight and s.is_due(now) and (only is None or str(s.id) in only)]
     held = await _held_by_deployments() if due else set()
     for source in due:
         if str(source.id) in held:

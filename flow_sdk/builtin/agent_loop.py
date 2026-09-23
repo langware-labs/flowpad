@@ -11,6 +11,9 @@ running:
   end of the deployment.
 * **It ends when the deployment does**: deleted, no longer ``serving``, or its agent disabled there.
   SIGTERM ends it between turns.
+* **It polls what it answers.** The app polls none of these channels while this process runs
+  (``agent_serve.polled_by_a_deployment``), so the heartbeat for them beats here, every
+  ``RECHECK_SECONDS``, each at its own interval; the loop's attention arms a driver's fast lane.
 
 The app's ``AgentServer`` starts this process and starts it again if it dies.
 """
@@ -73,8 +76,10 @@ async def _serve_until_changed(deployment_id: str, state: _State, stop: asyncio.
     """One generation of the loop: :func:`serve` over *state*'s channels until *stop*, a change to
     what it serves, or the loop failing (logged; the caller starts the next generation)."""
     from flow_sdk.builtin.agent_serve import hold_positions, serve, stop_serving  # noqa: PLC0415
+    from flow_sdk.ingest.poller import dispatch_due_sources  # noqa: PLC0415
 
     await hold_positions(state.deployment, state.sources)
+    own = {str(s.id) for s in state.sources}
     logger.info("deployment %s: %s answers %d channel(s)", deployment_id, state.agent.name or state.agent.id,
                 len(state.sources))
     stopping = asyncio.create_task(stop.wait())
@@ -82,6 +87,7 @@ async def _serve_until_changed(deployment_id: str, state: _State, stop: asyncio.
             if state.sources else None)
     try:
         while not stop.is_set():
+            await dispatch_due_sources(only=own)
             done, _ = await asyncio.wait({stopping, *([loop] if loop else [])}, timeout=RECHECK_SECONDS,
                                          return_when=asyncio.FIRST_COMPLETED)
             if loop is not None and loop in done:

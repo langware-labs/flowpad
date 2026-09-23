@@ -34,11 +34,11 @@ async def _chat(timeout: Optional[int]) -> DataSource:
     return source
 
 
-async def _say(source: DataSource, chat: str, minutes: int, text: str = "hi") -> tuple[str, MessageThread]:
+async def _say(source: DataSource, chat: str, minutes: int, text: str = "hi", *, ours: bool = False) -> tuple[str, MessageThread]:
     item = SourceItem(
         id=str(uuid.uuid4()), data_source_id=source.id, provider="agent", kind="content.message.chat",
-        external_id=f"{chat}/{uuid.uuid4().hex[:8]}", thread_key=chat, body=text,
-        author_external_id="dana", occurred_at=(T0 + timedelta(minutes=minutes)).isoformat(),
+        external_id=f"{chat}/{uuid.uuid4().hex[:8]}", thread_key=chat, body=text, sent_by_us=ours,
+        author_external_id="me" if ours else "dana", occurred_at=(T0 + timedelta(minutes=minutes)).isoformat(),
     )
     await item.save(notify=False)
     _, thread_id = await project_source_item(item, source=source, notify=False, announce=False)
@@ -82,6 +82,17 @@ async def test_a_placed_message_stays_in_its_thread_and_a_backfill_ends_nothing(
 
     assert replayed[1] == first.id, "re-projecting never moves a message into the newer thread"
     assert late.id == after.id
+
+
+@pytest.mark.asyncio
+async def test_a_slow_answer_stays_in_the_thread_it_answers():
+    """The agent's turn took longer than the timeout: its answer still answers THAT thread."""
+    source, chat = await _chat(timeout=600), f"chat-{uuid.uuid4().hex[:6]}"
+
+    _, asked = await _say(source, chat, 0, "what is the code word?")
+    _, answered = await _say(source, chat, 15, "PELICAN", ours=True)
+
+    assert answered.id == asked.id
 
 
 def test_a_changed_timeout_restarts_the_loop_that_holds_the_source():

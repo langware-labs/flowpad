@@ -195,6 +195,35 @@ async def test_the_app_does_not_poll_what_a_running_deployment_polls(mail_db, pr
     assert await polled_by_a_deployment([mine, theirs]) == {str(mine.id)}
 
 
+async def test_a_deployment_process_polls_the_channels_the_app_leaves_to_it(mail_db, processes, monkeypatch):
+    """The app leaves a running deployment's channels to its process — so that process must not
+    count ITSELF as the one holding them, or nobody polls them."""
+    from flow_sdk.builtin.data_source import SourceStatus
+    from flow_sdk.ingest import poller
+
+    running, _started = processes
+    agent = await _agent()
+    deployment = await agent.run_locally()
+    mine = await _channel(agent)
+    mine.status = SourceStatus.ACTIVE.value
+    await mine.save()
+    other = await _channel(await _agent())
+    other.status = SourceStatus.ACTIVE.value
+    await other.save()
+    running[str(deployment.id)] = 1
+    assert await polled_by_a_deployment([mine]) == {str(mine.id)}, "the app leaves it to the process"
+
+    monkeypatch.setenv(deployment_process.DEPLOYMENT_ENV, str(deployment.id))  # inside that process
+    assert await polled_by_a_deployment([mine]) == set()
+    spawned = []
+    try:
+        dispatched = await poller.dispatch_due_sources(spawn=lambda poll: spawned.append(poll.close()), only={str(mine.id)})
+    finally:
+        for source_id in (str(mine.id), str(other.id)):
+            poller._inflight.discard(source_id)
+    assert dispatched == [str(mine.id)], "its own channel is polled there, and nothing else"
+
+
 async def test_an_agent_mailbox_is_answered_by_one_deployment_never_two(mail_db):
     """A mailbox with no place of its own is the default deployment's — or the agent's email place's.
     Two processes answering it would mail the outsider twice."""
