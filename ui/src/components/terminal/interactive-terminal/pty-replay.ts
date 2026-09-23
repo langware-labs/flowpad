@@ -56,8 +56,8 @@ export interface ReplayResult {
 export async function fetchPtyStream(shellId: string): Promise<FramedPtyStream | null> {
   try {
     const data = await apiClient.get<FramedPtyStream>(`/shell/${shellId}/pty-stream`);
-    if (!data || !Array.isArray((data as FramedPtyStream).events)) return null;
-    return data as FramedPtyStream;
+    if (!data || !Array.isArray(data.events)) return null;
+    return data;
   } catch {
     return null; // 404 (no stream) or transient failure — caller falls back
   }
@@ -87,6 +87,23 @@ export async function replayPtyStream(stream: FramedPtyStream): Promise<ReplayRe
   const serializeAddon = new SerializeAddon();
   term.loadAddon(serializeAddon);
 
+  // SerializeAddon restores the mouse TRACKING mode (?1003h) but not the
+  // ENCODING (?1006h SGR / ?1016h SGR-pixels). A TUI that asked for both
+  // (Claude Code's fullscreen UI) would come back with tracking on and the
+  // default X10 encoding, and xterm emits X10 reports on `onBinary`, which
+  // nothing forwards to the PTY: every wheel tick and click was dropped.
+  // So watch the program's own mode switches through the parser (exact across
+  // split frames and `?1003;1006h` lists) and re-apply the last one.
+  let mouseEncoding = '';
+  const trackEncoding = (set: boolean) => (params: (number | number[])[]) => {
+    for (const p of params) {
+      if (p === 1006 || p === 1016) mouseEncoding = set ? `\x1b[?${p}h` : '';
+    }
+    return false; // observe only; xterm still applies the mode
+  };
+  term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, trackEncoding(true));
+  term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, trackEncoding(false));
+
   const decoder = new TextDecoder('utf-8', { fatal: false });
   let lastSeq = 0;
   let flush: Promise<void> = Promise.resolve();
@@ -103,7 +120,7 @@ export async function replayPtyStream(stream: FramedPtyStream): Promise<ReplayRe
   let pendingOutput: string[] = [];
   const flushPendingOutput = () => {
     if (pendingOutput.length) {
-      write(pendingOutput.join(''));
+      void write(pendingOutput.join('')); // awaited via `flush`
       pendingOutput = [];
     }
   };
@@ -124,7 +141,7 @@ export async function replayPtyStream(stream: FramedPtyStream): Promise<ReplayRe
     }
     flushPendingOutput();
     await flush;
-    const serialized = serializeAddon.serialize({ scrollback: REPLAY_SCROLLBACK });
+    const serialized = serializeAddon.serialize({ scrollback: REPLAY_SCROLLBACK }) + mouseEncoding;
     return { serialized, lastSeq, cols, rows };
   } finally {
     term.dispose();
