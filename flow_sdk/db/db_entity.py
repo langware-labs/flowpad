@@ -455,9 +455,22 @@ class DBEntity(DBBaseRecord):
                 op = OperationType.UPDATE
             # from_entity = the save's owner — rides the notification so the
             # unified-bus adapter can stamp containment scope (phase 3).
-            self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid, from_entity=owner)
-            await self.add_entity_op_notification(self_op)
-            self._notify_observers(self_op)
+            # Announced once the write is DURABLE. Inside a caller's transaction
+            # (``Entity.save`` holds one across the row and its record) that is at
+            # its commit — a listener reading the row on the announcement would
+            # otherwise read the snapshot before it. With none, it is now, as
+            # before. A copy rides, so what is announced is what was written.
+            self_op = DataOpMessage(data=self.model_copy(), op=op, to_entity=self.typeid, from_entity=owner)
+
+            async def announce() -> None:
+                await self.add_entity_op_notification(self_op)
+                self._notify_observers(self_op)
+
+            after_commit = getattr(self._db, "after_commit", None)
+            if after_commit is None:
+                await announce()
+            else:
+                await after_commit(announce)
         self._dirty = False
 
         return self
