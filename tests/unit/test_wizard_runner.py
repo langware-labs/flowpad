@@ -309,6 +309,7 @@ async def test_being_shipped_does_not_lend_approval_to_a_callee(tmp_path):
     assert result.exit_code is ExitCode.REFUSED
     assert "jq" in result.detail
     assert result.steps["jq"].exit_code is ExitCode.REFUSED
+    assert type(result.steps["jq"]) is CliResult, "a refused step answers in its callee's own class"
     # A refusal stops the run whatever `on_fail` says.
     assert "after" not in result.steps
     assert seen == []

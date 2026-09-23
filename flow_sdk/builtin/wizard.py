@@ -192,6 +192,7 @@ class Wizard(Entity):
         never who may start one — ``execute_wizard`` holds the wizard's slot.
         """
         from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
+        from flow_sdk.core.wizard.runner import wizard_refused  # noqa: PLC0415
         from flow_sdk.schema.data_spec.returned_value_spec import WizardResult  # noqa: PLC0415
 
         spec = self.spec()
@@ -212,10 +213,7 @@ class Wizard(Entity):
                 "offered, not from here — it needs the caller's request to do anything."
             )
         if not (approved or self.is_system()):
-            return WizardResult.refused(
-                f"{self.name or 'This wizard'} is not shipped with Flowpad. It runs commands "
-                "on this machine, so it must be approved before it can run."
-            )
+            return wizard_refused(self.name)
         return await execute_wizard(
             str(self.id), spec, self.asset_ref or "",
             trusted=True, approved=approved,
