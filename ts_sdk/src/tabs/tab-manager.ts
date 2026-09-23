@@ -97,7 +97,10 @@ export class TabManager {
   private refreshInFlight: Promise<Tab[]> | null = null;
   private refreshRequestedAgain = false;
   private attached = false;
+  /** The initial load has been STARTED (it may still be in flight). */
   private loadedOnce = false;
+  /** A list has been ADOPTED: the snapshot can answer navigation decisions. */
+  private hydrated = false;
   private broadcastHandler: ((message: BroadcastMessage) => void) | null = null;
   private attachedConnection: TabConnection | null = null;
   private pendingIntentKey: string | null = null;
@@ -180,6 +183,7 @@ export class TabManager {
   /** Replace the canonical store with an unscoped `list_all` projection. */
   adoptGlobal(tabs: readonly (Tab | ITab)[]): void {
     this.snapshot = tabs.map(coerceTab);
+    this.hydrated = true;
     // Lifecycle observers must settle before tab observers render this list.
     this.lifecycle.reconcile(this.snapshot);
     this.notify();
@@ -245,6 +249,18 @@ export class TabManager {
     return this.gateway.listAll();
   }
 
+  /**
+   * The global tab list for a navigation decision: the in-memory snapshot once
+   * it has been adopted at least once, a `list_all` round trip only before that.
+   *
+   * The snapshot is kept current by every write that returns a list and by the
+   * `tabs_changed` broadcast, so re-listing on every click bought nothing but a
+   * round trip on the switch path — the one place a switch is felt.
+   */
+  async snapshotOrRefresh(): Promise<readonly Tab[]> {
+    return this.hydrated ? this.snapshot : this.refresh();
+  }
+
   newTab(pointer: string, options?: INewTabOpts): Promise<Tab[]> {
     return this.gateway.newTab(pointer, options);
   }
@@ -282,7 +298,19 @@ export class TabManager {
   }
 
   activate(tabId: string): Promise<void> {
+    this.stampRecencyLocally(tabId);
     return this.gateway.activateById(tabId);
+  }
+
+  /**
+   * `activate` broadcasts no `tabs_changed`, so the snapshot would keep the old
+   * stamp — and recency is what project entry resolves against (read on demand
+   * via `resolveNext`). No `notify()`: that would re-render every tab
+   * subscriber on every switch; the server's next list carries the same stamp.
+   */
+  private stampRecencyLocally(tabId: string): void {
+    const tab = this.snapshot.find((t) => t.id === tabId);
+    if (tab) tab.last_active_at = Date.now();
   }
 
   close(tabId: string): Promise<Tab[]> {
@@ -387,6 +415,7 @@ export class TabManager {
     this.refreshRequestedAgain = false;
     this.attached = false;
     this.loadedOnce = false;
+    this.hydrated = false;
     this.broadcastHandler = null;
     this.attachedConnection = null;
     this.pendingIntentKey = null;
