@@ -20,6 +20,11 @@
       "label": "Channel",
       "placeholder": "{team id}/19:abc...@thread.tacv2",
       "hint": "Pick from the teams you have joined, or type '{team id}/{channel id}'. Both ids are needed: Graph reaches a channel only through its team, and a channel id is not unique across teams. Watching several channels? Add one source per channel."
+    },
+    "base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "API base URL"
     }
   }
 }

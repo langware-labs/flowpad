@@ -103,9 +103,12 @@ class Doubles:
             self.planted.append(("credential", str((saved.json().get("data") or {}).get("typeid") or "")))
         elif auth.connector:
             await self.plant_connector(auth.connector, secrets.get("token", ""))
-        elif auth.env:
+        elif auth.env or auth.secrets:
+            # Both shapes read the row's bound store by name first (``ingest/credentials``): an env var
+            # name, or a secret's key.
+            names = list(auth.env) if auth.env else list(auth.secrets)
             path = self.tmp / f"{provider}.env"
-            path.write_text("".join(f"{name}={secrets.get(name, '')}\n" for name in auth.env), encoding="utf-8")
+            path.write_text("".join(f"{name}={secrets.get(name, '')}\n" for name in names), encoding="utf-8")
             self.stores[provider] = {"type": "env_file", "config": {"env_file_path": str(path)}}
 
     async def plant_connector(self, provider: str, token: str) -> None:

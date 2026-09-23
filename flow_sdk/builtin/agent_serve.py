@@ -374,7 +374,7 @@ def is_own_outgoing(source, author: str) -> bool:
 # ── where a source is answered ──────────────────────────────────────────────
 
 
-async def answers_here(source, deployment) -> bool:
+async def answers_here(source, deployment, agent=None) -> bool:
     """Whether *deployment* (a placement on this machine) is the one answering *source*.
 
     ``answer_place`` names it. A mailbox still follows the agent's ``email_place``
@@ -385,9 +385,10 @@ async def answers_here(source, deployment) -> bool:
     if place:
         return place == str(deployment.id)
     if str(getattr(source, "provider", "") or "") == "cloud_email":
-        from flow_sdk.builtin.agent_places import email_answers_here  # noqa: PLC0415
-
-        return await email_answers_here(str(getattr(deployment, "parent_type_id", "")).partition("-")[2])
+        # A mailbox that carries no place of its own follows the agent's ``email_place``.
+        agent = agent if agent is not None else await deployment.agent()
+        if agent is not None and agent.email_place:
+            return str(agent.email_place) == str(deployment.id)
     # Several local deployments of one agent answer only what names them; the rest is the default one's.
     return not str(getattr(deployment, "slot", "") or "")
 
@@ -479,7 +480,7 @@ async def answered_sources(agent, deployment) -> list:
     from flow_sdk.builtin.agent_calls import answers_live  # noqa: PLC0415
 
     # A channel people talk to live is answered by the call (``agent_calls``), never by the drain.
-    return [s for s in await agent.channels() if not answers_live(s) and await answers_here(s, deployment)]
+    return [s for s in await agent.channels() if not answers_live(s) and await answers_here(s, deployment, agent)]
 
 
 async def running_deployments() -> list:

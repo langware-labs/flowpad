@@ -139,6 +139,8 @@ async def _attention_loop() -> None:
                     held = await _held_by_deployments()
                 source = await DataSource.get_by_id(source_id)
                 refused = source is None or source.poll_refusal() or source_id in held
+                if source_id in held:
+                    logger.info("[ingest] %s is held by a running deployment — polled there, not here", source_id)
             except Exception:  # noqa: BLE001 — classified as "drop the lease"
                 logger.exception("[ingest] attention lane: dropping %s", source_id)
                 refused = True
@@ -225,6 +227,7 @@ async def dispatch_due_sources(
     held = await _held_by_deployments() if due else set()
     for source in due:
         if str(source.id) in held:
+            logger.debug("[ingest] %s is held by a running deployment — polled there, not here", source.id)
             continue
         # Dispatch even when a capability is missing: `sync_source` records it
         # as `capability_unavailable` / config_error, which is what surfaces the

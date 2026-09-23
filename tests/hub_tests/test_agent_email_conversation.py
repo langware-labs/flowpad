@@ -240,7 +240,6 @@ async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
         name=f"Mailbot {mailboxes['agent_id'][:8]}",
         worker_type="claude",
         system_prompt="You answer email. Reply in one short sentence.",
-        email_allowed_senders=allow,
     )
     await agent.save()
 
@@ -250,6 +249,8 @@ async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
         channel="email",
         config={"agent_id": mailboxes["agent_id"], "address": mailboxes["agent_address"]},
         account_key=mailboxes["agent_address"],
+        # The allowlist the gate reads — what ``AgentMailbox._cache_policy`` mirrors from the hub.
+        inbound_allowed_senders=list(allow),
     )
     await source.save()
     await _served(server, agent, source)

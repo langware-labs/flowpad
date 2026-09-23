@@ -454,10 +454,17 @@ class Deployment(Entity):
         return not self.remote and self.is_local and kind_matches(KIND_AGENT, self.kind)
 
     async def _set_serving(self, serving: bool) -> bool:
-        """Stop (or start) this deployment's process: the app's supervisor acts on ``serving``."""
+        """Stop (or start) this deployment's process. Stopping ends it now — and, not serving, the
+        app's supervisor will not start it again; starting is the supervisor's (``serving``)."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+
         self.serving = serving
         self.status = self.status.model_copy(update={"provider_state": "running" if serving else "paused"})
         await self.save()
+        if not serving and deployment_process.alive(self):
+            await asyncio.to_thread(deployment_process.stop, self)
         return True
 
     async def _set_node_state(self, verb: str, provider_state: str) -> bool:

@@ -193,3 +193,24 @@ async def test_the_app_does_not_poll_what_a_running_deployment_polls(mail_db, pr
     assert await polled_by_a_deployment([mine, theirs]) == set(), "no process alive: the app polls both"
     running[str(deployment.id)] = 1
     assert await polled_by_a_deployment([mine, theirs]) == {str(mine.id)}
+
+
+async def test_an_agent_mailbox_is_answered_by_one_deployment_never_two(mail_db):
+    """A mailbox with no place of its own is the default deployment's — or the agent's email place's.
+    Two processes answering it would mail the outsider twice."""
+    agent = await _agent()
+    first = await agent.run_locally()
+    second = await agent.run_locally()
+    mailbox = DataSource(name="mailbox", provider="cloud_email", channel="email", owner=agent.typeid,
+                         config={"agent_id": agent.id, "address": f"{agent.name}@agentmail.to"},
+                         account_key=f"{agent.name}@agentmail.to")
+    await mailbox.save()
+
+    async def answering():
+        return [d.slot for d in (first, second) if str(mailbox.id) in _ids(await answered_sources(agent, d))]
+
+    assert await answering() == [""], "the default deployment, alone"
+
+    agent.email_place = second.id
+    await agent.save()
+    assert await answering() == ["2"], "the agent's email place, alone"

@@ -69,8 +69,10 @@ class HttpChatSource(Source):
         return self.origin(thread_key, "threads")
 
     def _me(self) -> UserProfile:
-        return UserProfile(origin=CloudOrigin(kind=self.provider, namespace=CALLERS, key=self.binding.account_key),
-                           name=self.binding.name or None)
+        """Who the channel's own messages are from: the deployment (``deployment:<id>``, the row's
+        account key and so its self-address)."""
+        me = self.binding.account_key or f"deployment:{self.config.get('deployment_id') or ''}"
+        return UserProfile(origin=CloudOrigin(kind=self.provider, namespace=CALLERS, key=me), name=self.binding.name or None)
 
     # ── inbound: the endpoint's request ─────────────────────────────────────
     def events_from_request(self, payload: Any) -> list[DataSourceEvent]:
@@ -100,7 +102,10 @@ class HttpChatSource(Source):
     # ── outbound: the reply, recorded ───────────────────────────────────────
     def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
         if not thread_key:
-            raise ValueError("a chat reply needs the thread it answers")
+            # Said to a caller without a conversation named: it starts one, theirs.
+            if not str(to or "").strip():
+                raise ValueError("a chat message needs the caller it is to, or the thread it continues")
+            thread_key = thread_key_of(str(to).strip(), f"c-{secrets.token_hex(8)}")
         answered = self.origin(in_reply_to, "threads", thread_key) if in_reply_to else None
         return MessageData(text=text, conversation=self.thread(thread_key)), answered
 
