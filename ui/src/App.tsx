@@ -22,6 +22,7 @@ import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
+import { SessionTakenOverOverlay } from '@src/components/session-taken-over-overlay';
 import { SnifferActiveNotice } from '@src/components/hooks/SnifferActiveNotice';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { RagRootsProvider } from '@src/hooks/use-rag-roots';
@@ -160,6 +161,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
         <MigrateLegacyKeychain />
+        <SessionTakenOverOverlay />
         <SnifferActiveNotice />
         <HarnessCapabilitiesProvider>
           <SnifferProvider>

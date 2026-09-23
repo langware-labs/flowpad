@@ -64,13 +64,13 @@ def _callback(client, **params):
 def test_different_user_triggers_purge_before_finalize(client, finalize_login, clear_user_data):
     """user-1 is signed in; user-2's key arrives — purge user-1 first, then finalize as user-2."""
     calls: list[str] = []
-    clear_user_data.side_effect = lambda: calls.append("purge")
+    clear_user_data.side_effect = lambda *_a, **_k: calls.append("purge")
     finalize_login.side_effect = lambda *_a, **_k: calls.append("finalize")
 
     with _validate_returns("user-2"), _current_user("user-1"):
         _callback(client)
 
-    clear_user_data.assert_awaited_once()
+    clear_user_data.assert_awaited_once_with(reason="switched_out")
     finalize_login.assert_awaited_once()
     assert calls == ["purge", "finalize"], "the outgoing user must be cleared before the new login finalizes"
 

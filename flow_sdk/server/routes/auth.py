@@ -225,7 +225,7 @@ async def login_callback(
                 current_user.get("id"),
                 incoming_id,
             )
-            await clear_user_data()
+            await clear_user_data(reason="switched_out")
 
         await _finalize_login(
             LoginData(
