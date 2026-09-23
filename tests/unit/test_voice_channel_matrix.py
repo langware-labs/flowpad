@@ -199,3 +199,22 @@ async def test_a_caller_the_line_does_not_admit_is_refused_before_anything_is_sa
         finally:
             await source.delete()
             await agent.delete()
+
+
+@pytest.mark.parametrize("provider", VOICE_CHANNELS)
+async def test_every_call_is_its_own_thread_even_with_the_same_person(provider, monkeypatch, tmp_path):
+    """A call is ONE conversation, start to end — and a second call with the same person is another."""
+    stub_the_turn(monkeypatch, uuid.uuid4().hex[:8])
+    async with double_for(provider, tmp_path) as double:
+        agent, source = await make_agent_source(provider, double, monkeypatch)
+        try:
+            driver = DataDriver.loaded(provider)
+            engine = TurnEngine(agent, await agent.local_deployment())
+            first = await answer_call(engine, source, await double.ring(driver, source))
+            second = await answer_call(engine, source, await double.ring(driver, source))
+            assert first and second and first != second, "two calls, two threads"
+            for conversation_id in (first, second):
+                texts = [m.text for m in await FlowMessage.get_all({"conversation_id": conversation_id})]
+                assert texts.count(CALL_ENDED) == 1, texts
+        finally:
+            await agent.delete()

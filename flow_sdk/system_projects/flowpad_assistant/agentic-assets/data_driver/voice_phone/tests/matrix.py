@@ -59,8 +59,10 @@ class Double:
         self.dials.append({"path": path, **dict(parse_qsl(str(headers.get("_body", ""))))})
         return 201, json.dumps({"sid": f"CA{len(self.dials):032d}", "status": "queued"}).encode(), {"Content-Type": "application/json"}
 
-    def rings_back(self, call_id: str = "rtc_phone1") -> dict:
-        """OpenAI's signed ``realtime.call.incoming`` for the dialled call: our number calling out."""
+    def rings_back(self, call_id: str = "") -> dict:
+        """OpenAI's signed ``realtime.call.incoming`` for the dialled call: our number calling out.
+        Each call its own id, as OpenAI mints one per call (``rtc_phone<n>``, n = the dial it answers)."""
+        call_id = call_id or f"rtc_phone{len(self.dials)}"
         # The leg carries the X- params of the TwiML the dial handed Twilio — our dial's token among them.
         twiml = unescape(self.dials[-1].get("Twiml", "")) if self.dials else ""
         sip_params = dict(parse_qsl(twiml.split("?", 1)[1].split("<", 1)[0])) if "?" in twiml else {}

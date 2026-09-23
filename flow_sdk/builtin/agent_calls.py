@@ -5,7 +5,8 @@ so its shape differs, but it lands in exactly the same places:
 
 * **Every sentence is a message.** What the caller said (``heard``) and what the voice said
   (``said``) go through the one ingestion chokepoint as ``VoiceTurnData`` and are projected into the
-  caller's thread — a call reads in the stream inbox like any chat, on any voice channel.
+  call's own thread — one conversation per call, start to end — which reads in the stream inbox like
+  any chat, on any voice channel.
 * **The agent is the brain.** When the voice asks (``delegate``), the request runs as an ordinary
   :class:`~flow_sdk.builtin.agent_serve.Turn` in that conversation's session — the same process and
   memory that answers the caller on every other channel — and the answer is handed back to be spoken.
@@ -181,7 +182,7 @@ async def _delegate(engine, session, turn, ask_id: str) -> None:
 
 
 async def record(driver, source, call: IncomingCall, event: CallEvent) -> Optional[str]:
-    """One sentence as a message in the caller's thread; answers the conversation id it was placed in."""
+    """One sentence as a message in the call's thread; answers the conversation id it was placed in."""
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.sources.values.event import DataSourceEvent, EventKind  # noqa: PLC0415
     from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
@@ -202,7 +203,7 @@ async def record(driver, source, call: IncomingCall, event: CallEvent) -> Option
 
 
 def sentence_item(source, driver, call: IncomingCall, event: CallEvent):
-    """A call sentence as the contract's item: the caller's thread, keyed by the call and the sentence."""
+    """A call sentence as the contract's item: the call's own thread, keyed by the call and the sentence."""
     from flow_sdk.sources.values.call import VoiceTurnData  # noqa: PLC0415
     from flow_sdk.sources.values.items import FileItem, MessageItem  # noqa: PLC0415
     from flow_sdk.sources.voice import person_profile, sentence_origin, thread_origin  # noqa: PLC0415
@@ -221,7 +222,7 @@ def sentence_item(source, driver, call: IncomingCall, event: CallEvent):
         data=VoiceTurnData(
             text=event.text,
             call_id=call.call_id,
-            conversation=thread_origin(kind, account, call.caller),
+            conversation=thread_origin(kind, account, call.caller, call.call_id),
             sender=person_profile(kind, account, address, name),
             sent_at=datetime.now(timezone.utc),
             attachments=attachments,

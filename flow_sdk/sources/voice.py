@@ -8,8 +8,10 @@ any of them is the channel ``voice``, a thread per person, one message per sente
 
 * **Channel.** ``origin_kind = "voice"`` for every voice driver, the way two WhatsApp transports
   share ``whatsapp`` — a person's calls read as one kind of conversation whichever way they came in.
-* **Addressing.** The person IS the thread: ``<account>/calls`` scopes it, their address keys it;
-  a sentence lives in ``<account>/calls/<person>``. Replies quote nothing — speech has no quote.
+* **Addressing.** A call IS the thread: ``<account>/calls`` scopes it and ``<person>/<call id>``
+  keys it, so each call is one conversation, start to end. A voice message outside any call (the
+  note a dial leaves before the call exists) is the person's own thread, keyed by their address.
+  A sentence lives in ``<account>/calls/<person>``. Replies quote nothing — speech has no quote.
 * **The key.** Calls run on ``OPENAI_API_KEY`` from the source's credential (``auth.env``: the
   project's store, then the process environment), else the key this machine stored for OpenAI.
 """
@@ -30,9 +32,10 @@ CALLS = "calls"
 PEOPLE = "people"
 
 
-def thread_origin(kind: str, account: str, person: str) -> CloudOrigin:
-    """A person's thread on a voice source: ``(voice, <account>/calls, <person>)``."""
-    return CloudOrigin(kind=kind, namespace=f"{account}/{CALLS}", key=person)
+def thread_origin(kind: str, account: str, person: str, call_id: str = "") -> CloudOrigin:
+    """A thread on a voice source: one call, ``(voice, <account>/calls, <person>/<call id>)`` — or,
+    with no call, the person's own, ``(voice, <account>/calls, <person>)``."""
+    return CloudOrigin(kind=kind, namespace=f"{account}/{CALLS}", key=f"{person}/{call_id}" if call_id else person)
 
 
 def sentence_origin(kind: str, account: str, person: str, key: str) -> CloudOrigin:
