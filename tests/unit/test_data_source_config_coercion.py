@@ -1,5 +1,6 @@
 """``DataSource.save`` shapes ``config`` by the driver's ``Config`` — a URL sent as a string where a
 list is declared becomes a one-element list, so the driver never iterates the characters of a URL."""
+
 from __future__ import annotations
 
 from typing import Annotated
@@ -12,7 +13,7 @@ from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
 from tests.unit._ingest_helpers import make_data_source
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]
+pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10), pytest.mark.usefixtures("fresh_user_scope")]
 
 
 class _ProbeConfig(SourceConfig):
@@ -23,7 +24,9 @@ class _ProbeConfig(SourceConfig):
 
 async def test_list_and_number_fields_are_coerced_on_save():
     _driver("probe_provider", _ProbeConfig)
-    src = make_data_source(provider="probe_provider", config={"feed_urls": "http://a/x\nhttp://b/y", "tags": "a, b", "depth": "3"})
+    src = make_data_source(
+        provider="probe_provider", config={"feed_urls": "http://a/x\nhttp://b/y", "tags": "a, b", "depth": "3"}
+    )
     await src.save(notify=False)
     assert src.config["feed_urls"] == ["http://a/x", "http://b/y"]
     assert src.config["tags"] == ["a", "b"] and src.config["depth"] == 3
@@ -97,7 +100,9 @@ async def test_a_value_off_the_pattern_is_refused_per_entry_after_coercion():
     the whole blob — the form's rule (`source-form.ts`), applied here."""
     _driver("regex_provider", _RegexConfig)
     with pytest.raises(ValueError, match=r"config.feed_urls is not valid: ftp://b/y"):
-        await make_data_source(provider="regex_provider", config={"feed_urls": "http://a/x\nftp://b/y"}).save(notify=False)
+        await make_data_source(provider="regex_provider", config={"feed_urls": "http://a/x\nftp://b/y"}).save(
+            notify=False
+        )
     src = make_data_source(provider="regex_provider", config={"feed_urls": "http://a/x"})
     await src.save(notify=False)
     assert src.config["feed_urls"] == ["http://a/x"]
@@ -111,4 +116,4 @@ async def test_an_existing_row_is_not_re_validated_on_re_save(monkeypatch):
     await src.save(notify=False)
     _driver("lenient_provider", _StrictConfig)  # a stricter rule, after the fact
     src.config = {"root": "/tmp/x"}
-    await src.save(notify=False)   # no raise
+    await src.save(notify=False)  # no raise

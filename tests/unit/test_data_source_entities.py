@@ -3,6 +3,7 @@
 These are the pieces the poller depends on being correct before it does any
 network I/O at all, so they are tested with an injected clock and no sleeping.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -15,9 +16,16 @@ from flow_sdk.ingest.health import SourceError, SourceHealth, classify, worst_of
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
+pytestmark = pytest.mark.usefixtures("fresh_user_scope")
+
 
 def _source(**kw) -> DataSource:
-    base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name=f"Test feed {uuid.uuid4().hex[:8]}", config={"feed_url": "http://127.0.0.1:1/feed"})
+    base = dict(
+        provider="rss",
+        account_key=f"acct-{uuid.uuid4().hex[:8]}",
+        name=f"Test feed {uuid.uuid4().hex[:8]}",
+        config={"feed_url": "http://127.0.0.1:1/feed"},
+    )
     base.update(kw)
     return DataSource(**base)
 
@@ -87,10 +95,7 @@ def test_health_rollup_is_worst_of():
     assert worst_of([SourceHealth.OK, SourceHealth.OK]) is SourceHealth.OK
     assert worst_of([SourceHealth.OK, SourceHealth.TRANSIENT_ERROR]) is SourceHealth.TRANSIENT_ERROR
     # A config error outranks a transient one — it is the state needing a person.
-    assert (
-        worst_of([SourceHealth.TRANSIENT_ERROR, SourceHealth.CONFIG_ERROR])
-        is SourceHealth.CONFIG_ERROR
-    )
+    assert worst_of([SourceHealth.TRANSIENT_ERROR, SourceHealth.CONFIG_ERROR]) is SourceHealth.CONFIG_ERROR
     assert worst_of([SourceHealth.OK, SourceHealth.NEVER_SYNCED]) is SourceHealth.NEVER_SYNCED
 
 
@@ -123,9 +128,7 @@ def test_status_classification_has_one_table(status, expected, code):
 )
 def test_unclassified_exceptions_are_transient(exc):
     health, _code, _detail = classify(exc)
-    assert health is SourceHealth.TRANSIENT_ERROR, (
-        "an unrecognised failure must not silently stop a working source"
-    )
+    assert health is SourceHealth.TRANSIENT_ERROR, "an unrecognised failure must not silently stop a working source"
 
 
 def test_source_error_carries_its_own_classification():
