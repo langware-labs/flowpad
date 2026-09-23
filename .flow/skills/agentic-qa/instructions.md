@@ -9,6 +9,17 @@
 
 ## Cycle-Level Defaults
 
+- **Run the cycle from a frozen detached worktree.** Peer sessions edit the main tree while a
+  cycle runs; a source file rewritten mid-run re-imports under a new content hash and the run is
+  voided ("kind already bound", 2026-09-23 run#1).
+- **`env -u LOCAL_SERVER_PORT` for every command.** An inherited `LOCAL_SERVER_PORT` is the user's
+  PROD instance. Same class: nvm's bin is not on PATH in a non-interactive shell (CLI rows then
+  skip as "not installed"), and a copied `.env.local` points `FLOWPAD_HUB_URL` at the PROD hub —
+  which `flow instance reset` (full) then relaunches with.
+- **Pin ALICE/BOB/`FLOWPAD_CLOUD_USER_*` to fresh instance accounts.** Long-lived ones carry
+  leaked state (alice@local.test held 2313 hub conversations on 2026-09-23).
+- **One instance-heavy phase at a time, and at most one debug agent alongside it.** Overlapping
+  phases plus agent sub-instances drove load to 182 and crash-reset the Mac (2026-09-23).
 - **Phase 3 (`tests/long_tests/`): always pass `--ignore=tests/long_tests/stress_matrix/`.** The `stress_matrix/` subdir requires `ANTHROPIC_API_KEY` AND Docker; its session-scoped conftest calls `pytest.exit("INVALID_API_KEY: ...", returncode=2)` on missing key, which aborts the ENTIRE Phase 3 collection before any test runs. Stress matrix is opt-in only (real API credits, real containers) — never include it in a routine QA cycle unless the user explicitly requests it (e.g. "run stress matrix" / "include stress matrix"). User confirmed default-off on 2026-05-24.
 
 ## Testing Environment
@@ -972,13 +983,11 @@ Any Playwright test whose duration exceeds 60s is reported as **timeout** — a 
   the agent then runs `find /` and blows the budget. Give a cwd-independent command instead.
 
 ## Learnings — 2026-09-23 full cycle (halted by circuit breaker)
-- Run from a frozen detached worktree when peer sessions edit the main tree (run#1 voided: a driver source.py rewritten mid-run → content-hash re-import → "kind already bound").
-- Session env: an inherited LOCAL_SERVER_PORT=9007 is PROD — always `env -u LOCAL_SERVER_PORT`.
-- Session env: nvm's bin is not on PATH, so CLI rows skip as "not installed".
-- Session env: a copied .env.local points FLOWPAD_HUB_URL at the PROD hub, and `flow instance reset` (full) relaunches with it.
-- Hub tiers: pin ALICE/BOB/FLOWPAD_CLOUD_USER_* to fresh instance accounts (alice@local.test holds 2313 leaked hub conversations).
+The standing rules this cycle produced are in **Cycle-Level Defaults** (frozen worktree,
+`env -u LOCAL_SERVER_PORT`, fresh hub accounts, one instance-heavy phase at a time) — that is
+where they execute. What is left here is this cycle's own evidence:
 - Hub tiers: no `-p no:cacheprovider` for tests/hub_tests; vitest hub needs FLOW_INSTANCE ∈ SHARE_INST_1/2.
-- Concurrency: overlapping P10 + P11 + agent sub-instances drove load to 182 and the Mac crash-reset. One instance-heavy phase at a time, ≤1 debug agent then.
+- The circuit breaker fired at load 182 during overlapping P10 + P11; the Mac crash-reset before Phase 11 finished.
 
 ### Testing environment — 2026-09-23
 - Cycle 2026-09-22/23: worktree ../flowpad-qa-2026-09-23 @bfe66853e (Python 3.11 venv); owned instances qa-cycle :6005/:5005, qa-react-9 :6010, qa-l1-7 :6011, qa-l2-8 :6012; local hub :8093 (../test_flowpad/FlowPad @aec5d163c, AGENT_MAILBOX disabled, no dummyauth); host 14 cores, load 5–38 typical, 182 peak before crash. Results: ui/tests/manual_regression/_results/2026-09-22T20-52-28Z/.
