@@ -208,6 +208,45 @@ describe('AgenticProcess.output terminal delivery', () => {
   });
 });
 
+describe('AgenticProcess.executeInstruction reads the turn\'s answer', () => {
+  it('a turn the backend could not take throws instead of waiting for a completion that never comes', async () => {
+    // `execute` answers a turn it could not take as a 200 carrying NOT_YET (only
+    // `busy` is a 409). Reading only a THROWN call as "not taken" made a sync
+    // execute wait forever for a turn that was never started.
+    const process = new WireUpdateProcess({
+      id: '00000000-0000-4000-8000-0000000000f1',
+      pty_mode: true,
+      busy: false,
+      worker_status: WorkerStatus.INITIALIZING,
+    });
+    const callAction = vi
+      .spyOn(dataManager, 'callAction')
+      .mockResolvedValue({ exit_code: 1, ran: false, detail: 'the worker could not start' } as never);
+    try {
+      await expect(process.executeInstruction('go', { sync: true })).rejects.toThrow('the worker could not start');
+    } finally {
+      callAction.mockRestore();
+    }
+  });
+
+  it('an accepted turn proceeds as before', async () => {
+    const process = new WireUpdateProcess({
+      id: '00000000-0000-4000-8000-0000000000f2',
+      pty_mode: true,
+      busy: false,
+      worker_status: WorkerStatus.INITIALIZING,
+    });
+    const callAction = vi
+      .spyOn(dataManager, 'callAction')
+      .mockResolvedValue({ exit_code: 0, detail: 'The turn was accepted.' } as never);
+    try {
+      await expect(process.executeInstruction('go', { sync: false })).resolves.toBeUndefined();
+    } finally {
+      callAction.mockRestore();
+    }
+  });
+});
+
 describe('AgenticProcess headless turn settlement (multi-client)', () => {
   it('does not settle a fresh pending turn as error from a statusless op while status is FAILED', () => {
     const process = new WireUpdateProcess({

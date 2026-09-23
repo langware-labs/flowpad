@@ -93,6 +93,16 @@ describe('useWizardRun.join', () => {
     expect(stepStatus(null)).toBe('');
   });
 
+  it('tells apart WHY a step did not finish, from the facts on its answer', () => {
+    // All NOT_YET, and all "failed" until now — a person could not tell a busy
+    // step from a crashed one, or a cancelled question from a timed-out one.
+    expect(stepStatus({ exit_code: NOT_YET, ran: false, busy: true })).toBe('busy');
+    expect(stepStatus({ exit_code: NOT_YET, timed_out: true })).toBe('timed_out');
+    expect(stepStatus({ exit_code: NOT_YET, ran: true, cancelled: true })).toBe('cancelled');
+    expect(stepStatus({ exit_code: NOT_YET, ran: false })).toBe('not_started');
+    expect(stepStatus({ exit_code: NOT_YET, ran: true })).toBe('failed');
+  });
+
   it('keeps answers whose step the document no longer declares', () => {
     const wizard = wizardDouble(ran({ a: { exit_code: OK }, gone: { exit_code: NOT_YET } }));
     const { result } = renderHook(() => useWizardRun(wizard));

@@ -50,6 +50,10 @@ const STEP_STYLE: Record<string, { Icon: typeof Circle; className: string }> = {
   failed: { Icon: TriangleAlert, className: 'text-destructive' },
   refused: { Icon: TriangleAlert, className: 'text-destructive' },
   not_found: { Icon: TriangleAlert, className: 'text-destructive' },
+  busy: { Icon: TriangleAlert, className: 'text-amber-500' },
+  timed_out: { Icon: TriangleAlert, className: 'text-amber-500' },
+  cancelled: { Icon: CircleDashed, className: 'text-muted-foreground' },
+  not_started: { Icon: TriangleAlert, className: 'text-destructive/70' },
   not_reached: { Icon: Circle, className: 'text-muted-foreground/30' },
 };
 

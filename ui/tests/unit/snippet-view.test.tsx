@@ -144,6 +144,10 @@ describe('SnippetView', () => {
   it.each([
     [{ returncode: 0, stdout: 'hi\n', stderr: '', timed_out: false, duration_s: 0.1 }, 'hi', null, /exit 0/],
     [{ returncode: 1, stdout: '', stderr: 'ValueError: boom', timed_out: false, duration_s: 0.1 }, null, 'ValueError: boom', /exit 1/],
+    // The backend writes a sentence for EVERY run that does not succeed — a failed
+    // run is not a stopped one just because it has a detail (the bug: it read so).
+    [{ exit_code: 1, returncode: 1, stdout: '', stderr: 'boom', timed_out: false, duration_s: 0.1, detail: 'The command exited 1.' }, null, 'boom', /exit 1/],
+    [{ exit_code: 4, returncode: null, stdout: '', stderr: 'snippet file not found', timed_out: false, duration_s: 0, detail: 'snippet file not found: /x.py' }, null, 'not found', /snippet file not found/],
     [{ returncode: -9, stdout: 'step 1\n', stderr: '', timed_out: true, duration_s: 2 }, 'step 1', null, /timed out after 30s/],
     [{ returncode: null, stdout: '', stderr: "no runner for '.cobol' files", timed_out: false, duration_s: 0 }, null, 'no runner', /did not run/],
   ])('renders a run result: %#', async (result, stdout, stderr, status) => {
