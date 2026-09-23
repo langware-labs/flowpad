@@ -170,6 +170,8 @@ class AskOp(ExeData):
 
     #: The question put to the person. Falls back to the op's label.
     prompt: str = ""
+    #: The answer is a secret (an API key): it is masked where it is typed and never echoed.
+    secret: bool = False
 
 
 #: Which ``exe_data`` class each subkind carries — the whole dispatch table.

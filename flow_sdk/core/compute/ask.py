@@ -46,11 +46,13 @@ class Question:
     #: That kind opened one level — what a form draws. Computed once, when the
     #: question is raised: it cannot change while the question is open.
     fields: Any = None
+    #: The answer is a secret: whoever draws the field masks it, and nothing echoes it.
+    secret: bool = False
     _future: "asyncio.Future" = field(repr=False, default=None)  # type: ignore[assignment]
 
     def to_payload(self) -> dict:
         """What a UI needs to draw the field. Never the future."""
-        return {"id": self.id, "op": self.op_name, "prompt": self.prompt, "fields": self.fields}
+        return {"id": self.id, "op": self.op_name, "prompt": self.prompt, "fields": self.fields, "secret": self.secret}
 
 
 #: Questions waiting for an answer, by id. Empty between asks: a question is
@@ -59,7 +61,7 @@ class Question:
 _PENDING: "dict[str, Question]" = {}
 
 
-def open_question(op_name: str, prompt: str, shape: Any) -> Question:
+def open_question(op_name: str, prompt: str, shape: Any, *, secret: bool = False) -> Question:
     """Register a question and return it. The caller then awaits ``wait_for``."""
     from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
 
@@ -67,6 +69,7 @@ def open_question(op_name: str, prompt: str, shape: Any) -> Question:
         id=str(uuid.uuid4()), op_name=op_name, prompt=prompt, shape=shape,
         # A kind string alone would render as one unnamed box.
         fields=fields_of_kind(shape) if isinstance(shape, str) else shape,
+        secret=secret,
         _future=asyncio.get_event_loop().create_future(),
     )
     _PENDING[question.id] = question

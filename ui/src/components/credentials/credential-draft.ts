@@ -52,6 +52,10 @@ export interface CredentialDraft {
   description: string;
   iconName: string;
   helpUrl: string;
+  /** The wiki page a person reads; kept as it is on save. */
+  setupWiki: string;
+  /** How an agent obtains and stores the values — required to save a definition. */
+  setup: string;
   scope: CredentialScopeName;
   /** The credential's own store — every environment's, unless `environments` overrides it. */
   store: CredentialValueStore;
@@ -63,6 +67,7 @@ export interface CredentialDraft {
 
 export type DraftProblem =
   | 'title-required'
+  | 'setup-required'
   | 'no-vars'
   | 'bad-env-var'
   | 'duplicate'
@@ -137,6 +142,8 @@ export function customDraft(scope: CredentialScopeName): CredentialDraft {
     description: '',
     iconName: '',
     helpUrl: '',
+    setupWiki: '',
+    setup: '',
     scope,
     store: 'env',
     environments: {},
@@ -154,6 +161,8 @@ export function templateDraft(spec: SecretPack, scope: CredentialScopeName): Cre
     description: spec.description || '',
     iconName: spec.icon_name || '',
     helpUrl: spec.help_url || '',
+    setupWiki: spec.setup_wiki || '',
+    setup: spec.setup || '',
     // A provider key funds every project on this machine: user scope, vault.
     scope: lmProvider ? 'user' : scope,
     store: lmProvider ? 'vault' : spec.value_store === 'vault' ? 'vault' : 'env',
@@ -182,6 +191,8 @@ function fromRow(row: CredentialStatusRow, mode: 'edit' | 'values'): CredentialD
     description: row.description,
     iconName: row.icon_name,
     helpUrl: row.help_url,
+    setupWiki: row.setup_wiki ?? '',
+    setup: row.setup ?? '',
     scope: row.scope,
     store: row.default_value_store ?? row.value_store,
     environments: row.environments ?? {},
@@ -252,6 +263,7 @@ function valueProblem(v: DraftVar, d: CredentialDraft): DraftProblem | null {
 export function validateDraft(d: CredentialDraft, taken: ReadonlySet<string>): DraftProblems {
   const problems: DraftProblems = { form: [], vars: {} };
   if (asksDefinition(d) && !d.title.trim()) problems.form.push('title-required');
+  if (asksDefinition(d) && !d.setup.trim()) problems.form.push('setup-required');
   if (!d.vars.length) problems.form.push('no-vars');
   const seen = new Set<string>();
   for (const v of d.vars) {
@@ -303,6 +315,8 @@ export function toSaveRequest(
       description: d.description.trim(),
       icon_name: d.iconName || undefined,
       help_url: d.helpUrl || undefined,
+      setup_wiki: d.setupWiki || undefined,
+      setup: d.setup.trim(),
       value_store: d.store,
       lm_provider: d.lmProvider || undefined,
       vars,

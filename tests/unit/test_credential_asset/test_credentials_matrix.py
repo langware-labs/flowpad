@@ -29,36 +29,8 @@ from flow_sdk.cli.auth.secrets import get_secrets, read_secret
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
-@pytest.fixture
-def home(folder_db, sod_env, tmp_path, monkeypatch):
-    """User scope rooted at a temp folder instead of the real home."""
-    import flow_sdk.builtin.asset_placement as placement
-    from flow_sdk.assets.placement import Scope
-
-    root = tmp_path / "home"
-    root.mkdir()
-    real = placement.root_for_scope
-
-    def root_for_scope(scope, *, project_mount=None):
-        return root if scope == Scope.USER else real(scope, project_mount=project_mount)
-
-    monkeypatch.setattr(placement, "root_for_scope", root_for_scope)
-    return root
-
-
-@pytest.fixture
-async def project(home, tmp_path):
-    mount = tmp_path / "proj"
-    mount.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=mount, check=True)
-    p = Project(name=str(mount))
-    p.fs_storage_mount_path = str(mount)
-    await p.save()
-    return p
-
-
 def _manifest(name: str, *env_vars: str, **extra) -> dict:
-    return {"name": name, "vars": {v: {"label": v} for v in env_vars}, **extra}
+    return {"name": name, "vars": {v: {"label": v} for v in env_vars}, "setup": f"Store it: `flow credentials set {name} ...`.", **extra}
 
 
 def _env(root: Path) -> dict[str, str]:

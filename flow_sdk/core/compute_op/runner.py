@@ -265,7 +265,10 @@ async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], 
     # The person gets the SHORTEST of: what the op asks for, what the caller
     # allows, and the product default. Nothing here lengthens it.
     timeout = min(spec.exe_data.timeout(), ask_timeout, ASK_TIMEOUT_SECONDS)
-    question = open_question(spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind)
+    question = open_question(
+        spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind,
+        secret=bool(getattr(spec.exe_data, "secret", False)),
+    )
     say(f"{spec.display_label}: waiting for you…")
     await raise_question(question)
     try:

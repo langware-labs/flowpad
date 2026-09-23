@@ -191,7 +191,7 @@ async def test_a_credential_resolves_from_the_owning_agents_project_declaration(
 
     await save_credential(
         scope="project", project_id=str(project.id),
-        manifest={"name": "channel-pack", "vars": {"CHANNEL_API_KEY": {"label": "key"}}},
+        manifest={"name": "channel-pack", "vars": {"CHANNEL_API_KEY": {"label": "key"}}, "setup": "Test pack."},
         values={"CHANNEL_API_KEY": "from-project-env-local"},
     )
     agent = await _agent_in(project)

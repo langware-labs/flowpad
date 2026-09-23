@@ -95,7 +95,7 @@ class Doubles:
                 return
             saved = await self.http.post(f"{CREDENTIALS}/save", json={
                 "scope": "user",
-                "manifest": {"name": auth.credential, "value_store": "vault",
+                "manifest": {"name": auth.credential, "value_store": "vault", "setup": "Planted by the channel doubles.",
                              "vars": {var: {"label": var, "secret": True, "required": True} for var in auth.vars.values()}},
                 "values": values,
             })
