@@ -249,6 +249,9 @@ class DataSource(Entity):
     # ── sync policy ──
     poll_interval_seconds: int = APIField(default=300, ge=MIN_POLL_INTERVAL_SECONDS)
     window_days: int = APIField(default=7, ge=1, description="The 'since last pull' floor")
+    #: A thread quiet this long is over: the next message on it starts a new thread (a new
+    #: conversation), on top of the driver's own split (a chat, a topic, a call). None = never.
+    thread_timeout_seconds: Optional[int] = APIField(default=None, ge=1, description="Seconds of quiet after which a thread ends")
     next_poll_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
     last_synced_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 

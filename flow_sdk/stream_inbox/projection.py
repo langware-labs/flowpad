@@ -36,11 +36,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
 from flow_sdk.stream_inbox._locks import loop_lock, new_registry
+from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +66,10 @@ async def find_thread(channel: str, key: str, owner, data_source_id: str):
     return thread if thread is not None else await MessageThread.find_unclaimed(channel, key, owner)
 
 
-async def resolve_thread(channel: str, key: str, owner, *, data_source_id: str, title: str, conversation_id: str = ""):
+async def resolve_thread(
+    channel: str, key: str, owner, *, data_source_id: str, title: str, conversation_id: str = "",
+    timeout_seconds: Optional[int] = None, at: Optional[datetime] = None,
+):
     """The thread for ``(owner, channel, key)`` read by ``data_source_id`` — found, adopted, or minted.
 
     Resolve-or-create, double-checked: a lookup does not absorb the race a derived id
@@ -81,15 +86,22 @@ async def resolve_thread(channel: str, key: str, owner, *, data_source_id: str, 
     ``conversation_id`` ADOPTS an existing conversation at birth instead of
     minting one — a channel whose threads already exist locally as hub-mirrored
     rows (the help desk) hands it over so both writers converge on one row.
+
+    ``timeout_seconds`` (the source's ``thread_timeout_seconds``) ends a thread that was quiet
+    that long before ``at``: it is closed (``close_thread``) and a new one minted on the same
+    key — a new conversation, on top of the driver's own split (a chat, a topic, a call).
     """
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
     thread = await MessageThread.find_existing(channel, key, owner, data_source_id)
-    if thread is not None:
+    if thread is not None and not await timed_out(thread, timeout_seconds, at):
         return thread
     async with _thread_lock():
         thread = await find_thread(channel, key, owner, data_source_id)
+        if thread is not None and await timed_out(thread, timeout_seconds, at):
+            await close_thread(thread)
+            thread = None
         if thread is not None:
             if not thread.owner or not thread.data_source_id:
                 thread.owner = thread.owner or owner
@@ -115,6 +127,31 @@ async def resolve_thread(channel: str, key: str, owner, *, data_source_id: str, 
         )
         await thread.save(notify=False)
         return thread
+
+
+async def last_message_at(thread_id: str) -> Optional[datetime]:
+    """When the thread's newest message entered it — None for a thread with none."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    rows = await FlowMessage.get_all({"match": {"thread_id": thread_id}, "order_by": {"sent_at": "desc"}, "limit": 1})
+    return iso_to_utc(rows[0].occurred_at) if rows else None
+
+
+async def timed_out(thread, timeout_seconds: Optional[int], at: Optional[datetime]) -> bool:
+    """Whether *thread* was quiet longer than ``timeout_seconds`` before ``at`` (now when None).
+    A message older than the thread's newest (a backfill) never ends it."""
+    if not timeout_seconds:
+        return False
+    last = await last_message_at(str(thread.id))
+    return last is not None and (at or datetime.now(timezone.utc)) - last > timedelta(seconds=timeout_seconds)
+
+
+async def close_thread(thread) -> None:
+    """End *thread*: its key moves aside (``<key>~<thread id>``), so the natural key names the
+    next thread from now on, while the closed one keeps its conversation and messages. A reply
+    addresses the channel through its ``SourceItem.thread_key``, never this row's key."""
+    thread.thread_key = f"{thread.thread_key}~{thread.id}"
+    await thread.save(notify=False)
 
 
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
@@ -257,12 +294,19 @@ async def project_source_item(
     key = thread_key_for(item, subject)
     owner = await owner_of(source)
 
-    thread = await resolve_thread(
-        channel, key, owner,
-        data_source_id=str(source.id),
-        title=subject or _thread_title(item) or key,
-        conversation_id=str(getattr(item, "conversation_id", "") or ""),
-    )
+    # A placed message stays in the thread it was placed in: a re-projection never moves it into
+    # the thread its key names NOW, which after a timeout is a newer one.
+    existing_fm = None if known_unplaced else await _placed_message(item)
+    thread = await _thread_of(existing_fm)
+    if thread is None:
+        thread = await resolve_thread(
+            channel, key, owner,
+            data_source_id=str(source.id),
+            title=subject or _thread_title(item) or key,
+            conversation_id=str(getattr(item, "conversation_id", "") or ""),
+            timeout_seconds=source.thread_timeout_seconds,
+            at=iso_to_utc(item.occurred_at),
+        )
     thread_id = str(thread.id)
     conversation_id = thread.conversation_id
 
@@ -290,7 +334,6 @@ async def project_source_item(
     # reconcile sweep's bulk proof) skips only the unlocked pre-check —
     # inside the lock the row is always re-asked, because any proof taken
     # before the lock is stale by definition.
-    existing_fm = None if known_unplaced else await _placed_message(item)
     if existing_fm is None:
         async with _thread_lock():
             existing_fm = await _placed_message(item)
@@ -352,6 +395,14 @@ def _envelope_of(item, source):
     return MessageEnvelope(
         subject=getattr(data, "subject", None), sender=data.sender, recipients=data.recipients, sent_at=data.sent_at
     )
+
+
+async def _thread_of(message):
+    """The thread a placed message is in, or None (not placed, or placed before threads)."""
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+    thread_id = str(getattr(message, "thread_id", "") or "") if message is not None else ""
+    return await MessageThread.get_one({"id": thread_id}) if thread_id else None
 
 
 async def _placed_message(item):

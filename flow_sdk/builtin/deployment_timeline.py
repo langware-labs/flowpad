@@ -20,7 +20,7 @@ timeline moved with a ``deployment.timeline`` tag (:func:`announce`); a client r
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from flow_sdk.schema.data_spec.deployment_timeline_spec import (
@@ -182,7 +182,9 @@ async def timeline(
     )
 
 
-def _status(conversation_id: str, channel: str, process, events: list[TimelineEvent], live: set[str]) -> str:
+def _status(
+    conversation_id: str, channel: str, process, events: list[TimelineEvent], live: set[str], timeout: Optional[int] = None
+) -> str:
     from flow_sdk.builtin.agent_calls import CALL_ENDED  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy  # noqa: PLC0415
 
@@ -193,14 +195,21 @@ def _status(conversation_id: str, channel: str, process, events: list[TimelineEv
     newest_message = next((e for e in events if e.kind in ("message_in", "reply_sent")), None)
     if channel == "voice" and newest_message is not None and newest_message.text == CALL_ENDED:
         return "ended"
+    # Quiet past its source's thread timeout: the next message starts a new thread.
+    if timeout and newest_message is not None and datetime.now(timezone.utc) - newest_message.at > timedelta(seconds=timeout):
+        return "ended"
     return "idle"
 
 
 async def threads(deployment, *, limit: int = 50) -> DeploymentThreads:
     """The conversations *deployment* holds, the most recently active first, each with its status now."""
     from flow_sdk.builtin.agent_calls import active_calls  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
     scan = await _scan(deployment, per_conversation=MESSAGES_PER_THREAD)
+    source_ids = {str(getattr(row, "channel_source_id", "") or "") for row in scan.conversations.values()} - {""}
+    sources = [await DataSource.get_one({"id": source_id}) for source_id in sorted(source_ids)]
+    timeouts = {str(s.id): s.thread_timeout_seconds for s in sources if s is not None}
     live = {str(c.get("conversation_id") or "") for c in active_calls().values()}
     by_thread: dict[str, list[TimelineEvent]] = {}
     for event in scan.events:
@@ -222,7 +231,9 @@ async def threads(deployment, *, limit: int = 50) -> DeploymentThreads:
                 channel=channel,
                 data_source_id=str(getattr(row, "channel_source_id", "") or ""),
                 process_id=str(process.id) if process is not None else "",
-                status=_status(conversation_id, channel, process, events, live),
+                status=_status(
+                    conversation_id, channel, process, events, live, timeouts.get(str(getattr(row, "channel_source_id", "") or ""))
+                ),
                 started_at=events[-1].at if events else _utc(getattr(row, "created_date", None)),
                 last_at=events[0].at if events else _utc(getattr(row, "updated_date", None)),
                 last_text=latest.text if latest is not None else "",

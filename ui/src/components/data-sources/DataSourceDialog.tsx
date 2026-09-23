@@ -87,6 +87,7 @@ function draftFrom(source: DataSource, spec?: DataDriver): SourceDraft {
     enabled: source.status !== 'disabled',
     poll_interval_seconds: source.poll_interval_seconds,
     window_days: source.window_days,
+    thread_timeout_seconds: source.thread_timeout_seconds ?? null,
     fields,
     picked,
   };
@@ -194,6 +195,7 @@ export function DataSourceDialog({
           JSON.stringify(editing.config ?? {}) !== JSON.stringify(config) ||
           editing.poll_interval_seconds !== draft.poll_interval_seconds ||
           editing.window_days !== draft.window_days ||
+          (editing.thread_timeout_seconds ?? null) !== draft.thread_timeout_seconds ||
           JSON.stringify(editing.inbound_allowed_senders ?? []) !== JSON.stringify(allowedSenders);
         editing.name = nextName;
         editing.status = nextStatus;
@@ -201,6 +203,7 @@ export function DataSourceDialog({
         editing.config = config;
         editing.poll_interval_seconds = draft.poll_interval_seconds;
         editing.window_days = draft.window_days;
+        editing.thread_timeout_seconds = draft.thread_timeout_seconds;
         editing.inbound_allowed_senders = allowedSenders;
         await editing.save();
         if (changed) editing.markEdit();
@@ -217,6 +220,7 @@ export function DataSourceDialog({
           status: draft.enabled ? 'new' : 'disabled',
           poll_interval_seconds: draft.poll_interval_seconds,
           window_days: draft.window_days,
+          thread_timeout_seconds: draft.thread_timeout_seconds,
           owner: owner ? owner.toString() : null,
           inbound_allowed_senders: allowedSenders,
         });
@@ -415,6 +419,27 @@ export function DataSourceDialog({
                       value={draft.window_days}
                       onChange={(e) => setDraft((d) => ({ ...d, window_days: Number(e.target.value) }))}
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="ds-thread-timeout">
+                      <Trans>Thread timeout (minutes)</Trans>
+                    </Label>
+                    <Input
+                      id="ds-thread-timeout"
+                      type="number"
+                      min={1}
+                      value={draft.thread_timeout_seconds === null ? '' : draft.thread_timeout_seconds / 60}
+                      placeholder={t`never`}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          thread_timeout_seconds: e.target.value === '' ? null : Math.round(Number(e.target.value) * 60),
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>A thread quiet this long ends; the next message starts a new one. Empty — never.</Trans>
+                    </p>
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="ds-account">
