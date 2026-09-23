@@ -96,10 +96,12 @@ class Double:
             self._server = None
 
     def deliver(self, text: str, *, sender: str, thread=None) -> dict:
-        message = _message(f"in{uuid.uuid4().hex[:10]}", text, created=_created(),
+        """A post from ``sender`` now: a new root (a thread of its own), or with ``thread`` (a root's
+        id) a reply under that root, as Teams threads a channel."""
+        message = _message(f"in{uuid.uuid4().hex[:10]}", text, created=_created(), replyToId=thread or None,
                            **{"from": {"user": {"id": sender, "displayName": f"Person {sender}", "userIdentityType": "aadUser"}}})
-        self.channel.roots.append(message)
-        return {"external_id": message["id"], "thread": message["id"]}
+        (self.channel.replies.setdefault(thread, []) if thread else self.channel.roots).append(message)
+        return {"external_id": message["id"], "thread": thread or message["id"]}
 
     def sent(self) -> list[dict]:
         return list(self.channel.outbox)

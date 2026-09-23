@@ -7,8 +7,10 @@ Double, plants the credentials the backend will resolve them with, and serves a 
     FLOW_INSTANCE=mx-8 FLOWPAD_HUB_URL=http://localhost:8093 uv run python tests/e2e/channel_doubles.py --backend http://localhost:6009 [--channels whatsapp,slack]
 
     GET  /channels                          {provider: {config, fields, secret_store?, sender, agent_only}}
-    POST /deliver   {channel, text, sender?} → the delivery (a webhook delivery is POSTed to the backend here)
+    POST /deliver   {channel, text, sender?, thread?} → the delivery (a webhook delivery is POSTed to the backend here);
+                    ``thread`` (a delivery's own ``thread``) continues that thread where the channel threads
     GET  /sent?channel=<provider>           → [{to, text, thread, external_id}]
+    POST /pair      {channel}                → {paired}: the person's one setup step a Double stands for (a QR scanned)
     POST /agent_mailbox {agent_id, address} → {outsider_address}   (agent email: the outsider that writes in)
     POST /shutdown
 
@@ -43,8 +45,12 @@ CREDENTIALS = "/api/v1/graph/compute_node/@local/credentials"
 
 
 class Doubles:
-    def __init__(self, backend: str, tmp: Path, channels=CHANNELS, *, plant: bool = True) -> None:
+    def __init__(self, backend: str, tmp: Path, channels=CHANNELS, *, plant: bool = True, own_credentials: bool = False) -> None:
         self.backend, self.tmp, self.wanted, self.plants = backend.rstrip("/"), tmp, tuple(channels), plant
+        #: A named credential (``auth.credential``) is the caller's to declare, in its own project:
+        #: ``/channels`` hands over its name and values instead of planting it in the user scope.
+        self.own_credentials = own_credentials
+        self.credentials: dict[str, dict] = {}
         self.doubles: dict[str, Any] = {}
         self.stores: dict[str, dict] = {}
         #: ``(kind, key)`` to undo at shutdown: a credential's typeid, a connector's name.
@@ -86,6 +92,9 @@ class Doubles:
             return
         if auth.credential:
             values = {auth.vars[key]: value for key, value in secrets.items() if key in auth.vars}
+            if self.own_credentials:
+                self.credentials[provider] = {"name": auth.credential, "values": values}
+                return
             status = (await self.http.get(f"{CREDENTIALS}/status")).json().get("data") or {}
             existing = next((c for c in status.get("credentials") or [] if c.get("name") == auth.credential and c.get("scope") == "user"), None)
             if existing is not None:
@@ -149,18 +158,28 @@ class Doubles:
                 entry["secrets"] = dict(getattr(double, "secrets", {}) or {})
             if provider in self.stores:
                 entry["secret_store"] = self.stores[provider]
+            if provider in self.credentials:
+                entry["credential"] = self.credentials[provider]
             if hasattr(double, "handshake"):
                 entry["handshake"] = double.handshake()
             out[provider] = entry
         return out
 
-    def deliver(self, channel: str, text: str, sender: str | None) -> dict:
+    def deliver(self, channel: str, text: str, sender: str | None, thread: str | None = None) -> dict:
         double = self.doubles[channel]
-        delivered = self.run(self.call(double.deliver, text, sender=sender or double.sender))
+        delivered = self.run(self.call(double.deliver, text, sender=sender or double.sender, thread=thread))
         if delivered.get("path"):
             r = self.run(self.http.post(delivered["path"], content=delivered["body"], headers={**delivered["headers"], "Content-Type": "application/json"}))
             delivered = {"external_id": delivered["external_id"], "thread": delivered["thread"], "webhook_status": r.status_code, "webhook_body": r.text[:200]}
         return delivered
+
+    def pair(self, channel: str) -> dict:
+        """The setup step a person does on the provider's side, where the channel has one."""
+        double = self.doubles[channel]
+        if not hasattr(double, "pair"):
+            return {"paired": False}
+        self.run(self.call(double.pair))
+        return {"paired": True}
 
     def sent(self, channel: str) -> list[dict]:
         return self.run(self.call(self.doubles[channel].sent))
@@ -192,7 +211,9 @@ def serve(doubles: Doubles) -> None:
                 if url.path == "/sent":
                     return reply(200, doubles.sent((parse_qs(url.query).get("channel") or [""])[0]))
                 if url.path == "/deliver":
-                    return reply(200, doubles.deliver(body["channel"], body["text"], body.get("sender")))
+                    return reply(200, doubles.deliver(body["channel"], body["text"], body.get("sender"), body.get("thread")))
+                if url.path == "/pair":
+                    return reply(200, doubles.pair(body["channel"]))
                 if url.path == "/agent_mailbox":
                     return reply(200, doubles.agent_mailbox(body["agent_id"], body["address"]))
                 if url.path == "/shutdown":
@@ -212,8 +233,11 @@ def main() -> None:
     parser.add_argument("--backend", required=True)
     parser.add_argument("--channels", default=",".join(CHANNELS), help="a subset of the matrix's channels, comma-separated")
     parser.add_argument("--no-plant", action="store_true", help="do not plant credentials; /channels then carries the values")
+    parser.add_argument("--own-credentials", action="store_true",
+                        help="leave named credentials to the caller's project: /channels carries {credential: {name, values}}")
     args = parser.parse_args()
-    doubles = Doubles(args.backend, Path(tempfile.mkdtemp(prefix="channel-doubles-")), [c for c in args.channels.split(",") if c], plant=not args.no_plant)
+    doubles = Doubles(args.backend, Path(tempfile.mkdtemp(prefix="channel-doubles-")), [c for c in args.channels.split(",") if c], plant=not args.no_plant,
+                      own_credentials=args.own_credentials)
     doubles.start()
     try:
         serve(doubles)
