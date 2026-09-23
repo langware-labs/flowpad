@@ -783,6 +783,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         await self._set_attached(project_id, [*base, env_var] if add else [n for n in base if n != env_var])
         return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id, declared)})
 
+    @action.post(action_name="keep-alive")
+    async def keep_alive_action(self) -> "ApiResponse":
+        """The UI reporting that a person just acted in it.
+
+        Only records the moment; the keep-alive loop (``flow_sdk/compute/keep_alive.py``)
+        decides whether to tell the hub this machine is in use.
+        """
+        from flow_sdk.compute.keep_alive import note_user_activity
+
+        note_user_activity()
+        return ApiSuccessResponse()
+
     @action.post(action_name="attach-secret")
     async def attach_secret(self, project_id: str = "", env_var: str = "") -> "ApiResponse":
         """Let this node see one of a project's declared secrets."""
