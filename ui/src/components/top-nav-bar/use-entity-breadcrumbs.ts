@@ -144,6 +144,7 @@ const CHILD_SECTION_CRUMB_LABELS = {
   mcp: msg`MCP servers`,
   skill: msg`Skills`,
   doc: msg`Docs`,
+  deployment: msg`Deployments`,
 } as const;
 
 /** Basename of an `asset_ref`, trailing separators ignored. */

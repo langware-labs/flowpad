@@ -22,6 +22,18 @@ describe('a nested child view', () => {
     expect(back.targetTypeId?.toString()).toBe(AGENT);
   });
 
+  it('a deployment opens nested in its agent, with the selected event in the URL', () => {
+    const agent = DockPointer.fromUrl(`/dock/assets/editor/agent/typeid/${AGENT}`);
+    const DEP = 'deployment-44444444-4444-4444-8444-444444444444';
+    const page = agent.withChild('deployment', DEP).withOption('run', 'p-1').withOption('t', '2026-09-23T20:20:44Z');
+    const back = DockPointer.fromUrl(page.toUrl());
+    expect(page.toUrl()).toContain(`/typeid/${AGENT}/child/deployment/${DEP}`);
+    expect(back.child).toEqual({ section: 'deployment', typeId: DEP });
+    expect(back.options?.run).toBe('p-1');
+    expect(back.options?.t).toBe('2026-09-23T20:20:44Z');
+    expect(page.tabHash).toBe(agent.tabHash);
+  });
+
   it('stays in the agent’s tab', () => {
     const agent = DockPointer.fromUrl(`/dock/assets/editor/agent/typeid/${AGENT}`);
     expect(agent.withChild('skill', 'skill-11111111-1111-4111-8111-111111111111').tabHash).toBe(agent.tabHash);

@@ -148,7 +148,7 @@ export const CHILD_PARAM = 'child';
 export const CHILD_SECTION_PARAM = 'child_section';
 const CHILD_SEGMENT = 'child';
 /** The sections a child can be opened from. */
-export const CHILD_SECTIONS = ['channel', 'data_source', 'schedule', 'mcp', 'skill', 'doc'] as const;
+export const CHILD_SECTIONS = ['channel', 'data_source', 'schedule', 'mcp', 'skill', 'doc', 'deployment'] as const;
 export type ChildSection = (typeof CHILD_SECTIONS)[number];
 
 function isChildSection(value: string | undefined): value is ChildSection {

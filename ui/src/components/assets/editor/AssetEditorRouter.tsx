@@ -373,7 +373,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           render={(agent) =>
             // A resource opened from the agent's menu replaces its body, in the agent's tab.
             nestedChild ? (
-              <AgentChildView section={nestedChild.section} typeIdString={nestedChild.typeId} />
+              <AgentChildView agent={agent} section={nestedChild.section} typeIdString={nestedChild.typeId} />
             ) : (
               <AssetCollisionShell entity={agent}>
                 <AgentProfileEditor agent={agent} mainRef={mainFileRef} />
