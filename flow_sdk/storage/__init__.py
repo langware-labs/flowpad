@@ -5,7 +5,6 @@ from .local_fs_driver import LocalStorageDriver
 from .entity_storage_service import (
     get_entity_storage,
     get_entity_embedded_storage,
-    get_default_embedded_storage,
 )
 
 __all__ = [
@@ -16,5 +15,4 @@ __all__ = [
     "LocalStorageDriver",
     "get_entity_storage",
     "get_entity_embedded_storage",
-    "get_default_embedded_storage",
 ]
