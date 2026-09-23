@@ -7890,7 +7890,7 @@ msgid "exit {0}"
 msgstr "exit {0}"
 
 #. placeholder {0}: result.returncode
-#. placeholder {1}: result.duration_s.toFixed(2)
+#. placeholder {1}: (result.duration_s ?? 0).toFixed(2)
 #: src/components/code-editor/SnippetView.tsx
 msgid "exit {0} · {1}s"
 msgstr "exit {0} · {1}s"
@@ -19439,7 +19439,7 @@ msgstr "stop hooks"
 msgid "stopped"
 msgstr "stopped"
 
-#. placeholder {0}: result.duration_s.toFixed(2)
+#. placeholder {0}: (result.duration_s ?? 0).toFixed(2)
 #: src/components/code-editor/SnippetView.tsx
 msgid "stopped — killed after {0}s"
 msgstr "stopped — killed after {0}s"
@@ -22073,6 +22073,10 @@ msgstr "Via"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "via hub login"
 msgstr "via hub login"
+
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+msgid "Vibe"
+msgstr "Vibe"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"
