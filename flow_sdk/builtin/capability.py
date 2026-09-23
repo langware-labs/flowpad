@@ -190,35 +190,40 @@ class Capability(Entity):
         cls._seeded_dbs.add(db)
         seeded: list[Capability] = []
         try:
-            for spec in get_default_capability_specs():
-                expected = cls.from_spec(spec)
-                existing = await db.get_by_id(expected.id, cls.get_type())
-                if existing is None:
-                    seeded.append(await expected.save(notify=False))
-                    continue
-                changed = False
-                for field in (
-                    "name",
-                    "kind",
-                    "description",
-                    "icon",
-                    "homepage_url",
-                    "value_type",
-                    "dependent_capability_kinds",
-                    "runnable",
-                    "install_prompt",
-                    # Platform-resolved, so it MUST reconcile: a row seeded on one
-                    # machine (or before the command existed) otherwise keeps a
-                    # command for the wrong OS forever.
-                    "install_command",
-                    "uname",
-                    "system",
-                ):
-                    expected_value = getattr(expected, field)
-                    if getattr(existing, field) != expected_value:
-                        setattr(existing, field, expected_value)
-                        changed = True
-                seeded.append(await existing.save(notify=False) if changed else existing)
+            # One writer transaction for the whole sweep: on a fresh instance it
+            # writes every row, and the first boot index hands the lock over per
+            # acquisition — a save per row made the first request wait a record
+            # per row.
+            async with db.write_transaction():
+                for spec in get_default_capability_specs():
+                    expected = cls.from_spec(spec)
+                    existing = await db.get_by_id(expected.id, cls.get_type())
+                    if existing is None:
+                        seeded.append(await expected.save(notify=False))
+                        continue
+                    changed = False
+                    for field in (
+                        "name",
+                        "kind",
+                        "description",
+                        "icon",
+                        "homepage_url",
+                        "value_type",
+                        "dependent_capability_kinds",
+                        "runnable",
+                        "install_prompt",
+                        # Platform-resolved, so it MUST reconcile: a row seeded on one
+                        # machine (or before the command existed) otherwise keeps a
+                        # command for the wrong OS forever.
+                        "install_command",
+                        "uname",
+                        "system",
+                    ):
+                        expected_value = getattr(expected, field)
+                        if getattr(existing, field) != expected_value:
+                            setattr(existing, field, expected_value)
+                            changed = True
+                    seeded.append(await existing.save(notify=False) if changed else existing)
         except Exception:
             cls._seeded_dbs.discard(db)
             raise

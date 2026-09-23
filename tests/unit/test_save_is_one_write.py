@@ -62,3 +62,23 @@ async def test_the_announcement_comes_after_the_commit(monkeypatch):
     process = await AgenticProcess(name="announced", visible=False).save()
 
     assert seen and seen[0] is not None and seen[0].id == process.id, "the row was announced before it existed"
+
+
+@async_context
+async def test_seeding_the_capabilities_is_one_writer_acquisition(monkeypatch):
+    """The first capability lookup on a fresh instance writes every row. It did
+    so one save at a time, so the first request during a boot index waited a
+    record per row (a task create: 20 acquisitions, 2.6s behind a slow index)."""
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.db import get_db_driver
+
+    await get_db_driver().delete_entities_by_type(Capability.get_type())
+    Capability._seeded_dbs.discard(Capability._db)
+    taken: list[int] = []
+    real = conn_mod._begin_immediate
+    monkeypatch.setattr(conn_mod, "_begin_immediate", lambda conn: (taken.append(1), real(conn))[1])
+
+    seeded = await Capability.ensure_seeded()
+
+    assert len(seeded) > 1, "the sweep wrote nothing — the test proves nothing"
+    assert len(taken) == 1, f"seeding {len(seeded)} rows took the writer lock {len(taken)} times"
