@@ -88,17 +88,29 @@ class MessageThread(ProjectedFields, Entity):
     async def find_existing(
         cls, channel: str, thread_key: str, owner: "TypeId | None", data_source_id: str
     ) -> "MessageThread | None":
-        """THE identity lookup — the row for this natural key, or None.
+        """THE identity lookup — the CURRENT row for this natural key, or None.
 
         The key is declared once, on the type (``TypeInfo.natural_key``); this
         is its named single-row entry point, indexed by
-        ``ix_entities_message_thread_natural_key_v3``. Same shape as
-        ``SourceItem.find_existing``.
+        ``ix_entities_message_thread_natural_key_v3``. A key names a SEQUENCE of
+        threads when its source times threads out (``thread_timeout_seconds``):
+        the quiet one stays as it was and the next message begins a new row on
+        the same key — so the current thread is the newest. Nothing renames an
+        ended thread: a key moved aside on one row came back with the next stale
+        save of it (a recount holding the old copy), and the key then named two.
+
+        Owner omitted on a key two owners share is refused, never silently picked — see
+        ``test_owner_of``; one owner's sequence of threads is not ambiguous.
         """
         match: dict = {"channel": channel, "thread_key": thread_key, "data_source_id": str(data_source_id)}
         if owner is not None:
             match["owner"] = str(owner)
-        return await cls.get_one(match)
+            rows = await cls.get_all({"match": match, "order_by": {"created_date": "desc"}, "limit": 1})
+            return rows[0] if rows else None
+        rows = await cls.get_all({"match": match, "order_by": {"created_date": "desc"}})
+        if len({str(r.owner or "") for r in rows}) > 1:
+            raise ValueError(f"Multiple owners' message threads match {match}: the lookup needs the owner")
+        return rows[0] if rows else None
 
     @classmethod
     async def find_unclaimed(cls, channel: str, thread_key: str, owner: "TypeId | None") -> "MessageThread | None":
