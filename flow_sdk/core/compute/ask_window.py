@@ -2,11 +2,13 @@
 
 Two ways in, tried in order, and neither is a new surface:
 
-1. **A live browser tab** — a targeted ``ui_command`` sends it to ``win/``, the
-   chrome-less focus layout that already exists (``FocusLayout``: "no sidebars,
-   no footer, no tab strip, no app chrome"). The routed view IS the window.
+1. **A live browser tab** — a targeted ``ui_command`` sends it to the ask view
+   IN THE DOCK: the question replaces the content area, and the rail (user
+   avatar, login) and the tab strip stay where they are. The person is still
+   inside the app, and answering returns them to where they were.
 2. **No tab** — borrow or start a backend through ``flow_service()`` and open a
-   browser at the same ``win/`` URL.
+   browser at the chrome-less ``win/`` URL: that window exists only for this
+   question, so there is no app around it to keep.
 
 Degrading to nothing is a legitimate outcome, not a failure: a headless box, a
 test, or ``FLOWPAD_NO_BROWSER`` all mean the question is registered and nobody
@@ -56,6 +58,9 @@ async def _push_to_live_tab(question) -> bool:
     Targeted, not broadcast, and the absence of a tab is the ANSWER here rather
     than an error: it is what makes the second route run. A broadcast would
     have reported success into an empty room, and no window would ever open.
+
+    No ``layout``: the frame lands in the dock. Sending the tab to ``win/`` used
+    to strand the person on a chrome-less screen with no way back but a restart.
     """
     try:
         from flow_sdk.notifications.ui_command import send_ui_command  # noqa: PLC0415
@@ -68,7 +73,6 @@ async def _push_to_live_tab(question) -> bool:
         await send_ui_command(
             socket,
             "navigate_dock",
-            layout=WIN_LAYOUT,
             view_type=ASK_VIEW,
             pointer=question.id,
         )

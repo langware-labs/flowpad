@@ -9,7 +9,7 @@
     "commands": {
       "darwin": "brew install node",
       "linux": "apt-get update && apt-get install -y nodejs",
-      "win32": "winget install --id OpenJS.NodeJS.LTS -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity"
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; winget install --id OpenJS.NodeJS.LTS -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity"
     },
     "timeout_seconds": 600
   },
