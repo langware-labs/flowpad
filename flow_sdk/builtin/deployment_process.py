@@ -97,16 +97,19 @@ def pid_of(deployment) -> Optional[int]:
                     return int(text)
             else:
                 fcntl.flock(fh, fcntl.LOCK_UN)
-    return _starting(str(deployment.id))
+    return _starting(deployment)
 
 
-def _starting(deployment_id: str) -> Optional[int]:
-    """A Python process whose command line names *deployment_id* — typed, still importing."""
+def _starting(deployment) -> Optional[int]:
+    """The process typed for *deployment* (``… <file> <id>``), still importing. Exactly that tail:
+    anything else naming the id — a ``grep``, a script driving the deployment — is not it, and taking
+    it for the loop left the deployment dead with nobody starting it."""
     import psutil  # noqa: PLC0415
 
+    tail = [str(file_of(deployment)), str(deployment.id)]
     for proc in psutil.process_iter(["pid", "cmdline"]):
         cmdline = proc.info.get("cmdline") or []
-        if deployment_id in cmdline and proc.info["pid"] != os.getpid():
+        if cmdline[-2:] == tail and proc.info["pid"] != os.getpid():
             return proc.info["pid"]
     return None
 

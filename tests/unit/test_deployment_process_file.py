@@ -74,8 +74,21 @@ def test_the_lock_says_who_runs_it_and_refuses_a_second_copy(deployment):
     mine.close()
 
 
+def test_a_bystander_naming_the_deployment_is_not_its_loop(deployment):
+    """A process that merely names the deployment (a script driving it, a grep) is not its loop."""
+    bystander = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", deployment.id, "out-dir"])
+    try:
+        time.sleep(0.2)
+        assert deployment_process.pid_of(deployment) is None
+    finally:
+        bystander.kill()
+
+
 def test_a_loop_still_importing_is_found_by_its_command_line(deployment):
-    starting = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", deployment.id])
+    starter = deployment_process.file_of(deployment).parent / "starting.py"
+    starter.write_text("import time; time.sleep(30)\n")
+    deployment.snippet = str(starter)
+    starting = subprocess.Popen([sys.executable, str(starter), deployment.id])
     try:
         for _ in range(100):
             if deployment_process.pid_of(deployment) is not None:
