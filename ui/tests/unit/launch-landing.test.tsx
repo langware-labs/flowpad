@@ -387,6 +387,66 @@ describe('/launch?agent=', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
+  describe('GA4 funnel', () => {
+    const funnel = () =>
+      (window.dataLayer)
+        .filter((p) => String(p.event).startsWith('launch_'))
+        .map((p) => [p.event, p.workflow_stage]);
+
+    beforeEach(() => {
+      window.dataLayer = [];
+    });
+
+    it('signed in: landing → setup → entered, and the redirect is not an abandon', async () => {
+      mocks.entity = answered({ data: publishedAgent() });
+
+      renderLanding(`?agent=${AGENT_ID}`);
+      await waitFor(() => expect(assign).toHaveBeenCalled());
+      window.dispatchEvent(new Event('pagehide'));
+
+      expect(funnel()).toEqual([
+        ['launch_view', 'landing'],
+        ['launch_setup_start', 'setup'],
+        ['launch_setup_complete', 'setup_complete'],
+        ['launch_enter_machine', 'entered'],
+      ]);
+      expect((window.dataLayer)[0]).toMatchObject({
+        agent_id: AGENT_ID,
+        signed_in: 'true',
+        flow: 'launch',
+      });
+    });
+
+    it('signed out: the sign-in click is reported, and leaving then is an abandon at sign-in', () => {
+      mocks.currentUser = null;
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      renderLanding(`?agent=${AGENT_ID}`);
+      fireEvent.click(screen.getByTestId('launch-sign-in'));
+      window.dispatchEvent(new Event('pagehide'));
+
+      expect(funnel()).toEqual([
+        ['launch_view', 'landing'],
+        ['launch_sign_in_start', 'sign_in'],
+        ['launch_abandon', 'sign_in'],
+      ]);
+    });
+
+    it('a failed setup is reported as such', async () => {
+      mocks.entity = answered({ data: publishedAgent() });
+      mocks.launchSandbox = vi.fn().mockRejectedValue(new Error('FlowPad did not come up in the sandbox'));
+
+      renderLanding(`?agent=${AGENT_ID}`);
+      await waitFor(() => expect(screen.getByTestId('launch-failed')).toBeTruthy());
+
+      expect(funnel()).toEqual([
+        ['launch_view', 'landing'],
+        ['launch_setup_start', 'setup'],
+        ['launch_setup_error', 'failed'],
+      ]);
+    });
+  });
+
   it.each([
     ['refused (403)', answered({ isError: true, error: { response: { status: 403 } } })],
     ['not found', answered({ notFound: true })],

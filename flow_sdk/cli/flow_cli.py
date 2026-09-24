@@ -683,6 +683,28 @@ def auth_set_runtime(
     typer.echo(f"✓ Runtime set to {assigned.value if hasattr(assigned, 'value') else assigned}")
 
 
+@auth_app.command("set-compute-node")
+def auth_set_compute_node(
+    typeid: Annotated[str, typer.Argument(help="The hub ComputeNode this instance runs as: compute_node-<uuid>")],
+):
+    """
+    Record which hub ComputeNode this instance is. Hub-driven; not for interactive use.
+
+    The keep-alive loop names this node when it tells the hub the machine is in
+    use; without it the instance sends no keep-alive and pauses on idle.
+
+    Example: flow auth set-compute-node compute_node-00000000-0000-4000-8000-000000000000
+    """
+    from flow_sdk.instance_settings.runtime import set_assigned_compute_node
+
+    try:
+        set_assigned_compute_node(typeid)
+    except ValueError as e:
+        typer.echo(f"✗ {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ Compute node set to {typeid}")
+
+
 @auth_app.command("test")
 def auth_test(delay: Annotated[int, typer.Option(help="Delay in seconds before allowing login")] = 5):
     """
