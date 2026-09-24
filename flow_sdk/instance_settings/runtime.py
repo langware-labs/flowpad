@@ -98,12 +98,23 @@ def set_assigned_runtime(kind: RuntimeKind | str) -> RuntimeKind:
     is ``/auth/login_callback``, which must call this only AFTER the hub's
     api-key validates — otherwise any anonymous caller who can reach the port
     could relabel the instance.
+
+    Also drops ``own_sandbox_id``'s memo. A caller that asks "which sandbox am
+    I" before this function has ever run sees an unassigned runtime and its
+    ``lru_cache`` locks that answer in for the rest of the process — this is
+    the ONE place the assignment changes, so it is the one place that can undo
+    that lock. Proven live on prod compute_node f41f5c42-a8fa-4934-8cda-
+    9080f09d24bd: an early caller (before this function's first real run)
+    cached ``None``, and every later ``cloud_login()`` kept building a
+    ``127.0.0.1`` login url no real browser could reach, until the process was
+    restarted by hand.
     """
     assigned = RuntimeKind(kind)
     if assigned not in _ASSIGNABLE:
         raise ValueError(f"Runtime {assigned!r} is not assignable; expected one of {_ASSIGNABLE}")
     app_config.set_config(_CONFIG_KEY, assigned.value)
     _cache[get_instance_settings().instance_name] = assigned
+    own_sandbox_id.cache_clear()
     return assigned
 
 
