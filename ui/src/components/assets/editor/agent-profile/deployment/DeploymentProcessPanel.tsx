@@ -6,6 +6,7 @@ import { useTheme } from 'next-themes';
 import { DEPLOYMENT_TIMELINE_TAG, type Deployment, type DeploymentProcess } from '@sdk';
 import { useOnTag } from '@sdk/react/hooks';
 import { ensureShikiMonaco, monacoTheme } from '@src/components/code-editor/shikiMonaco';
+import { SnippetView } from '@src/components/code-editor/SnippetView';
 import { SidecarShellTerminal } from '@src/components/terminal/interactive-terminal/SidecarShellTerminal';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
@@ -166,7 +167,7 @@ export function DeploymentProcessPanel({ deployment }: { deployment: Deployment 
               </p>
             )
           ) : (
-            <DeploymentCodeEditor deployment={deployment} />
+            <DeploymentCode deployment={deployment} onRestart={restart} />
           )}
         </div>
       )}
@@ -174,7 +175,40 @@ export function DeploymentProcessPanel({ deployment }: { deployment: Deployment 
   );
 }
 
-/** The file the deployment runs, saved as it is edited; Restart runs the edit. */
+/**
+ * The file the deployment runs, as the code snippet it is (``deployment_loop``): the loop shown, its
+ * imports and the line that runs it folded away. Saved as it is edited; its Restart runs the edit —
+ * the file is the deployment's process, not a run of this view. A file that is no longer a snippet
+ * (its markers removed) opens as plain code.
+ */
+function DeploymentCode({ deployment, onRestart }: { deployment: Deployment; onRestart: () => Promise<void> }) {
+  const { t } = useLingui();
+  const [code, setCode] = useState<{ file: string; text: string } | null>(null);
+  const [plain, setPlain] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void deployment.code().then((read) => alive && read && setCode(read));
+    return () => {
+      alive = false;
+    };
+  }, [deployment]);
+  if (!code) return null;
+  if (plain) return <DeploymentCodeEditor deployment={deployment} />;
+  return (
+    <div className="h-full min-h-0" data-testid="deployment-process-code">
+      <SnippetView
+        path={code.file}
+        language="python"
+        revision={code.text}
+        onNotSnippet={() => setPlain(true)}
+        onSynced={(text) => setCode((was) => (was ? { ...was, text } : was))}
+        runner={{ label: t`Restart`, run: onRestart }}
+      />
+    </div>
+  );
+}
+
+/** The file as plain code — for one that is not a snippet. Saved as it is edited. */
 function DeploymentCodeEditor({ deployment }: { deployment: Deployment }) {
   const { t } = useLingui();
   const { resolvedTheme } = useTheme();
@@ -217,7 +251,7 @@ function DeploymentCodeEditor({ deployment }: { deployment: Deployment }) {
 
   if (text === null || !themed) return null;
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="deployment-process-code">
+    <div className="flex h-full min-h-0 flex-col" data-testid="deployment-process-code-plain">
       <div className="flex h-7 shrink-0 items-center gap-2 border-b px-4 text-[11px] text-muted-foreground">
         <span className="truncate font-mono">{file}</span>
         <span className="ms-auto" data-testid="deployment-process-code-state">

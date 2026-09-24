@@ -1,9 +1,10 @@
 """A local agent deployment's process: a Python file, run in a shell.
 
 A running local deployment IS ``python <file>`` typed into a terminal (a ``Shell``, the same PTY
-``flow terminal`` opens) on this machine. The file is plain Python — by default two lines that run
-the stock agent loop for this deployment (``builtin/agent_loop``), written once next to the
-instance's other per-deployment state; a deployment's own ``snippet`` names another. Its stdio is
+``flow terminal`` opens) on this machine. The file is plain Python in the code-snippet format — by
+default the agent loop itself (``builtin/deployment_loop``: imports hidden, the loop shown) and the
+line that runs it, written once next to the instance's other per-deployment state; a deployment's
+own ``snippet`` names another. Its stdio is
 the terminal, so whoever watches the deployment sees the loop as it works, and can edit the file
 and run it again.
 
@@ -28,15 +29,22 @@ DEPLOYMENT_ENV = "FLOW_DEPLOYMENT_ID"
 #: ``provider_labels`` key → the deployment's shell (the terminal its process runs in).
 SHELL_LABEL = "flowpad.process.shell"
 
-#: What a deployment runs when it names no file of its own.
-STOCK = '''"""The agent loop of deployment {deployment_id}: answers the agent's channels here, until paused.
-
-Plain Python, run in this deployment's terminal — edit it and run it again (Restart).
-"""
+#: The line each deployment's file ends with: the loop above, run as THIS deployment (its lock, its
+#: terminal, started again when its channels change — ``agent_loop.main``).
+RUN = """
+# %% flowpad:init
 from flow_sdk.builtin.agent_loop import main
 
-main("{deployment_id}")
-'''
+main("{deployment_id}", loop=answer_every_message)
+"""
+
+
+def stock(deployment_id: str) -> str:
+    """A new deployment's file: the stock loop's own source (``deployment_loop``, a snippet), then
+    the line that runs it for *deployment_id* — what the app runs by default, as editable code."""
+    from flow_sdk.builtin import deployment_loop  # noqa: PLC0415
+
+    return Path(deployment_loop.__file__).read_text(encoding="utf-8").rstrip("\n") + "\n" + RUN.format(deployment_id=deployment_id)
 
 
 def _home() -> Path:
@@ -53,7 +61,7 @@ def file_of(deployment) -> Path:
     path = _home() / f"{deployment.id}.py"
     if not path.is_file():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(STOCK.format(deployment_id=deployment.id), encoding="utf-8")
+        path.write_text(stock(str(deployment.id)), encoding="utf-8")
     return path
 
 

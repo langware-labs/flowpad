@@ -116,18 +116,20 @@ async function api(method, path, body) {
     if (phases.includes('edit')) {
       const pidBefore = (await state()).match(/pid (\d+)/)?.[1];
       await page.click('[data-testid=deployment-process-tab-code]');
-      await page.waitForSelector('[data-testid=deployment-process-code] .monaco-editor', { timeout: 30000 });
-      await page.click('[data-testid=deployment-process-code] .monaco-editor .view-lines');
+      // The file is a code snippet: the loop shown, its imports and the line that runs it folded away.
+      await page.waitForSelector('[data-testid=deployment-process-code] [data-testid=snippet-region-snippet] .monaco-editor', { timeout: 30000 });
+      await expectWithin('edit', 'the Code tab shows the agent loop as a snippet', 5, async () =>
+        (await page.textContent('[data-testid=snippet-region-snippet]')).includes('answer_every_message'));
+      await page.click('[data-testid=snippet-region-snippet] .monaco-editor .view-lines');
       // At the top: the loop's own call blocks, so a line after it would print only on exit.
       await page.keyboard.press('Meta+ArrowUp');
       await page.keyboard.press('Home');
       await page.keyboard.type(EDIT_LINE);
       await page.keyboard.press('Enter');
-      await expectWithin('edit', 'the edit is saved', 10, async () => (await page.textContent('[data-testid=deployment-process-code-state]')).startsWith('Saved'));
-      const saved = (await api('GET', `/graph/deployment/${deploymentId}/code`)).text;
-      await expectWithin('edit', 'the file on disk has the edit', 2, async () => saved.includes('hello from the edited loop'));
+      await expectWithin('edit', 'the edit is saved to the file', 10, async () =>
+        (await api('GET', `/graph/deployment/${deploymentId}/code`)).text.includes('hello from the edited loop'));
       await shot('edit-code');
-      await page.click('[data-testid=deployment-process-restart]');
+      await page.click('[data-testid=snippet-run]'); // the snippet's own button: Restart
       await expectWithin('edit', 'Restart shows the console', 5, async () => (await page.$('[data-testid=deployment-process-panel] .xterm')) !== null);
       await expectWithin('edit', 'the edited loop prints its line', 30, async () => (await consoleText()).includes('hello from the edited loop'));
       await expectWithin('edit', 'it runs again, as a new process', 30, async () => {
