@@ -202,6 +202,7 @@ class Mix:
         while time.monotonic() < deadline:
             sent = (await self.control.get("/sent", params={"channel": channel.provider})).json()
             if len(sent) > before:
+                # The newest post: a reply that went anywhere else still fails the word check below.
                 return str(sent[-1].get("text") or "")
             await asyncio.sleep(0.5)
         raise TimeoutError(f"no answer left {channel.provider} in {self.answer_budget:.0f}s")
