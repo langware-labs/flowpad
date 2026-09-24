@@ -989,7 +989,9 @@ class AgenticProcess(Entity):
         started = await proc.start_pty()
         if isinstance(started, ApiFailResponse):
             return PromptResult.not_yet(
-                started.message or "The agent could not start.", ran=False, executor=str(proc.typeid),
+                started.message or "The agent could not start.",
+                ran=False,
+                executor=str(proc.typeid),
             )
         try:
             await proc.send(instruction)
@@ -2128,6 +2130,9 @@ class AgenticProcess(Entity):
                 workdir=self.workdir,
                 project_id=self.project_id,
                 visible=visible,
+                # A chat (headless) fork stays headless: its first prompt boots the
+                # forked worker through ``headless_prompt`` instead of a PTY.
+                pty_mode=self.pty_mode,
                 shared_context_entities=list(self.shared_context_entities or []),
                 name=None,
             )
@@ -3024,7 +3029,8 @@ class AgenticProcess(Entity):
             # NOT_FOUND, which `flow terminal run` already exits as 4 — and the
             # caller reads why from the same place it reads every other outcome.
             missing = CliResult.not_found(
-                f"There is no terminal {shell_id!r}." if shell_id
+                f"There is no terminal {shell_id!r}."
+                if shell_id
                 else "No open terminal — run `flow terminal open` first.",
                 command=command,
             )

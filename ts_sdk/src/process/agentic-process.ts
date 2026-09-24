@@ -3109,7 +3109,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    *
    * @param visible - Whether the new process should appear in the tabs view (default: false).
    *                  Pass true when forking from the UI toolbar.
-   * @returns The new AgenticProcess, already opened with a live PTY.
+   * @returns The new AgenticProcess — opened with a live PTY for a terminal
+   *          session; a headless (chat) fork boots on its first prompt instead.
    */
   async fork(visible = false): Promise<AgenticProcess> {
     const data = await this.post<Record<string, unknown>>('fork', { visible });
@@ -3119,7 +3120,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       new TypeId(AgenticProcess.type, data.id as string),
     );
     if (!newProcess) throw new Error(`Fork failed: new process ${data.id} not found after registration`);
-    await newProcess.start();
+    if (!newProcess.isHeadless) await newProcess.start();
     return newProcess;
   }
 
