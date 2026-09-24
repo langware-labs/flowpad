@@ -198,7 +198,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
 
   return (
     <div className="flex h-full flex-col">
-      {/* Project header: git state on the left, roster + invite on the right.
+      {/* Project header: git state on the left, publish + roster + invite on the right.
           The roster names itself (avatars / "No members" / Invite), so a
           separate "Members" caption was one label too many. */}
       {projectTypeId && (
@@ -215,18 +215,22 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
             ) : (
               <>
                 <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
-                {project && <ProjectCloudLinkButton project={project} />}
                 <ProjectPublishedButton projectId={projectTypeId.id} />
               </>
             )}
           </div>
-          <MembersAvatarStack
-            typeId={projectTypeId}
-            allowInviteLink
-            showInviteButton
-            beforeInvite={beforeProjectInvite}
-            inviteRoles={shareRoles}
-          />
+          {/* Publish sits beside Invite: inviting needs a published project, so the
+              two are the pair a user reaches for together. */}
+          <div className="flex items-center gap-2">
+            {!cloudMode && project && <ProjectCloudLinkButton project={project} />}
+            <MembersAvatarStack
+              typeId={projectTypeId}
+              allowInviteLink
+              showInviteButton
+              beforeInvite={beforeProjectInvite}
+              inviteRoles={shareRoles}
+            />
+          </div>
         </div>
       )}
       {!cloudMode && gitChecks && (
