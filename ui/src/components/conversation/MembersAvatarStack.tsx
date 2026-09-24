@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, Link as LinkIcon, Loader2, Plus, UserPlus, UsersRound, X } from 'lucide-react';
 import {
+  Conversation,
   mintInviteLink,
   normalizeEmail,
   type ContactsGroup,
@@ -118,9 +119,9 @@ export function MembersAvatarStack({
   const [permissionsContact, setPermissionsContact] = useState<ContactIdentity | null>(null);
 
   // My roster row drives every affordance gate: rank for the role selector
-  // (mirrors the hub's ``can_assign`` ceiling), owner for remove, editor+ for
-  // invite. The hub enforces all of these too — hiding here just keeps the UI
-  // from offering controls that would 403.
+  // (mirrors the hub's ``can_assign`` ceiling), editor+ for invite and — on
+  // rows below my rank — remove. The hub enforces all of these too — hiding
+  // here just keeps the UI from offering controls that would 403.
   const me = members.find((m) => !!m.user_id && !!localUser?.id && m.user_id === localUser.id) ?? null;
   const iAmOwner = participantRank(me) === 0;
   // Invite gate applies only when my roster row resolved. A local-only /
@@ -136,6 +137,17 @@ export function MembersAvatarStack({
       .toLowerCase()
       .split(',')
       .some((r) => INVITER_ROLES.includes(r.trim()));
+  // Remove mirrors the hub's ``delete_membership``: on a conversation only its
+  // owner may remove anyone; elsewhere anyone who may manage members may
+  // remove a member ranked strictly below them (the ``can_assign`` ceiling —
+  // peers, those above, an unranked role and myself are untouchable).
+  const myRank = participantRank(me);
+  const mayRemove = (p: ConversationParticipant) => {
+    if (!p.user_id || p.user_id === me?.user_id) return false;
+    if (typeId.type === Conversation.type) return iAmOwner && (p.role ?? '').toLowerCase() !== 'owner';
+    const theirRank = participantRank(p);
+    return mayInvite && myRank !== null && theirRank !== null && theirRank > myRank;
+  };
   // Invite roles capped by my rank (the hub refuses a grant at or above it).
   // No roster row yet = first share, which makes me the owner: offer them all.
   const offeredRoles = useMemo(() => {
@@ -547,8 +559,7 @@ export function MembersAvatarStack({
                             <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{role}</span>
                           )
                         )}
-                        {/* Remove — owner only, never on the owner's own row. */}
-                        {iAmOwner && (p.role ?? '').toLowerCase() !== 'owner' && p.user_id && (
+                        {mayRemove(p) && (
                           <button
                             type="button"
                             aria-label={`Remove ${participantLabel(p)}`}
