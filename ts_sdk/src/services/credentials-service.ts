@@ -192,6 +192,19 @@ export class CredentialsService {
     return dataManager.callAction<unknown, CredentialSaved>(action);
   }
 
+  /** Fill a credential's values BY NAME, declaring it from its shipped template when this
+   *  instance holds none yet (`flow credentials set`). The one call that does not need to
+   *  know whether the declaration exists. */
+  async setByName(
+    name: string,
+    values: Record<string, string>,
+    projectId: string | null = null,
+  ): Promise<CredentialSaved> {
+    const action = this.action('set', 'POST');
+    action.bodyParameters = projectId ? { name, values, project_id: projectId } : { name, values };
+    return dataManager.callAction<unknown, CredentialSaved>(action);
+  }
+
   /** Set or rotate one environment's values. Empty values are skipped, never cleared. */
   async setValues(
     typeid: string,
