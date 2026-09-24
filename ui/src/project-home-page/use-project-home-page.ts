@@ -8,8 +8,8 @@ import { useMemo } from 'react';
  * Read off the indexed `ProjectManifest` row — the projection of
  * `project_manifest.json`, which is where the home page lives — so a git pull
  * or another tab's change arrives the way every other row change does.
- * Declared, not resolved: `POST /api/v1/project/home-page` checks it exists and
- * belongs to this project.
+ * Declared, not resolved: `Project.openHomePage` (`GET project/<id>/home-page`)
+ * checks it exists and belongs to this project.
  */
 export function useProjectHomePage(projectId: string | null | undefined): string | null {
   const request = useMemo(

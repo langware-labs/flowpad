@@ -26,7 +26,6 @@ import { expect, test, type Page } from '@playwright/test';
 
 const BE = `http://localhost:${process.env.HP_BE_PORT || '6001'}`;
 const GRAPH = `${BE}/api/v1/graph`;
-const HOME_PAGE_ENDPOINT = `${BE}/api/v1/project/home-page`;
 const SESSION_URL = /\/dock\/shell\/agentic_process-([0-9a-f-]+).*viewMode=vibe/;
 
 interface Seeded {
@@ -250,7 +249,7 @@ test.describe('project home page', () => {
     declare(`agent-${doomed.id}`);
     await fetch(`${GRAPH}/agent/${doomed.id}`, { method: 'DELETE', signal: AbortSignal.timeout(20_000) });
 
-    const payload = await post(HOME_PAGE_ENDPOINT, { project_id: home.id });
+    const payload = await (await fetch(`${GRAPH}/project/${home.id}/home-page`)).json();
     expect(payload?.data?.asset).toBeNull();
 
     const card = await openCustomize(page, home.id);
@@ -272,7 +271,7 @@ test.describe('project home page', () => {
       const errors = collectPageErrors(page);
       write();
 
-      const payload = await post(HOME_PAGE_ENDPOINT, { project_id: home.id });
+      const payload = await (await fetch(`${GRAPH}/project/${home.id}/home-page`)).json();
       expect(payload?.status).toBe('SUCCESS');
       expect(payload?.data?.asset).toBeNull();
 
@@ -315,7 +314,7 @@ test.describe('project home page', () => {
   test("another project's agent written into the manifest is not honoured", async ({ page }) => {
     const errors = collectPageErrors(page);
     declare(`agent-${foreignAgent.id}`);
-    const payload = await post(HOME_PAGE_ENDPOINT, { project_id: home.id });
+    const payload = await (await fetch(`${GRAPH}/project/${home.id}/home-page`)).json();
     expect(payload?.data?.asset).toBeNull();
 
     await page.goto(projectHomeUrl(home.id));

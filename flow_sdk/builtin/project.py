@@ -506,7 +506,7 @@ class Project(Entity):
         if typeid is not None and await self._own_asset(typeid) is None:
             return ApiFailResponse(message=f"{typeid} is not an asset of this project", status_code=400)
         try:
-            spec = await asyncio.to_thread(set_home_page, Path(self.fs_storage_mount_path), typeid)
+            spec = set_home_page(Path(self.fs_storage_mount_path), typeid)
         except ManifestError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"home_page": spec.home_page})
@@ -523,23 +523,25 @@ class Project(Entity):
         return asset
 
     async def open_home_page(self) -> dict[str, Any]:
-        """Resolve the declared home page to the asset the frontend opens.
-
-        Only the resolution lives here; what to OPEN for it (an agent's last
-        chat in this project, else a new one) is the frontend's, the same
-        last-chat query the rail's Chats icon uses.
-
-        Scoped like auto-launch: the asset must live in this Project or one of
-        its direct context folders. The manifest arrives with a cloned repo —
-        third-party content — and a project must not be able to point its Home
-        at another project's agent. Anything unresolvable is the empty payload —
-        the default home.
-        """
+        """The declared home page's ``{asset, type}``, only if it is this project's own
+        (a cloned manifest must not point Home at another project's asset); else nulls."""
         typeid = self.home_page_typeid()
         asset = await self._own_asset(typeid) if typeid else None
         if asset is None:
             return {"asset": None, "type": None}
         return {"asset": typeid, "type": asset.get_type()}
+
+    @action.get(action_name="home-page")
+    async def home_page_action(self) -> "ApiResponse":
+        """`GET /project/<id>/home-page` — ``open_home_page``, for the loaders' redirect.
+
+        A failure is a SUCCESS envelope carrying ``error``: the TS client unwraps a
+        fail envelope to ``undefined``, which would read as "no home page"."""
+        try:
+            return ApiSuccessResponse(data=await self.open_home_page())
+        except Exception as exc:  # noqa: BLE001 — the loader must get a stable answer, never a 500
+            log.warning("project home page failed for %s: %s", self.id, exc)
+            return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
 
     @staticmethod
     def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:

@@ -181,6 +181,15 @@ export interface ProjectCustomization {
   brand?: ProjectBrand | null;
 }
 
+/** `GET project/<id>/home-page` — `Project.open_home_page()`. */
+export interface ProjectHomePage {
+  /** The declared asset's TypeId, once it resolves inside this project. */
+  asset: string | null;
+  type: string | null;
+  /** Set when the backend tried and failed; the rest is null alongside it. */
+  error?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Asset menu — 1:1 mirror of `flow_sdk/builtin/asset_menu.py`. Snake_case is the
 // wire's and is kept verbatim: new fields land on the backend model first, this
@@ -645,6 +654,14 @@ export class Project extends APIEntity<Project> {
    *  context folders. Returns the home page as now declared. */
   async setHomePage(typeid: string | null): Promise<{ home_page: string | null }> {
     return this.post<{ home_page: string | null }>('set-home-page', { typeid: typeid ?? '' });
+  }
+
+  /** The declared home page resolved to its asset (`GET project/<id>/home-page`),
+   *  or nulls when it names nothing of this project's. Static for the loaders,
+   *  which hold only the project id. */
+  static async openHomePage(projectId: string): Promise<ProjectHomePage> {
+    const actionInfo = new ActionInfo('home-page', Project.type, projectId, 'GET');
+    return (await dataManager.callAction<void, ProjectHomePage>(actionInfo)) ?? { asset: null, type: null };
   }
 
   /** Converge the live content dependencies declared by this Project's
