@@ -6,6 +6,7 @@ twice, run by hand) leaves at once, and "is it running" never mistakes a recycle
 """
 from __future__ import annotations
 
+import pathlib
 import subprocess
 import sys
 import textwrap
@@ -41,10 +42,17 @@ def _holder(deployment) -> subprocess.Popen:
     return proc
 
 
-def test_the_stock_file_runs_this_deployment_and_is_written_once(deployment):
-    path = deployment_process.file_of(deployment)
+def test_the_stock_file_is_the_agent_loop_as_a_snippet_run_for_this_deployment(deployment):
+    from flow_sdk.builtin import deployment_loop
+    from flow_sdk.core.snippet import SnippetDoc
 
-    assert path.read_text().count(f'main("{deployment.id}")') == 1
+    path = deployment_process.file_of(deployment)
+    doc = SnippetDoc.parse(path.read_text())
+
+    shown = "".join(r.body for r in doc.regions if r.kind == "snippet")
+    assert "async def answer_every_message(" in shown, "the loop itself is what the snippet shows"
+    assert shown.rstrip() in pathlib.Path(deployment_loop.__file__).read_text(), "the very loop the app runs by default"
+    assert f'main("{deployment.id}", loop=answer_every_message)' in "".join(r.body for r in doc.regions if r.kind == "init")
     path.write_text("# edited\n")
     assert deployment_process.file_of(deployment).read_text() == "# edited\n", "an edited file is never rewritten"
     assert deployment_process.command_of(deployment).endswith(f"{path} {deployment.id}")

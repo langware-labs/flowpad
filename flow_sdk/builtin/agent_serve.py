@@ -642,7 +642,7 @@ def is_history(message, since: Optional[datetime]) -> bool:
 ATTENTION_RENEW_SECONDS = 25.0
 
 
-async def serve(agent, deployment, *, sources=None, poll_every: "float | None" = None) -> None:
+async def serve(agent, deployment, *, sources=None, poll_every: "float | None" = None, loop=None) -> None:
     """Answer every message on the agent's channels that answer on *deployment*, until cancelled.
 
     One durable drain (a named consumer per placement, so a restart resumes after
@@ -657,18 +657,15 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
     a viewer does (:meth:`DataSource.note_attention`), so a driver that allows it
     is polled on its fast lane while an agent serves it, and no other is polled
     any faster than its interval. ``poll_every`` is only how often the drain
-    re-reads the database when no arrival woke it.
+    re-reads the database when no arrival woke it. *loop* is the loop itself —
+    ``(engine, channels, bound, every)``, the deployment file's own; the stock one when None.
     """
-    from flow_sdk.blocks import StreamInbox, workflow  # noqa: PLC0415
     from flow_sdk.blocks.arrivals import stoppable  # noqa: PLC0415
-    from flow_sdk.blocks.merge import pages  # noqa: PLC0415
 
     sources = list(sources) if sources is not None else await answered_sources(agent, deployment)
     if not sources:
         return
-    by_id = {str(s.id): s for s in sources}
     bound = {str(s.id): bound_at(deployment, s) for s in sources}
-    engine = TurnEngine(agent, deployment)
     stop = asyncio.Event()
     task = asyncio.current_task()
     if task is not None:
@@ -676,22 +673,17 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
     waiting = asyncio.get_running_loop().create_task(_keep_attention(sources))
     try:
         with stoppable(stop):
-            async with workflow(consumer_of(deployment)):
-                async for page in pages(*(StreamInbox.of(s) for s in sources), poll_every=poll_every, poll=False):
-                    if stop.is_set():
-                        continue  # unacked: the next loop on this placement is handed it again
-                    source = by_id[page.source_id]
-                    for message in page:
-                        if is_history(message, bound[page.source_id]):
-                            console.info("· %s  %s — written before the channel was bound: history, not answered",
-                                         source.channel or source.provider, _line(getattr(message, "body", ""), 60))
-                            await _skip(message)  # the backlog the channel held when it was bound
-                            continue
-                        await answer(engine, message, source=source)
-                    await page.ack()
+            await (loop or _default_loop())(TurnEngine(agent, deployment), sources, bound, poll_every)
     finally:
         waiting.cancel()
         await asyncio.gather(waiting, return_exceptions=True)
+
+
+def _default_loop():
+    """The stock loop — the very function each deployment's file shows (``deployment_loop``)."""
+    from flow_sdk.builtin.deployment_loop import answer_every_message  # noqa: PLC0415
+
+    return answer_every_message
 
 
 async def _keep_attention(sources) -> None:
@@ -729,22 +721,22 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
     body = str(getattr(message, "body", "") or "").strip()
     # The loop guard first: pure string work, and every reply the agent sends comes back.
     if is_own_outgoing(source, author):
-        return await _skip(message)
+        return await skip_message(message)
     channel = source.channel or source.provider
     if not admits(source, author):
         console.info("✗ %s  %s — not an allowed sender, not answered", channel, author)
         _announce(engine.deployment, "refused", data_source_id=str(source.id))
-        return await _skip(message)
+        return await skip_message(message)
     _announce(engine.deployment, "message_in", data_source_id=str(source.id))
     console.info("← %s  %s: %s", channel, author, _line(body))
     if not body:
-        return await _skip(message)
+        return await skip_message(message)
     # Three facts a source may declare about its messages (the driver class says; nothing here names one):
     # a ``quiet`` message is the log, not a call to act; ``turn_session`` names the session a message is
     # answered in; ``replies_explicitly`` means the turn's text is not sent back by itself.
     driver_cls = _driver_cls(source)
     if getattr(getattr(message, "data", None), "quiet", False):
-        return await _skip(message)
+        return await skip_message(message)
     session = str(session or "")
     hook = getattr(driver_cls, "turn_session", None)
     if not session and callable(hook):
@@ -769,7 +761,7 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
         console.info("✗ %s  %s — no reply: %s", channel, who, _line(outcome.detail))
         return False
     if getattr(driver_cls, "replies_explicitly", False):
-        await _skip(message)
+        await skip_message(message)
         return True
     await message.reply(await message.reply_spec(body=outcome.text))
     console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
@@ -785,7 +777,7 @@ def _announce(deployment, kind: str, **data) -> None:
         announce(str(deployment.id), kind, **data)
 
 
-async def _skip(message) -> bool:
+async def skip_message(message) -> bool:
     """Settle a message that gets no reply from here — acked when it came from a listener."""
     ack = getattr(message, "ack", None)
     if callable(ack):

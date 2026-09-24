@@ -214,22 +214,31 @@ chat = await ServiceEndpoint.find_existing(str(second.typeid), "chat")
 assert chat.backend.type == "channel"           # POST v1/chat/completions → a message → its loop answers
 ```
 
-The app starts each process (`FLOW_DEPLOYMENT_ID` names the deployment; `FLOW_INSTANCE` is inherited),
-records it on the row, adopts it alive after an app restart, starts it again if it dies, and stops it
-when the deployment stops serving or the agent is switched off. What the process runs is the whole
-loop — this, kept running (`flow_sdk/builtin/agent_loop.py`):
+Each deployment runs its own Python file — `~/.flow/instances/<instance>/deployments/<id>.py`, typed as
+`python <file> <id>` into the deployment's terminal (a PTY the page shows live, under its thread). The
+file is a code snippet: the agent loop itself, shown and editable, its imports and the line that runs
+it folded away. A new deployment's file is the stock loop, `flow_sdk/builtin/deployment_loop.py`:
 
 ```python
-deployment = await Deployment.get_by_id(os.environ["FLOW_DEPLOYMENT_ID"])
-agent = await deployment.agent()
-await serve(agent, deployment, sources=await answered_sources(agent, deployment))
+async def answer_every_message(engine, channels, bound, every=None):
+    async with workflow(consumer_of(engine.deployment)):  # this deployment's durable position
+        async for page in pages(*(StreamInbox.of(c) for c in channels), poll_every=every, poll=False):
+            for message in page:
+                if is_history(message, bound[page.source_id]):   # there before the agent took the channel
+                    await skip_message(message)
+                    continue
+                await answer(engine, message)                    # gates → turn → reply on its channel
+            await page.ack()
 ```
 
-— re-read every few seconds (a channel added is served from when it was added, never swallowed as
-history), started again after a failure, ended when the deployment is. `run_locally(snippet=path)`
-runs that Python file instead of the stock loop. A real process is proven by
-`tests/long_tests/test_local_deployment_process.py`: two deployments, two processes, each answering
-its own chat over HTTP, and stopping one ends only its process.
+and the file ends with `main("<id>", loop=answer_every_message)` (`agent_loop.main`): the deployment's
+lock (a second copy leaves at once), its console lines on the terminal, and the loop started again
+whenever the channels it answers change. Edit the loop and press Restart; the app types the command
+again in the same terminal. The app adopts a running loop after its own restart (the lock says who
+runs), starts it again if it dies (a Ctrl-C counts), and stops it when the deployment stops serving or
+the agent is switched off. `run_locally(snippet=path)` runs that file instead. Proven by
+`tests/long_tests/test_local_deployment_process.py` (two deployments, two terminals, each answering its
+own chat) and live in a browser by `tests/e2e/deployment_process_validate.cjs`.
 
 ## From TypeScript and HTTP
 

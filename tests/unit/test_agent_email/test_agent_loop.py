@@ -31,7 +31,7 @@ def served(monkeypatch):
     runs: list[set[str]] = []
     fail = {"next": False}
 
-    async def serve(agent, deployment, *, sources=None, poll_every=None):
+    async def serve(agent, deployment, *, sources=None, poll_every=None, loop=None):
         runs.append({str(s.id) for s in sources})
         if fail["next"]:
             fail["next"] = False
