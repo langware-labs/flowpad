@@ -40,7 +40,7 @@ function toText(value: number | null): string {
 }
 
 /** `''` → null (uncapped); a non-negative number → itself; anything else → `undefined` (reject). */
-export function parseMoney(raw: string): number | null | undefined {
+function parseMoney(raw: string): number | null | undefined {
   const trimmed = raw.trim().replace(/[$,\s]/g, '');
   if (trimmed === '') return null;
   const value = Number(trimmed);
