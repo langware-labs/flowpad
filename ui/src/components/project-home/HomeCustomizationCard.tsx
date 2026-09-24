@@ -74,7 +74,9 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
   // The picker's own list is the backend's default staging set (what a session
   // can attach), which leaves agents out — and an agent is THE home page. So the
   // card asks for the whole asset catalog, for this project, only while open.
-  const { types: assetTypes } = useAssetTypes({ withVaults: false });
+  // Standard's catalog even in Vibe: no type is browseable in Vibe, and an empty
+  // list sends no `types`, so the backend falls back to that same default set.
+  const { types: assetTypes } = useAssetTypes({ withVaults: false, vibeAsStandard: true });
   const homePageTypes = useMemo(() => assetTypes.map((type) => type.type_name), [assetTypes]);
   const homePageCandidates = useProcessAssets(null, {
     enabled: pickerOpen && !!project?.id,
