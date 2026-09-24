@@ -79,12 +79,12 @@ function openInvite(inviteRoles?: readonly string[]) {
   fireEvent.click(screen.getByTestId('members-avatar-stack'));
 }
 
-const input = () => screen.getByTestId('members-invite-input') as HTMLInputElement;
-const addRole = () => screen.getByTestId('members-invite-role') as HTMLSelectElement;
-const rowRole = (key: string) => screen.getByTestId(`members-invite-role-${key}`) as HTMLSelectElement;
+const input = () => screen.getByTestId('members-invite-input');
+const addRole = () => screen.getByTestId('members-invite-role');
+const rowRole = (key: string) => screen.getByTestId(`members-invite-role-${key}`);
 const options = (select: HTMLSelectElement) => Array.from(select.options).map((o) => o.value);
-const addButton = () => screen.getByTestId('members-invite-add') as HTMLButtonElement;
-const applyButton = () => screen.getByTestId('members-invite-submit') as HTMLButtonElement;
+const addButton = () => screen.getByTestId('members-invite-add');
+const applyButton = () => screen.getByTestId('members-invite-submit');
 
 function type(text: string) {
   fireEvent.change(input(), { target: { value: text } });
@@ -115,6 +115,21 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       openInvite(PROJECT_ROLES);
 
       expect(options(addRole())).toEqual(['member']);
+    });
+
+    it('lets an editor invite, capped below their own rank', () => {
+      myRole = 'editor';
+      openInvite(PROJECT_ROLES);
+
+      expect(screen.getByTestId('members-invite-form')).toBeTruthy();
+      expect(options(addRole())).toEqual(['member']);
+    });
+
+    it('shows a plain member the roster only — no invite form', () => {
+      myRole = 'member';
+      openInvite(PROJECT_ROLES);
+
+      expect(screen.queryByTestId('members-invite-form')).toBeNull();
     });
 
     it('renders no role selector when the surface passes no roles', () => {

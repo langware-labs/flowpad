@@ -46,6 +46,8 @@ import {
 const MAX_INLINE_AVATARS = 4;
 const MAX_CONTACT_SUGGESTIONS = 6;
 const MAX_GROUP_SUGGESTIONS = 3;
+/** Roles below admin that may still invite (``canInviteMembers`` covers admin+). */
+const INVITER_ROLES: readonly string[] = ['editor'];
 
 /** What the add row's text resolved to when a suggestion was picked. */
 type DraftPick =
@@ -116,7 +118,7 @@ export function MembersAvatarStack({
   const [permissionsContact, setPermissionsContact] = useState<ContactIdentity | null>(null);
 
   // My roster row drives every affordance gate: rank for the role selector
-  // (mirrors the hub's ``can_assign`` ceiling), owner for remove, admin+ for
+  // (mirrors the hub's ``can_assign`` ceiling), owner for remove, editor+ for
   // invite. The hub enforces all of these too — hiding here just keeps the UI
   // from offering controls that would 403.
   const me = members.find((m) => !!m.user_id && !!localUser?.id && m.user_id === localUser.id) ?? null;
@@ -124,8 +126,16 @@ export function MembersAvatarStack({
   // Invite gate applies only when my roster row resolved. A local-only /
   // not-yet-shared conversation has an empty roster (no ``me``) — keep the
   // form there, since this popover is also the first-share entry point and
-  // the sharer becomes the owner.
-  const mayInvite = me === null ? true : canInviteMembers(me);
+  // the sharer becomes the owner. Editors invite too (a project's hub policy
+  // grants them ``members``); ``offeredRoles`` below still caps what they may
+  // grant at roles under editor.
+  const mayInvite =
+    me === null ||
+    canInviteMembers(me) ||
+    (me.role ?? '')
+      .toLowerCase()
+      .split(',')
+      .some((r) => INVITER_ROLES.includes(r.trim()));
   // Invite roles capped by my rank (the hub refuses a grant at or above it).
   // No roster row yet = first share, which makes me the owner: offer them all.
   const offeredRoles = useMemo(() => {
