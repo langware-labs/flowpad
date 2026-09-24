@@ -74,3 +74,31 @@ class DeploymentThreads(DataSpec):
 
     deployment_id: str
     threads: list[DeploymentThread]
+
+
+class DeploymentProcess(DataSpec):
+    """A local deployment's process: the Python file it runs and the terminal it runs in."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind = "deployment.process"
+
+    deployment_id: str
+    #: The ``Shell`` whose terminal runs it — what the page shows; empty before its first start.
+    shell_id: str = ""
+    #: The file, and the command typed to run it.
+    file: str = ""
+    command: str = ""
+    #: The loop's pid while it runs (``None`` when nothing does).
+    pid: Optional[int] = None
+    #: Whether the deployment is on (the supervisor keeps an "on" one running).
+    serving: bool = False
+
+
+class DeploymentCode(DataSpec):
+    """The text of the file a local deployment runs."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind = "deployment.code"
+
+    file: str
+    text: str
