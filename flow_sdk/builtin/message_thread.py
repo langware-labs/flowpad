@@ -105,9 +105,7 @@ class MessageThread(ProjectedFields, Entity):
         match: dict = {"channel": channel, "thread_key": thread_key, "data_source_id": str(data_source_id)}
         if owner is not None:
             match["owner"] = str(owner)
-            rows = await cls.get_all({"match": match, "order_by": {"created_date": "desc"}, "limit": 1})
-            return rows[0] if rows else None
-        rows = await cls.get_all({"match": match, "order_by": {"created_date": "desc"}})
+        rows = await cls.get_all({"match": match, "order_by": {"created_date": "desc"}, **({"limit": 1} if owner else {})})
         if len({str(r.owner or "") for r in rows}) > 1:
             raise ValueError(f"Multiple owners' message threads match {match}: the lookup needs the owner")
         return rows[0] if rows else None

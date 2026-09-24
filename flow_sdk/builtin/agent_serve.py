@@ -598,7 +598,6 @@ async def hold_positions(deployment, sources) -> None:
     deployment is answered from when it was bound, not from when its loop first noticed it (the
     messages in between are arrivals, and would otherwise be swallowed as history).
     """
-    from flow_sdk.builtin import ingest_order  # noqa: PLC0415
     from flow_sdk.builtin.consumer_position import ConsumerPosition  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
 
@@ -610,7 +609,9 @@ async def hold_positions(deployment, sources) -> None:
 
 def bound_at(deployment, source) -> Optional[datetime]:
     """When *deployment* took *source*: the later of their creations (UTC), or None."""
-    stamps = [_utc(s) for s in (getattr(deployment, "created_date", None), getattr(source, "created_date", None)) if s]
+    from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
+
+    stamps = [iso_to_utc(s) for s in (getattr(deployment, "created_date", None), getattr(source, "created_date", None)) if s]
     return max(stamps, default=None)
 
 
@@ -618,16 +619,12 @@ def is_history(message, since: Optional[datetime]) -> bool:
     """Whether *message* was written before its channel was bound (*since*) — the backlog a new
     source's first read lands AFTER the binding in ingest order, which the position alone cannot
     tell from an arrival. Judged by the message's own time, floored to the second: a provider that
-    stamps whole seconds (Telegram) must not turn a message of the binding's second into history."""
+    stamps whole seconds must not turn a message of the binding's second into history."""
     from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
 
     row = getattr(message, "_row", None) or message
     at = iso_to_utc(getattr(row, "occurred_at", None))
     return since is not None and at is not None and at < since.replace(microsecond=0)
-
-
-def _utc(stamp: datetime) -> datetime:
-    return stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp.astimezone(timezone.utc)
 
 
 #: How often a serving loop renews its sources' attention lease — the UI's own rate
@@ -644,7 +641,8 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
     replied to on its own channel (send → record → ack). *sources* defaults to
     :func:`answered_sources`.
 
-    A consumer, never a poller: the loop reads what the app's ingest lands — a
+    A consumer, never a poller (the deployment's process beats the heartbeat for its channels,
+    ``agent_loop``): the loop reads what ingest lands — a
     push at once, a pull at the source's own pace — and says it is waiting the way
     a viewer does (:meth:`DataSource.note_attention`), so a driver that allows it
     is polled on its fast lane while an agent serves it, and no other is polled

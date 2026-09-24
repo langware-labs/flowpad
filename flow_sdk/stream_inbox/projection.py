@@ -36,7 +36,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
@@ -135,21 +135,23 @@ async def resolve_thread(
         return thread
 
 
-async def last_message_at(thread_id: str) -> Optional[datetime]:
-    """When the thread's newest message entered it — None for a thread with none."""
-    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-
-    rows = await FlowMessage.get_all({"match": {"thread_id": thread_id}, "order_by": {"sent_at": "desc"}, "limit": 1})
-    return iso_to_utc(rows[0].occurred_at) if rows else None
+def quiet_past(last: Optional[datetime], timeout_seconds: Optional[int], at: datetime) -> bool:
+    """THE thread-timeout rule: the thread's newest message (*last*) is more than the timeout before
+    *at*. Also what the deployment page reads a thread as ended by."""
+    return bool(timeout_seconds) and last is not None and at - last > timedelta(seconds=timeout_seconds)
 
 
 async def timed_out(thread, timeout_seconds: Optional[int], at: Optional[datetime]) -> bool:
-    """Whether *thread* was quiet longer than ``timeout_seconds`` before ``at`` (now when None).
-    A message older than the thread's newest (a backfill) never ends it."""
-    if not timeout_seconds:
+    """Whether *thread* was quiet longer than ``timeout_seconds`` before ``at``. A message older than
+    the thread's newest (a backfill) never ends it; a thread younger than the timeout cannot have
+    ended, so it costs no read."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    born = iso_to_utc(getattr(thread, "created_date", None))
+    if not timeout_seconds or at is None or (born is not None and not quiet_past(born, timeout_seconds, at)):
         return False
-    last = await last_message_at(str(thread.id))
-    return last is not None and (at or datetime.now(timezone.utc)) - last > timedelta(seconds=timeout_seconds)
+    rows = await FlowMessage.get_all({"match": {"thread_id": str(thread.id)}, "order_by": {"sent_at": "desc"}, "limit": 1})
+    return quiet_past(iso_to_utc(rows[0].occurred_at) if rows else None, timeout_seconds, at)
 
 
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
