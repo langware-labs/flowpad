@@ -61,13 +61,17 @@ export async function homePageDock(data: ProjectHomePageResponse, projectId: str
 /**
  * The project home page redirect, or null when there is nothing to land on.
  *
- * Only for the Home button: it acts on the root only when the load carries
- * `?homePage=open`, which `goHome({ homePage: true })` alone sets. A project
- * page, a cold start or any other root load is left where it is — otherwise
- * the project page (where the home page is configured) would bounce the user
- * into the agent before they could change it. Every Home click, not only the
- * first: safe because an agent home page RESUMES its last chat rather than
- * minting one per click.
+ * Acts only on a load that ASKS for it — `?homePage=open` (`withHomePage`),
+ * on the root or on the project's dock — and every time it is asked, not only
+ * the first. Two kinds of navigation ask:
+ *  - LAUNCHING a project: opening a folder or clone, picking a project,
+ *    setting up a shared one, switching to one.
+ *  - The Home button (`goHome({ homePage: true })`).
+ * Everything else that lands on the project page — its own "Open project home"
+ * button, its tab, the fallback after closing a tab — does not ask, so the
+ * project page (where the home page is configured) stays reachable. Safe to
+ * repeat because an agent home page RESUMES its last chat rather than minting
+ * one per visit.
  *
  * Same contract as the other load redirects: never blocks the load (any
  * failure means the default home) and lands as real URL state. `replace`, not
@@ -106,8 +110,8 @@ export async function projectHomePageRedirect(request: Request): Promise<Respons
   return replace(dock.toUrl());
 }
 
-// Imported by the home loader (the root is where the Home button goes). The
-// resolver list is shared, so it also runs on project-page loads — where the
-// `?homePage=open` gate above makes it a no-op. After agent auto-launch on
-// purpose: first redirect wins.
+// Imported by the home loader; the resolver list is shared, so it runs on root
+// loads and on project-dock loads alike. After agent auto-launch on purpose:
+// first redirect wins, so an agent's once-only auto-launch takes the very first
+// open.
 if (PROJECT_HOME_PAGE_ENABLED) registerLoadRedirect(projectHomePageRedirect);

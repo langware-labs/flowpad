@@ -3,8 +3,8 @@
 * ``GET  /project/resolve/{code}`` — public code→project lookup for the join flow.
 * ``POST /project/home-page`` ``{project_id}`` — the asset the project's home
   page names, resolved and scoped (``Project.open_home_page``). One call the
-  loaders make before render, mirroring ``/api/v1/agents/auto-launch``, so landing on it is a load-time
-  REDIRECT rather than a post-render hijack.
+  loaders make before render, mirroring ``/api/v1/agents/auto-launch``, so
+  landing on it is a load-time REDIRECT rather than a post-render hijack.
 
 Standard CRUD on Project is served by the generic graph router; the
 collaboration overlay actions (join, heartbeat, ensure-collaboration-code) are

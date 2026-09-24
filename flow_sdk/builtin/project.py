@@ -503,18 +503,24 @@ class Project(Entity):
         if not self.fs_storage_mount_path:
             return ApiFailResponse(message="Project has no local working directory")
         typeid = (typeid or "").strip() or None
-        if typeid is not None:
-            try:
-                asset = await Entity.get_by_typeid(typeid)
-            except ValueError:
-                asset = None
-            if asset is None or not assets_under_roots([asset], self.direct_context_roots()):
-                return ApiFailResponse(message=f"{typeid} is not an asset of this project", status_code=400)
+        if typeid is not None and await self._own_asset(typeid) is None:
+            return ApiFailResponse(message=f"{typeid} is not an asset of this project", status_code=400)
         try:
-            await asyncio.to_thread(set_home_page, Path(self.fs_storage_mount_path), typeid)
+            spec = await asyncio.to_thread(set_home_page, Path(self.fs_storage_mount_path), typeid)
         except ManifestError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-        return ApiSuccessResponse(data={"home_page": self.home_page_typeid()})
+        return ApiSuccessResponse(data={"home_page": spec.home_page})
+
+    async def _own_asset(self, typeid: str) -> Entity | None:
+        """The entity ``typeid`` names, if it lives in this Project or a direct
+        context folder (the auto-launch boundary), else ``None``."""
+        try:
+            asset = await Entity.get_by_typeid(typeid)
+        except ValueError:  # an unregistered type
+            return None
+        if asset is None or not assets_under_roots([asset], self.direct_context_roots()):
+            return None
+        return asset
 
     async def open_home_page(self) -> dict[str, Any]:
         """Resolve the declared home page to the asset the frontend opens.
@@ -529,18 +535,11 @@ class Project(Entity):
         at another project's agent. Anything unresolvable is the empty payload —
         the default home.
         """
-        payload: dict[str, Any] = {"asset": None, "type": None}
         typeid = self.home_page_typeid()
-        if not typeid:
-            return payload
-        try:
-            asset = await Entity.get_by_typeid(typeid)
-        except ValueError:  # an unregistered type
-            return payload
-        if asset is None or not assets_under_roots([asset], self.direct_context_roots()):
-            return payload
-        payload.update(asset=typeid, type=asset.get_type())
-        return payload
+        asset = await self._own_asset(typeid) if typeid else None
+        if asset is None:
+            return {"asset": None, "type": None}
+        return {"asset": typeid, "type": asset.get_type()}
 
     @staticmethod
     def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:

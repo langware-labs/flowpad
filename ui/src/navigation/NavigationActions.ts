@@ -31,7 +31,7 @@ import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-d
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
-import { HOME_PAGE_OPEN, HOME_PAGE_PARAM, isProjectHomePage } from '@src/project-home-page/home-page-state';
+import { isProjectHomePage, withHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
 import { errorMessage } from '@src/lib/error-message';
@@ -411,7 +411,7 @@ export class NavigationActions {
     // home. From the home page itself the button gives the plain home, or the
     // default home could never be reached.
     const wantsHomePage = options?.homePage && !isProjectHomePage(dataContext.project?.id, this.here);
-    this.openDock(wantsHomePage ? DockPointer.root().withOption(HOME_PAGE_PARAM, HOME_PAGE_OPEN) : DockPointer.root());
+    this.openDock(wantsHomePage ? withHomePage(DockPointer.root()) : DockPointer.root());
   }
 
   /** The journey shown where we are (or are going), or null. */
