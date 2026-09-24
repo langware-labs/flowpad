@@ -26,6 +26,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.app.actions.share_action import ShareInvitee
 from flow_sdk.builtin.project import Project
 
 
@@ -169,7 +170,7 @@ async def test_resharing_to_an_existing_member_does_not_reinvite(hub):
     hub["get"] = _FakeResponse(200, _ROSTER)
     proj = _project()
 
-    assert await proj.share(recipients=["Gadi@Langware.ai"]) is proj
+    assert await proj.share(invitees=[ShareInvitee(email="Gadi@Langware.ai")]) is proj
     assert _member_posts(hub) == [], "an existing member must not be re-invited (case-insensitively)"
 
 
@@ -181,5 +182,7 @@ async def test_resharing_still_invites_the_people_who_are_new(hub):
     hub["get"] = _FakeResponse(200, _ROSTER)
     proj = _project()
 
-    await proj.share(recipients=["gadi@langware.ai", "noa@langware.ai"])
+    await proj.share(
+        invitees=[ShareInvitee(email="gadi@langware.ai"), ShareInvitee(email="noa@langware.ai")]
+    )
     assert _member_posts(hub) == [f"/graph/project/{proj.id}/members"], "exactly one invite: the new person"

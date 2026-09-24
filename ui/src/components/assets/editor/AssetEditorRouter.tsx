@@ -23,7 +23,7 @@ import {
   type AnyEntity,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { isFolderShape } from '@sdk/FlowSync/schema';
+import { isFolderShape, type TypeShape } from '@sdk/FlowSync/schema';
 import { lazy, Suspense, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
@@ -176,8 +176,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     if (!ptr || !ptr.editor) return null;
     if (isFileOnlyEditor(ptr.editor) && !readOnly) return null;
     if (ptr.method !== AssetRoutingMethod.VFS) return null;
-    const vfs = VFSPath.parse(ptr.value);
-    return vfs.typeId ? new FSRef(vfs.entitySubPath, vfs.typeId) : null;
+    return vfsOccurrenceRef(ptr);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pointer, readOnly]);
   const { resolvedType: vfsResolvedType } = useEntityByPath<AnyEntity>(
@@ -198,18 +197,12 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
       };
     }
     if (!vfsResolveRef) return null;
-    return {
-      fsRef: vfsResolveRef,
-      // The record type is the backend's answer for this path. Until it lands
-      // (or when the path is not an asset) the registry's declared type for
-      // the editor stands in — the registry's word, never a client-side table;
-      // an empty registry (hub) leaves the editor name, which is only a label.
-      assetType: vfsResolvedType ?? primaryTypeForEditor(ptr.editor) ?? ptr.editor,
-      // record/refs is TYPEID-only, so `mainRef` is null on this route. A vfs
-      // pointer names the asset's own file, so it IS the main ref — editors
-      // that write the main file (agent.md) must use this, not `mainRef`.
-      mainFileRef: vfsResolveRef,
-    };
+    // The record type is the backend's answer for this path. Until it lands
+    // (or when the path is not an asset) the registry's declared type for
+    // the editor stands in — the registry's word, never a client-side table;
+    // an empty registry (hub) leaves the editor name, which is only a label.
+    const assetType = vfsResolvedType ?? primaryTypeForEditor(ptr.editor) ?? ptr.editor;
+    return vfsEditorTarget(vfsResolveRef, assetType, dataManager.getTypeInfo(assetType)?.shape);
     // ptr/typeId are derived deterministically from `pointer`; keying on the
     // stable strings keeps the memo from re-minting the FSRef every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -556,4 +549,22 @@ export function recordContentRef(mainRef: FSRef, folderBacked: boolean): FSRef {
     return mainRef.parent;
   }
   return mainRef;
+}
+
+/** The occurrence a vfs pointer addresses, on its compute node. */
+export function vfsOccurrenceRef(ptr: AssetDocPointer): FSRef | null {
+  const vfs = VFSPath.parse(ptr.value);
+  return vfs.typeId ? new FSRef(vfs.entitySubPath, vfs.typeId) : null;
+}
+
+/** The editor refs for a vfs pointer. record/refs is TYPEID-only, so `mainRef`
+ * is null on this route: editors that read or write the main file (agent.json)
+ * use `mainFileRef`, never `mainRef`. A pointer names either that file or, for
+ * a folder-shaped type, the asset's folder — the registry's `main` resolves it. */
+export function vfsEditorTarget(
+  ref: FSRef,
+  assetType: string,
+  shape: TypeShape | null | undefined,
+): { fsRef: FSRef; assetType: string; mainFileRef: FSRef } {
+  return { fsRef: ref, assetType, mainFileRef: assetOccurrenceMainRef(ref, shape) };
 }
