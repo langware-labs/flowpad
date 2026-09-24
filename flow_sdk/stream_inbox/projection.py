@@ -143,12 +143,11 @@ def quiet_past(last: Optional[datetime], timeout_seconds: Optional[int], at: dat
 
 async def timed_out(thread, timeout_seconds: Optional[int], at: Optional[datetime]) -> bool:
     """Whether *thread* was quiet longer than ``timeout_seconds`` before ``at``. A message older than
-    the thread's newest (a backfill) never ends it; a thread younger than the timeout cannot have
-    ended, so it costs no read."""
+    the thread's newest (a backfill) never ends it. Judged on message time only: the thread row's
+    own creation is ingest time, another clock (a backfilled message is older than its row)."""
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
-    born = iso_to_utc(getattr(thread, "created_date", None))
-    if not timeout_seconds or at is None or (born is not None and not quiet_past(born, timeout_seconds, at)):
+    if not timeout_seconds or at is None:
         return False
     rows = await FlowMessage.get_all({"match": {"thread_id": str(thread.id)}, "order_by": {"sent_at": "desc"}, "limit": 1})
     return quiet_past(iso_to_utc(rows[0].occurred_at) if rows else None, timeout_seconds, at)
