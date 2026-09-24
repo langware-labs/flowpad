@@ -459,6 +459,70 @@ class Project(Entity):
             has_bg = False
         return {"home_title": home_title, "has_home_background": has_bg, "brand": brand}
 
+    def home_page_typeid(self) -> str | None:
+        """The asset TypeId the project manifest DECLARES as its home page, or ``None``.
+
+        Declared, not resolved: whether the asset exists and lives in this
+        project needs the DB. ``open_home_page`` is the resolver.
+        """
+        from flow_sdk.assets.project_manifest import read_home_page  # noqa: PLC0415
+
+        root = self.fs_storage_mount_path
+        return read_home_page(Path(root)) if root else None
+
+    @action.post(action_name="set-home-page")
+    async def set_home_page_action(self, typeid: str = "") -> "ApiResponse":
+        """`POST /project/<id>/set-home-page {typeid}` — name (or, empty, clear) the home page.
+
+        Written into ``project_manifest.json`` so it travels with the repo. The
+        asset must be this project's own or a direct context folder's — the same
+        boundary ``open_home_page`` enforces — so the setting is refused here
+        rather than silently ignored on every Home click.
+        """
+        from flow_sdk.assets.project_manifest import ManifestError, set_home_page  # noqa: PLC0415
+
+        if not self.fs_storage_mount_path:
+            return ApiFailResponse(message="Project has no local working directory")
+        typeid = (typeid or "").strip() or None
+        if typeid is not None:
+            try:
+                asset = await Entity.get_by_typeid(typeid)
+            except ValueError:
+                asset = None
+            if asset is None or not assets_under_roots([asset], self.direct_context_roots()):
+                return ApiFailResponse(message=f"{typeid} is not an asset of this project", status_code=400)
+        try:
+            await asyncio.to_thread(set_home_page, Path(self.fs_storage_mount_path), typeid)
+        except ManifestError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"home_page": self.home_page_typeid()})
+
+    async def open_home_page(self) -> dict[str, Any]:
+        """Resolve the declared home page to the asset the frontend opens.
+
+        Only the resolution lives here; what to OPEN for it (an agent's last
+        chat in this project, else a new one) is the frontend's, the same
+        last-chat query the rail's Chats icon uses.
+
+        Scoped like auto-launch: the asset must live in this Project or one of
+        its direct context folders. The manifest arrives with a cloned repo —
+        third-party content — and a project must not be able to point its Home
+        at another project's agent. Anything unresolvable is the empty payload —
+        the default home.
+        """
+        payload: dict[str, Any] = {"asset": None, "type": None}
+        typeid = self.home_page_typeid()
+        if not typeid:
+            return payload
+        try:
+            asset = await Entity.get_by_typeid(typeid)
+        except ValueError:  # an unregistered type
+            return payload
+        if asset is None or not assets_under_roots([asset], self.direct_context_roots()):
+            return payload
+        payload.update(asset=typeid, type=asset.get_type())
+        return payload
+
     @staticmethod
     def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:
         """Validate a ``brand`` block from ``string.json``, or ``None``.

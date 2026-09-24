@@ -223,6 +223,41 @@ def unpublish(root: Path, typeid: str) -> ProjectManifestSpec:
     return _drop(manifest_path(root), ProjectManifestSpec, typeid)
 
 
+def read_home_page(root: Path) -> Optional[str]:
+    """The home-page TypeId the manifest declares, or None. Never raises.
+
+    Read on every serialization of the Project (``customization``) and every
+    Home click, so an unreadable ledger means "no home page", not an error —
+    the ledger's own readers still report it where it matters.
+    """
+    try:
+        spec = read_manifest(root)
+    except ManifestError:
+        return None
+    return spec.home_page if spec is not None else None
+
+
+def set_home_page(root: Path, typeid: Optional[str]) -> ProjectManifestSpec:
+    """Set (or, with None, clear) the project's home page; returns the manifest.
+
+    Clearing never CREATES a manifest — the same rule as ``unpublish``. The
+    value goes through the spec's own validator, so a malformed id writes
+    nothing rather than a pointer every reader would discard.
+    """
+    path = manifest_path(root)
+    with capsule_lock(path):
+        current = _read(path, ProjectManifestSpec)
+        if current is None and typeid is None:
+            return ProjectManifestSpec.empty()
+        base = current or ProjectManifestSpec.empty()
+        spec = ProjectManifestSpec.model_validate({**base.to_document(), "home_page": typeid})
+        if typeid is not None and spec.home_page is None:
+            raise ManifestError(f"home page {typeid!r} is not an asset TypeId (<type>-<uuid>)")
+        if current is None or _render(spec) != _render(current):
+            _write(path, spec)
+        return spec
+
+
 def state_in_tree(root: Path, entry: PublishedAssetSpec) -> str:
     """What a bare tree can say about a row: the carrier is there or it isn't."""
     return "in_use" if (Path(root) / entry.rel_path).exists() else "missing"

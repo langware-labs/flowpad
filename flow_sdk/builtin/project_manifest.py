@@ -36,6 +36,10 @@ class ProjectManifest(Entity):
         ),
     )
     entries: list[PublishedAssetSpec] = APIField(default_factory=list)
+    home_page: str | None = APIField(
+        default=None,
+        description="TypeId of the asset the Home button opens for this project. None = the default home.",
+    )
     asset_ref: str = APIField(default="")
 
 
