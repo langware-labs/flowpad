@@ -85,7 +85,23 @@ def kill_owned(
         except gone:
             continue
 
-    # Descend the recorded tree as well: children spawned after the scan (a
+    result.killed, result.survivors = terminate_tree(list(targets.values()))
+    return result
+
+
+def terminate_tree(roots: list) -> tuple[list[int], list[int]]:
+    """The shutdown ladder over *roots* (``psutil.Process``) and every descendant: SIGTERM all,
+    wait once, SIGKILL the survivors. ``(killed, survivors)`` pids. Never this process.
+
+    The caller has already decided the roots are its own; this only reaps them — batched,
+    because a degraded tree can hold dozens of children and one-at-a-time takes minutes.
+    """
+    import psutil
+
+    gone = (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess)
+    self_pid = os.getpid()
+    targets = {p.pid: p for p in roots if p.pid != self_pid}
+    # Descend the tree as well: children spawned after the roots were found (a
     # backend that forked a worker a moment ago) are still ours to reap.
     for pid in list(targets):
         try:
@@ -108,10 +124,7 @@ def kill_owned(
         except gone:
             pass
     _, survivors = psutil.wait_procs(alive, timeout=_KILL_GRACE)
-
-    result.killed = sorted(targets)
-    result.survivors = sorted(p.pid for p in survivors)
-    return result
+    return sorted(targets), sorted(p.pid for p in survivors)
 
 
 def kill_port_if_owned(

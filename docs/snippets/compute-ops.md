@@ -40,12 +40,21 @@ and `output_spec_kind` is what the person provides:
 ```
 
 `output_spec_kind` names a REGISTERED kind — a primitive, or a DataSpec with a
-`spec_kind` — and an unknown one is refused when the document is read.
+`spec_kind` — and an unknown one is refused when the document is read. An op
+cannot declare a shape of its OWN: this folder holds a JSON document and a
+markdown file, and a kind is registered by importing the module that declares
+it. See [ontology](../ontology.md) for what to do the day an op needs one.
 
 The op raises the question and waits a bounded time. A live tab is sent to
 `win/`, the chrome-less layout where the routed view IS the window; with no tab
 listening, a window is opened at the same address. `ASK_TIMEOUT_SECONDS` is 60;
 a caller may pass a shorter deadline, never a longer one.
+
+The question is held by the backend, because that is where the answer arrives.
+An op run anywhere else — a script, a worker — hands the question to the backend
+(`POST /api/v1/ask`) and keeps its lease on it until the person has answered or
+the deadline has passed. With no backend to ask through, it answers `NOT_YET`
+with `ran=False` and says so.
 
 `approved=True` is not optional. An op that is not a system op answers
 `REFUSED` unapproved — before it puts a question to anyone.
@@ -91,6 +100,13 @@ agent's answer names its process in `executor`; a caller that wants a second
 turn in the SAME session runs the next op with `executor=answer.executor`. A turn
 that ran out of time is `timed_out` — that process is busy, not done, so it is
 not prompted again on top of itself.
+
+**What the sequencing wizard then answers.** The shared check is what makes the
+pair one goal: a wizard counts goals, not attempts, so the cheap rung missing
+does not fail the run once the second rung reaches that same goal — the miss
+stays on its own step. See
+[wizards](wizards.md#3-a-fallback-is-two-steps-with-the-same-check). In Python
+the same pair is two `run_op` calls and the second answer is the one you keep.
 
 ---
 

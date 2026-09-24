@@ -79,7 +79,7 @@ export default function DiscoverDetailPage() {
   const item = hub ? hubItem : (directory.items.find((i) => i.typeid === typeid) ?? directory.candidates.find((i) => i.typeid === typeid) ?? null);
   const more = hub ? siblings : directory.items.filter((i) => i.typeid !== typeid);
   const loading = hub ? hubLoading : directory.isLoading;
-  const body = useDiscoverBody(item, directory.mode);
+  const body = useDiscoverBody(item);
   const reason = item ? bodyCopyKey(item) : null;
   const projectId = item?.sourceProjectId ?? directory.project?.id ?? null;
   const hubProject = useMemo(

@@ -13,6 +13,7 @@ import type { ComputeNode } from '../entities/compute-node/compute-node';
 import { perfTime } from '../utils/perf';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
+import { isOk, type PromptResult } from '../models/ReturnedValue';
 import { IEntity } from '../IEntity';
 import { FSRef, type FSRefJson } from '../fs/FSRef';
 import { ClaudeAgentOptions, factory as cliOptionsFactory } from '../cli_workers';
@@ -2631,8 +2632,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     // pane mounted just now, and wrong for a turn we learn about late (a
     // queue-drained prompt), where the turn's own head is already written by
     // the time `busy` reaches us. Derived by default so callers need no
-    // change; `opts.afterEntryId` overrides. Omitted entirely when we hold no
-    // transcript entry, which is exactly when the old default is right.
+    // change; `opts.afterEntryId` overrides.
     const afterEntryId = opts?.afterEntryId ?? this.lastHeldTranscriptEntryId();
 
     const actionInfo = new ActionInfo(
@@ -2644,7 +2644,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       true, // streaming
       ctrl.signal,
     );
+    // Holding nothing at all (the pane mounted before this session had a transcript — a turn run
+    // by another process, say), everything already on disk is news: ask for it from the start.
     if (afterEntryId) actionInfo.bodyParameters = { after_entry_id: afterEntryId };
+    else if (!this.flowDataStream.items.length) actionInfo.bodyParameters = { from_start: true };
 
     const response = await dataManager.callAction<unknown, Response>(actionInfo);
     if (!response || !response.body) return; // nothing in flight — not an error
@@ -2783,7 +2786,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     actionInfo.bodyParameters = { instruction, ...(workerSessionId ? { worker_session_id: workerSessionId } : {}) };
 
     try {
-      await dataManager.callAction(actionInfo);
+      // The turn's PromptResult. A turn the backend could not take is a 200
+      // carrying NOT_YET (only `busy` is a 409, which throws) — so the answer is
+      // READ: waiting for a completion that will never come would hang here.
+      const answer = await dataManager.callAction<Record<string, unknown>, PromptResult>(actionInfo);
+      if (answer && answer.exit_code !== undefined && !isOk(answer)) {
+        throw new Error(answer.detail || 'The turn was not taken');
+      }
     } catch (error) {
       // No backend turn was accepted, so do not leave the local pending latch
       // masking the process's last authoritative status.

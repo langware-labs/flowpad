@@ -5,11 +5,25 @@ import { apiBase } from '../_shared/api';
 
 const API = apiBase();
 
+// Every board a test creates lands in the user-scope family on disk; afterEach
+// removes it whether the test passed or not, so a red run leaves nothing behind.
+const created: Array<{ id: string; assetRef: string }> = [];
+
 async function createWhiteboard(request: APIRequestContext, name: string) {
   const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name } });
   expect(res.status()).toBe(200);
   const body = await res.json();
-  return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
+  const board = { id: body.data.id as string, assetRef: body.data.asset_ref as string };
+  created.push(board);
+  return board;
+}
+
+const UUID_V4_V5 = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[45][0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/** The `id:` in WHITE_BOARD.md's frontmatter — the whiteboard's identity carrier. */
+function frontmatterId(md: string): string | null {
+  const fm = md.match(/^---\n([\s\S]*?)\n---/);
+  return fm?.[1].match(/^id:\s*['"]?([^'"\s]+)/m)?.[1] ?? null;
 }
 
 async function openEditor(page: Page, id: string) {
@@ -55,6 +69,13 @@ const TWO_BOXES_ARROW = [
 ];
 
 test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
+  test.afterEach(async ({ request }) => {
+    for (const { id, assetRef } of created.splice(0)) {
+      await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+      fs.rmSync(assetRef, { recursive: true, force: true });
+    }
+  });
+
   test('C1: create opens the whiteboard editor', async ({ page, request }) => {
     test.setTimeout(60_000);
     await page.addInitScript(() => {
@@ -73,7 +94,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     expect(page.url()).toContain('/dock/assets/editor/whiteboard/');
   });
 
-  test('C2–C3: files on disk + capsule id present (after first save)', async ({ page, request }) => {
+  test('C2–C3: files on disk + frontmatter id present (after first save)', async ({ page, request }) => {
     test.setTimeout(60_000);
     await page.addInitScript(() => {
     try {
@@ -96,32 +117,25 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     expect(fs.existsSync(`${assetRef}/WHITE_BOARD.md`), 'WHITE_BOARD.md exists after save').toBe(true);
     expect(fs.existsSync(`${assetRef}/board.json`), 'board.json exists after save').toBe(true);
 
-    // C3a: right after save, autosave has only spliced the mermaid block — the
-    // id is NOT written into the markdown frontmatter. Since the named-asset-
-    // capsule refactor (4f94fb92 / b4295a7a), a whiteboard's identity lives in
-    // the folder capsule `.flow/capsules/identity.json`, not in WHITE_BOARD.md.
-    // The mermaid markers must already be present, though.
-    const mdPreIndex = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
-    expect(mdPreIndex).toContain('<!-- BEGIN whiteboard:auto -->');
-    expect(mdPreIndex).toContain('<!-- END whiteboard:auto -->');
-
-    // C3b: the identity capsule holds a valid UUID id (minted at create, so it
-    // is present without a corpus-wide index pass).
-    const capsulePath = `${assetRef}/.flow/capsules/identity.json`;
-    expect(fs.existsSync(capsulePath), 'identity capsule exists').toBe(true);
-    const capsule = JSON.parse(fs.readFileSync(capsulePath, 'utf8'));
-    // Capsule id (a valid v4/v5 UUID — version digit is 4 or 5).
-    expect(String(capsule.data?.id)).toMatch(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[45][0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/);
-    // The capsule id matches the entity id assigned at create.
-    expect(String(capsule.data?.id)).toBe(id);
-    // BEGIN/END mermaid markers coexist with capsule identity; there is no
-    // frontmatter id.
+    // C3: the whiteboard's identity carrier is WHITE_BOARD.md's frontmatter
+    // (TypeInfo `identity_carrier=frontmatter_identity()`; the folder-capsule and
+    // folder-name id forms were retired in 835d68760). The id is minted at create,
+    // so it is already there right after the first save, next to the mermaid block
+    // the autosave splices in.
     const md = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
     expect(md).toContain('<!-- BEGIN whiteboard:auto -->');
     expect(md).toContain('<!-- END whiteboard:auto -->');
+    const savedId = frontmatterId(md);
+    expect(savedId ?? '', 'frontmatter id is a valid v4/v5 UUID').toMatch(UUID_V4_V5);
+    expect(savedId, 'frontmatter id is the entity id assigned at create').toBe(id);
 
-    fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    // An index pass keeps the same id and the mermaid markers.
+    const idx = await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`);
+    expect(idx.status()).toBe(200);
+    const mdAfterIndex = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
+    expect(frontmatterId(mdAfterIndex), 'index pass keeps the frontmatter id').toBe(id);
+    expect(mdAfterIndex).toContain('<!-- BEGIN whiteboard:auto -->');
+    expect(mdAfterIndex).toContain('<!-- END whiteboard:auto -->');
   });
 
   test('C4: draw + autosave writes board.json (>=2 elements) + thumbnail', async ({ page, request }) => {
@@ -165,8 +179,6 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     expect(fs.existsSync(thumb), 'thumbnail.svg exists').toBe(true);
     expect(thumbSize, 'thumbnail.svg size > 200 bytes').toBeGreaterThan(200);
 
-    fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
   });
 
   test('C5: reload preserves content', async ({ page, request }) => {
@@ -200,7 +212,5 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     // No React error boundary (the appState.collaborators Map regression surfaces here).
     expect(await page.getByRole('heading', { name: /^Error$/ }).count()).toBe(0);
 
-    fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
   });
 });

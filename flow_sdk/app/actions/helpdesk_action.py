@@ -181,9 +181,9 @@ async def helpdesk_ensure(project_id: str = "") -> ApiResponse:
             # The portal is expected to be public; a missing token is normal.
             token = None
 
-        ok, message = await git_clone(target.portal_git_url, str(mount_path), token=token)
-        if not ok:
-            return ApiFailResponse(message=message, status_code=502)
+        clone = await git_clone(target.portal_git_url, str(mount_path), token=token)
+        if not clone.ok:
+            return ApiFailResponse(message=clone.detail, status_code=502)
         cloned = True
 
     proj = await Project.find_by_cwd(canonical)
@@ -229,12 +229,12 @@ async def helpdesk_refresh() -> ApiResponse:
     if not _is_checkout(mount_path):
         return ApiFailResponse(message="Help desk files are not set up yet", status_code=409)
 
-    ok, changed, message = await git_sync_mirror(str(mount_path))
-    if not ok:
-        return ApiFailResponse(message=message, status_code=502)
-    # ``changed`` comes back explicitly — the caller must not re-derive "is a
-    # re-index due?" by matching English in ``message``.
-    return ApiSuccessResponse(data={"updated": changed, "message": message})
+    synced = await git_sync_mirror(str(mount_path))
+    if not synced.ok:
+        return ApiFailResponse(message=synced.detail, status_code=502)
+    # ``changed`` comes back explicitly as the value — the caller must not
+    # re-derive "is a re-index due?" by matching English in ``detail``.
+    return ApiSuccessResponse(data={"updated": bool(synced.value), "message": synced.detail})
 
 
 @action.post(action_name="helpdesk-reset", types=None)

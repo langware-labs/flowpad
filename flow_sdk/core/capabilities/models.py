@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from flow_sdk._compat import StrEnum
 from flow_sdk.tags.grammar import tag_is_within
 from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 
 def now_iso() -> str:
@@ -175,6 +176,11 @@ class CapabilityResult(BaseModel):
     # the persisted row state is derived via ``Capability.derive_state`` so
     # NONE ("never tried") survives passive discovery.
     state: str = CapabilityState.NONE.value
+    #: What the worker behind this result answered — an install or a probe is
+    #: an agent run, and its own verdict, detail and ``executor`` ride here
+    #: rather than being copied into ``details``. ``None`` for a check that
+    #: ran no worker.
+    answer: PromptResult | None = None
 
 
 class CapabilityScope(BaseModel):

@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+
 from .file_system import ROOT_FOLDER
 
 logger = logging.getLogger(__name__)
@@ -114,6 +116,26 @@ def _git_err(result: subprocess.CompletedProcess, verb: str) -> str:
     return f"Git {verb} failed: {err}"
 
 
+def _answer(result: subprocess.CompletedProcess, verb: str, done: str, **fields) -> CliResult:
+    """A finished git invocation as the answer these helpers give. ``detail`` is
+    the sentence a caller shows (and a few match on — "already exists",
+    "CONFLICT"); the streams ride whole beside it."""
+    ok = result.returncode == 0
+    detail = ((result.stdout or result.stderr or "").strip() or done) if ok else _git_err(result, verb)
+    return CliResult.of_process(
+        " ".join(result.args),
+        result.returncode, result.stdout or "", result.stderr or "", detail=detail, **fields,
+    )
+
+
+def _unanswered(cmd: list[str], verb: str, exc: Exception, **fields) -> CliResult:
+    """An invocation that raised: its budget ran out, or it never started."""
+    logger.warning("[git] %s error: %s", verb, exc)
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return CliResult.of_process(" ".join(cmd), None, timed_out=True, duration_s=float(exc.timeout), **fields)
+    return CliResult.of_process(" ".join(cmd), None, "", str(exc), detail=f"Git {verb} error: {exc}", **fields)
+
+
 def find_project_root(file_path: str) -> Optional[str]:
     """Walk up from file_path to find the nearest .git directory."""
     p = Path(file_path).resolve()
@@ -211,7 +233,7 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
     return None
 
 
-async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, bool, str]:
+async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> CliResult:
     """Force a checkout to match its remote, discarding local changes.
 
     For a MIRROR — a checkout the app manages and the user never edits — as
@@ -219,8 +241,8 @@ async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple
     must be preserved. Use it only where local modifications are known to be
     machine-made and disposable; it throws away uncommitted work.
 
-    Returns ``(ok, changed, message)``. ``changed`` means **the working tree is
-    not what it was**, which is the question a caller actually asks (do I need
+    Answers a ``CliResult`` whose ``value`` is ``changed`` and whose ``detail`` is
+    the message. ``changed`` means **the working tree is not what it was**, which is the question a caller actually asks (do I need
     to re-index?) — NOT merely "did HEAD move". Those differ in exactly the case
     this function exists for: when the remote has not moved but the tree is
     dirty with index stamps, the reset rewrites those files, and reporting
@@ -234,7 +256,7 @@ async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple
     try:
         branch = branch or await _checked_out_branch(repo_path)
         if not branch:
-            return False, False, "Skipped sync (detached HEAD)."
+            return CliResult.not_applicable("Skipped sync (detached HEAD).", value=False)
 
         # Dirty BEFORE the reset: the reset is about to revert these, so they
         # count as a change even when no new commit arrives.
@@ -244,7 +266,7 @@ async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple
         before = await _git(["git", "rev-parse", "HEAD"], repo_path)
         fetch = await _git(["git", "fetch", "origin", branch], repo_path)
         if fetch.returncode != 0:
-            return False, False, _git_err(fetch, f"fetch origin {branch}")
+            return _answer(fetch, f"fetch origin {branch}", "", value=False)
 
         # Compare against the ref we just fetched rather than re-reading HEAD
         # after the reset — same answer, one subprocess fewer.
@@ -253,7 +275,7 @@ async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple
 
         reset = await _git(["git", "reset", "--hard", f"origin/{branch}"], repo_path)
         if reset.returncode != 0:
-            return False, False, _git_err(reset, f"reset --hard origin/{branch}")
+            return _answer(reset, f"reset --hard origin/{branch}", "", value=False)
 
         # Indexing also CREATES files (folder capsules, sidecars); `reset --hard`
         # leaves untracked ones behind, so a mirror has to clean them too or it
@@ -262,69 +284,61 @@ async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple
 
         changed = moved or was_dirty
         logger.info("[git] mirror synced to origin/%s (moved=%s dirty=%s)", branch, moved, was_dirty)
-        return True, changed, "Updated." if moved else ("Restored." if was_dirty else "Already up to date.")
+        return CliResult.of_process(
+            " ".join(reset.args), reset.returncode, reset.stdout or "", reset.stderr or "",
+            detail="Updated." if moved else ("Restored." if was_dirty else "Already up to date."),
+            value=changed,
+        )
     except Exception as e:
-        logger.warning("[git] mirror sync error: %s", e)
-        return False, False, f"Git mirror sync error: {e}"
+        return _unanswered(["git", "reset", "--hard", f"origin/{branch}"], "mirror sync", e, value=False)
 
 
-async def git_pull(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, str]:
+async def git_pull(repo_path: str, branch: Optional[str] = None) -> CliResult:
     """Pull latest from origin for the given branch, or the current branch if not specified.
 
     For a WORKING TREE whose local changes must be preserved — the opposite of
     ``git_sync_mirror``, which discards them.
 
-    Returns (success, message).
+    Answers a ``CliResult``; ``detail`` is the message to show.
     """
+    cmd = ["git", "pull", "origin", branch or ""]
     try:
         branch = branch or await _checked_out_branch(repo_path)
         if not branch:
             logger.warning("[git] Detached HEAD at %s — skipping pull", repo_path)
-            return False, "Skipped git pull (detached HEAD). Files may not be up to date."
-
-        result = await _git(["git", "pull", "origin", branch], repo_path)
-        if result.returncode == 0:
-            out = (result.stdout or "").strip()
-            logger.info("[git] pull origin %s succeeded: %s", branch, out)
-            return True, out or "Already up to date."
-        return False, _git_err(result, f"pull origin {branch}")
+            return CliResult.not_applicable("Skipped git pull (detached HEAD). Files may not be up to date.")
+        cmd = ["git", "pull", "origin", branch]
+        return _answer(await _git(cmd, repo_path), f"pull origin {branch}", "Already up to date.")
     except Exception as e:
-        logger.warning("[git] pull error: %s", e)
-        return False, f"Git pull error: {e}"
+        return _unanswered(cmd, "pull", e)
 
 
 async def git_clone(
     clone_url: str, target_dir: str, branch: Optional[str] = None, token: Optional[str] = None
-) -> Tuple[bool, str]:
+) -> CliResult:
     """Clone clone_url into target_dir, optionally checking out branch.
 
     When ``token`` is given (a GitHub access token), the clone authenticates via
     an inline credential helper that reads the token from the child env — so
     private repos work and the token never touches argv or the on-disk URL.
 
-    Returns (success, message).
+    Answers a ``CliResult``; ``detail`` is the message to show.
     """
+    auth_args, env = _git_token_auth(token)
+    cmd = ["git", *auth_args, "clone", clone_url, target_dir]
+    if branch:
+        cmd += ["--branch", branch]
     try:
-        auth_args, env = _git_token_auth(token)
-        cmd = ["git", *auth_args, "clone", clone_url, target_dir]
-        if branch:
-            cmd += ["--branch", branch]
 
         def _run(args):
             return subprocess.run(args, capture_output=True, text=True, timeout=120, env=env)
 
         result = await asyncio.to_thread(_run, cmd)
-        if result.returncode == 0:
-            out = (result.stdout or result.stderr or "").strip()
-            logger.info("[git] clone %s into %s succeeded", clone_url, target_dir)
-            return True, out or "Cloned successfully."
-        else:
-            err = (result.stderr or result.stdout or "").strip()
-            logger.warning("[git] clone %s FAILED: %s", clone_url, err)
-            return False, f"Git clone failed: {err}"
     except Exception as e:
-        logger.warning("[git] clone error: %s", e)
-        return False, f"Git clone error: {e}"
+        return _unanswered(cmd, "clone", e)
+    if result.returncode == 0:
+        logger.info("[git] clone %s into %s succeeded", clone_url, target_dir)
+    return _answer(result, "clone", "Cloned successfully.")
 
 
 async def git_remote_access(

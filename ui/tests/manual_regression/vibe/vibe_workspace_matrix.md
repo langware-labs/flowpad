@@ -56,7 +56,7 @@ Do not reuse process, project, browser-tab, or display state between scenarios.
 | VW-19 | Create another | Ask `Create another <asset type> based on this one and open it` | The new asset is created, and `flow show` from the workspace's process NAVIGATES: the URL becomes that asset's display address (`.../process/<typeid>/display/<tail>?viewMode=vibe&activeDisplay=1`) and the same chat remains mounted | The active-display child is ONE row that re-points — showing a second asset must not add a second chip; no duplicate process or target-history key; reload restores the new target at the same URL |
 | VW-20 | Open related | Ask `Open the related <known asset>` | The existing related asset becomes the launching process's active display, at the hosted URL naming that process; reopening it from history promotes it to its OWN durable child (the same address minus `activeDisplay`) | Correct viewer/type icon, the active-display chip's label follows the newest target, chat and ordered child history stay live |
 | VW-21 | Display URL | `flow show` a file, then a second file | Each show changes the URL to that target's display address, carrying `?viewMode=vibe`, `activeDisplay=1` and the host segments; the pane renders the file | The process chip stays selected in the global strip; `tab/list_all` holds ONE process row plus ONE active-display child across both shows |
-| VW-22 | Reload restore | From a shown document, hard-reload the bare process URL | The loader redirects back to the display address and the document re-renders | The redirect fires ONCE — a second reload of the display URL must not append history or bounce again; clicking the square Display header afterwards STAYS on the process (restore is a reload behavior, not a navigation one) |
+| VW-22 | Reload restore | From a shown document, hard-reload the bare process URL | The loader redirects back to the display address and the document re-renders | A second reload of the display URL must not append history or bounce again. Entering the process ALWAYS restores its last-shown item (no once-per-session memory — FLOWPAD-2096): clicking the square Display header from an older history entry lands on the NEWEST show, not on the bare process |
 | VW-23 | Back button | show A → show B → browser Back | Back lands on A's display address rendering A; Forward returns to B | N shows cost ONE history entry beyond the first (agent shows replace; the first pushes so Back returns to where the user arrived, not out of the workspace) |
 | VW-24 | Promote | From a shown document, click ⧉ "open in tab" | A separate DURABLE child appears, at the same address minus `activeDisplay` | The active-display row survives untouched; the next `flow show` re-points the active row and leaves the promoted chip alone |
 | VW-25 | App address | Register an artifact app, then `flow show app <artifact id>` | The URL becomes `/dock/app/artifact-<uuid>`; the app renders with its runtime toolbar | Toggling dev⇄served changes only `?runtime`, the path is byte-identical, and `tab/list_all` count is unchanged; reload re-enters the chosen runtime |
@@ -178,12 +178,20 @@ Fixture: Markdown, HTML, source, and an existing static app with `VW07_*` marker
 For each supported viewer fixture (Markdown, Skill, raw source, CSV/XLSX,
 Whiteboard, Deck, HTML, image, PDF):
 
-1. Open the fixture in Standard and verify its native viewer.
+1. Open the fixture in Standard INSIDE ITS PROJECT — the address the app places a
+   project's document at, `/dock/project/<project-id>/<editor tail>` — and verify its
+   native viewer. (The bare `/dock/assets/<editor tail>` form is the Global assets
+   scope: that tab belongs to no project, so `Discuss` is present but DISABLED with
+   the accessible name "Select a project to discuss this file" — verify that too.)
 2. Verify the MessageSquare `Discuss` control and accessible name.
 3. Click it; assert the dock path/pointer is unchanged and only
    `viewMode=vibe` is added.
-4. Verify the viewer did not lose selection/dirty state, chat is visible, and
-   the process target is the exact TypeId or compute-node VFS path.
+4. Verify the viewer did not lose selection/dirty state and the chat pane is
+   visible (36/64 split). With no host on the URL there is no session yet: the
+   chat pane shows an ENABLED `Start new chat` (`vibe-start-new-chat`) and there is
+   NO workspace child strip — no workspace is invented for the document. Once a
+   session is started, its process target is the exact TypeId or compute-node VFS
+   path.
 5. Hard reload and verify the same asset/chat split. Repeat at a narrow viewport
    and with reduced-motion emulation.
 

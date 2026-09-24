@@ -3,6 +3,7 @@ import { FSEntry } from '../fs/FSEntry';
 import { ActionInfo, TypeId } from '../models';
 import { DownloadOptions, UploadOptions } from '../models/FSOptions';
 import { FileUpload } from './FileUpload';
+import { ConnectionManager } from '../websocket';
 import type { AssetDocument, DocumentPatch } from '../fs/AssetDocument';
 
 /**
@@ -54,6 +55,15 @@ export interface SymlinkResolveResult {
  * Provides a consistent API for browse, upload, download, and delete operations
  * All methods throw errors on failure (consistent with SDK patterns)
  */
+/** One watched file: its listeners, and whether the server has it registered. */
+interface FileWatch {
+  typeid: TypeId;
+  path: string;
+  listeners: Set<() => void>;
+  registered: boolean;
+  syncing: boolean;
+}
+
 export class FSManager {
   async ensureDocument(typeid: TypeId, path: string, assetTypeId: TypeId, spec: Record<string, import('../fs/AssetDocument').DocumentValue>): Promise<void> {
     const action = this.createFSAction(typeid, 'ensure_document', path, 'POST');
@@ -77,6 +87,101 @@ export class FSManager {
       FSManager.instance = new FSManager();
     }
     return FSManager.instance;
+  }
+
+  // ---- file watches: fs/watch → file_changed_msg ---------------------------
+
+  private fileWatches = new Map<string, FileWatch>();
+  private fileWatchWired = false;
+  /** Bumped on every (re)connect: a watch sent before it was for the old socket. */
+  private fileWatchEpoch = 0;
+
+  /**
+   * Call `onChange` whenever the file changes on disk; returns the unwatch.
+   *
+   * The file counterpart of an entity watch: one server watch per (entity, path)
+   * however many listeners share it, dropped with the last one, and registered
+   * again on every reconnect (the server forgets a dropped socket's watches).
+   * Nothing is refetched here — the listener decides what a change means.
+   */
+  watchFile(typeid: TypeId, path: string, onChange: () => void): () => void {
+    this.wireFileWatch();
+    const clean = path.replace(/^\/+/, '');
+    const key = `${typeid.toString()}|${clean}`;
+    let watch = this.fileWatches.get(key);
+    if (!watch) {
+      watch = { typeid, path: clean, listeners: new Set(), registered: false, syncing: false };
+      this.fileWatches.set(key, watch);
+    }
+    watch.listeners.add(onChange);
+    void this.syncFileWatch(key);
+    return () => {
+      watch.listeners.delete(onChange);
+      void this.syncFileWatch(key);
+    };
+  }
+
+  /**
+   * Bring the server's watch in line with whether anyone listens — one request
+   * at a time per file. Sent concurrently, an unmount's `unwatch` and the
+   * remount's `watch` can reach the server in either order and leave it
+   * unwatched while every listener waits (seen live on a remounting view).
+   */
+  private async syncFileWatch(key: string): Promise<void> {
+    const watch = this.fileWatches.get(key);
+    if (!watch || watch.syncing) return;
+    watch.syncing = true;
+    try {
+      for (;;) {
+        const wanted = watch.listeners.size > 0;
+        if (wanted === watch.registered) break;
+        const epoch = this.fileWatchEpoch;
+        if (!(await this.postFileWatch(watch, wanted ? 'watch' : 'unwatch'))) break;
+        // Reconnected while it was in flight: it named the old socket, so it
+        // does not count — the loop sends it again for the new one.
+        watch.registered = epoch === this.fileWatchEpoch ? wanted : false;
+      }
+    } finally {
+      watch.syncing = false;
+      if (watch.listeners.size === 0 && !watch.registered) this.fileWatches.delete(key);
+    }
+  }
+
+  /** True when the server took it. Not connected → false; `on_open` re-syncs. */
+  private async postFileWatch(watch: FileWatch, action: 'watch' | 'unwatch'): Promise<boolean> {
+    const cm = ConnectionManager.getInstance();
+    if (!cm.connected) return false;
+    const info = this.createFSAction(watch.typeid, action, watch.path, 'POST');
+    info.bodyParameters = { connection_id: cm.id };
+    try {
+      await dataManager.callAction(info);
+      return true;
+    } catch {
+      // Best effort: a failed watch only means no live refresh until the next
+      // reconnect; a failed unwatch is cleared server-side when the socket goes.
+      return false;
+    }
+  }
+
+  private wireFileWatch(): void {
+    if (this.fileWatchWired) return;
+    this.fileWatchWired = true;
+    const cm = ConnectionManager.getInstance();
+    // Matched on the path: the server may name the entity by id where the
+    // client used a uname (`compute_node-@local`).
+    cm.on('on_file_changed', (message: { path?: string }) => {
+      for (const watch of this.fileWatches.values()) {
+        if (watch.path === message.path) watch.listeners.forEach((listener) => listener());
+      }
+    });
+    // A new socket has no watches server-side: register every file again.
+    cm.on('on_open', () => {
+      this.fileWatchEpoch += 1;
+      for (const [key, watch] of this.fileWatches) {
+        watch.registered = false;
+        void this.syncFileWatch(key);
+      }
+    });
   }
 
   /**

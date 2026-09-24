@@ -7,7 +7,7 @@
 import { gitOriginWebUrl, type DirectoryRow, type GitOrigin, type PublishedRow, type PublishedState, type UnpublishedRow } from '@sdk';
 import { installSnippet } from '@src/components/install/InstallSnippetDialog';
 
-export type BodyState = Pick<DirectoryRow, 'body_supported' | 'body_available' | 'body_reason' | 'body_ref'>;
+export type BodyState = Pick<DirectoryRow, 'body_reason'>;
 
 export interface DiscoverItem {
   typeid: string;
@@ -47,7 +47,7 @@ export function fromDirectoryRow(r: DirectoryRow): DiscoverItem {
     origin: r.origin ?? null,
     sourceProjectId: r.source_project_id,
     sourceProjectName: r.source_project_name,
-    body: { body_supported: r.body_supported, body_available: r.body_available, body_reason: r.body_reason, body_ref: r.body_ref },
+    body: { body_reason: r.body_reason },
     hubBody: null,
     bodyRef: r.body_ref ?? null,
   };
@@ -203,7 +203,7 @@ export function bodyCopyKey(item: DiscoverItem): BodyCopyKey | null {
     return 'publish_failed';
   }
   const body = item.body;
-  if (!body || body.body_available) return null;
+  if (!body || item.bodyRef) return null;
   if (body.body_reason === 'type_not_git') return 'type_not_git';
   if (body.body_reason === 'not_materialized') return 'not_materialized';
   return item.origin?.kind === 'local' ? 'not_on_hub_local' : 'not_on_hub_git';

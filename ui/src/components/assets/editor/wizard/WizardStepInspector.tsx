@@ -1,6 +1,6 @@
 import { Trans } from '@lingui/react/macro';
 import { ExternalLink } from 'lucide-react';
-import { AgenticProcess, TypeId, type CliResult } from '@sdk';
+import { AgenticProcess, TypeId, isCliResult, isOk, isWizardResult, type CliResult } from '@sdk';
 import type { ActivityProgressSpec } from '@sdk/activity';
 
 import { Button } from '@src/components/ui/button';
@@ -8,7 +8,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useEntity } from '@src/hooks/entity-hooks';
 
 import { LIVE_STATE, type WizardStepDoc } from './wizard-doc';
-import type { WizardStepAnswer } from './useWizardRun';
+import { stepStatus, type WizardStepAnswer } from './useWizardRun';
 
 function Stream({ label, text }: { label: string; text: string }) {
   if (!text) return null;
@@ -25,7 +25,8 @@ function Stream({ label, text }: { label: string; text: string }) {
 /** One command, with both streams: the step's own call, or the completion
  *  check that decided its verdict. */
 function CommandRow({ role, run }: { role: 'call' | 'check'; run: CliResult }) {
-  const failed = run.timed_out || (run.returncode != null && run.returncode !== 0);
+  // The verdict is ON the answer; `isOk` is the one reader of it.
+  const failed = !isOk(run);
   return (
     <li className="border-t border-border/60 py-2 first:border-t-0" data-testid={`wizard-probe-${role}`}>
       <div className="flex flex-wrap items-baseline gap-2">
@@ -83,7 +84,7 @@ export function WizardStepInspector({
   const { data: process } = useEntity<AgenticProcess>(
     executor.startsWith(`${AgenticProcess.type}${TypeId.DELIMITER}`) ? new TypeId(executor) : null,
   );
-  const call = outcome?.command ? (outcome as CliResult) : null;
+  const call = isCliResult(outcome) ? outcome : null;
   const check = outcome?.check ?? null;
   const args = Object.entries(step?.args ?? {});
 
@@ -144,6 +145,20 @@ export function WizardStepInspector({
       ) : null}
 
       {outcome?.text ? <Stream label="reply" text={outcome.text} /> : null}
+
+      {/* A step that called another WIZARD answers with that wizard's own result:
+          its steps are what it did, and they were not shown at all. */}
+      {isWizardResult(outcome) && outcome.steps ? (
+        <ul className="flex flex-col" data-testid="wizard-step-nested">
+          {Object.entries(outcome.steps).map(([id, sub]) => (
+            <li key={id} className="flex flex-wrap gap-2 font-mono text-[11px]">
+              <span>{id}</span>
+              <span className="text-muted-foreground">{stepStatus(sub)}</span>
+              {sub.detail ? <span className="text-muted-foreground">— {sub.detail}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {outcome?.detail ? <p className="text-xs text-muted-foreground">{outcome.detail}</p> : null}
 

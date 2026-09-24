@@ -253,3 +253,67 @@ def test_empty_write_is_noop(tmp_path: Path):
     f = PtyStreamFile(tmp_path / "session.pty")
     f.write(b"")
     assert f.exists is False
+
+
+# ── terminal modes across a cut / a new process ─────────────────────────────
+# A fullscreen TUI (Claude Code) switches to the alternate screen and turns on
+# mouse capture ONCE, at startup. Replay rebuilds the terminal from what the
+# file still holds, so a cut that drops that frame, or a respawned process
+# writing after one that died fullscreen, leaves the rebuilt terminal in the
+# wrong screen — and the mouse wheel has nothing to scroll (docs/pty-scroll.md,
+# issues 2 and 4).
+
+_FULLSCREEN = b"\x1b[?1049h\x1b[?1003h\x1b[?1006h"
+
+
+def test_truncation_keeps_the_modes_in_force_at_the_cut(tmp_path: Path):
+    f = PtyStreamFile(tmp_path / "s.pty", max_size_bytes=8 * 1024)
+    f.write(_FULLSCREEN + b"tui boot", seq=1)
+    for i in range(20):
+        f.write(b"y" * 1024, seq=i + 2)
+
+    survived = f.read_all()
+    assert b"tui boot" not in survived  # the frame that set the modes is gone
+    assert survived.startswith(_FULLSCREEN)
+
+
+def test_truncation_does_not_reapply_modes_that_were_turned_off(tmp_path: Path):
+    f = PtyStreamFile(tmp_path / "s.pty", max_size_bytes=8 * 1024)
+    f.write(_FULLSCREEN + b"tui", seq=1)
+    f.write(b"\x1b[?1006l\x1b[?1003l\x1b[?1049l$ ", seq=2)
+    for i in range(20):
+        f.write(b"y" * 1024, seq=i + 3)
+
+    assert f.read_all().startswith(b"y")
+
+
+def test_modes_survive_repeated_truncation(tmp_path: Path):
+    f = PtyStreamFile(tmp_path / "s.pty", max_size_bytes=8 * 1024)
+    f.write(b"\x1b[?1049h\x1b[?1003;1006h" + b"tui", seq=1)  # a parameter list
+    for i in range(200):  # many cuts; the carried modes are themselves cut again
+        f.write(b"y" * 1024, seq=i + 2)
+
+    assert f.read_all().startswith(_FULLSCREEN)
+
+
+def test_new_generation_resets_what_the_dead_process_left_on(tmp_path: Path):
+    path = tmp_path / "s.pty"
+    PtyStreamFile(path).write(_FULLSCREEN + b"old tui", seq=1)
+
+    respawned = PtyStreamFile(path)  # recovery respawns into the SAME file
+    respawned.mark_new_generation()
+    respawned.write(b"$ ", seq=2)
+
+    data = respawned.read_all()
+    reset = data[len(_FULLSCREEN + b"old tui") : -len(b"$ ")]
+    for mode in (b"\x1b[?1049l", b"\x1b[?1003l", b"\x1b[?1006l"):
+        assert mode in reset
+    # the reset carries no seq: generation-scoped readers never see it
+    assert respawned.read_output_after_seq(1) == b"$ "
+    assert respawned.max_seq() == 2
+
+
+def test_new_generation_on_a_fresh_file_writes_nothing(tmp_path: Path):
+    f = PtyStreamFile(tmp_path / "s.pty")
+    f.mark_new_generation()
+    assert not f.exists

@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "74794d1183005d3a3a4edc462c4edebc6ac14d16303e0251e86d4058ed37924c",
+  "inputs_hash": "6c5406a16ecdccb19bf2c22c22a1f9d96c97884af4e1cb426e97bd628fe5419a",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
@@ -30,9 +30,9 @@
       "name": "agent-deployment.md",
       "rel_path": "agent-deployment.md",
       "title": "Agent deployment — snippets",
-      "summary": "Snippets for placing an agent: Deployment rows, starting a session on a placement, reading and stopping placements, and a dedicated machine.",
-      "content_hash": "8851df3f0ffe185af4abd0d70ac083a42056c46b8a1bb7a5004053d31b746b09",
-      "size_bytes": 6092
+      "summary": "Snippets for placing an agent: Deployment rows, launching a session that answers a PromptResult, serve loops answering channels, reading and stopping placements, dedicated machines.",
+      "content_hash": "ef158cf7a636b92a4815224cf142a54773f5612df30361c5012a717a1ead2757",
+      "size_bytes": 6498
     },
     {
       "name": "agent-email.md",
@@ -55,24 +55,24 @@
       "rel_path": "agents-on-channels.md",
       "title": "An agent on a channel — snippets",
       "summary": "Snippets for putting an agent on a messaging channel like WhatsApp: the credential, the app-runs-it variant, and the your-process-runs-the-loop variant.",
-      "content_hash": "11d8e4ab0d54db9151a5b3a85faf256401a64e219e55f5a9d62d16a950919952",
-      "size_bytes": 4944
+      "content_hash": "b9a3de8c243936d483cf933e96e2caeee652313742a40c849c9780ba556e2639",
+      "size_bytes": 5482
     },
     {
       "name": "call-returns.md",
       "rel_path": "call-returns.md",
       "title": "Call → ExitCode → Return",
-      "summary": "The call-return contract, every fence tested: ComputeOp as one call per subkind, ReturnedValue subclasses, no raised outcomes, role timeouts, ask, wizard and agent continuation.",
-      "content_hash": "29d1475e1a4f155ee8f7f862d3e504e8a7ebd5be7b1cfd6cc89d00eda6b1b06d",
-      "size_bytes": 17017
+      "summary": "The call-return contract, every fence tested: ComputeOp as one call per subkind, ReturnedValue subclasses, busy as a field, no raised outcomes, role timeouts, ask, wizard, agent continuation.",
+      "content_hash": "80aaf9b989242f23efe64b41fe67d147a5cba0bea33583ecb59ef911167a84d6",
+      "size_bytes": 17718
     },
     {
       "name": "compute-ops.md",
       "rel_path": "compute-ops.md",
       "title": "Compute ops — one call that converges, composes, and can ask",
-      "summary": "Compute op snippets: one convergent call per subkind, asking a person once, a fallback as two ops, retries as the caller's, cancel and silence answers.",
-      "content_hash": "66cabcba34d5c75cda0d70826c0eb76cfce2ecebe89e8ae66cf0f134fdc4dc4e",
-      "size_bytes": 4496
+      "summary": "Compute op snippets: one convergent call per subkind, asking a person once even outside the backend, a fallback as two ops, caller-owned retries, cancel and silence answers.",
+      "content_hash": "e7a01fc0b89e0727c0eb81572be95e5a69afe354f300bae201ba71575972464f",
+      "size_bytes": 5506
     },
     {
       "name": "connections.md",
@@ -127,16 +127,16 @@
       "rel_path": "pipes.md",
       "title": "Pipes — wiring a source to whatever consumes it",
       "summary": "Runnable examples wiring a source to its consumer: one sync cycle, folder-to-folder mirroring with reflect, and following changes with ack and redelivery.",
-      "content_hash": "27a0f09687b3f85660047293ef0cf62754a4cab28557f7a0ee82c56f7b30e272",
-      "size_bytes": 7883
+      "content_hash": "206c7cd59f124ed3e6aa68a47e9de23f5c47438124bc8d02d3eb5b63577385fe",
+      "size_bytes": 8177
     },
     {
       "name": "processes.md",
       "rel_path": "processes.md",
       "title": "Processes and agents — snippets",
-      "summary": "Runnable snippets for processes and agents: attaching MCP servers to a process or an agent, how each harness renders them, and when MCP resolves.",
-      "content_hash": "01fd7843f85e88e8866380d56b3842c6b723528a22a0bac80e4881aecd54e7e5",
-      "size_bytes": 5494
+      "summary": "Runnable snippets for processes and agents: attaching MCP servers to a process or agent, per-harness rendering, and launching an agent to read its PromptResult answer.",
+      "content_hash": "3a90e019904bdae6854f6ee55c5552da13dd83982500cd50bcfd1a93d3e0768a",
+      "size_bytes": 5866
     },
     {
       "name": "rag.md",
@@ -163,6 +163,14 @@
       "size_bytes": 7404
     },
     {
+      "name": "wizards.md",
+      "rel_path": "wizards.md",
+      "title": "Wizards — a sequence of calls, and what travels between them",
+      "summary": "Wizard snippets, every fence tested: step order and a step with nothing to do, values passed between steps as environment, a fallback as two steps with one check, a declared output that binds, and a cycle that answers instead of recursing.",
+      "content_hash": "ed61eb5d833cd52cb0d9f6eef1d6d77dad9d5286466737203207e9be6bf7e3f8",
+      "size_bytes": 7709
+    },
+    {
       "name": "workflows.md",
       "rel_path": "workflows.md",
       "title": "Workflows — snippets",
@@ -172,6 +180,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T11:53:02.843835+00:00",
+  "generated_at": "2026-09-23T19:02:04Z",
   "latest_process_ref": ""
 }

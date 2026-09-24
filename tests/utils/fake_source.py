@@ -1,9 +1,8 @@
 """``ScriptedSource`` — a message source that answers what a test tells it to.
 
 Registered under any provider name, so a snippet written for ``agentmail`` or ``slack`` runs verbatim
-with no network: a traversal hands out the next scripted page, and a send records what was sent and
-reports ``recorded=False`` like the real senders do, so the redelivery paths get exercised the way
-they are in production. The controls live on the ``Script`` the context manager yields, because the
+with no network: a traversal hands out the next scripted page, and a send records what was sent
+(the send path then records its copy, marked ours, as it does for every real sender). The controls live on the ``Script`` the context manager yields, because the
 engine builds a fresh source instance for every session.
 """
 
@@ -59,8 +58,6 @@ class Script:
 
 class ScriptedSource(Source):
     provider = "scripted"
-    #: The scripted channel records nothing on send, like a real sender whose copy arrives later.
-    echoes_sends = True
     #: The script a registered subclass is built over — the engine builds a fresh source per session.
     script_of: ClassVar[Optional[Script]] = None
 

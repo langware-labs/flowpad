@@ -22,8 +22,6 @@ const mocks = vi.hoisted(() => ({
     origin: { kind: 'git', provider: 'github', owner: 'acme', name: 'tools', branch: 'main', rel_path: '.claude/skills/rca', head_commit: 'a'.repeat(40) },
     source_project_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     source_project_name: 'alpha',
-    body_supported: true,
-    body_available: true,
     body_reason: null,
     body_ref: { type_id: 'skill-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', path: 'SKILL.md' },
     ...over,
@@ -97,7 +95,7 @@ describe('DiscoverDetailPage (hub)', () => {
   });
 
   it('explains why the document is not on the hub', async () => {
-    directoryFor([mocks.row({ state: 'install', body_available: false, body_reason: 'not_on_hub', body_ref: null })]);
+    directoryFor([mocks.row({ state: 'install', body_reason: 'not_on_hub', body_ref: null })]);
     render(<DiscoverDetailPage />);
     expect(await screen.findByTestId('discover-body-reason')).toHaveTextContent('Connect GitHub on the publishing desk');
   });

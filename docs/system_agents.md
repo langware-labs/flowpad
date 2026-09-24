@@ -243,13 +243,13 @@ and `:186-192`):
 ```
 
 ```python
-    proc = await deployment.launch(
+    result = await deployment.launch(          # the run's PromptResult
         instruction,
         wait=True,
         name="Asset cleanup scan",
         workdir=workdir or root_strs[0],
     )
-    result = _build_run_result(proc)
+    proc = await AgenticProcess.get_by_typeid(result.executor)
 ```
 
 ***

@@ -33,13 +33,16 @@ driver's own report is empty.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
 from flow_sdk.stream_inbox._locks import loop_lock, new_registry
+from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +66,10 @@ async def find_thread(channel: str, key: str, owner, data_source_id: str):
     return thread if thread is not None else await MessageThread.find_unclaimed(channel, key, owner)
 
 
-async def resolve_thread(channel: str, key: str, owner, *, data_source_id: str, title: str, conversation_id: str = ""):
+async def resolve_thread(
+    channel: str, key: str, owner, *, data_source_id: str, title: str, conversation_id: str = "",
+    timeout_seconds: Optional[int] = None, at: Optional[datetime] = None,
+):
     """The thread for ``(owner, channel, key)`` read by ``data_source_id`` — found, adopted, or minted.
 
     Resolve-or-create, double-checked: a lookup does not absorb the race a derived id
@@ -80,15 +86,28 @@ async def resolve_thread(channel: str, key: str, owner, *, data_source_id: str, 
     ``conversation_id`` ADOPTS an existing conversation at birth instead of
     minting one — a channel whose threads already exist locally as hub-mirrored
     rows (the help desk) hands it over so both writers converge on one row.
+
+    ``timeout_seconds`` (the source's ``thread_timeout_seconds``) ends a thread that was quiet
+    that long before ``at``: it stays as it is, and a new one is minted on the same key — a new
+    conversation, on top of the driver's own split (a chat, a topic, a call). The key's newest
+    thread is its current one (``MessageThread.find_existing``).
+
+    The birth is decided under the database writer lock as well as this process's: a deployment's
+    loop process projects the same messages as the app, and a check-then-mint that only this
+    process serialized let both mint a thread for one key.
     """
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
     thread = await MessageThread.find_existing(channel, key, owner, data_source_id)
-    if thread is not None:
+    if thread is not None and not await timed_out(thread, timeout_seconds, at):
         return thread
-    async with _thread_lock():
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+
+    async with _thread_lock(), get_db_driver().write_transaction():
         thread = await find_thread(channel, key, owner, data_source_id)
+        if thread is not None and await timed_out(thread, timeout_seconds, at):
+            thread = None  # quiet past the timeout: it stays as it is, and the next thread begins
         if thread is not None:
             if not thread.owner or not thread.data_source_id:
                 thread.owner = thread.owner or owner
@@ -114,6 +133,25 @@ async def resolve_thread(channel: str, key: str, owner, *, data_source_id: str, 
         )
         await thread.save(notify=False)
         return thread
+
+
+def quiet_past(last: Optional[datetime], timeout_seconds: Optional[int], at: datetime) -> bool:
+    """THE thread-timeout rule: the thread's newest message (*last*) is more than the timeout before
+    *at*. Also what the deployment page reads a thread as ended by."""
+    return bool(timeout_seconds) and last is not None and at - last > timedelta(seconds=timeout_seconds)
+
+
+async def timed_out(thread, timeout_seconds: Optional[int], at: Optional[datetime]) -> bool:
+    """Whether *thread* was quiet longer than ``timeout_seconds`` before ``at``. A message older than
+    the thread's newest (a backfill) never ends it; a thread younger than the timeout cannot have
+    ended, so it costs no read."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    born = iso_to_utc(getattr(thread, "created_date", None))
+    if not timeout_seconds or at is None or (born is not None and not quiet_past(born, timeout_seconds, at)):
+        return False
+    rows = await FlowMessage.get_all({"match": {"thread_id": str(thread.id)}, "order_by": {"sent_at": "desc"}, "limit": 1})
+    return quiet_past(iso_to_utc(rows[0].occurred_at) if rows else None, timeout_seconds, at)
 
 
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
@@ -256,12 +294,21 @@ async def project_source_item(
     key = thread_key_for(item, subject)
     owner = await owner_of(source)
 
-    thread = await resolve_thread(
-        channel, key, owner,
-        data_source_id=str(source.id),
-        title=subject or _thread_title(item) or key,
-        conversation_id=str(getattr(item, "conversation_id", "") or ""),
-    )
+    # A placed message stays in the thread it was placed in: a re-projection never moves it into
+    # the thread its key names NOW, which after a timeout is a newer one.
+    existing_fm = None if known_unplaced else await _placed_message(item)
+    thread = await _thread_of(existing_fm)
+    if thread is None:
+        thread = await resolve_thread(
+            channel, key, owner,
+            data_source_id=str(source.id),
+            title=subject or _thread_title(item) or key,
+            conversation_id=str(getattr(item, "conversation_id", "") or ""),
+            # Our own message (the agent's answer, a reply sent from here) answers the thread it is in,
+            # however long the turn took: only the other side's message after a quiet spell ends one.
+            timeout_seconds=None if item.sent_by_us else source.thread_timeout_seconds,
+            at=iso_to_utc(item.occurred_at),
+        )
     thread_id = str(thread.id)
     conversation_id = thread.conversation_id
 
@@ -289,7 +336,6 @@ async def project_source_item(
     # reconcile sweep's bulk proof) skips only the unlocked pre-check —
     # inside the lock the row is always re-asked, because any proof taken
     # before the lock is stale by definition.
-    existing_fm = None if known_unplaced else await _placed_message(item)
     if existing_fm is None:
         async with _thread_lock():
             existing_fm = await _placed_message(item)
@@ -351,6 +397,14 @@ def _envelope_of(item, source):
     return MessageEnvelope(
         subject=getattr(data, "subject", None), sender=data.sender, recipients=data.recipients, sent_at=data.sent_at
     )
+
+
+async def _thread_of(message):
+    """The thread a placed message is in, or None (not placed, or placed before threads)."""
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+    thread_id = str(getattr(message, "thread_id", "") or "") if message is not None else ""
+    return await MessageThread.get_one({"id": thread_id}) if thread_id else None
 
 
 async def _placed_message(item):
@@ -544,7 +598,7 @@ async def _sender_for(item, source, channel: str) -> tuple[MessageSender, str]:
 
     address = (item.author_external_id or "").strip()
     display = display_name_of(item.author_display or "", address)
-    if is_self_address(source, address):
+    if item.is_ours(source):
         # An AGENT's mailbox is not the user's. Attributing its sent copies to
         # the human would put words in their mouth — the owner would appear to
         # have written replies they never saw. Same reasoning as
@@ -922,15 +976,39 @@ async def _on_item(event) -> None:
         logger.exception("[stream-inbox] projection failed for source_item %s", entity_id)
 
 
+#: Per loop: source id → "a sync completed while its sweep was running".
+_sweeps = new_registry()
+
+
 async def _on_sync(event) -> None:
+    """One sweep per source at a time; a sync that completes during it buys ONE more round.
+
+    Every pass ends in a `sync.completed`, and a backfill takes longer than the next pass: run
+    concurrently, each sweep re-walked the same unplaced backlog oldest-first. A desk's first pass
+    of 53 messages piled up 20 sweeps that each re-projected the whole backlog, which took 3.5
+    minutes to settle, and the newest ticket was placed last. The extra round still covers an item
+    that lands after the running sweep read its batch.
+    """
     source_id = str((event.data or {}).get("source_id") or "")
     if not source_id:
         return
+    pending = _sweeps.setdefault(asyncio.get_running_loop(), {})
+    if source_id in pending:
+        pending[source_id] = True
+        return
+    pending[source_id] = False
     try:
-        if await reconcile_source(source_id):
-            _touch()
-    except Exception:  # noqa: BLE001
-        logger.exception("[stream-inbox] reconcile failed for source %s", source_id)
+        while True:
+            try:
+                if await reconcile_source(source_id):
+                    _touch()
+            except Exception:  # noqa: BLE001
+                logger.exception("[stream-inbox] reconcile failed for source %s", source_id)
+            if not pending[source_id]:
+                return
+            pending[source_id] = False
+    finally:
+        pending.pop(source_id, None)
 
 
 def _touch() -> None:

@@ -282,3 +282,28 @@ async def test_both_executors_satisfy_the_protocol():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# Output is never truncated: a caller PARSES it
+# ---------------------------------------------------------------------------
+#
+# `CliResult.of_process` keeps only the last OUTPUT_CAP characters of a stream
+# by default — right for a record a person reads, wrong here. These executors
+# feed `git show` (a whole file's content), diffs, `status --porcelain` and JSON
+# that `module_rpc` parses. Cut to its last 8 KB, a file reads as its own tail
+# and a JSON document stops parsing.
+
+_BIG = "A" * 20_000 + "END"
+
+
+async def test_local_output_arrives_whole():
+    script = f"import sys; sys.stdout.write('A' * 20_000 + 'END')"
+    result = await _LocalCommandExecutor().run([sys.executable, "-c", script])
+    assert result.stdout == _BIG, f"got {len(result.stdout)} of {len(_BIG)} characters"
+
+
+async def test_remote_output_arrives_whole():
+    node, _sent = _stub_node(stdout=_BIG)
+    result = await ComputeNodeCommandExecutor(node).run(["git", "show", "HEAD:big.txt"])
+    assert result.stdout == _BIG, f"got {len(result.stdout)} of {len(_BIG)} characters"

@@ -13,10 +13,11 @@
  * E2B_KEY is a Phase 11 prerequisite; its absence is a hard preflight failure.
  */
 import { expect, test } from '@playwright/test';
-import { dismissSetupModal, gotoShell, openTabViaMenu, terminalTabChips } from './helpers';
+import { dismissSetupModal, gotoShell, openTabViaMenu, requireSandbox, terminalTabChips } from './helpers';
 
 test.describe('Sandbox terminal — uname -a', () => {
   test.beforeEach(async ({ page }) => {
+    await requireSandbox();
     await dismissSetupModal(page);
   });
 

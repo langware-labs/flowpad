@@ -32,8 +32,6 @@ function row(over: Partial<DirectoryRow> = {}): DirectoryRow {
     origin: GIT,
     source_project_id: 'p1',
     source_project_name: 'alpha',
-    body_supported: true,
-    body_available: false,
     body_reason: 'not_on_hub',
     body_ref: null,
     ...over,
@@ -80,9 +78,9 @@ describe('discover-model', () => {
     const base = fromDirectoryRow(row());
     expect(bodyCopyKey(base)).toBe('not_on_hub_git');
     expect(bodyCopyKey({ ...base, origin: { kind: 'local' } })).toBe('not_on_hub_local');
-    expect(bodyCopyKey(fromDirectoryRow(row({ body_supported: false, body_reason: 'type_not_git' })))).toBe('type_not_git');
+    expect(bodyCopyKey(fromDirectoryRow(row({ body_reason: 'type_not_git' })))).toBe('type_not_git');
     expect(bodyCopyKey(fromDirectoryRow(row({ body_reason: 'not_materialized' })))).toBe('not_materialized');
-    expect(bodyCopyKey(fromDirectoryRow(row({ body_available: true, body_reason: null, body_ref: { type_id: 'skill-x', path: 'SKILL.md' } })))).toBeNull();
+    expect(bodyCopyKey(fromDirectoryRow(row({ body_reason: null, body_ref: { type_id: 'skill-x', path: 'SKILL.md' } })))).toBeNull();
     const desk = fromPublished({ ...row(), hub_body: { status: 'skipped', code: 'github_not_connected' } }, null);
     expect(bodyCopyKey(desk)).toBe('github_not_connected');
     expect(bodyCopyKey({ ...desk, hubBody: { status: 'failed', code: 'branch_ahead' } })).toBe('publish_failed');

@@ -170,6 +170,15 @@ export function isPreviewEditor(editor: AssetEditor | null | undefined): boolean
   return !!editor && PREVIEW_EDITORS.has(editor);
 }
 
+/** An editor whose subject carries its OWN chat — an agent is talked to through its placement's
+ *  Chat, not through a Vibe session about its file — so the Vibe chat pane beside it is noise and
+ *  stays collapsed. */
+const OWN_CHAT_EDITORS: ReadonlySet<AssetEditor> = new Set([AssetEditor.AGENT]);
+
+export function hasOwnChat(editor: AssetEditor | null | undefined): boolean {
+  return !!editor && OWN_CHAT_EDITORS.has(editor);
+}
+
 /** Derived inverse of the STATIC table: record type → the editor that edits it. */
 
 export const TYPE_TO_EDITOR: Record<string, AssetEditor> = Object.fromEntries(

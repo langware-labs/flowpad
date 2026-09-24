@@ -102,7 +102,12 @@ storage (`flow_sdk/builtin/flow_message.py:233`):
 - **`local_path`** — transient, **API-response only**, never stored in the DB. The
   model serializer (`flow_sdk/builtin/flow_message.py:370`) populates it at
   serialization time by resolving the VFS subpath through the message's embedded
-  storage, and **only when the bytes are actually on local disk**. The UI reads a
+  storage, and **only when the bytes are actually on local disk**. Embedded storage
+  is the message's record-data folder, `<records_data>/flow_message/<id>/embedded/`
+  (`get_entity_embedded_storage`), on both sender and receiver. It is never the OS
+  temp dir: that dir is shared by every instance on a machine and emptied by macOS at
+  boot, which is how every file attachment on prod once lost its bytes. Deleting
+  the message removes the folder, and the bytes with it. The UI reads a
   non-null `local_path` as "this file is downloaded": a receiver sees `null`
   until it pulls the bundle; the sender sees it set the moment the file is staged.
 - **`prompt_preview`** — an inline copy of a prompt-entity `TYPE_ID`'s text that
@@ -334,7 +339,13 @@ both API serialization and `is_body_downloaded()` (used by catch-up).
 Its transient fields are never persisted or accepted from the hub:
 
 - `body_downloaded`: the message has a body and either its bundle is unpacked
-  locally or all renderable attachments are already available locally.
+  locally or all renderable attachments are already available locally. Bytes from
+  before the record-data move are carried over once, on upgrade to 0.2.175
+  (`migration_2026_09_embedded_storage_to_record_data`, which uses
+  `restore_attachment_file`). The sources are the unpacked bundle's copy
+  (`unpacked/attachment/files/<name>`), then the old OS-temp root. They are copied
+  before the next reboot empties that root, so every reader sees them, not only
+  the serializer.
 - `body_unpacked`: the extracted staging tree contains `flow_message.json` or
   the legacy `header.json` envelope. A raw ZIP alone is insufficient.
 - `body_missing_attachments`: references (`attachment_type`, `data`) whose

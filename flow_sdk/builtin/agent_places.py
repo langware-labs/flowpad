@@ -155,20 +155,23 @@ async def list_places(agent: "Agent") -> list[dict[str, Any]]:
     from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
     from flow_sdk.schema.data_spec.trigger_types import TriggerType  # noqa: PLC0415
 
-    local, placed, triggers = await asyncio.gather(
-        agent.local_deployment(),
+    # Listing places never creates one: this computer is a deployment only once it was launched here.
+    placed, triggers = await asyncio.gather(
         agent.deployments(),
         Trigger.get_all({"match": {"parent_type_id": str(agent.typeid)}}),
     )
-    deployments = [local] + [d for d in placed if d.id != local.id]
+    local = next((d for d in placed if d.is_local), None)
+    deployments = ([local] if local is not None else []) + [d for d in placed if d is not local]
     schedules = [t for t in triggers if t.trigger_type == TriggerType.SCHEDULE]
     # Unset keeps the legacy rule, reported as this computer: the machine asking is the one polling.
-    answering = agent.email_place or local.id
+    answering = agent.email_place or (local.id if local is not None else None)
     published = str(getattr(agent.origin, "head_commit", "") or "")
     cloud = [d for d in deployments if not d.is_local]
     repo = await asyncio.to_thread(_agent_repo, agent) if cloud and published else None
     counts = await asyncio.gather(*(asyncio.to_thread(behind_count, d.source_revision, published, repo) for d in cloud))
     behind = dict(zip((d.id for d in cloud), counts))
+
+    last_active = dict(zip((d.id for d in deployments), await asyncio.gather(*(_last_active(d) for d in deployments))))
 
     rows = []
     for deployment in deployments:
@@ -186,9 +189,24 @@ async def list_places(agent: "Agent") -> list[dict[str, Any]]:
                 ),
                 "answers_email": answering == deployment.id,
                 "behind": behind.get(deployment.id),
+                "last_active": last_active.get(deployment.id),
             }
         )
     return rows
+
+
+async def _last_active(deployment) -> str | None:
+    """When this place last did something: its newest run here, else the last time the machine was
+    seen (a cloud place's runs live on its own box). ISO time, or ``None`` when it never has."""
+    if deployment.is_local:
+        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        newest = await AgenticProcess.local_rows(
+            {"match": {"deployment_id": deployment.id}, "order_by": {"updated_date": "desc"}, "limit": 1}
+        )
+        stamp = getattr(newest[0], "updated_date", None) if newest else None
+        return stamp.isoformat() if hasattr(stamp, "isoformat") else (str(stamp) if stamp else None)
+    return getattr(deployment.status, "observed_at", None) or None
 
 
 async def email_answers_here(agent_id: str) -> bool:

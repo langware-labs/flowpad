@@ -17,6 +17,7 @@ import { FlaskConical, History } from 'lucide-react';
 import { useCallback, useMemo, useRef } from 'react';
 import { UsagePanel } from './UsagePanel';
 import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
+import { useNestedHost } from '../nested-host';
 
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
@@ -69,12 +70,15 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }
     [fsRef, mainFile],
   );
 
+  const nested = useNestedHost();
   const onDelete = useCallback(async () => {
     const s = skillRef.current;
     if (!s) return;
     await s.delete();
-    navigation.openDock(DockPointer.forAssetList(Skill.type));
-  }, [navigation]);
+    // Nested in another editor (a skill opened from the agent): back to it, not to the skill list.
+    if (nested) nested.close();
+    else navigation.openDock(DockPointer.forAssetList(Skill.type));
+  }, [navigation, nested]);
 
   // One occurrence-scoped document patch; the backend refreshes the entity projection.
   const headerExtras = useCallback(({ fields, setField }: MarkdownHeaderExtrasCtx) => {

@@ -29,7 +29,7 @@ export async function dockForScopeEntry(
   projectId: string | null,
   currentDock?: DockPointer | null,
 ): Promise<DockPointer> {
-  const tabs = (await tabManager.refresh()).filter((t) => tabInProject(t, projectId));
+  const tabs = (await tabManager.snapshotOrRefresh()).filter((t) => tabInProject(t, projectId));
   const known = tabs.filter(tabHasRecency);
   const dock = tabManager.resolveNext(known)?.dockPointer ?? null;
   if (dock) return dock as DockPointer;
@@ -90,7 +90,7 @@ export function dockForProjectEntry(projectId: string, currentDock?: DockPointer
  *  dockForProjectEntry because its fallback must be a Vibe empty state, never
  *  project home. */
 export async function agenticProcessIdForProjectEntry(projectId: string): Promise<string | null> {
-  const tabs = (await tabManager.refresh()).filter((t) => tabInProject(t, projectId) && tabIsProcess(t));
+  const tabs = (await tabManager.snapshotOrRefresh()).filter((t) => tabInProject(t, projectId) && tabIsProcess(t));
   return tabManager.resolveNext(tabs)?.target_id ?? null;
 }
 

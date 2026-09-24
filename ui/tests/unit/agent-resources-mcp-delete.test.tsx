@@ -9,7 +9,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render as rtlRender, screen } from '@testing-library/react';
 import type React from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import { TypeId } from '@sdk';
 
 const h = vi.hoisted(() => ({
@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   apiDeleteCalls: [] as string[],
 }));
 
+vi.mock('@src/components/agent-resources/AgentSchedulesSection', () => ({ AgentSchedulesSection: () => null }));
 vi.mock('@src/hooks/useContext', () => ({
   useContext: () => ({ activeEntityTypeId: null }),
 }));
@@ -70,11 +71,17 @@ afterEach(() => {
   h.apiDeleteCalls = [];
 });
 
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
 describe('AgentResourcesBody — deleting an MCP server (FLOWPAD-2092)', () => {
   it('offers a delete control on each MCP row that opens the shared confirm modal', () => {
     const id = new TypeId('mcp', '11111111-1111-4111-8111-111111111111').id;
-    h.mcpDescriptors = [{ typeid: `mcp-${id}`, source: 'project', posix_path: null, name: 'my-mcp-server' }];
+    h.mcpDescriptors = [{ typeid: `mcp-${id}`, source: 'project_dir', posix_path: null, name: 'my-mcp-server' }];
     render(<AgentResourcesBody />);
+    // Sections start closed (and remember being opened): open this one.
+    fireEvent.click(screen.getByTestId('navigator-section-mcp-servers'));
 
     fireEvent.click(screen.getByTestId(`agent-resource-delete-mcp-${id}`));
 
@@ -84,8 +91,10 @@ describe('AgentResourcesBody — deleting an MCP server (FLOWPAD-2092)', () => {
 
   it('confirming the modal deletes through the generic graph route for the row\'s type and id', async () => {
     const id = new TypeId('mcp', '22222222-2222-4222-8222-222222222222').id;
-    h.mcpDescriptors = [{ typeid: `mcp-${id}`, source: 'project', posix_path: null, name: 'other-server' }];
+    h.mcpDescriptors = [{ typeid: `mcp-${id}`, source: 'project_dir', posix_path: null, name: 'other-server' }];
     render(<AgentResourcesBody />);
+    // Sections start closed (and remember being opened): open this one.
+    fireEvent.click(screen.getByTestId('navigator-section-mcp-servers'));
 
     fireEvent.click(screen.getByTestId(`agent-resource-delete-mcp-${id}`));
     await h.deleteModalRequests[0].onConfirm();

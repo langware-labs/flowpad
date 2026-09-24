@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "interface",
   "folder_name": "interface",
-  "inputs_hash": "e76b5016cd714f025292120f4a12daa45a494c6a1816ed301a9292fc897a6c96",
+  "inputs_hash": "caf3c134b17ab97dc65f8b7cdda33d507e829f1ad14e233b243559ac351ac9a8",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
@@ -54,9 +54,9 @@
       "name": "pty-layer.md",
       "rel_path": "pty-layer.md",
       "title": "PTY layer — interface",
-      "summary": "The internal PTY layer's API surface: PtyRegistry and PtyState membership FSM, stream files, WS attach lifecycle and the replay route.",
-      "content_hash": "79683b68a719713ec8d8a032998f14f5c773d9e4883459f8d536d707e67de8f6",
-      "size_bytes": 15641
+      "summary": "The internal PTY layer's API surface: PtyRegistry and PtyState membership FSM, framed stream files, terminal-command endpoints, WS attach lifecycle, replay route and seq rule.",
+      "content_hash": "c2c8d70b65497a43818fbecea01e7e725a3f11ed9c356b9d2c7779049436b6a9",
+      "size_bytes": 16587
     },
     {
       "name": "session-naming.md",
@@ -92,6 +92,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T11:53:02.735178+00:00",
+  "generated_at": "2026-09-23T19:02:04Z",
   "latest_process_ref": ""
 }

@@ -3,7 +3,7 @@ import { DockPointerData } from '../models/DockPointer';
 
 /**
  * Deck entity — a generated presentation, backed by a DeckRecord on disk
- * (<project>/assets/decks/<name>/), produced by the `decker` skill.
+ * (<project>/agentic-assets/deck/<name>/), produced by the `decker` skill.
  *
  * Folder layout:
  *   <name>/deck.json    — build record {title, template, slides[]}

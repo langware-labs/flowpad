@@ -174,27 +174,50 @@ class Wizard(Entity):
         except Exception:  # noqa: BLE001 — a run summary must never fail a fetch
             return {"result": None, "approved": False}
 
-    async def run(self, *, approved: bool = False) -> "WizardResult":
+    async def run(self, *, approved: bool = False, unattended: bool = False) -> "WizardResult":
         """Run this wizard, and answer what it did. Never raises for an outcome.
 
         The OOP twin of ``ComputeOp.run``: a caller in Python drives the entity,
         not a route. ``run_action`` is this plus the HTTP shapes — the approval
-        it reads off a POST body, and the status codes an answer maps to.
+        it reads off a POST body, and the status codes an answer maps to. EVERY
+        gate lives here (missing, disabled, conversational, unapproved), so a
+        trigger meets exactly what a person does.
+
+        ``unattended`` reports at INSTANCE scope instead of on this entity.
+        `_send` routes by subject entity: one naming an entity reaches only its
+        WATCHERS, while an unscoped one belongs to the box and is broadcast. A
+        trigger-fired run fires at boot, before anyone has opened the wizard and
+        usually before a browser exists, so entity scope addressed a complete
+        progress tree to an audience of zero. It changes only WHO SEES the run,
+        never who may start one — ``execute_wizard`` holds the wizard's slot.
         """
         from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
+        from flow_sdk.core.wizard.runner import wizard_refused  # noqa: PLC0415
         from flow_sdk.schema.data_spec.returned_value_spec import WizardResult  # noqa: PLC0415
 
         spec = self.spec()
         if spec is None:
             return WizardResult.not_found(f"{self.name or self.asset_ref}: the document is missing or unreadable.")
-        if not (approved or self.is_system()):
-            return WizardResult.refused(
-                f"{self.name or 'This wizard'} is not shipped with Flowpad. It runs commands "
-                "on this machine, so it must be approved before it can run."
+        if not spec.enabled or not self.enabled:
+            # Here, not at the HTTP edge: a trigger or a Python caller must meet
+            # the same gate a person does.
+            return WizardResult.refused(f"{self.name or 'This wizard'} is disabled.")
+        if spec.agent:
+            # A CONVERSATIONAL wizard has no steps to run. Its agent talks to the
+            # person, and the caller supplies the prompt and the payload when it
+            # launches — none of which exist here. Running it "anyway" would spawn
+            # the agent against no payload at all, and because a shipped wizard
+            # needs no approval, nothing would stop it.
+            return WizardResult.not_applicable(
+                f"{self.name or 'This wizard'} is run by its agent from where it is "
+                "offered, not from here — it needs the caller's request to do anything."
             )
+        if not (approved or self.is_system()):
+            return wizard_refused(self.name)
         return await execute_wizard(
             str(self.id), spec, self.asset_ref or "",
-            trusted=True, approved=approved, subject_entity=str(self.typeid),
+            trusted=True, approved=approved,
+            subject_entity=None if unattended else str(self.typeid),
         )
 
     @action.post(action_name="run")
@@ -207,35 +230,15 @@ class Wizard(Entity):
         hangs a headless run forever, so an unattended caller gets an immediate,
         legible refusal instead.
 
-        The body of every answer is the ``WizardResult``. Only the status code is
-        HTTP's: 403 for ``REFUSED``, 409 for a wizard that did not run because
-        another run holds it (``NOT_YET`` with ``ran=False``).
+        The body of EVERY answer is the ``WizardResult``, with a 200 — the exit
+        code is the answer, and a caller reads it from one place, exactly as
+        ``POST /compute_op/<id>/run`` does. The one exception is ``busy``: the
+        slot is held by another run, which is HTTP's own 409 and the one case a
+        caller should simply retry. Disabled, conversational and unapproved are
+        answers (``REFUSED`` / ``NOT_APPLICABLE``), decided in ``run`` so a
+        trigger meets them too.
         """
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
-
-        spec = self.spec()
-        if spec is None:
-            return ApiFailResponse(
-                message=f"Wizard document is missing or unreadable at {self.asset_ref!r}",
-                status_code=400,
-            )
-        if not spec.enabled or not self.enabled:
-            return ApiFailResponse(message=f"Wizard {self.name!r} is disabled", status_code=409)
-        if spec.agent:
-            # A CONVERSATIONAL wizard has no steps to run. Its agent talks to the
-            # person, and the caller supplies the prompt and the payload when it
-            # launches — none of which exist here. Running it "anyway" would spawn
-            # the agent against no payload at all, and because a shipped wizard
-            # needs no approval, nothing would stop it.
-            return ApiFailResponse(
-                message=(
-                    f"{self.name or 'This wizard'} is run by its agent from where it is "
-                    "offered, not from here — it needs the caller's request to do anything."
-                ),
-                status_code=409,
-            )
-
         from flow_sdk.core.wizard.state import is_approved, record_approval  # noqa: PLC0415
 
         approved = False
@@ -251,9 +254,7 @@ class Wizard(Entity):
 
         result = await self.run(approved=approved)
         payload = result.model_dump(mode="json")
-        if result.exit_code is ExitCode.REFUSED:
-            return ApiFailResponse(message=result.detail, status_code=403, data=payload)
-        if result.exit_code is ExitCode.NOT_YET and not result.ran:
+        if result.busy:
             return ApiFailResponse(message=result.detail, status_code=409, data=payload)
         return ApiSuccessResponse(data=payload)
 

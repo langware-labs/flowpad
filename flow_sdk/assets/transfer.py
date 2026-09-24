@@ -78,6 +78,7 @@ def restore_tree(
     entry_dir: Path,
     project_root: Path,
     *, overwrite: bool,
+    placed: list[Path] | None = None,
 ) -> bool:
     """Copy every file under ``attachment/<type>-@<id>/`` into ``project_root``.
 
@@ -86,6 +87,9 @@ def restore_tree(
     — no per-type knowledge. Returns True when ≥1 file was restored. Raises
     ``FlowMessageExistsError`` on a genuine collision when overwrite=False;
     a byte-identical existing file is an idempotent no-op (re-receive).
+
+    ``placed`` collects each destination now holding its file (copied or
+    already identical) — only paths that passed the traversal guards.
     """
     from flow_sdk.fs_store.origin.git_origin import is_safe_rel_path  # noqa: PLC0415
 
@@ -111,6 +115,8 @@ def restore_tree(
             continue
         if dest.exists() and not overwrite:
             if filecmp.cmp(src, dest, shallow=False):
+                if placed is not None:
+                    placed.append(dest)
                 continue  # same asset already present — no-op
             conflicts.append({"path": str(dest)})
             continue
@@ -119,6 +125,8 @@ def restore_tree(
         raise AssetTransferConflict(conflicts)
     for src, dest in pending:
         materialize_asset_sync(src, dest, overwrite=overwrite)
+    if placed is not None:
+        placed.extend(dest for _, dest in pending)
     return bool(pending)
 
 

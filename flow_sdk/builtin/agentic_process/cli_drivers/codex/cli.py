@@ -39,7 +39,7 @@ class CodexAgentOptions(AgentOptions):
     (the ``test_agentic_process_clock_agent`` test asserts on ``cmd_line``).
     """
 
-    # sm/md/lg → gpt-5.4-mini/gpt-5.4/gpt-5.5, applied when emitting command.
+    # sm/md/lg → gpt-5.6-luna/gpt-5.6-terra/gpt-5.6-sol, applied when emitting command.
     MODEL_TIERS = CODEX_MODEL_TIERS
 
     def __init__(

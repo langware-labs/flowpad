@@ -137,6 +137,8 @@ _NOT_ROUND_TRIPPED = {
     "asset_ref", "my_process_id", "project_name", "project_root",   # derived / sender-local
     "last_viewed_at", "ttl", "target_entity", "workspace_id",       # local-only state
     "group_name", "reporter",                                       # KNOWN DRIFT — see above
+    # A task.md exists only for a repo task (the default a reindex restores); an instance task has no file.
+    "placement",
 }
 
 

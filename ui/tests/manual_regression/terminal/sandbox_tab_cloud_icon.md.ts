@@ -8,10 +8,11 @@
  * button is rendered). Absence is a hard Phase 11 preflight failure.
  */
 import { expect, test } from '@playwright/test';
-import { dismissSetupModal, gotoShell, openTabViaMenu, terminalTabChips } from './helpers';
+import { dismissSetupModal, gotoShell, openTabViaMenu, requireSandbox, terminalTabChips } from './helpers';
 
 test.describe('Sandbox tab — provider icon', () => {
   test.beforeEach(async ({ page }) => {
+    await requireSandbox();
     await dismissSetupModal(page);
   });
 

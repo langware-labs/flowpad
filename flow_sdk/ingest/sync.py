@@ -65,6 +65,8 @@ async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> 
     emit_sync_tag(source.provider, source.id, "started")
     source.last_attempted_at = now
     try:
+        # Who it reads as first: the records this pass lands must tell our own posts from a stranger's.
+        await stype.identify(source)
         found = await stype.traverse(source, position_of(source, now))
         placed = await _place(source, found)
     except Exception as exc:  # noqa: BLE001 — classified, recorded, never re-raised

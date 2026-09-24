@@ -8,6 +8,9 @@
  * The markdown editor opens for an existing doc.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { apiBase, apiContext } from '../_shared/api';
 
 const API = apiBase();
@@ -49,31 +52,45 @@ test.describe('Project doc creation — entity API', () => {
   test('test 2: Creating a markdown doc via the entity API writes the entity (and is searchable)', async () => {
     test.setTimeout(60_000);
     const rq = await apiContext();
-    const projectId = await firstWritableProjectId(rq);
-    // Mirrors Markdown.createInProject(): the project scope is encoded in the
-    // graph path, so save() materializes the file, stamps project_id, and
-    // updates FTS before returning.
-    const created = await (await rq.post(`${API}/api/v1/graph/project/${projectId}/markdown`, {
-      data: { name: 'regression_new_doc_check' },
-    })).json();
-    expect(created.status).toBe('SUCCESS');
-    expect(created.data?.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(created.data?.type).toBe('markdown');
-    expect(created.data?.name).toBe('regression_new_doc_check');
-    expect(created.data?.project_id).toBe(projectId);
-    expect(created.data?.asset_ref).toMatch(/regression_new_doc_check\.md$/);
+    // Its own temp project and a per-run name: a fixed name in a shared project
+    // (the default project's mount is the user's real workspace) survives a DB
+    // clear on disk, and the next run's create is refused as a duplicate.
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'flowpad-newdoc-')));
+    const project = await rq.post(`${API}/api/v1/graph/project`, {
+      data: { name: path.basename(root), fs_storage_mount_path: root },
+    });
+    expect(project.status()).toBe(200);
+    const projectId = (await project.json()).data.id as string;
+    const name = `regression_new_doc_check_${Date.now().toString(36)}`;
+    try {
+      // Mirrors Markdown.createInProject(): the project scope is encoded in the
+      // graph path, so save() materializes the file, stamps project_id, and
+      // updates FTS before returning.
+      const created = await (await rq.post(`${API}/api/v1/graph/project/${projectId}/markdown`, {
+        data: { name },
+      })).json();
+      expect(created.status).toBe('SUCCESS');
+      expect(created.data?.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(created.data?.type).toBe('markdown');
+      expect(created.data?.name).toBe(name);
+      expect(created.data?.project_id).toBe(projectId);
+      expect(created.data?.asset_ref).toMatch(new RegExp(`${name}\\.md$`));
 
-    await expect(async () => {
-      const res = await rq.get(
-        `${API}/api/v1/search?record_type=markdown&q=regression_new_doc_check&user=false&projects=${projectId}`,
-      );
-      expect(res.status()).toBe(200);
-      const body = await res.json();
-      expect(body.data?.results).toEqual(expect.arrayContaining([
-        expect.objectContaining({ record_id: created.data.id, project_id: projectId }),
-      ]));
-    }).toPass({ timeout: 15_000 });
-    await rq.dispose();
+      await expect(async () => {
+        const res = await rq.get(
+          `${API}/api/v1/search?record_type=markdown&q=${name}&user=false&projects=${projectId}`,
+        );
+        expect(res.status()).toBe(200);
+        const body = await res.json();
+        expect(body.data?.results).toEqual(expect.arrayContaining([
+          expect.objectContaining({ record_id: created.data.id, project_id: projectId }),
+        ]));
+      }).toPass({ timeout: 15_000 });
+    } finally {
+      await rq.delete(`${API}/api/v1/graph/project/${projectId}`).catch(() => undefined);
+      await fs.rm(root, { recursive: true, force: true });
+      await rq.dispose();
+    }
   });
 
   test('test 3: The markdown editor surface opens for an existing doc', async ({ page }) => {

@@ -302,21 +302,22 @@ class UserMachineWorker:
                     return
                 await self._cmd_status(command_message_id, **{field: chunk.decode("utf-8", errors="replace")})
 
+        # None when the process's end was lost: the last frame then says it ENDED
+        # with no code, rather than inventing -1 ("ran and exited -1").
+        exit_code: int | None = None
         try:
             await asyncio.gather(relay(process.stdout, "stdout"), relay(process.stderr, "stderr"))
             exit_code = await process.wait()
         except asyncio.CancelledError:
-            exit_code = -1
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("[connect] command %s pump failed: %s", command_message_id, exc)
-            exit_code = -1
         finally:
             self._processes.pop(command_message_id, None)
             if self._ws is not None:
                 try:
-                    await self._cmd_status(command_message_id, exit_code=exit_code)
-                except Exception:  # noqa: BLE001 — socket gone; the hub already marked it -1
+                    await self._cmd_status(command_message_id, exit_code=exit_code, ended=True)
+                except Exception:  # noqa: BLE001 — socket gone; the hub already completed it
                     pass
 
     async def _op_cancel(self, body: dict[str, Any]) -> None:

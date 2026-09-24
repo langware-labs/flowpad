@@ -220,7 +220,7 @@ def _spec():
 
 
 async def _question_id(timeout: float = 30.0) -> str:
-    from flow_sdk.core.compute.ask import open_questions
+    from flow_sdk.core.compute_op.ask import open_questions
 
     for _ in range(int(timeout / 0.1)):
         waiting = open_questions()
@@ -264,14 +264,11 @@ async def test_no_tab_listening_takes_the_window_route(_record_browser_opens):
     What is pinned: with no tab, the push is declined and the fall-through is
     reached, at the chrome-less address.
 
-    What is NOT automated, deliberately: the last step of that route calls
-    ``flow_service()``, which borrows or STARTS the selected instance — and on
-    a developer's machine the selected instance is their real one. A test that
-    may start or adopt somebody's running server is not a test worth having.
-    Verified by hand instead; the address it would open is asserted here.
+    The window itself opens on this backend's own port and starts nothing; that
+    last step is pinned in ``tests/unit/test_compute_op_ask.py``.
     """
-    from flow_sdk.core.compute.ask import cancel, open_question
-    from flow_sdk.core.compute.ask_window import _push_to_live_tab, ask_url
+    from flow_sdk.core.compute_op.ask import cancel, open_question
+    from flow_sdk.core.compute_op.ask_window import _push_to_live_tab, ask_url
 
     question = open_question("get-api-key", "token", {"token": "string"})
     try:

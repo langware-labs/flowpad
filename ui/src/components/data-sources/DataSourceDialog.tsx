@@ -87,6 +87,7 @@ function draftFrom(source: DataSource, spec?: DataDriver): SourceDraft {
     enabled: source.status !== 'disabled',
     poll_interval_seconds: source.poll_interval_seconds,
     window_days: source.window_days,
+    thread_timeout_seconds: source.thread_timeout_seconds,
     fields,
     picked,
   };
@@ -124,20 +125,24 @@ export function DataSourceDialog({
   const specs = only ? offered.filter(only) : offered;
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft());
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // Nothing is wrong with a form nobody has filled in yet. Problems are shown once the person
+  // asks to add the source — before that the red box reads as a broken dialog, not as guidance.
+  const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
-  // Seed the form once per opening, keyed on WHAT is being edited. `specs` /
-  // `specFor` change identity on every live `DataDriver` emission, and
-  // depending on them re-seeded the draft mid-typing — discarding whatever had
-  // been entered. The spec is read through a ref so the seed still sees the
-  // current one without subscribing the effect to it.
-  const seedRef = useRef({ specFor, specs });
-  seedRef.current = { specFor, specs };
+  // Seed the form once per opening, keyed on WHAT is being edited. `specFor`
+  // changes identity on every live `DataDriver` emission, and depending on it
+  // re-seeded the draft mid-typing — discarding whatever had been entered. It is
+  // read through a ref so the seed still sees the current one without
+  // subscribing the effect to it.
+  const seedRef = useRef(specFor);
+  seedRef.current = specFor;
   useEffect(() => {
     if (!open) return;
-    const { specFor: lookup, specs: available } = seedRef.current;
-    setDraft(editing ? draftFrom(editing, lookup(editing.provider)) : emptyDraft(available[0]));
+    setDraft(editing ? draftFrom(editing, seedRef.current(editing.provider)) : emptyDraft());
     setShowAdvanced(false);
+    setTried(false);
   }, [open, editing]);
 
   const spec = specFor(draft.provider);
@@ -190,6 +195,7 @@ export function DataSourceDialog({
           JSON.stringify(editing.config ?? {}) !== JSON.stringify(config) ||
           editing.poll_interval_seconds !== draft.poll_interval_seconds ||
           editing.window_days !== draft.window_days ||
+          editing.thread_timeout_seconds !== draft.thread_timeout_seconds ||
           JSON.stringify(editing.inbound_allowed_senders ?? []) !== JSON.stringify(allowedSenders);
         editing.name = nextName;
         editing.status = nextStatus;
@@ -197,6 +203,7 @@ export function DataSourceDialog({
         editing.config = config;
         editing.poll_interval_seconds = draft.poll_interval_seconds;
         editing.window_days = draft.window_days;
+        editing.thread_timeout_seconds = draft.thread_timeout_seconds;
         editing.inbound_allowed_senders = allowedSenders;
         await editing.save();
         if (changed) editing.markEdit();
@@ -213,6 +220,7 @@ export function DataSourceDialog({
           status: draft.enabled ? 'new' : 'disabled',
           poll_interval_seconds: draft.poll_interval_seconds,
           window_days: draft.window_days,
+          thread_timeout_seconds: draft.thread_timeout_seconds,
           owner: owner ? owner.toString() : null,
           inbound_allowed_senders: allowedSenders,
         });
@@ -280,7 +288,18 @@ export function DataSourceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent
+        ref={contentRef}
+        className="max-h-[85vh] overflow-y-auto sm:max-w-lg"
+        // Every provider tile is a tooltip trigger, and a tooltip opens on focus: auto-focusing
+        // the first tile popped its description over the row below it, where it sat on top of
+        // the tiles a person was about to click. The dialog itself takes focus instead.
+        onOpenAutoFocus={(e) => {
+          if (editing) return;
+          e.preventDefault();
+          contentRef.current?.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{editing ? t`Edit data source` : t`Add a data source`}</DialogTitle>
           <DialogDescription>
@@ -330,7 +349,7 @@ export function DataSourceDialog({
             </TileSection>
           )}
 
-          {provisioned ? (
+          {!editing && !draft.provider ? null : provisioned ? (
             <p className="text-sm text-muted-foreground" data-testid="provisioned-source-note">
               {spec?.description}
             </p>
@@ -402,6 +421,27 @@ export function DataSourceDialog({
                     />
                   </div>
                   <div className="space-y-1">
+                    <Label htmlFor="ds-thread-timeout">
+                      <Trans>Thread timeout (minutes)</Trans>
+                    </Label>
+                    <Input
+                      id="ds-thread-timeout"
+                      type="number"
+                      min={1}
+                      value={draft.thread_timeout_seconds === null ? '' : draft.thread_timeout_seconds / 60}
+                      placeholder={t`never`}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          thread_timeout_seconds: e.target.value === '' ? null : Math.round(Number(e.target.value) * 60),
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>A thread quiet this long ends; the next message starts a new one. Empty — never.</Trans>
+                    </p>
+                  </div>
+                  <div className="space-y-1">
                     <Label htmlFor="ds-account">
                       <Trans>Account key</Trans>
                     </Label>
@@ -423,7 +463,7 @@ export function DataSourceDialog({
             </>
           )}
 
-          {problems.length > 0 && (
+          {tried && problems.length > 0 && (
             <ul className="space-y-1 rounded bg-destructive/10 p-2 text-xs text-destructive">
               {problems.map((p) => (
                 <li key={p}>{p}</li>
@@ -436,7 +476,7 @@ export function DataSourceDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             <Trans>Cancel</Trans>
           </Button>
-          <Button onClick={() => void submit()} disabled={busy || problems.length > 0}>
+          <Button onClick={() => { setTried(true); void submit(); }} disabled={busy}>
             {busy ? '…' : editing ? t`Save` : provisioned ? t`Create ${spec?.title}` : t`Add source`}
           </Button>
         </DialogFooter>

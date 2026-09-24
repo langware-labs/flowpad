@@ -4,7 +4,8 @@ The ``asset_cleanup`` SubAgent asset (``flowpad_assistant/.claude/agents/
 asset_cleanup.md``) is the scan-task contract. :func:`run_asset_cleanup`
 launches the named ``asset-cleanup`` Agent—which owns the worker and model—as a
 one-shot headless :class:`AgenticProcess` over the user home plus
-recently-active project roots and returns the parsed findings. Identify-only —
+recently-active project roots and answers a PromptResult whose value is the
+parsed findings. Identify-only —
 nothing is ever deleted.
 """
 

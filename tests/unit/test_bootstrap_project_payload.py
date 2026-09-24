@@ -37,6 +37,15 @@ def test_a_project_with_no_language_says_so_explicitly():
     assert payload["locale"] is None
 
 
+def test_the_opening_project_carries_its_workdir():
+    """A session launched in the opening project resolves its cwd off this row
+    (the SDK caches it as the expanded project). Without the path, a launch
+    clicked before any other project fetch landed silently did nothing."""
+    payload = project_to_dict(_project(fs_storage_mount_path="/work/opening-project"))
+
+    assert payload["fs_storage_mount_path"] == "/work/opening-project"
+
+
 def test_the_generic_entity_dict_stays_generic():
     """`entity_to_dict` is the identity projection EVERY entity shares — user,
     domain, visitor, compute node. A project-only field must not leak into it."""

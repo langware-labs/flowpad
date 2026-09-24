@@ -17,6 +17,7 @@ import {
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
+import { isValidIdentifier } from '@sdk/models/TypeId';
 import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
 import { getViewMode, rememberedDockViewMode, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
@@ -70,6 +71,8 @@ export interface NavigationCommitOptions {
    * mode to a bare URL — only a switch saves the preference.
    */
   viewModeSwitch?: boolean;
+  /** The `tab_switch` start line's `via=` when neither flag above names it. */
+  via?: string;
 }
 
 interface PendingDockNavigation {
@@ -97,6 +100,25 @@ let pendingDockNavigation: PendingDockNavigation | null = null;
 // URL — the ChatsNavigator reads currentDock.scopeFilter to filter history, exactly
 // like assets/explorer/triggers (SHELL's tabHash ignores scope, so the open
 // session's identity is unaffected).
+/**
+ * The project a session dock BELONGS to, when it is already known without a
+ * fetch: its open tab's project, else the cached process's. A session opened
+ * from another project (a project switch, a chat link, spotlight) must carry its
+ * own project's scope — seeding the one being left made the loader's scope
+ * reconcile redirect, so the whole loader ran a second time.
+ */
+function ownerProjectId(dock: DockPointer): string | null {
+  if (dock.viewType !== ViewType.SHELL) return null;
+  const tab = tabForDockKey(tabManager.getSnapshot(), dock.tabHash);
+  if (tab) return tab.project_id ?? null;
+  const processId = DockPointer.isAgenticProcessPointer(dock.pointer ?? '')
+    ? DockPointer.extractAgenticProcessId(dock.pointer ?? '')
+    : null;
+  // A malformed id (a hand-typed or legacy link) must not throw out of openDock.
+  if (!processId || !isValidIdentifier(processId)) return null;
+  return AgenticProcess.getByIdFromCache<AgenticProcess>(processId)?.project_id ?? null;
+}
+
 export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
   // Events (+ its aliases): ONE ScopeFilter drives both halves of the screen —
@@ -215,6 +237,15 @@ export class NavigationActions {
     }
   }
 
+  /** Stamp a mode-less target: its own remembered dock mode, else the live mode
+   *  on screen (`liveMode`, read only when there is no memory). An entry must
+   *  state its mode, or it re-resolves through the stored preference. */
+  private static withTargetViewMode(target: DockPointer, liveMode: () => ViewMode | null): DockPointer {
+    if (target.viewMode !== null) return target;
+    const mode = rememberedDockViewMode(target) ?? liveMode();
+    return mode ? target.withViewMode(mode) : target;
+  }
+
   private static clearCommittedPendingNavigation(): void {
     if (!pendingDockNavigation) return;
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
@@ -273,7 +304,7 @@ export class NavigationActions {
     });
     if (willNavigate) {
       NavigationActions.logTabSwitchStart(
-        opts?.viewModeSwitch ? 'view_mode' : opts?.replace ? 'replace' : 'openDock',
+        opts?.viewModeSwitch ? 'view_mode' : opts?.replace ? 'replace' : (opts?.via ?? 'openDock'),
         target,
       );
       // React Router owns browser history and, critically, loader execution.
@@ -310,6 +341,9 @@ export class NavigationActions {
     // A backend-driven navigate onto workspace content stays in the workspace.
     const carriedHost = hostToCarry(here, target);
     if (carriedHost) target = target.withHost(carriedHost);
+    // ...and in the mode on screen, as `openDock` does: otherwise an agent's
+    // navigate repaints the user out of the mode they were looking at.
+    target = NavigationActions.withTargetViewMode(target, () => here?.viewMode ?? null);
     const url = target.toUrl(window.location.pathname);
     if (here?.equals(target)) return;
     NavigationActions.logTabSwitchStart('detached', target);
@@ -344,7 +378,8 @@ export class NavigationActions {
     NavigationActions.clearCommittedPendingNavigation();
     const url = dock.toUrl(window.location.pathname);
     if (NavigationActions.getCurrentBrowserUrl() === url) return;
-    this.commitBrowserNavigation(dock, url, url);
+    // `via=commit`: a param edit, a journey close or the dock closing — not a click.
+    this.commitBrowserNavigation(dock, url, url, { via: 'commit' });
   }
 
   /**
@@ -523,7 +558,7 @@ export class NavigationActions {
       dock.scopeFilter === null &&
       !isContentAssetDock(dock)
     ) {
-      const projectId = dataContext.project?.id ?? null;
+      const projectId = ownerProjectId(dock) ?? dataContext.project?.id ?? null;
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
@@ -550,14 +585,10 @@ export class NavigationActions {
     // DISPLAYS that mode — memory is minted by `VIEW_MODE_STORE`, not by opening.
     // Cache-only: a cold deep link has no entity to read here, and the shell
     // loader redirects a session onto its remembered mode instead.
-    if (dock.viewMode === null) {
-      const liveViewMode =
-        rememberedDockViewMode(dock) ??
-        NavigationActions.currentBrowserViewMode() ??
-        this.currentDock?.viewMode ??
-        null;
-      if (liveViewMode) dock = dock.withViewMode(liveViewMode);
-    }
+    dock = NavigationActions.withTargetViewMode(
+      dock,
+      () => NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null,
+    );
 
     if (this.currentDock?.equals(dock)) {
       toplog.log('navigation', 'openDock no-op (currentDock equals target)', {
@@ -728,7 +759,7 @@ export class NavigationActions {
       line: options?.line,
       column: options?.column,
     });
-    this.openDock(pointer);
+    this.openDock(options?.scope ? pointer.withScopeFilter(options.scope) : pointer);
   }
 
   /**
@@ -768,6 +799,16 @@ export class NavigationActions {
         parentTabId: anchor?.parent_tab_id ?? null,
       });
       this.openDock(placed);
+    } catch (error) {
+      notifyLinkError(error);
+    }
+  }
+
+  /** The link as a tab of `process`'s vibe workspace — the process opens in vibe mode showing it. */
+  async openLinkInVibe(link: string, source: Shell | null, process: AgenticProcess): Promise<void> {
+    try {
+      const dock = placeDockInProject(await this.resolveLinkDock(link, source), process.project_id ?? source?.project_id);
+      this.openDock(dock.withViewMode(ViewMode.Vibe).withHost(process.typeId.toString()));
     } catch (error) {
       notifyLinkError(error);
     }
@@ -1041,6 +1082,11 @@ export class NavigationActions {
   openLens(category: string, type: string, ref: string, options?: Record<string, string>): void {
     const pointer = DockPointer.forLens(category, type, ref, undefined, options);
     this.openDock(pointer);
+  }
+
+  /** Open the table behind one home counter (see `DockPointer.forCounterAssets`). */
+  openAssetList(group: string, counter: string): void {
+    this.openDock(DockPointer.forCounterAssets(group, counter));
   }
 
   /**

@@ -106,14 +106,24 @@ describe('building a draft', () => {
 });
 
 describe('validateDraft', () => {
-  it('a custom key needs a name and valid, unique variable names', () => {
+  it('a custom key needs a name, setup instructions and valid, unique variable names', () => {
     const d = customDraft('user');
     d.vars = [emptyVar('9BAD'), emptyVar('DUP'), emptyVar('DUP')];
 
     const p = validateDraft(d, new Set());
 
-    expect(p.form).toEqual(['title-required']);
+    expect(p.form).toEqual(['title-required', 'setup-required']);
     expect(Object.values(p.vars)).toEqual(['bad-env-var', 'duplicate']);
+    expect(validateDraft({ ...d, title: 'Stripe', setup: 'From the dashboard.' }, new Set()).form).toEqual([]);
+  });
+
+  it('a save sends the setup instructions and keeps the setup wiki', () => {
+    const d = { ...customDraft('user'), title: 'Stripe', setup: '  From the dashboard.  ', setupWiki: 'Stripe keys', vars: [emptyVar('STRIPE_KEY')] };
+
+    const { manifest } = toSaveRequest(d, null);
+
+    expect(manifest.setup).toBe('From the dashboard.');
+    expect(manifest.setup_wiki).toBe('Stripe keys');
   });
 
   it('a variable another credential in the same scope declares is refused', () => {
@@ -139,7 +149,7 @@ describe('validateDraft', () => {
 
 describe('toSaveRequest', () => {
   it('a new credential names its scope and project, and only filled values travel', () => {
-    const d = { ...customDraft('project'), title: 'My Stripe', description: ' Payments ' };
+    const d = { ...customDraft('project'), title: 'My Stripe', description: ' Payments ', setup: 'From the Stripe dashboard.' };
     d.vars = [
       { ...emptyVar('STRIPE_KEY'), description: 'the secret key', value: 'sk_test' },
       { ...emptyVar('STRIPE_ACCOUNT'), secret: false },
@@ -154,6 +164,8 @@ describe('toSaveRequest', () => {
         description: 'Payments',
         icon_name: undefined,
         help_url: undefined,
+        setup_wiki: undefined,
+        setup: 'From the Stripe dashboard.',
         value_store: 'env',
         lm_provider: undefined,
         vars: {

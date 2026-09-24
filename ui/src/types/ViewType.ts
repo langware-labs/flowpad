@@ -463,6 +463,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.ASSET_LIST]: {
+    title: msg`Assets`,
+    iconName: 'Table',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   // `Brain` matches RAG_INDEX.icon in the backend TypeInfo, so the tab chip and the type glyph
   // (which comes from the registry via iconForType) agree.
   [ViewType.RAG]: {

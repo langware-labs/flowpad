@@ -138,9 +138,9 @@ class EntityType(StrEnum):
     ASSET_CLEANUP_REPORT = "asset_cleanup_report"
     DATASET = "dataset"
     # A reusable slide-deck template — a folder of layout HTML components +
-    # shared design tokens under assets/deck-templates/ (see the decker skill).
+    # shared design tokens under agentic-assets/deck_template/ (see the decker skill).
     DECK_TEMPLATE = "deck_template"
-    # A generated presentation — a folder under assets/decks/ holding the
+    # A generated presentation — a folder under agentic-assets/deck/ holding the
     # self-contained deck HTML + its deck.json build record (see decker skill).
     DECK = "deck"
     # A flat tabular file asset — a .csv (editable) or .xlsx (read-only view)

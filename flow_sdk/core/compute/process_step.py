@@ -155,21 +155,6 @@ async def launch_step_process(
     return await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status)
 
 
-def _last_reply(process: Any) -> str:
-    """What the agent said in the turn that just ended. Never raises, never waits:
-    the turn is already over, so the transcript is read, not streamed."""
-    try:
-        from flow_sdk.app.actions.execute_prompt import _last_turn_assistant_text  # noqa: PLC0415
-
-        # The streamer's copy, not a fresh parse: an eager parse of a long
-        # session is ~1s on the event loop.
-        transcript = process._current_transcript()
-        return _last_turn_assistant_text(transcript.entries if transcript is not None else [])
-    except Exception:  # noqa: BLE001 — the reply is a courtesy; the verdict does not depend on it
-        logger.debug("could not read the agent's reply", exc_info=True)
-        return ""
-
-
 async def _prompt_and_wait(
     process: Any,
     prompt: str,
@@ -206,9 +191,11 @@ async def _prompt_and_wait(
             f"The agent run failed: {exc}", executor=executor, duration_s=time.monotonic() - started,
         )
 
-    # Reaching a terminal state is NOT proof the work landed — that is what the
-    # completion check is for. All this reports is that the agent stopped.
-    return PromptResult.satisfied(
-        "The agent finished.", text=_last_reply(process), executor=executor,
-        duration_s=time.monotonic() - started,
-    )
+    # HOW the agent stopped, read the one way AgenticProcess.run reads it: an
+    # error or an interrupt is NOT_YET, whatever it wrote on the way down. (It
+    # was always `satisfied` here, so an agent op with no completion check — a
+    # continuation, say — reported a crashed agent as done.) Even a clean stop is
+    # NOT proof the work landed; that is what the completion check is for.
+    from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+
+    return _build_run_result(process).model_copy(update={"duration_s": time.monotonic() - started})

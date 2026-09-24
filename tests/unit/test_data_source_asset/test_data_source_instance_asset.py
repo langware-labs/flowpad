@@ -155,3 +155,16 @@ async def test_a_hand_edit_is_indexed_and_the_rows_runtime_survives_it(scope):
     row = await DataSource.get_by_id(source.id)
     assert row.name == "renamed"
     assert (row.status, row.health) == (SourceStatus.DISABLED.value, "ok")
+
+
+async def test_the_thread_timeout_is_authored_in_the_file(scope):
+    source = await _saved()
+    source.thread_timeout_seconds = 1800
+    await source.save()
+    assert _document(source)["thread_timeout_seconds"] == 1800
+
+    main = _folder(source) / "data_source.json"
+    main.write_text(main.read_text(encoding="utf-8").replace("1800", "600"), encoding="utf-8")
+    await index_path("data_source", _folder(source))
+
+    assert (await DataSource.get_by_id(source.id)).thread_timeout_seconds == 600

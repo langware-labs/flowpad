@@ -94,6 +94,11 @@ class ConnectionSpec(DataSpec):
     #: "API key", "GitHub account". Empty when the provider does not say: a
     #: guess here would be a claim about someone's billing.
     account: str = ""
+    #: HOW it signs in: ``oauth`` (approved in a browser), ``device`` (a vendor
+    #: CLI's own login on this machine) or ``api_key`` (a stored key). Empty on an
+    #: OAuth grant: whether it is a device grant is the provider catalogue's
+    #: ``kind``, which this row does not carry.
+    sign_in: str = ""
     icon: str = ""
     #: ``machine`` for sign-ins and harnesses; a credential row carries its own
     #: scope, ``user`` or ``project``.
@@ -133,6 +138,7 @@ class ConnectionSpec(DataSpec):
             detail=str(value.get("detail") or ""),
             identity=str(value.get("identity") or ""),
             account=str(value.get("account") or ""),
+            sign_in=str(value.get("sign_in") or ""),
             icon=str(value.get("icon") or ""),
             scope=str(value.get("scope") or "machine"),
             credential_ref=str(value.get("credential_ref") or ""),

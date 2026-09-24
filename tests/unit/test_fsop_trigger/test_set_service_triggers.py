@@ -41,6 +41,24 @@ async def test_idempotent_across_reruns(initialize_test_db):
     assert second.id == first.id
 
 
+async def test_daily_usage_analysis_is_forced_off(initialize_test_db):
+    """A fresh instance seeds the daily usage report disabled, and an install
+    seeded while it was on by default flips off on the next boot."""
+    await set_service_triggers()
+    trigger = await Trigger.get_by_uname("builtin_daily_usage_analysis")
+    assert trigger.enabled is False
+
+    trigger.enabled = True
+    await trigger.update()
+    assert (await Trigger.get_by_uname("builtin_daily_usage_analysis")).enabled is True
+
+    await set_service_triggers()
+
+    reseeded = await Trigger.get_by_uname("builtin_daily_usage_analysis")
+    assert reseeded.id == trigger.id
+    assert reseeded.enabled is False
+
+
 async def test_transcript_route_callback_registered_at_import():
     """T5: The streamer route callback registers at module import (via the
     lazy import in _service_trigger_specs())."""

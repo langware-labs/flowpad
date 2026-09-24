@@ -5,12 +5,12 @@ a ``DataSpec`` carried something that is not data, which is exactly why it
 needed a custom serializer to survive JSON at all: the validator compiled the
 authoring form on the way in, and the serializer un-compiled it on the way out.
 
-Nine fields declared it. **Two** ever used the class
-(``core/compute_op/runner.py``, ``core/wizard/runner.py``), and one of those
-converted it straight back to the form to put in a prompt — form → class → form,
-for nothing. So the field keeps the form, and the two callers compile when they
-need a type. ``_COMPILED`` already caches by canonical form, so that is a dict
-hit, not a re-parse.
+Nine fields declared it. **One** place ever needs the class
+(``core/compute/declared_value.to_declared``, which validates a value against a
+declared shape); another converted it straight back to the form to put in a
+prompt — form → class → form, for nothing. So the field keeps the form, and the
+one caller compiles when it needs a type. ``_COMPILED`` already caches by
+canonical form, so that is a dict hit, not a re-parse.
 
 What is NOT lost: the form is still validated at the write, where the file is
 still in hand and the author can be told which key is wrong. That was the real
@@ -44,8 +44,8 @@ def normalize_shape_form(value: Any) -> Any:
 
 
 def compile_form(form: Any) -> Any:
-    """An authoring form → the type it names. The inverse, at the two call
-    sites that genuinely need a class."""
+    """An authoring form → the type it names. The inverse, for the one caller
+    that genuinely needs a class (``declared_value.to_declared``)."""
     return None if form is None else DataSpec.parse(form)
 
 

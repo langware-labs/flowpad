@@ -190,10 +190,13 @@ async def test_conformance(check, serve):
 def recorded(monkeypatch):
     seen: list = []
 
-    async def _ingest(items, **_kw):
-        seen.extend(items)
+    async def _ingest(item, **_kw):
+        from flow_sdk.ingest.models import IngestOutcome  # noqa: PLC0415
 
-    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", _ingest)
+        seen.append(item)
+        return IngestOutcome(entity_id=f"row-{item.external_id}", external_id=item.external_id, status="created")
+
+    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_item", _ingest)
     return seen
 
 

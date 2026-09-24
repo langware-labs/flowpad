@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, List, Optional
 
-from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.schema.data_spec.task_spec import TaskKind, TaskStatus, TaskType
@@ -85,6 +85,31 @@ class Task(Entity):
     task_type_label: Optional[str] = APIField(None)
     team_space_id: Optional[str] = APIField(None)
     worker_session_id: Optional[str] = APIField(None)
+
+    #: Where the row lives. ``repo`` (a person's task): a folder asset in the project, in git.
+    #: ``instance`` (a task an agent delegated): the DB and this machine's record shadow only —
+    #: runtime bookkeeping never touches the project's git tree. ``flow task keep`` promotes one.
+    placement: str = APIField("repo", persist=Persist.TRUE, sharing=Sharing.PRIVATE)
+
+    def is_file_backed(self) -> bool:
+        return bool(self.asset_ref) or self.placement != "instance"
+
+    # ── a delegated task: the task ledger (``flow_sdk/tasks/ledger.py`` is the one writer) ──
+    #: Who asked for it, as a typed ref: ``agent:<id>`` / ``user:<id>``.
+    creator: Optional[str] = APIField(None)
+    #: Who does it: ``subagent:<name>`` / ``agent:<id>`` / ``user:<email>``. Not ``assignee``,
+    #: which stays the human share field.
+    owner: Optional[str] = APIField(None)
+    #: The conversation the request came from — where the creator reports back.
+    origin_conversation: Optional[str] = APIField(None)
+    #: The creator's session (its process's target — a conversation, or its chat) — where task news
+    #: wakes it, so it answers with the memory of the request.
+    origin_session: Optional[str] = APIField(None)
+    budget_usd: Optional[float] = APIField(None)
+    budget_turns: Optional[int] = APIField(None)
+    cost_usd: Optional[float] = APIField(None)
+    #: The outcome in a sentence or two; files ride ``artifacts`` / ``output_dir``.
+    result: Optional[str] = APIField(None)
 
     # NOTE: per-subclass implicit context projections (project_id /
     # assignee / my_process_id / shared_process_id) used to live here as

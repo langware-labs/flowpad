@@ -3169,10 +3169,10 @@
           "workdir": null,
           "worker_type": "codex"
         },
-        "shell_dash": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - -- $'-rf danger'",
-        "shell_instr": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - -- $'fix the bug'",
-        "shell_multi": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - -- $'line one\\nline two'",
-        "shell_none": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini -",
+        "shell_dash": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.6-luna - -- $'-rf danger'",
+        "shell_instr": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.6-luna - -- $'fix the bug'",
+        "shell_multi": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.6-luna - -- $'line one\\nline two'",
+        "shell_none": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.6-luna -",
         "spawn_dash": {
           "argv": [
             "codex",
@@ -3184,7 +3184,7 @@
             "-c",
             "model_reasoning_effort=low",
             "-m",
-            "gpt-5.4-mini",
+            "gpt-5.6-luna",
             "-"
           ],
           "env": {}
@@ -3200,7 +3200,7 @@
             "-c",
             "model_reasoning_effort=low",
             "-m",
-            "gpt-5.4-mini",
+            "gpt-5.6-luna",
             "-"
           ],
           "env": {}
@@ -3216,7 +3216,7 @@
             "-c",
             "model_reasoning_effort=low",
             "-m",
-            "gpt-5.4-mini",
+            "gpt-5.6-luna",
             "-"
           ],
           "env": {}
@@ -3232,7 +3232,7 @@
             "-c",
             "model_reasoning_effort=low",
             "-m",
-            "gpt-5.4-mini",
+            "gpt-5.6-luna",
             "-"
           ],
           "env": {}
@@ -3252,10 +3252,10 @@
           "workdir": null,
           "worker_type": "codex"
         },
-        "shell_dash": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
-        "shell_instr": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
-        "shell_multi": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
-        "shell_none": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini -",
+        "shell_dash": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.6-luna - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.6-luna - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.6-luna - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.6-luna -",
         "spawn_dash": {
           "argv": [
             "codex",
@@ -3267,7 +3267,7 @@
             "-c",
             "model_reasoning_effort=low",
             "-m",
-            "gpt-5.4-mini",
+            "gpt-5.6-luna",
             "-"
           ],
           "env": {}
@@ -3283,7 +3283,7 @@
             "-c",
             "model_reasoning_effort=low",
             "-m",
-            "gpt-5.4-mini",
+            "gpt-5.6-luna",
             "-"
           ],
           "env": {}
@@ -3299,7 +3299,7 @@
             "-c",
             "model_reasoning_effort=low",
             "-m",
-            "gpt-5.4-mini",
+            "gpt-5.6-luna",
             "-"
           ],
           "env": {}
@@ -3315,7 +3315,7 @@
             "-c",
             "model_reasoning_effort=low",
             "-m",
-            "gpt-5.4-mini",
+            "gpt-5.6-luna",
             "-"
           ],
           "env": {}

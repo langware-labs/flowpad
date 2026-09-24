@@ -233,3 +233,51 @@ class TestGetAllJsonFieldFilter:
 
         assert len(results) == 1
         assert results[0].session_id == "session-A"
+
+
+class TestGetAllSkipsUnreadableRows:
+    """A list survives a row it cannot build; a single-row read still says it is broken.
+
+    A `source_item` whose payload named a `spec_kind` this process could not reach used to
+    abort the whole hydration loop, so `GET /api/v1/graph/source_item` answered 500 and the
+    screen was empty — several hundred good rows lost to one bad one.
+    """
+
+    async def _insert_broken(self, driver, entity_id):
+        """A body the model cannot validate: `data` must be a dict, not a list."""
+        async with driver.session_factory() as session:
+            await session.execute(text(
+                "INSERT INTO entities (id, type, namespace, data, record_data_ref) "
+                "VALUES (:id, 'note', '', :data, NULL)"
+            ), {"id": entity_id, "data": '{"created_date": []}'})
+            await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_the_good_rows_still_come_back(self, driver, caplog):
+        await _insert_entity(driver, "ok1", "note")
+        await self._insert_broken(driver, "bad")
+        await _insert_entity(driver, "ok2", "note")
+
+        rows = await driver.get_all(QueryFilter(type="note"))
+
+        assert sorted(r.id for r in rows) == ["ok1", "ok2"]
+        assert "bad" in caplog.text and "skipped 1 unreadable row" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_list_of_only_broken_rows_is_empty_not_an_error(self, driver):
+        await self._insert_broken(driver, "bad")
+        assert await driver.get_all(QueryFilter(type="note")) == []
+
+    @pytest.mark.asyncio
+    async def test_a_systematic_failure_warns_once_not_once_per_row(self, driver, caplog):
+        """These failures are a property of a TYPE — a payload class this process cannot
+        reach poisons every row of it — so per-row logging would emit thousands of
+        identical multi-line pydantic errors. The count is the diagnostic."""
+        for i in range(25):
+            await self._insert_broken(driver, f"bad{i}")
+
+        assert await driver.get_all(QueryFilter(type="note")) == []
+
+        warnings = [r for r in caplog.records if "unreadable" in r.getMessage()]
+        assert len(warnings) == 1
+        assert "skipped 25 unreadable row(s)" in warnings[0].getMessage()

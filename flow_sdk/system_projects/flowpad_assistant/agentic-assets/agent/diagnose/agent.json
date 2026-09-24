@@ -9,6 +9,12 @@
   "permission_mode": "bypassPermissions",
   "load_flowpad_assistant": true,
   "enabled": true,
-  "version": 4,
-  "title": ""
+  "version": 5,
+  "title": "",
+  "mcp_servers": [
+    "mcp-97501da9-2314-4331-adc1-2dac604a9b31",
+    "mcp-6a29cf68-f6ce-4458-adfc-5398e849e760",
+    "mcp-ddc97f48-e8b7-4c25-87c1-9cbc5c35ffe8",
+    "mcp-a884cc06-f36f-415c-94ac-227f04f450c2"
+  ]
 }

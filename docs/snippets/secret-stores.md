@@ -354,6 +354,39 @@ await remote.validate_keys(agentmail.credentials.names())
 await agentmail.set_secret_store(remote)  # the agentmail source now loads its key from GCP
 ```
 
+## 7. Set up a project — `flow project setup`
+
+Everything above is one credential or one connection at a time. `flow project setup` does them all,
+from the command line, for the project in the working directory:
+
+```bash
+flow project setup --dry-run    # what the project needs, and what already holds
+flow project setup              # walk it: sign in, type keys, or leave one empty for the AI
+flow project setup --no-ai      # never hand a value to the AI setup
+flow credentials check telegram # exit 0 when every development value is present
+flow credentials set telegram TELEGRAM_BOT_TOKEN=123456:abc  # store one (declares it from its template)
+flow connections test google --scope https://www.googleapis.com/auth/drive.readonly
+```
+
+It **collects** the credentials the project declares and the auth of every data source it holds —
+a driver's `auth.connector` is a connection, `auth.credential` a credential, and `auth.env` /
+`auth.secrets` names map to whichever credential (declared, else a shipped template) declares
+them. A name nothing declares is reported, never guessed. It then **compiles** a wizard, held in
+memory and never written, and runs it with the stock runner:
+
+| requirement | steps (each `on_fail: continue`)                                                                  | check                                   |
+| ----------- | ------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| connection  | `flow connections connect <provider>` — consent is a person's click, so there is no AI rung        | `flow connections test <p> --scope …`   |
+| credential  | an `ask` per missing value (masked when `secret`), then `flow credentials set <name> --from-inputs` | `flow credentials check <name>`         |
+|             | **AI setup**: the `provisioner` agent following the credential's own `setup` instructions         | the same check — so it skips itself when the key step got there |
+
+Every `CredentialSpec` carries `setup`: how to obtain its values and store them, written for an
+agent to follow and ending in `flow credentials set`. Authoring refuses a credential without it; a
+pack written before it existed still loads, and setup reports it as having no AI setup. Leaving a
+question empty is how a person hands that credential to the AI. Values travel ask → the run →
+the environment of `flow credentials set`; nothing prints them, and the CLI log keeps names only.
+Running it again is the resume: whatever holds is skipped. The environment is `development`.
+
 ## What each call replaced
 
 | call                                                  | before                                                                                                   |

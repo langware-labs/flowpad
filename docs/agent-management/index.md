@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-19ec5c4d-9a34-5922-9864-878be1f4d806
-inputs_hash: 67a4a8ddb8780a10b156ce1d6b83be41879790d2e56b55a35fa8f37d61d8eab7
+inputs_hash: ee9034286475990565951ddad74dc00252bdb6ecdfd06bdad402237b642e8f43
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-19T23:43:14.381921+00:00'
+generated_at: '2026-09-23T19:02:04Z'
 latest_process_ref: ''
 file_count: 7
 subfolder_count: 0
@@ -19,7 +19,7 @@ subfolder_count: 0
 
 ## Files
 - [Agent Records](agent-records.md) — Which agent state survives a restart: FSRecord shadow folders and entity rows versus live PTY handles, plus Claude JSONL transcripts and record-entity sync.
-- [AgenticProcess](agentic-process.md) — AgenticProcess, the entity behind one worker-backed agent session: the orthogonal pty_mode transport and visible UI axes, and the WorkerDriver delegation.
+- [AgenticProcess](agentic-process.md) — AgenticProcess entity reference: orthogonal pty_mode transport and visible axes, WorkerDriver delegation, wizard runtime with WizardResult close, statuses, config, backend and TypeScript APIs.
 - [Claude Process Lifecycle, CLI Options & Restart Contract](claude-session-manager.md) — Claude process lifecycle without a manager layer: createProcess and spawn flows, opening existing sessions, stop/restart/fork, CLI option storage, and restart-required detection.
 - [Mode Switching (Chat/Headless ⇄ Interactive PTY)](mode-switching.md) — Switching an AgenticProcess between headless CLI and interactive PTY transports: pty_mode versus visible, the single switch-mode seam, and the mid-turn guard.
 - [PTY, Shell State, and WebSocket Transport](pty-websocket.md) — PTY stack reference: Shell-owned state, backend PTY creation, WebSocket transport and REST-over-WS, disk-backed framed replay, and attach, input, resize, close semantics.

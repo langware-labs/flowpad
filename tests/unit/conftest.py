@@ -11,6 +11,8 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+import tempfile
+
 import pytest
 
 from flow_sdk.builtin.shell import Shell
@@ -189,6 +191,45 @@ async def kill_pty(shell: Shell) -> None:
     pty = shell.compute_node.get_pty(shell.id) if shell.compute_node_id else None
     if pty:
         await pty.kill()
+
+
+@pytest.fixture(autouse=True)
+def _assets_stay_in_the_sandbox(tmp_path, monkeypatch):
+    """No test writes an asset outside its own tmp directory.
+
+    A scope root is a real machine path. Once any test seeds the @local project
+    — several do, to establish a genuine precondition — asset creation resolves
+    to PROJECT scope and lands under that project's mount, which is ``/tmp``:
+    every later test then shares ``/tmp/agentic-assets``. It accumulated 247
+    folders on this machine, and a name a snippet reuses ("Notes", "folder_src")
+    collides with the folder some earlier RUN left there — which is why the
+    failures grew run over run and vanished when a file was run alone.
+
+    So a root that would land outside the pytest tmp tree is redirected into it.
+    A root already inside (every fixture that builds its own) is left exactly as
+    it is, which is what keeps the tests that assert on their project's mount
+    working.
+    """
+    import flow_sdk.builtin.asset_placement as placement
+
+    real = placement.root_for_scope
+    sandbox = Path(tmp_path) / "scope-roots"
+    base = str(Path(tempfile.gettempdir()).resolve())
+
+    def root_for_scope(scope, *, project_mount=None):
+        root = real(scope, project_mount=project_mount)
+        if root is None:
+            return None
+        resolved = Path(root).resolve()
+        if str(resolved).startswith(base):
+            # Already inside this machine's temp tree — every fixture that builds
+            # its own root lands here, including the ones that ASSERT on the path.
+            return root
+        caged = sandbox / str(scope)
+        caged.mkdir(parents=True, exist_ok=True)
+        return caged
+
+    monkeypatch.setattr(placement, "root_for_scope", root_for_scope)
 
 
 @pytest.fixture

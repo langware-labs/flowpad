@@ -29,6 +29,10 @@ interface Spec {
   id: string;
   name: string;
   title?: string;
+  /** False keeps a driver out of the picker (a vendor the cloud stands in front of). */
+  listed?: boolean;
+  /** The cloud creates the account — offered only when adding for an agent. */
+  provisioned?: boolean;
   config?: Record<string, SpecField>;
 }
 
@@ -124,11 +128,22 @@ test.describe('Data sources are served by the backend', () => {
     const dialog = page.getByRole('dialog').filter({ hasText: 'Add a data source' });
     await expect(dialog).toBeVisible();
 
-    for (const spec of specs) {
+    // The manifest decides, not ui/: `listed: false` keeps a driver out of the picker, and a
+    // `provisioned` one is an agent's own account, offered only when adding for an agent.
+    // Both flags are read off the fetched manifests, never written out here.
+    const offered = specs.filter((s) => s.listed !== false && !s.provisioned);
+    expect(offered.length, 'no installed spec is offered to a person').toBeGreaterThan(0);
+    for (const spec of offered) {
       await expect(
         dialog.getByTestId(`provider-${spec.name}`),
         `${spec.name} is installed but the dialog does not offer it`,
       ).toBeVisible();
+    }
+    for (const spec of specs.filter((s) => !offered.includes(s))) {
+      await expect(
+        dialog.getByTestId(`provider-${spec.name}`),
+        `${spec.name} is unlisted or provisioned but the dialog offers it`,
+      ).toHaveCount(0);
     }
   });
 
@@ -153,12 +168,22 @@ test.describe('Data sources are served by the backend', () => {
   test('a bad feed url blocks submission', async ({ page }) => {
     await openScreen(page);
     const dialog = await openDialog(page, 'rss');
-    await dialog.locator('#ds-name').fill(`rejected-${stamp()}`);
+    const name = `rejected-${stamp()}`;
+    await dialog.locator('#ds-name').fill(name);
     await dialog.locator('#ds-feed_url').fill('not-a-url');
 
-    // The manifest's `pattern` is doing this. No RSS-specific validator survives in ui/.
-    await expect(dialog.getByRole('button', { name: 'Add source' })).toBeDisabled();
+    // Problems are shown once Add source is pressed, not before anything is typed — so the
+    // button stays pressable and pressing it is what refuses. The manifest's `pattern` is
+    // doing this; no RSS-specific validator survives in ui/.
+    await expect(dialog).not.toContainText('not valid');
+    await dialog.getByRole('button', { name: 'Add source' }).click();
     await expect(dialog).toContainText('not valid');
+    await expect(dialog, 'a refused source must leave the dialog open').toBeVisible();
+
+    const api = await apiContext();
+    const rows = ((await (await api.get('/api/v1/graph/data_source')).json()).data ?? []) as { name: string }[];
+    await api.dispose();
+    expect(rows.map((r) => r.name), 'the refused source was created anyway').not.toContain(name);
   });
 
   test('an rss source can be created', async ({ page }) => {
@@ -199,8 +224,14 @@ test.describe('Data sources are served by the backend', () => {
     });
     await expect(card).toHaveAttribute('data-status', 'setup');
 
+    // Verify reports through a notification, like every verb on the screen — the card
+    // carries no second result channel (see DataSourceRow's `pull`).
     await card.locator('[data-testid^="source-verify-"]').click();
-    await expect(card).toContainText(/Google/i);
+    await expect(
+      page.locator('section[aria-label^="Notifications"] [data-sonner-toast]').filter({ hasText: /Google/i }),
+      'Verify did not name Google as what is missing',
+    ).toBeVisible();
+    await expect(card).toHaveAttribute('data-status', 'setup');
   });
 
   test('a git repository can be created', async ({ page }) => {

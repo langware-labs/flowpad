@@ -6,6 +6,7 @@ import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError, isApiError } from '../ApiResponse';
 import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
+
 import config from '../config';
 import { IEntity } from '../IEntity';
 import type { AssetOccurrence } from '../APIEntity';
@@ -35,6 +36,14 @@ import { SubscriptionMap, TypeIdMap, WatchMap, WatchQueryMap } from './map';
 import { ExpansionRequest, QueryRequest } from './query';
 import { ActionType, JSONSchemaParser, TypeInfo } from './schema';
 import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
+
+/** Whether `fetch` can resolve what this client addresses. It parses the URL itself
+ *  and rejects a relative one — no document is consulted — so the base has to be
+ *  absolute, which it is wherever the app really runs. */
+function canFetchAbsolute(): boolean {
+  return /^https?:\/\//i.test(apiClient.defaults.baseURL ?? '');
+}
+
 
 export enum EntityStatus {
   NA = 'NA',
@@ -1637,6 +1646,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         ...(requestConfig ?? {}),
         headers: { ...(requestConfig?.headers ?? {}), 'X-Flow-Connection-Id': ConnectionManager.getInstance().id },
       };
+    }
+
+    // XHR cannot outlive the page; the fetch adapter can (same client and interceptors).
+    // Only where `fetch` can resolve the address: it parses the URL itself and throws on a
+    // relative one, while XHR resolves it against the document. With no absolute base and no
+    // document to resolve against, keeping the default adapter costs only the keepalive.
+    if (actionInfo.keepalive && canFetchAbsolute()) {
+      requestConfig = { ...(requestConfig ?? {}), adapter: 'fetch', fetchOptions: { keepalive: true } };
     }
 
     // In-flight dedup for GETs: share a pending request with concurrent callers

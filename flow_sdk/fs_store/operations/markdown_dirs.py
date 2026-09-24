@@ -16,19 +16,27 @@ _DOCS_WALK_MAX_DEPTH = 3
 
 
 def _find_docs_subdirs(root: Path) -> list[Path]:
-    """All directories named 'docs' under root, capped at _DOCS_WALK_MAX_DEPTH."""
+    """All directories named 'docs' under root, capped at _DOCS_WALK_MAX_DEPTH.
+
+    Pruned at the LAST level that can match, not one past it: ``os.walk`` lists
+    a directory before yielding it, so clearing ``dirnames`` only once inside a
+    too-deep directory still lists every one of them. On a Flowpad instance
+    dir (a Claude project whenever a session ran there) that is each
+    ``records/<type>/<id>`` home — 77,815 listings and 5s for the 234 that can
+    hold a ``docs`` dir. The first markdown indexed pays it while its batch
+    holds the SQLite writer lock, so every other writer waited it out.
+    """
     found: list[Path] = []
     root_depth = len(root.parts)
     try:
         for dirpath, dirnames, _ in os.walk(root, topdown=True):
             p = Path(dirpath)
-            depth = len(p.parts) - root_depth
-            if depth >= _DOCS_WALK_MAX_DEPTH:
+            if p.name == "docs":
+                found.append(p)
+            if len(p.parts) - root_depth >= _DOCS_WALK_MAX_DEPTH - 1:
                 dirnames.clear()
                 continue
             dirnames[:] = [d for d in dirnames if d not in _WALK_IGNORED]
-            if p.name == "docs":
-                found.append(p)
     except PermissionError:
         pass
     return found

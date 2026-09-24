@@ -21,9 +21,11 @@ def listen(*sources: Any, poll_every: "float | None" = None) -> AsyncIterator[De
     return merge_iterators([s.listen(poll_every=poll_every) for s in sources])
 
 
-def pages(*sources: Any, size: int = 50, poll_every: "float | None" = None) -> AsyncIterator[DeliveredPage]:
+def pages(
+    *sources: Any, size: int = 50, poll_every: "float | None" = None, poll: bool = True
+) -> AsyncIterator[DeliveredPage]:
     """Yield from every source's ``pages()`` as pages land; one page is always one source's."""
-    return merge_iterators([s.pages(size=size, poll_every=poll_every) for s in sources])
+    return merge_iterators([s.pages(size=size, poll_every=poll_every, poll=poll) for s in sources])
 
 
 __all__ = ["listen", "pages"]

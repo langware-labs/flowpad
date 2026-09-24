@@ -10,6 +10,7 @@ import {
 } from '@src/tabs/tab-content-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { replace } from 'react-router';
 
 function dock(id = '5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'): DockPointer {
   return new DockPointer(ViewType.SHELL, `shell-${id}`);
@@ -40,6 +41,7 @@ function mockNoExistingTabs() {
 afterEach(() => {
   vi.restoreAllMocks();
   resetTabContentLifecycleForTests();
+  tabManager.resetForTests();
 });
 
 describe('tab lifecycle registry', () => {
@@ -72,6 +74,42 @@ describe('tab lifecycle registry', () => {
     expect(result.tab?.id).toBe(tab.id);
     expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.OpenFailed);
     expect(tabManager.lifecycle.get(d.tabHash)?.error).toBe('attach failed');
+  });
+
+  // A deleted process/shell mints no tab; without its loader's redirect the page
+  // was stranded on "Tab could not be materialized".
+  it('lets the content loader redirect a dead address that mints no tab', async () => {
+    const d = dock();
+    mockNoExistingTabs();
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [], created: false });
+    registerTabContentAdapter(ViewType.SHELL, {
+      setupTab() {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw replace('/dock/shell/shell-fallback');
+      },
+      cleanupTab: () => Promise.resolve(),
+    });
+
+    const thrown = await setupTab(d).catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(Response);
+    expect((thrown as Response).headers.get('Location')).toBe('/dock/shell/shell-fallback');
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).not.toBe(TabLifecycleState.OpenFailed);
+  });
+
+  it('still records open_failed when no tab mints for a target the loader can load', async () => {
+    const d = dock();
+    mockNoExistingTabs();
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue({ tabs: [], created: false });
+    const setupContent = vi.fn(() => Promise.resolve());
+    registerTabContentAdapter(ViewType.SHELL, { setupTab: setupContent, cleanupTab: () => Promise.resolve() });
+
+    const result = await setupTab(d);
+
+    expect(setupContent).toHaveBeenCalledTimes(1);
+    expect(result.tab).toBeNull();
+    expect(tabManager.lifecycle.get(d.tabHash)?.state).toBe(TabLifecycleState.OpenFailed);
+    expect(tabManager.lifecycle.get(d.tabHash)?.error).toBe('Tab could not be materialized for this URL.');
   });
 
   it('emits materialized tabs before content setup resolves', async () => {
@@ -270,6 +308,36 @@ describe('tab lifecycle registry', () => {
   });
 });
 
+describe('switching to an already-open tab', () => {
+  it('reuses it from the loaded tab list, with no list_all round trip', async () => {
+    const dock = new DockPointer(ViewType.SHELL, 'agentic_process-5a1d7c3e-1111-4111-8111-111111111111');
+    tabManager.adoptGlobal([
+      new Tab({ id: nextTabId(), pointer: dock.toJSON() ?? '', target_type: 'agentic_process', visible: true }),
+    ]);
+    const listAll = vi.spyOn(Tab, 'listAll');
+    const mint = vi.spyOn(Tab, 'getFromDockPointer');
+
+    const result = await setupTab(dock);
+
+    // The URL commit waits on this call — a list_all here is a round trip on
+    // every single tab click.
+    expect(listAll).not.toHaveBeenCalled();
+    expect(mint).not.toHaveBeenCalled();
+    expect(result.tab?.pointer).toBe(dock.toJSON());
+  });
+
+  it('lists once before the first adoption, then trusts the snapshot', async () => {
+    const dock = new DockPointer(ViewType.SHELL, 'agentic_process-5a1d7c3e-2222-4222-8222-222222222222');
+    const row = new Tab({ id: nextTabId(), pointer: dock.toJSON() ?? '', target_type: 'agentic_process', visible: true });
+    const listAll = vi.spyOn(Tab, 'listAll').mockResolvedValue([row]);
+
+    await setupTab(dock);
+    await setupTab(dock);
+
+    expect(listAll).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('workspace child adoption guard', () => {
   // The vibe workspace registers its PROCESS tab in the global parent slot; the
   // chokepoint may adopt ONLY content-asset docks. A process/project dock
@@ -278,12 +346,14 @@ describe('workspace child adoption guard', () => {
   // nested-workspace / process-under-process corruption.
   const PARENT = '00000000-0000-4000-8000-00000000feed';
   const MD = '30c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  /** A process OTHER than the host — navigating to the host's own tab is a reuse, not a mint. */
+  const OTHER_PROC = '30c05e11-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
   function assetDock(): DockPointer {
     return new DockPointer(ViewType.ASSETS, `editor/markdown/typeid/markdown-${MD}`);
   }
   function processDock(): DockPointer {
-    return new DockPointer(ViewType.SHELL, `agentic_process-${MD}`);
+    return new DockPointer(ViewType.SHELL, `agentic_process-${OTHER_PROC}`);
   }
   /** A plain terminal — same viewType as the process dock, different pointer. */
   function shellDock(): DockPointer {
@@ -311,7 +381,12 @@ describe('workspace child adoption guard', () => {
     ]);
   }
 
-  afterEach(() => tabManager.adoptGlobal([]));
+  afterEach(() => tabManager.resetForTests());
+
+  /** Add a row to the loaded tab list — where the reuse check looks. */
+  function seedTab(tab: Tab): void {
+    tabManager.adoptGlobal([...tabManager.getSnapshot(), tab]);
+  }
 
   async function materializedParent(d: DockPointer): Promise<string | null | undefined> {
     seedHostTab();
@@ -367,12 +442,12 @@ describe('workspace child adoption guard', () => {
       id: nextTabId(),
       pointer: d.toJSON() ?? '',
       target_type: 'agentic_process',
-      target_id: MD,
+      target_id: OTHER_PROC,
       project_id: 'p1',
       visible: true,
       parent_tab_id: null,
     });
-    vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
+    seedTab(existing);
     const spy = vi.spyOn(Tab, 'getFromDockPointer');
     await setupTab(d);
     expect(spy).not.toHaveBeenCalled();
@@ -456,6 +531,8 @@ describe('workspace child adoption guard', () => {
       visible: true,
       parent_tab_id: null,
     });
+    seedTab(existing);
+    // The re-read after the reparent write (the reuse check reads the snapshot).
     vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
     const spy = vi.spyOn(Tab, 'newTab').mockResolvedValue([
       new Tab({ ...existing, parent_tab_id: PARENT }),

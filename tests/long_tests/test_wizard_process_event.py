@@ -165,9 +165,11 @@ async def test_flow_wizard_cli_closes_real_process_and_delivers_ws_event(live_wi
             assert cli_payload["result"]["status"] == "done"
 
             ws_payload = await _recv_wizard_closed(ws, process_id)
+            answer = ws_payload.pop("answer")
             assert ws_payload == {
                 "status": "done",
                 "data": {"localPath": "/tmp/app"},
                 "errorStr": None,
                 "wizardId": process_id,
             }
+            assert answer["exit_code"] == 0 and answer["value"] == {"localPath": "/tmp/app"}

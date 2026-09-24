@@ -96,6 +96,14 @@ async def workflow(name: str):
         current_workflow.reset(token)
 
 
+class SessionsExhausted(RuntimeError):
+    """Every session slot of a runner is taken — ``max_processes`` is reached.
+
+    Raised by the spawn primitive; ``_AgentRunner.run`` answers it as ``busy``:
+    nothing ran, and a slot frees when a session closes.
+    """
+
+
 class _AgentRunner:
     """Runs an ``Agent``, one ``AgenticProcess`` per session.
 
@@ -153,7 +161,7 @@ class _AgentRunner:
         if existing is not None:
             return existing
         if len(self.processes) >= self.max_processes:
-            raise RuntimeError(
+            raise SessionsExhausted(
                 f"max_processes={self.max_processes} live sessions reached; key {key!r} would exceed the budget"
             )
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
@@ -183,21 +191,31 @@ class _AgentRunner:
         from the record, never by a second turn.
         """
         from flow_sdk.builtin.agent_serve import Turn, TurnEngine, turn_key  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import AgentUnavailable  # noqa: PLC0415
 
-        ap = await self.process_for(m)
+        try:
+            ap = await self.process_for(m)
+        except SessionsExhausted as full:
+            # Every session slot is taken: busy, and it frees when one closes.
+            return PromptResult.held(str(full))
+        except AgentUnavailable as gone:
+            return gone.answer()
         executor = str(ap.typeid)
         turn = Turn(session=str(ap.typeid), key=turn_key(m), body=m.body or m.name or "")
         outcome = await TurnEngine(self.agent, None).run(turn, process=ap)
-        if outcome.kind == "refused":
-            return PromptResult.not_yet(outcome.text, ran=False, executor=executor)
-        return self._output(outcome.text, executor)
+        if not outcome.ok:
+            # Not taken, busy, errored or out of time — the engine's own answer,
+            # with ``busy``, ``timed_out`` and ``executor`` intact.
+            return outcome
+        return self._output(outcome.text, executor).model_copy(update={"ran": outcome.ran})
 
     def _output(self, text: str, executor: str) -> PromptResult:
         """The turn's reply as a value, held to the persona's declared shape.
 
-        Every return path in ``run`` goes through here — including the two that
-        answer from a record rather than from a fresh turn — so a replayed turn
-        and a live one produce the same shape, not merely the same text.
+        The one value-bearing return goes through here, and ``TurnEngine``
+        answers the same way whether the turn was live or replayed from a
+        record — so the two produce the same shape, not merely the same text. A
+        turn that was not answered returns before this: it has no reply to shape.
         """
         from flow_sdk.core.compute.declared_value import (  # noqa: PLC0415
             DeclaredShapeError,
@@ -285,6 +303,11 @@ async def _respond_to(agent: "AgentRef", source: MessageBlock):
                 try:
                     async for message in messages:
                         answer = await _process_message(agent, message)
+                        if not answer.ok or not answer.text:
+                            # Not taken, errored or out of time: nothing to say.
+                            # Replying `answer.text` anyway sent an empty message.
+                            logger.info("agent: no reply to a message (%s)", answer.detail)
+                            continue
                         try:
                             await message.reply(answer.text)
                         except _MessageRequestExpired:
@@ -461,9 +484,15 @@ class StreamInbox:
         *,
         size: int = 50,
         poll_every: "float | timedelta | None" = None,
+        poll: bool = True,
     ) -> AsyncIterator["DeliveredPage"]:
         """Async-iterate inbound messages as they arrive, ``size`` at a time, each page with an
         ``ack()`` that commits it whole.
+
+        ``poll=False`` drains only: the loop never asks the provider, it reads what the
+        app's own ingest lands (the heartbeat, a push, the attention lane) — woken by
+        each arrival, the cadence only a DB re-read. That is the app's agent serve loop:
+        a consumer, not a poller; it says it is waiting through ``note_attention``.
 
         THE drain — ``listen()`` is this, flattened. Each cycle polls the source through the
         poller's slot (a poll already in flight is skipped, not stacked), then drains what landed
@@ -485,7 +514,7 @@ class StreamInbox:
         from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
-        from flow_sdk.stream_inbox.projection import is_self_address, project_source_item  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
 
         source = await self.ensure_source()
         position = await ConsumerPosition.ensure_for(
@@ -502,7 +531,8 @@ class StreamInbox:
         async with arrivals(str(source.id)) as arrived:
             while True:
                 arrived.clear()
-                await poll_source(source, datetime.now(timezone.utc))
+                if poll:
+                    await poll_source(source, datetime.now(timezone.utc))
                 while True:
                     rows = await SourceItem.page_after(str(source.id), last_seen, limit=max(1, int(size)))
                     if not rows:
@@ -514,12 +544,16 @@ class StreamInbox:
                         redelivered = in_flight_at_start is not None and key <= in_flight_at_start
                         # Place it in its conversation regardless of the filters below — the
                         # stream inbox UI shows everything; the LOOP only acts on what passes.
+                        # Placed silently (an import's storm must not wake a turn per item) — except
+                        # our OWN outgoing copy: nothing answers it, and whoever watches the
+                        # conversation is waiting to see the reply land.
+                        own = item.is_ours(source)
                         try:
-                            await project_source_item(item, source=source, announce=False)
+                            await project_source_item(item, source=source, announce=own)
                         except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
                             logger.exception("blocks: projection failed for %s", item.id)
                         sender = str(item.author_external_id or "").strip().lower()
-                        if is_self_address(source, item.author_external_id or "") or (
+                        if own or (
                             self.senders and sender not in self.senders
                         ):
                             # Acked now while nothing in this page has been handed over — an ack is an
@@ -539,7 +573,8 @@ class StreamInbox:
                     if position.mark_in_flight(rows[-1]):
                         await position.commit()
                     yield page
-                await until(arrived, cadence)
+                if not await until(arrived, cadence):
+                    return
 
     async def listen(
         self,

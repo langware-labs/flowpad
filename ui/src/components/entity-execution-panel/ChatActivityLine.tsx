@@ -1,4 +1,4 @@
-import { AgenticProcess, WORKER_STATUS_LABEL, WorkerStatus } from '@sdk';
+import { AgenticProcess, WorkerStatus } from '@sdk';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { DotPulse } from '@src/components/dot-pulse';
 import { getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
@@ -107,19 +107,17 @@ export function ChatActivityLine({ process, trailing }: ChatActivityLineProps) {
   if (!active) return null;
 
   const workerStatus = status ?? process.workerStatus;
-  // This line only renders while a turn is in flight, so a status that means
-  // "the turn ended" cannot be describing THIS turn — it is the previous one's
-  // final status, which survives the turn boundary on the entity and is what a
-  // resumed session hydrates with before the new turn reports in. Rendering it
-  // verbatim printed "Complete" under a live pulse. Fall back to the neutral
-  // in-flight word until the worker says something that can be true right now.
-  const label = isTerminalStatus(workerStatus)
-    ? WORKER_STATUS_LABEL[WorkerStatus.WORKING]
-    : getStatusLabel({
-        status: process.status,
-        workerStatus,
-        session_id: process.session_id,
-      });
+  // This line only renders while a turn is in flight, so it is labelled as busy: a status that
+  // cannot be describing THIS turn — the previous turn's terminal one ("Complete" under a live
+  // pulse), or none at all (a turn another process runs, e.g. a local deployment's loop, reports
+  // nothing here, and the lifecycle fallback read the process at rest: "Idle") — reads Working
+  // (`getDisplayStatus`) until the worker says something that can be true right now.
+  const label = getStatusLabel({
+    status: process.status,
+    busy: true,
+    workerStatus,
+    session_id: process.session_id,
+  });
   const elapsed = startedAt != null ? formatClock(now - startedAt) : null;
   const ActivityIcon = activity?.icon;
 

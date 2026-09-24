@@ -1,6 +1,7 @@
 import { ActionInfo, dataManager, QueryRequest, Task, TaskKind } from '@sdk';
 import { useContacts } from '@src/components/contact-picker/use-contacts';
 import { statusLabel } from '@src/components/task-bar/constants';
+import { statusFamily } from '@src/components/task-bar/task-utils';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -51,7 +52,7 @@ export function MemberTasksSection({ task }: MemberTasksSectionProps) {
 
   if (task.kind !== TaskKind.GROUP && members.length === 0) return null;
 
-  const done = members.filter((m) => m.status === 'done').length;
+  const done = members.filter((m) => statusFamily(m.status) === 'done').length;
 
   return (
     <div className="border-b">
@@ -86,9 +87,9 @@ export function MemberTasksSection({ task }: MemberTasksSectionProps) {
                 className="flex items-center gap-2 px-6 py-1.5 text-start text-sm hover:bg-muted/50"
                 data-testid="member-task-line"
               >
-                {m.status === 'done' ? (
+                {statusFamily(m.status) === 'done' ? (
                   <CheckCircle className="h-3.5 w-3.5 shrink-0 text-green-500" />
-                ) : m.status === 'in_progress' ? (
+                ) : statusFamily(m.status) === 'in_progress' ? (
                   <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-500" />
                 ) : (
                   <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -97,9 +98,9 @@ export function MemberTasksSection({ task }: MemberTasksSectionProps) {
                 <span
                   className={cn(
                     'shrink-0 rounded-full px-2 py-0.5 text-[10px]',
-                    m.status === 'done'
+                    statusFamily(m.status) === 'done'
                       ? 'bg-green-500/10 text-green-600 dark:text-green-400'
-                      : m.status === 'in_progress'
+                      : statusFamily(m.status) === 'in_progress'
                         ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
                         : 'bg-muted text-muted-foreground',
                   )}

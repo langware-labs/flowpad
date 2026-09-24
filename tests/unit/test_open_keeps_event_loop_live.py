@@ -24,6 +24,7 @@ import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
+import psutil
 import pytest
 
 from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
@@ -122,4 +123,60 @@ async def test_opening_agentic_process_keeps_event_loop_live():
     assert worst < MAX_LOOP_GAP_S, (
         f"event loop blocked for {worst * 1000:.0f}ms while opening the agentic "
         f"process — the PTY spawn is running on the loop instead of in a thread"
+    )
+
+
+# A child that ignores HUP and INT: ptyprocess's ``terminate(force=True)`` walks
+# HUP → CONT → INT → KILL with a blocking ``time.sleep`` between each step, so
+# closing it holds the calling thread ~0.4s. `exec` keeps the ignore mask on the
+# one process the PTY owns — no orphaned grandchild outlives the test.
+_STUBBORN_CHILD = ["/bin/sh", "-c", "trap '' HUP INT; exec sleep 30"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("close", ["close_pty_session", "_cleanup_dead_pty_session"])
+async def test_closing_a_stubborn_pty_keeps_event_loop_live(close):
+    """Closing a shell tab must not freeze every other request while the child dies."""
+    provider = LocalComputeProvider()
+    node_id = await provider.create_node("loop-live-close-node", None)
+    key = (node_id, "loop-live-close-sess")
+    await provider.get_or_create_pty_session(
+        node_id, key[1], on_output=lambda _b: None, spawn_args=_STUBBORN_CHILD
+    )
+    process = provider._pty_processes[key]["process"]
+    # The close must signal the child only once sh has installed the trap and exec'd.
+    while psutil.Process(process.pid).name() != "sleep":
+        await asyncio.sleep(0.01)
+
+    gaps: list[float] = []
+    last = time.monotonic()
+    stop = False
+
+    async def heartbeat():
+        nonlocal last
+        while not stop:
+            now = time.monotonic()
+            gaps.append(now - last)
+            last = now
+            await asyncio.sleep(0.005)
+
+    hb = asyncio.create_task(heartbeat())
+    try:
+        await asyncio.sleep(0.05)
+        if close == "close_pty_session":
+            await provider.close_pty_session(*key)
+        else:
+            await provider._cleanup_dead_pty_session(key, reason="test")
+        await asyncio.sleep(0.05)
+    finally:
+        stop = True
+        await hb
+        if process.isalive():
+            process.terminate(force=True)
+
+    assert not process.isalive(), "the stubborn child survived the close"
+    worst = max(gaps)
+    assert worst < 0.1, (
+        f"event loop blocked for {worst * 1000:.0f}ms while closing the PTY — "
+        f"terminate(force=True) is running on the loop instead of in a thread"
     )

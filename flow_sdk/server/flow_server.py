@@ -18,10 +18,31 @@ import inspect
 from contextlib import asynccontextmanager
 from typing import Any, Callable
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .driver_types import FlowDrivers
+
+
+def _rejected_body(request: Request, exc: Exception) -> JSONResponse:
+    """A `RequestValidationError` as the standard FAIL envelope.
+
+    The issues become one sentence — `body.field: message`, the same wording the UI and
+    the wizard use — because a caller shows a message, and an unreadable one is why a
+    mistyped field could take a page down. 422 is preserved: WHAT went wrong is the
+    status, and only the body's shape changes.
+    """
+    issues = exc.errors() if isinstance(exc, RequestValidationError) else []
+    said = "; ".join(
+        f"{'.'.join(str(part) for part in issue.get('loc', ()))}: {issue.get('msg', '')}".strip(": ")
+        for issue in issues
+    )
+    return JSONResponse(
+        status_code=422,
+        content={"status": "FAIL", "message": said or "Request body was rejected", "data": None},
+    )
 
 
 class FlowServer:
@@ -99,6 +120,15 @@ class FlowServer:
         # Outermost of all: the `http` toplog tag times every request that reaches
         # the app, including the ones an inner layer rejects or answers itself.
         app.add_middleware(HttpTimingMiddleware)
+
+        # A rejected BODY answers in the standard envelope, like every other failure.
+        # FastAPI handles `RequestValidationError` itself, so it never reaches the
+        # catch-all middleware above — routes bound straight to FastAPI were answering
+        # 422 with a raw `{"detail": [ {...}, ... ]}`, a shape no client of ours reads.
+        # `apiClient` unwraps `{status,data}`; the UI's error reader was handed a LIST
+        # where it expected a sentence and put an object into React, which replaced the
+        # whole page with the error screen.
+        app.add_exception_handler(RequestValidationError, _rejected_body)
 
         # 5. Core routers
         from .routes import bootstrap_router, health_router, wiki_router

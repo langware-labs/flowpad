@@ -88,6 +88,28 @@ async def test_copy_skip_is_idempotent(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_targeted_reindex_drops_a_deleted_copy(tmp_path: Path) -> None:
+    """A copy has no row — only the primary's occurrences name it — so the
+    targeted ``invalidate`` path (resync the survivor, report the copy deleted)
+    must refresh the projection itself; before, only a full index pass did and
+    the collision badge kept counting a file that was gone."""
+    from flow_sdk.fs_store.reindex import reindex_paths
+
+    idx, a, aid = await _seed_one(tmp_path)
+    b = a.with_name("b.md")
+    shutil.copyfile(a, b)
+    await idx.index(IndexerOptions(**_OPTS))
+    assert len((await _sources())[aid][3]) == 2
+
+    b.unlink()
+    await reindex_paths([str(a)], [str(b)])
+
+    src = await _sources()
+    assert (src[aid][0] or "").endswith("a.md")
+    assert [item["path"] for item in src[aid][3]] == [str(a.resolve())]
+
+
+@pytest.mark.asyncio
 async def test_missing_primary_promotes_remaining_occurrence(tmp_path: Path) -> None:
     idx, a, aid = await _seed_one(tmp_path)
     b = a.with_name("b.md")

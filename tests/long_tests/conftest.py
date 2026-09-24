@@ -221,7 +221,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
 
 
 @pytest.fixture(autouse=True)
-def _real_home_for_cli_subprocess_tests(request):
+async def _real_home_for_cli_subprocess_tests(request):
     """Restore real ``$HOME`` for tests that spawn real worker CLI subprocesses.
 
     Scope of this fixture is **subprocess auth only**: the CLI inherits the
@@ -240,16 +240,26 @@ def _real_home_for_cli_subprocess_tests(request):
     the CLI subprocess inherits working auth. All other long tests keep the
     sandbox HOME from the parent conftest so the indexer doesn't walk the
     real projects tree.
+
+    Swapping HOME swaps which vendor logins exist, so the harness login verdicts
+    already in the session DB describe the OTHER home and are dropped on both
+    edges. An earlier sandbox-HOME test that booted the app ran the capability
+    sweep, which probed ``claude auth status``, got "logged out" and saved
+    ``login_state=idle``; the spawn resolver honours that verdict, so this
+    module's worker was refused as "claude is signed out" while the real HOME was
+    signed in (and passed in isolation).
     """
     module_stem = request.path.stem
     if module_stem in _REAL_HOME_TEST_MODULES:
         os.environ["HOME"] = _REAL_HOME
         os.environ["USERPROFILE"] = _REAL_HOME
+        await _forget_login_verdicts()
         try:
             yield
         finally:
             os.environ["HOME"] = _SANDBOX_HOME
             os.environ["USERPROFILE"] = _SANDBOX_USERPROFILE
+            await _forget_login_verdicts()
     else:
         yield
 
@@ -367,6 +377,13 @@ def live_backend(initialize_test_db, allocate_ports, tmp_path, monkeypatch):
     name = f"live-e2e-{uuid.uuid4().hex[:8]}"
     flow_home = tmp_path / "flow-home"
 
+    # The instance's vault, keyed the headless way unless the test named a key: the backend, every
+    # process it starts (they inherit its environment) and this test all read one store, so a
+    # credential saved through the API is what the backend and its processes resolve.
+    if not os.environ.get("SOD_ENC_KEY"):
+        from cryptography.fernet import Fernet
+
+        monkeypatch.setenv("SOD_ENC_KEY", Fernet.generate_key().decode())
     env = {
         **os.environ,
         "FLOW_INSTANCE": name,
@@ -399,6 +416,21 @@ def live_backend(initialize_test_db, allocate_ports, tmp_path, monkeypatch):
         import asyncio  # noqa: PLC0415
 
         asyncio.get_event_loop().run_until_complete(_forget_login_verdicts())
+
+
+@pytest.fixture
+def runs_deployments(monkeypatch, tmp_path):
+    """Before ``live_backend`` boots: it starts running agent deployments as processes, looks again
+    every second, and their loops (``tests/utils/mock_agent_loop.py``) run on the mock worker."""
+    monkeypatch.setenv("AGENT_RUN_DEPLOYMENTS", "true")
+    monkeypatch.setenv("AGENT_WATCH_SECONDS", "1")
+    monkeypatch.setenv("MOCK_TRANSCRIPTS", str(tmp_path / "mock-transcripts"))
+
+
+@pytest.fixture
+def deployments_backend(runs_deployments, live_backend):
+    """The URL of a real backend that runs agent deployments as processes."""
+    return f"http://127.0.0.1:{live_backend}"
 
 
 async def _forget_login_verdicts() -> None:

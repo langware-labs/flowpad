@@ -78,6 +78,8 @@ allowed_fs_actions = [
     "document",
     "ensure_document",
     "open",
+    "watch",
+    "unwatch",
     "create_symlink",
     "resolve_symlink",
     "import_item",

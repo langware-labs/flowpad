@@ -55,7 +55,6 @@ from .routes import (
     assets_router,
     auth_router,
     capabilities_router,
-    chat_router,
     cloud_router,
     data_source_webhook_router,
     debug_router,
@@ -415,21 +414,31 @@ async def _prune_retired_type_rows() -> None:
         logging.getLogger(__name__).exception("Retired entity types: prune failed")
 
 
-#: The one supervisor of agent placements on this machine (``builtin/agent_serve``).
+#: The one supervisor of the agent deployments running on this machine (``builtin/agent_serve``).
 _AGENT_SERVER = None
 
 
 async def _start_agent_server() -> None:
-    """Every agent placement here serves: its ``chat`` endpoint, and its channels' serve loop."""
+    """Every running local agent deployment's process runs (and its ``chat`` channel exists)."""
     global _AGENT_SERVER
     try:
         from flow_sdk.builtin.agent_serve import AgentServer
         from flow_sdk.config import default_service_config
 
-        _AGENT_SERVER = AgentServer(serve_channels=default_service_config.agent_serve_channels)
+        _AGENT_SERVER = AgentServer(
+            run_processes=default_service_config.agent_run_deployments,
+            watch_seconds=default_service_config.agent_watch_seconds,
+        )
         await _AGENT_SERVER.start()
     except Exception:
         logging.getLogger(__name__).exception("Agent server: start failed")
+    try:
+        # The task ledger's runtime: dispatch subagent runs, deliver task news, feed the Tasks channel.
+        from flow_sdk.tasks import runtime as task_runtime
+
+        task_runtime.start()
+    except Exception:
+        logging.getLogger(__name__).exception("Task runtime: start failed")
 
 
 async def _prune_web_delivery_rows() -> None:
@@ -681,6 +690,17 @@ async def _shutdown_extras():
         except Exception:
             logging.getLogger(__name__).debug("Agent server: stop failed", exc_info=True)
 
+    # Symmetric with the start above: the runtime subscribes to `task.*` on the
+    # process-wide bus, so a shutdown that leaves it subscribed leaves a live
+    # dispatcher behind — it kept claiming tasks created after the server it
+    # belonged to was gone.
+    try:
+        from flow_sdk.tasks import runtime as task_runtime
+
+        task_runtime.stop()
+    except Exception:
+        logging.getLogger(__name__).debug("Task runtime: stop failed", exc_info=True)
+
     try:
         from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 
@@ -748,7 +768,6 @@ server.add_router(auth_router)
 server.add_router(cloud_router)
 server.add_router(privacy_router)
 server.add_router(hooks_router)
-server.add_router(chat_router)
 server.add_router(directory_router)
 server.add_router(detection_router)
 server.add_router(search_router)
@@ -763,6 +782,9 @@ from .routes.service_endpoint import router as service_endpoint_router  # noqa: 
 server.add_router(service_endpoint_router)
 server.add_router(webhook_api_router)
 server.add_router(data_source_webhook_router)
+from flow_sdk.server.routes.tasks import router as task_ledger_router  # noqa: E402
+
+server.add_router(task_ledger_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(debug_router)
