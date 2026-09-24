@@ -8,7 +8,6 @@
  * The rows themselves are the endpoint layer's `UsageChildRow`, the same one
  * the expert by-child table renders — only the columns differ.
  */
-import type { LLMUsageCounters, LLMUsageReport } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
@@ -17,41 +16,10 @@ import { formatValue } from '@src/components/cost-dashboard/constants';
 import { UsageChildRow } from '@src/components/llm-endpoints/UsageRows';
 import { endpointIdFromTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { useLlmEndpoints, usageQueryOptions } from '@src/components/llm-endpoints/use-llm-endpoints';
-import { childLabel, cohortRange, formatUsd } from '@src/components/llm-endpoints/usage-math';
+import { cohortRange, formatUsd } from '@src/components/llm-endpoints/usage-math';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 
-export interface MemberRow {
-  /** Bare endpoint uuid. */
-  id: string;
-  name: string;
-  today: LLMUsageCounters | null;
-  month: LLMUsageCounters | null;
-}
-
-/** Merge the two reports into rows, month spend descending. Pure.
- *  `onlyId` is a BARE uuid — callers holding a typeid must normalise first. */
-export function memberRows(
-  today: LLMUsageReport | undefined,
-  month: LLMUsageReport | undefined,
-  onlyId?: string,
-  lookup?: (id: string) => string | undefined,
-): MemberRow[] {
-  const dims = new Set<string>([...Object.keys(today?.breakdown ?? {}), ...Object.keys(month?.breakdown ?? {})]);
-  const names = { ...(today?.names ?? {}), ...(month?.names ?? {}) };
-  const rows: MemberRow[] = [];
-  for (const dim of dims) {
-    if (dim === '') continue; // usage that entered here directly — not a member
-    const id = endpointIdFromTypeId(dim);
-    if (onlyId && id !== onlyId) continue;
-    rows.push({
-      id,
-      name: childLabel(dim, names, lookup),
-      today: today?.breakdown?.[dim] ?? null,
-      month: month?.breakdown?.[dim] ?? null,
-    });
-  }
-  return rows.sort((a, b) => (b.month?.cost_usd ?? 0) - (a.month?.cost_usd ?? 0));
-}
+import { memberRows } from './member-rows';
 
 export interface MembersTableProps {
   endpointId: string;

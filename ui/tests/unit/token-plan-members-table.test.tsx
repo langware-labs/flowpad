@@ -36,7 +36,8 @@ vi.mock('@src/components/llm-endpoints/use-llm-endpoints', async (importOriginal
   useLlmEndpoints: () => ({ endpoints: h.endpoints, isLoading: false, refetch: vi.fn(), error: null }),
 }));
 
-import { MembersTable, memberRows } from '@src/components/token-plan/MembersTable';
+import { MembersTable } from '@src/components/token-plan/MembersTable';
+import { memberRows } from '@src/components/token-plan/member-rows';
 
 const counters = (cost: number) => ({
   requests: 1,
