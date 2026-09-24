@@ -10,6 +10,7 @@ is set, so the second route declines too. That is the honest unit-level claim â€
 "it stopped pushing and went looking for a window" â€” and the browser half is
 proven by the long test, not here.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,9 +50,45 @@ def test_the_frame_names_the_layout():
     """
     from flow_sdk.notifications.ui_command import build_ui_command
 
-    frame = json.loads(build_ui_command(
-        "navigate_dock", layout="win", view_type="ask", pointer="q-1",
-    ))
+    frame = json.loads(
+        build_ui_command(
+            "navigate_dock",
+            layout="win",
+            view_type="ask",
+            pointer="q-1",
+        )
+    )
     assert frame["message_type"] == "ui_command"
     assert frame["kind"] == "navigate_dock"
     assert (frame["layout"], frame["view_type"], frame["pointer"]) == ("win", "ask", "q-1")
+
+
+async def test_a_live_tab_is_sent_to_the_dock_not_a_chromeless_window(monkeypatch):
+    """The question replaces the content area; the rail and tab strip stay.
+
+    A `layout` of "win" would strand the person on a screen with no app around
+    it and no way back short of a restart.
+    """
+    from flow_sdk.core.compute import ask_window
+    from flow_sdk.notifications import ui_command
+    from flow_sdk.server.routes import websocket
+
+    sent: list[tuple] = []
+
+    async def capture(socket, kind, **fields):
+        sent.append((socket, kind, fields))
+
+    monkeypatch.setattr(websocket, "get_active_connection", lambda: ("conn-1", "the-socket"))
+    monkeypatch.setattr(ui_command, "send_ui_command", capture)
+
+    question = open_question("ask-install-git", "Git is required to continue", "confirm")
+    try:
+        assert await ask_window.raise_question(question) is True
+    finally:
+        from flow_sdk.core.compute.ask import forget
+
+        forget(question.id)
+
+    ((socket, kind, fields),) = sent
+    assert (socket, kind) == ("the-socket", "navigate_dock")
+    assert fields == {"view_type": "ask", "pointer": question.id}, "no layout: the frame lands in the dock"

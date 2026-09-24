@@ -9,7 +9,7 @@
     "commands": {
       "darwin": "brew install python3",
       "linux": "apt-get update && apt-get install -y python3",
-      "win32": "winget install --id Python.Python.3.12 -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity"
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; winget install --id Python.Python.3.12 -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity"
     },
     "timeout_seconds": 600
   },

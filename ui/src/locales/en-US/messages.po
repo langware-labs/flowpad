@@ -2801,6 +2801,7 @@ msgstr "AWS Region"
 msgid "AWS region for Bedrock"
 msgstr "AWS region for Bedrock"
 
+#: src/components/ask/AskView.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx

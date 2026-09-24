@@ -262,14 +262,15 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
-  // A question waiting on a person. Never a tab: it is raised in `win/` where
-  // it IS the window, and it stops existing once answered.
+  // A question waiting on a person. Never a tab: it replaces the content area
+  // (dock) or is the whole window (`win/`, when no tab was listening), and it
+  // stops existing once answered.
   [ViewType.ASK]: {
     title: msg`Ask`,
     iconName: 'MessageCircleQuestion',
     tabLocation: 'dedicated',
     canAddAsTab: false,
-    // The question IS the window: no workspace frame around it.
+    // No workspace frame around the question; the rail and tab strip stay.
     chrome: 'fullbleed',
   },
   [ViewType.APPS]: {
