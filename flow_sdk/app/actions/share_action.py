@@ -11,12 +11,23 @@ from __future__ import annotations
 
 import logging
 from json import JSONDecodeError
+from typing import Annotated, Optional, Union
 
 from fastapi import HTTPException
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    TypeAdapter,
+    ValidationError,
+    model_validator,
+)
 
 from flow_sdk.actions import action
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.project import Project
+from flow_sdk.builtin.project import Project, ProjectInviteRoleError
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
@@ -27,6 +38,70 @@ logger = logging.getLogger(__name__)
 # Standardized copy for the privacy-mode block — kept in sync with the
 # frontend guard (``ts_sdk/src/services/privacy-guard.ts``).
 LOCAL_MODE_SHARE_MESSAGE = "Sharing disabled in Local mode"
+
+
+NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
+
+
+class ShareInvitee(BaseModel):
+    """One resolved recipient of a ``share`` invite: the internal
+    email/user_id split ``Project.share`` / ``Conversation.share`` take.
+    Build it from wire input via ``WireInvitee`` / ``ShareInvitee.from_wire``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: Optional[str] = None
+    user_id: Optional[str] = None
+    role: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _exactly_one_identifier(self) -> "ShareInvitee":
+        if bool(self.email) == bool(self.user_id):
+            raise ValueError("each invitee needs exactly one of 'email' or 'user_id'")
+        return self
+
+    @classmethod
+    def from_wire(cls, item: object) -> "ShareInvitee":
+        return _wire_adapter.validate_python(item)
+
+
+class _InviteeWireObject(BaseModel):
+    """The ``{idOrEmail, role?}`` wire shape, used when a role is needed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id_or_email: NonEmptyStr = Field(alias="idOrEmail")
+    role: Optional[str] = None
+
+
+def _resolve(item: Union[str, _InviteeWireObject]) -> ShareInvitee:
+    """Resolve ``idOrEmail`` as a hub id FIRST, falling back to email.
+    ``recipient_user_id`` only matches a real UUID; ``normalize_email`` has
+    no ``@`` check, so testing email first would misfile every bare UUID.
+    """
+    from flow_sdk.builtin.user import normalize_email, recipient_user_id  # noqa: PLC0415
+
+    if isinstance(item, str):
+        id_or_email, role = item, None
+    else:
+        id_or_email, role = item.id_or_email, item.role
+
+    if user_id := recipient_user_id(id_or_email):
+        return ShareInvitee(user_id=user_id, role=role)
+    return ShareInvitee(email=normalize_email(id_or_email), role=role)
+
+
+# A ``recipients`` entry on the wire: either a bare "email-or-id" string (the
+# original flat shape, kept so existing callers don't break) or
+# ``{idOrEmail, role?}``. Validates straight to a resolved ``ShareInvitee``.
+WireInvitee = Annotated[
+    Union[NonEmptyStr, _InviteeWireObject],
+    Field(union_mode="left_to_right"),
+    AfterValidator(_resolve),
+]
+
+_wire_adapter = TypeAdapter(WireInvitee)
 
 
 def _local_mode_share_blocked() -> bool:
@@ -66,21 +141,25 @@ async def share_entity() -> ApiResponse:
     except JSONDecodeError:
         body = {}
 
-    # Optional ``recipients`` (list of email strings): the entity's ``share``
-    # implementation forwards each to ``POST /graph/<type>/<id>/members`` as a
-    # standard ``MembershipRequest`` — see ``Conversation.share``.
-    recipients = body.get("recipients")
-    if recipients is not None and not isinstance(recipients, list):
-        raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
-
-    # Optional ``recipient_user_ids`` (list of hub user ids): the same invitation,
-    # addressed by hub id, for a contact the address book knows only by
-    # ``user_id`` (the hub does not disclose other people's emails, so those
-    # contacts have no address to invite). Forwarded to the same members endpoint
+    # Optional ``recipients``: [idOrEmail | {idOrEmail, role?}, ...]. A bare
+    # string is the original flat shape (still accepted, so no existing
+    # caller of this endpoint breaks); the object form adds a role. The
+    # entity's ``share`` implementation forwards each to
+    # ``POST /graph/<type>/<id>/members`` as a standard ``MembershipRequest``
     # — see ``Conversation.share``.
-    recipient_user_ids = body.get("recipient_user_ids")
-    if recipient_user_ids is not None and not isinstance(recipient_user_ids, list):
-        raise HTTPException(status_code=400, detail="share: 'recipient_user_ids' must be a list")
+    raw_invitees = body.get("recipients")
+    if raw_invitees is not None and not isinstance(raw_invitees, list):
+        raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
+    try:
+        invitees = [ShareInvitee.from_wire(item) for item in (raw_invitees or [])]
+    except (ValueError, ValidationError) as e:
+        raise HTTPException(status_code=400, detail=f"share: invalid 'recipients': {e}")
+
+    # By-email and by-id invitees split back into the two addressing forms
+    # ``Conversation.share`` takes; ``Project.share`` takes ``invitees`` as-is
+    # (it owns role validation itself — see ``ProjectInviteRoleError`` below).
+    recipients = [inv.email for inv in invitees if inv.email] or None
+    recipient_user_ids = [inv.user_id for inv in invitees if inv.user_id] or None
 
     # Hub-only types have no local row to look up, and nothing to push: the entity already lives
     # on the hub and this endpoint's whole job for them is the invitation. Resolved BEFORE the
@@ -150,19 +229,25 @@ async def share_entity() -> ApiResponse:
             )
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
-    # Conversation and Project both implement a ``share(recipients=...)`` fan-out
-    # (per-recipient MembershipRequest). Other types share without invites.
-    # ``recipient_user_ids`` is Conversation-only for now: Project.share() has no
-    # by-id addressing form, so passing it there would silently drop those people.
-    # Conversation needs no ``recipients`` guard — its share() treats two empty
-    # lists as the plain hub push, exactly like the bare ``share()`` below.
+    # Conversation and Project both fan out one MembershipRequest per recipient,
+    # addressable by email OR hub user id — a contact known only by id (the hub
+    # never discloses another user's email) is otherwise unreachable from either
+    # surface's address book. Other types share without invites. An empty
+    # ``invitees``/pair of empty lists is the plain hub push, same as the bare
+    # ``share()`` below.
     try:
         if isinstance(entity, Conversation):
             await entity.share(recipients=recipients, recipient_user_ids=recipient_user_ids)
-        elif recipients and isinstance(entity, Project):
-            await entity.share(recipients=recipients)
+        elif isinstance(entity, Project):
+            await entity.share(invitees=invitees or None)
         else:
             await entity.share()
+    except ProjectInviteRoleError as exc:
+        return ApiFailResponse(
+            status_code=400,
+            message=str(exc),
+            data={"code": "invalid_role"},
+        )
     except Exception as exc:  # noqa: BLE001 — keep Project publish failures typed
         if isinstance(entity, Project):
             logger.warning("[share] publishing Project %s failed: %s", entity.id, exc)
@@ -188,10 +273,10 @@ async def share_entity() -> ApiResponse:
             # user_id came from), so this is a no-op refresh rather than a new
             # row — but keeping both halves symmetric means the learner never
             # has to care which path admitted someone.
-            from flow_sdk.builtin.conversation import _recipient_user_id  # noqa: PLC0415
+            from flow_sdk.builtin.user import recipient_user_id  # noqa: PLC0415
             learn_entries += [
                 {"user_id": user_id}
-                for user_id in map(_recipient_user_id, recipient_user_ids or [])
+                for user_id in map(recipient_user_id, recipient_user_ids or [])
                 if user_id
             ]
             await _learn_address_book(learn_entries)
