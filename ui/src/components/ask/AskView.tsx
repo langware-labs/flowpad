@@ -30,6 +30,8 @@ interface Question {
   prompt: string;
   /** The declared kind opened one level: `{field: form}`, or the kind itself for a scalar. */
   fields: Shape;
+  /** The answer is a secret (an API key): drawn masked. */
+  secret?: boolean;
 }
 
 /** The field names to draw. An object shape is its keys; anything else is one
@@ -132,6 +134,8 @@ export default function AskView() {
             id={`ask-${name}`}
             data-testid={`ask-input-${name || 'value'}`}
             autoFocus
+            type={question.secret ? 'password' : 'text'}
+            autoComplete={question.secret ? 'off' : undefined}
             value={values[name] ?? ''}
             onChange={(e) => setValues((prev) => ({ ...prev, [name]: e.target.value }))}
             onKeyDown={(e) => {

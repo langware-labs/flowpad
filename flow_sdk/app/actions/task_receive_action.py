@@ -144,7 +144,8 @@ async def pull_for_task() -> ApiResponse:
             return ApiFailResponse(message="No local repo path found for this task")
 
         from flow_sdk.utils.git import git_pull
-        pull_ok, pull_msg = await git_pull(local_path, branch=branch or None)
+        pulled = await git_pull(local_path, branch=branch or None)
+        pull_ok, pull_msg = pulled.ok, pulled.detail
 
         conflicts = "CONFLICT" in (pull_msg or "")
 
@@ -210,12 +211,14 @@ async def clone_for_task() -> ApiResponse:
         clone_path = str(_Path(target_dir) / repo_name)
 
         from flow_sdk.utils.git import git_clone, git_pull
-        clone_ok, clone_msg = await git_clone(clone_url, clone_path, branch=branch or None)
+        cloned = await git_clone(clone_url, clone_path, branch=branch or None)
+        clone_ok, clone_msg = cloned.ok, cloned.detail
 
         # If clone failed because the directory already exists, pull instead.
         if not clone_ok and "already exists and is not an empty directory" in clone_msg:
             logger.info("[task_receive] clone target exists — attempting pull instead: %s", clone_path)
-            pull_ok, pull_msg = await git_pull(clone_path, branch=branch or None)
+            pulled = await git_pull(clone_path, branch=branch or None)
+            pull_ok, pull_msg = pulled.ok, pulled.detail
             conflicts = "CONFLICT" in (pull_msg or "")
             op_ok = pull_ok and not conflicts
             if op_ok or conflicts:

@@ -15,16 +15,8 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlaceActivity', () => ({
   AgentPlaceActivity: () => <div data-testid="mock-activity" />,
 }));
-vi.mock('@src/components/assets/editor/agent-profile/AgentScheduleSection', () => ({
-  AgentScheduleSection: (props: { deploymentId?: string; isLocal?: boolean }) => (
-    <div data-testid="mock-schedules" data-deployment={props.deploymentId} data-local={String(props.isLocal)} />
-  ),
-}));
 vi.mock('@src/components/assets/editor/agent-profile/AgentPlaceConfig', () => ({
   AgentPlaceConfig: () => <div data-testid="mock-config" />,
-}));
-vi.mock('@src/components/assets/editor/agent-profile/AgentPlaceChannels', () => ({
-  AgentPlaceChannels: () => <div data-testid="mock-channels" />,
 }));
 vi.mock('@src/components/assets/editor/agent-profile/DeployedAgentChatPanel', () => ({
   DeployedAgentChatPanel: () => <div data-testid="mock-chat" />,
@@ -77,11 +69,9 @@ describe('a place card', () => {
     expect(screen.queryByTestId('agent-place-menu')).toBeNull();
   });
 
-  it('shows the tab named in the URL and scopes schedules to this place', () => {
-    renderCard(place(LOCAL_ID, true), { [PLACE_TAB_OPTION]: 'schedules' });
-    const schedules = screen.getByTestId('mock-schedules');
-    expect(schedules).toHaveAttribute('data-deployment', LOCAL_ID);
-    expect(schedules).toHaveAttribute('data-local', 'true');
+  it('shows the tab named in the URL', () => {
+    renderCard(place(LOCAL_ID, true), { [PLACE_TAB_OPTION]: 'config' });
+    expect(screen.getByTestId('mock-config')).toBeInTheDocument();
   });
 
   it('switching tab only navigates', () => {
@@ -101,12 +91,11 @@ describe('a place card', () => {
     expect(pointer.options.chat).toBe(CLOUD_ID);
   });
 
-  it('Channels is the second tab and opens from the URL', () => {
-    renderCard(place(LOCAL_ID, true), { [PLACE_TAB_OPTION]: 'channels' });
-    const triggers = screen.getAllByRole('tab').map((tab) => tab.textContent);
-    expect(triggers[1]).toBe('Channels');
-    expect(triggers.some((label) => label?.includes('Email'))).toBe(false);
-    expect(screen.getByTestId('mock-channels')).toBeInTheDocument();
+  it('holds only Activity and Config — channels and schedules live in the resources menu', () => {
+    // An old link to a moved tab still lands on the card, on Activity.
+    renderCard(place(LOCAL_ID, true), { [PLACE_TAB_OPTION]: 'schedules' });
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.replace(/\d+$/, ''))).toEqual(['Activity', 'Config']);
+    expect(screen.getByTestId('mock-activity')).toBeInTheDocument();
   });
 
   it('renders the chat when the URL says it is open', () => {

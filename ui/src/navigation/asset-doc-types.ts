@@ -18,6 +18,7 @@ export {
   TYPE_TO_EDITOR,
   editorForPath,
   editorForType,
+  hasOwnChat,
   isAssetEditor,
   isFileOnlyEditor,
   isFilelessEditor,

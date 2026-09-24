@@ -2,7 +2,7 @@
 id: 2e94ef01-a00b-5cc5-99a8-df11e0f04736
 ---
 
-- PRECONDITION: switch the app to Advanced view (footer view pill or localStorage `viewMode=advanced`) — the footer indexing indicator (`footer-indexing-indicator`) is wrapped in AdvancedOnly and does not exist in the default Standard view
+- PRECONDITION: open the app in Advanced view by putting the mode on the URL — every "navigate to {APP_URL}/dock/search" below is `{APP_URL}/dock/search?viewMode=advanced` (URL-first; a localStorage `viewMode` seed does NOT hold, because preferences.json loads after first paint and its stored mode wins) — the footer indexing indicator (`footer-indexing-indicator`) is wrapped in AdvancedOnly and does not exist in the default Standard view
 test 1: Rebuild-index button is visible in the search-view header
 - [browser] navigate to {APP_URL}/dock/search
 - [browser] wait for page to load (networkidle)

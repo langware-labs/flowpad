@@ -29,36 +29,8 @@ from flow_sdk.cli.auth.secrets import get_secrets, read_secret
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
-@pytest.fixture
-def home(folder_db, sod_env, tmp_path, monkeypatch):
-    """User scope rooted at a temp folder instead of the real home."""
-    import flow_sdk.builtin.asset_placement as placement
-    from flow_sdk.assets.placement import Scope
-
-    root = tmp_path / "home"
-    root.mkdir()
-    real = placement.root_for_scope
-
-    def root_for_scope(scope, *, project_mount=None):
-        return root if scope == Scope.USER else real(scope, project_mount=project_mount)
-
-    monkeypatch.setattr(placement, "root_for_scope", root_for_scope)
-    return root
-
-
-@pytest.fixture
-async def project(home, tmp_path):
-    mount = tmp_path / "proj"
-    mount.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=mount, check=True)
-    p = Project(name=str(mount))
-    p.fs_storage_mount_path = str(mount)
-    await p.save()
-    return p
-
-
 def _manifest(name: str, *env_vars: str, **extra) -> dict:
-    return {"name": name, "vars": {v: {"label": v} for v in env_vars}, **extra}
+    return {"name": name, "vars": {v: {"label": v} for v in env_vars}, "setup": f"Store it: `flow credentials set {name} ...`.", **extra}
 
 
 def _env(root: Path) -> dict[str, str]:
@@ -266,6 +238,15 @@ async def test_a_disabled_vault_blocks_the_save_and_creates_no_folder(home, proj
 
     assert excinfo.value.code == "vault-disabled"
     assert not (home / "agentic-assets").exists()
+
+
+async def test_a_second_credential_with_the_same_name_is_refused_as_existing(home, project):
+    await save_credential(scope="user", manifest=_manifest("personal", "QA_USER"))
+
+    with pytest.raises(CredentialError, match="already exists") as excinfo:
+        await save_credential(scope="user", manifest=_manifest("personal", "QA_OTHER"))
+
+    assert excinfo.value.code == "exists"
 
 
 async def test_a_value_for_an_undeclared_variable_is_refused(home, project):

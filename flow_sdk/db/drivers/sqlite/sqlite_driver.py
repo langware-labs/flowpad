@@ -36,6 +36,7 @@ from flow_sdk.db.drivers.db_driver import (
 )
 from flow_sdk.db.drivers.path_model import NodeConnection, NodesPath
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.flowpad_types.enums import RelationshipDirection
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -821,14 +822,11 @@ class SQLiteDBDriver(DBDriver):
                 # Filter to columns EntitySchema knows — stale DBs can have extra
                 # leftover columns (e.g. old ``content_hash``) that would crash kwargs.
                 schema = EntitySchema(**{k: v for k, v in row_dict.items() if k in entity_cols})
-                try:
-                    entity = self._schema_to_entity(schema)
+                for entity in self._hydrate([schema], "FTS search"):
                     entity._fts_snippet = snippet_val  # type: ignore[attr-defined]
                     entity._fts_title = fts_title  # type: ignore[attr-defined]
                     entity._fts_description = fts_description  # type: ignore[attr-defined]
                     entities_with_score.append((bm25_score, entity))
-                except Exception:
-                    logger.warning("FTS search: failed to hydrate entity %s", row_dict.get("id"))
 
         # Python-side recency blend: blended = bm25 / (1 + days_old * k)
         if cal.recency_factor and entities_with_score:
@@ -998,13 +996,10 @@ class SQLiteDBDriver(DBDriver):
                 fts_title = row_dict.pop("_fts_title", None) or None
                 fts_description = row_dict.pop("_fts_description", None) or None
                 schema = EntitySchema(**{k: v for k, v in row_dict.items() if k in entity_cols})
-                try:
-                    entity = self._schema_to_entity(schema)
+                for entity in self._hydrate([schema], "browse_by_type"):
                     entity._fts_title = fts_title  # type: ignore[attr-defined]
                     entity._fts_description = fts_description  # type: ignore[attr-defined]
                     entities.append(entity)
-                except Exception:
-                    logger.warning("browse_by_type: failed to hydrate entity %s", row_dict.get("id"))
             return entities, total
 
     async def fts_delete(self, entity_id: str) -> None:
@@ -1547,7 +1542,12 @@ class SQLiteDBDriver(DBDriver):
     async def after_commit(self, callback: Callable[[], Awaitable[None]]) -> None:
         from flow_sdk.request_context.methods import get_current_transaction
 
-        bound = get_current_transaction()
+        # Resolved like ``_session_ctx`` does, including its tolerance: a
+        # request context that carries no transaction means "none bound".
+        try:
+            bound = get_current_transaction()
+        except Exception:  # noqa: BLE001
+            bound = None
         if not isinstance(bound, AsyncSession):
             bound = _standalone_session_var.get()
         if bound is None:
@@ -1977,7 +1977,7 @@ class SQLiteDBDriver(DBDriver):
 
         async with self._session_ctx(write=False) as session:
             result = await session.execute(query)
-            entities = [self._schema_to_entity(s) for s in result.scalars().all()]
+            entities = self._hydrate(result.scalars().all(), "get_all")
 
         # Python post-filter — only needed when SQL pushdown was partial
         if not fully_sql:
@@ -2941,9 +2941,8 @@ class SQLiteDBDriver(DBDriver):
         if all_entity_ids:
             async with self._session_ctx(write=False) as session:
                 result = await session.execute(select(EntitySchema).where(EntitySchema.id.in_(all_entity_ids)))
-                for schema in result.scalars():
-                    entity = self._schema_to_entity(schema)
-                    entities_by_id[schema.id] = entity
+                for entity in self._hydrate(result.scalars().all(), "connection_paths"):
+                    entities_by_id[str(entity.id)] = entity
 
         # Build all paths from cached data
         paths = []
@@ -2954,8 +2953,8 @@ class SQLiteDBDriver(DBDriver):
                 if not rel:
                     continue
 
-                source = entities_by_id.get(rel.from_typeid.id if rel.from_typeid else None)
-                target = entities_by_id.get(rel.to_typeid.id if rel.to_typeid else None)
+                source = entities_by_id.get(str(rel.from_typeid.id) if rel.from_typeid else "")
+                target = entities_by_id.get(str(rel.to_typeid.id) if rel.to_typeid else "")
 
                 if source and target:
                     connections.append(NodeConnection(source=source, rel=rel, target=target))
@@ -3055,6 +3054,39 @@ class SQLiteDBDriver(DBDriver):
             return dt.replace(tzinfo=UTC)
         return dt
 
+    def _hydrate(self, schemas: "Sequence[EntitySchema]", where: str) -> List[DBBaseRecord]:
+        """The rows of a LIST that can be built, with ONE warning for those that cannot.
+
+        A row whose stored body no longer validates (a payload whose ``spec_kind`` names a
+        class this process cannot reach, a field a migration removed) used to abort the
+        whole comprehension, so one bad row returned a 500 and an empty screen instead of
+        the other several hundred. Same rule as ``graph.py``'s "never let a reflection-layer
+        bug 500 the whole request" and the indexer's malformed-record skip.
+
+        One line per LIST, not per row, on purpose: these failures are properties of a TYPE,
+        not of a row — a missing payload class poisons every row of that type at once — so
+        per-row logging would emit thousands of identical multi-line pydantic errors while
+        saying nothing the first does not. The count is what tells you it is systematic.
+
+        LIST reads only: ``_schema_to_entity`` still raises for every single-row caller,
+        where skipping would turn "this row is corrupt" into "no such row".
+        """
+        built: List[DBBaseRecord] = []
+        skipped: list[str] = []
+        first: Optional[Exception] = None
+        for schema in schemas:
+            try:
+                built.append(self._schema_to_entity(schema))
+            except Exception as exc:  # noqa: BLE001 — the row is data; failing to build it is its own
+                skipped.append(f"{schema.type} {schema.id}")
+                first = first or exc
+        if skipped:
+            logger.warning(
+                "[sqlite] %s: skipped %d unreadable row(s) (%s%s) — %s",
+                where, len(skipped), ", ".join(skipped[:3]), ", …" if len(skipped) > 3 else "", first,
+            )
+        return built
+
     def _schema_to_entity(self, schema: EntitySchema) -> DBBaseRecord:
         """Convert schema to entity."""
         entity_class = self.registry.get(schema.type)
@@ -3081,7 +3113,10 @@ class SQLiteDBDriver(DBDriver):
             "updated_through": schema.updated_through,
             **data,
         }
-        return entity_class(**combined)
+
+        # A stored row may carry a field its type has since dropped.
+        with lenient_entity_load():
+            return entity_class(**combined)
 
     def _relationship_to_schema(self, rel: DBBaseRelationship) -> RelationshipSchema:
         """Convert relationship to schema."""

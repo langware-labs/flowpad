@@ -1,12 +1,14 @@
 import apiClient from '@sdk/client';
-import { PrefKey } from '@sdk';
+import { ConnectionManager, PrefKey, isOk, type CliResult, type TypeId } from '@sdk';
+import { useFileWatch } from '@sdk/react/hooks';
 import { usePreference } from '@src/hooks/use-preference';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import Editor, { loader } from '@monaco-editor/react';
+import type { editor as monacoEditor } from 'monaco-editor';
 import { ensureShikiMonaco, monacoTheme } from './shikiMonaco';
 import { useLingui } from '@lingui/react/macro';
-import { Import, ListStart, Play } from 'lucide-react';
+import { Import, ListStart, Play, Square } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -35,13 +37,14 @@ interface SnippetRead {
   error_code?: string;
 }
 
-interface SnippetRunResult {
-  returncode: number | null;
-  stdout: string;
-  stderr: string;
-  timed_out: boolean;
-  duration_s: number;
-}
+/** The run's answer, and whether THIS view stopped it. A stop is a fact the
+ *  view knows — it pressed the button — not something to infer from the answer:
+ *  reading "any detail means stopped" labelled every failed run "stopped", since
+ *  the backend writes a sentence for every run that does not succeed. */
+type SnippetOutcome = CliResult & { stopped: boolean };
+
+/** The one caller of the stop route: the button and the unmount both go through here. */
+const stopRun = (runId: string) => apiClient.post<{ stopped?: boolean }>('/api/v1/snippet/stop', { run_id: runId });
 
 const LINE_HEIGHT = 19;
 const SAVE_DEBOUNCE_MS = 500;
@@ -49,6 +52,8 @@ const SAVE_DEBOUNCE_MS = 500;
 interface SnippetViewProps {
   /** Absolute machine path of the snippet file. */
   path: string;
+  /** The same file as the editor addresses it — what the file watch names. */
+  watch?: { typeid: TypeId; path: string };
   /** Monaco language id. */
   language: string;
   /** The file's current text (fs cache); a change that isn't ours reloads the regions. */
@@ -60,7 +65,7 @@ interface SnippetViewProps {
   onSynced: (text: string) => void;
 }
 
-export function SnippetView({ path, language, revision, readOnly, onNotSnippet, onSynced }: SnippetViewProps) {
+export function SnippetView({ path, watch, language, revision, readOnly, onNotSnippet, onSynced }: SnippetViewProps) {
   const { t } = useLingui();
   const { resolvedTheme } = useTheme();
   const [showInit, setShowInit] = usePreference<boolean>(PrefKey.SNIPPET_SHOW_INIT);
@@ -78,7 +83,10 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
   const [notice, setNotice] = useState('');
   const error = readError || notice;
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<SnippetRunResult | null>(null);
+  const [result, setResult] = useState<SnippetOutcome | null>(null);
+  // The run in flight, by the id the backend knows it by — what Stop names.
+  const runIdRef = useRef<string | null>(null);
+  const stopRequestedRef = useRef(false);
   // Editors mount only once the shared shiki themes exist (see shikiMonaco.ts).
   const [themed, setThemed] = useState(false);
 
@@ -114,13 +122,25 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
     [onSynced],
   );
 
+  const loadedRef = useRef(false);
+
   const load = useCallback(async () => {
-    const res = await apiClient.post<SnippetRead>('/api/v1/snippet/read', { path });
+    let res: SnippetRead;
+    try {
+      res = await apiClient.post<SnippetRead>('/api/v1/snippet/read', { path });
+    } catch (reason) {
+      // Never a spinner forever: before the first read the raw editor takes the
+      // file (it can show it without this route); after it, keep the view.
+      if (loadedRef.current) setNotice(errorMessage(reason, t`Could not read the snippet`));
+      else onNotSnippet();
+      return;
+    }
     if (!res?.regions) {
       if (res?.error_code === 'NOT_A_SNIPPET') onNotSnippet();
       else setReadError(res?.error_code ?? t`Could not read the snippet`);
       return;
     }
+    loadedRef.current = true;
     setReadError('');
     synced(res.text);
     const changed = res.regions.some((r) => (localRef.current.get(r.index) ?? null) !== r.shown);
@@ -136,6 +156,10 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
   useEffect(() => {
     if (revision !== syncedRef.current) void load();
   }, [load, revision]);
+
+  // Someone else (the agent) wrote the file: re-read it. Our own saves come
+  // back here too, and read as unchanged.
+  useFileWatch(watch?.typeid, watch?.path, () => void load());
 
   const save = useCallback(
     (region: SnippetRegionView) => {
@@ -197,6 +221,12 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
   );
 
   const run = useCallback(async () => {
+    // One run at a time: clicks landing before the button turns into Stop would
+    // each start a process, and Stop only knows the last.
+    if (runIdRef.current) return;
+    const runId = crypto.randomUUID();
+    runIdRef.current = runId;
+    stopRequestedRef.current = false;
     setRunning(true);
     try {
       // Run what is on screen: flush unsaved edits first.
@@ -205,17 +235,41 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
         return region ? save(region) : null;
       });
       await Promise.all([...flushing, ...inflightRef.current]);
-      setResult(await apiClient.post<SnippetRunResult>('/api/v1/snippet/run', { path, timeout_seconds: timeoutSeconds }));
+      // The connection id ends the run if this tab closes mid-run (no unmount runs then).
+      const answer = await apiClient.post<CliResult>('/api/v1/snippet/run', {
+        path,
+        timeout_seconds: timeoutSeconds,
+        run_id: runId,
+        connection_id: ConnectionManager.getInstance().id,
+      });
+      // A run that finished cleanly as Stop landed was not stopped.
+      setResult({ ...answer, stopped: stopRequestedRef.current && !isOk(answer) });
     } catch (reason) {
       setNotice(errorMessage(reason, t`Could not run the snippet`));
     } finally {
+      runIdRef.current = null;
       setRunning(false);
     }
   }, [path, regions, save, timeoutSeconds, t]);
 
+  /** Kill the run in flight; it then answers with what it printed so far. */
+  const stop = useCallback(async () => {
+    const runId = runIdRef.current;
+    if (!runId) return;
+    stopRequestedRef.current = true;
+    try {
+      await stopRun(runId);
+    } catch (reason) {
+      setNotice(errorMessage(reason, t`Could not stop the snippet`));
+    }
+  }, [t]);
+
   useEffect(
     () => () => {
       pendingRef.current.forEach((handle) => clearTimeout(handle));
+      // Leaving the view must not leave its run going.
+      const runId = runIdRef.current;
+      if (runId) stopRun(runId).catch(() => undefined);
     },
     [],
   );
@@ -235,10 +289,17 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="snippet-view">
       <div className="flex items-center gap-1 border-b px-2 py-1">
-        <Button size="sm" onClick={() => void run()} disabled={running} data-testid="snippet-run">
-          <Play className="mr-1 h-3.5 w-3.5" />
-          {running ? t`Running…` : t`Run`}
-        </Button>
+        {running ? (
+          <Button size="sm" variant="destructive" onClick={() => void stop()} data-testid="snippet-stop">
+            <Square className="mr-1 h-3.5 w-3.5" />
+            {t`Stop`}
+          </Button>
+        ) : (
+          <Button size="sm" onClick={() => void run()} data-testid="snippet-run">
+            <Play className="mr-1 h-3.5 w-3.5" />
+            {t`Run`}
+          </Button>
+        )}
         {has('init') && (
           <Button variant={showInit ? 'secondary' : 'ghost'} size="sm" onClick={() => setShowInit(!showInit)} data-testid="snippet-toggle-init">
             <ListStart className="mr-1 h-3.5 w-3.5" />
@@ -255,36 +316,18 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {visible.map((region) => {
-          const text = localRef.current.get(region.index) ?? region.shown;
-          const lines = Math.max(text.split('\n').length, 1);
-          return (
-            <div key={`${generation}-${region.index}`} data-testid={`snippet-region-${region.kind}`} className="border-b">
-              {label[region.kind] && <div className="px-3 pt-1 text-[11px] uppercase tracking-wide text-muted-foreground">{label[region.kind]}</div>}
-              <Editor
-                height={lines * LINE_HEIGHT + 8}
-                language={language}
-                defaultValue={region.shown}
-                onChange={(value) => onEdit(region, value)}
-                theme={monacoTheme(resolvedTheme)}
-                options={{
-                  readOnly,
-                  fontSize: 14,
-                  lineHeight: LINE_HEIGHT,
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  automaticLayout: true,
-                  lineNumbers: (n: number) => String(n + region.line - 1),
-                  folding: false,
-                  glyphMargin: false,
-                  renderLineHighlight: 'none',
-                  scrollbar: { vertical: 'hidden', alwaysConsumeMouseWheel: false },
-                  padding: { top: 4, bottom: 4 },
-                }}
-              />
-            </div>
-          );
-        })}
+        {visible.map((region) => (
+          <div key={`${generation}-${region.index}`} data-testid={`snippet-region-${region.kind}`} className="border-b">
+            {label[region.kind] && <div className="px-3 pt-1 text-[11px] uppercase tracking-wide text-muted-foreground">{label[region.kind]}</div>}
+            <RegionEditor
+              region={region}
+              language={language}
+              theme={monacoTheme(resolvedTheme)}
+              readOnly={readOnly}
+              onChange={(value) => onEdit(region, value)}
+            />
+          </div>
+        ))}
 
         {result && (
           <div className="p-3 font-mono text-xs" data-testid="snippet-console">
@@ -293,13 +336,67 @@ export function SnippetView({ path, language, revision, readOnly, onNotSnippet, 
             <div className="mt-1 text-muted-foreground" data-testid="snippet-status">
               {result.timed_out
                 ? t`timed out after ${timeoutSeconds}s — killed`
-                : result.returncode === null
-                  ? t`did not run`
-                  : t`exit ${result.returncode} · ${result.duration_s.toFixed(2)}s`}
+                : result.stopped
+                  ? t`stopped — killed after ${(result.duration_s ?? 0).toFixed(2)}s`
+                  : result.returncode == null
+                    ? // Never started: no such file, no runner for it. The answer says which.
+                      result.detail || t`did not run`
+                    : t`exit ${result.returncode} · ${(result.duration_s ?? 0).toFixed(2)}s`}
             </div>
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * One region's editor, as tall as its content. Sized from Monaco's own content
+ * height, which follows every keystroke: a height computed from the line count
+ * at render time lagged until the next save, and a new line pushed the first one
+ * out of sight meanwhile.
+ */
+function RegionEditor({
+  region,
+  language,
+  theme,
+  readOnly,
+  onChange,
+}: {
+  region: SnippetRegionView;
+  language: string;
+  theme: string;
+  readOnly?: boolean;
+  onChange: (value: string | undefined) => void;
+}) {
+  const [height, setHeight] = useState(() => Math.max(region.shown.split('\n').length, 1) * LINE_HEIGHT + 8);
+  const onMount = useCallback((editor: monacoEditor.IStandaloneCodeEditor) => {
+    const fit = () => setHeight(editor.getContentHeight());
+    editor.onDidContentSizeChange(fit);
+    fit();
+  }, []);
+  return (
+    <Editor
+      height={height}
+      language={language}
+      defaultValue={region.shown}
+      onChange={onChange}
+      onMount={onMount}
+      theme={theme}
+      options={{
+        readOnly,
+        fontSize: 14,
+        lineHeight: LINE_HEIGHT,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        automaticLayout: true,
+        lineNumbers: (n: number) => String(n + region.line - 1),
+        folding: false,
+        glyphMargin: false,
+        renderLineHighlight: 'none',
+        scrollbar: { vertical: 'hidden', alwaysConsumeMouseWheel: false },
+        padding: { top: 4, bottom: 4 },
+      }}
+    />
   );
 }

@@ -27,15 +27,18 @@ one question each: does the *credential* path work.
 ## Before you start
 
 An instance with the assistant project indexed (`scripts/instance_ctl.sh launch dev-1`),
-open at `/dock/data-sources`. Confirm the provider grid shows all eight — if `slack` or
-`agent` is missing, the manifests did not index and nothing below is meaningful.
+open at `/dock/data-sources`. Confirm the provider grid shows every listed, non-provisioned
+driver (`agentmail` is unlisted and `cloud_email` is offered only when adding for an agent) —
+if `slack` or `agent` is missing, the manifests did not index and nothing below is meaningful.
 
 ## slack
 
 1. Add → **Slack**. The form asks for channel ids, and the account key is deliberately
    EMPTY — the workspace belongs to the connection, not the form.
 2. Enter one channel id (`C…`). A value that is not a channel id must be rejected by the
-   manifest's `pattern` before the button enables.
+   manifest's `pattern`: pressing Add source shows the problem ("not valid"), the dialog
+   stays open, and no source is created. (Problems are shown once Add source is pressed,
+   not before anything is typed.)
 3. Save. The card must land in **setup**, not active — Slack has a `verify` step.
 4. Press **Verify** with the bot NOT yet invited. Expect a refusal naming the channel, in
    words a person can act on ("invite the Flowpad bot to #eng").
@@ -54,9 +57,12 @@ open at `/dock/data-sources`. Confirm the provider grid shows all eight — if `
 
 ## agentmail
 
-1. Add → **AgentMail**. The API key does NOT appear in the form — the `inbox` field is
-   `account_key: true` and the secret belongs to the connection (same contract as slack).
-   A plaintext key field reappearing here is the regression to catch.
+1. The manifest is `listed: false`: Add offers NO **AgentMail** tile to a person (people get
+   Agent Email, which the cloud allocates), so no form — and no key field — can reach them
+   through the picker. Its manifest keeps the API key out of the config too —
+   the `inbox` field is `account_key: true` and the secret belongs to the connection (same
+   contract as slack). A plaintext key field reappearing in the manifest, or the tile reappearing in
+   the picker, is the regression to catch. Steps 2–3 need a source created over the API.
 2. Save, Verify, poll. Messages land as records.
 3. Reopen the source for editing. The key must NOT be echoed back into the form.
 

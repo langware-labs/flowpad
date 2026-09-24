@@ -11,6 +11,8 @@ import { notify } from '@src/notifications';
 import { ContextEntitiesEnum, dataContext, isHubOnly, PageId, Project } from '@sdk';
 import { useCallback } from 'react';
 import { useLingui } from '@lingui/react/macro';
+import { withHomePage } from '@src/project-home-page/home-page-state';
+import { ViewType } from '@src/types/ViewType';
 
 // ---------------------------------------------------------------------------
 // Shared path helpers — one source of truth for the project-open flow so the
@@ -119,16 +121,18 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
           await dataContext.setActiveEntityTypeId(null);
           await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
           navigation.openDock(
-            DockPointer.forHome(undefined, undefined, isHome ? undefined : { vibeNoProcess: true })
-              .withScopeFilter(projectScope(project.id))
-              .withViewMode(ViewMode.Vibe),
+            withHomePage(
+              DockPointer.forHome(undefined, undefined, isHome ? undefined : { vibeNoProcess: true })
+                .withScopeFilter(projectScope(project.id))
+                .withViewMode(ViewMode.Vibe),
+            ),
           );
           return;
         }
         if (isHome) {
           // URL-first: the scope-carrying HOME dock's loader
           // (adoptScopeProject) is the single writer of project context.
-          navigation.openDock(DockPointer.forHome().withScopeFilter(projectScope(project.id)));
+          navigation.openDock(withHomePage(DockPointer.forHome().withScopeFilter(projectScope(project.id))));
           return;
         }
         // Plain switch (footer Switch Project included): navigate to the
@@ -138,7 +142,12 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
         // (Assets/Explorer/Desktop) re-scopes to the destination, else the
         // project landing. No context pre-write here: the destination dock's
         // loader is the single writer of project context (URL-first).
-        navigation.openDock(await dockForProjectEntry(project.id, currentDock));
+        // A switch that lands on the project's page or the home asks for the
+        // project's home page. A resumed tab is left as it is: its loader runs
+        // no load redirect, and the option would only linger in its URL.
+        const entry = await dockForProjectEntry(project.id, currentDock);
+        const landing = entry.viewType === ViewType.PROJECT || entry.viewType === ViewType.HOME;
+        navigation.openDock(landing ? withHomePage(entry) : entry);
       }
     },
     [isVibe, isHome, onProjectChanged, onPicked, navigation, currentDock],

@@ -27,18 +27,6 @@ import { basename } from './asset-row-helpers';
  */
 export type AssetScopeKind = 'agent' | 'user' | 'project' | 'context' | 'folder' | 'system' | 'external';
 
-/** Every scope in lookup order: the agent's own first, then project, then user;
- *  the rest trail in the order a lookup would reach them. */
-export const ASSET_SCOPE_ORDER: readonly AssetScopeKind[] = [
-  'agent',
-  'project',
-  'user',
-  'context',
-  'folder',
-  'system',
-  'external',
-];
-
 export interface AssetScope {
   kind: AssetScopeKind;
   /** Short chip text: 'this agent' | 'user' | <project name> | <folder> | 'system' | 'external'. */

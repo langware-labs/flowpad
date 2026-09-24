@@ -131,10 +131,13 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await expect(page.getByText('VW02_MARKDOWN_READY')).toBeVisible();
       await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
 
-      // VW-22: the square Display header goes back to the bare process and STAYS
-      // there — restore already fired once this session, so it must not bounce.
+      // VW-22: the square Display header navigates to the process, and entering
+      // the process ALWAYS restores its last-shown item — no once-per-session
+      // memory (7505e8574, FLOWPAD-2096). So from an older history entry it lands
+      // on the newest show (the HTML), not on the bare process.
       await page.getByTestId('workspace-display-tab').click();
-      await expect(page).toHaveURL(processUrlRe(fixture.processId));
+      await expect(page).toHaveURL(displayUrlRe(fixture.projectId, fixture.processId, 'editor/html/'));
+      await expect(htmlFrame.locator('#activate')).toHaveText('VW03_HTML_READY');
 
       // A hard reload is a new session, so restore fires again and returns the
       // user to the deliverable.
@@ -171,7 +174,9 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await showPort(request, fixture.processId, address.port);
       await openVibe(page, fixture.processId);
 
-      const app = page.frameLocator('[data-testid="vibe-webapp-frame"]');
+      // A shown port is registered as a ServiceEndpoint and rendered by the app
+      // dock (2ff1abbb4); its frame is `vibe-app-frame`, as in VW-25.
+      const app = page.frameLocator('[data-testid="vibe-app-frame"]');
       await expect(app.locator('#marker')).toHaveText('VW04_EXISTING_APP');
       await app.locator('#count').click();
       await expect(app.locator('#count')).toHaveText('1');
@@ -263,7 +268,18 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
     }
   });
+      // A project's document outside its project (the bare `/dock/assets/…` form)
+      // is the GLOBAL assets scope: that tab belongs to no project (a scope-keyed
+      // tab's project is its scope — 68a23b08a), so Discuss has nowhere to start a
+      // session and says so.
       await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${source.id}?viewMode=standard`);
+      const globalDiscuss = page.getByTestId('top-nav-bar').getByTestId('asset-discuss-in-vibe');
+      await expect(globalDiscuss).toBeDisabled();
+      await expect(globalDiscuss).toHaveAccessibleName('Select a project to discuss this file');
+
+      // Opened inside its project — the address the app itself places a project's
+      // document at (`rebaseAssetsOntoProject`: /dock/project/<P>/<editor tail>).
+      await page.goto(`/dock/project/${fixture.projectId}/editor/markdown/typeid/markdown-${source.id}?viewMode=standard`);
       // The file's identity lives in the top bar's current crumb (the editor
       // has no header row of its own); the navigator tree also lists the file
       // under more than one root, so a bare text match is ambiguous.
@@ -278,12 +294,17 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
 
       // Discuss keeps the document at its natural asset address and only adds
       // the view mode: no workspace host is inferred or invented for it.
-      await expect(page).toHaveURL(/\/dock\/assets\/editor\/markdown\/.*viewMode=vibe/);
+      await expect(page).toHaveURL(
+        new RegExp(`/dock/project/${fixture.projectId}/editor/markdown/.*viewMode=vibe`),
+      );
       const after = new URL(page.url());
       expect(after.pathname).toBe(before.pathname);
-      await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
+      // No host means no session yet (1dedd3668): the chat pane offers to start
+      // one — enabled, because the document is inside its project — and there is
+      // no workspace strip, since no workspace was invented for the document.
+      await expect(page.getByTestId('vibe-start-new-chat')).toBeEnabled();
       await expect(crumb).toHaveAttribute('title', 'vibe-origin-source.md');
-      await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
+      await expect(page.getByTestId('workspace-child-strip')).toHaveCount(0);
       expect(await page.locator('[data-panel-id="asset-vibe-chat"]').getAttribute('data-panel-size')).toBe('36.0');
       expect(await page.locator('[data-panel-id="asset-vibe-content"]').getAttribute('data-panel-size')).toBe('64.0');
 

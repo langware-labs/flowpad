@@ -286,6 +286,19 @@ class Activity:
             node = node._child_segment(seg)
         return node
 
+    def child_or_self(self, name: str) -> "Activity":
+        """The child called ``name``, or THIS node when the tree is at its cap.
+
+        For a REPORTER — a nested run folding its report into its caller's node —
+        where how deep the report happens to be must never decide an outcome. A
+        producer of per-item nodes still calls :meth:`child` and still hears the
+        raise, which is the case the cap exists for.
+        """
+        try:
+            return self.child(name)
+        except ValueError:
+            return self
+
     def _child_segment(self, seg: str) -> "Activity":
         existing = self._children.get(seg)
         if existing is not None:

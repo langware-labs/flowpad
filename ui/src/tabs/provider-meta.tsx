@@ -52,8 +52,14 @@ export const PROVIDER_META: Record<
  *  (`claude_code`) or a raw string off the wire. This owns BOTH the alias and
  *  the fallback policy so consumers don't each carry a cast plus a `??`. */
 export function providerKeyFor(workerType: string | undefined | null): keyof typeof PROVIDER_META {
+  return knownProviderKey(workerType) ?? 'claude';
+}
+
+/** The vendor's key when this table has a mark for it, else `undefined` — for a
+ *  surface where drawing Claude's mark on someone else's row would be a lie. */
+export function knownProviderKey(workerType: string | undefined | null): keyof typeof PROVIDER_META | undefined {
   const key = workerType === 'claude_code' ? 'claude' : workerType;
-  return (key as keyof typeof PROVIDER_META) in PROVIDER_META ? (key as keyof typeof PROVIDER_META) : 'claude';
+  return key && Object.hasOwn(PROVIDER_META, key) ? (key as keyof typeof PROVIDER_META) : undefined;
 }
 
 export function providerMetaFor(workerType: string | undefined | null) {

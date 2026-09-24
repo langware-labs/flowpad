@@ -185,6 +185,10 @@ async def test_session_turn_runs_direct_on_glm(
     auth = await resolve_worker_api_auth(ap)
     assert auth is not None, f"{binary}: api-mode did not bind — the turn would use device auth"
     assert SLUG in (auth.model_slug or ""), f"{binary}: model slug is {auth.model_slug!r}, not the GLM slug"
+    # The RESOLVED binding, not the endpoint handed in: a pin the resolver misread once
+    # passed every check above and spawned against the hub relay with the local row's id.
+    wired = repr((auth.env, auth.config_overrides, auth.provider_options))
+    assert hub_base_url not in wired, f"{binary}: the spawn binding points at the hub relay, not openrouter"
 
     # ── guest opens the session and sends ONE prompt ───────────────────────────
     hub_ws_bridge.install()

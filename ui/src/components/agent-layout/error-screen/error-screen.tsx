@@ -2,7 +2,7 @@ import { NotFoundError } from '@src/errors/NotFoundError';
 import NotFound from '@src/pages/NotFound';
 import { Button } from '@src/components/ui/button';
 import { ChevronDown, ChevronUp, Home } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouteError } from 'react-router';
 import { isBackendUnreachable, toplog } from '@sdk';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -31,8 +31,11 @@ const ErrorScreen = () => {
   const errorAny = (error ?? null) as ErrorLike | null;
 
   // The route's errorElement replaced the whole page — the loudest way a tab
-  // switch can fail. One `tab_switch` line per error shown.
+  // switch can fail. One line per error: StrictMode double-invokes effects.
+  const loggedErrorRef = useRef<unknown>(undefined);
   useEffect(() => {
+    if (!toplog.isOn('tab_switch') || loggedErrorRef.current === error) return;
+    loggedErrorRef.current = error;
     toplog.log(
       'tab_switch',
       `error ${sinceTabSwitch()} sink=error_screen path=${window.location.pathname} status=${errorStatus(error) || '-'} err:`,

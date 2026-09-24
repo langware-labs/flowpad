@@ -8,7 +8,7 @@ import { dockLabel, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 
 export interface TabSetupResult {
   tab: Tab | null;
-  tabs?: Tab[];
+  tabs?: readonly Tab[];
   error?: unknown;
 }
 
@@ -20,7 +20,7 @@ export interface TabContentAdapter {
 export interface SetupTabOptions {
   setupContent?: () => Promise<void>;
   adapter?: TabContentAdapter;
-  onMaterialized?: (tabs: Tab[]) => void;
+  onMaterialized?: (tabs: readonly Tab[]) => void;
   /** Explicit workspace parent for a mounted-view adoption pass. */
   parentTabId?: string | null;
 }
@@ -60,11 +60,14 @@ function shouldMaterializeDock(dock: DockPointer): boolean {
 async function materializeTab(
   dock: DockPointer,
   options: SetupTabOptions,
-): Promise<{ tab: Tab | null; tabs: Tab[] }> {
-  // Every awaited leg below is timed individually. One label used to cover all
-  // three round-trips, which is how a 4816ms cold open was attributed to a
-  // loader that awaits nothing — measure per leg before deciding what to cut.
-  const existing = await perfTime('materializeTab.listAll(reuse-check)', () => tabManager.listAll());
+): Promise<{ tab: Tab | null; tabs: readonly Tab[] }> {
+  // Every awaited leg below is timed individually — measure per leg before
+  // deciding what to cut. The reuse check reads the in-memory snapshot: the tab
+  // being switched to is already in it, and a `list_all` here gated every URL
+  // commit on a round trip. A false miss is safe — it falls through to
+  // `ensureDock`, which reuses the row. Every path that writes re-reads through
+  // `refresh()`, so this function is the one place the snapshot is adopted.
+  const existing = await perfTime('materializeTab.snapshot(reuse-check)', () => tabManager.snapshotOrRefresh());
   const existingTab = tabForDockKey(existing, dock.tabHash);
   // The URL says which workspace, if any, is hosting this dock. Only workspace
   // CONTENT may be adopted — content assets/files and a plain terminal (a shell
@@ -108,7 +111,8 @@ async function materializeTab(
         parentTabId,
       }),
     );
-    const all = await perfTime('materializeTab.listAll(reparent-adopt)', () => tabManager.listAll());
+    await perfTime('materializeTab.refresh(reparent-adopt)', () => tabManager.refresh());
+    const all = tabManager.getSnapshot();
     return { tab: tabForDockKey(all, dock.tabHash) ?? existingTab, tabs: all };
   }
   // Inverse of the adopt guard: a NON-adoptable dock must never CARRY a parent
@@ -179,9 +183,9 @@ async function materializeTab(
   );
   const scopedTab = tabForDockKey(scoped, dock.tabHash);
 
-  const all = await perfTime('materializeTab.listAll(adopt)', () => tabManager.listAll());
-  const tab = tabForDockKey(all, dock.tabHash) ?? scopedTab;
-  return { tab, tabs: all };
+  await perfTime('materializeTab.refresh(adopt)', () => tabManager.refresh());
+  const all = tabManager.getSnapshot();
+  return { tab: tabForDockKey(all, dock.tabHash) ?? scopedTab, tabs: all };
 }
 
 /**
@@ -289,12 +293,15 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   const promise = (async (): Promise<TabSetupResult> => {
     tabManager.lifecycle.set(key, TabLifecycleState.Opening);
     let tab: Tab | null = null;
-    let tabs: Tab[] = [];
+    let tabs: readonly Tab[] = [];
     try {
       const materialized = await materializeTab(dock, options);
       tab = materialized.tab;
       tabs = materialized.tabs;
       if (!tab) {
+        // A gone target (deleted process or shell) mints no tab, and its content
+        // loader owns the recovery redirect — so run it before failing the open.
+        await adapter.setupTab(dock);
         throw new Error('Tab could not be materialized for this URL.');
       }
       tabManager.lifecycle.set(key, TabLifecycleState.Opening, { tabId: tab.id });
@@ -411,24 +418,13 @@ export async function closeTabsWithLifecycle(
   }
 }
 
-/** Materialize a dock and immediately adopt its returned global projection. */
+/** Materialize a dock. `materializeTab` adopts the global list itself, so
+ *  this is `setupTab` under the name the loaders and their tests know. */
 export async function setupTabAndAdopt(
   dock: DockPointer,
   options?: SetupTabOptions,
 ): Promise<void> {
-  const onMaterialized = options?.onMaterialized;
-  let adoptedMaterializedTabs = false;
-  const result = await setupTab(dock, {
-    ...options,
-    onMaterialized: (tabs) => {
-      adoptedMaterializedTabs = true;
-      onMaterialized?.(tabs);
-      tabManager.adoptGlobal(tabs);
-    },
-  });
-  if (!adoptedMaterializedTabs && result.tabs && result.tabs.length > 0) {
-    tabManager.adoptGlobal(result.tabs);
-  }
+  await setupTab(dock, options);
 }
 
 export function resetTabContentLifecycleForTests(): void {

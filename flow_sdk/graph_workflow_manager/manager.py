@@ -874,36 +874,32 @@ class GraphWorkflowManager:
             pass
         self._stamp_example(exec_base, run, node.id, seq, fe, process_id=proc.id)
         try:
-            proc.status = (ProcessStatus.STOPPED if result.exit_code == 0 else ProcessStatus.FAILED).value
-            proc.exit_code = result.exit_code
+            proc.status = (ProcessStatus.STOPPED if result.ok else ProcessStatus.FAILED).value
+            proc.exit_code = result.returncode
             await proc.update()
         except Exception:
             logger.debug("GraphWorkflowManager: subprocess row stamp failed", exc_info=True)
         detail = {
             "duration_ms": duration,
-            "exit_code": result.exit_code,
+            "exit_code": result.returncode,
             "stdout": result.stdout[-2000:],
             "stderr": result.stderr[-2000:],
             "process_id": proc.id,
         }
-        if result.exit_code == 0:
+        if result.ok:
             run.journal.append("node_done", {"node": node.id, "execution": {"seq": seq}, **detail})
             # Uniform auto-`done`: the handler's dict return, in both runtimes.
             # Reserve the successor hop BEFORE releasing this slot (counters
             # must never hit 0/0 mid-handoff).
-            if isinstance(result.result, dict):
-                self.emit_from_node(run, node.id, AGENT_DONE_EVENT, result.result)
+            if isinstance(result.value, dict):
+                self.emit_from_node(run, node.id, AGENT_DONE_EVENT, result.value)
             self._finish_execution(run, rt)
             self._emit_node_status(run, node, "finished", detail)
         else:
             self._finish_execution(run, rt)
-            run.journal.append("node_error", {"node": node.id, "execution": {"seq": seq}, **detail})
-            self._emit_node_status(
-                run,
-                node,
-                "failed",
-                {**detail, "error": f"exit {result.exit_code}: {result.stderr.strip()[-300:]}"},
-            )
+            failed = {**detail, "error": f"{result.detail} {result.stderr.strip()[-300:]}".strip()}
+            run.journal.append("node_error", {"node": node.id, "execution": {"seq": seq}, **failed})
+            self._emit_node_status(run, node, "failed", failed)
         self._maybe_finalize(run)
 
     async def _attach_to_run(self, run: _Run, proc: Any) -> None:

@@ -399,7 +399,7 @@ class E2BComputeProvider(ComputeProvider):
                         cmd.mark_complete(e.exit_code)
                     except Exception as e:
                         service_log.warning(f"[E2B] Error waiting on background command: {e}")
-                        cmd.mark_complete(-1)
+                        cmd.mark_complete(None)
 
                 asyncio.create_task(handle_output(), name=f"e2b_run_command_{message_id}")
             else:
@@ -408,7 +408,7 @@ class E2BComputeProvider(ComputeProvider):
             cmd.mark_complete(e.exit_code)
         except Exception as e:
             service_log.error(f"[E2B] Error running command on {provider_node_id}: {e}")
-            cmd.mark_complete(-1)
+            cmd.mark_complete(None)
 
         return cmd
 

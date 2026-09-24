@@ -77,7 +77,6 @@ class WahaSource(Source):
     provider = "waha"
     #: The same channel as the Cloud API source: one WhatsApp, whichever transport carries it.
     origin_kind = "whatsapp"
-    echoes_sends = False
     identity_config_key = "session"
 
     def __init__(self, binding: SourceBinding) -> None:

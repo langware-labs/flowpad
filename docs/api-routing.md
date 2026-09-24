@@ -296,7 +296,6 @@ These routes bypass the graph/action system entirely. They are registered as Fas
 |------------|--------|---------------|
 | `server/routes/auth.py` | `/api/auth` | OAuth flows, login, logout |
 | `server/routes/hooks.py` | `/api/hooks` | Hook management |
-| `server/routes/chat.py` | `/api/chat` | Claude CLI sessions |
 | `server/routes/directory.py` | `/api/directory` | Working directory management |
 | `server/routes/detection.py` | — | Claude Code detection |
 | `server/routes/testing.py` | — | `/ping`, `/prompt` (test/debug) |

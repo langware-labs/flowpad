@@ -171,8 +171,13 @@ def read_result(wizard_id: str) -> "Optional[WizardResult]":
 
 
 def record_result(wizard_id: str, result: "WizardResult") -> None:
-    """Stamp what the last run answered — the whole ``WizardResult``."""
-    dumped = result.model_dump(mode="json")
+    """Stamp what the last run answered — the ``WizardResult``, each step's
+    output kept to its last ``OUTPUT_CAP`` characters.
+
+    This is where output is trimmed: a result a caller READS arrives whole, and
+    one written to disk must not grow by whatever a command printed.
+    """
+    dumped = result.trimmed().model_dump(mode="json")
     _mutate(wizard_id, lambda _state: {"result": dumped})
 
 

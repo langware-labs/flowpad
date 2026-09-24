@@ -22,10 +22,13 @@ test 1: Doc-chat panel mounts on every editable doc-type with asset_ref-resolved
 >
 - compute node typeid = `compute_node-<bootstrap default_compute_node.id>`
 - for each editable doc-type, open `{APP_URL}/dock/assets/editor/<editor>/vfs/<computeNodeTypeId>/<relPath>`:
-  - skill: editor=skill, path `~/.claude/skills/qa-docchat-skill-fixture`
-  - (the fixture is SELF-PROVISIONED by the test's beforeAll — written to
-    disk, indexed, then fully purged in afterAll. They must never be assumed
-    to pre-exist on the machine.)
+  - skill: editor=skill, path `<temp project>/.claude/skills/qa-docchat-skill-<run id>`, opened under
+    `?scope-mode=project&scope-activeProjectId=<temp project id>`
+  - (the fixture is SELF-PROVISIONED by the test's beforeAll: a fresh temp project folder is
+    created as a project, the skill is scope-created in it under a per-run name and indexed;
+    afterAll deletes the skill, the project and the folder. Never seed into the bootstrap default
+    project — its mount is the user's real workspace, shared by every instance, and a leftover
+    there makes the next run's create fail 409 "already exists in this scope".)
 - validate `[data-testid="entity-execution-panel"]` is present
 - validate the panel's nearest React fiber `EntityExecutionPanel` has prop `target` matching `<type>-<uuid>` (proves asset_ref → entity TypeId resolution via useEntityByPath)
 - validate the chat textarea with placeholder "Ask about this doc…" is visible and NOT disabled (`taDisabled === false`)

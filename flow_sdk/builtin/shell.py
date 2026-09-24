@@ -772,11 +772,11 @@ class Shell(Entity):
         between the echoed command line and that sentinel.
 
         ``timeout`` bounds the WAIT, not the command: on expiry the command
-        keeps running in the user's terminal and this returns what it printed
-        so far with ``timed_out`` set and no ``returncode``. It never kills
-        anything and never reports success it did not observe — a long-running
-        command is a fact to report, not an error to hide. A shell with no live
-        terminal answers the same way it would any command that never started.
+        keeps running in the user's terminal and this returns what it printed so
+        far with ``timed_out`` set and no ``returncode``. That is ``ran=True``
+        with no verdict yet — the command IS running. It never kills anything and
+        never reports success it did not observe. A shell with no live terminal
+        is the other case entirely: nothing started, so ``ran`` is False.
         """
         from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
 
@@ -801,12 +801,12 @@ class Shell(Entity):
             if match:
                 return CliResult.of_process(
                     command, int(match.group(1)), _sentinel_body(tail, marker, match.start()),
-                    duration_s=loop.time() - started, executor=executor, cap=None,
+                    duration_s=loop.time() - started, executor=executor,
                 )
             if loop.time() >= deadline:
                 return CliResult.of_process(
                     command, None, _sentinel_body(tail, marker, len(tail)),
-                    timed_out=True, duration_s=loop.time() - started, executor=executor, cap=None,
+                    timed_out=True, duration_s=loop.time() - started, executor=executor,
                 )
             await asyncio.sleep(poll_interval)
 
@@ -1270,7 +1270,6 @@ class Shell(Entity):
             stderr.decode("utf-8", errors="replace"),
             duration_s=time.monotonic() - started,
             executor=str(self.typeid),
-            cap=None,  # the caller asked for this command's output: all of it
         )
         return ApiSuccessResponse(data=answer.model_dump(mode="json"))
 

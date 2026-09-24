@@ -27,6 +27,7 @@ from flow_sdk._compat import UTC
 from flow_sdk.builtin.organization import Organization
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -123,7 +124,8 @@ async def materialize_remote_membership_entity(
         if data.get("updated_date") is not None:
             payload["updated_date"] = data["updated_date"]
         payload["fetched_at"] = datetime.now(UTC)
-        ent = cls.model_validate(payload)
+        with lenient_entity_load():
+            ent = cls.model_validate(payload)
         ent.id = ent_id
         # Pure reflection of the hub row — preserve created_by/dates verbatim,
         # never stamp the local sync user.

@@ -48,7 +48,7 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItem
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.schema.data_spec import DataSpec
-from tests.hub_tests._hub_agent import create_hub_agent
+from tests.hub_tests._hub_agent import create_hub_agent, mailbox_capability_required
 from tests.hub_tests._local_login import login_as
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]
@@ -84,7 +84,8 @@ async def mailboxes(hub_base_url, hub_login_payload):
 
     allocated: list[str] = []
     try:
-        agent_box = await driver.create_mailbox(agent_id)
+        with mailbox_capability_required():
+            agent_box = await driver.create_mailbox(agent_id)
         allocated.append(agent_id)
         outsider_box = await driver.create_mailbox(outsider_id)
         allocated.append(outsider_id)
@@ -174,11 +175,10 @@ async def agent_server():
 
     pytest never runs server startup, so nothing serves and nothing discovers
     the CLI. Both halves below stand that up — through the same entry points
-    production uses: the stream inbox (ingested mail is projected) and the agent
-    server (each agent placement's serve loop answers its channels). The test
-    tier turns channel loops off by default; this test IS one, so it asks.
+    production uses: the stream inbox (ingested mail is projected) and each
+    running deployment's loop (``builtin/agent_loop`` — in production its own
+    process; here the same code as a task, so the turn stays in this test).
     """
-    from flow_sdk.builtin.agent_serve import AgentServer
     from flow_sdk.stream_inbox import start_stream_inbox
 
     start_stream_inbox()
@@ -199,12 +199,34 @@ async def agent_server():
     # would have found: the folder holding the CLI on PATH.
     _inject_claude_harness()
 
-    server = AgentServer(serve_channels=True)
-    await server.start()
+    loops = _Loops()
     try:
-        yield server
+        yield loops
     finally:
-        await server.stop()
+        await loops.stop()
+
+
+class _Loops:
+    """Running deployments' loops, as tasks of this test instead of processes of their own."""
+
+    def __init__(self) -> None:
+        import asyncio  # noqa: PLC0415
+
+        self.tasks: list = []
+        self.stopping = asyncio.Event()
+
+    async def run(self, deployment) -> None:
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.agent_loop import run  # noqa: PLC0415
+
+        self.tasks.append(asyncio.create_task(run(deployment.id, stop=self.stopping)))
+
+    async def stop(self) -> None:
+        import asyncio  # noqa: PLC0415
+
+        self.stopping.set()  # what each process's SIGTERM does: its loop ends between turns
+        await asyncio.gather(*self.tasks, return_exceptions=True)
 
 
 async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
@@ -219,7 +241,6 @@ async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
         name=f"Mailbot {mailboxes['agent_id'][:8]}",
         worker_type="claude",
         system_prompt="You answer email. Reply in one short sentence.",
-        email_allowed_senders=allow,
     )
     await agent.save()
 
@@ -229,6 +250,8 @@ async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
         channel="email",
         config={"agent_id": mailboxes["agent_id"], "address": mailboxes["agent_address"]},
         account_key=mailboxes["agent_address"],
+        # The allowlist the gate reads — what ``AgentMailbox._cache_policy`` mirrors from the hub.
+        inbound_allowed_senders=list(allow),
     )
     await source.save()
     await _served(server, agent, source)
@@ -236,12 +259,15 @@ async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
 
 
 async def _served(server, agent, source) -> None:
-    """The agent's placement serves *source* from now on — a reconcile holds its position before
-    the loop starts, so mail sent after this is an arrival, never history."""
-    deployment = await agent.local_deployment()
-    await server.reconcile()
-    served = server.serving().get(str(deployment.id), frozenset())
-    assert str(source.id) in served, "the placement does not serve the mailbox"
+    """The agent runs here and answers *source* from now on — launching it holds its position on
+    each channel before its loop starts, so mail sent after this is an arrival, never history."""
+    from flow_sdk.builtin.agent_serve import answered_sources  # noqa: PLC0415
+
+    deployment = await agent.run_locally()
+    assert str(source.id) in {str(s.id) for s in await answered_sources(agent, deployment)}, (
+        "the deployment does not answer the mailbox"
+    )
+    await server.run(deployment)
 
 
 async def _await_reply(outsider_id: str, *, from_address: str) -> dict | None:
@@ -391,7 +417,8 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
         await flow_sdk.auth.login()
         # The allowlist is the mailbox's, declared in the one call that makes it —
         # the same shape docs/snippets/agent-email.md advertises.
-        mailbox = await pirate.allocate_mailbox(allowed_senders=[gmail.account_key])
+        with mailbox_capability_required():
+            mailbox = await pirate.allocate_mailbox(allowed_senders=[gmail.account_key])
         if mailbox.provider != "agentmail":
             pytest.skip(
                 "Gmail delivery requires the local Hub to run with "

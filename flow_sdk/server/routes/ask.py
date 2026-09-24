@@ -18,13 +18,17 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from flow_sdk.core.compute.ask import answer as deliver_answer
-from flow_sdk.core.compute.ask import cancel as decline
-from flow_sdk.core.compute.ask import open_questions, pending
+from flow_sdk.core.compute_op.ask import answer as deliver_answer
+from flow_sdk.core.compute_op.ask import cancel as decline
+from flow_sdk.core.compute_op.ask import ask_person, open_questions, pending, serve_here
 from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
 from flow_sdk.responses.response import ApiSuccessResponse
 
 router = APIRouter(prefix="/api/v1/ask")
+
+# Mounting these routes is what makes this process the one answers reach, so a
+# question asked here is held here; everyone else asks through ``POST /``.
+serve_here()
 
 
 def _fail(message: str, status_code: int) -> JSONResponse:
@@ -43,6 +47,28 @@ class AnswerRequest(BaseModel):
     """What the person typed. ``value`` may be any JSON the shape accepts."""
 
     value: Any = None
+
+
+class AskRequest(BaseModel):
+    """A question from a process that is not this one — ``ask_through_backend``."""
+
+    op: str
+    prompt: str
+    shape: Any = None
+    #: Already the op's shortest deadline; this route waits exactly that long.
+    timeout: float
+    label: str
+    #: The answer is a secret: the window masks it.
+    secret: bool = False
+
+
+@router.post("")
+async def ask_for_another_process(body: AskRequest):
+    """Raise the question here, wait the caller's bounded time, answer with the
+    ``AskResult``. The answer routes below resolve it like any local question."""
+    said = await ask_person(body.op, body.prompt, body.shape, timeout=body.timeout, label=body.label,
+                            secret=body.secret)
+    return ApiSuccessResponse(data=said.model_dump(mode="json"))
 
 
 @router.get("")

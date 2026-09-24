@@ -65,8 +65,8 @@ def test_model_tier_persists_raw_and_emits_resolved_model():
     assert cmd.to_json()["model"] == "sm"
 
     argv, _env = cmd.to_spawn_args()
-    assert argv[argv.index("-m") + 1] == "gpt-5.4-mini"
-    assert "-m gpt-5.4-mini" in cmd.to_shell_string()
+    assert argv[argv.index("-m") + 1] == "gpt-5.6-luna"
+    assert "-m gpt-5.6-luna" in cmd.to_shell_string()
 
 
 def test_json_spawn_args_read_prompt_from_stdin():

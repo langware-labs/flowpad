@@ -56,12 +56,17 @@ async def run_shell(
     workdir: Path,
     extra_env: Optional[dict] = None,
     platform: str = "",
+    stop: Optional[asyncio.Event] = None,
 ) -> CliResult:
     """Run one shell one-liner. Never raises — a failure IS the result.
 
     ``stdin`` is DEVNULL on purpose. An installer that decides to ask a
     question must fail on a closed stdin rather than block a headless run
     forever waiting for an answer nobody is there to give.
+
+    Setting *stop* ends the run early, the same way a timeout does: the whole
+    process group is killed and what it printed is kept. Cancelling the call
+    kills the process group too — a cancelled caller must not leave it running.
     """
     platform = platform or sys.platform
     # Unbuffered Python: stdout is a pipe here, so Python block-buffers it, and
@@ -82,15 +87,32 @@ async def run_shell(
     # came back with no output at all — exactly the output that says where it
     # hung. Reading to EOF under a shield keeps it; the kill closes the pipes.
     finished = asyncio.ensure_future(asyncio.gather(proc.stdout.read(), proc.stderr.read(), proc.wait()))
+    stopper = asyncio.ensure_future(stop.wait()) if stop is not None else None
+    waiters = [finished, stopper] if stopper is not None else [finished]
     try:
-        stdout, stderr, _ = await asyncio.wait_for(asyncio.shield(finished), timeout=timeout_seconds)
-    except asyncio.TimeoutError:
+        await asyncio.wait(waiters, timeout=timeout_seconds, return_when=asyncio.FIRST_COMPLETED)
+    except asyncio.CancelledError:
+        # Reap before re-raising, exactly as a timeout does: the kill closes the
+        # pipes, and returning earlier leaves the process and its transports open.
         kill_process_tree(proc)
-        timed_out = True
         try:
-            stdout, stderr, _ = await finished
-        except Exception:  # noqa: BLE001 — the kill already decided the outcome
-            stdout, stderr = b"", b""
+            await asyncio.shield(finished)
+        except BaseException:  # noqa: BLE001 — being cancelled already decided the outcome
+            pass
+        raise
+    finally:
+        if stopper is not None:
+            stopper.cancel()
+    stopped = False
+    if not finished.done():
+        kill_process_tree(proc)
+        stopped = stop is not None and stop.is_set()
+        timed_out = not stopped
+    try:
+        # Already done on the fast path; on the kill path the closed pipes end it.
+        stdout, stderr, _ = await finished
+    except Exception:  # noqa: BLE001 — the kill already decided the outcome
+        stdout, stderr = b"", b""
     # ``of_process`` keeps the END of each stream: that is where the error is.
     return CliResult.of_process(
         command,
@@ -99,4 +121,5 @@ async def run_shell(
         stderr.decode(errors="replace") if stderr else "",
         timed_out=timed_out,
         duration_s=time.monotonic() - t0,
+        detail="The run was stopped." if stopped else "",
     )

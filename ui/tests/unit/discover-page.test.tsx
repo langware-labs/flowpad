@@ -24,8 +24,8 @@ const mocks = vi.hoisted(() => ({
   },
   directory: {
     rows: [
-      { typeid: `skill-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb`, type: 'skill', id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'rca', description: 'root cause', rel_path: '.claude/skills/rca', published_at: '2026-09-09T00:00:00Z', state: 'install', origin: { kind: 'git', provider: 'github', owner: 'acme', name: 'tools', branch: 'main', rel_path: '.claude/skills/rca' }, source_project_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', source_project_name: 'alpha', body_supported: true, body_available: false, body_reason: 'not_on_hub', body_ref: null },
-      { typeid: `markdown-dddddddd-dddd-4ddd-8ddd-dddddddddddd`, type: 'markdown', id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'guide', description: '', rel_path: 'docs/guide.md', published_at: '2026-09-01T00:00:00Z', state: 'install', origin: { kind: 'local' }, source_project_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', source_project_name: 'beta', body_supported: true, body_available: false, body_reason: 'not_on_hub', body_ref: null },
+      { typeid: `skill-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb`, type: 'skill', id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'rca', description: 'root cause', rel_path: '.claude/skills/rca', published_at: '2026-09-09T00:00:00Z', state: 'install', origin: { kind: 'git', provider: 'github', owner: 'acme', name: 'tools', branch: 'main', rel_path: '.claude/skills/rca' }, source_project_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', source_project_name: 'alpha', body_reason: 'not_on_hub', body_ref: null },
+      { typeid: `markdown-dddddddd-dddd-4ddd-8ddd-dddddddddddd`, type: 'markdown', id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'guide', description: '', rel_path: 'docs/guide.md', published_at: '2026-09-01T00:00:00Z', state: 'install', origin: { kind: 'local' }, source_project_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', source_project_name: 'beta', body_reason: 'not_on_hub', body_ref: null },
     ],
     facets: { types: [], projects: [] },
     total: 2,

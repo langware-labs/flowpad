@@ -230,6 +230,35 @@ async def test_capability_install_process_uses_default_harness_worker(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_capability_install_with_a_disabled_installer_answers_refused(monkeypatch):
+    """A disabled `capability-installer` is a refusal the result carries — the
+    install used to raise it out of the action."""
+    import flow_sdk.builtin.agent_registry as agent_registry
+    import flow_sdk.core.capabilities.registry as registry_mod
+    from flow_sdk.builtin.deployment import AgentUnavailable
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
+    class Disabled:
+        async def create_process(self, prompt, **options):
+            raise AgentUnavailable("capability-installer is disabled here", ExitCode.REFUSED)
+
+    async def fake_deployment(ref):
+        return Disabled()
+
+    async def fake_harness():
+        return CapabilityKind.CODEX_CLI.value
+
+    monkeypatch.setattr(agent_registry, "get_agent_local_deployment", fake_deployment)
+    monkeypatch.setattr(registry_mod, "resolve_default_harness_kind", fake_harness)
+    spec = registry_mod.get_capability_registry().get(CapabilityKind.CLAUDE_CLI.value).spec
+
+    result = await registry_mod.run_capability_install_process(spec)
+
+    assert result.ok is False and result.answer.exit_code is ExitCode.REFUSED
+    assert "disabled" in result.message
+
+
+@pytest.mark.asyncio
 async def test_cli_capability_install_failure_is_returned(monkeypatch):
     import flow_sdk.core.capabilities.registry as registry_mod
 

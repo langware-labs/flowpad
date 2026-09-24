@@ -55,6 +55,8 @@ export interface CredentialStatusRow {
   description: string;
   icon_name: string;
   help_url: string;
+  setup_wiki: string;
+  setup: string;
   scope: CredentialScopeName;
   project_id: string | null;
   /** The environment these presences were read for. */
@@ -127,6 +129,8 @@ export interface CredentialManifestInput {
   icon_name?: string;
   help_url?: string;
   setup_wiki?: string;
+  /** How an agent obtains and stores the values. Required when saving. */
+  setup?: string;
   value_store?: CredentialValueStore;
   lm_provider?: string;
   vars: Record<string, CredentialManifestVar>;
@@ -185,6 +189,19 @@ export class CredentialsService {
   async save(request: SaveCredentialRequest): Promise<CredentialSaved> {
     const action = this.action('save', 'POST');
     action.bodyParameters = { ...request };
+    return dataManager.callAction<unknown, CredentialSaved>(action);
+  }
+
+  /** Fill a credential's values BY NAME, declaring it from its shipped template when this
+   *  instance holds none yet (`flow credentials set`). The one call that does not need to
+   *  know whether the declaration exists. */
+  async setByName(
+    name: string,
+    values: Record<string, string>,
+    projectId: string | null = null,
+  ): Promise<CredentialSaved> {
+    const action = this.action('set', 'POST');
+    action.bodyParameters = projectId ? { name, values, project_id: projectId } : { name, values };
     return dataManager.callAction<unknown, CredentialSaved>(action);
   }
 

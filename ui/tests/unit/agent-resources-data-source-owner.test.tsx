@@ -16,7 +16,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render as rtlRender, screen } from '@testing-library/react';
 import type React from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TypeId } from '@sdk';
 
 const h = vi.hoisted(() => ({
@@ -44,6 +44,16 @@ vi.mock('@src/hooks/entity-hooks', () => ({
   useEntitiesQuery: () => ({ data: h.sources, isLoading: false, refetch: vi.fn() }),
 }));
 
+// A driver that sends is a message channel; the fixture's drivers are slack (sends) and rss.
+vi.mock('@src/components/data-sources/use-source-specs', async (original) => ({
+  ...(await original<object>()),
+  useSourceSpecs: () => ({ specFor: (provider: string) => ({ name: provider, sends: provider === 'slack' }) }),
+}));
+
+vi.mock('@src/components/agent-resources/AgentSchedulesSection', () => ({
+  AgentSchedulesSection: () => <div data-testid="mock-schedules-section" />,
+}));
+
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openTab: vi.fn() } }),
 }));
@@ -56,18 +66,23 @@ const { AgentResourcesBody } = await import('@src/components/agent-resources/Age
 
 const render = (ui: React.ReactElement) => rtlRender(ui);
 
-function makeSource(id: string, owner: string | null) {
+function makeSource(id: string, owner: string | null, provider = 'rss') {
   return {
     id,
     name: `source-${id}`,
-    provider: 'slack',
-    channel: 'slack',
+    provider,
+    channel: provider,
     status: 'active',
     health: 'ok',
     owner,
     typeId: new TypeId('data_source', id),
   };
 }
+
+// A section the person opens is remembered in this browser: each test starts from none opened.
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 afterEach(() => {
   cleanup();
@@ -120,6 +135,9 @@ describe('AgentResourcesBody — data source list scoped to the open agent (FLOW
     ];
     render(<AgentResourcesBody />);
 
+    // Sections start closed; the count says what is inside before it is opened.
+    expect(screen.getByTestId('navigator-section-data-sources-count')).toHaveTextContent('1');
+    fireEvent.click(screen.getByTestId('navigator-section-data-sources'));
     expect(screen.getByText('source-src-1')).toBeInTheDocument();
     expect(screen.queryByText('source-src-2')).not.toBeInTheDocument();
     expect(screen.queryByText('source-src-3')).not.toBeInTheDocument();
@@ -131,11 +149,27 @@ describe('AgentResourcesBody — data source list scoped to the open agent (FLOW
     h.sources = [makeSource('src-1', new TypeId('agent', 'agent-123').toString())];
     render(<AgentResourcesBody />);
 
-    // The section starts collapsed when settled empty — expand it to see the
-    // empty state (`NavigatorSection` only opens children/emptyState while open).
+    // Sections start closed — open it to see the empty state.
     fireEvent.click(screen.getByTestId('navigator-section-data-sources'));
 
     expect(screen.queryByText('source-src-1')).not.toBeInTheDocument();
     expect(screen.getByText('Connect a data source to make it available here')).toBeInTheDocument();
   });
 });
+
+describe('AgentResourcesBody — channels apart from data sources', () => {
+  it('lists a message source under Channels and anything else under Data sources', () => {
+    const agent = new TypeId('agent', 'agent-123');
+    h.activeEntityTypeId = agent;
+    h.sources = [makeSource('src-5', agent.toString(), 'slack'), makeSource('src-6', agent.toString(), 'rss')];
+    render(<AgentResourcesBody />);
+
+    expect(screen.getByTestId('navigator-section-channels-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('navigator-section-data-sources-count')).toHaveTextContent('1');
+    fireEvent.click(screen.getByTestId('navigator-section-channels'));
+    expect(screen.getByText('source-src-5')).toBeInTheDocument();
+    expect(screen.queryByText('source-src-6')).not.toBeInTheDocument();
+    expect(screen.getByTestId('mock-schedules-section')).toBeInTheDocument();
+  });
+});
+

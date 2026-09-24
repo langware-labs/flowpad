@@ -51,6 +51,7 @@ from pydantic import ValidationError
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.capsules.atomic import atomic_write, capsule_lock
 from flow_sdk.instances.model import utc_now_iso
+from flow_sdk.tags.grammar import namespace_from_name
 from flow_sdk.schema.data_spec.project_manifest_spec import (
     DEPS_MAIN,
     PROJECT_MANIFEST_MAIN,
@@ -212,6 +213,50 @@ def make_entry(
     )
 
 
+def namespace_seed(root: Path) -> str:
+    """The namespace a project gets when it has never named one: its folder name,
+    folded to what a marker can hold.
+
+    A marker segment is ``[a-z0-9_]`` only (``flow_sdk/tags/grammar.py``), while real
+    project folders are full of dashes and capitals — ``ai-course`` is not a legal
+    namespace, so the name is folded rather than used raw. ``""`` when nothing usable
+    survives: such a project stays OURS, and an authored asset under it is refused by
+    name (which is loud) rather than minting into our ontology (which is silent).
+
+    A SEED, not an identity. Two checkouts with the same folder name seed the same
+    namespace; that is allowed — a namespace is an unvalidated claim — and a human who
+    cares edits the file, which is then never overwritten.
+    """
+    return namespace_from_name(Path(root).name)
+
+
+def ensure_namespace(root: Path, ns: str) -> Optional[ProjectManifestSpec]:
+    """Record the project's ontology namespace, creating the manifest if it has none.
+
+    A manifest that already names one is returned UNTOUCHED. That is what makes
+    "frozen at first publish" a mechanism rather than a convention: re-keying a
+    namespace orphans every kind the project's assets have ever written, so a rename
+    (or a re-seed with a different rule) must never reach an existing declaration.
+    """
+    if not ns:
+        return None
+    path = manifest_path(root)
+    # Read BEFORE locking. From the second boot onward every project answers here, and
+    # the lock is a cross-process file lock — a resolve(), a sha256 and a flock, three
+    # times the cost of the read it was guarding. The re-read inside the lock is what
+    # keeps the write correct.
+    declared = _read(path, ProjectManifestSpec)
+    if declared is not None and declared.ns:
+        return declared
+    with capsule_lock(path):
+        spec = _read(path, ProjectManifestSpec) or ProjectManifestSpec.empty()
+        if spec.ns:
+            return spec
+        spec = spec.model_copy(update={"ns": ns})
+        _write(path, spec)   # ``atomic_write`` makes the parent and skips an identical write
+        return spec
+
+
 def publish(root: Path, entry: PublishedAssetSpec) -> ProjectManifestSpec:
     """Add or replace ``entry``; returns the manifest as written."""
     return _upsert(manifest_path(root), ProjectManifestSpec, entry)
@@ -221,6 +266,41 @@ def unpublish(root: Path, typeid: str) -> ProjectManifestSpec:
     """Drop the row for ``typeid``. Absent row, absent file: nothing is
     written — unpublishing must never create a manifest."""
     return _drop(manifest_path(root), ProjectManifestSpec, typeid)
+
+
+def read_home_page(root: Path) -> Optional[str]:
+    """The home-page TypeId the manifest declares, or None. Never raises.
+
+    Read on every serialization of the Project (``customization``) and every
+    Home click, so an unreadable ledger means "no home page", not an error —
+    the ledger's own readers still report it where it matters.
+    """
+    try:
+        spec = read_manifest(root)
+    except ManifestError:
+        return None
+    return spec.home_page if spec is not None else None
+
+
+def set_home_page(root: Path, typeid: Optional[str]) -> ProjectManifestSpec:
+    """Set (or, with None, clear) the project's home page; returns the manifest.
+
+    Clearing never CREATES a manifest — the same rule as ``unpublish``. The
+    value goes through the spec's own validator, so a malformed id writes
+    nothing rather than a pointer every reader would discard.
+    """
+    path = manifest_path(root)
+    with capsule_lock(path):
+        current = _read(path, ProjectManifestSpec)
+        if current is None and typeid is None:
+            return ProjectManifestSpec.empty()
+        base = current or ProjectManifestSpec.empty()
+        spec = ProjectManifestSpec.model_validate({**base.to_document(), "home_page": typeid})
+        if typeid is not None and spec.home_page is None:
+            raise ManifestError(f"home page {typeid!r} is not an asset TypeId (<type>-<uuid>)")
+        if current is None or _render(spec) != _render(current):
+            _write(path, spec)
+        return spec
 
 
 def state_in_tree(root: Path, entry: PublishedAssetSpec) -> str:

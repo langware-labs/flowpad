@@ -75,7 +75,9 @@ def _plant_fixture(root: Path) -> None:
 async def test_asset_cleanup_agent_flags_planted_garbage(tmp_path):
     _plant_fixture(tmp_path)
 
-    result = await run_asset_cleanup(roots=[tmp_path], workdir=str(tmp_path))
+    answer = await run_asset_cleanup(roots=[tmp_path], workdir=str(tmp_path))
+    assert answer.ok, answer.detail
+    result = answer.value
 
     by_name = {f.name: f for f in result.findings}
     assert set(by_name) >= {JUNK_SKILL, JUNK_AGENT, GOOD_SKILL, GOOD_AGENT}, (

@@ -52,7 +52,7 @@ agent = await Agent.get_one({"name": "researcher"})
 await agent.add_mcp(McpSpec(name="linear", transport="http", url="https://mcp.linear.app/sse"))
 await agent.add_mcp(McpSpec(name="docs", command="fastmcp", args=["run", "server.py"]))
 
-proc = await agent.launch("Find the open Linear issues assigned to me.", wait=True)
+answer = await agent.launch("Find the open Linear issues assigned to me.", wait=True)
 ```
 
 `add_mcp` writes an asset, not a list entry: `agentic-assets/mcp/<name>/mcp.json`
@@ -73,17 +73,23 @@ author time, not at spawn.
 ## 3. Launch an agent and read the answer
 
 ```python
+from flow_sdk.builtin.agentic_process import AgenticProcess
+
 agent = await Agent.get_one({"name": "researcher"})
 
-proc = await agent.launch("Summarize today's stream inbox in three bullets.", wait=True)
+answer = await agent.launch("Summarize today's stream inbox in three bullets.", wait=True)
+answer.ok, answer.text                                  # the run's verdict, and its reply
+proc = await AgenticProcess.get_by_typeid(answer.executor)
 ```
 
 * `agent.create_process(prompt, **options)` is the primitive: the process is
   built from everything the agent declares (worker, model, permissions, system
   prompt, dirs, MCP servers). Not saved, not started.
 * `agent.launch(prompt, wait=...)` is `create_process` + save + first turn,
-  routed through `dispatch_agent_run` so run lifecycle events fire and a
-  remotely placed agent is refused rather than silently run here.
+  routed through `dispatch_agent_run` so run lifecycle events fire. It answers a
+  `PromptResult` whose `executor` names the process — with `wait`, the run's own
+  verdict (an errored worker is `NOT_YET`); a remotely placed agent answers
+  `NOT_APPLICABLE` rather than being silently run here.
 * `agent.use()` opens a visible session as the agent with no first turn.
 
 `prompt()` returning is not the turn finishing, and `wait()` blocks for a

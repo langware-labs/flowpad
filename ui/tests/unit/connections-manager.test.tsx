@@ -210,8 +210,11 @@ describe('ConnectionsManager', () => {
     h.grants = { github: 'held', anthropic: 'held' };
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
-    expect(screen.getByTestId('connection-kind-github').textContent).toBe('OAuth');
-    expect(screen.getByTestId('connection-kind-anthropic').textContent).toBe('OAuth + PKCE');
+    // One method per cell; the grant flavour (PKCE) is the tooltip's detail.
+    const method = (id: string) => screen.getByTestId(`connection-kind-${id}`).querySelector('[data-method]')!;
+    expect(method('github').getAttribute('data-method')).toBe('oauth');
+    expect(method('anthropic').getAttribute('data-method')).toBe('oauth');
+    expect(method('anthropic').getAttribute('aria-label')).toMatch(/PKCE/);
 
     // One chip and a count, not a stack: four chips wrapped the row to four
     // lines and pushed Status and Actions out of view. The rest is a hover away.
@@ -340,6 +343,8 @@ const TWILIO_TEMPLATE = {
   value_store: 'env',
   lm_provider: '',
   scope: 'system',
+  // Every shipped template carries one, and a credential without it cannot be saved.
+  setup: 'Open the Twilio console and copy the Account SID.',
   vars: { TWILIO_SID: { label: 'Account SID', required: true } },
   varNames: ['TWILIO_SID'],
 };
@@ -502,6 +507,8 @@ describe('ConnectionsManager — adding a credential', () => {
     expect(screen.queryByTestId('credential-var-value-0')).toBeNull();
 
     await userEvent.type(screen.getByTestId('credential-title'), 'QA pack');
+    // Authoring a definition says how to get its values: the AI setup follows it.
+    await userEvent.type(screen.getByTestId('credential-setup'), 'Read them off the QA console.');
     await userEvent.click(screen.getByTestId('credential-save'));
 
     await waitFor(() => expect(h.save).toHaveBeenCalled());
@@ -526,7 +533,9 @@ describe('ConnectionsManager — credential rows', () => {
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
     expect(screen.getByTestId('connection-row-user-twilio')).toBeTruthy();
-    expect(screen.getByTestId('connection-store-user-twilio').textContent).toMatch(/vault/i);
+    const method = screen.getByTestId('connection-kind-user-twilio');
+    expect(method.dataset.method).toBe('api_key');
+    expect(method.getAttribute('aria-label')).toMatch(/vault/i);
     expect(screen.getByTestId('connection-scope-user-twilio').textContent).toMatch(/all projects/i);
   });
 

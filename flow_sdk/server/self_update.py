@@ -23,6 +23,10 @@ import subprocess
 import sys
 import threading
 import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from importlib import metadata
 
 from flow_sdk.utils.semver import string2semver
@@ -92,22 +96,41 @@ def build_install_command(version: str) -> list[str]:
     return [sys.executable, "-m", "pip", "install", f"{PACKAGE}=={version}"]
 
 
-def reinstall_version(version: str, timeout: float = 180.0) -> tuple[bool, str]:
-    """Run the pinned reinstall. Returns ``(ok, combined_output)``.
+def reinstall_version(version: str, timeout: float = 180.0) -> "CliResult":
+    """Run the pinned reinstall — a ``CliResult``, built the one way every
+    process record is (``of_process``), so a timeout is ``timed_out`` rather than
+    folded into "failed". Never raises.
 
     Blocking — call via ``asyncio.to_thread`` from an async route.
     """
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
     cmd = build_install_command(version)
-    logger.info("[self-update] installing %s==%s via: %s", PACKAGE, version, " ".join(cmd))
+    command = " ".join(cmd)
+    logger.info("[self-update] installing %s==%s via: %s", PACKAGE, version, command)
+    started = time.monotonic()
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except Exception as exc:
+    except subprocess.TimeoutExpired as exc:
+        logger.warning("[self-update] reinstall did not finish within %.0fs", timeout)
+        return CliResult.of_process(
+            command, None, _text(exc.stdout), _text(exc.stderr),
+            timed_out=True, duration_s=time.monotonic() - started,
+        )
+    except Exception as exc:  # noqa: BLE001 — could not start: an answer, not a crash
         logger.warning("[self-update] reinstall failed: %s", exc)
-        return False, str(exc)
-    output = (result.stdout or "") + (result.stderr or "")
-    if result.returncode != 0:
-        logger.warning("[self-update] reinstall exit=%d:\n%s", result.returncode, output)
-    return result.returncode == 0, output
+        return CliResult.of_process(command, None, "", str(exc))
+    answer = CliResult.of_process(
+        command, result.returncode, result.stdout or "", result.stderr or "",
+        duration_s=time.monotonic() - started,
+    )
+    if not answer.ok:
+        logger.warning("[self-update] reinstall exit=%d:\n%s", result.returncode, answer.stdout + answer.stderr)
+    return answer
+
+
+def _text(raw) -> str:
+    return raw.decode(errors="replace") if isinstance(raw, bytes) else (raw or "")
 
 
 def schedule_restart(delay: float = 1.0) -> None:

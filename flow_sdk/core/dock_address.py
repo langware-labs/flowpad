@@ -145,6 +145,7 @@ class ViewType(StrEnum):
     SIGNALS = "signals"  # Alias of EVENTS
     DATA_SOURCES = "data-sources"  # Configured ingestion sources
     RAG = "rag"  # Search indexes and the folders they cover
+    ASSET_LIST = "asset-list"  # One home counter's assets as a table — ?group=<g>&counter=<c>
     PROCESS_RUNS = "process-runs"  # AgenticProcess execution history
     PLAN = "plan"  # Plan viewer with Milkdown editor
     CRON = "cron"  # Alias of EVENTS (scheduled jobs)
@@ -418,6 +419,9 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         label="Search indexes",
         aliases=("embeddings", "knowledge index", "vector index"),
     ),
+    # The counter it came from is a query pair (?group=&counter=), not a pointer.
+    # Labelled apart from `assets` (the tree): this is one counter's table.
+    ViewType.ASSET_LIST: _m(_NONE, label="Asset list", aliases=("counter assets",)),
     ViewType.PROCESS_RUNS: _m(_OPT, label="Runs", aliases=("history",)),
     ViewType.PLAN: _m(_REQ, label="Plan"),
     ViewType.CRON: _m(_NONE, label="Events", aliases=("schedule", "scheduled jobs")),

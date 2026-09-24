@@ -112,7 +112,7 @@ def is_turn_busy(
 ) -> bool:
     """True when a turn is in flight — the single ``busy`` boolean.
 
-    ``busy`` is a function of process state, resolved from four signals (any
+    ``busy`` is a function of process state, resolved from five signals (any
     one → busy):
 
       1. the per-process prompt lock is held (headless / chat-over-PTY turn), OR
@@ -121,7 +121,9 @@ def is_turn_busy(
       3. ``_turn_in_flight`` is set (a worker spinning up before its transcript
          lands), OR
       4. the raw ``worker_status`` is a mid-turn activity state
-         (``_BUSY_WORKER_STATUSES``) — **INTERACTIVE (PTY) transport only**.
+         (``_BUSY_WORKER_STATUSES``) — **INTERACTIVE (PTY) transport only**, OR
+      5. another live OS process is running a turn on it
+         (:func:`turn_owned_elsewhere` — a local deployment's loop).
 
     A native-xterm turn holds no lock and sets no ``_turn_in_flight`` flag, so
     (3) is the only signal that keeps it ``busy`` — that is why the ``switch-mode``
@@ -155,10 +157,56 @@ def is_turn_busy(
         return True
     if getattr(process, "_turn_in_flight", False):
         return True
+    if turn_owned_elsewhere(process, worker_status):
+        return True
     if get_worker_mode(process) is not WorkerMode.INTERACTIVE:
         return False
     resolved = worker_status if worker_status is not None else process.fetch_worker_status()
     return resolved in _BUSY_WORKER_STATUSES
+
+
+def turn_owned_elsewhere(process: "AgenticProcess", worker_status: WorkerStatus | None = None) -> bool:
+    """True when ANOTHER live OS process is running a turn on *process*.
+
+    Signals 1–3 of :func:`is_turn_busy` live in the memory of the process that
+    runs the turn. A local agent deployment runs its turns in its own process
+    (``builtin/agent_loop``), so the app — which serves ``busy`` to every client —
+    holds none of them. What it can read is the turn record that runner writes on
+    the row (``agent_serve.started_record``): a turn STARTED by a pid that is
+    still alive is in flight. A dead pid is not — a loop that crashed mid-turn
+    must not pin ``busy`` forever (the same trap signal 4 is gated against).
+
+    The record closes only after the runner has read the reply, while the app's
+    last live push fires on the transcript's own turn end. So the transcript has
+    the last word: once its tail stopped working, the turn is over here too —
+    otherwise that final push would leave every client showing "working".
+    """
+    import os  # noqa: PLC0415
+
+    from flow_sdk.builtin.agent_serve import OWNER_PID, STARTED, turns_of  # noqa: PLC0415
+
+    own = os.getpid()
+    owned = any(
+        isinstance(record, dict)
+        and record.get("status") == STARTED
+        and isinstance(record.get(OWNER_PID), int)
+        and record[OWNER_PID] != own
+        and _pid_alive(record[OWNER_PID])
+        for record in turns_of(process).values()
+    )
+    if not owned:
+        return False
+    tail = worker_status if worker_status is not None else process.fetch_worker_status()
+    return tail is None or tail in _BUSY_WORKER_STATUSES
+
+
+def _pid_alive(pid: int) -> bool:
+    import psutil  # noqa: PLC0415
+
+    try:
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
 
 
 def is_ready_from_busy(

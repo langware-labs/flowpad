@@ -202,26 +202,37 @@ def _start_service_guarded(port: int) -> None:
     # stdout streams to this same terminal — the user sees progress.
     # ``run_if_needed`` is a no-op when no recipe exists or the migration
     # already completed, so this is safe on every start.
+    from flow_sdk import boot_progress
     from flow_sdk.migrations import runner as migration_runner
     from flow_sdk.server.launch import check_server_health, start_monitor_detached, wait_for_server_health
 
-    migration_exit = migration_runner.run_if_needed()
-    if migration_exit != 0:
-        typer.echo(
-            f"Migration failed (exit={migration_exit}); refusing to start server.",
-            err=True,
-        )
-        raise typer.Exit(migration_exit)
+    # Each step below is a boot phase the desktop app's startup gate can see
+    # (boot_progress writes to this process's stdout when the app asked for
+    # it). A migration imports nothing for minutes, so without the phase line
+    # the gate would read it as a hang.
+    try:
+        boot_progress.set_phase("migration")
+        migration_exit = migration_runner.run_if_needed()
+        if migration_exit != 0:
+            typer.echo(
+                f"Migration failed (exit={migration_exit}); refusing to start server.",
+                err=True,
+            )
+            raise typer.Exit(migration_exit)
 
-    if check_server_health(port):
-        typer.echo(f"Server already running on port {port}")
-    else:
-        typer.echo(f"Starting Flow server on http://127.0.0.1:{port}")
-        start_monitor_detached(port)
-        if wait_for_server_health(port, timeout=10.0):
-            typer.echo("Server is ready")
+        if check_server_health(port):
+            typer.echo(f"Server already running on port {port}")
         else:
-            typer.echo("Server may still be starting...")
+            typer.echo(f"Starting Flow server on http://127.0.0.1:{port}")
+            boot_progress.set_phase("spawn")
+            start_monitor_detached(port)
+            boot_progress.set_phase("wait_health")
+            if wait_for_server_health(port, timeout=10.0):
+                typer.echo("Server is ready")
+            else:
+                typer.echo("Server may still be starting...")
+    finally:
+        boot_progress.stop()
 
 
 start_app = typer.Typer(help="Start the Flow server.", invoke_without_command=True, add_completion=False)
@@ -1304,6 +1315,14 @@ from flow_sdk.cli.commands.connections_cmd import connections_app
 
 app.add_typer(connections_app, name="connections")
 
+from flow_sdk.cli.commands.credentials_cmd import credentials_app
+
+app.add_typer(credentials_app, name="credentials")
+
+from flow_sdk.cli.commands.project_cmd import project_app
+
+app.add_typer(project_app, name="project")
+
 from flow_sdk.cli.commands.schema_cmd import schema_app
 
 app.add_typer(schema_app, name="schema")
@@ -1322,6 +1341,10 @@ app.add_typer(conversation_app, name="conversation")
 from flow_sdk.cli.commands.process_cmd import process_app
 
 app.add_typer(process_app, name="process")
+
+from flow_sdk.cli.commands.task_cmd import task_app
+
+app.add_typer(task_app, name="task")
 
 from flow_sdk.cli.commands.wizard_cmd import wizard_command
 
@@ -1578,6 +1601,22 @@ def uninstall():
         typer.echo("No sniffer hooks found.")
 
 
+#: Commands whose arguments or stdin carry a secret: ``VAR=VALUE`` pairs, typed keys. The log keeps
+#: the command and its names, never the values.
+_SECRET_COMMANDS = {("credentials", "set"), ("project", "setup")}
+
+
+def _carries_secrets(argv: list[str]) -> bool:
+    return tuple(argv[1:3]) in _SECRET_COMMANDS
+
+
+def _logged_argv(argv: list[str]) -> list[str]:
+    """``argv`` as the CLI log may keep it: a secret command's ``VAR=VALUE`` becomes ``VAR=***``."""
+    if not _carries_secrets(argv):
+        return argv
+    return [a if i < 3 or "=" not in a or a.startswith("-") else a.split("=", 1)[0] + "=***" for i, a in enumerate(argv)]
+
+
 def cli_main():
     """Entry point for the installed ``flow`` console script.
 
@@ -1619,7 +1658,7 @@ def cli_main():
     try:
         import select
 
-        if not sys.stdin.isatty() and select.select([sys.stdin], [], [], 0.0)[0]:
+        if not _carries_secrets(argv) and not sys.stdin.isatty() and select.select([sys.stdin], [], [], 0.0)[0]:
             from io import StringIO
 
             stdin_data = sys.stdin.read()
@@ -1658,7 +1697,7 @@ def cli_main():
 
             record = CliLogRecord(
                 workdir=workdir,
-                command=argv,
+                command=_logged_argv(argv),
                 exit_code=exit_code,
                 stdout=stdout_val,
                 stderr=stderr_val,

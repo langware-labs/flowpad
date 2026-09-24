@@ -111,6 +111,11 @@ async for change in docs.listen(poll_every=0.5):    # seconds between THIS loop'
 drives a source the heartbeat would not. The attention fast lane is a different
 mechanism (a viewer's lease) and `listen()` deliberately does not use it.
 
+That is YOUR loop's contract: it polls, at `poll_every`. The app's own agent serve
+loop does not — it drains with `pages(poll=False)` and holds the fast-lane lease
+instead (`DataSource.note_attention`), so an agent never asks a provider faster than
+the source's own lane or interval allows.
+
 ## 5. An agent on several sources
 
 ```python

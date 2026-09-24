@@ -30,16 +30,21 @@ Key on the **intent**, not on the mode and not on who authored the file:
   pins the display pane; in any other mode it opens the target as a tab right after
   your process and marks your chip. A background agent therefore cannot interrupt
   anyone. **This is the default, and it is what a bare "open it" means.**
-- **"Take me there"** — the user explicitly asks to jump to / go to / be taken to
-  something → **`flow navigate`**. It moves the tab the user is looking at, so use it
-  only when being moved is what they asked for.
+- **"Take me there"** — the user explicitly asks to navigate to / jump to / go to /
+  be taken to something → **`flow navigate`**. The word "navigate" in the request is
+  itself that explicit ask. It moves the tab the user is looking at, so use it only
+  when being moved is what they asked for.
 
 When in doubt, `flow show` — the failure mode of showing is a tab the user ignores;
 the failure mode of navigating is yanking them out of their work.
 
 ## You have a file path
 
-This is "open it" after writing or discussing a file. No TypeId, no indexing needed:
+Apply the decision rule above to the user's words first — having a path does not
+make it a `flow show`.
+
+"Open it" / "show it" after writing or discussing a file → show it. No TypeId, no
+indexing needed:
 
 ```bash
 flow show file <absolute-path>
@@ -47,8 +52,8 @@ flow show file <absolute-path>
 
 Exit 0 = shown, done.
 
-Only if the user explicitly asked to be *taken* to it does the file need an entity
-first. Two commands, no research:
+"Navigate to it" / "take me to it" → the file needs an entity first. Two commands,
+no research:
 
 ```bash
 flow record index <absolute-path> --types markdown   # returns data.typeid
@@ -80,8 +85,7 @@ SNIP
   `flowpad:snippet` marker the command refuses (exit 2).
 - `--lang` is the file extension: `py`, `js`, `rs`, `sh`. With no PATH the code is
   read from stdin into the OS temp dir; the JSON answer's `path` is that file. To
-  change it on a later turn, edit that file, then run `flow show snippet <path>` again
-  so the view reloads it — the view does not watch the file. An existing file:
+  change it on a later turn, edit that file. An existing file:
   `flow show snippet <path>` (on an explicit "take me there", `flow navigate file <path>`
   opens the same snippet view).
 - The file runs top to bottom **as written** — the markers are only comments, so the
@@ -89,15 +93,19 @@ SNIP
   point: in rust, `fn main() { ... }` goes inside the snippet region (bare statements
   do not compile).
 - Run it yourself exactly as the Run button does, and read the result before you
-  claim it works:
+  claim it works. Show first, then run THAT file by the `path` the show answered —
+  never a copy of the code (`python3 -c ...`, a scratch file): the user runs the
+  file on screen, and a copy that passes proves nothing about it:
 
 ```bash
 flow snippet run <path> --timeout 30   # JSON stdout/stderr; exit = the snippet's own, 124 on timeout
 ```
 
 - A run that never ends is killed at its timeout (the Run button's is a preference,
-  30s by default), keeping whatever it printed. Nobody has to stop it by hand; stdin
-  is closed, so `input()` fails instead of waiting.
+  30s by default), keeping whatever it printed; the view also has a Stop button that
+  kills it at once. stdin is closed, so `input()` fails instead of waiting.
+- The view watches the file: when you edit it on a later turn the open view
+  updates by itself — no need to show it again.
 
 ## You already have a TypeId
 
@@ -142,6 +150,7 @@ opens a different screen and reports success.
 | --- | --- | --- |
 | AI Configuration | `ai-config` | ai config, llm apis, models, clis |
 | Artifacts | `artifacts` | deliverables |
+| Asset list | `asset-list` | counter assets |
 | Assets | `assets` | library, docs tree |
 | Assistance | `assistance` | expert assistance |
 | Capabilities | `capabilities` | checks, system checks |

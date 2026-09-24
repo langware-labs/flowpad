@@ -285,8 +285,11 @@ class HelpdeskSource(Source):
         message_id = str((body or {}).get("id") or "")
         if not message_id:
             raise OutcomeUnknown("the hub accepted the reply but returned no id for it")
-        data = MessageData(text=text, conversation=self.ticket_origin(ticket), sent_at=datetime.now(timezone.utc), in_reply_to=answered)
-        return MessageItem(origin=self.origin(message_id, ticket), data=data)
+        # Built by the poll's own `_item`, so the send-time copy IS the record the next poll reads —
+        # hub ids included; without them the projection mints a twin of this reply.
+        item = self._item(ticket, {"text": text, "sender_id": self.hub.me(), **(body or {}), "id": message_id})
+        update = {"in_reply_to": answered, "sent_at": item.data.sent_at or datetime.now(timezone.utc)}
+        return MessageItem(origin=item.origin, data=item.data.model_copy(update=update))
 
     # ── transport ───────────────────────────────────────────────────────────
     def _where(self, origin: object) -> tuple[str, Optional[str]]:

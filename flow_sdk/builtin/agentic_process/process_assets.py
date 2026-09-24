@@ -374,7 +374,10 @@ class ProcessAssets:
 
         asset_dir = self.ensure_process_assets()
         agents = {**legacy_agents, **self._load_materialized_agents_json(asset_dir.os_path)}
-        agent_block = self._render_agents_instruction_block(agents, self.process.process_persona_path)
+        # A Chief of Staff's native roster is its staff, described in CoS.md and spawned with the Agent
+        # tool — never the "execute it yourself" catalogue embedded agents get.
+        chief = bool((self.process.context_data or {}).get("chief_of_staff"))
+        agent_block = "" if chief else self._render_agents_instruction_block(agents, self.process.process_persona_path)
         instructions = "\n\n".join(p for p in (explicit, agent_block) if p).strip()
 
         self._normalize_process_asset_mount()

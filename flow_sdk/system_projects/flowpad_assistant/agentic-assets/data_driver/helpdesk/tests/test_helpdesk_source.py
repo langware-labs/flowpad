@@ -226,8 +226,20 @@ class TestSend:
     async def test_it_picks_the_ticket_up_before_answering_every_time(self, hub):
         out = await DataDriver.loaded("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
         assert [c for c in hub.calls if c[0] == "post"] == [("post", "conversation", TICKET, "pickup"), ("post", "conversation", TICKET, "add_message")]
-        assert out.recorded is False, "the next poll ingests the sent copy onto the hub's id"
+        assert out.recorded is True, "recorded at send, on the hub's id — the next poll's copy lands on the same row"
         assert out.external_id == hub.messages[-1]["id"]
+
+    async def test_the_recorded_copy_carries_the_hub_ids_like_the_polled_one(self, hub):
+        """The send-time copy and the next poll's copy are one message. Without the hub ids on the
+        sent copy the projection mints a FlowMessage of its own, and the poll's copy (which has
+        them) lands beside it: the staff reply shows twice."""
+        from flow_sdk.builtin.source_item import SourceItem
+
+        row = _row()
+        out = await DataDriver.loaded("helpdesk").send(row, thread_key=TICKET, to=TICKET, text="try restarting it")
+        (item,) = [i for i in await SourceItem.get_all({"data_source_id": str(row.id)}) if i.external_id == out.external_id]
+        assert item.message_id == out.external_id, "the projection must land the sent copy on the hub's message id"
+        assert item.conversation_id == TICKET, "the projection must adopt the hub conversation"
 
     async def test_a_send_records_who_we_answer_as(self, hub):
         saved = []

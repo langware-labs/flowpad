@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "b621bf7deb54b28ea98a5c8b25527b80482076ca304a22eba8ee66c94b58bdc6",
+  "inputs_hash": "0f9313e09e5f0c7dc1e81e4b2c2c1a8c6eb2b5be31ed9c84be88e03b6279798f",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the single shape system with its kind registry, data sources and datasets, records, search and the SQLite layer underneath.",
@@ -39,7 +39,7 @@
       "rel_path": "data-source-asset.md",
       "title": "Data source assets",
       "summary": "Data sources as folder assets: data_driver.json manifest plus source.py discovered by convention, and the separate DataSource asset holding config, owner and cadence.",
-      "content_hash": "11a17c027d19198b8ad7763d60ba36269d1c6a5e9334190962b47f8b29c0e98b",
+      "content_hash": "5e8093c57eb83abe44b9ace820eb1e6fe3741bf0e6501c4648ea8610da65f0bb",
       "size_bytes": 16065
     },
     {
@@ -55,8 +55,8 @@
       "rel_path": "data-sources.md",
       "title": "Data sources",
       "summary": "Data sources: one DataSource reads one stream via a driver, owning query, cursor and origin, and the fetch-to-SourceItem ingestion pipeline.",
-      "content_hash": "be29ac55e7e6e2a308567f28f192a2500f12fd05f9c9abffffddb721dadcc231",
-      "size_bytes": 30245
+      "content_hash": "94df860e732461e1d64989402812132d5628b1b9b93507b2b62745a62649540a",
+      "size_bytes": 30706
     },
     {
       "name": "data-spec.md",
@@ -220,6 +220,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T11:53:02.619684+00:00",
+  "generated_at": "2026-09-22T21:26:04.324663+00:00",
   "latest_process_ref": ""
 }

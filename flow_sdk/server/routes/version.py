@@ -293,10 +293,13 @@ async def _install_version(req: InstallVersionRequest) -> InstallVersionResponse
             error="No monitor process is running, so the server can't auto-restart.",
         )
 
-    ok, output = await asyncio.to_thread(self_update.reinstall_version, version)
-    if not ok:
+    answer = await asyncio.to_thread(self_update.reinstall_version, version)
+    if not answer.ok:
         return InstallVersionResponse(
-            success=False, reason="install_failed", error="Install failed", output=output[-2000:]
+            success=False,
+            reason="install_failed",
+            error=answer.detail or "Install failed",
+            output=(answer.stdout + answer.stderr)[-2000:],
         )
 
     self_update.schedule_restart()

@@ -42,9 +42,10 @@ async def test_read_returns_each_region_as_the_viewer_edits_it(client, tmp_path)
     assert data["path"] == str(path.resolve())
     assert data["text"] == SNIPPET
     assert data["regions"] == [
-        {"index": 0, "kind": "hidden", "shown": "import json", "line": 3},
-        {"index": 1, "kind": "init", "shown": "d = {'a': 1}", "line": 5},
-        {"index": 2, "kind": "snippet", "shown": "print(json.dumps(d))", "line": 7},
+        {"index": 0, "kind": "hidden", "shown": "import sys", "line": 1},  # before the first marker
+        {"index": 1, "kind": "hidden", "shown": "import json", "line": 3},
+        {"index": 2, "kind": "init", "shown": "d = {'a': 1}", "line": 5},
+        {"index": 3, "kind": "snippet", "shown": "print(json.dumps(d))", "line": 7},
     ]
 
 
@@ -72,8 +73,8 @@ async def test_unknown_body_keys_are_rejected(client, tmp_path):
 async def test_save_writes_only_that_region_and_answers_the_reread_file(client, tmp_path):
     path = tmp_path / "s.py"
     path.write_text(SNIPPET)
-    data = (await _post(client, "save", {"path": str(path), "index": 2, "kind": "snippet", "shown": "print(d['a'])"}))["data"]
-    assert data["regions"][2]["shown"] == "print(d['a'])"
+    data = (await _post(client, "save", {"path": str(path), "index": 3, "kind": "snippet", "shown": "print(d['a'])"}))["data"]
+    assert data["regions"][3]["shown"] == "print(d['a'])"
     assert path.read_text() == SNIPPET.replace("print(json.dumps(d))", "print(d['a'])")
     assert data["text"] == path.read_text()
 
@@ -89,7 +90,7 @@ async def test_save_by_a_stale_position_is_refused_and_writes_nothing(client, tm
 async def test_save_against_text_that_changed_on_disk_is_refused(client, tmp_path):
     path = tmp_path / "s.py"
     path.write_text(SNIPPET.replace("print(json.dumps(d))", "print('agent')"))
-    body = {"path": str(path), "index": 2, "kind": "snippet", "shown": "print(1)", "base": "print(json.dumps(d))"}
+    body = {"path": str(path), "index": 3, "kind": "snippet", "shown": "print(1)", "base": "print(json.dumps(d))"}
     assert _error_code(await _post(client, "save", body)) == "STALE"
     assert "print('agent')" in path.read_text()
 
@@ -116,6 +117,17 @@ async def test_run_ok_exception_syntax_and_hang_are_all_results(client, tmp_path
     assert r["timed_out"] and r["stdout"] == "before\n"
 
 
+async def test_stop_route_ends_a_hanging_run(client, tmp_path):
+    hang = tmp_path / "hang.py"
+    hang.write_text("# %% flowpad:snippet\nprint('up', flush=True)\nwhile True:\n    pass\n")
+    run = asyncio.create_task(_post(client, "run", {"path": str(hang), "timeout_seconds": 30, "run_id": "api-1"}))
+    await asyncio.sleep(0.4)
+    assert (await _post(client, "stop", {"run_id": "api-1"}))["data"] == {"stopped": True}
+    r = (await asyncio.wait_for(run, 5))["data"]
+    assert not r["timed_out"] and r["detail"] == "The run was stopped." and r["stdout"] == "up\n"
+    assert (await _post(client, "stop", {"run_id": "api-1"}))["data"] == {"stopped": False}
+
+
 async def test_run_timeout_is_bounded(client, tmp_path):
     for bad in (0, -1, 601):
         resp = await client.post("/api/v1/snippet/run", json={"path": str(tmp_path / "x.py"), "timeout_seconds": bad})
@@ -135,3 +147,22 @@ async def test_ten_concurrent_runs_through_the_route(client, tmp_path):
         paths.append(p)
     results = await asyncio.gather(*(_post(client, "run", {"path": str(p)}) for p in paths))
     assert [r["data"]["stdout"] for r in results] == [f"{i}\n" for i in range(10)]
+
+
+async def test_a_rejected_body_answers_in_the_standard_envelope(client, tmp_path):
+    """A 422 is a FAIL envelope with a sentence, like every other failure.
+
+    FastAPI handles `RequestValidationError` itself, so it never reaches the catch-all
+    middleware, and a route bound straight to FastAPI used to answer with a raw
+    `{"detail": [ {...} ]}` — a shape no client of ours reads. `apiClient` unwraps
+    `{status,data}`; the UI's error reader was handed that LIST where it expected a
+    sentence, put an object into React, and the whole page was replaced by the error
+    screen. A mistyped field must not be able to do that.
+    """
+    resp = await client.post("/api/v1/snippet/run", json={"path": str(tmp_path / "x.py"), "bogus": 1})
+
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["status"] == "FAIL" and body["data"] is None
+    assert body["message"] == "body.bogus: Extra inputs are not permitted"
+    assert "detail" not in body, "the raw pydantic issue list must not reach a client"

@@ -210,6 +210,10 @@ _PROMPT_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 _PROMPT_ADMISSIONS: dict[str, object] = {}
 _PROMPT_WORKERS: dict[str, Any] = {}
 _PROMPT_TASKS: dict[str, asyncio.Task] = {}
+# The transcript's byte size when a PTY prompt was taken — ``stream_transcript``
+# counts only user turns written from there on as the NEW turn. Keyed by process
+# id (process-global for the same reason as above).
+_TRANSCRIPT_SIZE_AT_PROMPT: dict[str, int] = {}
 
 
 def register_prompt_task(process_id: str, task: asyncio.Task) -> None:
@@ -394,6 +398,7 @@ def _release_process_transcript_state(process: "AgenticProcess") -> None:
     process._last_broadcast_key = None  # setter drops the row
     _PENDING_ENTRIES.pop(key, None)
     _REINDEX_WATERMARKS.pop(key, None)
+    _TRANSCRIPT_SIZE_AT_PROMPT.pop(key, None)
     task = _DEBOUNCE_TASKS.pop(key, None)
     if task is not None and not task.done():
         # The flush re-reads the row and bails when it is gone, but an armed
@@ -974,13 +979,24 @@ class AgenticProcess(Entity):
         """One-shot: create → start → send → wait → answer → stop.
 
         Answers with a ``PromptResult`` — ``text`` is the reply, ``executor``
-        the process. An error or interrupted end is ``NOT_YET``, never a raise.
+        the process. An error or interrupted end is ``NOT_YET``, never a raise —
+        and so is a worker that never started: the context manager discarded
+        ``start_pty``'s failure, so ``send`` raised "No shell linked" instead.
         """
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
         proc = cls(workdir=workdir, **kwargs)
-        async with proc:
+        started = await proc.start_pty()
+        if isinstance(started, ApiFailResponse):
+            return PromptResult.not_yet(
+                started.message or "The agent could not start.", ran=False, executor=str(proc.typeid),
+            )
+        try:
             await proc.send(instruction)
             await proc.wait()
             return _build_run_result(proc)
+        finally:
+            await proc.exit()
 
     @classmethod
     async def is_installed(cls, worker_type: "WorkerType | str | None" = None) -> bool:
@@ -1381,6 +1397,8 @@ class AgenticProcess(Entity):
             # back to headless. Headless never reaches here (the loader skips
             # ``start`` when ``pty_mode is False``).
             if visible is True:
+                if not self.pty_mode:
+                    self._forget_broadcast_on_transport_change()
                 self.pty_mode = True
 
             shell = await self.shell() if self.shell_id else None
@@ -1710,16 +1728,18 @@ class AgenticProcess(Entity):
             self._requeue_undelivered(launched_head)
             return ApiFailResponse(message=str(e))
 
-    @action.post(action_name="exit")
-    async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Kill worker process but keep shell entity alive (status=stopped). Use before restart."""
-        if self.hub_route:
-            return await self._relay_json("exit", body={}, refresh=False)
+    async def _stop_headless_turn(self, *, source: str) -> None:
+        """Stop this process's in-flight print-mode turn and its CLI child.
+
+        The turn runs detached from the request that started it, so nothing
+        else ends it: a process exited or deleted mid-turn would otherwise keep
+        its CLI running (and writing) until the vendor finished on its own.
+        """
         worker = _PROMPT_WORKERS.get(self.id)
         turn = _PROMPT_TASKS.get(self.id)
         # A completion must not launch another queued turn during teardown.
         if (worker is not None or turn is not None or not self.shell_id) and self.queue.exists():
-            self.queue.clear(source="exit")
+            self.queue.clear(source=source)
         if worker is not None or turn is not None:
             if worker is not None:
                 await worker.close_session()
@@ -1728,6 +1748,13 @@ class AgenticProcess(Entity):
                 await asyncio.gather(turn, return_exceptions=True)
             if worker is not None:
                 unregister_prompt_worker(self.id, worker)
+
+    @action.post(action_name="exit")
+    async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Kill worker process but keep shell entity alive (status=stopped). Use before restart."""
+        if self.hub_route:
+            return await self._relay_json("exit", body={}, refresh=False)
+        await self._stop_headless_turn(source="exit")
         if not self.shell_id:
             # Headless: a finished turn leaves nothing to kill, but the process still ends STOPPED.
             self.status = ProcessStatus.STOPPED.value
@@ -1806,6 +1833,8 @@ class AgenticProcess(Entity):
         # context_data) rather than overwriting it from a stale snapshot.
         fresh = await AgenticProcess.get_by_id(self.id) or self
         fresh.visible = False
+        if fresh.pty_mode:
+            fresh._forget_broadcast_on_transport_change()
         # Persist the durable transport intent so a reload keeps this session
         # headless (the loader reads ``pty_mode`` to decide whether to attach a PTY).
         fresh.pty_mode = False
@@ -2986,13 +3015,20 @@ class AgenticProcess(Entity):
         if not command:
             return ApiFailResponse(message="command is required", status_code=400)
 
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
         shell_id = str(body.get("shell_id") or "").strip()
         shell = await Shell.get_one({"id": shell_id}) if shell_id else await self._current_terminal()
         if shell is None:
-            return ApiFailResponse(
-                message="No open terminal — run `flow terminal open` first",
-                status_code=404,
+            # An ANSWER, not a transport error: there is no terminal to run in —
+            # NOT_FOUND, which `flow terminal run` already exits as 4 — and the
+            # caller reads why from the same place it reads every other outcome.
+            missing = CliResult.not_found(
+                f"There is no terminal {shell_id!r}." if shell_id
+                else "No open terminal — run `flow terminal open` first.",
+                command=command,
             )
+            return ApiSuccessResponse(data=missing.model_dump(mode="json"))
 
         try:
             timeout = float(body.get("timeout") or 120.0)
@@ -3013,7 +3049,14 @@ class AgenticProcess(Entity):
         The event is re-emitted as ``wizard.closed`` so the frontend promise
         registered by ``launchWizard`` can resolve through the same entity-event
         channel as other AgenticProcess control events.
+
+        ``status`` is the agent's own three-way word — it keeps "cancel" apart
+        from "error" for the person, which no exit code does. ``answer`` is the
+        same close as the ``WizardResult`` every other wizard run answers with:
+        ``OK`` with the data as its value when done, ``NOT_YET`` otherwise.
         """
+        from flow_sdk.schema.data_spec.returned_value_spec import WizardResult  # noqa: PLC0415
+
         status = str(payload.get("status") or "").strip().lower()
         if status not in {"done", "cancel", "error"}:
             status = "error"
@@ -3024,6 +3067,13 @@ class AgenticProcess(Entity):
             "errorStr": payload.get("errorStr"),
             "wizardId": payload.get("wizardId") or (self.context_data or {}).get("wizard", {}).get("id") or self.id,
         }
+        if status == "done":
+            answer = WizardResult.satisfied("The wizard is done.", value=result["data"])
+        elif status == "cancel":
+            answer = WizardResult.not_yet("The wizard was cancelled.")
+        else:
+            answer = WizardResult.not_yet(result["errorStr"] or "The wizard reported an error.")
+        result["answer"] = answer.model_dump(mode="json")
         await self.emit_entity_event("wizard.closed", result)
         return result
 
@@ -3075,6 +3125,7 @@ class AgenticProcess(Entity):
         # stdin) boots to an empty composer and treats a raw paste+CR as literal
         # text, so its prompt is typed once the composer is ready instead.
         typed = getattr(self.driver, "pty_launch_drops_prompt", False)
+        self._note_transcript_size_at_prompt()
         if await self.is_running():
             if typed:
                 self._schedule_gated_pty_delivery(instruction)
@@ -3102,7 +3153,12 @@ class AgenticProcess(Entity):
         executor = str(self.typeid)
         taken = await self.prompt(instruction)
         if isinstance(taken, ApiFailResponse):
-            return PromptResult.not_yet(taken.message or "The turn was not taken.", ran=False, executor=executor)
+            detail = taken.message or "The turn was not taken."
+            if taken.status_code == 409:
+                # Another turn is in flight: the slot is held — try later.
+                return PromptResult.held(detail, executor=executor)
+            # The worker could not take it at all — retrying changes nothing.
+            return PromptResult.not_yet(detail, ran=False, executor=executor)
         return PromptResult.satisfied("The turn was accepted.", executor=executor)
 
     async def _is_live_pty(self) -> bool:
@@ -3135,9 +3191,20 @@ class AgenticProcess(Entity):
             # the session) would DROP these keystrokes. Wait for the prompt to be
             # ready HERE so callers — and submit(instruction), which types via
             # input() — never have to settle the PTY themselves.
+            #
+            # Ready means the vendor's composer marker, the same gate prompt()
+            # types behind — not output quiescence. A resuming claude goes quiet
+            # for ~300ms between its terminal probes and the transcript repaint,
+            # and anything typed into that gap is discarded (the input handler
+            # isn't attached yet): the first line typed after a Vibe→terminal
+            # switch vanished. Quiescence stays the gate for a marker-less vendor.
             shell = await self.shell()
             if shell:
-                await shell.wait_for_input_ready()
+                pattern = getattr(self.driver, "pty_composer_ready_pattern", None)
+                if pattern is None:
+                    await shell.wait_for_input_ready()
+                elif not await shell.wait_for_composer_ready(pattern):
+                    return ApiFailResponse(message="the terminal closed before its input box was ready")
             await self.send(text.encode())  # raw bytes ⇒ no submit
             return ApiSuccessResponse(data={"status": "typed", "staged": False})
         # ``queue.enqueue`` persists the entry to its own file — durable without a
@@ -3232,6 +3299,8 @@ class AgenticProcess(Entity):
         )
 
         deadline = time.monotonic() + timeout
+        # A driver whose worker writes synchronously can say how often looking is worth it.
+        poll_interval = min(poll_interval, float(getattr(self.driver, "transcript_poll_seconds", poll_interval)))
 
         # Wait until the driver can locate a transcript (worker has been
         # spawned and produced — or pre-touched — a session JSONL).
@@ -3255,7 +3324,10 @@ class AgenticProcess(Entity):
         # soft-terminal so heavy multi-tool turns finish within 28 s, but
         # leave enough room for a follow-up ``tool_use`` to grow the file
         # and reset the timer.
-        _settle_seconds = 2.0
+        # A driver whose worker writes its whole turn before it unregisters (nothing can land after
+        # the marker) declares a shorter settle as ``transcript_settle_seconds``; the lag is a fact
+        # about the vendor's CLI, so the vendor says it.
+        _settle_seconds = float(getattr(self.driver, "transcript_settle_seconds", 2.0))
         _post_tool_settle_seconds = 8.0
         # ERROR is an abnormal END (the CLI gave up — retries mid-turn are API_ERROR), so it ends a turn too.
         _terminal_states = {_WS.COMPLETE, _WS.INTERRUPTED, _WS.INACTIVE, _WS.ERROR}
@@ -3264,7 +3336,13 @@ class AgenticProcess(Entity):
         # the stream opened: a reused session's tail is the PRIOR turn's IDLE. Not
         # global: Claude's bare ``system:init`` is IDLE before its first turn lands.
         _is_user_turn = getattr(self.driver, "is_transcript_user_turn", None)
-        _user_turns_at_open: int | None = None
+        # Count against the transcript as it stood when the turn was PROMPTED.
+        # Copilot (1.0.88) creates its session record only with the first
+        # user.message, so "the file as first read" already holds this turn and
+        # the IDLE after it never ended the stream. The file as first read is the
+        # fallback for a stream no prompt() of this process preceded.
+        _prompt_offset = _TRANSCRIPT_SIZE_AT_PROMPT.pop(str(self.id), None)
+        _user_turns_at_open: int | None = None if _prompt_offset is None else 0
         _user_turns_seen = 0
         _terminal_since: float | None = None
         _terminal_size: int | None = None
@@ -3273,6 +3351,7 @@ class AgenticProcess(Entity):
 
         offset = 0
         while True:
+            line_start = offset
             try:
                 with open(transcript_path, "rb") as fh:
                     fh.seek(offset)
@@ -3281,8 +3360,10 @@ class AgenticProcess(Entity):
             except OSError:
                 new_bytes = b""
 
-            for raw_line in new_bytes.decode("utf-8", errors="replace").splitlines():
-                raw_line = raw_line.strip()
+            for raw_bytes in new_bytes.splitlines(keepends=True):
+                starts_at = line_start
+                line_start += len(raw_bytes)
+                raw_line = raw_bytes.decode("utf-8", errors="replace").strip()
                 if not raw_line:
                     continue
                 try:
@@ -3300,11 +3381,15 @@ class AgenticProcess(Entity):
                             extended - deadline,
                         )
                         deadline = extended
-                if _is_user_turn is not None and _is_user_turn(entry):
+                if (
+                    _is_user_turn is not None
+                    and (_prompt_offset is None or starts_at >= _prompt_offset)
+                    and _is_user_turn(entry)
+                ):
                     _user_turns_seen += 1
                 yield entry
             if _user_turns_at_open is None:
-                _user_turns_at_open = _user_turns_seen  # the first read is the file as opened
+                _user_turns_at_open = _user_turns_seen
 
             tail_status = self.driver.tail_status(transcript_path)
             # Resume-aware guard: while THIS process's turn worker is still live,
@@ -3359,6 +3444,8 @@ class AgenticProcess(Entity):
             now = time.monotonic()
 
             if _terminal:
+                if _settle_seconds <= 0:
+                    return  # nothing can land after the marker: no settle to wait out
                 if _terminal_since is None or _terminal_size != cur_size:
                     _terminal_since = now
                     _terminal_size = cur_size
@@ -3430,19 +3517,23 @@ class AgenticProcess(Entity):
         instruction: str | None = None,
         session_id: str | None = None,
     ) -> ApiSuccessResponse | ApiFailResponse:
-        """Execute an instruction on this process.
+        """Execute an instruction on this process — the turn's ``PromptResult``.
 
-        Called by the TS SDK's executeInstruction(). Delegates to prompt()
-        which handles both fresh-start and send-to-running-process cases.
+        Called by the TS SDK's executeInstruction(). Goes through ``send_turn``,
+        so the answer is the same one a Python caller holds: OK means the turn
+        was ACCEPTED (it runs in the background), NOT_YET means it was not. Only
+        ``busy`` — another turn in flight — is HTTP's 409; everything else is the
+        dump with a 200, like every other call in the system.
         """
         if not instruction:
             return ApiFailResponse(message="instruction is required")
         if session_id:
             self.session_id = session_id
-        result = await self.prompt(instruction)
-        if isinstance(result, ApiFailResponse):
-            return result
-        return result if isinstance(result, ApiSuccessResponse) else ApiSuccessResponse(data={"status": "ok"})
+        answer = await self.send_turn(instruction)
+        payload = answer.model_dump(mode="json")
+        if answer.busy:
+            return ApiFailResponse(message=answer.detail, status_code=409, data=payload)
+        return ApiSuccessResponse(data=payload)
 
     # ── Print-mode streaming prompt ──────────────────────────────────────────
     #
@@ -3805,6 +3896,22 @@ class AgenticProcess(Entity):
         if composer_gated:
             return None, True
         return message, not driver.pty_submits_on_paste
+
+    def _note_transcript_size_at_prompt(self) -> None:
+        """Record where the transcript ends before this prompt lands.
+
+        Only for a driver that ends a turn on IDLE after a new user turn
+        (``is_transcript_user_turn``) — see ``stream_transcript``. No transcript
+        yet (a fresh launch) is zero.
+        """
+        if getattr(self.driver, "is_transcript_user_turn", None) is None:
+            return
+        path = self.driver.transcript_path(self)
+        try:
+            size = path.stat().st_size if path else 0
+        except OSError:
+            size = 0
+        _TRANSCRIPT_SIZE_AT_PROMPT[str(self.id)] = size
 
     def _schedule_gated_pty_delivery(self, message: str) -> None:
         """Type ``message`` once the composer is ready, without blocking ``prompt()``."""
@@ -4379,7 +4486,7 @@ class AgenticProcess(Entity):
         )
 
     @action.post(action_name="observe-turn")
-    async def observe_turn(self, after_entry_id: str | None = None) -> Any:
+    async def observe_turn(self, after_entry_id: str | None = None, from_start: bool = False) -> Any:
         """Stream an IN-FLIGHT turn's transcript entries to a client that did
         NOT start it.
 
@@ -4387,7 +4494,8 @@ class AgenticProcess(Entity):
         transcript entry; send me what follows it". Omit it and the stream
         watermarks at open, which is the historical behaviour — see the
         watermark block below for why that default is wrong for a client that
-        learns about a turn late.
+        learns about a turn late. *from_start* is the position of a client that
+        holds no entry at all: everything on disk is sent.
 
         A turn's content reaches the client that sent it through that client's
         own ``prompt`` response stream. Nobody else has a source: a turn typed
@@ -4492,7 +4600,11 @@ class AgenticProcess(Entity):
         # today, never flood a pane with the whole session.
         entries_at_open = _read_entries(path) if path is not None and path.exists() else []
         emitted = len(entries_at_open)
-        if after_entry_id:
+        if from_start:
+            # The client holds NOTHING of this session — it mounted before the transcript existed,
+            # or on a session another process runs — so everything on disk is news to it.
+            emitted = 0
+        elif after_entry_id:
             # Scan from the tail: the client's position is far likelier to be
             # recent, and the last match wins if an id somehow repeats.
             for index in range(len(entries_at_open) - 1, -1, -1):
@@ -5985,7 +6097,9 @@ class AgenticProcess(Entity):
         Best-effort — a failure to unlink never blocks the entity delete.
 
         Also ends the process's Activity: a deleted process never reaches ``close``,
-        and an unended root stays on the footer chip as live work.
+        and an unended root stays on the footer chip as live work. An in-flight
+        headless turn is stopped first: its CLI child would otherwise outlive
+        the row, and keep writing the transcript this delete removes.
         """
         end_process_activity(self.id, message="deleted")
         if self.hub_route:
@@ -5995,6 +6109,8 @@ class AgenticProcess(Entity):
             relayed = await self._relay_json(None, method="DELETE", refresh=False)
             if isinstance(relayed, ApiFailResponse):
                 raise RuntimeError(f"deployed agent process delete failed: {relayed.message}")
+        else:
+            await self._stop_headless_turn(source="delete")
         if delete_chats and not self.hub_route:  # a route row owns no transcript here
             self._delete_session_transcript()
         result = await super().delete()
@@ -6604,7 +6720,13 @@ class AgenticProcess(Entity):
         explicit = str((self.context_data or {}).get("instructions") or "").strip()
         summary = (await self.resolve_context_summary()) or ""
         always = self._resolve_always_use_skills_block()
-        return "\n\n".join(p for p in (explicit, summary, always) if p) or None
+        # A Chief of Staff reads its open tasks every turn — resolved now, not at launch.
+        tasks = ""
+        if (self.context_data or {}).get("chief_of_staff"):
+            from flow_sdk.tasks.cos import open_tasks_block  # noqa: PLC0415
+
+            tasks = await open_tasks_block(self)
+        return "\n\n".join(p for p in (explicit, summary, always, tasks) if p) or None
 
     def _resolve_always_use_skills_block(self) -> str:
         """The project's ``always_use_skills`` as a system-prompt directive.
@@ -7550,6 +7672,21 @@ class AgenticProcess(Entity):
             # axes. Wrong arity raises here rather than surfacing as a silent
             # mis-index at the read.
             _LAST_BROADCAST_KEYS[str(self.id)] = _BroadcastKey(*key)
+
+    def _forget_broadcast_on_transport_change(self) -> None:
+        """Drop the flush's dedup key when the transport flips.
+
+        The key records only what the FLUSH broadcast; a headless turn's end
+        edge goes out on the prompt path, so the key can still read the old
+        turn's ``busy=True``. A PTY turn's busy edges come from the flush alone,
+        so that stale key deduped the first PTY turn and the UI never saw it
+        start. A new transport starts a new broadcast history.
+
+        Pops the row rather than assigning through the setter: ``_perform_open``
+        calls this, and a ``self.x =`` there reads as launch output to the
+        copy-back guard (``test_launch_output_fields``).
+        """
+        _LAST_BROADCAST_KEYS.pop(str(self.id), None)
 
     async def _flush_transcript_change(self) -> None:
         """Run after the debounce window on this AP's transcript.

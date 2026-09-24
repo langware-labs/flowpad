@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { withViewMode } from '../_shared/view-mode';
-import { apiBase } from '../_shared/api';
+import { apiBase, waitForIndexerIdle } from '../_shared/api';
 
 const API_URL = apiBase();
 
@@ -12,8 +12,11 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 
 test.describe('Search Scan Info Stats', () => {
   // ── Test 1: Bootstrap API includes scan_info ───────────────────────────────
+  // scan_info is served by the deferred /api/v1/graph/info route, not
+  // /graph/bootstrap (split out of bootstrap so boot does not wait on it; see
+  // docs/boot.md).
   test('bootstrap API response includes scan_info with expected shape', async ({ request }) => {
-    const res = await request.get(`${API_URL}/api/v1/graph/bootstrap`);
+    const res = await request.get(`${API_URL}/api/v1/graph/info`);
     expect(res.status()).toBe(200);
 
     const body = await res.json();
@@ -107,7 +110,7 @@ test.describe('Search Scan Info Stats', () => {
   });
 
   // ── Test 6: Rebuild-index button wires archive→clear→scan→index in order ───
-  test('rebuild-index button orchestrates archive, clear, scan and index in order', async ({ page }) => {
+  test('rebuild-index button orchestrates archive, clear, scan and index in order', async ({ page, request }) => {
     await dismissSetupModal(page);
     await page.goto('/dock/search');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
@@ -127,6 +130,10 @@ test.describe('Search Scan Info Stats', () => {
     const indexedBefore = await readIndexedCount();
     expect(indexedBefore).toBeGreaterThanOrEqual(0);
 
+    // The button is disabled BY DESIGN while any indexer activity runs (busy =
+    // an activity in flight) — and a cleared DB indexes on its first page load.
+    // "Enabled" is only the contract once the indexer is idle.
+    expect(await waitForIndexerIdle(request), 'indexer idle before the rebuild click').toBe(true);
     const rebuildButton = page.locator('[data-testid="rebuild-index"]');
     await expect(rebuildButton).toBeVisible({ timeout: 5_000 });
     await expect(rebuildButton).toBeEnabled({ timeout: 5_000 });

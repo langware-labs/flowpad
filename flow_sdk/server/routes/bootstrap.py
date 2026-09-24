@@ -1101,6 +1101,33 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
     return ensured
 
 
+async def _seed_project_namespaces() -> None:
+    """Give every already-known project its ontology namespace, and build the map.
+
+    New projects are seeded when they are materialized; this covers the ones that
+    existed before. Seeding is idempotent and never overwrites a declaration, so this
+    converges — after the first boot it writes nothing and only fills the map, which
+    is what a synchronous kind loader reads.
+    """
+    from flow_sdk.builtin.project_manifest import ensure_project_namespace  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
+
+    projects = await get_cached_projects()
+
+    def _sweep() -> None:
+        for project in projects:
+            try:
+                # Reads the project's manifest, and tells the namespace map what it read —
+                # which is why no separate "load every manifest row" query is needed.
+                ensure_project_namespace(project)
+            except Exception as exc:  # noqa: BLE001 — one bad checkout must not stop the sweep
+                logging.warning("[namespace] %s could not be seeded (non-fatal): %s", project.id, exc)
+
+    # ONE thread for the whole sweep. Per project this is a ~40µs file read; a thread
+    # hop each costs several times that, and the projects are independent.
+    await asyncio.to_thread(_sweep)
+
+
 async def _reap_protected_path_projects() -> None:
     """Remove stale protected-path Project rows and exact Project shadows.
 
@@ -1329,6 +1356,10 @@ async def index_system_content() -> None:
         await _reap_protected_path_projects()
     except Exception as e:
         logging.warning(f"[startup-index] Failed to reap mount-root project (non-fatal): {e}")
+    try:
+        await _seed_project_namespaces()
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to seed project namespaces (non-fatal): {e}")
     try:
         await _index_system_project_markdowns(system_projects)
     except Exception as e:
@@ -1756,11 +1787,18 @@ def project_to_dict(project) -> dict:
     runs, so a project that must never become CURRENT has to say so here —
     without it, the compact dict looks like an ordinary project and the app
     opens in it.
+
+    ``fs_storage_mount_path`` is the third: the SDK caches this dict as the
+    expanded project, so a "start a session in this project" that resolves the
+    workdir off the cached row got nothing until some later list/activate call
+    happened to overwrite it — a launch clicked in that window silently did
+    nothing (no request, no error).
     """
     return {
         **entity_to_dict(project),
         "locale": getattr(project, "locale", None),
         "hidden": bool(getattr(project, "hidden", False)),
+        "fs_storage_mount_path": getattr(project, "fs_storage_mount_path", None),
     }
 
 

@@ -57,6 +57,7 @@
     "signals",
     "data-sources",
     "rag",
+    "asset-list",
     "process-runs",
     "plan",
     "cron",
@@ -664,6 +665,14 @@
       "chrome": "workspace"
     },
     "rag": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "workspace"
+    },
+    "asset-list": {
       "addressable": true,
       "pointer": "none",
       "folds_pointer": false,

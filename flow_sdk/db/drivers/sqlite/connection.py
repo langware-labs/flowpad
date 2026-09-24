@@ -1,6 +1,7 @@
 """SQLite connection and schema definitions for async SQLAlchemy."""
 
 import asyncio
+import logging
 import sqlite3
 import threading
 import time
@@ -13,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
 
 from flow_sdk import toplog
+
+logger = logging.getLogger(__name__)
 
 
 def get_database_path() -> str:
@@ -215,6 +218,182 @@ def _begin_immediate(conn) -> None:
         conn.exec_driver_sql("BEGIN IMMEDIATE")
     finally:
         _writer_served()
+
+
+def _release_handle(handle: sqlite3.Connection) -> None:
+    """Close a sqlite handle, ending its transaction first.
+
+    ``close()`` alone does not release a transaction while a cursor still holds
+    a statement: sqlite defers the whole close, and the handle keeps its
+    transaction and the writer lock until that statement is finalized. An
+    explicit rollback ends the transaction either way.
+    """
+    try:
+        if handle.in_transaction:
+            handle.rollback()
+    except sqlite3.Error:
+        logger.warning("sqlite: rollback before close failed", exc_info=True)
+    finally:
+        handle.close()
+
+
+def _detach_and_release(conn, handle: sqlite3.Connection | None) -> None:
+    """Detach ``conn`` from its handle first, so a later ``close()``/``stop()``
+    on it returns at once instead of queueing to a worker that is going away."""
+    conn._connection = None
+    if handle is not None:
+        _release_handle(handle)
+
+
+def _make_aiosqlite_stop_idempotent() -> None:
+    """A second ``aiosqlite.Connection.stop()`` returns no future to wait on.
+
+    ``stop()`` queues a sentinel that ends the connection's worker thread and
+    returns a future the worker resolves. A SECOND stop queues another sentinel
+    behind the first — the worker has exited by then, so that future never
+    resolves. SQLAlchemy reaches exactly that when a cancel lands while it
+    terminates a connection: ``terminate()`` shields ``close()``, is cancelled,
+    and falls back to ``stop()``; the shielded ``close()`` then calls ``stop()``
+    in its ``finally`` and awaits the orphan future forever. Nothing can cancel
+    it (it is shielded), so the loop's shutdown — ``asyncio.run`` gathering its
+    tasks, a TestClient portal joining its thread — hangs with it. Under writer
+    contention every connection sits in a 15s busy wait, so a cancel almost
+    always lands there. Upstream as of aiosqlite 0.22.1 / SQLAlchemy 2.0.46.
+
+    The stop also closes the sqlite handle it was called for. Upstream's
+    sentinel reads ``self._connection`` when the worker runs it, but a
+    ``close()`` that follows the stop sets that to None first: its own call is
+    refused ("Connection closed") and its ``finally`` clears the attribute. The
+    worker then exits without closing anything, and while any cursor still
+    references the handle, its transaction and the writer lock stay held.
+    """
+    import aiosqlite
+    import aiosqlite.core as core
+
+    stop = aiosqlite.Connection.stop
+    if getattr(stop, "_flow_idempotent", False):
+        return
+
+    def _stop_once(self):
+        if not self._running:
+            return None  # already stopping: the first sentinel ends the worker
+        self._running = False
+        handle = self._connection
+
+        def close_and_stop():
+            _detach_and_release(self, handle)
+            return core._STOP_RUNNING_SENTINEL
+
+        try:
+            future = asyncio.get_event_loop().create_future()
+        except Exception:  # noqa: BLE001 — no loop in this thread, as upstream
+            future = None
+        self._tx.put_nowait((future, close_and_stop))
+        return future
+
+    _stop_once._flow_idempotent = True
+    aiosqlite.Connection.stop = _stop_once
+
+
+def _release_connections_whose_loop_closed() -> None:
+    """A connection whose event loop closed under it closes its sqlite handle.
+
+    aiosqlite runs every call on a worker thread and hands the outcome back
+    through the caller's loop. When that loop has closed, the hand-back raises
+    ``RuntimeError: Event loop is closed``. Upstream the error escapes the
+    worker, so the thread dies and the sqlite handle stays open with whatever
+    transaction it holds. Nothing can release it now: every rollback, close or
+    stop is queued to a thread that no longer exists, and a caller awaiting one
+    waits forever. If the call in flight was a ``BEGIN IMMEDIATE`` waiting out
+    busy_timeout, it takes the writer lock after its owner is gone and holds it
+    for the rest of the process. That is how a pytest-timeout during a
+    TestClient startup, whose portal loop closes without waiting for the
+    worker, left every later test in the session "database is locked"
+    (QA cycle 2026-09-23).
+
+    A closed loop can never resume the coroutine that owned the call, so the
+    connection is abandoned. The worker closes the handle on its own thread,
+    which rolls back and releases the lock. It detaches the handle so later
+    ``close()``/``stop()`` calls return at once, answers anything still
+    queued, and exits. Upstream as of aiosqlite 0.22.1.
+    """
+    import queue
+    import weakref
+
+    import aiosqlite.core as core
+
+    init = core.Connection.__init__
+    if getattr(init, "_flow_releases_on_closed_loop", False):
+        return
+
+    def _handoff(future, deliver, value) -> bool:
+        """Resolve ``future`` on its loop; False when that loop has closed."""
+        try:
+            future.get_loop().call_soon_threadsafe(deliver, future, value)
+        except RuntimeError:
+            if not future.get_loop().is_closed():
+                raise
+            return False
+        return True
+
+    def _step(future, function) -> tuple[bool, bool]:
+        """Run one queued call and hand its outcome to its caller.
+
+        Returns (handed back — False when the caller's loop has closed,
+        the call was the stop sentinel).
+        """
+        try:
+            deliver, value = core.set_result, function()
+        except BaseException as e:  # noqa: BLE001 — every outcome goes to its caller
+            deliver, value = core.set_exception, e
+        handed_back = future is None or _handoff(future, deliver, value)
+        return handed_back, deliver is core.set_result and value is core._STOP_RUNNING_SENTINEL
+
+    def _abandon(tx, conn_ref) -> None:
+        conn = conn_ref()
+        if conn is not None:
+            conn._running = False
+            _detach_and_release(conn, conn._connection)
+        while True:
+            try:
+                future, function = tx.get_nowait()
+            except queue.Empty:
+                return
+            _step(future, function)
+
+    def _worker(tx, conn_ref) -> None:
+        while True:
+            handed_back, stopped = _step(*tx.get())
+            if not handed_back:
+                _abandon(tx, conn_ref)
+                return
+            if stopped:
+                return
+
+    def _init(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        self._thread = threading.Thread(target=_worker, args=(self._tx, weakref.ref(self)))
+
+    _init._flow_releases_on_closed_loop = True
+    core.Connection.__init__ = _init
+
+
+def _patch_aiosqlite() -> None:
+    """Both patches reach into aiosqlite internals as of 0.22; on any other
+    version they could silently mis-drive its worker, so they stand down."""
+    import aiosqlite
+
+    if not aiosqlite.__version__.startswith("0.22."):
+        logger.warning(
+            "sqlite: aiosqlite %s is not 0.22.x — the stop/closed-loop patches are not installed",
+            aiosqlite.__version__,
+        )
+        return
+    _make_aiosqlite_stop_idempotent()
+    _release_connections_whose_loop_closed()
+
+
+_patch_aiosqlite()
 
 
 def install_pragmas_and_immediate(engine: AsyncEngine) -> None:

@@ -75,7 +75,7 @@ async def project(home, tmp_path):
 
 
 def _manifest(name: str, *env_vars: str, **extra) -> dict:
-    return {"name": name, "vars": {v: {"label": v} for v in env_vars}, **extra}
+    return {"name": name, "vars": {v: {"label": v} for v in env_vars}, "setup": f"Store it: `flow credentials set {name} ...`.", **extra}
 
 
 async def _deployment(environment: str, name: str = "qa") -> Deployment:
@@ -203,6 +203,7 @@ async def test_status_reads_one_environment_and_lists_every_one(home, project):
             "name": "db",
             "vars": {"DATABASE_URL": {}, "SENTRY_DSN": {"required": False}},
             "environments": {"production": {"required": ["DATABASE_URL", "SENTRY_DSN"]}},
+            "setup": "Store it: `flow credentials set db DATABASE_URL=...`.",
         },
         values={"DATABASE_URL": "dev"},
     )

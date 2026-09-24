@@ -12,6 +12,7 @@ import {
 } from '@src/components/ui/alert-dialog';
 import { ActionInfo, dataManager, Trigger } from '@sdk';
 import Editor from '@monaco-editor/react';
+import { applyShikiTheme, monacoTheme } from '@src/components/code-editor/shikiMonaco';
 import { Pencil } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useRef, useState } from 'react';
@@ -148,7 +149,8 @@ export function TriggerEditor({ trigger }: Props) {
             language="python"
             value={content}
             onChange={(val) => setContent(val ?? '')}
-            theme={resolvedTheme === 'dark' ? 'vs-dark' : 'light'}
+            onMount={(_editor, monaco) => applyShikiTheme(monaco, 'python', resolvedTheme)}
+            theme={monacoTheme(resolvedTheme)}
             options={{
               readOnly: isReadOnly,
               fontSize: 13,

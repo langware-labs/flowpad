@@ -27,6 +27,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Journey anchor for the session launcher (`?highlight=NewSession`). */
 const NEW_SESSION_TAG = 'NewSession';
+/** Roles a project invite may grant — mirrors ``PROJECT_INVITE_ROLES`` on the backend. */
+const PROJECT_INVITE_ROLES = ['member', 'admin'] as const;
 
 interface ProjectHomeProps {
   /** Pin spawned shells/processes to this project; otherwise the active project. */
@@ -245,6 +247,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
             allowInviteLink
             showInviteButton
             beforeInvite={beforeProjectInvite}
+            inviteRoles={PROJECT_INVITE_ROLES}
           />
         </div>
       )}

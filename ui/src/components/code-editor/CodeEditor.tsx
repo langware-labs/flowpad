@@ -14,12 +14,13 @@ import { ScrollArea, ScrollBar } from '@src/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useFS } from '@src/hooks/useFS';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { TabInfo, useEditorStore } from '@src/store/use-editor-store';
-import { ChevronDown, ChevronUp, Pin, TerminalIcon, X } from 'lucide-react';
+import { openInPreview, TabInfo, useEditorStore } from '@src/store/use-editor-store';
+import { ChevronDown, ChevronUp, FolderTree, Pin, TerminalIcon, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DiffViewer from './DiffViewer';
 import { EditorPane } from './EditorPane';
+import { EditorFileTree } from './EditorFileTree';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 
 interface EditorFile {
@@ -82,15 +83,29 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   const createTabInfo = useCallback(
     (filePath: string): TabInfo => ({
       path: filePath,
+      isPreview: true,
       onDirtyChange: (isDirty: boolean) => {
-        setOpenTabs((prevTabs) => prevTabs.map((tab) => (tab.path === filePath ? { ...tab, isDirty } : tab)));
+        // Editing a preview tab keeps it — it must not be replaced by the next open.
+        setOpenTabs((prevTabs) =>
+          prevTabs.map((tab) =>
+            tab.path === filePath ? { ...tab, isDirty, isPreview: tab.isPreview && !isDirty } : tab,
+          ),
+        );
       },
     }),
     [],
   );
 
-  const { isTerminalExpanded, setIsTerminalExpanded, editorTabs, setEditorTabs, editorActiveTab, setEditorActiveTab } =
-    useEditorStore();
+  const {
+    isTerminalExpanded,
+    setIsTerminalExpanded,
+    editorTabs,
+    setEditorTabs,
+    editorActiveTab,
+    setEditorActiveTab,
+    showFileTree,
+    setShowFileTree,
+  } = useEditorStore();
 
   // State for failed file tracking - must be declared BEFORE useMemo that might reference it
   const [failedFiles] = useState<Set<string>>(new Set());
@@ -151,16 +166,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     });
 
     // Auto-open the streaming file
-    setOpenTabs((prev) => {
-      // If tab already exists, just return as-is
-      if (prev.some((tab) => tab.path === activePath)) {
-        return prev;
-      }
-
-      // Close unpinned tabs before opening new one
-      const filteredTabs = prev.filter((tab) => tab.isPinned);
-      return [...filteredTabs, createTabInfo(activePath)];
-    });
+    setOpenTabs((prev) => openInPreview(prev, createTabInfo(activePath)));
     setActiveTab(() => activePath);
   }, [activePath, contentCache, createTabInfo]);
 
@@ -218,17 +224,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     // Clear pending state
     setPendingOpenFile(null);
 
-    // Auto-close unpinned tabs when dock changes to a different file
-    setOpenTabs((prev) => {
-      // If tab already exists, just return as-is
-      if (prev.some((tab) => tab.path === pendingOpenFile)) {
-        return prev;
-      }
-
-      // Close unpinned tabs before opening new one
-      const filteredTabs = prev.filter((tab) => tab.isPinned);
-      return [...filteredTabs, createTabInfo(pendingOpenFile)];
-    });
+    // A different file from the dock takes over the preview tab
+    setOpenTabs((prev) => openInPreview(prev, createTabInfo(pendingOpenFile)));
 
     setActiveTab(pendingOpenFile);
 
@@ -239,17 +236,45 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     }
   }, [pendingOpenFile, openFiles, createTabInfo, downloadFileContent]);
 
-  const togglePinTab = useCallback((filePath: string) => {
-    setOpenTabs((prev) => prev.map((tab) => (tab.path === filePath ? { ...tab, isPinned: !tab.isPinned } : tab)));
+  const keepTab = useCallback((filePath: string) => {
+    setOpenTabs((prev) => prev.map((tab) => (tab.path === filePath ? { ...tab, isPreview: false } : tab)));
   }, []);
+
+  const togglePinTab = useCallback((filePath: string) => {
+    setOpenTabs((prev) =>
+      prev.map((tab) => (tab.path === filePath ? { ...tab, isPinned: !tab.isPinned, isPreview: false } : tab)),
+    );
+  }, []);
+
+  // Switching files is navigation (URL-first): the tab follows the URL, and the
+  // active scope rides along so the file tree keeps its filter.
+  const openTabPath = useCallback(
+    (path?: string) => navigation.openEditor(path, { scope: currentDock?.scopeFilter }),
+    [navigation, currentDock],
+  );
+
+  // A tree pick: re-picking the file already shown keeps its tab (leaves
+  // preview); any other file navigates.
+  const handleTreeOpenFile = useCallback(
+    (path: string) => (path === activePath ? keepTab(path) : openTabPath(path)),
+    [activePath, keepTab, openTabPath],
+  );
+
+  const handleTabChange = useCallback(
+    (value: string) => {
+      if (value === 'diff') setActiveTab(value);
+      else openTabPath(value);
+    },
+    [openTabPath],
+  );
 
   const closeFile = useCallback(
     (fileId: string) => {
       const newTabs = openTabs.filter((tab) => tab.path !== fileId);
       setOpenTabs(newTabs);
-      if (activeTab === fileId) navigation.openEditor(newTabs.at(-1)?.path);
+      if (activeTab === fileId) openTabPath(newTabs.at(-1)?.path);
     },
-    [openTabs, activeTab, navigation],
+    [openTabs, activeTab, openTabPath],
   );
 
   const expandTerminal = useCallback(() => {
@@ -299,10 +324,24 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   );
 
 
+  const treeVisible = !readOnly && showFileTree;
+  const fileTreeToggle = readOnly ? null : (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="mx-1 h-6 w-6 flex-shrink-0"
+      onClick={() => setShowFileTree(!showFileTree)}
+      title={t`Toggle file tree`}
+      aria-pressed={showFileTree}
+    >
+      <FolderTree className="h-4 w-4" />
+    </Button>
+  );
+
   const renderEditorContent = () => (
     <div className="flex h-full flex-col">
       {openTabs.length > 0 || diffTab ? (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="flex h-full flex-col">
           {activeTab !== 'diff' && activeTab && (
             <AssetEditorHeader
               fileName={activeTab.split('/').pop() || activeTab}
@@ -320,9 +359,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                     <TabsTrigger
                       key={tab.path}
                       value={tab.path}
+                      onDoubleClick={() => keepTab(tab.path)}
+                      title={tab.isPreview ? t`Preview — double-click to keep open` : undefined}
                       className="group relative flex items-center gap-1 rounded-none border-e px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-none"
                     >
-                      <span className="max-w-[120px] truncate text-sm">
+                      <span className={`max-w-[120px] truncate text-sm ${tab.isPreview ? 'italic' : ''}`}>
                         {file.path?.split('/')?.pop()}
                         {tab.isDirty && '*'}
                       </span>
@@ -386,6 +427,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
               </TabsList>
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
+            {fileTreeToggle}
           </div>
 
           {openTabs.map((tab) => {
@@ -420,6 +462,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
             <p className="text-lg">
               <Trans>No files open</Trans>
             </p>
+            {!showFileTree && fileTreeToggle}
           </div>
         </div>
       )}
@@ -444,7 +487,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     </div>
   );
 
-  if (!projectTypeId) {
+  // A path that names its own entity (`compute_node-@local/...`) needs no project.
+  if (!effectiveTypeId) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center text-muted-foreground">
         <p className="text-sm">
@@ -457,17 +501,21 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   return (
     <>
       <div className="flex h-full w-full flex-col bg-background">
-        {renderEditorContent()}
+        <ResizablePanelGroup direction="horizontal" autoSaveId="code-editor-file-tree">
+          <ResizablePanel id="code-editor-main" order={1} minSize={40}>
+            {renderEditorContent()}
+          </ResizablePanel>
+          {treeVisible && (
+            <>
+              <ResizableHandle />
+              <ResizablePanel id="code-editor-tree" order={2} defaultSize={22} minSize={12} maxSize={45}>
+                <EditorFileTree activePath={activePath} onOpenFile={handleTreeOpenFile} />
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
         {/* eslint-disable-next-line no-constant-binary-expression */}
         {false && renderTerminalPanel()}
-        {/* eslint-disable-next-line no-constant-binary-expression */}
-        {false && (
-          <ResizablePanelGroup direction="horizontal">
-            <ResizablePanel />
-            <ResizableHandle />
-            <ResizablePanel />
-          </ResizablePanelGroup>
-        )}
       </div>
 
       {/* File creation dialog */}

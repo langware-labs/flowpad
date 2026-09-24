@@ -28,10 +28,10 @@ tags: [whiteboard, create, persistence]
 * Validate `WHITE_BOARD.md` exists.
 * Validate `board.json` either exists OR will be created on first save (the editor lazy-creates it).
 
-### C3: Frontmatter id stamped (after index)
-* Right after first save, WHITE_BOARD.md has the BEGIN/END mermaid block but NO frontmatter — the editor's autosave only splices the mermaid block; the frontmatter `id:` is stamped by the indexer (`whiteboard_gen_id`), not on save. Validate the BEGIN/END mermaid markers are present in the file body at this point.
-* Trigger an index: POST `${API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`; wait ~3s.
-* `cat <folder>/WHITE_BOARD.md` → frontmatter MUST now contain `id:` (a valid v5/v4 UUID). The BEGIN/END mermaid markers MUST survive the frontmatter stamp.
+### C3: Frontmatter id (minted at create)
+* The whiteboard's identity carrier is WHITE_BOARD.md's frontmatter (`identity_carrier=frontmatter_identity()`; the folder capsule is not used). The id is minted at create, so right after the first save `cat <folder>/WHITE_BOARD.md` → frontmatter MUST contain `id:` (a valid v4/v5 UUID) equal to the entity id returned by the create, and the BEGIN/END mermaid markers MUST be present in the body.
+* Trigger an index: POST `${API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`.
+* `cat <folder>/WHITE_BOARD.md` → the frontmatter `id:` MUST be unchanged, and the BEGIN/END mermaid markers MUST survive.
 
 ### C4: Draw + autosave + thumbnail
 * In the editor tab, run via `browser_evaluate`:
@@ -63,3 +63,6 @@ C1–C5 all pass. C2's "board.json missing right after create" is acceptable (FI
 ## Cleanup
 
 * `rm -rf <folder>` after the test completes.
+
+## Teardown
+* Every board created above (including C1's) is deleted — `DELETE ${API_URL}/api/v1/graph/whiteboard/<id>` and its folder removed — whether the test passed or failed.

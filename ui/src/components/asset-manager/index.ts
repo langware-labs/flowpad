@@ -3,7 +3,7 @@ export { AssetManagerPopover } from './AssetManagerPopover';
 export { useProcessAssets, type UseProcessAssetsResult } from './useProcessAssets';
 
 export { AssetRow } from './AssetManagerPopover';
-export { ASSET_SCOPE_ORDER, assetScope, type AssetScope, type AssetScopeKind } from './asset-scope';
+export { assetScope, type AssetScope, type AssetScopeKind } from './asset-scope';
 
 // Label helpers for surfaces that list descriptors outside the popover.
 // `displayLabelForDescriptor`, not the typeid form: it threads the descriptor's

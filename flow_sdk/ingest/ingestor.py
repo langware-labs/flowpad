@@ -8,8 +8,8 @@ one place received bundle assets are indexed.
 **The order is load-bearing and is guaranteed, not merely written down.**
 ``emit_tag`` is synchronous and the bus wraps coroutine handlers in
 ``ensure_future``, so no subscriber body can begin before this function yields.
-Since the ``await entity.save(...)`` — which writes the row, the shadow metadata
-and the FTS entry in one pass — has already returned by then, any TAG trigger or
+Since the write transaction around ``await entity.save(...)`` — which writes the
+row, the shadow metadata and the FTS entry — has committed by then, any TAG trigger or
 flow subscription that reads the entity back, or searches for it, finds it
 committed. A refactor that moves emission to the caller, or into ``save()``'s
 notify path, breaks that silently: keep steps 5-7 in one function.
@@ -27,6 +27,7 @@ import logging
 from typing import Optional, Sequence
 
 from flow_sdk.builtin.source_item import SourceItem
+from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.ingest.ingest_on_tag import emit_item_tag
 from flow_sdk.ingest.legacy_lift import lift
@@ -51,9 +52,15 @@ async def ingest_item(
     owner: Optional[TypeId] = None,
     mode: IngestMode = IngestMode.INCREMENTAL,
     known: Optional[dict[tuple[str, ...], SourceItem]] = None,
+    sent_by_us: bool = False,
 ) -> IngestOutcome:
     """``known`` is a pre-loaded ``{natural key: row}`` map from
     ``ingest_items``; without it this falls back to a single lookup.
+
+    ``sent_by_us`` is the send path's: the row is marked ours BEFORE it is saved, so the
+    first event anyone sees already says who wrote it. The mark is set, never cleared — an
+    echo that got here first is marked now (and announced as an update), and a later echo
+    rewrites only the snapshot.
 
     **Identity is the natural key, not the id.** The DB serializer resolves the
     row by ``(data_source, origin)`` and gates on the digest; a
@@ -68,23 +75,40 @@ async def ingest_item(
         existing = known.get(ser.natural_key_of(SourceItem, item))
     else:
         existing = await ser.resolve(SourceItem, item)
-
-    row, status = ser.upsert(SourceItem, item, existing=existing)
-    if row is None:
+    # The gate, on the pre-read: an unchanged item costs no write at all.
+    if existing is not None and not sent_by_us and ser.upsert(SourceItem, item, existing=existing)[0] is None:
         return IngestOutcome(entity_id=str(existing.id), external_id=item.external_id, status="unchanged")
 
     # ── record + index ────────────────────────────────────────────────────
+    # The row this item names is resolved AGAIN under the writer lock, in the
+    # same transaction as its save. The pre-read was taken before any write, so
+    # two ingests of one delivery (a lane and a direct sync) could both find
+    # nothing and both insert. Under BEGIN IMMEDIATE the second one waits for
+    # the first to commit and then finds its row.
+    #
     # save() writes the DB row, the shadow metadata.json and the FTS row. For a
     # Tier B type that IS the standard index — the filesystem indexer is never
     # invoked, so ingestion cannot contend with it for the SQLite writer.
     #
     # notify=False during a backfill suppresses the per-entity data_op, and with
     # it the CREATE broadcast that would otherwise go to every connected client.
-    await row.save(owner, notify=(mode is IngestMode.INCREMENTAL))
+    async with get_db_driver().write_transaction():
+        existing = await ser.resolve(SourceItem, item)
+        mark = sent_by_us and not (existing is not None and existing.sent_by_us)
+        row, status = ser.upsert(SourceItem, item, existing=existing)
+        if row is None:
+            # Nothing changed on the row itself: only the "we sent this" mark is worth a write.
+            if not mark:
+                return IngestOutcome(entity_id=str(existing.id), external_id=item.external_id, status="unchanged")
+            row, status = existing, "updated"
+        if mark:
+            row.sent_by_us = True
+        await row.save(owner, notify=(mode is IngestMode.INCREMENTAL))
 
     # ── emit ──────────────────────────────────────────────────────────────
-    # AFTER the save, so the id in the event is the one the row actually holds
-    # (a new row's uuid4 is allocated by save, not before it).
+    # AFTER the commit, so the id in the event is the one the row actually holds
+    # (a new row's uuid4 is allocated by save, not before it) and a subscriber
+    # reading it back finds it.
     entity_id = str(row.id)
     if mode is IngestMode.INCREMENTAL:
         emit_item_tag(item, entity_id, status)

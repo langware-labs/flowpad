@@ -23,22 +23,38 @@ export type BadgeVisual = {
   variant: 'destructive' | 'secondary' | 'outline';
   icon: typeof Loader2;
   iconClassName?: string;
+  /** The status dot, for surfaces that draw one (the Connections table). Here,
+   *  not in each surface: an amber dot beside "Connected" was one of them
+   *  deciding health for itself. */
+  dot: string;
 };
 
 export const LOGIN_VISUAL: Record<HubLoginStatus, BadgeVisual> = {
-  logged_in: { text: msg`Logged in`, variant: 'secondary', icon: CheckCircle2 },
-  logging_in: { text: msg`Signing in`, variant: 'outline', icon: Loader2, iconClassName: 'animate-spin' },
-  login_failed: { text: msg`Login failed`, variant: 'destructive', icon: AlertCircle },
-  logged_out: { text: msg`Logged out`, variant: 'outline', icon: CloudOff },
+  logged_in: { text: msg`Logged in`, variant: 'secondary', icon: CheckCircle2, dot: 'bg-emerald-500' },
+  logging_in: {
+    text: msg`Signing in`,
+    variant: 'outline',
+    icon: Loader2,
+    iconClassName: 'animate-spin',
+    dot: 'animate-pulse bg-amber-500',
+  },
+  login_failed: { text: msg`Login failed`, variant: 'destructive', icon: AlertCircle, dot: 'bg-red-500' },
+  logged_out: { text: msg`Logged out`, variant: 'outline', icon: CloudOff, dot: 'bg-muted-foreground/40' },
 };
 
 export const CONNECTION_VISUAL: Record<HubConnectionStatus, BadgeVisual> = {
-  verified: { text: msg`Connection verified`, variant: 'secondary', icon: CheckCircle2 },
-  connected: { text: msg`Connected`, variant: 'outline', icon: Cloud },
-  connecting: { text: msg`Connecting`, variant: 'outline', icon: Loader2, iconClassName: 'animate-spin' },
-  auth_rejected: { text: msg`Connection rejected`, variant: 'destructive', icon: AlertCircle },
-  error: { text: msg`Connection error`, variant: 'destructive', icon: AlertCircle },
-  disconnected: { text: msg`Not connected`, variant: 'outline', icon: CloudOff },
+  verified: { text: msg`Connection verified`, variant: 'secondary', icon: CheckCircle2, dot: 'bg-emerald-500' },
+  connected: { text: msg`Connected`, variant: 'outline', icon: Cloud, dot: 'bg-emerald-500' },
+  connecting: {
+    text: msg`Connecting`,
+    variant: 'outline',
+    icon: Loader2,
+    iconClassName: 'animate-spin',
+    dot: 'animate-pulse bg-amber-500',
+  },
+  auth_rejected: { text: msg`Connection rejected`, variant: 'destructive', icon: AlertCircle, dot: 'bg-red-500' },
+  error: { text: msg`Connection error`, variant: 'destructive', icon: AlertCircle, dot: 'bg-red-500' },
+  disconnected: { text: msg`Not connected`, variant: 'outline', icon: CloudOff, dot: 'bg-amber-500' },
 };
 
 /**

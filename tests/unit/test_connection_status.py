@@ -196,6 +196,24 @@ async def test_a_vendor_that_cannot_be_reached_costs_a_verdict_not_the_screen(mo
     assert await status_mod.check_harness_logins() == {"codex": "authenticated"}
 
 
+# ── how it signs in ────────────────────────────────────────────────────────
+
+
+def test_a_harness_with_an_account_of_its_own_signs_in_by_device_login():
+    assert status_mod._sign_in_for("claude") == "device"
+
+
+def test_a_harness_funded_only_by_a_key_signs_in_by_api_key():
+    """deepagents has no account of its own (``has_device_login=False``); a
+    device-login icon on its row claimed a sign-in that cannot exist."""
+    assert status_mod._sign_in_for("deepagents") == "api_key"
+
+
+def test_sign_in_survives_the_wire():
+    spec = ConnectionSpec(provider="x", display_name="X", sign_in="api_key")
+    assert ConnectionSpec.from_wire(spec.model_dump(mode="json")).sign_in == "api_key"
+
+
 # ── what account it is ─────────────────────────────────────────────────────
 
 
@@ -332,6 +350,7 @@ async def test_a_credential_is_a_connection_when_its_values_are_there(monkeypatc
     assert [r.provider for r in rows] == ["gmail"]
     assert rows[0].connected and rows[0].scope == "project"
     assert rows[0].env_vars == ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD")
+    assert rows[0].sign_in == "api_key"
 
 
 async def test_a_partial_or_missing_credential_is_not_a_row(monkeypatch):

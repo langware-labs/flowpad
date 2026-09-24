@@ -20,6 +20,7 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, position
@@ -44,8 +45,12 @@ def _saved_channel() -> str:
     return "C0" + uuid.uuid4().hex[:9].upper()
 
 
-def _source(**config) -> DataSource:
-    return DataSource(provider="slack", name=f"Slack test {uuid.uuid4().hex[:8]}", config={"channel": CHANNEL, "base_url": BASE, **config})
+def _source(*, identified: bool = True, **config) -> DataSource:
+    """A source that already knows who it reads as (as a verified one does), so a traverse goes
+    straight to the channel instead of asking ``auth.test`` first; ``identified=False`` for one
+    that does not know yet."""
+    return DataSource(provider="slack", name=f"Slack test {uuid.uuid4().hex[:8]}", account_key="@flowpad-bot" if identified else "",
+                      config={"channel": CHANNEL, "base_url": BASE, **config})
 
 
 def _view(cursor: str | None = None, window_start: str | None = None):
@@ -358,7 +363,9 @@ async def test_send_posts_into_the_thread_and_returns_the_ts(serve):
     source = _source(channel=_saved_channel())
     await source.save()
     outcome = await DataDriver.loaded("slack").send(source, thread_key="100.000100", to=CHANNEL, text="on it", in_reply_to="100.000100")
-    assert outcome.external_id == "300.000300" and outcome.recorded is False
+    assert outcome.external_id == "300.000300" and outcome.recorded is True
+    (row,) = await SourceItem.get_all({"data_source_id": str(source.id), "external_id": "300.000300"})
+    assert row.sent_by_us, "on record at send, marked ours — the echo lands on this row"
     assert slack.requests[0] == "/chat.postMessage"
     assert json.loads(slack.bodies[0]) == {"channel": CHANNEL, "text": "on it", "thread_ts": "100.000100"}
 
@@ -367,7 +374,7 @@ async def test_send_stamps_the_bots_own_identity_once(serve):
     from flow_sdk.stream_inbox.projection import is_self_address
 
     serve([{"ok": True, "ts": "1.1"}, {"ok": True, "user_id": "UBOT", "bot_id": "B1", "user": "flowpad"}])
-    source = _source(channel=_saved_channel())
+    source = _source(identified=False, channel=_saved_channel())
     await source.save()
     await DataDriver.loaded("slack").send(source, thread_key="", to=CHANNEL, text="hi")
     assert source.account_key == "@flowpad"

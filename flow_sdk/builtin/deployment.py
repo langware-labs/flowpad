@@ -41,6 +41,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (
     ArtifactLinkSource,
@@ -49,11 +50,12 @@ from flow_sdk.worldview.models import (
     DeploymentStatus,
     DeploymentTarget,
 )
-from flow_sdk.worldview.ontology import KindStr, normalize_kind
+from flow_sdk.worldview.ontology import KindStr, kind_matches, normalize_kind
 
-if TYPE_CHECKING:  # pragma: no cover
+if TYPE_CHECKING:
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 #: What is placed. The ``compute.node`` kind is a desktop — a machine placed for
 #: a human rather than for an agent; from inside the box the two are identical
@@ -77,6 +79,26 @@ KIND_NODE = "compute.node"
 NODE_PROVIDERS = frozenset({"local", "local_machine", "e2b", "docker", "gcp_vm", "user_machine"})
 
 logger = logging.getLogger(__name__)
+
+
+class AgentUnavailable(RuntimeError):
+    """The placed agent is missing (``NOT_FOUND``) or disabled (``REFUSED``).
+
+    Raised by the process primitive; a boundary that forms an answer turns it
+    into one with ``exit_code`` — the two cases are different answers, and a
+    bare ``RuntimeError`` left a caller no way to tell them apart.
+    """
+
+    def __init__(self, message: str, exit_code: ExitCode):
+        super().__init__(message)
+        self.exit_code = exit_code
+
+    def answer(self) -> "PromptResult":
+        """This as the answer a launch gives: refused, or no such agent."""
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
+
+        make = PromptResult.refused if self.exit_code is ExitCode.REFUSED else PromptResult.not_found
+        return make(str(self))
 
 
 class DeploymentActionError(RuntimeError):
@@ -176,6 +198,15 @@ class Deployment(Entity):
         description="Credential environment: development (this computer) or a named one (production, staging, ...)",
     )
 
+    #: Which of an element's deployments on one provider this is: ``""`` the default one, else a
+    #: short name ("2", "3", …). How one agent runs in several places on this computer.
+    slot: str = APIField(default="", description="Which of the element's deployments on this provider ('' = the default)")
+    #: A local agent deployment that RUNS: a subprocess on this machine running its loop
+    #: (``builtin/agent_loop``). A placement processes are only spawned through does not.
+    serving: bool = APIField(default=False, description="A local deployment that runs its own agent loop process")
+    #: The Python file that process runs instead of the stock loop; ``None`` runs the stock loop.
+    snippet: str | None = APIField(default=None, description="The loop this deployment runs, when not the stock one")
+
     #: The deployed element, when the caller already had it. Not just a cache: a
     #: SHIPPED agent resolved off disk on a cold instance is never persisted, so
     #: reading it back by ``parent_type_id`` would find nothing at all.
@@ -200,6 +231,7 @@ class Deployment(Entity):
         *,
         kind: str | None = None,
         environment: str | None = None,
+        slot: str = "",
     ) -> Optional["Deployment"]:
         """The placement of *parent_type_id* on *provider* (in *environment*, when given), or None.
 
@@ -229,6 +261,10 @@ class Deployment(Entity):
             # of the same element on the same provider are two rows.
             if environment is not None and (row.environment or DEFAULT_ENVIRONMENT) != environment:
                 continue
+            # Several deployments of one element on one provider are told apart by their slot;
+            # the default one has none.
+            if (row.slot or "") != (slot or ""):
+                continue
             return row
         return None
 
@@ -241,6 +277,7 @@ class Deployment(Entity):
         kind: str,
         payload: dict[str, Any],
         element: Optional[Entity] = None,
+        slot: str = "",
     ) -> "Deployment":
         """Create the placement, or update it in place when something changed.
 
@@ -255,8 +292,8 @@ class Deployment(Entity):
         ``NotImplemented`` — so the guard was True on 100% of calls and every
         resolve wrote.
         """
-        body = {**payload, "kind": normalize_kind(kind), "parent_type_id": str(parent_type_id)}
-        existing = await cls.find_existing(parent_type_id, provider, kind=kind)
+        body = {**payload, "kind": normalize_kind(kind), "parent_type_id": str(parent_type_id), "slot": slot}
+        existing = await cls.find_existing(parent_type_id, provider, kind=kind, slot=slot)
         if existing is None:
             body.setdefault("status", {}).setdefault("observed_at", datetime.now(UTC).isoformat())
             deployment = cls(**body)
@@ -423,11 +460,34 @@ class Deployment(Entity):
         bridge like any other hub update, so this doesn't write the status
         locally in that case; doing both would race the push.
         """
+        if self._runs_here():
+            return await self._set_serving(False)
         return await self._set_node_state("pause", "paused")
 
     async def resume(self) -> bool:
         """Start a paused machine again. The counterpart of :meth:`pause`, same routing."""
+        if self._runs_here():
+            return await self._set_serving(True)
         return await self._set_node_state("resume", "running")
+
+    def _runs_here(self) -> bool:
+        """An agent deployment on this machine: it runs as a process here, so pausing it stops that
+        process (``serving``) — never the machine under it."""
+        return not self.remote and self.is_local and kind_matches(KIND_AGENT, self.kind)
+
+    async def _set_serving(self, serving: bool) -> bool:
+        """Stop (or start) this deployment's process. Stopping ends it now — and, not serving, the
+        app's supervisor will not start it again; starting is the supervisor's (``serving``)."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+
+        self.serving = serving
+        self.status = self.status.model_copy(update={"provider_state": "running" if serving else "paused"})
+        await self.save()
+        if not serving and deployment_process.alive(self):
+            await asyncio.to_thread(deployment_process.stop, self)
+        return True
 
     async def _set_node_state(self, verb: str, provider_state: str) -> bool:
         """Pause or resume the machine: through the hub for a remote placement, else on the node here."""
@@ -526,6 +586,39 @@ class Deployment(Entity):
         """`POST /deployment/<id>/update` — bring a cloud machine to the published definition."""
         return await self._answer("update", self.update)
 
+    @action.get(action_name="timeline")
+    async def timeline_action(self):
+        """`GET /deployment/<id>/timeline?limit=&before=&conversation=` — what reached it, what it
+        ran, what it answered. Newest first, read from the rows (``builtin/deployment_timeline``);
+        ``conversation`` narrows it to one thread; ``before`` (the previous page's) pages back.
+        """
+        from flow_sdk.builtin.deployment_timeline import timeline  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        raw_limit = str((request_info.get_param("limit") if request_info else None) or "")
+        raw_before = str((request_info.get_param("before") if request_info else None) or "")
+        limit = min(int(raw_limit), 200) if raw_limit.isdigit() and int(raw_limit) > 0 else 50
+        before = None
+        if raw_before:
+            try:
+                before = datetime.fromisoformat(raw_before.replace("Z", "+00:00"))
+            except ValueError:
+                return ApiFailResponse(message=f"before={raw_before!r} is not an ISO time", status_code=400)
+        conversation = str((request_info.get_param("conversation") if request_info else None) or "").strip() or None
+        page = await timeline(self, limit=limit, before=before, conversation=conversation)
+        return ApiSuccessResponse(data=page.model_dump(mode="json"))
+
+    @action.get(action_name="threads")
+    async def threads_action(self):
+        """`GET /deployment/<id>/threads` — the conversations it holds (a chat, a whole phone call),
+        the active ones first, each with its status now (``live`` / ``working`` / ``ended`` / ``idle``)."""
+        from flow_sdk.builtin.deployment_timeline import threads  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=(await threads(self)).model_dump(mode="json"))
+
     @action.get(action_name="runs")
     async def runs_action(self):
         """`GET /deployment/<id>/runs?limit=` — the latest runs on a cloud machine; the hub bounds ``limit``."""
@@ -561,13 +654,21 @@ class Deployment(Entity):
         )
 
     async def _require_agent(self) -> "Agent":
-        """The placed Agent, or a loud error — a launch site naming a missing or
-        disabled agent is a bug we want to see, not a silent no-op."""
+        """The placed Agent, or ``AgentUnavailable`` — a launch site naming a
+        missing or disabled agent is a bug we want to see, not a silent no-op.
+
+        Raised, because ``create_process`` is a primitive that hands back a
+        process. A boundary that forms an ANSWER (a turn, a launch) catches it
+        and answers with ``exit_code`` instead."""
         agent = await self.agent()
         if agent is None:
-            raise RuntimeError(f"deployment {self.id}: agent {self.parent_type_id!r} not found")
+            raise AgentUnavailable(
+                f"deployment {self.id}: agent {self.parent_type_id!r} not found", ExitCode.NOT_FOUND,
+            )
         if not agent.enabled_on(self.id):
-            raise RuntimeError(f"agent {agent.name!r} is disabled on {self.name or self.id}")
+            raise AgentUnavailable(
+                f"agent {agent.name!r} is disabled on {self.name or self.id}", ExitCode.REFUSED,
+            )
         return agent
 
     async def create_process(self, prompt: str = "", **options) -> "AgenticProcess":
@@ -620,6 +721,14 @@ class Deployment(Entity):
                 p for p in (agent.system_prompt.strip(), existing) if p
             )
         context_data.setdefault("launched_by_agent", agent.name)
+        # Chief of Staff mode — CoS.md, the skill, the native staff roster. Off: nothing changes.
+        from flow_sdk.tasks.cos import apply_to_launch, staff_dir  # noqa: PLC0415
+
+        cli_config = opts.to_json()
+        cos_options = apply_to_launch(
+            agent, context_data=context_data, cli_config=cli_config, worker_type=worker_override or agent.worker_type,
+            project_dir=await staff_dir(agent) if getattr(agent, "chief_of_staff", False) else None,
+        )
 
         # Declared -> attached, BEFORE the folder is read below. ``mcp_servers``
         # on agent.json is the authored intent; ``mcp_assets()`` is the structural
@@ -639,7 +748,7 @@ class Deployment(Entity):
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
             worker_type=worker_type_value(worker_override or agent.worker_type),
             project_id=options.pop("project_id", None) or agent.project_id,
-            load_flowpad_assistant=agent.load_flowpad_assistant,
+            load_flowpad_assistant=cos_options.get("load_flowpad_assistant", agent.load_flowpad_assistant),
             additional_dirs=list(agent.additional_dirs or []),
             # The agent's MCP assets, resolved from its folder. Set on the
             # constructor rather than via ``process.add_mcp`` because this verb
@@ -648,7 +757,7 @@ class Deployment(Entity):
             # Reads the folder AFTER the attach above, which is what puts the
             # editor's declared ids there.
             mcp_servers=await _place_mcp_specs(agent, place_mcp),
-            cli_config=opts.to_json(),
+            cli_config=cli_config,
             instruction_content=prompt,
             context_data=context_data,
             deployment_id=self.id,
@@ -657,19 +766,30 @@ class Deployment(Entity):
         _prepare_output_folder(process)
         return process
 
-    async def launch(self, prompt: str, *, wait: bool = False, **options) -> "AgenticProcess":
-        """``create_process`` + save + run the first turn. The convenience shape.
+    async def launch(self, prompt: str, *, wait: bool = False, **options) -> "PromptResult":
+        """``create_process`` + save + run the first turn — answered as a
+        ``PromptResult`` whose ``executor`` names the process. Never raises for
+        an outcome.
 
-        ``wait=True`` polls to a terminal state.
+        Without ``wait``, OK means the turn was ACCEPTED (it runs on in the
+        background) — the answer ``send_turn`` gives. With ``wait=True`` it is
+        the RUN's answer once the worker settles, read the way
+        ``AgenticProcess.run`` reads it. Not taken is NOT_YET (``busy`` when a
+        turn is in flight); a disabled agent is REFUSED, a missing one NOT_FOUND.
+        A caller that needs the process resolves it from ``executor``.
         """
-        proc = await self.create_process(prompt, **options)
+        from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+
+        try:
+            proc = await self.create_process(prompt, **options)
+        except AgentUnavailable as gone:
+            return gone.answer()
         await proc.save()
         taken = await proc.send_turn(prompt)
-        if not taken.ok:
-            raise RuntimeError(f"launch failed — {taken.detail}")
-        if wait:
-            await proc.wait()
-        return proc
+        if not taken.ok or not wait:
+            return taken
+        await proc.wait()
+        return _build_run_result(proc)
 
     async def use(self, *, owner=None, **options) -> "AgenticProcess":
         """Open a session AS this agent: a visible, headless Chat process, saved,
