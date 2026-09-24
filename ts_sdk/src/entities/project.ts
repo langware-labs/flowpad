@@ -639,6 +639,14 @@ export class Project extends APIEntity<Project> {
     return this.post<AdoptHelpdeskResult>('adopt-helpdesk-from-git', { url, branch, scope });
   }
 
+  /** Name (or, with null, clear) the asset the Home button opens. Written into
+   *  the project manifest (`project_manifest.json`), so it travels with the
+   *  repo. The backend refuses an asset outside this project and its direct
+   *  context folders. Returns the home page as now declared. */
+  async setHomePage(typeid: string | null): Promise<{ home_page: string | null }> {
+    return this.post<{ home_page: string | null }>('set-home-page', { typeid: typeid ?? '' });
+  }
+
   /** Converge the live content dependencies declared by this Project's
    * `.flowpad/bootstrap.json`. The backend owns clone/link/index idempotency. */
   async reconcileBootstrap(): Promise<ReconcileBootstrapResult> {

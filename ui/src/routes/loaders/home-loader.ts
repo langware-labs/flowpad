@@ -8,6 +8,7 @@ import { runLoadRedirects } from './load-redirects';
 // Side-effect import: features register their load-redirect resolvers here.
 import '@src/journey/journey-load-redirect';
 import '@src/agents/agent-auto-launch-redirect'; // after journeys: first redirect wins
+import '@src/project-home-page/project-home-page-redirect'; // the Home button's `?homePage=open` target
 
 /**
  * Ensure compute node is loaded for the current project

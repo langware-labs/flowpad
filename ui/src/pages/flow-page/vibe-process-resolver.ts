@@ -5,12 +5,14 @@ import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useCallback, useRef } from 'react';
 
-/** Rail-resume contract: the latest real Chat that was opened in this project. */
-export function lastVibeChatQuery(projectId: string): QueryRequest {
+/** Rail-resume contract: the latest real Chat that was opened in this project.
+ *  `target` narrows it to one entity's chats — an agent's sessions carry the
+ *  agent's TypeId as `target_typeid_str` (`Deployment.use`). */
+export function lastVibeChatQuery(projectId: string, target?: string): QueryRequest {
   return new QueryRequest({
     type: AgenticProcess.type,
     scope: [],
-    name: `lastVibeChat:${projectId}`,
+    name: `lastVibeChat:${projectId}${target ? `:${target}` : ''}`,
     query: new QueryFilter({
       match: {
         op: '$AND',
@@ -18,6 +20,7 @@ export function lastVibeChatQuery(projectId: string): QueryRequest {
           { op: '$EQ', operands: ['project_id', projectId] },
           { op: '$EQ', operands: ['process_type', ProcessKind.Chat] },
           { op: '$IS_NOT_NULL', operands: ['last_active_at'] },
+          ...(target ? [{ op: '$EQ', operands: ['target_typeid_str', target] }] : []),
         ],
       },
     }),

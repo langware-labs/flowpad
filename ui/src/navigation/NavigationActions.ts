@@ -31,6 +31,7 @@ import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-d
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { vfsLocatorForComputeNode } from './vfs-locator';
 import { dockForDisplayTarget } from './display-target-pointer';
+import { HOME_PAGE_OPEN, HOME_PAGE_PARAM, isProjectHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
 import { errorMessage } from '@src/lib/error-message';
@@ -395,12 +396,22 @@ export class NavigationActions {
    * can't each re-derive the branch, and so the pending `TODO(nav)` about
    * committing through the router has exactly one place left to land.
    */
-  goHome(): void {
+  goHome(options?: { homePage?: boolean }): void {
     // Two surfaces, one navigation. The hub keeps every navigation under
     // `page=hub` (a desk factory would revert the page and land on the desk
     // home); the desk home is the app root. Both are pointers, so the branch is
     // a choice of destination rather than a choice of mechanism.
-    this.openDock(this.here.page === PageId.HUB ? DockPointer.forHome().withPage(PageId.HUB) : DockPointer.root());
+    if (this.here.page === PageId.HUB) {
+      this.openDock(DockPointer.forHome().withPage(PageId.HUB));
+      return;
+    }
+    // `homePage`: the Home BUTTON asks for the project's home page, which the
+    // root's load redirect resolves (`project-home-page-redirect`). Only the
+    // button asks — a fallback "go home" (no chat to resume) wants the plain
+    // home. From the home page itself the button gives the plain home, or the
+    // default home could never be reached.
+    const wantsHomePage = options?.homePage && !isProjectHomePage(dataContext.project?.id, this.here);
+    this.openDock(wantsHomePage ? DockPointer.root().withOption(HOME_PAGE_PARAM, HOME_PAGE_OPEN) : DockPointer.root());
   }
 
   /** The journey shown where we are (or are going), or null. */
