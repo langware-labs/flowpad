@@ -429,6 +429,8 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  target teardown). Returns the updated list. */
   static async closeById(id: string): Promise<Tab[]> {
     const info = new ActionInfo('close', Tab.type, id, 'POST');
+    // Optimistic close: see ActionInfo.keepalive.
+    info.keepalive = true;
     const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
     return Tab.fromResponse(res?.tabs ?? []);
   }

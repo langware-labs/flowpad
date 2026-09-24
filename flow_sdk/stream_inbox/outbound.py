@@ -1,12 +1,11 @@
 """Reply into the cloud thread a conversation caches.
 
 The inverse of ``flow_sdk/stream_inbox/projection.py`` and deliberately much smaller,
-because it does not write anything itself. It resolves *where* to send, hands
-the driver the message, and lets the reply come back in through the ordinary
-ingest route — the worker records the sent copy with ``flow record create``,
-the projector turns it into a FlowMessage, and it sorts into the conversation by
-its own timestamp. There is no outbound write path to keep in step with the
-inbound one.
+because it does not write anything itself. It resolves *where* to send and hands
+the driver the message; the driver's send records the sent copy through the
+ordinary ingest chokepoint (marked ``sent_by_us``), the projector turns it into a
+FlowMessage, and it sorts into the conversation by its own timestamp. There is no
+outbound write path to keep in step with the inbound one.
 
 **Dispatch is fire-and-forget by design.** An agent turn is tens of seconds; a
 conversation must stay usable while one runs. What the caller gets back is "this
@@ -33,6 +32,13 @@ RECENT_WINDOW = 25
 #: mid-flight, which would silently drop a send the user believes was accepted.
 #: Same idiom as `_RECEPTION_SETUP_TASKS` / `_PENDING_RUNS` elsewhere.
 _INFLIGHT: "set[asyncio.Task]" = set()
+
+
+async def settle() -> None:
+    """Wait for every reply accepted so far to finish sending and recording — a shutdown's (or a
+    test's) barrier."""
+    while _INFLIGHT:
+        await asyncio.gather(*list(_INFLIGHT), return_exceptions=True)
 
 
 class ChannelSendUnavailable(Exception):
@@ -229,12 +235,6 @@ async def _run_send(conversation_id: str, target: ReplyTarget, text: str) -> Non
             outcome.external_id or "?",
             outcome.artifact_id or "-",
         )
-        if not outcome.drafted and not outcome.recorded:
-            # Only meaningful for a real send: the mail IS gone, and only the
-            # local copy is missing. Re-sending to fix bookkeeping would mail
-            # the recipient twice. A DRAFT is never recorded by design, so
-            # warning about it would fire on every reply.
-            logger.warning("[channel-send] %s → %s delivered but NOT recorded locally", target.channel, target.to)
     except LaunchError as exc:
         logger.error("[channel-send] %s → %s failed: %s", target.channel, target.to, exc.as_dict())
     except Exception:  # noqa: BLE001

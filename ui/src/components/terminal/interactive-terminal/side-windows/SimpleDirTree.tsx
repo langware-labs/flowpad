@@ -26,6 +26,10 @@ import { useFS } from '@src/hooks/useFS';
 
 interface SimpleDirTreeProps {
   computeNodeTypeId: TypeId;
+  /** Stable id placed in the paths handed to `onSelectFile` / navigation —
+   *  `compute_node-@local` for the local machine even when I/O uses its live
+   *  id (see `fsFolderRoot`'s `locatorTypeId`). Defaults to `computeNodeTypeId`. */
+  locatorTypeId?: TypeId;
   /** Highest level the user can navigate up to. ".." is hidden when at this path. */
   topLevel: string;
   /** Initial directory to show. Defaults to topLevel. Must be at or under topLevel. */
@@ -171,6 +175,7 @@ function toVfsPath(typeId: TypeId, absPath: string): string {
 
 export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   computeNodeTypeId,
+  locatorTypeId,
   topLevel,
   initialPath,
   onSelectFile,
@@ -262,14 +267,16 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   const handleOpenGenericFile = useCallback(
     (item: { name: string; vfs_abs_path?: string }) => {
       const childPath = joinPath(currentPath, item.name);
-      const openPath = item.vfs_abs_path || toVfsPath(computeNodeTypeId, childPath);
+      const openPath = locatorTypeId
+        ? toVfsPath(locatorTypeId, childPath)
+        : item.vfs_abs_path || toVfsPath(computeNodeTypeId, childPath);
       if (onSelectFile) {
         onSelectFile(openPath);
         return;
       }
       navigation.openFile(openPath);
     },
-    [computeNodeTypeId, currentPath, navigation, onSelectFile],
+    [computeNodeTypeId, locatorTypeId, currentPath, navigation, onSelectFile],
   );
 
   const handleOpenAsset = useCallback(

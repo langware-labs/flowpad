@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
-import { ActionInfo, dataManager, FSRef, TypeId, Wizard } from '@sdk';
+import { ActionInfo, dataManager, FSRef, TypeId, Wizard, isOk, type WizardResult } from '@sdk';
 import {
   CheckCircle2,
   Circle,
@@ -50,6 +50,10 @@ const STEP_STYLE: Record<string, { Icon: typeof Circle; className: string }> = {
   failed: { Icon: TriangleAlert, className: 'text-destructive' },
   refused: { Icon: TriangleAlert, className: 'text-destructive' },
   not_found: { Icon: TriangleAlert, className: 'text-destructive' },
+  busy: { Icon: TriangleAlert, className: 'text-amber-500' },
+  timed_out: { Icon: TriangleAlert, className: 'text-amber-500' },
+  cancelled: { Icon: CircleDashed, className: 'text-muted-foreground' },
+  not_started: { Icon: TriangleAlert, className: 'text-destructive/70' },
   not_reached: { Icon: Circle, className: 'text-muted-foreground/30' },
 };
 
@@ -149,8 +153,15 @@ function WizardViewerBody({
       try {
         const info = new ActionInfo(action, Wizard.type, wizard.id, 'POST');
         info.bodyParameters = body;
-        await dataManager.callAction<Record<string, unknown>, unknown>(info);
+        // Every answer is a 200 carrying the WizardResult — refused, disabled and
+        // not-applicable included — so the verdict is READ here, not inferred
+        // from a thrown status. A run that ran shows in the run panel; one that
+        // never started would otherwise vanish without a word.
+        const answer = await dataManager.callAction<Record<string, unknown>, WizardResult>(info);
         await refresh();
+        if (answer && !isOk(answer) && answer.ran === false) {
+          notify.error({ title: t`The wizard did not run`, message: answer.detail || t`The wizard did not run` });
+        }
       } catch (e) {
         notify.error({ title: t`The wizard could not run`, message: errorMessage(e, t`The wizard could not run`) });
       } finally {

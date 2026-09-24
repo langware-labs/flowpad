@@ -266,7 +266,8 @@ test 20: Close-all button hides at < 2 tabs
 
 test 21: Chip selects project, swaps tab strip, and lands on the project home
 - via REST: create `Proj-A` (2 shells) and `Proj-B` (3 shells)
-- navigate to `{APP_URL}/dock/shell` (lands in one of them); click `top-nav-project-list` and select the OTHER one
+- navigate to `{APP_URL}/dock/shell/shell-<a Proj-A shell id>` (explicitly in Proj-A, so Proj-B has no
+  last-active tab); click `top-nav-project-list` and select Proj-B
 - validate strip switches; URL lands on `/dock/project/<project-id>` because
   direct REST tabs have no known recency; footer/workdir match
 - validate no terminal panel is active until a tab is selected
@@ -319,7 +320,8 @@ test 27: Every shell carries a real project_id (no orphans by design)
 
 test 28: Footer "Switch Project" modal switches end-to-end
 - create two project entities with real disposable mount directories and one
-  shell/tab in each
+  shell/tab in each (NOT under the OS temp dir — temp roots are not valid project
+  cwds; use `~/.flowpad-qa-roots/<label>-<uuid>` and remove it afterwards)
 - enter Proj-A, click the footer `Switch Project` control, and validate the
   modal's `Active projects` section includes Proj-B
 - select Proj-B and validate its project-home URL, footer, and tab strip

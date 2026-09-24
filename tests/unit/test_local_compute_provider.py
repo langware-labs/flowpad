@@ -76,6 +76,23 @@ async def test_run_command(local_provider):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("background", [True, False])
+async def test_a_command_that_never_started_has_no_exit_code(local_provider, tmp_path, background):
+    """No made-up -1: a reader could not tell it from a real exit -1, and an
+    answer built from it said the command ran."""
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+
+    node_id = await local_provider.create_node("test-node", RuntimeEnvironment(name="test-runtime"))
+    local_provider._node_dirs[node_id] = str(tmp_path / "gone")  # spawning in it fails
+
+    cmd = await local_provider.run_command(node_id, "echo hi", background=background)
+    await cmd.wait()
+
+    assert cmd.exit_code is None
+    assert CliResult.of_process("echo hi", cmd.exit_code).ran is False
+
+
+@pytest.mark.asyncio
 async def test_set_env(local_provider):
     """Test setting environment variables.
 

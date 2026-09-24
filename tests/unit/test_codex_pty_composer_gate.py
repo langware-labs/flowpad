@@ -55,6 +55,8 @@ def _raw_capture(name: str) -> bytes:
 
 CLAUDE_COMPOSER_CAPTURE = _raw_capture("claude_pty_composer_2_1_207.b64")
 CLAUDE_RESUME_COMPOSER_CAPTURE = _raw_capture("claude_pty_resume_composer_2_1_220.b64")
+CLAUDE_RESUME_NEWLINE_CAPTURE = _raw_capture("claude_pty_resume_composer_2_1_280.b64")
+CLAUDE_CURSOR_GAPS_CAPTURE = _raw_capture("claude_pty_composer_cursor_gaps_2_1_280.b64")
 COPILOT_TRUST_CAPTURE = _raw_capture("copilot_pty_trust_1_0_70.b64")
 COPILOT_COMPOSER_CAPTURE = _raw_capture("copilot_pty_composer_1_0_70.b64")
 OPENCODE_BOOT_CAPTURE = _raw_capture("opencode_pty_boot_1_18_16.b64")
@@ -116,10 +118,32 @@ def test_claude_pattern_matches_real_resumed_blank_composer_frame():
     assert ClaudeDriver.pty_composer_ready_pattern.search(text)
 
 
+def test_claude_pattern_matches_resumed_composer_whose_rule_is_on_the_next_line():
+    """2.1.280's full resume repaint puts ``\\r\\r\\n`` between the prompt glyph and
+    the rule. The gate never opened on it, so ``input()`` into a resumed TUI
+    waited forever (QA 2026-09-23, vibe_return_from_terminal_reconcile)."""
+    assert CLAUDE_RESUME_NEWLINE_CAPTURE.startswith("❯\u00a0\r\r\n".encode())
+    assert ClaudeDriver.pty_composer_ready_pattern.search(strip_pty_controls(CLAUDE_RESUME_NEWLINE_CAPTURE))
+
+
+def test_claude_pattern_matches_composer_painted_with_cursor_jumps():
+    """Claude paints the placeholder's word gaps as ``ESC[<col>G`` on most boots.
+
+    Real 2.1.280 capture: ``Try\x1b[7G"refactor\x1b[17G<filepath>"``. Dropping
+    the jump glued ``Try"refactor`` together, the gate never opened, and every
+    cold PTY prompt waited for the blind last-resort delivery (QA 2026-09-23).
+    """
+    assert b'Try\x1b[7G"' in CLAUDE_CURSOR_GAPS_CAPTURE
+    text = strip_pty_controls(CLAUDE_CURSOR_GAPS_CAPTURE)
+    assert 'Try "refactor <filepath>"' in text
+    assert ClaudeDriver.pty_composer_ready_pattern.search(text)
+
+
 def test_claude_pattern_rejects_generic_prompt_glyph_and_echoed_user_turn():
     pattern = ClaudeDriver.pty_composer_ready_pattern
     assert not pattern.search("❯\u00a0")
     assert not pattern.search("❯ Reply with ONLY this exact token")
+    assert not pattern.search("❯\u00a0\n\n───"), "one line break, not any gap"
 
 
 def test_copilot_composer_pattern_rejects_trust_and_matches_composer():

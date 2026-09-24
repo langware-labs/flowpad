@@ -24,10 +24,15 @@ test 1: The Data Sources screen renders
 - [browser] validate the element with data-testid="add-data-source" is visible
 
 test 2: Every installed spec is offered as a provider
-- [api] GET /api/v1/graph/data_driver — collect every `name`
+- [api] GET /api/v1/graph/data_driver — collect every `name`, with its `listed` and `provisioned`
 - [browser] open the Add dialog
-- [browser] for each name, validate a button with data-testid="provider-<name>" is visible
-- this is the phase-2 contract: the dialog renders what is INSTALLED
+- [browser] for each name that is listed and not provisioned, validate a button with
+  data-testid="provider-<name>" is visible
+- [browser] for each name that is `listed: false` (agentmail) or `provisioned` (cloud_email),
+  validate NO such button renders — the manifest keeps it out of a person's picker (a
+  provisioned one is offered only when adding for an agent)
+- this is the phase-2 contract: the dialog renders what is INSTALLED, filtered by the
+  manifests' own flags and nothing written in ui/
 
 test 3: The RSS form is the RSS manifest
 - [api] read the `rss` spec's `config`
@@ -40,9 +45,12 @@ test 4: An RSS source can be created
 - [browser] validate a card with data-provider="rss" appears
 
 test 5: A bad feed URL blocks submission
-- [browser] fill the feed field with "not-a-url"
-- [browser] validate the Add button is disabled (the manifest's `pattern` did this — no
-  per-provider validator exists any more)
+- [browser] choose rss, name it, fill the feed field with "not-a-url"
+- [browser] validate no "not valid" problem is shown yet — problems appear once Add source
+  is pressed, not before anything is typed
+- [browser] press Add source; validate the dialog shows "not valid" and stays open (the
+  manifest's `pattern` did this — no per-provider validator exists any more)
+- [api] validate no source with that name was created
 
 test 6: Hacker News needs nothing but a name
 - [browser] choose hackernews, name it, submit
@@ -62,7 +70,9 @@ test 9: A Drive source lands in setup, not active
 - [browser] choose gdrive, name it, submit — every field is optional
 - [browser] validate the card's data-status is "setup" (its driver has a verify step)
 - [browser] press Verify with no Google credential
-- [browser] validate the card names Google as what is missing
+- [browser] validate the Verify notification names Google as what is missing (every verb on
+  the screen reports through a notification; the card carries no second result channel),
+  and the card is still in "setup"
 
   Drive's CREDENTIALED half is not automatable — see `credentialed_sources.md`. What is
   automated here is the half that would silently regress: a source that resolved straight

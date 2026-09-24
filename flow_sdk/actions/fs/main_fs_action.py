@@ -34,6 +34,7 @@ from .fs_actions import (
     serve,
     upload,
     upload_zip,
+    watch_file,
     write,
 )
 
@@ -112,6 +113,8 @@ async def fs() -> ApiResponse[Any] | StreamingResponse:
             return await create_symlink(current_request_info, fs_info)
         elif fs_info.fs_action == "resolve_symlink":
             return await resolve_symlink(current_request_info, fs_info)
+        elif fs_info.fs_action in ("watch", "unwatch"):
+            return await watch_file(current_request_info, fs_info, on=fs_info.fs_action == "watch")
         else:
             return ApiSuccessResponse(data=[])
 

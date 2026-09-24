@@ -21,6 +21,7 @@ from flow_sdk.tags.grammar import (
     tag_matches,
     tag_pattern_problem,
     tag_tree,
+    namespace_from_name,
 )
 
 GRAMMAR = json.loads(
@@ -129,3 +130,23 @@ def test_a_namespace_the_marker_cannot_hold_fails_where_it_is_built() -> None:
     """Rather than producing a tag `normalize_tag` rejects somewhere later."""
     with pytest.raises(ValueError, match="not a usable namespace"):
         join_namespace("Acme Corp", "orders.created")
+
+
+def test_a_name_is_folded_into_something_a_marker_can_hold():
+    """A namespace segment is `[a-z0-9_]`, and `join_namespace` RAISES on anything else —
+    during an asset's import, where it would take the asset down. Real names are not
+    shaped that way, so folding lives here, next to the class it has to satisfy."""
+    assert namespace_from_name("ai-course") == "ai_course"
+    assert namespace_from_name("My Project") == "my_project"
+    assert namespace_from_name("2026") == "2026"
+    # Nothing usable survives: the caller stays in OUR ontology rather than minting junk.
+    assert namespace_from_name("---") == ""
+    assert namespace_from_name("") == ""
+
+
+def test_every_folded_name_is_a_legal_marker():
+    """The fold and the pattern cannot drift: whatever comes out joins without raising."""
+    for raw in ["ai-course", "My Project", "a.b.c", "ünïcode", "2026", "__x__"]:
+        folded = namespace_from_name(raw)
+        if folded:
+            assert join_namespace(folded, "ingest.x") == f"--{folded}--.ingest.x"

@@ -2,11 +2,12 @@ import { Agent, ExpressionNode, Project, QueryFilter, QueryRequest } from '@sdk'
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 
-/** How many agents a home surface will show. The two vibe heroes center their
- *  column inside `overflow-hidden`, so an unbounded grid does not scroll — it
- *  is silently clipped. Bound it in the QUERY (not a `.slice()`) so the cap is
- *  one fact rather than a render-time trim. */
-const MAX_HOME_AGENTS = 8;
+/** How many agent TILES a home surface will show. The two vibe heroes center
+ *  their column inside `overflow-hidden`, so an unbounded grid does not scroll —
+ *  it is silently clipped. The cap is a render trim, not a query limit: the home
+ *  agent counters need the whole list, and one unbounded query shared by both is
+ *  cheaper than a capped one plus an uncapped one. */
+export const MAX_HOME_AGENTS = 8;
 
 /** The half-open `[<dir><sep>, <dir><next>)` pair `Entity.assets_by_path` uses
  *  server-side, where `next` is the codepoint after the separator — so a dir
@@ -98,7 +99,6 @@ export function useProjectAgents(project?: Project | null) {
         query: new QueryFilter({
           match: new ExpressionNode({ op: '$OR', operands: roots.flatMap(underDir) }),
           order_by: { name: 'asc' },
-          limit: MAX_HOME_AGENTS,
         }),
       });
     },
@@ -107,6 +107,6 @@ export function useProjectAgents(project?: Project | null) {
     // `name` embeds it, though it cannot change `QueryRequest.key`.
     [rootsKey, project?.id],
   );
-  const { data: agents = [] } = useEntitiesQuery<Agent>(request, { enabled: rootsKey.length > 0 });
-  return { agents };
+  const { data: agents = [], isLoading } = useEntitiesQuery<Agent>(request, { enabled: rootsKey.length > 0 });
+  return { agents, isLoading: rootsKey.length > 0 && isLoading };
 }

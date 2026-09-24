@@ -158,13 +158,15 @@ async def _mock_agent(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("wait", [True, False], ids=["after-turn", "in-flight"])
 async def test_exit_stops_a_headless_process(tmp_path, monkeypatch, wait):
-    """processes.md: ``proc = await agent.launch(..., wait=True)`` then ``await proc.exit()``.
+    """processes.md: ``agent.launch(..., wait=True)``, resolve the process from the
+    answer's ``executor``, then ``await proc.exit()``.
 
     After the turn no worker/turn is registered and there is no shell; in flight, exit
     joins the turn. Either way the process ends STOPPED, never "No active shell session".
     """
     agent = await _mock_agent(tmp_path, monkeypatch)
-    proc = await agent.launch("Summarize today's inbox in three bullets.", wait=wait)
+    answer = await agent.launch("Summarize today's inbox in three bullets.", wait=wait)
+    proc = await AgenticProcess.get_by_typeid(answer.executor)
     in_flight = ap_mod._PROMPT_TASKS.get(proc.id) is not None
     assert in_flight is (not wait), "precondition: the turn is over iff we waited for it"
 

@@ -4,6 +4,7 @@ I/O records, retention, and rerun. No LLM spawns (agent nodes are exercised
 only up to the budget gate)."""
 import asyncio
 import json
+import time
 
 import pytest
 
@@ -488,7 +489,42 @@ async def test_subprocess_missing_script_fails_cleanly(tmp_path):
     await _until(lambda: not fm.live_run_ids(), "run finalized")
     entries = read_run_journal(tmp_path / "submissing", fe.execution_id)
     errors = [e for e in entries if e["kind"] == "node_error"]
-    assert errors and errors[0]["exit_code"] == 127
+    # It never started: no made-up 127, and the reason is said, not coded.
+    assert errors and errors[0]["exit_code"] is None
+    assert "script not found" in errors[0]["error"]
+
+
+PY_FORKS_AND_HANGS = """
+import subprocess, sys, time
+
+def on_graph_workflow_event(event_name, data, flow_ctx):
+    # A grandchild that inherits the pipes: killing only the runner would
+    # leave it holding them open, and the harness would wait it out.
+    subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    time.sleep(30)
+"""
+
+
+@pytest.mark.long  # 1.01s: the deadline floor is 1s
+async def test_subprocess_deadline_kills_the_whole_group(tmp_path):
+    """The deadline is a real bound: the runner AND what it forked are killed,
+    and the answer says it timed out rather than inventing exit 124."""
+    from types import SimpleNamespace
+
+    from flow_sdk.graph_workflow_manager.function_runner import run_function_subprocess
+
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "hang.py").write_text(PY_FORKS_AND_HANGS, encoding="utf-8")
+    node = SimpleNamespace(id="p", node_data={"function": "scripts/hang.py"})
+    fe = SimpleNamespace(event="go", data={}, flow_id="f", execution_id="x")
+    run = SimpleNamespace(
+        flow=SimpleNamespace(doc=SimpleNamespace(config=SimpleNamespace(deadline_s=0))),
+        started_at=time.monotonic(),
+    )
+    started = time.monotonic()
+    answer = await run_function_subprocess(tmp_path, node, fe, run, {})
+    assert time.monotonic() - started < 5
+    assert answer.timed_out and not answer.ok and answer.returncode is None
 
 
 # ── rerun ─────────────────────────────────────────────────────────────────────

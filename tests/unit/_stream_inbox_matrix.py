@@ -7,7 +7,9 @@ What a cell proves (the same four things on every surface):
    channel (``origin.kind == source.channel``), and never to us;
 3. the reply leaves through the channel — the double records it — and on an agent cell the agent's
    serve loop answers it as the agent;
-4. ``StreamInbox(..., owner=…)`` adopts the owner's source rather than minting a twin.
+4. the reply is recorded at once, as ours, and the channel's echo of it stays that one row — the
+   agent never answers its own reply;
+5. ``StreamInbox(..., owner=…)`` adopts the owner's source rather than minting a twin.
 
 Providers are data here, never branches: every channel goes through the same body, and what differs
 per channel (who writes in, whose address it is) the driver's ``Double`` says.
@@ -31,6 +33,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.ingest.testing import make_data_source
+from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
 from flow_sdk.stream_inbox import outbound
 from flow_sdk.stream_inbox.agent_scope import resolve_agent_stream_inbox_scope
 from flow_sdk.stream_inbox.projection import reconcile_source
@@ -72,6 +75,52 @@ class Cell:
         return self.agent.typeid if self.owner_kind == "user" else self.user
 
 
+class _Serving:
+    """A local deployment's loop (``agent_serve.serve``), run here as a task in place of its process."""
+
+    def __init__(self, task: "asyncio.Task") -> None:
+        self.task = task
+
+    async def reconcile(self) -> None:
+        """Nothing to do: the loop reads its sources' state itself, every pass."""
+
+    async def stop(self) -> None:
+        from flow_sdk.builtin.agent_serve import stop_serving  # noqa: PLC0415
+
+        await stop_serving(self.task)  # between cycles, as the process's own SIGTERM does
+
+
+async def served(provider: str, double, monkeypatch, syncs: "list | None" = None, *, allowed: "list | None" = None, **fields):
+    """An agent owning *provider*'s source over *double*, launched here: its deployment's loop serving it.
+
+    *allowed* is the source's allowlist (the double's sender by default; ``[]`` admits whoever the
+    driver lets in). *syncs* is emptied the moment before the loop starts: every poll from then on
+    counts."""
+    from flow_sdk.builtin.agent_serve import answered_sources, serve  # noqa: PLC0415
+
+    agent = Agent(name=f"served {provider} {uuid.uuid4().hex[:6]}", worker_type="claude", system_prompt="Be brief.")
+    await agent.save()
+    monkeypatch.setattr(DataDriver.loaded(provider), "credentials_for", double.credentials)
+    source = make_data_source(
+        provider, name=f"served {provider} {uuid.uuid4().hex[:6]}", config=dict(double.config), owner=agent.typeid,
+        status=SourceStatus.ACTIVE.value, inbound_allowed_senders=[double.sender] if allowed is None else allowed,
+        **dict(double.fields), **fields,
+    )
+    await source.save()
+    await sync_source(source)  # its first position: what the double holds now is history
+    if syncs is not None:
+        syncs.clear()
+    deployment = await agent.run_locally()  # holds its position on each channel before the loop starts
+    assert str(source.id) in {str(s.id) for s in await answered_sources(agent, deployment)}
+    server = _Serving(asyncio.get_running_loop().create_task(serve(agent, deployment, poll_every=0.05)))
+    return agent, source, server
+
+
+async def sent_by_us(source) -> list[SourceItem]:
+    """The rows this machine sent on *source* — on record the moment ``send`` returns."""
+    return await SourceItem.get_all({"data_source_id": str(source.id), "sent_by_us": True})
+
+
 async def local_user_typeid() -> TypeId:
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
@@ -82,8 +131,7 @@ async def make_cell(owner_kind: str, provider: str, double, monkeypatch) -> Cell
     """The owner (the local user or a fresh Agent), the other owner, and a saved source of the
     channel owned by the former, with credentials answered by the double."""
     user = await local_user_typeid()
-    agent = Agent(name=f"matrix {provider} {uuid.uuid4().hex[:6]}", worker_type="claude", system_prompt="Be brief.",
-                  email_allowed_senders=[double.sender])
+    agent = Agent(name=f"matrix {provider} {uuid.uuid4().hex[:6]}", worker_type="claude", system_prompt="Be brief.")
     await agent.save()
     owner = user if owner_kind == "user" else agent.typeid
 
@@ -120,6 +168,11 @@ def _stub_the_turn(cell: Cell, monkeypatch) -> None:
 
         async def save(self):
             pass
+
+        def fetch_worker_status(self):
+            from flow_sdk.transcript_analyzer.worker_status import WorkerStatus  # noqa: PLC0415
+
+            return WorkerStatus.IDLE
 
     process = _Process()
 
@@ -164,11 +217,10 @@ async def deliver(cell: Cell) -> SourceItem:
     else:
         await sync_source(cell.source)
     await reconcile_source(str(cell.source.id))
-    # Match the delivered TEXT, not the bare nonce: the agent's answer carries the
-    # nonce too ("agent reply <nonce>"), and on a channel that echoes a sent message
-    # back into the same mailbox it is ingested as its own row. Counting that as a
-    # second delivery is how this read "not ingested" when it had been ingested once.
-    rows = [r for r in await SourceItem.get_all({"data_source_id": str(cell.source.id)}) if inbound in (r.body or "")]
+    # Match the delivered TEXT on rows we did not send: an email reply quotes the message it
+    # answers, so our recorded reply carries the inbound text too.
+    rows = [r for r in await SourceItem.get_all({"data_source_id": str(cell.source.id)})
+            if inbound in (r.body or "") and not r.sent_by_us]
     assert len(rows) == 1, f"{cell.provider}: the delivery was not ingested ({len(rows)} rows carry it)"
     return rows[0]
 
@@ -213,11 +265,36 @@ async def reply_as_agent(cell: Cell, item: SourceItem) -> dict:
     reply = f"agent reply {cell.nonce}"
     for _ in range(200):  # the loop's cadence is 20 ms; this is ~4 s of them
         sent = [m for m in cell.double.sent() if reply in (m["text"] or "")]
-        if sent:
+        # Answered = sent AND on record: the double sees the message a step before `send` records it.
+        if sent and await sent_by_us(cell.source):
             assert len(sent) == 1, f"{cell.provider}: answered {len(sent)} times"
             return sent[0]
         await asyncio.sleep(0.02)
     raise AssertionError(f"{cell.provider}: the agent's serve loop never answered ({cell.double.sent()})")
+
+
+async def recorded_once(cell: Cell, text: str) -> None:
+    """The reply is on record the moment it is sent — before any poll — marked ours and projected as
+    ours; the channel's next read (its echo, where it has one) lands on that same row, and the serve
+    loop does not answer it."""
+
+    async def rows() -> list[SourceItem]:
+        return [r for r in await SourceItem.get_all({"data_source_id": str(cell.source.id)}) if text in (r.body or "")]
+
+    (row,) = await rows()
+    assert row.sent_by_us, f"{cell.provider}: the recorded reply is not marked ours"
+    await reconcile_source(str(cell.source.id))  # the app's projection subscriber, in-process
+    fm, _ = await projected(row)
+    ours = MessageSender.agent(cell.agent.id) if cell.owner_kind == "agent" else MessageSender.user(cell.user.id)
+    assert fm.sender_id == ours.wire_id, f"{cell.provider}: our reply is attributed to {fm.sender_id}"
+
+    sent = len(cell.double.sent())
+    await sync_source(cell.source)  # the echo, on a channel that has one
+    if cell.owner_kind == "agent":
+        await asyncio.sleep(0.2)  # ten serve-loop cycles: time to (wrongly) answer the echo
+    (after,) = await rows()
+    assert (after.id, after.sent_by_us) == (row.id, True), f"{cell.provider}: the echo became a second row or cleared the mark"
+    assert len(cell.double.sent()) == sent, f"{cell.provider}: the agent answered its own reply"
 
 
 async def adopts_the_owners_source(cell: Cell, monkeypatch) -> None:

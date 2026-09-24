@@ -12,9 +12,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PrefKey, instancePreferences } from '@sdk';
 
-const mocks = vi.hoisted(() => ({ post: vi.fn() }));
+const mocks = vi.hoisted(() => ({ post: vi.fn(), fileChanged: null as null | (() => void), watched: [] as string[] }));
 
 vi.mock('@sdk/client', () => ({ __esModule: true, default: { post: mocks.post } }));
+vi.mock('@sdk/react/hooks', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useFileWatch: (_typeid: unknown, path: string | undefined, onChange: () => void) => {
+    if (path) mocks.watched.push(path);
+    mocks.fileChanged = onChange;
+  },
+}));
 vi.mock('@src/components/code-editor/shikiMonaco', () => ({
   ensureShikiMonaco: () => Promise.resolve(),
   monacoTheme: () => 'dark-plus',
@@ -66,6 +73,8 @@ describe('SnippetView', () => {
   afterEach(() => {
     cleanup();
     mocks.post.mockReset();
+    mocks.fileChanged = null;
+    mocks.watched = [];
   });
 
   it('shows only the snippet region until init and imports are asked for, and remembers', async () => {
@@ -109,7 +118,7 @@ describe('SnippetView', () => {
     expect(save).toBeGreaterThan(-1);
     expect(save).toBeLessThan(urls.indexOf('/api/v1/snippet/run'));
     expect(calls[save][1]).toEqual({ path: PATH, index: 2, kind: 'snippet', shown: 'print(d + 1)', base: 'print(d)' });
-    expect(calls.find(([url]) => url.endsWith('/run'))?.[1]).toEqual({ path: PATH, timeout_seconds: 30 });
+    expect(calls.find(([url]) => url.endsWith('/run'))?.[1]).toEqual({ path: PATH, timeout_seconds: 30, run_id: expect.any(String), connection_id: expect.any(String) });
     expect(onSynced).toHaveBeenCalledWith('READ TEXT');
     expect(onSynced).toHaveBeenCalledWith('FILE TEXT');
     expect(editors()[0].value).toBe('print(d + 1)');
@@ -135,6 +144,10 @@ describe('SnippetView', () => {
   it.each([
     [{ returncode: 0, stdout: 'hi\n', stderr: '', timed_out: false, duration_s: 0.1 }, 'hi', null, /exit 0/],
     [{ returncode: 1, stdout: '', stderr: 'ValueError: boom', timed_out: false, duration_s: 0.1 }, null, 'ValueError: boom', /exit 1/],
+    // The backend writes a sentence for EVERY run that does not succeed — a failed
+    // run is not a stopped one just because it has a detail (the bug: it read so).
+    [{ exit_code: 1, returncode: 1, stdout: '', stderr: 'boom', timed_out: false, duration_s: 0.1, detail: 'The command exited 1.' }, null, 'boom', /exit 1/],
+    [{ exit_code: 4, returncode: null, stdout: '', stderr: 'snippet file not found', timed_out: false, duration_s: 0, detail: 'snippet file not found: /x.py' }, null, 'not found', /snippet file not found/],
     [{ returncode: -9, stdout: 'step 1\n', stderr: '', timed_out: true, duration_s: 2 }, 'step 1', null, /timed out after 30s/],
     [{ returncode: null, stdout: '', stderr: "no runner for '.cobol' files", timed_out: false, duration_s: 0 }, null, 'no runner', /did not run/],
   ])('renders a run result: %#', async (result, stdout, stderr, status) => {
@@ -175,6 +188,64 @@ describe('SnippetView', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.getByText(/changed outside the editor/)).toBeTruthy();
     expect(calls).toBeDefined();
+  });
+
+  it('a first read that fails hands the file to the raw editor instead of spinning', async () => {
+    mocks.post.mockImplementation(() => Promise.reject(new Error('Network Error')));
+    const onNotSnippet = vi.fn();
+    view({ onNotSnippet });
+    await waitFor(() => expect(onNotSnippet).toHaveBeenCalled());
+  });
+
+  it('Stop kills the run in flight by its id, and the result says it was stopped', async () => {
+    let finishRun: (value: unknown) => void = () => undefined;
+    const calls = backend({
+      '/api/v1/snippet/run': new Promise((resolve) => (finishRun = resolve)),
+      '/api/v1/snippet/stop': { stopped: true },
+    });
+    view();
+    fireEvent.click(await screen.findByTestId('snippet-run'));
+    fireEvent.click(await screen.findByTestId('snippet-stop'));
+    await waitFor(() => expect(calls.some(([url]) => url.endsWith('/stop'))).toBe(true));
+    const runId = calls.find(([url]) => url.endsWith('/run'))?.[1].run_id;
+    expect(typeof runId).toBe('string');
+    expect(calls.find(([url]) => url.endsWith('/stop'))?.[1]).toEqual({ run_id: runId });
+    // What a killed run really answers with: the reason is the backend's own sentence.
+    finishRun({ returncode: -9, stdout: 'started\n', stderr: '', timed_out: false, duration_s: 0.4, detail: 'The run was stopped.' });
+    expect((await screen.findByTestId('snippet-status')).textContent).toMatch(/stopped/);
+    expect(screen.getByTestId('snippet-stdout').textContent).toContain('started');
+    expect(screen.getByTestId('snippet-run')).toBeTruthy();
+  });
+
+  it('clicks before the button turns into Stop start one run, not one each', async () => {
+    const calls = backend({ '/api/v1/snippet/run': new Promise(() => undefined) });
+    view();
+    const runButton = await screen.findByTestId('snippet-run');
+    fireEvent.click(runButton);
+    fireEvent.click(runButton);
+    fireEvent.click(runButton);
+    await screen.findByTestId('snippet-stop');
+    expect(calls.filter(([url]) => url.endsWith('/run'))).toHaveLength(1);
+  });
+
+  it('leaving the view mid-run stops the run', async () => {
+    const calls = backend({ '/api/v1/snippet/run': new Promise(() => undefined), '/api/v1/snippet/stop': { stopped: true } });
+    const { unmount } = view();
+    fireEvent.click(await screen.findByTestId('snippet-run'));
+    await screen.findByTestId('snippet-stop');
+    unmount();
+    const runId = calls.find(([url]) => url.endsWith('/run'))?.[1].run_id;
+    await waitFor(() => expect(calls.find(([url]) => url.endsWith('/stop'))?.[1]).toEqual({ run_id: runId }));
+  });
+
+  it('watches its file, and a change on disk (the agent) reloads the regions', async () => {
+    backend();
+    view({ watch: { typeid: { toString: () => 'compute_node-@local' } as never, path: PATH } });
+    await screen.findByTestId('snippet-region-snippet');
+    expect(mocks.watched).toContain(PATH);
+    backend({ '/api/v1/snippet/read': { path: PATH, regions: [REGIONS[0], REGIONS[1], { ...REGIONS[2], shown: 'print(agent)' }] } });
+    mocks.fileChanged?.();
+    await waitFor(() => expect(editors()[0].value).toBe('print(agent)'));
   });
 
   it('hands back to the raw editor when the file is not a snippet', async () => {

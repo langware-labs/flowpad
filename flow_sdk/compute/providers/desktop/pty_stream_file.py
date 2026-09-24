@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -49,6 +50,45 @@ from flow_sdk import toplog
 # Truncate down to this fraction of max when the cap is exceeded, so the
 # (read + rewrite) compaction amortizes instead of running on every write.
 _TRUNCATE_TO_FRACTION = 0.75
+
+# Replay rebuilds the terminal from what the file still holds. A fullscreen TUI
+# (Claude Code) sets its screen and mouse modes ONCE, at startup, so these must
+# survive a cut and must not outlive the process that set them — otherwise the
+# rebuilt terminal is on the wrong screen and the mouse wheel has nothing to
+# scroll (docs/pty-scroll.md, issues 2 and 4).
+_PRIVATE_MODE = re.compile(rb"\x1b\[\?([0-9;]+)([hl])")
+_ALT_SCREEN = frozenset({47, 1047, 1049})
+_MOUSE_TRACKING = frozenset({9, 1000, 1002, 1003})
+_MOUSE_ENCODING = frozenset({1006, 1016})
+_FLAGS = frozenset({1, 1004, 2004})  # cursor keys, focus reporting, bracketed paste
+# Everything a dead process can leave on, turned off; written before a new
+# process's first output into the same file.
+_GENERATION_RESET = b"\x1b[?1049l\x1b[?1003l\x1b[?1006l\x1b[?1016l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[?25h"
+
+
+def _modes_in_force(output: bytes) -> bytes:
+    """The escape sequences that re-establish the modes ``output`` leaves on."""
+    alt = mouse = encoding = None
+    flags: set[int] = set()
+    cursor_hidden = False
+    for m in _PRIVATE_MODE.finditer(output):
+        on = m.group(2) == b"h"
+        for param in m.group(1).split(b";"):
+            if not param.isdigit():
+                continue
+            mode = int(param)
+            if mode in _ALT_SCREEN:
+                alt = mode if on else None
+            elif mode in _MOUSE_TRACKING:
+                mouse = mode if on else None
+            elif mode in _MOUSE_ENCODING:
+                encoding = mode if on else None
+            elif mode in _FLAGS:
+                (flags.add if on else flags.discard)(mode)
+            elif mode == 25:
+                cursor_hidden = not on
+    active = [m for m in (alt, mouse, encoding) if m is not None] + sorted(flags)
+    return b"".join(b"\x1b[?%dh" % m for m in active) + (b"\x1b[?25l" if cursor_hidden else b"")
 
 
 class PtyStreamFile:
@@ -92,6 +132,19 @@ class PtyStreamFile:
         if seq is not None:
             frame.append(seq)
         self._append_line(json.dumps(frame))
+
+    def mark_new_generation(self) -> None:
+        """Turn off the modes a previous process left on, before a new one writes.
+
+        Recovery respawns into the SAME file. A process that died on the
+        alternate screen with mouse capture on never wrote the resets, so
+        replay would hand the new process's output a fullscreen canvas with no
+        scrollback. The frame carries no seq: generation-scoped readers
+        (``read_output_after_seq``, ``max_seq``) never see it.
+        """
+        if not self.size:
+            return
+        self._append_line(json.dumps(["o", base64.b64encode(_GENERATION_RESET).decode("ascii")]))
 
     def write_resize(self, cols: int, rows: int) -> None:
         """Append a resize frame. Every actual winsize change must be recorded —
@@ -188,7 +241,8 @@ class PtyStreamFile:
         """Drop whole frames from the front until under the compaction target.
 
         The header is rewritten to the winsize in effect at the first retained
-        frame (tracked through any dropped resize frames).
+        frame (tracked through any dropped resize frames), and the terminal
+        modes still in force at the cut are carried in a first output frame.
         """
         t0 = time.monotonic()
         target = int(self._max_size_bytes * _TRUNCATE_TO_FRACTION)
@@ -200,19 +254,26 @@ class PtyStreamFile:
 
         size = len(raw)
         drop = 1  # index of first retained frame line (0 is the header)
+        dropped_output: list[bytes] = []
         while drop < len(lines) - 1 and size > target:
             line = lines[drop]
             try:
                 frame = json.loads(line)
                 if frame[0] == "r":
                     cols, rows = int(frame[1][0]), int(frame[1][1])
+                elif frame[0] == "o":
+                    dropped_output.append(base64.b64decode(frame[1]))
             except (ValueError, IndexError, TypeError):
                 pass  # malformed line (e.g. torn tail) — drop it
             size -= len(line) + 1
             drop += 1
 
         new_header = json.dumps({"v": 1, "cols": cols, "rows": rows}).encode()
-        new_raw = new_header + b"\n" + b"\n".join(lines[drop:])
+        retained = lines[drop:]
+        modes = _modes_in_force(b"".join(dropped_output))
+        if modes:
+            retained = [json.dumps(["o", base64.b64encode(modes).decode("ascii")]).encode(), *retained]
+        new_raw = new_header + b"\n" + b"\n".join(retained)
         self._path.write_bytes(new_raw)
         self._size = len(new_raw)
         # Runs on the PTY reader thread holding the file lock; a resize from the

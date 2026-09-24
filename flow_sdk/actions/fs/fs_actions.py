@@ -9,6 +9,7 @@ import asyncio
 import errno
 import json
 import logging
+import os
 import mimetypes
 import re
 import urllib.parse
@@ -440,6 +441,32 @@ async def read_optional(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> 
         return ApiSuccessResponse(data={"exists": False, "content": None})
     raw = b"".join([chunk async for chunk in storage.stream(path)])
     return ApiSuccessResponse(data={"exists": True, "content": raw.decode("utf-8", errors="replace")})
+
+
+async def watch_file(request_info: RequestInfo, fs_info: EntityFSReqInfo, *, on: bool) -> ApiResponse[bool]:
+    """Start (``watch``) or stop (``unwatch``) telling this connection when the
+    file changes on disk — a ``file_changed_msg`` naming the entity and path it
+    was watched by. POST body ``{connection_id}``. See ``file_watch``."""
+    from flow_sdk.actions.fs.file_watch import unwatch_file  # noqa: PLC0415
+    from flow_sdk.actions.fs.file_watch import watch_file as start_watch  # noqa: PLC0415
+
+    if request_info.method != "post":
+        return ApiFailResponse(message="watch/unwatch require POST")
+    body = await request_info.get_post_data()
+    connection_id = body.get("connection_id") if isinstance(body, dict) else None
+    if not connection_id:
+        return ApiFailResponse(message="connection_id is required")
+    storage = await _get_storage_for_entity(request_info)
+    local = storage._local_full_path(fs_info.vpath.abs_vfspath)
+    entity = str(fs_info.vpath.typeid)
+    path = "/".join((request_info.sub_path or "").split("/")[1:])
+    if on:
+        if not os.path.isfile(local):
+            return ApiFailResponse(message=f"no such file: {local}", data={"error_code": "NOT_FOUND"})
+        start_watch(connection_id, local, entity, path)
+    else:
+        unwatch_file(connection_id, local, entity, path)
+    return ApiSuccessResponse(data=True)
 
 
 async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> StreamingResponse | ApiFailResponse:

@@ -138,3 +138,41 @@ def connect_connection(
             }
         )
     )
+
+
+EXIT_NOT_CONNECTED = 1
+
+
+@connections_app.command("test")
+def test_connection(
+    provider: Annotated[str, typer.Argument(help="Canonical provider id from `flow connections list`.")],
+    scope: Annotated[
+        list[str],
+        typer.Option("--scope", help="A scope the grant must cover. Repeatable."),
+    ] = [],  # noqa: B006 — typer reads the default, never mutates it
+    json_output: Annotated[bool, typer.Option("--json", help="Emit one JSON object.")] = False,
+) -> None:
+    """Exit 0 when ``provider`` is connected, its test passes, and its grant covers every ``--scope``.
+
+    The completion check of a setup step: it prints no token, only the verdict.
+    """
+    from flow_sdk.core.connections import test as test_provider  # noqa: PLC0415
+
+    try:
+        result = _run(test_provider(provider))
+        rows = _run(list_connections("")) if scope else []
+    except ConnectionConnectError as error:
+        _error_exit(error, json_output=json_output)
+        return
+    granted = next((set(r.scopes) for r in rows if r.provider.lower() == provider.strip().lower()), set())
+    missing = [s for s in dict.fromkeys(scope) if s not in granted] if scope else []
+    ok = bool(result.ok) and not missing
+    payload = {"ok": ok, "provider": provider, "identity": result.identity, "missing_scopes": missing,
+               "detail": result.detail}
+    if json_output:
+        typer.echo(json.dumps(payload))
+    else:
+        verdict = "connected" if ok else ("missing scopes: " + ", ".join(missing) if missing else "not connected")
+        typer.echo(f"{provider}: {verdict}" + (f" ({result.identity})" if ok and result.identity else ""))
+    if not ok:
+        raise typer.Exit(EXIT_NOT_CONNECTED)

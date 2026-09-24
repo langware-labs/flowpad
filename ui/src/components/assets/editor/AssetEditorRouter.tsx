@@ -49,6 +49,8 @@ import { detectLanguage } from '@sdk';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
+import { AgentChildView } from './agent-profile/AgentChildView';
+import { useNestedHost } from './nested-host';
 import { SubAgentAssetEditor } from './subagent/SubAgentAssetEditor';
 import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
 import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAssetEditor';
@@ -94,6 +96,10 @@ function machinePathOf(value: string): string {
   return vfs.typeId ? vfs.machinePath : value;
 }
 
+function useIsNested(): boolean {
+  return useNestedHost() !== null;
+}
+
 function ConnectingFallback() {
   usePrimaryContentPending(true);
   return (
@@ -116,6 +122,9 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   const { currentDock } = useDockNavigation();
   const readOnly = currentDock?.options?.readOnly === '1';
   const occurrenceType = currentDock?.options?.assetType;
+  // The view nested in THIS editor — only the page's own editor has one; a router rendering the
+  // child itself (AgentChildView) must not see it again.
+  const nestedChild = useIsNested() ? null : currentDock?.child ?? null;
   const ptr = (() => {
     try {
       const p = AssetDocPointer.parse(pointer);
@@ -354,11 +363,16 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           renderDocument={renderDocument}
           typeLabel="agent"
           resolvedEntity={typeIdEntity as Agent | undefined}
-          render={(agent) => (
-            <AssetCollisionShell entity={agent}>
-              <AgentProfileEditor agent={agent} mainRef={mainFileRef} />
-            </AssetCollisionShell>
-          )}
+          render={(agent) =>
+            // A resource opened from the agent's menu replaces its body, in the agent's tab.
+            nestedChild ? (
+              <AgentChildView agent={agent} section={nestedChild.section} typeIdString={nestedChild.typeId} />
+            ) : (
+              <AssetCollisionShell entity={agent}>
+                <AgentProfileEditor agent={agent} mainRef={mainFileRef} />
+              </AssetCollisionShell>
+            )
+          }
         />
       );
     case AssetEditor.WHITEBOARD:

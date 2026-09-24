@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessStatus, WorkerStatus
+from flow_sdk.builtin.agentic_process.cli_drivers import AgenticProcessContextKey
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.driver import CodexDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail_status
 from flow_sdk.flowpad_types.enums import WorkerType
@@ -182,6 +183,8 @@ def test_codex_driver_falls_back_to_recent_rollout_by_workdir(
         worker_type=WorkerType.CODEX,
         session_id="flowpad-preassigned-session-id",
         workdir=str(workdir),
+        # The fallback is bounded by the worker's own launch; unlaunched owns none.
+        context_data={AgenticProcessContextKey.WORKER_STARTED_AT.value: datetime.now(tz=timezone.utc).isoformat()},
     )
     proc.updated_date = datetime.now(tz=timezone.utc)
 

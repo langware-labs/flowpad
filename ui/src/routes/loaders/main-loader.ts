@@ -49,12 +49,11 @@ export { describeProcessStartError };
  * This runs before tab materialization on purpose, and only for a SCOPE-KEYED
  * dock (Assets, Explorer), whose tab identity IS its scope
  * (`tabHash` = `<viewType>|project:<id>`). Such a tab cannot be minted for a
- * project that isn't there — `setupTab` throws "Tab could not be materialized
- * for this URL.", records OpenFailed and returns, so NOTHING downstream runs:
- * not the dock loader, not scope adoption, not any error surface. The dock is
- * abandoned and the browse views render the dead scope's zero rows as an
- * ordinary empty list. Any repair placed after this point is unreachable, which
- * is what makes this the right seam. Docks whose identity ignores scope are
+ * project that isn't there, and the dock loader that still runs after the failed
+ * mint cannot repair it either: scope adoption swallows the dead project, so the
+ * browse views would render its zero rows as an ordinary empty list. Repairing
+ * here, before materialization, also skips the tab round trips a dead scope would
+ * otherwise spend. Docks whose identity ignores scope are
  * unaffected and are left to resolve their own project (a shell derives it from
  * its process), so they pay no extra fetch here.
  *

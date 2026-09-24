@@ -12,14 +12,16 @@
  *     precondition: "if slack or agent is missing … nothing below is meaningful"),
  *   - slack: the form asks for channel ids and does NOT ask for an account key
  *     ("the workspace belongs to the connection, not the form"), and a value
- *     that is not a channel id is rejected by the manifest's pattern before the
- *     button enables,
+ *     that is not a channel id is refused by the manifest's pattern when Add
+ *     source is pressed — the problem is shown and nothing is created,
  *   - agent: the `connector` field exists (it is what names the channel),
  *   - agentmail: the key never appears in the form — the `inbox` field is
- *     account-bound (`account_key: true`) and the secret lives on the connection.
+ *     account-bound (`account_key: true`) and the secret lives on the connection;
+ *     and the manifest is `listed: false`, so a person's picker offers no
+ *     AgentMail form at all (people get Agent Email, which the cloud allocates).
  */
 import { expect, test, type Page } from '@playwright/test';
-import { apiOrigin } from '../_shared/api';
+import { apiContext, apiOrigin } from '../_shared/api';
 
 interface SpecField {
   type?: string;
@@ -31,6 +33,7 @@ interface SpecField {
 interface Spec {
   id: string;
   name: string;
+  listed?: boolean;
   config?: Record<string, SpecField>;
 }
 
@@ -47,12 +50,17 @@ test.beforeAll(async ({ request }) => {
   specs = (((await res.json()) as { data?: Spec[] }).data ?? []);
 });
 
-async function openProvider(page: Page, provider: string) {
+async function openDialog(page: Page) {
   await page.goto('/dock/data-sources');
   await expect(page.getByTestId('data-sources-view')).toBeVisible();
   await page.getByTestId('add-data-source').click();
   const dialog = page.getByRole('dialog').filter({ hasText: 'Add a data source' });
   await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+async function openProvider(page: Page, provider: string) {
+  const dialog = await openDialog(page);
   await dialog.getByTestId(`provider-${provider}`).click();
   return dialog;
 }
@@ -72,7 +80,8 @@ test('slack: channel ids only — no account key in the form; a non-channel-id f
   ).toBeFalsy();
 
   const dialog = await openProvider(page, 'slack');
-  await dialog.locator('#ds-name').fill('e2etest-slack-gate');
+  const name = `e2etest-slack-gate-${Date.now()}`;
+  await dialog.locator('#ds-name').fill(name);
 
   // `channel` is a ChoiceField (`type: text`, `choices: true`) — a picker,
   // not a bare input. Its listing fires ON OPEN, not on mount, so the plain-input
@@ -83,14 +92,23 @@ test('slack: channel ids only — no account key in the form; a non-channel-id f
   const picker = dialog.getByTestId(`ds-choice-${channelKey}`);
   if (await picker.isVisible().catch(() => false)) {
     await picker.click();
+    // A refusal unmounts the popover and hands back the text box in its place, so there
+    // is nothing left to dismiss — an Escape here would reach the dialog and close it.
     await expect(dialog.getByTestId(`ds-choice-detail-${channelKey}`)).toBeVisible();
-    await page.keyboard.press('Escape');
   }
   await dialog.locator(`#ds-${channelKey}`).fill('definitely-not-a-channel-id');
+  // Problems are shown once Add source is pressed, not before — so pressing it is what
+  // must refuse: the pattern's problem appears, the dialog stays, and nothing is created.
+  await dialog.getByRole('button', { name: 'Add source' }).click();
   await expect(
-    dialog.getByRole('button', { name: 'Add source' }),
-    "the manifest's pattern must reject a non-channel-id before the button enables",
-  ).toBeDisabled();
+    dialog,
+    "the manifest's pattern must reject a non-channel-id when Add source is pressed",
+  ).toContainText('not valid');
+  await expect(dialog).toBeVisible();
+  const api = await apiContext();
+  const rows = ((await (await api.get('/api/v1/graph/data_source')).json()).data ?? []) as { name: string }[];
+  await api.dispose();
+  expect(rows.map((r) => r.name), 'the refused slack source was created anyway').not.toContain(name);
 });
 
 test('agent: the connector field is what names the channel', async ({ page }) => {
@@ -111,6 +129,10 @@ test('agentmail: the API key never appears in the form — the inbox is account-
     Object.keys(schema).find((k) => /api.?key|token|secret/i.test(k)),
     'no plaintext API-key field in the form',
   ).toBeFalsy();
-  const dialog = await openProvider(page, 'agentmail');
-  await expect(dialog.locator(`#ds-${accountField}`)).toBeVisible();
+  // The form a person could open is none at all: `listed: false` keeps AgentMail out of the
+  // picker, so no key field — plaintext or otherwise — can reach a person through it.
+  expect(specNamed('agentmail').listed, 'agentmail is unlisted by its manifest').toBe(false);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByTestId('provider-rss'), 'the picker rendered its providers').toBeVisible();
+  await expect(dialog.getByTestId('provider-agentmail'), 'an unlisted provider is offered').toHaveCount(0);
 });

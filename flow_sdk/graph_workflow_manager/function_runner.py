@@ -29,9 +29,11 @@ import logging
 import os
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
+
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.assets.types.graph_workflow_doc import GraphWorkflowNodeDef
@@ -56,14 +58,6 @@ def record_emission(output_folder: "Path | None", event: str, data: dict) -> Non
         pass
 
 
-@dataclass
-class FunctionResult:
-    exit_code: int
-    stdout: str
-    stderr: str
-    result: Optional[dict] = None  # the handler's dict return (auto-`done` payload)
-
-
 def _api_base() -> str:
     """This instance's HTTP base (for the subprocess's emit bridge)."""
     from flow_sdk.config import load_server_info
@@ -77,21 +71,26 @@ async def run_function_subprocess(
     fe: "RunEvent",
     run: "_Run",
     folders: dict[str, str],
-) -> FunctionResult:
+) -> CliResult:
     """Manager-side harness: spawn the runner subprocess for one event.
 
     ``folders`` carries the execution-record paths threaded into flow_ctx:
     ``{"input": ..., "output": ..., "flow_output": ...}``.
+
+    Answers like any other command: ``returncode`` is the process's own exit
+    (``None`` when it never started — a missing script is not a made-up 127),
+    ``timed_out`` when the deadline budget killed it, and the handler's dict
+    return rides as ``value``.
     """
     ref = str(node.node_data.get("function") or "")
     target = ref
     if ref.endswith(".py"):
         script = (flow_folder / ref).resolve()
         if not script.exists():
-            return FunctionResult(exit_code=127, stdout="", stderr=f"script not found: {ref}")
+            return CliResult.not_found(f"script not found: {ref}", command=ref)
         target = str(script)
     elif not ref:
-        return FunctionResult(exit_code=127, stdout="", stderr="function node has no function ref")
+        return CliResult.not_found("function node has no function ref")
 
     payload = json.dumps({
         "event": fe.event,
@@ -106,6 +105,8 @@ async def run_function_subprocess(
     })
     env = dict(os.environ)
     env.setdefault("FLOW_INSTANCE", os.environ.get("FLOW_INSTANCE", ""))
+    command = f"{sys.executable} -m flow_sdk.graph_workflow_manager.function_runner {target}"
+    started = time.monotonic()
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "flow_sdk.graph_workflow_manager.function_runner", target,
         stdin=asyncio.subprocess.PIPE,
@@ -113,6 +114,9 @@ async def run_function_subprocess(
         stderr=asyncio.subprocess.PIPE,
         env=env,
         cwd=str(flow_folder),
+        # Its own group, so a timeout kills what the function forked too —
+        # a child holding the pipes open would otherwise outlive the budget.
+        start_new_session=CAN_KILLPG,
     )
     # Bound by the run's remaining deadline budget (a designed loop budget,
     # not a symptom mask): a hung function must not hold the node slot forever.
@@ -120,9 +124,12 @@ async def run_function_subprocess(
     try:
         out, err = await asyncio.wait_for(proc.communicate(payload.encode()), timeout=remaining)
     except asyncio.TimeoutError:
-        proc.kill()
+        kill_process_tree(proc)
         await proc.wait()
-        return FunctionResult(exit_code=124, stdout="", stderr="killed: run deadline budget expired")
+        return CliResult.of_process(
+            command, None, "", "killed: run deadline budget expired",
+            timed_out=True, duration_s=time.monotonic() - started,
+        )
 
     stdout = out.decode(errors="replace")
     stderr = err.decode(errors="replace")
@@ -140,11 +147,11 @@ async def run_function_subprocess(
                 pass
         else:
             kept.append(line)
-    return FunctionResult(
-        exit_code=proc.returncode or 0,
-        stdout="\n".join(kept) + ("\n" if kept else ""),
-        stderr=stderr,
-        result=result,
+    return CliResult.of_process(
+        command, proc.returncode,
+        "\n".join(kept) + ("\n" if kept else ""), stderr,
+        duration_s=time.monotonic() - started,
+        value=result,
     )
 
 

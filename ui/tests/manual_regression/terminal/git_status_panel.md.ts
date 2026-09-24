@@ -409,7 +409,8 @@ test.describe('Git Status Panel', () => {
     expect(gitJson.status).toBe('SUCCESS');
     const gitData = gitJson.data!;
     expect(gitData.error).toBeNull();
-    expect(typeof gitData.branch).toBe('string');
+    // null on a detached HEAD (the type says so, and use-git-change-count.ts reads it that way)
+    expect(gitData.branch === null || typeof gitData.branch === 'string').toBe(true);
     expect(typeof gitData.ahead).toBe('number');
     expect(typeof gitData.behind).toBe('number');
     expect(Array.isArray(gitData.files)).toBe(true);

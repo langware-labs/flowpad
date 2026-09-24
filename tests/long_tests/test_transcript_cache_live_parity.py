@@ -32,6 +32,7 @@ import pytest
 from flow_sdk.builtin.agentic_process import transcript_cache
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from tests.long_tests._transcript_helpers import assert_prompt_ok, safe_exit
+from tests.long_tests.conftest import fund_worker_without_a_login
 from tests.long_tests.test_process_mcp_multi_vendor import _WORKER_TYPE, WORKERS, _cli_config
 from tests.test_settings import test_service_config
 from tests.unit.test_transcript_cache_no_repeat_search import view
@@ -92,6 +93,7 @@ async def _run_turn_judging(process: AgenticProcess, worker: str, instruction: s
 @pytest.mark.parametrize("worker", WORKERS)
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_cached_transcript_resolution_matches_uncached_on_a_real_worker(worker: str, tmp_path: Path):
+    await fund_worker_without_a_login(worker)  # a no-op for a harness with its own login
     process = await AgenticProcess(
         worker_type=_WORKER_TYPE[worker],
         workdir=str(tmp_path),

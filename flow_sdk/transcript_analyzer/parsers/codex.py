@@ -80,6 +80,23 @@ def _skill_name_from_command(command: object) -> str | None:
     return match.group(1) if match else None
 
 
+def _skill_call_entry(
+    command: object, *, tool_name: str, tool_use_id: str, tool_input: dict, **fields: Any
+) -> SkillCallEntry | None:
+    """The SkillCallEntry for a shell call that loads a SKILL.md, else None."""
+    skill_name = _skill_name_from_command(command)
+    if not skill_name:
+        return None
+    return SkillCallEntry(
+        skill_name=skill_name,
+        invocation_kind=SkillInvocationKind.FILE_LOAD,
+        tool_name=tool_name,
+        tool_use_id=f"{tool_use_id}:skill",
+        tool_input=tool_input,
+        **fields,
+    )
+
+
 # Codex Plan Mode emits the finalized plan inside an assistant message wrapped
 # in ``<proposed_plan>...</proposed_plan>``. We synthesize an
 # ``ExitPlanModeEntry`` from that marker so downstream code (PlanHandler,
@@ -633,18 +650,15 @@ class _CodexParserBase:
             use_base = {**base, "id": f"{tool_use_id}:tool_use"}
             result_base = {**base, "id": f"{tool_use_id}:tool_result"}
             entries: list[TranscriptEntry] = []
-            skill_name = _skill_name_from_command(cmd)
-            if skill_name:
-                entries.append(
-                    SkillCallEntry(
-                        skill_name=skill_name,
-                        invocation_kind=SkillInvocationKind.FILE_LOAD,
-                        tool_name="shell",
-                        tool_use_id=f"{tool_use_id}:skill",
-                        tool_input={"command": cmd},
-                        **{**base, "id": f"{tool_use_id}:skill_call"},
-                    )
-                )
+            skill_call = _skill_call_entry(
+                cmd,
+                tool_name="shell",
+                tool_use_id=tool_use_id,
+                tool_input={"command": cmd},
+                **{**base, "id": f"{tool_use_id}:skill_call"},
+            )
+            if skill_call:
+                entries.append(skill_call)
             entries.append(
                 ToolUseEntry(
                     tool_name="shell",
@@ -690,18 +704,15 @@ class _CodexParserBase:
             tool_use_id = call_id or str(eid or base["id"])
             tool_input = self._safe_json(payload.get("arguments") or {}) or {}
             out: list[TranscriptEntry] = []
-            skill_name = _skill_name_from_command(tool_input)
-            if skill_name:
-                out.append(
-                    SkillCallEntry(
-                        skill_name=skill_name,
-                        invocation_kind=SkillInvocationKind.FILE_LOAD,
-                        tool_name=tool_name or "shell",
-                        tool_use_id=f"{tool_use_id}:skill",
-                        tool_input=tool_input if isinstance(tool_input, dict) else {},
-                        **{**envelope, **base, "id": f"{base['id']}:skill_call"},
-                    )
-                )
+            skill_call = _skill_call_entry(
+                tool_input,
+                tool_name=tool_name or "shell",
+                tool_use_id=tool_use_id,
+                tool_input=tool_input if isinstance(tool_input, dict) else {},
+                **{**envelope, **base, "id": f"{base['id']}:skill_call"},
+            )
+            if skill_call:
+                out.append(skill_call)
             out.append(
                 ToolUseEntry(
                     tool_name=tool_name,
@@ -781,7 +792,16 @@ class _CodexParserBase:
                     return file_entries
                 # Zero parseable ops → fall through to generic ToolUseEntry.
 
-            return [
+            # Code mode's ``exec`` input is a script wrapping
+            # ``tools.exec_command({cmd: ...})``, so a SKILL.md read lives in it.
+            skill_call = _skill_call_entry(
+                raw_input,
+                tool_name=tool_name,
+                tool_use_id=tool_use_id,
+                tool_input={"command": raw_input} if isinstance(raw_input, str) else {},
+                **{**envelope, **base, "id": f"{base['id']}:skill_call"},
+            )
+            return ([skill_call] if skill_call else []) + [
                 ToolUseEntry(
                     tool_name=tool_name,
                     tool_use_id=tool_use_id,

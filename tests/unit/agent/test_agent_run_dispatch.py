@@ -1,6 +1,7 @@
 """The run routing seam: a run is addressed to a machine, not to "here"."""
 import pytest
 
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, PromptResult
 from flow_sdk.builtin.agent_run import (
     TAG_RUN_FAILED,
     TAG_RUN_REQUESTED,
@@ -39,12 +40,12 @@ def captured(monkeypatch):
 
 async def test_local_run_launches_and_reports_started(captured):
     async def _launch(prompt, **_):
-        return type("P", (), {"id": "proc-9"})()
+        return PromptResult.satisfied("The turn was accepted.", executor="agentic_process-proc-9")
 
     dep = _FakeDeployment("local-node", local=True, launch=_launch)
-    proc = await dispatch_agent_run(dep, "do the thing")
+    answer = await dispatch_agent_run(dep, "do the thing")
 
-    assert proc.id == "proc-9"
+    assert answer.ok and answer.executor == "agentic_process-proc-9"
     tags = [t for t, _n, _d in captured]
     assert tags == [TAG_RUN_REQUESTED, TAG_RUN_STARTED]
     # every event is addressed to the machine the deployment places it on
@@ -63,23 +64,24 @@ async def test_remote_run_refuses_rather_than_running_here(captured):
 
     dep = _FakeDeployment("far-away-node", local=False, launch=_launch)
 
-    with pytest.raises(NotImplementedError) as err:
-        await dispatch_agent_run(dep, "do the thing")
+    answer = await dispatch_agent_run(dep, "do the thing")
 
-    assert "far-away-node" in str(err.value)
+    # An answer, not a raise: not this machine's to run — nothing ran here.
+    assert answer.exit_code is ExitCode.NOT_APPLICABLE and answer.ran is False
+    assert "far-away-node" in answer.detail
     assert [t for t, _n, _d in captured] == [TAG_RUN_REQUESTED, TAG_RUN_FAILED]
 
 
-async def test_launch_failure_is_reported_and_reraised(captured):
+async def test_a_launch_that_was_not_taken_is_reported_and_answered(captured):
     async def _launch(prompt, **_):
-        raise RuntimeError("worker died")
+        return PromptResult.held("another turn is already in flight", executor="agentic_process-proc-9")
 
     dep = _FakeDeployment("local-node", local=True, launch=_launch)
-    with pytest.raises(RuntimeError, match="worker died"):
-        await dispatch_agent_run(dep, "x")
+    answer = await dispatch_agent_run(dep, "x")
 
+    assert answer.busy and answer.exit_code is ExitCode.NOT_YET
     assert [t for t, _n, _d in captured] == [TAG_RUN_REQUESTED, TAG_RUN_FAILED]
-    assert captured[-1][2]["error"] == "worker died"
+    assert captured[-1][2]["error"] == "another turn is already in flight"
 
 
 # ── deployment upsert ─────────────────────────────────────────────────────────

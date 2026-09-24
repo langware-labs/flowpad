@@ -2,49 +2,26 @@
 
 Provides:
 - get_entity_storage(): Get filesystem storage for an entity (with optional override from entity config)
-- get_entity_embedded_storage(): Get embedded/blob storage for an entity in temp folder
+- get_entity_embedded_storage(): Get embedded/blob storage in the entity's record-data folder
 """
 
 import logging
-import os
-import tempfile
 from typing import Any, Callable, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.config import StorageProvider
+from flow_sdk.fs_store.record_paths import data_dir_for
 from flow_sdk.storage.local_fs_driver import LocalStorageDriver
 
 logger = logging.getLogger(__name__)
 
 
-def get_default_embedded_storage() -> LocalStorageDriver:
-    """Get default embedded storage in temp folder for blobs.
-
-    Returns:
-        LocalStorageDriver mounted at a temp folder for embedded storage
-    """
-    temp_dir = os.path.join(tempfile.gettempdir(), "flow-embedded-storage")
-    os.makedirs(temp_dir, exist_ok=True)
-
-    return LocalStorageDriver(mount_path=temp_dir)
-
-
 def get_entity_embedded_storage(typeid: TypeId) -> LocalStorageDriver:
-    """Get embedded/blob storage for an entity.
+    """Get embedded/blob storage for an entity: ``<records_data>/<type>/<id>/embedded/``.
 
-    Embedded storage is used for large blobs and is stored in a temp folder.
-    Each entity gets its own subfolder under the embedded storage root.
-
-    Args:
-        typeid: The entity's TypeId (type:id)
-
-    Returns:
-        StorageDriver for the entity's embedded storage
+    Never the OS temp dir — that is shared by every instance and purged at boot.
     """
-    parent_storage = get_default_embedded_storage()
-    # Create entity-specific subfolder: {entity_type}/{entity_id}
-    entity_subfolder = f"{typeid.type}/{typeid.id}"
-    entity_storage = parent_storage.subfolder_storage(entity_subfolder)
+    entity_storage = LocalStorageDriver(mount_path=str(data_dir_for(typeid.type, typeid.id) / "embedded"))
     entity_storage.root_entity_typeid = typeid
     return entity_storage
 
@@ -61,7 +38,7 @@ def get_entity_storage(
     1. File-backed Git-publishable assets use their entity VFS rooted at the
        local asset checkout.
     2. If entity has fs_storage_provider set, use configured storage mount.
-    3. Otherwise, ``fallback(typeid)`` — the temp-folder embedded storage unless
+    3. Otherwise, ``fallback(typeid)`` — the record-data embedded storage unless
        the caller has a request-scoped store (``Entity.fs_storage`` does).
 
     Simple and deterministic - no database lookups. Entity only used if already available.

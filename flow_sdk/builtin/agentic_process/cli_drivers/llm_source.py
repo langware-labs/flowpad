@@ -504,15 +504,18 @@ def _apply_constraint(
 
     This is what makes the list self-explaining -- the failure message and the picker's
     greyed rows are the same data, so they cannot disagree.
-    """
-    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
 
+    The named row is matched by typeid whatever its KIND. A process pinned to a local
+    ``api_key`` endpoint used to miss here (only hub rows matched), fall through to the
+    hub stub below, and spawn against ``<hub>/llm_endpoint/<local id>/invoke`` -- a
+    budget the hub has never heard of, answered with 403 ``target_not_found``.
+    """
     scope = "this process" if origin is LLMSourceOrigin.PROCESS else "this project"
-    why = f"{scope} requires hub endpoint {typeid}"
+    why = f"{scope} requires endpoint {typeid}"
     out: list[Candidate] = []
     named = False
     for endpoint, source in candidates:
-        if endpoint.kind == LLMEndpointKind.HUB and source.endpoint_typeid == typeid:
+        if source.endpoint_typeid == typeid:
             named = True
             out.append(
                 Candidate(endpoint, source.model_copy(update={"rank": -1, "auto": source.eligible, "origin": origin}))

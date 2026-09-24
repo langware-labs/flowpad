@@ -112,7 +112,8 @@ class AgentConfig(SourceConfig):
     """What a agent source is configured with."""
 
     connector: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-    harness: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    #: The worker CLI that runs the fetch. Claude Code unless the user picks another.
+    harness: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] = "claude"
     retired_list = ("segments", "mailbox")
 
     #: The ONE mailbox (gmail label) or channel id (slack) this source walks. Empty = the

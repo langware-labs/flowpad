@@ -89,6 +89,49 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface Deployment extends EntityMerge<IDeployment> {}
 
+/** One thing that happened on a deployment — mirror of `deployment.timeline_event`. */
+export interface TimelineEvent {
+  at: string;
+  kind: 'message_in' | 'reply_sent' | 'turn_started' | 'turn_failed' | 'refused';
+  who: string;
+  text: string;
+  channel: string;
+  data_source_id: string;
+  process_id: string;
+  conversation_id: string;
+  message_id: string;
+}
+
+/** A page of a deployment's timeline, newest first — mirror of `deployment.timeline`. */
+export interface DeploymentTimeline {
+  deployment_id: string;
+  events: TimelineEvent[];
+  before: string | null;
+}
+
+/**
+ * One conversation a deployment holds — a chat, a mail thread, a whole phone call — mirror of
+ * `deployment.thread`. `status`: `live` (a call is on the line), `working` (the agent is mid-turn),
+ * `ended` (a call that is over), `idle`.
+ */
+export interface DeploymentThread {
+  conversation_id: string;
+  title: string;
+  who: string;
+  channel: string;
+  data_source_id: string;
+  process_id: string;
+  status: 'live' | 'working' | 'ended' | 'idle';
+  started_at: string | null;
+  last_at: string | null;
+  last_text: string;
+  messages: number;
+  turns: number;
+}
+
+/** The tag a deployment's process emits when its timeline moved (relayed to the app). */
+export const DEPLOYMENT_TIMELINE_TAG = 'deployment.timeline';
+
 /**
  * Deployment is THE placement record: this thing runs on that machine.
  *
@@ -196,6 +239,28 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   async endpoints(): Promise<ServiceEndpoint[]> {
     const data = await this.get<{ endpoints?: IServiceEndpoint[] } | null>('endpoints');
     return (data?.endpoints ?? []).map((row) => new ServiceEndpoint(row));
+  }
+
+  /**
+   * What reached this deployment, what it ran and what it answered — newest first
+   * (`GET deployment/<id>/timeline`); `conversation` narrows it to one thread, `before` pages back.
+   */
+  async timeline(
+    opts: { limit?: number; before?: string | null; conversation?: string | null } = {},
+  ): Promise<DeploymentTimeline> {
+    const params = new URLSearchParams();
+    if (opts.limit) params.set('limit', String(opts.limit));
+    if (opts.before) params.set('before', opts.before);
+    if (opts.conversation) params.set('conversation', opts.conversation);
+    const qs = params.toString();
+    const data = await this.get<DeploymentTimeline | null>(`timeline${qs ? `?${qs}` : ''}`);
+    return data ?? { deployment_id: this.id, events: [], before: null };
+  }
+
+  /** The conversations it holds, the active ones first (`GET deployment/<id>/threads`). */
+  async threads(): Promise<DeploymentThread[]> {
+    const data = await this.get<{ threads?: DeploymentThread[] } | null>('threads');
+    return data?.threads ?? [];
   }
 
   /** The latest runs on a cloud machine, read through the hub. This computer's runs are the local run list. */

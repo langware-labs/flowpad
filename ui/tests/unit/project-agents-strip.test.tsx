@@ -17,6 +17,8 @@ vi.mock('@sdk/react/hooks', () => ({
 
 vi.mock('@src/hooks/use-project-agents', () => ({
   useProjectAgents: () => ({ agents: h.agents }),
+  // The strip slices by it; a mock without it renders nothing but the error.
+  MAX_HOME_AGENTS: 8,
 }));
 
 vi.mock('@src/components/agents/use-agent-launcher', () => ({

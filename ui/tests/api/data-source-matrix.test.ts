@@ -160,16 +160,17 @@ async function seedAuth(provider: string, values: Record<string, string>): Promi
   if (auth.credential) {
     const vars: Record<string, string> = auth.vars ?? {};
     const status = await credentialsService.status();
-    if (status.credentials.some((row) => row.name === auth.credential && row.scope === 'user')) return null;
-    const { typeid } = await credentialsService.save({
-      scope: 'user',
-      manifest: {
-        name: auth.credential,
-        value_store: 'vault',
-        vars: Object.fromEntries(Object.values(vars).map((name) => [name, { label: name, secret: true, required: true }])),
-      },
-      values: Object.fromEntries(Object.entries(values).map(([key, value]) => [vars[key], value])),
-    });
+    const held = status.credentials.find((row) => row.name === auth.credential);
+    // Never overwrite a real one. Otherwise fill the values BY NAME: a shipped template of
+    // this name is already a declaration, and declaring a second one is refused as a
+    // duplicate — `set` declares from the template only when nothing holds the name yet.
+    if (held && held.state === 'connected') return null;
+    const { typeid } = await credentialsService.setByName(
+      auth.credential,
+      Object.fromEntries(Object.entries(values).map(([key, value]) => [vars[key], value])),
+    );
+    // Remove only what this seeding brought into being.
+    if (held) return null;
     return () => credentialsService.remove(typeid);
   }
   const names = Object.entries(values).map(([key]) => auth.secrets?.[key] as string);

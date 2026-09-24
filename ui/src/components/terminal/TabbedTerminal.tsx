@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { AgenticProcess, connectionManager, dataContext, Shell, tabKey, tabManager, Tab, toplog, TypeId } from '@sdk';
+import { AgenticProcess, connectionManager, dataContext, Shell, tabInProject, tabKey, tabManager, Tab, toplog, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
@@ -10,7 +10,7 @@ import { useTerminalTabs } from '@src/tabs/use-tab-manager';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { notify } from '@src/notifications';
 import { AlertTriangle, LoaderCircle, PlayCircle, RefreshCw } from 'lucide-react';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
 import { useProcessSurface } from './interactive-terminal/use-process-surface';
 import { retryFailedStart, TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
@@ -34,6 +34,13 @@ interface TabbedTerminalProps {
    * Omitted by the plain /dock/shell host, which is not process-scoped.
    */
   processId?: string;
+  /**
+   * False while the host keeps this body mounted but hidden (another view, a
+   * load error, the hub page). No panel is active then — nothing resizes, and
+   * the "active tab missing" overlay does not read the URL's dock as a lost
+   * session.
+   */
+  visible?: boolean;
 }
 
 /**
@@ -351,10 +358,20 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   scope = 'project',
   spawnProjectId,
   processId,
+  visible = true,
 }) => {
   const { flow } = useAgentContext();
   const { currentDock } = useDockNavigation();
-  const tabs = useTerminalTabs(scope, spawnProjectId);
+  // Every terminal tab regardless of project: a panel the user already opened
+  // stays mounted (hidden) when they switch project, so coming back is a
+  // visibility flip — not a new `/open`, pty-stream download and replay. The
+  // strip's scoped list is derived from it (one pass over the snapshot, not two).
+  const allTerminalTabs = useTerminalTabs('all');
+  const scopeProjectId = spawnProjectId === undefined ? (dataContext.project?.id ?? null) : spawnProjectId;
+  const tabs = useMemo(
+    () => (scope === 'all' ? allTerminalTabs : allTerminalTabs.filter((tab) => tabInProject(tab, scopeProjectId))),
+    [allTerminalTabs, scope, scopeProjectId],
+  );
 
   // Process-scoped host: a process that loaded but carries no shell has nothing
   // to attach to. Hook order is fixed — the entity is subscribed unconditionally
@@ -369,9 +386,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   );
   const hostDisconnected = !!hostProcess && !hostProcess.shell_id;
 
-  // Active panel = the URL (every tab is keyed by its dockPointer.tabHash).
-  // A non-terminal dock's tabHash never matches a terminal tab, so no special-case.
-  const activeKey = currentDock?.tabHash ?? '';
+  // Active panel = the URL (every tab is keyed by its dockPointer.tabHash), and
+  // none at all while the host hides this body.
+  const activeKey = visible ? (currentDock?.tabHash ?? '') : '';
 
   // The URL names a session but NO tab in this scope backs it (scope filtering,
   // backend refusal, cross-project drift): without this arm every panel stays
@@ -390,6 +407,18 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   // Lazy-mount: mount the active panel on first visit; keep mounted ones warm
   // (the Set never shrinks) so re-activation is instant.
   const [mounted, setMounted] = useState<Set<string>>(() => new Set(activeKey ? [activeKey] : []));
+
+  // The panels to render: this scope's tabs plus every already-mounted panel
+  // from other scopes, in GLOBAL order so a project switch never reorders (moves)
+  // a live terminal's DOM node. A panel leaves only when its tab is closed —
+  // never because the project moved.
+  const panelTabs = useMemo(
+    () =>
+      scope === 'all'
+        ? allTerminalTabs
+        : allTerminalTabs.filter((tab) => tabInProject(tab, scopeProjectId) || mounted.has(tabKey(tab))),
+    [allTerminalTabs, scope, scopeProjectId, mounted],
+  );
   // The last key an activation was traced for: null until the first one, which
   // is always cold even though `mounted` is seeded with it; and a repeat of the
   // same key is StrictMode's second effect run, not a switch.
@@ -430,21 +459,24 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     <div className={`flex h-full ${className}`}>
       <div className="flex h-full w-full flex-col">
         <div className="relative flex-1 overflow-hidden" data-testid="terminal-panels">
-          {tabs.length === 0 ? (
-            <ProjectHome spawnProjectId={spawnProjectId} createOnly />
-          ) : (
-            tabs.map((tab) => {
-              const tabHash = tabKey(tab);
-              return (
-                <TerminalPanel
-                  key={tabHash}
-                  tab={tab}
-                  isActive={tabHash === activeKey}
-                  isMounted={mounted.has(tabHash)}
-                  flow={flow ?? null}
-                />
-              );
-            })
+          {panelTabs.map((tab) => {
+            const tabHash = tabKey(tab);
+            return (
+              <TerminalPanel
+                key={tabHash}
+                tab={tab}
+                isActive={tabHash === activeKey}
+                isMounted={mounted.has(tabHash)}
+                flow={flow ?? null}
+              />
+            );
+          })}
+          {/* Over the kept panels, not instead of them: a project with no
+              terminals must not unmount the ones other projects left warm. */}
+          {tabs.length === 0 && (
+            <div className="absolute inset-0 z-10 overflow-auto bg-background">
+              <ProjectHome spawnProjectId={spawnProjectId} createOnly />
+            </div>
           )}
           {activeTabMissing && (
             <div className="absolute inset-0 z-10 bg-background" data-testid="terminal-active-tab-missing">

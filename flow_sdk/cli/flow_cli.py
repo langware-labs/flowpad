@@ -1315,6 +1315,14 @@ from flow_sdk.cli.commands.connections_cmd import connections_app
 
 app.add_typer(connections_app, name="connections")
 
+from flow_sdk.cli.commands.credentials_cmd import credentials_app
+
+app.add_typer(credentials_app, name="credentials")
+
+from flow_sdk.cli.commands.project_cmd import project_app
+
+app.add_typer(project_app, name="project")
+
 from flow_sdk.cli.commands.schema_cmd import schema_app
 
 app.add_typer(schema_app, name="schema")
@@ -1333,6 +1341,10 @@ app.add_typer(conversation_app, name="conversation")
 from flow_sdk.cli.commands.process_cmd import process_app
 
 app.add_typer(process_app, name="process")
+
+from flow_sdk.cli.commands.task_cmd import task_app
+
+app.add_typer(task_app, name="task")
 
 from flow_sdk.cli.commands.wizard_cmd import wizard_command
 
@@ -1589,6 +1601,22 @@ def uninstall():
         typer.echo("No sniffer hooks found.")
 
 
+#: Commands whose arguments or stdin carry a secret: ``VAR=VALUE`` pairs, typed keys. The log keeps
+#: the command and its names, never the values.
+_SECRET_COMMANDS = {("credentials", "set"), ("project", "setup")}
+
+
+def _carries_secrets(argv: list[str]) -> bool:
+    return tuple(argv[1:3]) in _SECRET_COMMANDS
+
+
+def _logged_argv(argv: list[str]) -> list[str]:
+    """``argv`` as the CLI log may keep it: a secret command's ``VAR=VALUE`` becomes ``VAR=***``."""
+    if not _carries_secrets(argv):
+        return argv
+    return [a if i < 3 or "=" not in a or a.startswith("-") else a.split("=", 1)[0] + "=***" for i, a in enumerate(argv)]
+
+
 def cli_main():
     """Entry point for the installed ``flow`` console script.
 
@@ -1630,7 +1658,7 @@ def cli_main():
     try:
         import select
 
-        if not sys.stdin.isatty() and select.select([sys.stdin], [], [], 0.0)[0]:
+        if not _carries_secrets(argv) and not sys.stdin.isatty() and select.select([sys.stdin], [], [], 0.0)[0]:
             from io import StringIO
 
             stdin_data = sys.stdin.read()
@@ -1669,7 +1697,7 @@ def cli_main():
 
             record = CliLogRecord(
                 workdir=workdir,
-                command=argv,
+                command=_logged_argv(argv),
                 exit_code=exit_code,
                 stdout=stdout_val,
                 stderr=stderr_val,

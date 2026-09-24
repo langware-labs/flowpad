@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 import { waitForIndexerIdle, apiBase } from '../_shared/api';
+import { withViewMode } from '../_shared/view-mode';
 
 const API = apiBase();
 
@@ -24,20 +25,14 @@ const API = apiBase();
 async function openSearch(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    // The footer indexing indicator (footer-indexing-indicator) is wrapped in
-    // <AdvancedOnly> — it does not exist in the default Standard view.
-    localStorage.setItem('viewMode', 'advanced');
   });
-  await page.goto('/dock/search');
-  await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-  // View mode is now a backend-owned preference (`preferences.ui.view_mode`);
-  // the legacy `viewMode` localStorage key above is only adopted when the backend
-  // file doesn't already provide a value, so it is overridden the moment bootstrap
-  // reconciles an explicit backend value (e.g. Standard). Force Advanced through
-  // the live setter AFTER bootstrap so it wins, then wait for the DOM to reflect it.
-  await page.evaluate(() => {
-    (window as unknown as { setView?: (v: string) => void }).setView?.('advanced');
-  });
+  // The footer indexing indicator (footer-indexing-indicator) is wrapped in
+  // <AdvancedOnly> — it does not exist in the default view. The mode is put on
+  // the URL (URL-first): the address outranks the stored preference from first
+  // paint. A localStorage seed or a `window.setView()` after load does not hold —
+  // preferences.json lands after networkidle and its stored mode (a previous
+  // file's Standard) wins over the device seed, by design.
+  await page.goto(withViewMode('/dock/search', 'advanced'));
   await page.locator('html[data-view="advanced"]').waitFor({ timeout: 10_000 });
 }
 

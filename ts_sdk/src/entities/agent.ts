@@ -1,6 +1,7 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
+import type { PromptResult } from '../models/ReturnedValue';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { mainFileForType } from '../models/asset-editor';
@@ -78,6 +79,8 @@ export class Agent extends APIEntity<Agent> {
   subagents: string[];
   additional_dirs: string[];
   load_flowpad_assistant: boolean;
+  /** Chief of Staff mode: answers fast and delegates long work to its subagents as tasks. */
+  chief_of_staff: boolean;
   /** Vendor-specific launch keys the schema does not enumerate (e.g. Claude's
    *  `chrome: true`). Nested by nature — which is why this type must never be
    *  round-tripped through the markdown frontmatter editor. */
@@ -133,6 +136,7 @@ export class Agent extends APIEntity<Agent> {
     this.subagents = entity.subagents || [];
     this.additional_dirs = entity.additional_dirs || [];
     this.load_flowpad_assistant = entity.load_flowpad_assistant ?? false;
+    this.chief_of_staff = entity.chief_of_staff ?? false;
     this.cli_options = entity.cli_options || {};
 
     this.enabled = entity.enabled ?? true;
@@ -225,8 +229,10 @@ export class Agent extends APIEntity<Agent> {
    * remote deployment fails loudly here rather than quietly running on the
    * server.
    */
-  async run(prompt: string): Promise<AgentRunResult> {
-    return (await this.post('run', { prompt })) as AgentRunResult;
+  async run(prompt: string): Promise<PromptResult> {
+    // The launch's own answer: `executor` names the process to navigate to;
+    // `exit_code` says whether the first turn was accepted (and, when not, why).
+    return (await this.post('run', { prompt })) as PromptResult;
   }
 
   /**
@@ -289,8 +295,10 @@ export class Agent extends APIEntity<Agent> {
    * `environment` is the placement's credential environment — `production`
    * when omitted. One cloud machine per environment.
    */
-  async deploy(environment?: string): Promise<AgentDeployResult> {
-    return (await this.post('deploy', environment ? { environment } : undefined)) as AgentDeployResult;
+  /** Deploy to a cloud machine (the default), or `provider: 'local'` — this computer. */
+  async deploy(environment?: string, provider?: 'local'): Promise<AgentDeployResult> {
+    const body = { ...(environment ? { environment } : {}), ...(provider ? { provider } : {}) };
+    return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
   }
 
   /** Every place this agent runs on — this computer first — with what each owns. */
@@ -474,10 +482,14 @@ export interface AgentDeployResult {
   agent_definition_error?: string;
 }
 
-/** What `POST /agent/<id>/use` hands back — the session opened as the agent. */
-export type AgentUseResult = Omit<AgentRunResult, 'compute_node_id'>;
+/** What `POST /agent/<id>/use` hands back — the session opened as the agent.
+ *  Not a call answer: opening a session runs nothing, so it names the process. */
+export interface AgentUseResult {
+  process_id: string;
+  process_typeid: string;
+  deployment_id: string;
+}
 
-/** What `POST /agent/<id>/run` hands back. */
 /** The fields a schedule manages — `POST /agent/<id>/add_schedule` and friends
  *  (`flow_sdk/builtin/agent_schedule.py`). Omitted fields are left as they are. */
 export interface AgentScheduleFields {
@@ -529,6 +541,8 @@ export interface AgentPlace {
   behind: number | null;
   /** Whether the agent runs on this place: its own switch, else the definition's `enabled`. */
   enabled: boolean;
+  /** When it last did something (ISO): its newest run here, else when a cloud machine was last seen. */
+  last_active?: string | null;
 }
 
 /** `GET /agent/<id>/version` — what this computer has that the published version lacks. */
@@ -539,9 +553,4 @@ export interface AgentVersionState {
   pending_changes: number;
 }
 
-export interface AgentRunResult {
-  process_id: string;
-  process_typeid: string;
-  deployment_id: string;
-  compute_node_id: string;
-}
+

@@ -47,6 +47,10 @@ export class ActionInfo {
   // This call starts something the server answers back to THIS tab (an OAuth
   // flow confirms in the screen that asked). Sends `X-Flow-Connection-Id`.
   private _carriesInitiator: boolean = false;
+  // The browser finishes this request even if the page unloads first. For a
+  // write the UI has already shown as done (an optimistic tab close): an
+  // ordinary fetch is aborted by a reload between its preflight and its POST.
+  private _keepalive: boolean = false;
 
   constructor(
     name: string,
@@ -189,6 +193,14 @@ export class ActionInfo {
 
   public set carriesInitiator(value: boolean) {
     this._carriesInitiator = value;
+  }
+
+  public get keepalive(): boolean {
+    return this._keepalive;
+  }
+
+  public set keepalive(value: boolean) {
+    this._keepalive = value;
   }
 
   public get actionUrl(): string {

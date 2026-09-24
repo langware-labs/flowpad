@@ -1,7 +1,7 @@
 import { TypeId, VFSPath } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { DockPointer, normalizeRel } from './DockPointer';
-import { AssetMode, AssetRoutingMethod, LOCAL_COMPUTE_NODE, isFilelessEditor, isPreviewEditor } from './asset-doc-types';
+import { AssetMode, AssetRoutingMethod, LOCAL_COMPUTE_NODE, hasOwnChat, isFilelessEditor, isPreviewEditor } from './asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 
 export interface ContentAssetTarget {
@@ -64,6 +64,12 @@ export function isContentAssetDock(dock: DockPointer): boolean {
 export function isPreviewAssetDock(dock: DockPointer): boolean {
   const pointer = assetPointerForDock(dock);
   return pointer?.mode === AssetMode.EDITOR && isPreviewEditor(pointer.editor);
+}
+
+/** A content-asset dock whose subject has its own chat (an agent): the Vibe chat pane stays shut. */
+export function isOwnChatAssetDock(dock: DockPointer): boolean {
+  const pointer = assetPointerForDock(dock);
+  return pointer?.mode === AssetMode.EDITOR && hasOwnChat(pointer.editor);
 }
 
 /**

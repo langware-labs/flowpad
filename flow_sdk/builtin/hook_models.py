@@ -28,8 +28,6 @@ from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 _log = logging.getLogger(__name__)
 
 _DEFAULT_SCRIPT_TIMEOUT_S = 30.0
-# Bytes captured from stdout/stderr — bounded so TriggerLogRecord stays small.
-_SCRIPT_OUTPUT_CAP = 8192
 
 # POSIX-only: Windows has no process groups in this sense, so there the script
 # is spawned and killed as a lone child (a Windows script that forks a detached
@@ -207,7 +205,7 @@ async def _exec_script(
     tempfile (cross-platform via tempfile.NamedTemporaryFile) and its path
     passed via CHANGES_JSON_PATH so scripts that need the batch can read it.
 
-    Captures stdout/stderr (the last _SCRIPT_OUTPUT_CAP of each). Kills the
+    Captures stdout/stderr whole. Kills the
     process at `timeout_seconds`. Cleans up the tempfile after the subprocess.
     """
     import json
@@ -273,7 +271,6 @@ async def _exec_script(
             proc.returncode,
             stdout.decode(errors="replace") if stdout else "",
             stderr.decode(errors="replace") if stderr else "",
-            cap=_SCRIPT_OUTPUT_CAP,  # the END of each stream, where the error is
             timed_out=timed_out,
             duration_s=time.monotonic() - t0,
         )
@@ -292,6 +289,9 @@ class RunScriptActionHandler(TriggerActionHandler):
     One subprocess per fire (i.e. per debounce batch), not per event. The full
     batch is delivered via CHANGES_JSON_PATH; FIRST_* env vars give quick access
     to the head of the batch for simple scripts.
+
+    Always answers a ``CliResult`` — never ``None``: a script that is not where
+    the trigger says is NOT_FOUND, a call with no action NOT_APPLICABLE.
     """
 
     async def execute(
@@ -300,10 +300,18 @@ class RunScriptActionHandler(TriggerActionHandler):
         action: Optional["TriggerAction"] = None,
         changes: Optional[list["ChangeEvent"]] = None,
         timeout_seconds: float = _DEFAULT_SCRIPT_TIMEOUT_S,
-    ) -> "Optional[CliResult]":
+    ) -> "CliResult":
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
+        name = getattr(trigger, "name", "?")
+
+        def missing(message: str, command: str = "") -> "CliResult":
+            _log.warning("RUN_SCRIPT on %s: %s", name, message)
+            return CliResult.not_found(message, command=command)
+
         if action is None:
-            _log.warning("RUN_SCRIPT on %s: no action supplied", getattr(trigger, "name", "?"))
-            return None
+            _log.warning("RUN_SCRIPT on %s: no action supplied", name)
+            return CliResult.not_applicable("No action was supplied, so there is no script to run.")
 
         # Resolution mode 1: external script path (preferred if it exists on disk).
         if action.script_path:
@@ -318,31 +326,17 @@ class RunScriptActionHandler(TriggerActionHandler):
         if action.script_filename:
             data_dir = getattr(trigger, "data_dir", None)
             if data_dir is None:
-                _log.warning(
-                    "RUN_SCRIPT on %s: script_filename set but trigger has no data_dir",
-                    getattr(trigger, "name", "?"),
-                )
-                return None
+                return missing(f"script {action.script_filename} is named but the trigger has no data folder.")
             embedded = Path(data_dir) / action.script_filename
             if not embedded.exists():
-                _log.warning(
-                    "RUN_SCRIPT on %s: embedded script %s does not exist in %s",
-                    getattr(trigger, "name", "?"),
-                    action.script_filename,
-                    data_dir,
-                )
-                return None
+                return missing(f"embedded script {action.script_filename} does not exist in {data_dir}.", str(embedded))
             # Ensure +x before exec (embedded files won't have it from write_file).
             _ensure_executable(embedded)
             return await _exec_script(
                 embedded, trigger, changes, timeout_seconds=timeout_seconds
             )
 
-        _log.warning(
-            "RUN_SCRIPT on %s: no script_path on disk and no script_filename",
-            getattr(trigger, "name", "?"),
-        )
-        return None
+        return missing("no script_path on disk and no script_filename.", action.script_path or "")
 
 
 class RunAgentActionHandler(TriggerActionHandler):
@@ -357,7 +351,11 @@ class RunAgentActionHandler(TriggerActionHandler):
     Deliberately no unattended trust gate (``_run_wizard_trigger`` has one): an
     enabled trigger on an indexed agent runs, on whichever machine indexed it.
 
-    Returns the started ``AgenticProcess`` so the fire can log its id.
+    Answers the launch's ``PromptResult`` — its ``executor`` is how the fire
+    logs the run — and never ``None``: another machine's place is
+    NOT_APPLICABLE, a place switched off REFUSED. A missing prompt, or no agent
+    to run, is a broken trigger document, and raises (reported as
+    ``trigger.failed``).
     """
 
     async def execute(
@@ -368,6 +366,7 @@ class RunAgentActionHandler(TriggerActionHandler):
     ) -> Any:
         from flow_sdk.builtin.agent import Agent  # noqa: PLC0415 — entity layer imports this module
         from flow_sdk.builtin.agent_serve import workdir_for  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
 
         prompt = str(getattr(action, "prompt", "") or "").strip()
         if not prompt:
@@ -381,6 +380,8 @@ class RunAgentActionHandler(TriggerActionHandler):
                 if agent is not None:
                     break
         if agent is None:
+            # The document names nothing runnable — a broken trigger, like a
+            # missing prompt; raising is what reports it as `trigger.failed`.
             raise LookupError(f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: no agent to run")
 
         from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
@@ -391,31 +392,43 @@ class RunAgentActionHandler(TriggerActionHandler):
 
             deployment = await place_of(agent, runs_on, local=True)
             if deployment is None:
-                _log.info("RUN_AGENT on %s: place %s is not this agent's place on this machine; not running",
-                          getattr(trigger, "name", "?"), runs_on)
-                return None
+                return PromptResult.not_applicable(
+                    f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: place {runs_on} is not "
+                    "this agent's place on this machine."
+                )
         else:
             # Resolved once here and handed to `launch`, which would otherwise resolve it again.
             deployment = await agent.local_deployment()
-        # A place can be switched off on its own; a schedule on it is then a quiet no-op, not an error.
+        # A place can be switched off on its own; a schedule on it is then a QUIET
+        # refusal, checked here before `launch` — which would refuse too, but only
+        # after announcing a run: every tick of a schedule on a switched-off place
+        # would emit `agent.run.requested` / `failed`.
         if not agent.enabled_on(deployment.id):
-            _log.info("RUN_AGENT on %s: agent %r is disabled on place %s; not running",
-                      getattr(trigger, "name", "?"), agent.name, deployment.id)
-            return None
-        process = await agent.launch(
+            return PromptResult.refused(
+                f"RUN_AGENT on {getattr(trigger, 'name', '?')!r}: agent {agent.name!r} is disabled "
+                f"on place {deployment.id}."
+            )
+        answer = await agent.launch(
             prompt,
             deployment=deployment,
             name=f"{getattr(trigger, 'name', '') or agent.name} · scheduled",
             workdir=await workdir_for(agent),
             context_data={"trigger_id": str(getattr(trigger, "id", "") or "")},
         )
+        if not answer.ok:
+            _log.info("RUN_AGENT on %s: %s", getattr(trigger, "name", "?"), answer.detail)
+            return answer
         # A launched run is never finished by anyone: `launch` returns at
         # scheduling time and the lifecycle stays RUNNING forever, so the run
         # history showed every scheduled run as still running. Supervise it to
         # its end — detached, because a "Run now" fires inside a request whose
         # transaction is gone by the time the turn ends.
-        create_detached_task(_finish_agent_run(process), name=f"run-agent-finish-{str(process.id)[:8]}")
-        return process
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        process = await AgenticProcess.get_by_typeid(answer.executor)
+        if process is not None:
+            create_detached_task(_finish_agent_run(process), name=f"run-agent-finish-{str(process.id)[:8]}")
+        return answer
 
 
 async def _finish_agent_run(process: Any) -> None:

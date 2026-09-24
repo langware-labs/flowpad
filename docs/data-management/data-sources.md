@@ -181,7 +181,6 @@ application reads, so the engine asks the type rather than probing.
 | `identity_config_key` | `address` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.StreamInbox`) matches on to reuse a source |
 | `connection` | `None` | The machine connection it reads with (`google`, `slack`), checked before a row exists |
 | `open_inbound` | `False` | Strangers are the point (a help desk): an empty allowlist admits everyone |
-| `echoes_sends` | `False` | The provider returns our own sends on the next read, so a send is not recorded twice |
 
 Setup (`Verifiable.verify`), a picker (`Choosing.choices`), identity (`Identified.whoami`)
 and a targeted reply lookup (`find_reply`, Gmail's In-Reply-To scan) come from the
@@ -190,7 +189,14 @@ miss answers `None`, and `sync_source` records that as the `unknown_provider` co
 error rather than crashing the poller.
 
 Callers send through `DataSource.send(MessageSpec)`, which validates the common
-message shape before delegating to the driver's `send()` hook. For transports
+message shape before delegating to the driver's `send()` hook. A sent message is
+recorded at once as a `SourceItem` marked `sent_by_us`, so the conversation shows
+it without waiting for the next poll. When the provider echoes it back, the echo
+has the same natural key, so it updates that row and the mark stays. Every "did we
+write this" check reads `SourceItem.is_ours`: the drain's self-filter, crash-recovery
+redelivery, and the projection's sender. A draft is never recorded. A send whose
+transport records its own copy (the agent-worker driver) is not recorded again, and
+that copy is not marked: it reads as ours only by its author. For transports
 with reply headers, `DataSource.expect_reply(outcome)` returns when a received
 item references the sent provider id; a driver may use its targeted lookup or
 session-level wait instead of a mailbox backfill. The caller owns the outer

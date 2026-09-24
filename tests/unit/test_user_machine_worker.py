@@ -279,3 +279,25 @@ def test_command_env_puts_flow_on_path():
     env = _command_env({"X": "1"})
     assert env["X"] == "1"
     assert env["PATH"].split(os.pathsep)[-1] == os.environ.get("PATH", "").split(os.pathsep)[-1]
+
+
+async def test_a_command_whose_end_is_lost_ends_with_no_exit_code(tmp_path):
+    """The last frame says the command ENDED, with no code to give — not a made-up -1,
+    which the hub read as 'ran and exited -1'."""
+    from types import SimpleNamespace
+
+    hub, worker, task = await _connected_worker(tmp_path)
+    sent: list[dict] = []
+
+    async def capture(command_message_id, **fields):
+        sent.append(fields)
+
+    async def lost():
+        raise RuntimeError("the process handle went away")
+
+    try:
+        worker._cmd_status = capture
+        await worker._pump("c-lost", SimpleNamespace(stdout=None, stderr=None, wait=lost))
+        assert sent == [{"exit_code": None, "ended": True}]
+    finally:
+        await _stop(hub, worker, task)

@@ -161,15 +161,14 @@ class ComputeOp(Entity):
         """
         from flow_sdk.activity import Activity  # noqa: PLC0415
         from flow_sdk.core.compute_op import run_op  # noqa: PLC0415
+        from flow_sdk.core.compute_op.runner import refused_for  # noqa: PLC0415
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
 
         spec = self.spec()
         if spec is None:
             return ReturnedValue.not_found(f"{self.name}: the document is missing or unreadable.")
         if not (approved or self.is_system()):
-            return spec.exe_data.ANSWER.refused(
-                f"{spec.display_label} runs on this machine and has not been approved."
-            )
+            return refused_for(spec)
 
         async def go(node) -> "ReturnedValue":
             node.label(spec.display_label)

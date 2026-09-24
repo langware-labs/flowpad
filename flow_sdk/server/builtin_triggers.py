@@ -95,12 +95,16 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
         dict(
             uname="builtin_daily_usage_analysis",
             name="Last day usage analysis",
-            description="Every day at 7am (local): fires the daily-analysis "
-                        "flow — analyze (function) → publish — which posts a usage "
-                        "report to the Home Feed. Manually runnable like any trigger.",
+            description="Disabled by default. When enabled, every day at 7am "
+                        "(local) fires the daily-analysis flow — analyze (function) "
+                        "→ publish — which posts a usage report to the Home Feed.",
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="0 7 * * *",
+            # Off by default, and FORCED off: the upsert re-applies every spec
+            # key on each boot, so existing installs flip off on restart and a
+            # user who enables it is reset on the next one.
+            enabled=False,
             # No direct action: the daily-analysis GraphWorkflow (service_graph_workflows)
             # routes this trigger's `fired` through analyze → publish —
             # a direct action here would double-fire the report.
@@ -291,64 +295,27 @@ async def _wizard_for(trigger: Trigger) -> "Optional[Wizard]":
             "primitive.",
 )
 async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> None:
-    from pathlib import Path  # noqa: PLC0415
-
-    from flow_sdk.assets.types.wizard import read_wizard
-    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
 
     # WHICH wizard, by TypeId, off the ACTION that says so. `trigger.path` was
     # the old channel and a poor one: a generic field a HOOK trigger uses for
     # its record.json, marked Sharing.PRIVATE, so a shared trigger lost its
     # subject entirely and nothing could validate the subject was a wizard.
-    # `path` is still read as a fallback so a row seeded before this keeps
-    # running.
     wizard = await _wizard_for(trigger)
-    asset_ref = (wizard.asset_ref if wizard else (trigger.path or "")).strip()
-    if wizard is None and not asset_ref:
-        _log.warning("wizard trigger %r names no wizard; nothing to run", trigger.uname)
+    if wizard is None:
+        # A row with no resolvable wizard could never run anyway: without the
+        # entity there is no shipped-ness to trust, so it was always refused.
+        _log.warning("wizard trigger %r names no wizard it can resolve; nothing to run", trigger.uname)
         return
 
-    spec = wizard.spec() if wizard is not None else read_wizard(Path(asset_ref))
-    if spec is None:
-        _log.warning("wizard trigger %r: no readable wizard at %s", trigger.uname, asset_ref)
+    # Every gate — missing, disabled, conversational, unapproved — is decided in
+    # `Wizard.run`, never re-implemented here. A trigger fire is unattended by
+    # definition: there is no client to ask, so a wizard not shipped with Flowpad
+    # answers REFUSED; the user can still run it from the app, where approval is.
+    result = await wizard.run(unattended=True)
+    if result.exit_code is ExitCode.REFUSED:
+        _log.warning("wizard trigger %r: %s Run it from the app to approve it.", trigger.uname, result.detail)
         return
-
-    trusted = wizard.is_system() if wizard is not None else False
-    if not trusted:
-        # No client to ask, and a trigger fire is by definition unattended.
-        # Refusing is the only safe answer; the user can still run it from the
-        # UI, which is where the approval prompt lives.
-        _log.warning(
-            "wizard trigger %r: %s is not shipped with Flowpad, so it will not run "
-            "unattended. Run it from the app to approve it.",
-            trigger.uname, asset_ref,
-        )
-        return
-
-    from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
-
-    result = await execute_wizard(
-        str(wizard.id) if wizard else "unknown", spec, asset_ref,
-        trusted=True,
-        # INSTANCE scope (None), deliberately — not the wizard entity.
-        #
-        # `_send` routes by subject entity: one naming an entity reaches only
-        # that entity's WATCHERS, while an unscoped one belongs to the box and
-        # is broadcast to every connection. A trigger-fired run is unattended
-        # by definition — it fires at boot, before anyone has opened the wizard
-        # and usually before a browser exists at all — so entity scope
-        # addressed a complete, correct progress tree to an audience of zero.
-        # Verified on a clean container: the tree was right at its scoped
-        # address and the footer chip's unscoped replay returned zero rows.
-        #
-        # Setting up the machine at startup IS box-level work, the same shape
-        # as an index walk, so it belongs in the same chip. The UI path keeps
-        # entity scope, because there the viewer IS watching. Which of the two
-        # is used changes only WHO SEES the run — never who may start one:
-        # `execute_wizard` holds the wizard's own slot for that.
-        subject_entity=None,
-    )
-    # An answer, never a raise — a wizard already running is `NOT_YET`, ran=False.
     _log.info("wizard trigger %r: %s — %s", trigger.uname,
               "ok" if result.ok else "not done", result.detail)
 

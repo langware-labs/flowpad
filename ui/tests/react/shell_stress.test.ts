@@ -290,6 +290,13 @@ describe('Shell / PTY lifecycle stress — integration', () => {
       await shell.attachPty({ cols: 80, rows: 24 });
 
       expect(shell.attached).toBe(true);
+      // Stimulate live output AFTER attach. The attach-time repaint only emits
+      // bytes once the shell is at its line editor; a zsh still sourcing the
+      // user's rc files (pyenv/nvm — seconds under host load) redraws nothing,
+      // and its first prompt can land past the deadline. The tty echoes this
+      // newline whatever state the shell is in, so the chunk under test is
+      // this cycle's own live output, not a race against rc-file startup.
+      await sendNewline(computeNode.id, shell.id);
       await waitForChunks(shell);
 
       // No live-output bleed: gate is open, subscribe, then close

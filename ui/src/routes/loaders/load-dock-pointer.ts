@@ -15,6 +15,7 @@ import {
 } from '@sdk';
 import { redirect } from 'react-router';
 import { DockPointer } from '@src/navigation';
+import { AssetMode } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 import { clearDockLoadError } from './dock-load-error-store';
 import { DockLoadError, handleDockLoadError } from './dock-load-error';
@@ -271,8 +272,13 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         break;
       case ViewType.ASSETS:
         // A concrete asset resolves its owner; only a browse landing needs a
-        // remembered/default project before it can resolve anything.
-        if (!dock.pointer || dock.scopeProjectId) await adoptScopeProject(dock);
+        // remembered/default project before it can resolve anything. The
+        // project landing (`project-home`) IS a browse landing — it has no
+        // owner of its own — so an unscoped one restores the project too,
+        // instead of rendering an empty home for no project.
+        if (!dock.pointer || dock.pointer === (AssetMode.PROJECT_HOME as string) || dock.scopeProjectId) {
+          await adoptScopeProject(dock);
+        }
         await loadAssetRoute(dock.pointer, {
           allowLocalWikiAlias: dock.page !== PageId.HUB,
           wikiAuthority: wikiAuthorityForPage(dock.page),
@@ -303,6 +309,13 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         await loadPlanRoute(dock.pointer);
         break;
       case ViewType.LENS:
+        // Only a claude transcript owns a project (its session's). Every other
+        // lens (codex/copilot transcripts, logs, …) is context-neutral, so the
+        // project the URL pins is the only project it has — without adopting
+        // it, a fresh load left no active project and the strip (which filters
+        // by project) hid the very tab being shown. A claude transcript's own
+        // project still wins: its loader runs after this.
+        if (dock.scopeProjectId) await adoptScopeProject(dock);
         await loadLensRoute(dock.pointer);
         break;
       case ViewType.GRAPH:

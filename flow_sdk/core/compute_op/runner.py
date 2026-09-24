@@ -146,7 +146,7 @@ async def run_op(
     exe = spec.exe_data
     if not trusted:
         # Refused before anything runs — an unapproved op cannot even ask its question.
-        return exe.ANSWER.refused(f"{spec.display_label} runs on this machine and has not been approved.")
+        return refused_for(spec)
     workdir = Path(workdir) if workdir else Path.cwd()
     say = _say(on_status)
 
@@ -168,8 +168,20 @@ async def run_op(
 
     if spec.completion_check is None or not exe.RECHECKED:
         # No re-check: an op with no check has only the call's own word, and a
-        # person's valid answer IS the verdict of an ask.
-        return _with_value(spec, call) if call.ok else call
+        # person's valid answer IS the verdict of an ask. A call that never ran
+        # (NOT_APPLICABLE is `ok` too) produced no value, so there is nothing to
+        # hold to the declared kind — doing so would demote "not this machine's
+        # problem" to a failure.
+        return _with_value(spec, call) if call.ok and call.ran else call
+
+    if not call.ran:
+        # The call never happened — no command for this box, no harness to run
+        # it. Nothing has changed since ``before``, so there is nothing to
+        # re-check: running it again would spend a process (and up to
+        # CHECK_TIMEOUT) to learn what we already know. The call's own exit code
+        # and sentence stand — NOT_APPLICABLE must not become a failure, and
+        # "nothing ran" must not read as "it ran and failed".
+        return call.model_copy(update={"value": None, "check": before})
 
     after = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
     if after.exit_code is ExitCode.OK:
@@ -181,6 +193,18 @@ async def run_op(
         "exit_code": ExitCode.NOT_YET, "value": None, "check": after,
         "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.",
     })
+
+
+def refused_for(spec: ComputeOpSpec) -> ReturnedValue:
+    """The one refusal an op can answer, in the op's own answer type.
+
+    Both gates — the entity's (approved or system) and the runner's own
+    ``trusted`` — say this, and a person should not meet two spellings of one
+    sentence depending on which way the op was reached.
+    """
+    return spec.exe_data.ANSWER.refused(
+        f"{spec.display_label} runs on this machine and has not been approved."
+    )
 
 
 def _say(on_status: Optional[Callable[[str], None]]) -> Callable[[str], None]:
@@ -256,25 +280,20 @@ async def _cli(spec: ComputeOpSpec, *, platform: str, workdir: Path, env: Option
 async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], None], **_: Any) -> AskResult:
     """Put the op's declared output to a person and wait a bounded time.
 
-    A cancel and a timeout are both "no value" — ``NOT_YET`` — and differ in
-    ``cancelled`` / ``timed_out``, which is what a caller branches on.
+    Asked here when this process is the backend the answer reaches; handed to
+    the backend otherwise (``ask.ask_through_backend``).
     """
-    from flow_sdk.core.compute.ask import Cancelled, open_question, wait_for  # noqa: PLC0415
-    from flow_sdk.core.compute.ask_window import raise_question  # noqa: PLC0415
+    from flow_sdk.core.compute_op.ask import ask_person, ask_through_backend, served_here  # noqa: PLC0415
 
     # The person gets the SHORTEST of: what the op asks for, what the caller
     # allows, and the product default. Nothing here lengthens it.
     timeout = min(spec.exe_data.timeout(), ask_timeout, ASK_TIMEOUT_SECONDS)
-    question = open_question(spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind)
     say(f"{spec.display_label}: waiting for you…")
-    await raise_question(question)
-    try:
-        value = await wait_for(question, timeout=timeout)
-    except Cancelled:
-        return AskResult.not_yet(f"{spec.display_label}: cancelled.", cancelled=True)
-    except TimeoutError:
-        return AskResult.not_yet(f"{spec.display_label}: no answer within {timeout:g}s.", timed_out=True)
-    return AskResult.satisfied(f"{spec.display_label}: answered.", value=value)
+    ask = ask_person if served_here() else ask_through_backend
+    return await ask(
+        spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind,
+        timeout=timeout, label=spec.display_label, secret=spec.exe_data.secret,
+    )
 
 
 async def _prompt(spec: ComputeOpSpec, **_: Any) -> PromptResult:
@@ -331,7 +350,7 @@ async def _agent(spec: ComputeOpSpec, *, workdir: Path, platform: str, executor:
     # BEFORE the launch, always: a previous run's receipt read as this run's
     # result reports the last run's success for a call that did nothing.
     clear_receipt(path)
-    prompt = spec.exe_data.prompt if executor else _prompt_for(spec, platform=platform)
+    prompt = spec.exe_data.prompt if executor else _prompt_for(spec, platform=platform, workdir=workdir)
     if spec.output_spec_kind is not None:
         prompt += result_contract(path, VALUE_KEY, fields_of_kind(spec.output_spec_kind))
     said = await launch(
@@ -356,15 +375,25 @@ async def _agent(spec: ComputeOpSpec, *, workdir: Path, platform: str, executor:
     return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary})
 
 
-def _prompt_for(spec: ComputeOpSpec, *, platform: str) -> str:
-    """The goal, how a person does it by hand, what is asked, and the bar."""
+def _prompt_for(spec: ComputeOpSpec, *, platform: str, workdir: Path) -> str:
+    """The goal, how a person does it by hand, what is asked, and the bar.
+
+    The bar names the directory it is judged in. Every launched agent is also
+    told to write the files it produces to its run's output folder, and an agent
+    that read "here" as that folder made its own copy of the check pass there
+    while the re-check, run in ``workdir``, still failed.
+    """
     check = spec.completion_check.command_for(platform) if spec.completion_check is not None else None
+    bar = (
+        f"You are done only when this exits 0, run from `{workdir}` — the caller "
+        f"runs it there after you stop, so the goal lands there, not in your output folder:\n\n    {check}"
+    )
     parts = [
         f"Goal: {spec.display_label}." if spec.display_label else "",
         spec.description,
         spec.exe_data.prompt,
         f"How this is done by hand:\n\n{spec.setup}" if spec.setup else "",
-        f"You are done only when this exits 0:\n\n    {check}" if check else "",
+        bar if check else "",
     ]
     return "\n\n".join(part.strip() for part in parts if part and part.strip())
 

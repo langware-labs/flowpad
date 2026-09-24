@@ -3,7 +3,8 @@
 its real model, so the runner has no test-only branch.
 
 The script is a JSON file (path in ``DEEPAGENTS_FAKE_SCRIPT``): a list of turns, each either
-``{"text": "..."}`` or ``{"tool_calls": [{"name": ..., "args": {...}}]}``. The model replays them
+``{"text": "..."}`` or ``{"tool_calls": [{"name": ..., "args": {...}}]}``, optionally with a
+``"finish_reason"`` (an empty turn with one is how an upstream failure arrives inside a 200). The model replays them
 in order, one per invocation, which drives deepagents' real tool loop with no LLM.
 """
 
@@ -39,6 +40,7 @@ def scripted(model: str) -> ScriptedChatModel:
                 content=turn.get("text") or "",
                 tool_calls=calls,
                 usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+                response_metadata={"finish_reason": turn["finish_reason"]} if "finish_reason" in turn else {},
             )
         )
     return ScriptedChatModel(responses=responses)

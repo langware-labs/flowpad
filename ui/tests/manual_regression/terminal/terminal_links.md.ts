@@ -239,7 +239,7 @@ test('a site that refuses embedding retains its external-open escape', async ({ 
   await clickPrintedLink(page, url);
   await expect(page.locator('[data-testid="web-url-frame"]')).toHaveAttribute('src', url);
   const popup = page.waitForEvent('popup');
-  await page.getByRole('button', { name: 'Open in browser', exact: true }).click();
+  await page.getByTestId('web-url-open-in-browser').click();
   const external = await popup;
   await expect(external.getByRole('heading')).toHaveText('Web link content');
   await external.close();

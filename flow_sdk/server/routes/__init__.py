@@ -9,7 +9,6 @@ from .assets import router as assets_router
 from .auth import router as auth_router
 from .bootstrap import router as bootstrap_router
 from .capabilities import router as capabilities_router
-from .chat import router as chat_router
 from .cloud import router as cloud_router
 from .data_source_webhook import router as data_source_webhook_router
 from .debug import router as debug_router
@@ -56,7 +55,6 @@ __all__ = [
     "cloud_router",
     "privacy_router",
     "hooks_router",
-    "chat_router",
     "directory_router",
     "detection_router",
     "search_router",

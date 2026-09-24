@@ -8,6 +8,8 @@ outbound spec's chat-targeted reply, and a token that never reaches an error mes
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from urllib.parse import parse_qs
@@ -48,6 +50,14 @@ class _Bot:
         self.updates = list(updates or [])
         self.chats = {CHAT, "-100123", "444555666"}
         self.requests, self.bodies, self.next_id = [], [], 8
+        # The loopback server answers on its own thread while a test delivers on another: an id is
+        # handed out under a lock, as the real Bot API never hands out one twice.
+        self._ids = threading.Lock()
+
+    def mint_id(self) -> int:
+        with self._ids:
+            minted, self.next_id = self.next_id, self.next_id + 1
+        return minted
 
     def __call__(self, path, headers):
         route, _, query = path.partition("?")
@@ -63,13 +73,12 @@ class _Bot:
             return self._ok([u for u in self.updates if u["update_id"] >= offset][:limit])
         if str(body.get("chat_id")) not in self.chats:
             return 400, json.dumps({"ok": False, "error_code": 400, "description": "Bad Request: chat not found"}).encode(), {}
-        sent = {"message_id": self.next_id, "date": 1756700100, "chat": {"id": int(body["chat_id"]), "type": "private"},
+        sent = {"message_id": self.mint_id(), "date": int(time.time()), "chat": {"id": int(body["chat_id"]), "type": "private"},
                 "from": {"id": 777, "username": "my_bot", "is_bot": True}, "text": body["text"]}
         if body.get("reply_to_message_id"):
             sent["reply_to_message"] = {"message_id": body["reply_to_message_id"]}
         if body.get("message_thread_id"):
             sent["message_thread_id"] = body["message_thread_id"]
-        self.next_id += 1
         return self._ok(sent)
 
     @staticmethod
@@ -193,10 +202,10 @@ class TestSend:
     def recorded(self, monkeypatch):
         seen: list = []
 
-        async def _ingest(items, **_kw):
-            seen.extend(items)
+        async def _ingest(item, **_kw):
+            seen.append(item)
 
-        monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", _ingest)
+        monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_item", _ingest)
         return seen
 
     async def test_a_reply_maps_onto_send_message(self, bot, recorded):
@@ -209,7 +218,7 @@ class TestSend:
         out = await DataDriver.loaded("telegram").send(_row(bot), thread_key=CHAT, to=CHAT, text="hi")
         assert out.recorded is True
         assert [i.external_id for i in recorded] == [f"{CHAT}/8"]
-        assert recorded[0].author_external_id == "777", "the copy's author is the bot, which is how it reads as ours"
+        assert recorded[0].author_external_id == "777", "the copy's author is the bot"
 
     async def test_a_forum_thread_key_sets_the_topic(self, bot, recorded):
         await DataDriver.loaded("telegram").send(_row(bot), thread_key="-100123/42", to="", text="hi")
@@ -259,10 +268,10 @@ async def test_the_double_delivers_after_the_source_exists_and_records_the_reply
 
     recorded: list = []
 
-    async def _ingest(items, **_kw):
-        recorded.extend(items)
+    async def _ingest(item, **_kw):
+        recorded.append(item)
 
-    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_items", _ingest)
+    monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_item", _ingest)
     with Double() as double:
         monkeypatch.setattr(DataDriver.loaded("telegram"), "credentials_for", double.credentials)
         row = SimpleNamespace(id="ds-tg", provider="telegram", name="Telegram bot", config=double.config, **double.fields)

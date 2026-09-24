@@ -20,7 +20,7 @@ import pytest
 
 from flow_sdk.core.compute.receipt import receipt_path
 from flow_sdk.core.compute_op.runner import VALUE_KEY
-from flow_sdk.core.wizard.runner import Resolved, run_wizard
+from flow_sdk.core.wizard.runner import MAX_WIZARD_DEPTH, Resolved, run_wizard
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import (
     CliResult,
@@ -69,6 +69,24 @@ def _shell(code_for, *, seen=None):
             seen.append((command, dict(kw.get("extra_env") or {})))
         return CliResult.of_process(command, code_for(command))
     return shell
+
+
+def _converges(name: str):
+    """A shell where `have <name>` fails until `install <name>` has run.
+
+    The op then has real work to do on its first pass and none on its second,
+    which is what makes `ran` mean something in these tests.
+    """
+    installed = False
+
+    def code_for(command: str) -> int:
+        nonlocal installed
+        if command == f"install {name}":
+            installed = True
+            return 0
+        return 0 if installed else 1
+
+    return _shell(code_for)
 
 
 def _launch():
@@ -193,7 +211,9 @@ async def test_continue_lets_the_rest_of_the_run_proceed(tmp_path):
     assert list(result.steps) == ["first", "second"]
     assert result.steps["first"].exit_code is ExitCode.NOT_YET
     assert result.steps["second"].ok and result.steps["second"].ran is False
-    assert result.exit_code is ExitCode.NOT_YET, "one step failing is still a run that did not finish"
+    # The two ops have DIFFERENT checks — `have broken` and `have jq` — so the
+    # failed one is a goal of its own that nobody reached: the run did not finish.
+    assert result.exit_code is ExitCode.NOT_YET
 
 
 # ── arguments ────────────────────────────────────────────────────────────────
@@ -289,9 +309,78 @@ async def test_being_shipped_does_not_lend_approval_to_a_callee(tmp_path):
     assert result.exit_code is ExitCode.REFUSED
     assert "jq" in result.detail
     assert result.steps["jq"].exit_code is ExitCode.REFUSED
+    assert type(result.steps["jq"]) is CliResult, "a refused step answers in its callee's own class"
     # A refusal stops the run whatever `on_fail` says.
     assert "after" not in result.steps
     assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_after_real_work_does_not_report_that_nothing_ran(tmp_path):
+    """`ran=False` means SKIPPED to every reader — so a run that installed
+    something before it hit an untrusted callee must not claim it."""
+    spec = WizardSpec.model_validate({"name": "w", "steps": [
+        {"id": "jq", "kind": "compute", "ref": "jq"},
+        {"id": "rg", "kind": "compute", "ref": "rg"},
+    ]})
+    # `have jq` fails until `install jq` has run, so the first step really works;
+    # `rg` does not resolve as trusted, so the second step refuses.
+    async def resolve(name: str):
+        return Resolved(_op(name), name != "rg")
+
+    result = await _run_wizard(spec, tmp_path=tmp_path, resolve_op=resolve, shell=_converges("jq"))
+
+    assert result.exit_code is ExitCode.REFUSED
+    assert result.steps["jq"].ran is True, "the first step really installed something"
+    assert result.ran is True, "the run did work before it was stopped"
+
+
+@pytest.mark.asyncio
+async def test_a_wizard_that_calls_itself_answers_instead_of_recursing(tmp_path):
+    """A cycle is caught by NAME, and the answer names the loop.
+
+    Unbounded nesting ends in a crash — the Activity tree's own depth cap raises
+    before the stack gives out — and a crash is not an answer.
+    """
+    spec = WizardSpec.model_validate({"name": "loop", "steps": [
+        {"id": "again", "kind": "wizard", "ref": "loop"},
+    ]})
+    result = await _run_wizard(spec, tmp_path=tmp_path, resolve_wizard=_wizards({"loop": spec}))
+
+    assert result.exit_code is ExitCode.NOT_YET
+    assert "already on this run's stack" in result.steps["again"].detail
+    assert "loop -> loop" in result.steps["again"].detail
+
+
+@pytest.mark.asyncio
+async def test_a_chain_that_never_repeats_still_has_a_floor(tmp_path):
+    """The other runaway: each wizard calls a DIFFERENT one, forever."""
+    # One more level than the cap allows, so the floor is what stops it.
+    table = {f"w{i}": WizardSpec.model_validate({"name": f"w{i}", "steps": [
+        {"id": "down", "kind": "wizard", "ref": f"w{i + 1}"},
+    ]}) for i in range(MAX_WIZARD_DEPTH + 1)}
+    result = await _run_wizard(table["w0"], tmp_path=tmp_path, resolve_wizard=_wizards(table))
+
+    assert result.exit_code is ExitCode.NOT_YET
+    deepest = result.steps["down"].steps["down"].steps["down"]
+    assert f"more than {MAX_WIZARD_DEPTH}" in deepest.detail
+
+
+@pytest.mark.asyncio
+async def test_a_declared_output_the_steps_do_not_satisfy_fails_the_wizard(tmp_path):
+    """A wizard's `output` binds, exactly as an op's `output_spec_kind` does —
+    otherwise a caller binds a value that does not hold and carries the breakage
+    somewhere it cannot be explained."""
+    spec = WizardSpec.model_validate({
+        "name": "w",
+        "output": {"port": "int"},
+        "steps": [{"id": "jq", "kind": "compute", "ref": "jq", "bind": "jq"}],
+    })
+    result = await _run_wizard(spec, tmp_path=tmp_path, resolve_op=_ops(_op("jq")))
+
+    assert result.exit_code is ExitCode.NOT_YET
+    assert "not the declared output" in result.detail
+    assert result.steps["jq"].ok, "the step itself was fine; the wizard's promise was not"
 
 
 @pytest.mark.asyncio

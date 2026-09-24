@@ -14,6 +14,7 @@ from tests.unit._stream_inbox_matrix import (
     double_for,
     make_cell,
     not_applicable,
+    recorded_once,
     reply_as_agent,
     reply_as_human,
 )
@@ -34,9 +35,10 @@ async def test_a_message_lands_in_its_owners_stream_inbox_and_is_answered_on_its
                 item = await deliver(cell)
                 _, conversation = await assert_owned_and_attributed(cell, item)
                 if owner_kind == "user":
-                    await reply_as_human(cell, conversation)
+                    reply = await reply_as_human(cell, conversation)
                 else:
-                    await reply_as_agent(cell, item)
+                    reply = await reply_as_agent(cell, item)
+                await recorded_once(cell, reply["text"])
             await adopts_the_owners_source(cell, monkeypatch)
         finally:
             await cell.source.delete()

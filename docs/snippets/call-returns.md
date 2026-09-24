@@ -44,6 +44,7 @@ class AgentOp(ExeData):                       # compute_op.agent — a harness w
 
 class AskOp(ExeData):                         # compute_op.ask — a person
     prompt: str
+    secret: bool                              # masked where it is typed (an API key)
 
 class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     name: str
@@ -73,6 +74,7 @@ class ReturnedValue(DataSpec):                # compute.returned
     detail: str                               # ONE sentence for a person
     ran: bool                                 # False ⇒ nothing executed
     timed_out: bool                           # the wait ended before the work did
+    busy: bool                                # a held slot turned it away — retry later
     duration_s: float
     executor: str | None                      # 'agentic_process-<id>' | 'shell-<id>'
     check: CliResult | None                   # the last completion-check run
@@ -165,6 +167,13 @@ except ValidationError as refused:
 "unknown kind 'snippet.greetin'" in reason    # True — refused at read, never Any
 ```
 
+That `class Greeting(DataSpec)` is the registration: a kind exists once the
+module declaring it has been imported. So a kind is nameable here — in flow_sdk,
+or in an asset that ships a module, like a data source — and NOT in an op's own
+folder, which holds a JSON document and a markdown file. An op returns a
+primitive or a kind that already exists. The rule, and the one mechanism to
+reuse if that changes, are in [ontology](../ontology.md).
+
 ## 5. Nothing raises for an outcome
 
 Refused, busy, never started, timed out, failed: all returned. Only bad input
@@ -189,8 +198,8 @@ carried.returncode                        # 2 — the exception CARRIES the resu
 | what happened | `exit_code` | `ran` | how a caller tells |
 | --- | --- | --- | --- |
 | not approved | `REFUSED` | False | never retry |
-| someone else is running it (a wizard's lock, a turn in flight) | `NOT_YET` | False | nothing ran — try later |
-| never started (no harness, spawn failed) | `NOT_YET` | False | `detail` says why |
+| someone else is running it (a wizard's lock, a turn in flight) | `NOT_YET` | False | `busy` — try later; the only case an edge answers 409 |
+| never started (no harness, spawn failed) | `NOT_YET` | False | not `busy` — `detail` says why; retrying changes nothing |
 | still running when the wait ended | `NOT_YET` | True | `timed_out` — do not re-run on top of it |
 | ended in error / interrupted | `NOT_YET` | True | the process, via `executor` |
 | a reply that is not the declared kind | `NOT_YET` | True | `text` keeps the reply |
@@ -303,6 +312,7 @@ fix = ComputeOpSpec(name="marker-agent", subkind="agent",
 
 first = await run_op(fix, trusted=True, workdir=tmp)
 type(first) is PromptResult               # True
+first.exit_code                           # ExitCode.OK — the agent made the check hold
 first.executor.startswith("agentic_process-")   # True
 
 # A follow-up has no completion check: with one that already holds, nothing

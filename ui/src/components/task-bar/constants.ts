@@ -24,6 +24,12 @@ export const STATUS_LABELS: Record<string, string> = {
   to_do: 'New',
   in_progress: 'In progress',
   done: 'Done',
+  // A delegated task's lifecycle (the task ledger).
+  submitted: 'Submitted',
+  working: 'Working',
+  input_required: 'Needs input',
+  failed: 'Failed',
+  canceled: 'Canceled',
 };
 
 export function statusLabel(s?: string): string {

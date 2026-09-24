@@ -98,10 +98,6 @@ ping_received = threading.Event()
 prompt_completions = []
 prompt_received = threading.Event()
 
-# Background Claude sessions
-claude_sessions: Dict[str, Dict[str, Any]] = {}
-session_counter = 0
-session_lock = threading.Lock()
 
 # Hook reporters
 buffer_reporter = BufferReporter(max_size=100)

@@ -70,7 +70,7 @@ call, recorded with its date and reason in `EXCEPTIONS` in
 runtime cannot work out for itself. Two rules keep it that way:
 
 * **The class is authoritative for what it is.** Traits (`durable_cursor`,
-  `reflects`, `stamps_identity`, `echoes_sends`, …) are ClassVars on the source
+  `reflects`, `stamps_identity`, `open_inbound`, …) are ClassVars on the source
   class; a manifest copy would be "authoritative-looking, owned by nobody, and
   silently corrected later". A `traits` key in a manifest is a **load error**.
 * **Presence beats declaration.** A capability is a protocol the class implements,

@@ -1,4 +1,4 @@
-import { Agent, QueryRequest, Trigger, type ICronEvent } from '@sdk';
+import { Agent, QueryRequest, Trigger, type ICronEvent, type TypeId } from '@sdk';
 import type { AgentScheduleFields } from '@sdk/entities/agent';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { projectScope, userScope } from '@sdk/utils/scope-filter';
@@ -54,39 +54,13 @@ export function AgentScheduleSection({ agent, autoLaunchPrompt = '', deploymentI
   // The author's zone: "daily at 09:00" must mean their 09:00 on a sandbox too.
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
-  const request = useMemo(
-    () =>
-      new QueryRequest({
-        type: Trigger.type,
-        scope: [],
-        // `query`, not `match` — see AgentDeploymentsSection.
-        query: { parent_type_id: agent.typeId.toString() },
-        name: 'agentSchedules',
-      }),
-    [agent.typeId],
-  );
-  const { data: rows = [], refetch } = useEntitiesQuery<Trigger>(request);
+  const { schedules: allSchedules, refetch } = useAgentSchedules(agent.typeId);
   const schedules = useMemo(
-    () =>
-      rows.filter(
-        (row) =>
-          row.trigger_type === 'schedule' &&
-          (row.runs_on === deploymentId || (!row.runs_on && isLocal)),
-      ),
-    [rows, deploymentId, isLocal],
+    () => allSchedules.filter((row) => row.runs_on === deploymentId || (!row.runs_on && isLocal)),
+    [allSchedules, deploymentId, isLocal],
   );
 
-  const labels = useMemo<ScheduleDescribeLabels>(
-    () => ({
-      once: (when) => t`Once at ${when}`,
-      daily: (time) => t`Daily at ${time}`,
-      weekly: (day, time) => t`${day} at ${time}`,
-      monthly: (day, time) => t`Day ${day} of each month at ${time}`,
-      every: (interval) => t`Every ${interval}`,
-      cron: (expr) => t`Cron ${expr}`,
-    }),
-    [t],
-  );
+  const labels = useScheduleLabels();
 
   const fail = useCallback(
     (title: string, e: unknown) => notify.error({ title, message: errorMessage(e, title), forceToast: true }),
@@ -325,3 +299,38 @@ export function AgentScheduleSection({ agent, autoLaunchPrompt = '', deploymentI
     </section>
   );
 }
+
+/** Every schedule that runs this agent, on any place — one named query shared by its readers. */
+export function useAgentSchedules(agentTypeId: TypeId) {
+  const request = useMemo(
+    () =>
+      new QueryRequest({
+        type: Trigger.type,
+        scope: [],
+        // `query`, not `match` — see AgentDeploymentsSection.
+        query: { parent_type_id: agentTypeId.toString() },
+        name: 'agentSchedules',
+      }),
+    [agentTypeId],
+  );
+  const { data: rows = [], isLoading, refetch } = useEntitiesQuery<Trigger>(request);
+  const schedules = useMemo(() => rows.filter((row) => row.trigger_type === 'schedule'), [rows]);
+  return { schedules, isLoading, refetch };
+}
+
+/** How a schedule's timing is said ("Daily at 09:00"). */
+export function useScheduleLabels(): ScheduleDescribeLabels {
+  const { t } = useLingui();
+  return useMemo<ScheduleDescribeLabels>(
+    () => ({
+      once: (when) => t`Once at ${when}`,
+      daily: (time) => t`Daily at ${time}`,
+      weekly: (day, time) => t`${day} at ${time}`,
+      monthly: (day, time) => t`Day ${day} of each month at ${time}`,
+      every: (interval) => t`Every ${interval}`,
+      cron: (expr) => t`Cron ${expr}`,
+    }),
+    [t],
+  );
+}
+

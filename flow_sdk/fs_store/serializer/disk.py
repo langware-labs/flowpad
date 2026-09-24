@@ -29,6 +29,7 @@ from flow_sdk.assets.serialization import (
     write_asset_tree,
 )
 from flow_sdk.builtin.drivers.local_driver import _resolve_local_path
+from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.fs_store.origin.fs_origin import FSOrigin
 from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -95,7 +96,9 @@ class DiskSerializer:
         resolved_id = observed_id or entity_id
         if resolved_id:
             data["id"] = resolved_id
-        return cls(**data)
+
+        with lenient_entity_load():  # an asset file may predate a field's removal
+            return cls(**data)
 
     @staticmethod
     def _load_via_parser(cls: type, info: Any, root: Path, entity_id: Optional[str]) -> Any:

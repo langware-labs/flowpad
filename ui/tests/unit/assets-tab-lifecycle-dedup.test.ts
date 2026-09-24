@@ -6,7 +6,7 @@
  * in-memory Tab store (seed rows use `dock.toJSON()`, so dedup runs through the
  * actual `Tab.dockPointer` reconstruction).
  */
-import { Tab } from '@sdk';
+import { Tab, tabManager } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resetTabContentLifecycleForTests, setupTab } from '@src/tabs/tab-content-lifecycle';
 import { projectScope, type ScopeFilter } from '@src/lib/scope-filter';
@@ -41,6 +41,7 @@ function mockTabStore() {
 afterEach(() => {
   vi.restoreAllMocks();
   resetTabContentLifecycleForTests();
+  tabManager.resetForTests();
 });
 
 describe('assets tab dedup by scope', () => {

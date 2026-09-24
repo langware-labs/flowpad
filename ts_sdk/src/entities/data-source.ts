@@ -53,6 +53,7 @@ export interface IDataSource extends IEntity {
   verified_at?: string | null;
   poll_interval_seconds?: number;
   window_days?: number;
+  thread_timeout_seconds?: number | null;
   cursor?: string | null;
   manifest?: Record<string, unknown>;
   high_water?: string | null;
@@ -121,6 +122,8 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   verified_at: string | null = null;
   poll_interval_seconds: number = 300;
   window_days: number = 7;
+  /** A thread quiet this long is over: the next message starts a new thread. Null = never. */
+  thread_timeout_seconds: number | null = null;
   /** The provider's opaque resume token — one per source, since a source is ONE
    *  stream. Null until the first pass completes, and after `reset`. */
   cursor: string | null = null;
@@ -155,6 +158,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.verified_at = entity.verified_at ?? this.verified_at;
     this.poll_interval_seconds = entity.poll_interval_seconds ?? this.poll_interval_seconds;
     this.window_days = entity.window_days ?? this.window_days;
+    this.thread_timeout_seconds = entity.thread_timeout_seconds ?? this.thread_timeout_seconds;
     this.cursor = entity.cursor ?? this.cursor;
     this.manifest = entity.manifest ?? this.manifest;
     this.high_water = entity.high_water ?? this.high_water;

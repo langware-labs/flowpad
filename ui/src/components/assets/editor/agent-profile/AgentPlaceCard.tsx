@@ -19,12 +19,11 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 import { AgentPlaceActivity } from './AgentPlaceActivity';
 import { AgentPlaceConfig } from './AgentPlaceConfig';
-import { AgentPlaceChannels } from './AgentPlaceChannels';
-import { AgentScheduleSection } from './AgentScheduleSection';
 import { DeployedAgentChatPanel } from './DeployedAgentChatPanel';
 import { usePlaceDisplay } from './use-place-display';
 
-const PLACE_TABS = ['activity', 'channels', 'schedules', 'config'] as const;
+// Channels and schedules live in the agent-resources menu on the left.
+const PLACE_TABS = ['activity', 'config'] as const;
 type PlaceTab = (typeof PLACE_TABS)[number];
 
 /** Dock option holding the selected environment's tab. */
@@ -35,7 +34,6 @@ const PLACE_CHAT_OPTION = 'chat';
 interface AgentPlaceCardProps {
   agent: Agent;
   place: AgentPlace;
-  autoLaunchPrompt?: string;
   pendingChanges?: number;
   onChanged: () => void | Promise<void>;
 }
@@ -46,7 +44,7 @@ interface AgentPlaceCardProps {
  * The selected tab and the open chat live in the URL (dock options) — a click
  * only navigates, per the URL-first rule.
  */
-export function AgentPlaceCard({ agent, place, autoLaunchPrompt, pendingChanges = 0, onChanged }: AgentPlaceCardProps) {
+export function AgentPlaceCard({ agent, place, pendingChanges = 0, onChanged }: AgentPlaceCardProps) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   // Keyed by identity, not by the row object: every places reload hands back fresh
@@ -201,15 +199,6 @@ export function AgentPlaceCard({ agent, place, autoLaunchPrompt, pendingChanges 
           <TabsTrigger value="activity" data-testid="agent-place-tab-activity">
             <Trans>Activity</Trans>
           </TabsTrigger>
-          <TabsTrigger value="channels" data-testid="agent-place-tab-channels">
-            <Trans>Channels</Trans>
-          </TabsTrigger>
-          <TabsTrigger value="schedules" data-testid="agent-place-tab-schedules">
-            <Trans>Schedules</Trans>
-            {place.schedule_count > 0 && (
-              <span className="ms-1.5 text-[11px] text-muted-foreground">{place.schedule_count}</span>
-            )}
-          </TabsTrigger>
           <TabsTrigger value="config" data-testid="agent-place-tab-config">
             <Trans>Config</Trans>
             {overrideCount > 0 && (
@@ -222,17 +211,6 @@ export function AgentPlaceCard({ agent, place, autoLaunchPrompt, pendingChanges 
         <div className="px-3.5 py-3">
           <TabsContent value="activity" className="mt-0">
             <AgentPlaceActivity deployment={deployment} isLocal={place.is_local} />
-          </TabsContent>
-          <TabsContent value="channels" className="mt-0">
-            <AgentPlaceChannels agent={agent} />
-          </TabsContent>
-          <TabsContent value="schedules" className="mt-0">
-            <AgentScheduleSection
-              agent={agent}
-              autoLaunchPrompt={autoLaunchPrompt}
-              deploymentId={deployment.id}
-              isLocal={place.is_local}
-            />
           </TabsContent>
           <TabsContent value="config" className="mt-0">
             <AgentPlaceConfig

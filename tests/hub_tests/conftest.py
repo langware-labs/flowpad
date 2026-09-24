@@ -386,9 +386,19 @@ def _cleanup_identities() -> list[str]:
         ),
         (os.environ.get("BOB_EMAIL") or bob, os.environ.get("BOB_PW")),
     ]
+    # One login per ACCOUNT, not per pair: ``FLOWPAD_CLOUD_USER_EMAIL`` and alice
+    # are normally the same person, and each login mints a fresh token, so
+    # deduping tokens let alice through twice — every snapshot then listed her
+    # rows twice, and her conversation list alone is the slowest call here.
     tokens: list[str] = []
-    for token in (_cleanup_token(email, password) for email, password in pairs):
-        if token and token not in tokens:
+    seen: set[str] = set()
+    for email, password in pairs:
+        account = (email or "").strip().lower()
+        if not account or account in seen:
+            continue
+        token = _cleanup_token(email, password)
+        if token:
+            seen.add(account)
             tokens.append(token)
     return tokens
 
@@ -400,7 +410,9 @@ def _cleanup_identities() -> list[str]:
 # the fixture below, and ``test_org_login_and_invite`` has already had to weaken
 # an assertion ("which org is 'primary' is ambiguous once a user has several —
 # a test-only artifact of repeated runs") because of this exact pile.
-_CLEANUP_TYPES = ("conversation", "organization", "team", "skill", "task", "markdown", "agent")
+# ``project`` is the helpdesk desks: their fixtures delete them in ``finally``,
+# but a run killed mid-test (the timeout cap) skips that, so the diff backs it up.
+_CLEANUP_TYPES = ("conversation", "organization", "team", "skill", "task", "markdown", "agent", "project")
 
 
 def _live_ids(token: str, entity_type: str) -> set[str]:
