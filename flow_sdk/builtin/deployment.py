@@ -619,6 +619,72 @@ class Deployment(Entity):
 
         return ApiSuccessResponse(data=(await threads(self)).model_dump(mode="json"))
 
+    def _local_process(self):
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentProcess  # noqa: PLC0415
+
+        return DeploymentProcess(
+            deployment_id=str(self.id), shell_id=deployment_process.shell_id_of(self),
+            file=str(deployment_process.file_of(self)), command=deployment_process.command_of(self),
+            pid=deployment_process.pid_of(self), serving=bool(self.serving),
+        )
+
+    @action.get(action_name="process")
+    async def process_action(self):
+        """`GET /deployment/<id>/process` — a local deployment's process: its file, its terminal, its pid."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.is_local:
+            return ApiFailResponse(message="only a local deployment runs a process here", status_code=400)
+        return ApiSuccessResponse(data=(await asyncio.to_thread(self._local_process)).model_dump(mode="json"))
+
+    @action.get(action_name="code")
+    async def code_action(self):
+        """`GET /deployment/<id>/code` — the text of the Python file a local deployment runs."""
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentCode  # noqa: PLC0415
+
+        if not self.is_local:
+            return ApiFailResponse(message="only a local deployment runs a file here", status_code=400)
+        path = deployment_process.file_of(self)
+        return ApiSuccessResponse(data=DeploymentCode(file=str(path), text=path.read_text(encoding="utf-8")).model_dump(mode="json"))
+
+    @action.post(action_name="save_code")
+    async def save_code_action(self):
+        """`POST /deployment/<id>/save_code {text}` — write the file; it runs from the next (re)start."""
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentCode  # noqa: PLC0415
+
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        text = ((await request_info.get_post_data()) or {}).get("text") if request_info else None
+        if not self.is_local or not isinstance(text, str):
+            return ApiFailResponse(message="a local deployment's file takes {text: <python>}", status_code=400)
+        path = deployment_process.file_of(self)
+        path.write_text(text, encoding="utf-8")
+        return ApiSuccessResponse(data=DeploymentCode(file=str(path), text=text).model_dump(mode="json"))
+
+    @action.post(action_name="restart")
+    async def restart_action(self):
+        """`POST /deployment/<id>/restart` — stop the loop; the supervisor runs the file again at once
+        (this write is what tells it), in the same terminal."""
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.is_local or not self.serving:
+            return ApiFailResponse(message="only a running local deployment restarts", status_code=400)
+        if not await asyncio.to_thread(deployment_process.stop, self):
+            return ApiFailResponse(message="its process did not stop", status_code=500)
+        await self.save()
+        return ApiSuccessResponse(data=(await asyncio.to_thread(self._local_process)).model_dump(mode="json"))
+
     @action.get(action_name="runs")
     async def runs_action(self):
         """`GET /deployment/<id>/runs?limit=` — the latest runs on a cloud machine; the hub bounds ``limit``."""

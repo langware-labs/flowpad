@@ -129,6 +129,24 @@ export interface DeploymentThread {
   turns: number;
 }
 
+/** A local deployment's process — mirror of `deployment.process`: the file it runs, its terminal. */
+export interface DeploymentProcess {
+  deployment_id: string;
+  /** The Shell whose terminal runs it; empty before its first start. */
+  shell_id: string;
+  file: string;
+  command: string;
+  /** The loop's pid while it runs, else null. */
+  pid: number | null;
+  serving: boolean;
+}
+
+/** The text of the file a local deployment runs — mirror of `deployment.code`. */
+export interface DeploymentCode {
+  file: string;
+  text: string;
+}
+
 /** The tag a deployment's process emits when its timeline moved (relayed to the app). */
 export const DEPLOYMENT_TIMELINE_TAG = 'deployment.timeline';
 
@@ -255,6 +273,26 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     const qs = params.toString();
     const data = await this.get<DeploymentTimeline | null>(`timeline${qs ? `?${qs}` : ''}`);
     return data ?? { deployment_id: this.id, events: [], before: null };
+  }
+
+  /** A local deployment's process: its file, its terminal, its pid (`GET deployment/<id>/process`). */
+  async process(): Promise<DeploymentProcess | null> {
+    return this.get<DeploymentProcess | null>('process');
+  }
+
+  /** The Python file a local deployment runs (`GET deployment/<id>/code`). */
+  async code(): Promise<DeploymentCode | null> {
+    return this.get<DeploymentCode | null>('code');
+  }
+
+  /** Write the file; it runs from the next (re)start (`POST deployment/<id>/save_code`). */
+  async saveCode(text: string): Promise<DeploymentCode> {
+    return (await this.post('save_code', { text })) as DeploymentCode;
+  }
+
+  /** Stop the loop; the app runs the file again at once, in the same terminal (`POST deployment/<id>/restart`). */
+  async restart(): Promise<DeploymentProcess> {
+    return (await this.post('restart')) as DeploymentProcess;
   }
 
   /** The conversations it holds, the active ones first (`GET deployment/<id>/threads`). */
