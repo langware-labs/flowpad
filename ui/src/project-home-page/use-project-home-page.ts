@@ -1,9 +1,6 @@
-import { QueryFilter, QueryRequest, type AnyEntity } from '@sdk';
+import { QueryFilter, QueryRequest, RecordType, type AnyEntity } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useMemo } from 'react';
-
-/** The manifest row type (`ProjectManifest`, `flow_sdk/builtin/project_manifest.py`). */
-const PROJECT_MANIFEST_TYPE = 'project_manifest';
 
 /**
  * The home page `projectId`'s manifest declares, or null.
@@ -18,7 +15,7 @@ export function useProjectHomePage(projectId: string | null | undefined): string
   const request = useMemo(
     () =>
       new QueryRequest({
-        type: PROJECT_MANIFEST_TYPE,
+        type: RecordType.PROJECT_MANIFEST,
         scope: [],
         name: `projectHomePage:${projectId ?? 'none'}`,
         query: new QueryFilter({ match: { project_id: projectId ?? '' } }),
