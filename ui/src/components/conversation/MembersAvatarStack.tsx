@@ -157,6 +157,13 @@ export function MembersAvatarStack({
     const grantable = grantableRoles(me);
     return inviteRoles.filter((r) => grantable.includes(r));
   }, [inviteRoles, me]);
+  // A member row's role options: what the ladder lets me assign that member,
+  // narrowed to ``inviteRoles`` when the surface passes them — so changing a
+  // role offers exactly what inviting does (a project's ``share-roles``).
+  const rowRoles = (p: ConversationParticipant) => {
+    const assignable = assignableRoles(me, p);
+    return inviteRoles?.length ? inviteRoles.filter((r) => assignable.includes(r)) : assignable;
+  };
   // The role selector on the add row — defaults to ``member``. Whatever it
   // shows when Add is clicked is the role that recipient joins the list with;
   // each listed row can still be changed individually (a project invite is one
@@ -498,7 +505,10 @@ export function MembersAvatarStack({
                     // Role selector mirrors the hub ``can_assign`` ceiling: options
                     // strictly below my rank, only on members strictly below my rank,
                     // never my own row / the owner. Empty = render the static label.
-                    const roles = assignableRoles(me, p);
+                    // Where the surface passes ``inviteRoles`` (the backend's
+                    // ``share-roles`` list) the options are that list, the same one
+                    // the invite form offers; otherwise the full ladder.
+                    const roles = rowRoles(p);
                     const contact = participantIsUser(p, localUser) ? null : contactFromParticipant(p);
                     const identity = (
                       <>
