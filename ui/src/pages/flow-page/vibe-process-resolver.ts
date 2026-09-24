@@ -1,4 +1,4 @@
-import { AgenticProcess, ProcessKind, QueryFilter, QueryRequest } from '@sdk';
+import { AgenticProcess, type ExpressionNode, ProcessKind, QueryFilter, QueryRequest } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { mostRecentProcess } from '@src/utils/process-recency';
 import { ViewMode } from '@src/contexts/view-mode-context';
@@ -9,21 +9,17 @@ import { useCallback, useRef } from 'react';
  *  `target` narrows it to one entity's chats — an agent's sessions carry the
  *  agent's TypeId as `target_typeid_str` (`Deployment.use`). */
 export function lastVibeChatQuery(projectId: string, target?: string): QueryRequest {
+  const operands: Partial<ExpressionNode>[] = [
+    { op: '$EQ', operands: ['project_id', projectId] },
+    { op: '$EQ', operands: ['process_type', ProcessKind.Chat] },
+    { op: '$IS_NOT_NULL', operands: ['last_active_at'] },
+  ];
+  if (target) operands.push({ op: '$EQ', operands: ['target_typeid_str', target] });
   return new QueryRequest({
     type: AgenticProcess.type,
     scope: [],
     name: `lastVibeChat:${projectId}${target ? `:${target}` : ''}`,
-    query: new QueryFilter({
-      match: {
-        op: '$AND',
-        operands: [
-          { op: '$EQ', operands: ['project_id', projectId] },
-          { op: '$EQ', operands: ['process_type', ProcessKind.Chat] },
-          { op: '$IS_NOT_NULL', operands: ['last_active_at'] },
-          ...(target ? [{ op: '$EQ', operands: ['target_typeid_str', target] }] : []),
-        ],
-      },
-    }),
+    query: new QueryFilter({ match: { op: '$AND', operands } }),
   });
 }
 

@@ -67,8 +67,13 @@ VALID: dict[str, dict] = {
     "data_source": {"poll_interval_seconds": 300},
     # `location_type` is a closed enum, and entity-only (not in the spec)
     "micro_app": {"location_type": "Asset"},
-    # only a publishable type may appear in an entry; the schema is THIS build's
-    "project_manifest": {"entries": [], "manifest_schema": 1},
+    # only a publishable type may appear in an entry; the schema is THIS build's;
+    # `home_page` must be a `<type>-<uuid v4/v5>` TypeId (a filler string reads as unset)
+    "project_manifest": {
+        "entries": [],
+        "manifest_schema": 1,
+        "home_page": "agent-2f0f4f1e-8a51-4c43-9b0a-6d5d3c1e7a42",
+    },
     # a timestamp is normalised on read, so it has to be one going in
     "source_item": {"occurred_at": "2026-01-02T03:04:05+00:00"},
     # `value_store` is env|vault, `lm_provider` is a closed set, and an
