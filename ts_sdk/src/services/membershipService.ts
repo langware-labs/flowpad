@@ -155,6 +155,19 @@ class MembershipService {
     }
   }
 
+  /** The roles a share invite may grant — the backend's global list
+   *  (``GET /graph/share-roles``). Empty on failure: the invite form then offers
+   *  no picker and the backend's default role applies. */
+  async fetchShareRoles(): Promise<string[]> {
+    try {
+      const actionInfo = new ActionInfo('share-roles', null, null, 'GET');
+      return (await dataManager.callAction<undefined, string[]>(actionInfo)) ?? [];
+    } catch (error) {
+      console.error('Failed to fetch share roles', error);
+      return [];
+    }
+  }
+
   async createMembership(entity_typeId: TypeId, membershipRequest: IMembershipRequest): Promise<void> {
     try {
       const actionInfo = new ActionInfo('members', entity_typeId.type, entity_typeId.id, 'POST');
