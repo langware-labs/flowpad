@@ -397,3 +397,38 @@ describe('roster — remove (✕) follows the hub ladder', () => {
     expect(removable()).toEqual(['Remove Dana', 'Remove Ari']);
   });
 });
+
+describe('roster — change-role dropdown offers the backend share roles', () => {
+  /** The backend's `share-roles` answer, as ProjectHome passes it. */
+  const SHARE_ROLES = ['editor', 'member', 'admin'];
+  const rowOptions = (name: string) =>
+    Array.from(screen.getByLabelText(`Change role of ${name}`).options).map((o) => o.value);
+
+  function openRoster(inviteRoles?: readonly string[]) {
+    render(<MembersAvatarStack typeId={PROJECT} inviteRoles={inviteRoles} />);
+    fireEvent.click(screen.getByTestId('members-avatar-stack'));
+  }
+
+  beforeEach(() => {
+    myRole = 'owner';
+  });
+
+  it('offers an owner the share roles only — no reader', () => {
+    openRoster(SHARE_ROLES);
+
+    expect(rowOptions('Dana')).toEqual(['editor', 'member', 'admin']);
+  });
+
+  it('caps the share roles below my rank — an editor may set member only', () => {
+    myRole = 'editor';
+    openRoster(SHARE_ROLES);
+
+    expect(rowOptions('Dana')).toEqual(['member']);
+  });
+
+  it('falls back to the full ladder where the surface passes no roles', () => {
+    openRoster();
+
+    expect(rowOptions('Dana')).toEqual(['admin', 'editor', 'member', 'reader']);
+  });
+});
