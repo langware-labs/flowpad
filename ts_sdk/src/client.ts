@@ -75,6 +75,26 @@ export interface ApiAxiosInstance
 export const invalidTokenMessage = 'Invalid token, login required';
 export const invalidRefreshTokenMessage = 'Invalid refresh token, login required';
 
+/**
+ * A hub-launched sandbox pauses on E2B's idle timer and auto-resumes on the
+ * next request — but the resume is not instant. A request that lands in that
+ * window gets a 502 straight from E2B's edge (never reaches our own backend,
+ * whose own 5xx codes are never 502), with the body "the sandbox is running
+ * but port is not open". Nothing before this retried it, so a login (or
+ * anything else) that happened to land in that window just failed outright,
+ * with no signal to the caller that trying again a moment later would work.
+ *
+ * Bounded and short on purpose: this is a race measured in hundreds of
+ * milliseconds, not a circuit breaker for a genuinely down backend — that
+ * case is `isServiceUnavailable` below, which this leaves untouched.
+ */
+const SANDBOX_WAKING_RETRY_STATUS = 502;
+const SANDBOX_WAKING_RETRY_DELAYS_MS = [300, 800];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Extended client interface for test token support
 interface ExtendedApiClient extends ApiAxiosInstance {
   testUserToken?: string;
@@ -142,6 +162,19 @@ function initApiClient(client: ApiAxiosInstance) {
       // Do something with response error
       const method = error.config?.method?.toUpperCase() || 'UNKNOWN';
       apiStats.incrementFailed(method);
+
+      // A sandbox waking from E2B's idle pause: retry silently, a few times,
+      // with a short delay — see SANDBOX_WAKING_RETRY_STATUS above.
+      if (error.response?.status === SANDBOX_WAKING_RETRY_STATUS && error.config) {
+        const cfg = error.config as AxiosRequestConfig & { __sandboxWakeRetryCount?: number };
+        const attempt = cfg.__sandboxWakeRetryCount ?? 0;
+        if (attempt < SANDBOX_WAKING_RETRY_DELAYS_MS.length) {
+          cfg.__sandboxWakeRetryCount = attempt + 1;
+          const delay = SANDBOX_WAKING_RETRY_DELAYS_MS[attempt];
+          console.log(`API call got 502 (sandbox likely waking up) — retrying in ${delay}ms`);
+          return sleep(delay).then(() => client.request(cfg));
+        }
+      }
 
       // Check for network errors (backend unavailable)
       if (error.code === 'ERR_NETWORK' || error.code === 'ERR_CONNECTION_REFUSED' || !error.response) {

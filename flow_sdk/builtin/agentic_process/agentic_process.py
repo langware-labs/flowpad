@@ -680,8 +680,14 @@ class AgenticProcess(Entity):
 
     @classmethod
     def preserved_fields_on_save(cls, current_data: dict) -> tuple[str, ...]:
-        """Only the naming transaction may change an initialized naming state."""
-        return ("name", "naming_state", "auto_rename") if current_data.get("naming_state") is not None else ()
+        """Only the naming transaction may change an initialized naming state, and
+        only the client's own ``update`` may change ``last_mode`` — a server save
+        holds an instance loaded before the user switched modes (``switch-mode`` →
+        ``exit()`` wrote the old mode back)."""
+        naming = ("name", "naming_state", "auto_rename") if current_data.get("naming_state") is not None else ()
+        info = get_current_request_info()
+        client_update = info is not None and info.action == "update"
+        return naming if client_update else (*naming, "last_mode")
 
     auto_rename: bool = APIField(
         default=True,

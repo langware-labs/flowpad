@@ -1,6 +1,7 @@
 """A source's ``thread_timeout_seconds``: a thread quiet that long is over, and the next message on
 the same chat starts a new thread — a new conversation — on top of the driver's own split.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -16,7 +17,7 @@ from flow_sdk.stream_inbox.projection import find_thread, owner_of, project_sour
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
-T0 = datetime(2026, 9, 24, 9, 0, tzinfo=timezone.utc)
+T0 = datetime.now(timezone.utc)  # the thread is born at wall-clock now; a fixed date expires
 
 
 @pytest.fixture(autouse=True)
@@ -26,19 +27,31 @@ def _records_root(tmp_path, monkeypatch):
 
 async def _chat(timeout: Optional[int]) -> DataSource:
     source = DataSource(
-        provider="agent", channel="telegram", name=f"chat {uuid.uuid4().hex[:8]}",
-        account_key=f"bot-{uuid.uuid4().hex[:8]}", config={"connector": "telegram", "harness": "claude"},
+        provider="agent",
+        channel="telegram",
+        name=f"chat {uuid.uuid4().hex[:8]}",
+        account_key=f"bot-{uuid.uuid4().hex[:8]}",
+        config={"connector": "telegram", "harness": "claude"},
         thread_timeout_seconds=timeout,
     )
     await source.save()
     return source
 
 
-async def _say(source: DataSource, chat: str, minutes: int, text: str = "hi", *, ours: bool = False) -> tuple[str, MessageThread]:
+async def _say(
+    source: DataSource, chat: str, minutes: int, text: str = "hi", *, ours: bool = False
+) -> tuple[str, MessageThread]:
     item = SourceItem(
-        id=str(uuid.uuid4()), data_source_id=source.id, provider="agent", kind="content.message.chat",
-        external_id=f"{chat}/{uuid.uuid4().hex[:8]}", thread_key=chat, body=text, sent_by_us=ours,
-        author_external_id="me" if ours else "dana", occurred_at=(T0 + timedelta(minutes=minutes)).isoformat(),
+        id=str(uuid.uuid4()),
+        data_source_id=source.id,
+        provider="agent",
+        kind="content.message.chat",
+        external_id=f"{chat}/{uuid.uuid4().hex[:8]}",
+        thread_key=chat,
+        body=text,
+        sent_by_us=ours,
+        author_external_id="me" if ours else "dana",
+        occurred_at=(T0 + timedelta(minutes=minutes)).isoformat(),
     )
     await item.save(notify=False)
     _, thread_id = await project_source_item(item, source=source, notify=False, announce=False)
@@ -77,7 +90,9 @@ async def test_a_placed_message_stays_in_its_thread_and_a_backfill_ends_nothing(
     first_item, first = await _say(source, chat, 0)
     _, after = await _say(source, chat, 30)
 
-    replayed = await project_source_item(await SourceItem.get_by_id(first_item), source=source, notify=False, announce=False)
+    replayed = await project_source_item(
+        await SourceItem.get_by_id(first_item), source=source, notify=False, announce=False
+    )
     _, late = await _say(source, chat, 20)  # arrives now, older than the thread's newest message
 
     assert replayed[1] == first.id, "re-projecting never moves a message into the newer thread"
