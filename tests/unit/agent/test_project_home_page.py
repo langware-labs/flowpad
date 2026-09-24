@@ -19,7 +19,8 @@ import pytest
 from flow_sdk.assets import project_manifest as manifest
 from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.schema.data_spec.project_manifest_spec import ProjectManifestSpec
-from tests.unit.agent._seed import seed_agent as _agent, seed_project as _project
+from tests.unit.agent._seed import seed_agent as _agent
+from tests.unit.agent._seed import seed_project as _project
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
@@ -81,7 +82,7 @@ def test_a_malformed_id_is_refused_at_write_time(tmp_path):
 async def test_no_manifest_is_the_default_home(tmp_path):
     project = await _project(tmp_path / "none")
 
-    assert await project.open_home_page() == {"asset": None, "type": None}
+    assert await project.open_home_page() == {"asset": None, "type": None, "declared": None}
 
 
 async def test_the_declared_agent_resolves_to_its_asset(tmp_path):
@@ -90,7 +91,7 @@ async def test_the_declared_agent_resolves_to_its_asset(tmp_path):
     agent = await _agent(root, "intake")
     _declare(root, str(agent.typeid))
 
-    assert await project.open_home_page() == {"asset": str(agent.typeid), "type": "agent"}
+    assert await project.open_home_page() == {"asset": str(agent.typeid), "type": "agent", "declared": str(agent.typeid)}
 
 
 async def test_the_home_page_action_answers_with_the_resolution(tmp_path):
@@ -102,7 +103,7 @@ async def test_the_home_page_action_answers_with_the_resolution(tmp_path):
     response = await project.home_page_action()
 
     assert isinstance(response, ApiSuccessResponse)
-    assert response.data == {"asset": str(agent.typeid), "type": "agent"}
+    assert response.data == {"asset": str(agent.typeid), "type": "agent", "declared": str(agent.typeid)}
 
 
 async def test_the_home_page_is_not_customization(tmp_path):
@@ -127,9 +128,12 @@ async def test_an_agent_from_another_project_is_refused(tmp_path):
 async def test_a_vanished_asset_falls_back_to_the_default_home(tmp_path):
     root = tmp_path / "vanished"
     project = await _project(root)
-    _declare(root, f"agent-{uuid.uuid4()}")
+    declared = f"agent-{uuid.uuid4()}"
+    _declare(root, declared)
 
-    assert (await project.open_home_page())["asset"] is None
+    resolved = await project.open_home_page()
+    assert resolved["asset"] is None
+    assert resolved["declared"] == declared, "the card shows what the file names, resolved or not"
 
 
 async def test_the_set_action_writes_the_manifest_and_refuses_a_foreign_asset(tmp_path):

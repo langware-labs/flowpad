@@ -982,7 +982,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * or a hub user id, for a contact the address book knows only by id (the
    * hub never discloses other people's emails, so those contacts have no
    * email to invite by); the backend decides which by shape. ``role`` is
-   * optional; only a Project invite honours it (``member`` | ``admin``,
+   * optional; only a Project invite honours it (one of the roles the
+   * ``share-roles`` action returns — ``membershipService.fetchShareRoles`` —
    * default ``member``) — other types ignore it.
    *
    * On the wire, ``recipients`` mirrors ``users`` exactly (bare string or

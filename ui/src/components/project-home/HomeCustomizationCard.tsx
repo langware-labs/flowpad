@@ -13,7 +13,6 @@ import {
   HOME_STRINGS_FILE,
 } from '@src/components/home-customization';
 import { isHomePageCandidate } from '@src/project-home-page/home-page-candidates';
-import { useProjectHomePage } from '@src/project-home-page/use-project-home-page';
 import { isImageFile } from '@src/utils/clipboard-image';
 import { notify } from '@src/notifications';
 import { Check, Image as ImageIcon, Loader2, PackageSearch, RotateCcw, Trash2, Upload } from 'lucide-react';
@@ -33,8 +32,8 @@ interface HomeCustomizationCardProps {
  * `home_title` and the `home.png` background, both over the generic `fs`
  * upload/download API. The home page (what the Home button opens) is the one
  * exception: it lives in the project manifest, which only the backend writes,
- * so it goes through `Project.setHomePage` and is read off the manifest row
- * (`useProjectHomePage`). After a customization write we re-fetch the project
+ * so it goes through `Project.setHomePage` and is read back from that file
+ * (`Project.openHomePage`). After a customization write we re-fetch the project
  * so the recomputed `customization` field (and every home) updates.
  */
 export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ project }) => {
@@ -53,12 +52,21 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
 
   const [busyHomePage, setBusyHomePage] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // What the button shows: set the moment a save lands, re-synced from the
-  // manifest row whenever it changes (another tab, a git pull). Local state so a
-  // save is visible without waiting for the row to be re-indexed.
-  const declaredHomePage = useProjectHomePage(project?.id);
-  const [homePage, setHomePage] = useState<string | null>(declaredHomePage);
-  useEffect(() => setHomePage(declaredHomePage), [declaredHomePage]);
+  // What the button shows: what the manifest FILE declares, read through the
+  // backend (`Project.openHomePage` → `declared`) — not an indexed row, which a
+  // manifest that arrived with a clone or a share never gets. Set again the
+  // moment a save lands.
+  const [homePage, setHomePage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!project?.id) return setHomePage(null);
+    let live = true;
+    Project.openHomePage(project.id)
+      .then((resolved) => live && setHomePage(resolved.declared ?? null))
+      .catch(() => live && setHomePage(null));
+    return () => {
+      live = false;
+    };
+  }, [project?.id]);
   // The declared asset, loaded for its name. Any type: the file names a TypeId,
   // and the picker offers every registered asset.
   const homePageTypeId = useMemo(() => (homePage ? new TypeId(homePage) : null), [homePage]);
@@ -66,7 +74,9 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
   // The picker's own list is the backend's default staging set (what a session
   // can attach), which leaves agents out — and an agent is THE home page. So the
   // card asks for the whole asset catalog, for this project, only while open.
-  const { types: assetTypes } = useAssetTypes({ withVaults: false });
+  // Standard's catalog even in Vibe: no type is browseable in Vibe, and an empty
+  // list sends no `types`, so the backend falls back to that same default set.
+  const { types: assetTypes } = useAssetTypes({ withVaults: false, vibeAsStandard: true });
   const homePageTypes = useMemo(() => assetTypes.map((type) => type.type_name), [assetTypes]);
   const homePageCandidates = useProcessAssets(null, {
     enabled: pickerOpen && !!project?.id,
