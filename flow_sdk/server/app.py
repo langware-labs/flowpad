@@ -673,6 +673,17 @@ async def _shutdown_extras():
         except Exception:
             logging.getLogger(__name__).debug("Agent server: stop failed", exc_info=True)
 
+    # Symmetric with the start above: the runtime subscribes to `task.*` on the
+    # process-wide bus, so a shutdown that leaves it subscribed leaves a live
+    # dispatcher behind — it kept claiming tasks created after the server it
+    # belonged to was gone.
+    try:
+        from flow_sdk.tasks import runtime as task_runtime
+
+        task_runtime.stop()
+    except Exception:
+        logging.getLogger(__name__).debug("Task runtime: stop failed", exc_info=True)
+
     try:
         from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 
