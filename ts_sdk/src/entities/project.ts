@@ -28,6 +28,24 @@ import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 import { Wiki } from './wiki';
+import { getMembers } from './members';
+import { isValidUUIDv4 } from '../models/TypeId';
+import { normalizeEmail } from '../utils/utils';
+
+/** Role a Project invite grants when the caller names none (the hub's default too). */
+const PROJECT_DEFAULT_INVITE_ROLE = 'member';
+
+/** A hub user id fit to address an invitation, or null — a bare UUID or a
+ *  ``user-<uuid>`` typeid string. Mirrors ``flow_sdk.builtin.user.recipient_user_id``. */
+function recipientUserId(value: string): string | null {
+  if (isValidUUIDv4(value)) return value;
+  try {
+    const typeId = new TypeId(value);
+    return typeId.type === 'user' && isValidUUIDv4(typeId.id) ? typeId.id : null;
+  } catch {
+    return null; // not a typeid at all — an email, or garbage the hub will refuse
+  }
+}
 
 export interface ProjectMember {
   member_id: string;
@@ -383,6 +401,54 @@ export class Project extends APIEntity<Project> {
     const parts = this.name.replace(/\\/g, '/').split('/').filter(Boolean);
     if (parts.length <= 1) return null;
     return parts[parts.length - 1] || null;
+  }
+
+  /**
+   * Invite people to this Project — or, with nobody to invite, publish it.
+   *
+   * With recipients this is a MEMBERSHIP grant on the Project's hub row: one
+   * reflected ``POST project/<id>/members`` per person, the same hub endpoint
+   * every other shareable type invites through. It never reaches the ``share``
+   * action, so an invite neither re-publishes the row nor runs the publish gates
+   * (clean tree, pushed branch, GitHub) — those guard creating the row, not a
+   * grant on one that exists. The row must exist: on an unpublished Project the
+   * call is not reflected and the local ``members`` body refuses it (409), so
+   * callers publish first.
+   *
+   * Anyone already on the roster (any status) is skipped — the hub refuses to
+   * re-invite an accepted member ("use change_role"). An unreadable roster
+   * invites everyone, so an outage costs a redundant invite, never a missing one.
+   */
+  override async share(users: (string | { idOrEmail: string; role?: string })[] = []): Promise<Project> {
+    if (!users.length) return super.share();
+    const roster = await getMembers(this.typeId).catch(() => []);
+    const knownEmails = new Set<string>();
+    const knownUserIds = new Set<string>();
+    for (const m of roster) {
+      for (const key of ['email', 'user_email', 'recipient_email']) {
+        const email = normalizeEmail(m[key] as string | null | undefined);
+        if (email) knownEmails.add(email);
+      }
+      if (m.user_id?.trim()) knownUserIds.add(m.user_id.trim());
+    }
+    for (const u of users) {
+      const { idOrEmail, role } = typeof u === 'string' ? { idOrEmail: u, role: undefined } : u;
+      const trimmed = idOrEmail.trim();
+      if (!trimmed) continue;
+      // Hub id first: ``normalizeEmail`` has no ``@`` check, so testing email
+      // first would misfile every bare UUID (same order as the backend's _resolve).
+      const userId = recipientUserId(trimmed);
+      const email = userId ? null : normalizeEmail(trimmed);
+      if (userId ? knownUserIds.has(userId) : !email || knownEmails.has(email)) continue;
+      const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
+      info.hubReflect = true; // membership is hub-owned — reflect to the hub
+      info.bodyParameters = {
+        ...(userId ? { recipient_user_id: userId } : { recipient_email: email }),
+        invitation_targets: [{ typeid: this.typeId.toString(), role: role || PROJECT_DEFAULT_INVITE_ROLE }],
+      };
+      await dataManager.callAction(info);
+    }
+    return this;
   }
 
   /**

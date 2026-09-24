@@ -5,11 +5,9 @@ import { ProjectGitChip, type GitCheck } from '@src/components/project-home/Proj
 import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDialog';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
-import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
-import type { GitShareGate } from '@src/hooks/use-git-share-gate';
+import { PublishProjectDialog } from '@src/components/project-home/PublishProjectDialog';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
-import apiClient from '@sdk/client';
-import { launchWizard, CapabilityKinds } from '@sdk';
+import { launchWizard } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
 import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import type { PanelHandlers } from '@src/components/quick-create';
@@ -135,25 +133,20 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   // project is the active one (they read/write live Project state).
   const project = dataCtx.project?.id === projectId ? dataCtx.project : null;
   const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
-  const [gitGateOpen, setGitGateOpen] = useState(false);
   const [gitSetupOpen, setGitSetupOpen] = useState(false);
-  const [gitGateState, setGitGateState] = useState<'setup' | 'blocked'>('setup');
-  const [gitGateReason, setGitGateReason] = useState<string | null>(null);
-  const beforeProjectInvite = useMemo<(() => Promise<boolean>) | undefined>(() => {
-    if (!projectId || cloudMode) return undefined;
-    return async () => {
-      const result = await apiClient.post<{
-        result?: { available?: boolean; message?: string; details?: { reason?: string } };
-      }>('/graph/capabilities/test', { kind: CapabilityKinds.GitHub, scope_type: 'project', scope_id: projectId });
-      const capability = result?.result;
-      if (capability?.available) return true;
-      const reason = capability?.details?.reason;
-      setGitGateReason(capability?.message ?? null);
-      setGitGateState(reason === 'no-git-remote' || reason === 'no-workspace' ? 'setup' : 'blocked');
-      setGitGateOpen(true);
+  const [publishOpen, setPublishOpen] = useState(false);
+  // Invite branches on whether the Project has a hub row. Published: the invite
+  // pane opens and invites are membership grants — no publish checks. Not
+  // published: there is nothing to grant on yet, so the publish popup opens
+  // INSTEAD of the pane.
+  const beforeProjectInvite = useMemo<(() => boolean) | undefined>(() => {
+    if (!project || cloudMode) return undefined;
+    return () => {
+      if (project.remote === true) return true;
+      setPublishOpen(true);
       return false;
     };
-  }, [cloudMode, projectId]);
+  }, [cloudMode, project]);
   // Setting up Git needs an answer the old flow never asked for — WHICH remote
   // and WHICH branch — so `runSetup` opens the chooser and the wizard launches
   // from its submit, rather than the wizard inventing a public repo on `main`.
@@ -185,26 +178,11 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
     },
     [project],
   );
-  const gitGate = useMemo<GitShareGate>(
-    () => ({
-      state: gitGateState,
-      reason: gitGateReason,
-      busy: false,
-      // The gate's contract is a promise; this step is now just "open the
-      // chooser", and the wizard it used to await is launched from its submit.
-      // Hand off to the chooser: the gate has asked its question, and the
-      // wizard is launched from the chooser's submit.
-      runSetup: () => {
-        if (project?.fs_storage_mount_path) {
-          setGitGateOpen(false);
-          setGitSetupOpen(true);
-        }
-        return Promise.resolve();
-      },
-      runCommit: async () => {},
-    }),
-    [gitGateReason, gitGateState, project],
-  );
+  // Hand off to the chooser; the wizard is launched from the chooser's submit.
+  const openGitSetup = useCallback(() => {
+    if (project?.fs_storage_mount_path) setGitSetupOpen(true);
+    return Promise.resolve();
+  }, [project]);
 
   const createTab = <CreateTab projectId={projectId} spawnProjectId={spawnProjectId} panelProps={panelProps} />;
 
@@ -256,7 +234,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           open
           onOpenChange={(next) => !next && setGitChecks(null)}
           checks={gitChecks}
-          onSetupRepo={gitGate.runSetup}
+          onSetupRepo={openGitSetup}
         />
       )}
       {!cloudMode && project && (
@@ -283,14 +261,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           awaitSubmit
           onSubmit={runGitSetup}
         />
-      )}
-      {!cloudMode && gitGateState === 'blocked' && gitGateReason && (
-        <div
-          className="border-b border-red-300 bg-red-50 px-4 py-2 text-xs text-red-800"
-          data-testid="project-git-access-warning"
-        >
-          {gitGateReason}
-        </div>
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -326,13 +296,8 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
         </div>
       </div>
 
-      {!cloudMode && (
-        <GitShareGateDialog
-          open={gitGateOpen}
-          onOpenChange={setGitGateOpen}
-          folderName={project?.name ?? 'Project'}
-          gate={gitGate}
-        />
+      {!cloudMode && project && (
+        <PublishProjectDialog project={project} open={publishOpen} onOpenChange={setPublishOpen} />
       )}
       {!cloudMode && dialogs}
     </div>

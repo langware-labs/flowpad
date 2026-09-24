@@ -70,9 +70,10 @@ interface MembersAvatarStackProps {
   allowInviteLink?: boolean;
   /** Show a visible invite trigger beside the member avatars. */
   showInviteButton?: boolean;
-  /** Optional entity-specific prerequisite. Returning false keeps both invite
-   *  paths closed; project sharing uses this for its GitHub capability test. */
-  beforeInvite?: () => Promise<boolean>;
+  /** Optional entity-specific prerequisite, asked when the invite pane is about
+   *  to open. Returning false keeps it closed — the caller shows its own UI
+   *  instead (a Project that isn't published yet shows its publish popup). */
+  beforeInvite?: () => boolean;
   /** Roles the invite form may grant, e.g. ``['member', 'admin']`` for a
    *  project. Omitted = no picker, and the entity's own default role applies. */
   inviteRoles?: readonly string[];
@@ -325,7 +326,6 @@ export function MembersAvatarStack({
     setLinking(true);
     setLinkError(null);
     try {
-      if (beforeInvite && !(await beforeInvite())) return;
       if (!(entity as { remote?: boolean }).remote) await entity.share();
       const link = await mintInviteLink(typeId);
       await navigator.clipboard.writeText(link.url);
@@ -368,7 +368,6 @@ export function MembersAvatarStack({
     setInviting(true);
     setInviteError(null);
     try {
-      if (beforeInvite && !(await beforeInvite())) return;
       await addMembers(invitable);
       setPending([]);
     } catch (err) {
@@ -398,6 +397,7 @@ export function MembersAvatarStack({
       });
       return;
     }
+    if (next && beforeInvite && !beforeInvite()) return;
     setOpen(next);
     if (!next) {
       // Reset transient state so reopening the popover doesn't show a stale
