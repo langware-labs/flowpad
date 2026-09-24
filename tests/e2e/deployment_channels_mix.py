@@ -36,6 +36,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -53,6 +54,11 @@ PROJECT_PREFIX = "mix-e2e-"
 RECALL = "What is the code word I gave you in this conversation? Reply with only the word, or UNKNOWN if I gave you none."
 
 
+def _utc(iso: Optional[str]) -> datetime:
+    at = datetime.fromisoformat(str(iso or "1970-01-01T00:00:00").replace("Z", "+00:00"))
+    return at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+
+
 def log(**event: Any) -> None:
     print(json.dumps({"t": time.strftime("%H:%M:%S"), **event}), flush=True)
 
@@ -62,6 +68,9 @@ class Channel:
     provider: str
     word: str
     source_id: str = ""
+    #: When the run bound the channel (UTC ISO): a thread that started before is the channel's past —
+    #: shown on the page, never answered — and not one of this run's.
+    bound: str = ""
     thread: Optional[str] = None
     answers: dict = field(default_factory=dict)
     failures: list = field(default_factory=list)
@@ -75,6 +84,9 @@ class Mix:
         self.timeout, self.answer_budget = timeout, answer_budget
         self.agent_id = self.deployment_id = self.chat_endpoint = self.project_id = ""
         self.source_ids: list[str] = []
+        #: source id → the moments its thread read ``working`` (``watch_statuses``), and how long each read took
+        self.working: dict[str, list[float]] = {}
+        self.read_seconds: list[float] = []
 
     async def graph(self, method: str, path: str, **kw) -> Any:
         r = await self.api.request(method, f"/graph/{path}", **kw)
@@ -103,6 +115,7 @@ class Mix:
         doubles = (await self.control.get("/channels")).json()
         channels = [Channel(p, WORDS[i]) for i, p in enumerate(["http_chat", *[p for p in providers if p in doubles]])]
         for channel in channels:
+            channel.bound = datetime.now(timezone.utc).isoformat()
             if channel.provider == "cloud_email":  # the agent's own mailbox, born with it on the hub
                 channel.source_id = mailbox_source
                 await self.graph("patch", f"data_source/{channel.source_id}", json={"thread_timeout_seconds": self.timeout})
@@ -213,27 +226,32 @@ class Mix:
         return data.get("threads") or []
 
     async def threads_of(self, channel: Channel) -> list[dict]:
-        return sorted([t for t in await self.threads() if t["data_source_id"] == channel.source_id], key=lambda t: t["started_at"] or "")
+        mine = [t for t in await self.threads()
+                if t["data_source_id"] == channel.source_id and _utc(t["started_at"]) >= _utc(channel.bound) - timedelta(seconds=2)]
+        return sorted(mine, key=lambda t: t["started_at"] or "")
 
-    async def saw_working(self, channel: Channel, until: asyncio.Event) -> bool:
-        """Whether the channel's thread read ``working`` on the deployment while its turn ran."""
-        while not until.is_set():
-            if any(t["status"] == "working" for t in await self.threads_of(channel)):
-                return True
+    async def watch_statuses(self) -> None:
+        """ONE reader of what the page shows, for every channel: each time a source's thread reads
+        ``working``, noted with the moment (a reader per channel would be N times the load on the
+        endpoint it measures)."""
+        while True:
+            started = time.monotonic()
+            try:
+                for thread in await self.threads():
+                    if thread["status"] == "working":
+                        self.working.setdefault(thread["data_source_id"], []).append(time.monotonic())
+            except Exception as exc:  # noqa: BLE001 — a missed read is a gap, not a failure
+                log(step="watch_statuses", error=str(exc))
+            self.read_seconds.append(time.monotonic() - started)
             await asyncio.sleep(0.5)
-        return False
 
     async def step(self, channel: Channel, name: str, text: str) -> str:
-        answered = asyncio.Event()
-        watching = asyncio.create_task(self.saw_working(channel, answered))
         started = time.monotonic()
-        try:
-            answer = await self.ask(channel, text)
-        finally:
-            answered.set()
-        channel.timings[name] = round(time.monotonic() - started, 1)
+        answer = await self.ask(channel, text)
+        ended = time.monotonic()
+        channel.timings[name] = round(ended - started, 1)
         channel.answers[name] = answer
-        channel.timings[f"{name}_seen_working"] = await watching
+        channel.timings[f"{name}_seen_working"] = any(started <= t <= ended for t in self.working.get(channel.source_id, []))
         log(channel=channel.provider, step=name, seconds=channel.timings[name], answer=answer[:120])
         return answer
 
@@ -257,7 +275,8 @@ class Mix:
 
             after = (await self.step(channel, "after_timeout", RECALL)).upper()
             self.expect(channel, channel.word not in after, f"after the timeout the agent still knew {channel.word}: {after!r}")
-            threads = await self.threads_of(channel)
+            # The answer left the channel; the page shows it once its record is projected — moments later.
+            threads = await self.settled(channel, lambda ts: len(ts) == 2 and ts[-1]["messages"] >= 2)
             self.expect(channel, len(threads) == 2, f"two threads after the timeout, found {len(threads)}")
             if len(threads) == 2:
                 old, new = threads
@@ -272,6 +291,8 @@ class Mix:
             "channels": {c.provider: {"ok": not c.failures, "word": c.word, "answers": c.answers, "timings": c.timings,
                                       "failures": c.failures} for c in channels},
             "threads": await self.threads(),
+            "threads_read_seconds": {"reads": len(self.read_seconds), "max": round(max(self.read_seconds, default=0), 2),
+                                     "mean": round(sum(self.read_seconds) / max(1, len(self.read_seconds)), 2)},
         }
 
     async def cleanup(self) -> None:
@@ -291,6 +312,15 @@ class Mix:
             if folder.name.startswith(PROJECT_PREFIX) and folder.is_dir():
                 shutil.rmtree(folder)
         log(step="cleanup", project_id=self.project_id)
+
+    async def settled(self, channel: Channel, done, budget: float = 15.0) -> list[dict]:
+        """The channel's threads once *done* holds for them (or as they are when *budget* runs out)."""
+        deadline = time.monotonic() + budget
+        while True:
+            threads = await self.threads_of(channel)
+            if done(threads) or time.monotonic() >= deadline:
+                return threads
+            await asyncio.sleep(0.5)
 
     @staticmethod
     def expect(channel: Channel, ok: bool, what: str) -> None:
@@ -332,9 +362,11 @@ async def main() -> int:
         if args.watch:
             watcher = await watch(args.watch, mix, Path(args.watch_out))
         words = [c.word for c in channels]
+        statuses = asyncio.create_task(mix.watch_statuses())
         await asyncio.gather(*(
             mix.converse(c, [w for w in words if w != c.word], i * args.stagger) for i, c in enumerate(channels)
         ))
+        statuses.cancel()
         report = await mix.report(channels, args.timeout)
         log(step="finished", ok=[c.provider for c in channels if not c.failures])
     finally:
