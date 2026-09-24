@@ -343,6 +343,8 @@ const TWILIO_TEMPLATE = {
   value_store: 'env',
   lm_provider: '',
   scope: 'system',
+  // Every shipped template carries one, and a credential without it cannot be saved.
+  setup: 'Open the Twilio console and copy the Account SID.',
   vars: { TWILIO_SID: { label: 'Account SID', required: true } },
   varNames: ['TWILIO_SID'],
 };
@@ -505,6 +507,8 @@ describe('ConnectionsManager — adding a credential', () => {
     expect(screen.queryByTestId('credential-var-value-0')).toBeNull();
 
     await userEvent.type(screen.getByTestId('credential-title'), 'QA pack');
+    // Authoring a definition says how to get its values: the AI setup follows it.
+    await userEvent.type(screen.getByTestId('credential-setup'), 'Read them off the QA console.');
     await userEvent.click(screen.getByTestId('credential-save'));
 
     await waitFor(() => expect(h.save).toHaveBeenCalled());
