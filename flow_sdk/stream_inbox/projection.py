@@ -88,8 +88,13 @@ async def resolve_thread(
     rows (the help desk) hands it over so both writers converge on one row.
 
     ``timeout_seconds`` (the source's ``thread_timeout_seconds``) ends a thread that was quiet
-    that long before ``at``: it is closed (``close_thread``) and a new one minted on the same
-    key — a new conversation, on top of the driver's own split (a chat, a topic, a call).
+    that long before ``at``: it stays as it is, and a new one is minted on the same key — a new
+    conversation, on top of the driver's own split (a chat, a topic, a call). The key's newest
+    thread is its current one (``MessageThread.find_existing``).
+
+    The birth is decided under the database writer lock as well as this process's: a deployment's
+    loop process projects the same messages as the app, and a check-then-mint that only this
+    process serialized let both mint a thread for one key.
     """
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
@@ -97,11 +102,12 @@ async def resolve_thread(
     thread = await MessageThread.find_existing(channel, key, owner, data_source_id)
     if thread is not None and not await timed_out(thread, timeout_seconds, at):
         return thread
-    async with _thread_lock():
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+
+    async with _thread_lock(), get_db_driver().write_transaction():
         thread = await find_thread(channel, key, owner, data_source_id)
         if thread is not None and await timed_out(thread, timeout_seconds, at):
-            await close_thread(thread)
-            thread = None
+            thread = None  # quiet past the timeout: it stays as it is, and the next thread begins
         if thread is not None:
             if not thread.owner or not thread.data_source_id:
                 thread.owner = thread.owner or owner
@@ -144,14 +150,6 @@ async def timed_out(thread, timeout_seconds: Optional[int], at: Optional[datetim
         return False
     last = await last_message_at(str(thread.id))
     return last is not None and (at or datetime.now(timezone.utc)) - last > timedelta(seconds=timeout_seconds)
-
-
-async def close_thread(thread) -> None:
-    """End *thread*: its key moves aside (``<key>~<thread id>``), so the natural key names the
-    next thread from now on, while the closed one keeps its conversation and messages. A reply
-    addresses the channel through its ``SourceItem.thread_key``, never this row's key."""
-    thread.thread_key = f"{thread.thread_key}~{thread.id}"
-    await thread.save(notify=False)
 
 
 #: How many un-projected items one reconcile pass will catch up. A first Gmail

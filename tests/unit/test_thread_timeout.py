@@ -85,6 +85,22 @@ async def test_a_placed_message_stays_in_its_thread_and_a_backfill_ends_nothing(
 
 
 @pytest.mark.asyncio
+async def test_a_stale_save_of_the_ended_thread_leaves_the_new_one_current():
+    """Another lane still holds the ended thread (a recount of its messages) and saves it after the
+    timeout began the next one: the chat's next message still lands in the new thread. Found live —
+    a key moved aside on the ended row came back with that save, and the key named two threads."""
+    source, chat = await _chat(timeout=600), f"chat-{uuid.uuid4().hex[:6]}"
+    _, first = await _say(source, chat, 0)
+    held = await MessageThread.get_by_id(first.id)
+
+    _, after = await _say(source, chat, 30)
+    await held.save(notify=False)
+    _, next_one = await _say(source, chat, 31)
+
+    assert next_one.id == after.id
+
+
+@pytest.mark.asyncio
 async def test_a_slow_answer_stays_in_the_thread_it_answers():
     """The agent's turn took longer than the timeout: its answer still answers THAT thread."""
     source, chat = await _chat(timeout=600), f"chat-{uuid.uuid4().hex[:6]}"
