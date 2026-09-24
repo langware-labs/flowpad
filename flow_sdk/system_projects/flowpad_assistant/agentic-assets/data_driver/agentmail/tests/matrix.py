@@ -56,8 +56,10 @@ class _Inbox:
             self.outbox.append({"to": ",".join(sent["to"]), "text": body.get("text"), "thread": thread,
                                 "external_id": sent["message_id"]})
             return self._json(200, {"message_id": sent["message_id"], "thread_id": thread})
+        # Newest first, as AgentMail lists an inbox: a pass reads the first page down to what it has
+        # seen, so an oldest-first listing hid every new message once the inbox outgrew one page.
         start, limit = int(params.get("page_token") or 0), int(params.get("limit") or 25)
-        page = self.messages[start:start + limit]
+        page = sorted(self.messages, key=lambda m: m["timestamp"], reverse=True)[start:start + limit]
         more = start + limit < len(self.messages)
         return self._json(200, {"messages": page, **({"next_page_token": str(start + limit)} if more else {})})
 
