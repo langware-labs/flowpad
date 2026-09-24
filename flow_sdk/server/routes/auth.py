@@ -206,27 +206,14 @@ async def login_callback(
         user_info = await validate_api_key_async(flowpad_api_key)
 
         # A shared sandbox has exactly one logged-in identity for the whole
-        # instance. If this login resolves to a DIFFERENT person than the one
-        # currently signed in, drop the outgoing person's session and their
-        # hub-mirrored data (conversations/messages/org membership) BEFORE
-        # finalizing the new login — otherwise the incoming person inherits
-        # the previous one's stream inbox. Checked strictly after the api-key
-        # validates, for the same reason cookie-gate/runtime are: an
-        # unvalidated caller must not be able to trigger a logout.
-        from flow_sdk.cli.app_config import get_user
+        # instance — see `purge_outgoing_user_if_switching` for the shared
+        # switch-detection this and the sandbox-reclaim path both run.
+        # Checked strictly after the api-key validates, for the same reason
+        # cookie-gate/runtime are: an unvalidated caller must not be able to
+        # trigger a logout.
+        from flow_sdk.cli.auth.cloud_login import purge_outgoing_user_if_switching
 
-        current_user = get_user()
-        incoming_id = user_info.get("id") if isinstance(user_info, dict) else None
-        if current_user and incoming_id and current_user.get("id") != incoming_id:
-            from flow_sdk.cli.auth.cloud_login import clear_user_data
-            from flow_sdk.cloud_client.auth_status import LogoutReason
-
-            logger.info(
-                "login_callback: switching logged-in user (%s -> %s), clearing previous session",
-                current_user.get("id"),
-                incoming_id,
-            )
-            await clear_user_data(reason=LogoutReason.SWITCHED_OUT)
+        await purge_outgoing_user_if_switching(user_info, caller="login_callback")
 
         await _finalize_login(
             LoginData(

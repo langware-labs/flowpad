@@ -359,12 +359,12 @@ async def clear_user_data(reason: str | None = None) -> None:
     wake-from-sleep, or a hub hiccup rejecting a socket, must clear credentials
     without destroying local data.
 
-    Two callers reach this, both cases where the outgoing person's data must
-    actually go, not just their session pointer: an explicit logout (no reason —
-    the person asked), and ``/auth/login_callback`` finding a DIFFERENT person's
-    key than whoever is currently signed in on a shared sandbox (``reason=
-    LogoutReason.SWITCHED_OUT``, ``flow_sdk/cloud_client/auth_status.py``) — see
-    ``flow_sdk/server/routes/auth.py``. ``reason`` rides the LOGGED_OUT broadcast
+    Two shapes of caller reach this, both cases where the outgoing person's data
+    must actually go, not just their session pointer: an explicit logout (no
+    reason — the person asked), and ``purge_outgoing_user_if_switching`` below
+    finding a DIFFERENT person's identity than whoever is currently signed in
+    on a shared sandbox (``reason=LogoutReason.SWITCHED_OUT``,
+    ``flow_sdk/cloud_client/auth_status.py``). ``reason`` rides the LOGGED_OUT broadcast
     so the frontend can tell "you logged out" from "someone else just took this
     machine" — the latter is the only case where it also drops the local entity
     cache (``ts_sdk/src/services/cloud_login.ts``, ``_setLoggedOut``) and shows
@@ -381,3 +381,40 @@ async def clear_user_data(reason: str | None = None) -> None:
         await clear_stream_inbox()
     except Exception:  # noqa: BLE001
         logger.warning("logout: clearing local hub data failed", exc_info=True)
+
+
+async def purge_outgoing_user_if_switching(incoming_user: dict | None, *, caller: str) -> None:
+    """Shared switch-detection (FLOWPAD-2151) for every channel that can log a
+    DIFFERENT person into a shared sandbox: the browser flow
+    (``/auth/login_callback``, ``flow_sdk/server/routes/auth.py``) and the
+    reclaim flow (``complete_sandbox_login``, ``flow_sdk/cli/auth/
+    sandbox_login.py``) — the reclaim path bypassed this entirely until it
+    started calling this too: reclaiming a shared sandbox as someone ELSE
+    silently repainted the displaced person's tab with no purge and no
+    ``SessionTakenOverOverlay`` warning (proven live on prod compute_node
+    f41f5c42-a8fa-4934-8cda-9080f09d24bd, 2026-09-24).
+
+    A shared sandbox has exactly one logged-in identity for the whole
+    instance, so a DIFFERENT incoming person must purge whoever is currently
+    signed in — via ``clear_user_data`` above — before the new login
+    finalizes.
+
+    Checked strictly on an ALREADY-VALIDATED ``incoming_user`` — both callers
+    validate the api-key/token first: an unvalidated caller must never be
+    able to trigger a logout of whoever is signed in. ``caller`` is only for
+    the log line, to tell the two channels apart in the logs.
+    """
+    from flow_sdk.cli.app_config import get_user
+
+    current_user = get_user()
+    incoming_id = incoming_user.get("id") if isinstance(incoming_user, dict) else None
+    if current_user and incoming_id and current_user.get("id") != incoming_id:
+        from flow_sdk.cloud_client.auth_status import LogoutReason
+
+        logger.info(
+            "%s: switching logged-in user (%s -> %s), clearing previous session",
+            caller,
+            current_user.get("id"),
+            incoming_id,
+        )
+        await clear_user_data(reason=LogoutReason.SWITCHED_OUT)
