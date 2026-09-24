@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import time
 import uuid
 from typing import TYPE_CHECKING, Callable
@@ -275,7 +276,7 @@ class PtyActionsMixin:
         # Evict oldest sessions when the cap is reached, to prevent PTY device exhaustion.
         node_sessions = [k for k in pty_registry.states if k[0] == self.id]
         if len(node_sessions) >= _PTY_CAP:
-            evict_keys = node_sessions[:_PTY_EVICT_COUNT]
+            evict_keys = [k for k in node_sessions if not pty_registry.states[k].pinned][:_PTY_EVICT_COUNT]
             logging.warning(f"[PTY] Cap ({_PTY_CAP}) reached — evicting {len(evict_keys)} oldest sessions")
             toplog.log("pty", "cap_evict cap=%s evicting=%s", _PTY_CAP, [k[2] for k in evict_keys])
             for evict_key in evict_keys:
@@ -297,10 +298,23 @@ class PtyActionsMixin:
 
         # Mutable holder for session_state, populated after generate_session()
         session_state_holder: list = []
+        # What the PTY prints before its session is registered — a login shell's prompt, a command
+        # that writes at once — is held here and replayed, in order, the moment it is. Dropped, it
+        # was never counted, so ``Shell.write``'s readiness waited out its whole budget on a fresh
+        # shell. The lock orders the reader thread against that replay.
+        early_output: list[bytes] = []
+        output_lock = threading.Lock()
         # `pty` toplog: last time a delayed-output line was logged (≤1/s).
         slow_output_logged_at = [0.0]
 
         def on_pty_output(data: bytes):
+            with output_lock:
+                if not session_state_holder:
+                    early_output.append(data)
+                    return
+                _on_output(data)
+
+        def _on_output(data: bytes):
             logging.debug(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
             current_pty_key = (self.id, self.node_provider_id, shell_id)
 
@@ -480,8 +494,13 @@ class PtyActionsMixin:
         except Exception as e:
             logging.warning(f"[PTY] Error creating shell session record: {e}", exc_info=True)
 
-        # Populate the holder so on_pty_output can access session_state
-        session_state_holder.append(session_state)
+        # Populate the holder so on_pty_output can access session_state — and replay what the PTY
+        # printed before it was.
+        with output_lock:
+            session_state_holder.append(session_state)
+            for data in early_output:
+                _on_output(data)
+            early_output.clear()
 
         # Add to active_pty_sessions
         if shell_id not in self.active_pty_sessions:
