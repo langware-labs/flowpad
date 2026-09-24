@@ -57,3 +57,35 @@ describe('APIEntity.share', () => {
     expect(project.remote).toBe(false);
   });
 });
+
+describe('Project.share(users) — invites are membership grants, not a publish', () => {
+  const ME = '3b0e1c2d-4f5a-4b6c-8d7e-9f0a1b2c3d4e';
+  const THEM = '7c6d5e4f-3a2b-4c1d-9e8f-0a1b2c3d4e5f';
+
+  it('POSTs one reflected members call per new recipient and never hits the share action', async () => {
+    const project = new Project({ type: Project.type, id: PROJECT_ID, name: 'p', remote: true } as Partial<Project>);
+    const call = vi.spyOn(dataManager, 'callAction').mockImplementation((info) =>
+      Promise.resolve(info.method === 'GET' ? [{ user_id: ME, email: 'owner@example.com', role: 'owner' }] : undefined),
+    );
+
+    await project.share(['New@Example.com', { idOrEmail: `user-${THEM}`, role: 'admin' }, 'owner@example.com']);
+
+    const infos = call.mock.calls.map(([info]) => info);
+    expect(infos.every((info) => info.name === 'members')).toBe(true);
+    const posts = infos.filter((info) => info.method === 'POST');
+    expect(posts.map((info) => info.hubReflect)).toEqual([true, true]);
+    expect(posts.map((info) => info.bodyParameters)).toEqual([
+      { recipient_email: 'new@example.com', invitation_targets: [{ typeid: `project-${PROJECT_ID}`, role: 'member' }] },
+      { recipient_user_id: THEM, invitation_targets: [{ typeid: `project-${PROJECT_ID}`, role: 'admin' }] },
+    ]);
+  });
+
+  it('with nobody to invite is still the publish', async () => {
+    const project = new Project({ type: Project.type, id: PROJECT_ID, name: 'p', remote: false } as Partial<Project>);
+    const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ type: Project.type, id: PROJECT_ID, remote: true });
+
+    await project.share();
+
+    expect(call.mock.calls[0][0].name).toBe('share');
+  });
+});

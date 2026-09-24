@@ -10,9 +10,9 @@
  *    the admin is told before the invitations go out rather than after.
  *  - **One share call carries the whole team**, addressed by email, which is the
  *    only thing a `MembershipRequest` accepts.
- *  - **A project that cannot be linked to the cloud cannot be shared**, and says
- *    the backend's own reason — the publish rules are the server's, and this
- *    dialog only asks them early.
+ *  - **Inviting is not publishing.** A published project invites even with a
+ *    dirty tree — the publish checks guard publishing only — and an unpublished
+ *    one gets the publish popup INSTEAD of this dialog.
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -57,6 +57,11 @@ vi.mock('@sdk', async (importOriginal) => ({
 }));
 vi.mock('@src/notifications', () => ({
   notify: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
+// The publish control is its own component with its own tests; here it only has
+// to be present inside the popup.
+vi.mock('@src/components/project-home/ProjectCloudLinkButton', () => ({
+  ProjectCloudLinkButton: () => <button type="button">link-to-cloud</button>,
 }));
 // The picker is its own component with its own project list; here it only has to
 // hand back a choice so the dialog under test can open.
@@ -135,18 +140,19 @@ describe('sharing a project with a team', () => {
     expect(screen.queryByTestId('team-share-project-private-repo')).toBeNull();
   });
 
-  it('refuses, with the backend’s reason, when the project cannot be linked to the cloud', async () => {
+  it('invites into a published project even when its tree is dirty — publish checks do not apply', async () => {
     h.preflight = {
       ...h.preflight,
       available: false,
       reason: 'The repository has uncommitted changes — commit them so they travel.',
       code: 'dirty',
     };
-    await openDialog();
+    const user = await openDialog();
 
-    expect(await screen.findByTestId('team-share-project-blocked')).toHaveTextContent('uncommitted changes');
-    expect(screen.getByTestId('team-share-project-confirm')).toBeDisabled();
-    expect(h.share).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId('team-share-project-confirm')).toBeEnabled());
+    await user.click(screen.getByTestId('team-share-project-confirm'));
+
+    await waitFor(() => expect(h.share).toHaveBeenCalledWith(['ada@example.com', 'grace@example.com']));
   });
 
   it('offers GitHub when that is the only thing missing', async () => {
@@ -166,10 +172,15 @@ describe('sharing a project with a team', () => {
     expect(screen.queryByTestId(`team-share-project-${TEAM_ID}`)).toBeNull();
   });
 
-  it('says a project that is not in the cloud will be linked by sharing it', async () => {
+  it('shows the publish popup instead of the dialog for a project that is not in the cloud', async () => {
     h.project = { remote: false, share: h.share };
-    await openDialog();
+    const user = userEvent.setup();
+    render(<ShareProjectButton teamId={TEAM_ID} teamName="Physics" />);
+    await user.click(screen.getByTestId(`team-share-project-${TEAM_ID}`));
+    await user.click(await screen.findByText('pick-atlas'));
 
-    expect(await screen.findByTestId('team-share-project-will-link')).toBeInTheDocument();
+    expect(await screen.findByTestId('publish-project-dialog')).toBeInTheDocument();
+    expect(screen.queryByTestId('team-share-project-dialog')).not.toBeInTheDocument();
+    expect(h.share).not.toHaveBeenCalled();
   });
 });

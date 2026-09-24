@@ -8,8 +8,10 @@
  * them immediately, so nobody has to accept anything; explicit acceptance stays
  * the fallback the hub falls back to on its own.
  *
- * **What actually travels, and what doesn't.** Sharing publishes the project to
- * the hub (`Project.share`), which carries its metadata — its `locale`, so a
+ * **What actually travels, and what doesn't.** The project must already be
+ * published — an unpublished one gets the publish popup instead of this dialog —
+ * and sharing is then a membership grant per person (`Project.share(users)` → the
+ * `members` action). The published row carries its metadata — its `locale`, so a
  * recipient opens it in the language its author works in — and its shared
  * context and secret DECLARATIONS. The files, and therefore the project's
  * skills, travel by Git: the recipient's client clones the repository the first
@@ -25,10 +27,8 @@
  * admin's own credential helpers switched off, and the answer is shown BEFORE
  * the invitations go out, because afterwards it is N people's problem.
  *
- * **Nothing here re-implements the publish rules.** Whether a project may be
- * linked to the cloud at all is `assert_project_publishable`'s decision, made
- * server-side on the share call; `useGitSharePreflight` is the same authority
- * asked early so the admin sees the blocker before pressing rather than after.
+ * **Nothing here runs the publish rules.** They guard publishing (the popup's
+ * `ProjectCloudLinkButton`), not an invite to a Project that is already published.
  */
 import { OAUTH_PROVIDERS, OAuthStatus, TypeId, oauthService, type Project } from '@sdk';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
@@ -50,7 +50,7 @@ import { useEntity } from '@src/hooks/entity-hooks';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useGitAnonymousAccess } from '@src/hooks/use-git-anonymous-access';
-import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
+import { PublishProjectDialog } from '@src/components/project-home/PublishProjectDialog';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
@@ -133,7 +133,6 @@ function ShareProjectDialog({
   const { t } = useLingui();
   const projectTypeId = useMemo(() => new TypeId('project', projectId), [projectId]);
   const { data: project } = useEntity<Project>(projectTypeId);
-  const preflight = useGitSharePreflight(projectTypeId, true);
   const access = useGitAnonymousAccess(projectTypeId, true);
 
   const [recipients, setRecipients] = useState<TeamRecipients | null>(null);
@@ -218,9 +217,14 @@ function ShareProjectDialog({
 
   const people = recipients?.emails.length ?? 0;
   const repoLabel = access.repo ?? t`this project uses`;
-  const checking = !preflight.answered || !recipients;
-  const blocked = preflight.answered && !preflight.available;
-  const canShare = !!project && !checking && !blocked && people > 0 && !sharing && !connecting;
+  const checking = !recipients;
+  const canShare = !!project && !checking && people > 0 && !sharing && !connecting;
+
+  // Inviting needs the Project's hub row: an unpublished Project gets the publish
+  // popup INSTEAD of this dialog, and this dialog takes its place once published.
+  if (project && project.remote !== true) {
+    return <PublishProjectDialog project={project} open onOpenChange={(next) => !next && onClose()} />;
+  }
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
@@ -260,22 +264,6 @@ function ShareProjectDialog({
                   />
                 </span>
               )}
-            </p>
-          )}
-
-          {project && project.remote !== true && (
-            <p className="text-muted-foreground" data-testid="team-share-project-will-link">
-              <Trans>This project isn't in the cloud yet — sharing it links it there first.</Trans>
-            </p>
-          )}
-
-          {blocked && (
-            <p
-              className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-destructive"
-              data-testid="team-share-project-blocked"
-            >
-              {preflight.reason ?? <Trans>This project isn't ready to link to the cloud.</Trans>}{' '}
-              <Trans>Open the project and use "Link to cloud" to finish setting it up.</Trans>
             </p>
           )}
 
