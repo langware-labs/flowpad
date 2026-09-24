@@ -19,6 +19,7 @@ import { VIBE_AGENTS_TAG, VibeAgentsCard } from './VibeAgentsCard';
 import { useHighlight } from '@src/components/wiki-tip/highlight';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useContext as useDataContext } from '@src/hooks/useContext';
+import { useShareRoles } from '@src/hooks/use-share-roles';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { Project, TypeId } from '@sdk';
 import { tagAttrs } from '@src/tags/tag-attrs';
@@ -27,8 +28,6 @@ import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Journey anchor for the session launcher (`?highlight=NewSession`). */
 const NEW_SESSION_TAG = 'NewSession';
-/** Roles a project invite may grant — mirrors ``PROJECT_INVITE_ROLES`` on the backend. */
-const PROJECT_INVITE_ROLES = ['member', 'admin'] as const;
 
 interface ProjectHomeProps {
   /** Pin spawned shells/processes to this project; otherwise the active project. */
@@ -126,6 +125,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   // Resolve the target project (explicit spawn pin, else the active project).
   const projectId = spawnProjectId ?? dataCtx.project?.id ?? null;
   const projectTypeId = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
+  const shareRoles = useShareRoles();
 
   // The dialogs the create tiles defer to. Hosted here rather than in the panel
   // so they outlive whatever the tile click dismisses.
@@ -247,7 +247,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
             allowInviteLink
             showInviteButton
             beforeInvite={beforeProjectInvite}
-            inviteRoles={PROJECT_INVITE_ROLES}
+            inviteRoles={shareRoles}
           />
         </div>
       )}

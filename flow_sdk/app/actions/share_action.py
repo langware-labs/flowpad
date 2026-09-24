@@ -116,6 +116,16 @@ def _local_mode_share_blocked() -> bool:
     return is_local_mode()
 
 
+# The roles a share invite may grant — one global list, served by ``share-roles``.
+SHARE_ROLES: tuple[str, ...] = ("editor", "member", "admin")
+
+
+@action.get(action_name="share-roles", types=None)
+async def share_roles() -> ApiResponse:
+    """``GET /api/v1/graph/share-roles`` — the roles a share invite may grant."""
+    return ApiSuccessResponse(data=list(SHARE_ROLES))
+
+
 @action.post(action_name="share", types="all")
 async def share_entity() -> ApiResponse:
     """Generic ``share`` — forward this entity to the hub.

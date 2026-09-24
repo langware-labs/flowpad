@@ -192,8 +192,8 @@ class HelpdeskConfig(BaseModel):
 
 # Roles a project invite may carry. The hub's ``can_assign`` is the authority
 # (strictly below the inviter's rank); this only rejects anything else up front.
-ProjectInviteRole = Literal["member", "admin"]
-PROJECT_INVITE_ROLES: tuple[ProjectInviteRole, ...] = ("member", "admin")
+ProjectInviteRole = Literal["member", "admin", "editor"]
+PROJECT_INVITE_ROLES: tuple[ProjectInviteRole, ...] = ("member", "admin", "editor")
 PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "member"
 
 
