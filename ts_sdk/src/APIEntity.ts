@@ -973,36 +973,39 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * stored cloud credentials. The action returns the backend's canonical
    * entity; adopt that response rather than guessing which fields changed.
    *
-   * When ``recipients`` is provided (list of email strings) and the entity
-   * is a Conversation, each recipient is invited via the standard
-   * ``MembershipRequest`` pattern (one ``POST /graph/conversation/<id>/members``
-   * per recipient). See ``Conversation.share`` on the Python side.
+   * ``users`` invites recipients via the standard ``MembershipRequest``
+   * pattern (one ``POST /graph/<type>/<id>/members`` per recipient — see
+   * ``Conversation.share`` / ``Project.share`` on the Python side). Each
+   * entry is either a bare ``idOrEmail`` string — for a caller with no role
+   * to send — or ``{idOrEmail, role?}`` when one is needed. ``idOrEmail`` is
+   * either an email — for anyone, including someone with no account yet —
+   * or a hub user id, for a contact the address book knows only by id (the
+   * hub never discloses other people's emails, so those contacts have no
+   * email to invite by); the backend decides which by shape. ``role`` is
+   * optional; only a Project invite honours it (``member`` | ``admin``,
+   * default ``member``) — other types ignore it.
    *
-   * ``recipientUserIds`` (hub user ids) is the same invitation addressed by hub
-   * id, for a contact the address book knows only by ``user_id`` — the hub never
-   * discloses other people's emails, so those contacts have no address to
-   * invite. Pass either, or both.
+   * On the wire, ``recipients`` mirrors ``users`` exactly (bare string or
+   * ``{idOrEmail, role}``) — the local backend's ``share`` action validates it.
    */
-  public async share(recipients?: string[], recipientUserIds?: string[]): Promise<T> {
+  public async share(users: (string | { idOrEmail: string; role?: string })[] = []): Promise<T> {
     const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
-    const cleaned = recipients?.map((r) => normalizeEmail(r)).filter((r): r is string => !!r);
-    const byId = recipientUserIds?.map((id) => id.trim()).filter((id) => !!id);
-    info.bodyParameters =
-      cleaned?.length || byId?.length
-        ? {
-            ...this.toJSON(),
-            ...(cleaned?.length ? { recipients: cleaned } : {}),
-            ...(byId?.length ? { recipient_user_ids: byId } : {}),
-          }
-        : {};
-    const response = await dataManager.callAction<unknown, unknown>(info);
+    const recipients: (string | { idOrEmail: string; role: string })[] = [];
+    for (const u of users) {
+      const { idOrEmail, role } = typeof u === 'string' ? { idOrEmail: u, role: undefined } : u;
+      const trimmed = idOrEmail.trim();
+      if (!trimmed) continue;
+      recipients.push(role ? { idOrEmail: trimmed, role } : trimmed);
+    }
+    info.bodyParameters = recipients.length ? { ...this.toJSON(), recipients } : {};
+    // Not one fixed shape — a full entity or a bare receipt, depending on entity type — hence a guarded dict, not a named response type.
+    const response = await dataManager.callAction<unknown, Record<string, unknown>>(info);
     if (
       response &&
-      typeof response === 'object' &&
       'id' in response &&
       'type' in response &&
-      String((response as { id: unknown }).id) === this.id &&
-      String((response as { type: unknown }).type) === this.typeId.type
+      String(response.id) === this.id &&
+      String(response.type) === this.typeId.type
     ) {
       return dataManager.updateEntityFromJson<T>(response);
     }

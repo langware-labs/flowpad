@@ -8,7 +8,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Literal, Optional
 
 from pydantic import (
     BaseModel,
@@ -46,6 +46,7 @@ from flow_sdk.request_context.methods import (
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
+    from flow_sdk.app.actions.share_action import ShareInvitee
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
 
 log = logging.getLogger(__name__)
@@ -186,6 +187,24 @@ class HelpdeskConfig(BaseModel):
     welcome_message: Optional[str] = None
     mode: HelpdeskMode = HelpdeskMode.HUMAN
     portal_git_url: Optional[str] = None
+
+
+# Roles a project invite may carry. The hub's ``can_assign`` is the authority
+# (strictly below the inviter's rank); this only rejects anything else up front.
+ProjectInviteRole = Literal["member", "admin"]
+PROJECT_INVITE_ROLES: tuple[ProjectInviteRole, ...] = ("member", "admin")
+PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "member"
+
+
+class ProjectInviteRoleError(ValueError):
+    """A ``share()`` invitee's role isn't one of ``PROJECT_INVITE_ROLES``.
+
+    A ``ValueError`` subclass, not a distinct type — anything catching
+    ``ValueError`` broadly still works — but the dedicated type lets
+    ``share_action.py`` tell "bad role" apart from a hub-call failure
+    (``FlowpadClient._unwrap`` also raises plain ``ValueError``) without
+    inspecting message text.
+    """
 
 
 class Project(Entity):
@@ -1007,31 +1026,28 @@ class Project(Entity):
                 "the account that owns it, or give this folder a new project id."
             ) from unreachable
 
-    async def share(self, recipients: Optional[List[str]] = None) -> "Project":
-        """Publish this project to the hub as a shared unit + invite recipients.
-
-        Mirrors ``Conversation.share``: the project's own (uuid4) id is the shared
-        identity, so ``super().share()`` publishes the hub row under ``self.id`` —
-        no separate cloud id. Persisting ``remote=True`` on the local row is the
-        caller's responsibility (``share_action.share_entity``).
-
-        Without ``recipients``: just the hub create. The hub stamps the creator
-        as ``owner`` on create (``save(owner=...)`` → literal 'owner' role edge;
-        ``project`` relies on the hub's default ``owner:["*"]`` policy chain), so
-        no explicit join is needed — the roster derives from role edges.
-        With ``recipients`` (emails): one ``MembershipRequest`` per recipient
-        targets ``project-<id>`` with role ``member`` via
-        ``POST /graph/project/<id>/members``. Under the Hub's assignment policy,
-        the recipient is granted immediately and receives the full Project over
-        the live bridge; explicit invitation acceptance remains the fallback
-        when Hub auto-accept is disabled.
+    async def share(self, invitees: Optional[List["ShareInvitee"]] = None) -> "Project":
+        """Publish this project to the hub, then invite each recipient — by
+        email or hub user id (for a contact known only by id) — as one
+        ``MembershipRequest`` per person via
+        ``POST /graph/project/<id>/members``. ``role`` is optional per
+        recipient (default ``member``).
         """
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+        from flow_sdk.builtin.user import recipient_user_id as parse_recipient_user_id  # noqa: PLC0415
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
         from flow_sdk.core.entity.parent_share import parent_share_typeid  # noqa: PLC0415
         from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
+        # Validated up front, before any hub call, so a bad role fails the
+        # whole share rather than landing some invites and rejecting others
+        # partway through.
+        for inv in invitees or []:
+            if inv.role is not None and inv.role not in PROJECT_INVITE_ROLES:
+                raise ProjectInviteRoleError(
+                    f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.role!r}"
+                )
         creds = load_credentials()
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required")
@@ -1074,7 +1090,7 @@ class Project(Entity):
             # so only this line distinguishes "I published it" from "it was
             # shared to me" — which is what the push-to-cloud gate needs.
             self.hub_published_at = _now_iso()
-            if not recipients:
+            if not invitees:
                 return self
             # A grant is idempotent in intent, but inviting someone who already
             # holds a role is a 400 on the hub ("User has already accepted; use
@@ -1082,28 +1098,37 @@ class Project(Entity):
             # note after the grant already landed — fails the whole share with
             # hub_publish_failed. Read the roster once and invite only who is
             # missing: an existing member already HAS what this call grants.
-            already = await self._hub_member_emails(client)
-            for email in recipients:
-                if not email or not isinstance(email, str):
-                    continue
-                email = normalize_email(email)
-                if not email or email in already:
+            already_emails, already_user_ids = await self._hub_member_identities(client)
+
+            for inv in invitees:
+                role = inv.role or PROJECT_DEFAULT_INVITE_ROLE
+                if inv.email:
+                    email = normalize_email(inv.email)
+                    if not email or email in already_emails:
+                        continue
+                    field, recipient_key = "recipient_email", email
+                elif inv.user_id:
+                    user_id = parse_recipient_user_id(inv.user_id)
+                    if not user_id or user_id in already_user_ids:
+                        continue
+                    field, recipient_key = "recipient_user_id", user_id
+                else:
                     continue
                 await client.post(
                     f"/graph/project/{self.id}/members",
                     {
-                        "recipient_email": email,
+                        field: recipient_key,
                         "invitation_targets": [
-                            {"typeid": f"project-{self.id}", "role": "member"},
+                            {"typeid": f"project-{self.id}", "role": role},
                         ],
                     },
                 )
         return self
 
-    async def _hub_member_emails(self, client) -> set[str]:
-        """Emails already on this project's hub roster (any status).
+    async def _hub_member_identities(self, client) -> tuple[set[str], set[str]]:
+        """(``emails``, ``user_ids``) already on this project's hub roster (any status).
 
-        An unreadable roster returns an empty set, which falls through to
+        An unreadable roster returns two empty sets, which falls through to
         inviting everyone — the behaviour before this read existed — so a roster
         outage can only cost a redundant invite, never a missing one.
         """
@@ -1113,8 +1138,9 @@ class Project(Entity):
             rows = await client.get(f"/graph/project/{self.id}/members")
         except Exception:  # noqa: BLE001 — degrade to the old invite-everyone path
             logging.warning("[project.share] roster read failed for %s; inviting all", self.id)
-            return set()
+            return set(), set()
         emails: set[str] = set()
+        user_ids: set[str] = set()
         for row in rows if isinstance(rows, list) else []:
             if not isinstance(row, dict):
                 continue
@@ -1122,7 +1148,10 @@ class Project(Entity):
                 email = normalize_email(row.get(key) or "")
                 if email:
                     emails.add(email)
-        return emails
+            user_id = row.get("user_id")
+            if isinstance(user_id, str) and user_id.strip():
+                user_ids.add(user_id.strip())
+        return emails, user_ids
 
     async def setup_from_git_origin(self) -> "Project":
         """Materialize this shared project into a local Git worktree.

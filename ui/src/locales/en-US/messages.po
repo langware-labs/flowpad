@@ -1969,6 +1969,7 @@ msgid "Allowed senders"
 msgstr "Allowed senders"
 
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "Already a member — change their role in the list above"
 msgstr "Already a member — change their role in the list above"
 
@@ -10296,6 +10297,15 @@ msgstr "Invitations — dismiss"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Invite"
 msgstr "Invite"
+
+#. placeholder {0}: p.name || p.email || key
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Invite {0} as"
+msgstr "Invite {0} as"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Invite as"
+msgstr "Invite as"
 
 #: src/components/account/organization-panel.tsx
 msgid "Invite by email…"

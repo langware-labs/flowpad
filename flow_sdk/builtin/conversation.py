@@ -9,7 +9,7 @@ from pydantic import computed_field, model_validator
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
-from flow_sdk.builtin.user import normalize_email
+from flow_sdk.builtin.user import normalize_email, recipient_user_id
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
 from flow_sdk.db.drivers.db_base_record import TypeId
@@ -136,38 +136,6 @@ def _coerce_context_typeid(ref) -> Optional[TypeId]:
     except Exception:  # noqa: BLE001
         return None
     return None
-
-
-def _recipient_user_id(value) -> Optional[str]:
-    """A hub user id fit to address an invitation with, or ``None``.
-
-    Accepts a bare id, a ``"user-<uuid>"`` typeid string, or a ``TypeId`` — the
-    address book and the members roster each hand out a slightly different
-    shape, and every one of them means the same person. Parsed by hand rather
-    than through ``TypeId`` precisely because of the bare form: ``TypeId``
-    splits at the first dash, so a naked UUID would parse as type ``"<first
-    group>"`` rather than being recognized as an id.
-
-    The id must be a real UUID: the hub resolves it with a point read, so junk
-    would surface as a confusing "user not found" rather than a malformed-input
-    error. Version-agnostic (``is_valid_uuid``, not ``is_valid_entity_id``) —
-    this is a reference to a row the hub minted, not an id being born here.
-    """
-    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
-
-    if isinstance(value, TypeId):
-        value = str(value)
-    if not isinstance(value, str):
-        return None
-    candidate = value.strip()
-    if not candidate:
-        return None
-    user_prefix = f"{EntityType.USER.value}-"
-    if candidate.startswith(user_prefix):
-        candidate = candidate[len(user_prefix) :]
-    # Anything left that is not a bare UUID (a "project-<id>" typeid, a name) is
-    # not something this path may address.
-    return candidate if is_valid_uuid(candidate) else None
 
 
 class Conversation(ProjectedFields, Entity):
@@ -511,7 +479,7 @@ class Conversation(ProjectedFields, Entity):
 
             # One invitation per contact we can only name by hub id.
             for value in recipient_user_ids or []:
-                user_id = _recipient_user_id(value)
+                user_id = recipient_user_id(value)
                 if not user_id:
                     continue
                 await client.post(

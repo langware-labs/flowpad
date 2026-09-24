@@ -146,18 +146,17 @@ export async function createConversationForShare(
     // here made every one of them pickable but unsendable. An email wins when a
     // participant has both: it is the path that also works for someone without
     // an account yet.
-    const emails: string[] = [];
-    const recipientUserIds: string[] = [];
+    const invitees: string[] = [];
     for (const p of params.participants) {
       const email = normalizeEmail(p.email) || '';
       if (email.includes('@')) {
-        emails.push(email);
+        invitees.push(email);
         continue;
       }
       const userId = (p.user_id || '').trim();
-      if (userId) recipientUserIds.push(userId);
+      if (userId) invitees.push(userId);
     }
-    if (emails.length === 0 && recipientUserIds.length === 0) {
+    if (invitees.length === 0) {
       throw new Error('At least one recipient email or hub contact is required');
     }
 
@@ -181,7 +180,7 @@ export async function createConversationForShare(
     if (opts?.draftRef) opts.draftRef.current = conv;
 
     await conv.save();
-    await conv.share(emails, recipientUserIds);
+    await conv.share(invitees);
     conversationId = conv.id;
   } else {
     if (!params.project_id) {

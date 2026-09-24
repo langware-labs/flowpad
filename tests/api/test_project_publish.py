@@ -151,7 +151,7 @@ async def test_project_publish_returns_and_persists_canonical_project(
         ),
     )
 
-    async def _publish(self: Project, recipients=None) -> Project:  # noqa: ARG001
+    async def _publish(self: Project, invitees=None) -> Project:  # noqa: ARG001
         self.remote = True
         self.hub_published_at = PUBLISHED_AT
         return self
