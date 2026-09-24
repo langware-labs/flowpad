@@ -1157,6 +1157,10 @@ msgstr "a server someone else hosts"
 msgid "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
 msgstr "A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat."
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A thread quiet this long ends; the next message starts a new one. Empty — never."
+msgstr "A thread quiet this long ends; the next message starts a new one. Empty — never."
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "a wizard name"
 msgstr "a wizard name"
@@ -12262,6 +12266,7 @@ msgid "net"
 msgstr "net"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "never"
 msgstr "never"
@@ -17537,6 +17542,10 @@ msgstr "Saving…"
 msgid "Say hi…"
 msgstr "Say hi…"
 
+#: src/components/credentials/CredentialDialog.tsx
+msgid "Say how to get these values — the AI setup follows it"
+msgstr "Say how to get these values — the AI setup follows it"
+
 #. placeholder {0}: postScanResult.grand_total.toLocaleString()
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Scan & index complete — {0} records found"
@@ -18456,6 +18465,10 @@ msgstr "Setup failed"
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
 msgstr "Setup git"
+
+#: src/components/credentials/CredentialDialog.tsx
+msgid "Setup instructions"
+msgstr "Setup instructions"
 
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
@@ -21207,6 +21220,10 @@ msgstr "This worker has no session to view yet."
 msgid "Thread"
 msgstr "Thread"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Thread timeout (minutes)"
+msgstr "Thread timeout (minutes)"
+
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
 msgid "Threads"
 msgstr "Threads"
@@ -22679,6 +22696,10 @@ msgstr "Where do I get this?"
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Where each assistant gets its model access, and why."
 msgstr "Where each assistant gets its model access, and why."
+
+#: src/components/credentials/CredentialDialog.tsx
+msgid "Where the key is created, and how to store it: flow credentials set <name> VAR=…"
+msgstr "Where the key is created, and how to store it: flow credentials set <name> VAR=…"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Where this desk lives"
