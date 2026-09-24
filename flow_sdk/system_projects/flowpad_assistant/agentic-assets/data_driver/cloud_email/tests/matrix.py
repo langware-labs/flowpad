@@ -129,9 +129,20 @@ class HubDouble:
             await client.delete(f"{self._backend}/api/v1/graph/agent/{self.outsider_id}")
 
     async def deliver(self, text: str, *, sender: str = "", thread: str | None = None, subject: str = "Round trip") -> dict:
+        """The outsider writes to the agent: a new email, or with ``thread`` (a delivery's own) a reply
+        to the newest message of that thread in the outsider's mailbox — as a person continues one."""
         from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver  # noqa: PLC0415
 
-        out = await get_agent_mailbox_driver().send(self.outsider_id, {"to": self.config["address"], "subject": subject, "text": text})
+        driver = get_agent_mailbox_driver()
+        if thread:
+            page = await driver.list_messages(self.outsider_id)
+            ours = sorted((m for m in (page or {}).get("messages") or [] if str(m.get("thread_id") or "") == thread),
+                          key=lambda m: str(m.get("timestamp") or ""))
+            if ours:
+                out = await driver.reply(self.outsider_id, str(ours[-1].get("message_id")), {"text": text})
+                return {"external_id": str(out.get("message_id") or ""), "thread": str(out.get("thread_id") or thread),
+                        "sender": self.outsider_address}
+        out = await driver.send(self.outsider_id, {"to": self.config["address"], "subject": subject, "text": text})
         return {"external_id": str(out.get("message_id") or ""), "thread": str(out.get("thread_id") or ""), "sender": self.outsider_address}
 
     async def sent(self) -> list[dict]:
