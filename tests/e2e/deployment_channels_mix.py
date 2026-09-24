@@ -42,6 +42,8 @@ from typing import Any, Optional
 
 import httpx
 
+from flow_sdk.utils.serialization import iso_to_utc
+
 #: One code word per channel — distinct, so a leak between conversations is visible.
 WORDS = ("PELICAN", "TANGERINE", "GLACIER", "SAXOPHONE", "LANTERN", "CACTUS", "NEBULA", "WALRUS", "ORIGAMI", "HAMMOCK")
 SYSTEM_PROMPT = (
@@ -54,11 +56,6 @@ PROJECT_PREFIX = "mix-e2e-"
 RECALL = "What is the code word I gave you in this conversation? Reply with only the word, or UNKNOWN if I gave you none."
 
 
-def _utc(iso: Optional[str]) -> datetime:
-    at = datetime.fromisoformat(str(iso or "1970-01-01T00:00:00").replace("Z", "+00:00"))
-    return at if at.tzinfo else at.replace(tzinfo=timezone.utc)
-
-
 def log(**event: Any) -> None:
     print(json.dumps({"t": time.strftime("%H:%M:%S"), **event}), flush=True)
 
@@ -68,13 +65,15 @@ class Channel:
     provider: str
     word: str
     source_id: str = ""
-    #: When the run bound the channel (UTC ISO): a thread that started before is the channel's past —
-    #: shown on the page, never answered — and not one of this run's.
-    bound: str = ""
+    #: When the run bound the channel: a thread that started before is the channel's past — shown on
+    #: the page, never answered — and not one of this run's.
+    bound: Optional[datetime] = None
     thread: Optional[str] = None
     answers: dict = field(default_factory=dict)
     failures: list = field(default_factory=list)
     timings: dict = field(default_factory=dict)
+    #: step → whether the page showed the channel's thread ``working`` while that step's turn ran.
+    seen_working: dict = field(default_factory=dict)
 
 
 class Mix:
@@ -115,25 +114,19 @@ class Mix:
         doubles = (await self.control.get("/channels")).json()
         channels = [Channel(p, WORDS[i]) for i, p in enumerate(["http_chat", *[p for p in providers if p in doubles]])]
         for channel in channels:
-            channel.bound = datetime.now(timezone.utc).isoformat()
-            if channel.provider == "cloud_email":  # the agent's own mailbox, born with it on the hub
-                channel.source_id = mailbox_source
-                await self.graph("patch", f"data_source/{channel.source_id}", json={"thread_timeout_seconds": self.timeout})
-                continue
-            if channel.provider == "http_chat":
-                channel.source_id = await self.chat_source()
+            channel.bound = datetime.now(timezone.utc)
+            if channel.provider in ("http_chat", "cloud_email"):  # born with the agent: its chat, its mailbox
+                channel.source_id = await self.chat_source() if channel.provider == "http_chat" else mailbox_source
                 await self.graph("patch", f"data_source/{channel.source_id}", json={"thread_timeout_seconds": self.timeout})
                 continue
             entry = doubles[channel.provider]
             if entry.get("credential"):  # a named credential: declared in this project, never the user's
                 credential = entry["credential"]
-                r = await self.api.post("/graph/compute_node/@local/credentials/save", json={
+                await self.graph("post", "compute_node/@local/credentials/save", json={
                     "scope": "project", "project_id": self.project_id, "values": credential["values"],
                     "manifest": {"name": credential["name"], "value_store": "vault", "setup": "Planted by the channels mix.",
                                  "vars": {var: {"label": var, "secret": True, "required": True} for var in credential["values"]}},
                 })
-                if r.status_code >= 400 or r.json().get("status") == "FAIL":
-                    raise RuntimeError(f"{channel.provider}: credential: {r.text[:200]}")
             body = {
                 "name": f"Mix {channel.provider}", "provider": channel.provider, "config": entry["config"],
                 "owner": f"agent-{self.agent_id}", "inbound_allowed_senders": [entry["sender"]],
@@ -227,7 +220,7 @@ class Mix:
 
     async def threads_of(self, channel: Channel) -> list[dict]:
         mine = [t for t in await self.threads()
-                if t["data_source_id"] == channel.source_id and _utc(t["started_at"]) >= _utc(channel.bound) - timedelta(seconds=2)]
+                if t["data_source_id"] == channel.source_id and iso_to_utc(t["started_at"]) >= channel.bound - timedelta(seconds=2)]
         return sorted(mine, key=lambda t: t["started_at"] or "")
 
     async def watch_statuses(self) -> None:
@@ -251,7 +244,8 @@ class Mix:
         ended = time.monotonic()
         channel.timings[name] = round(ended - started, 1)
         channel.answers[name] = answer
-        channel.timings[f"{name}_seen_working"] = any(started <= t <= ended for t in self.working.get(channel.source_id, []))
+        channel.seen_working[name] = any(started <= t <= ended for t in self.working.get(channel.source_id, []))
+        self.expect(channel, channel.seen_working[name], f"{name}: the page never showed the thread working")
         log(channel=channel.provider, step=name, seconds=channel.timings[name], answer=answer[:120])
         return answer
 
@@ -285,11 +279,11 @@ class Mix:
         except Exception as exc:  # noqa: BLE001 — one channel's failure is reported, the others run on
             self.expect(channel, False, f"{type(exc).__name__}: {exc}")
 
-    async def report(self, channels: list[Channel], timeout: int) -> dict:
+    async def report(self, channels: list[Channel]) -> dict:
         return {
-            "project_id": self.project_id, "agent_id": self.agent_id, "deployment_id": self.deployment_id, "timeout": timeout,
+            "project_id": self.project_id, "agent_id": self.agent_id, "deployment_id": self.deployment_id, "timeout": self.timeout,
             "channels": {c.provider: {"ok": not c.failures, "word": c.word, "answers": c.answers, "timings": c.timings,
-                                      "failures": c.failures} for c in channels},
+                                      "seen_working": c.seen_working, "failures": c.failures} for c in channels},
             "threads": await self.threads(),
             "threads_read_seconds": {"reads": len(self.read_seconds), "max": round(max(self.read_seconds, default=0), 2),
                                      "mean": round(sum(self.read_seconds) / max(1, len(self.read_seconds)), 2)},
@@ -367,7 +361,7 @@ async def main() -> int:
             mix.converse(c, [w for w in words if w != c.word], i * args.stagger) for i, c in enumerate(channels)
         ))
         statuses.cancel()
-        report = await mix.report(channels, args.timeout)
+        report = await mix.report(channels)
         log(step="finished", ok=[c.provider for c in channels if not c.failures])
     finally:
         if watcher is not None:  # the page is read to the end — each thread opened — before anything goes

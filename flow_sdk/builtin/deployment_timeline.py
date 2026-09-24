@@ -20,7 +20,7 @@ timeline moved with a ``deployment.timeline`` tag (:func:`announce`); a client r
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from flow_sdk.schema.data_spec.deployment_timeline_spec import (
@@ -72,6 +72,8 @@ class _Scan:
     conversations: dict[str, Any] = field(default_factory=dict)
     #: conversation id → its newest process of this deployment.
     processes: dict[str, Any] = field(default_factory=dict)
+    #: source id → the channels this deployment answers.
+    sources: dict[str, Any] = field(default_factory=dict)
 
 
 async def _scan(deployment, *, conversation: Optional[str] = None, per_conversation: int) -> _Scan:
@@ -97,6 +99,7 @@ async def _scan(deployment, *, conversation: Optional[str] = None, per_conversat
     scan.agent_name = str(getattr(agent, "name", "") or "") if agent else ""
     # Every channel this deployment answers — live ones (a call) included, which the drain leaves out.
     sources = {str(s.id): s for s in (await agent.channels() if agent else []) if await answers_here(s, deployment)}
+    scan.sources = sources
 
     if conversation:
         row = await Conversation.get_by_id(conversation)
@@ -196,7 +199,9 @@ def _status(
     if channel == "voice" and newest_message is not None and newest_message.text == CALL_ENDED:
         return "ended"
     # Quiet past its source's thread timeout: the next message starts a new thread.
-    if timeout and newest_message is not None and datetime.now(timezone.utc) - newest_message.at > timedelta(seconds=timeout):
+    from flow_sdk.stream_inbox.projection import quiet_past  # noqa: PLC0415
+
+    if newest_message is not None and quiet_past(newest_message.at, timeout, datetime.now(timezone.utc)):
         return "ended"
     return "idle"
 
@@ -204,12 +209,8 @@ def _status(
 async def threads(deployment, *, limit: int = 50) -> DeploymentThreads:
     """The conversations *deployment* holds, the most recently active first, each with its status now."""
     from flow_sdk.builtin.agent_calls import active_calls  # noqa: PLC0415
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
     scan = await _scan(deployment, per_conversation=MESSAGES_PER_THREAD)
-    source_ids = {str(getattr(row, "channel_source_id", "") or "") for row in scan.conversations.values()} - {""}
-    sources = [await DataSource.get_one({"id": source_id}) for source_id in sorted(source_ids)]
-    timeouts = {str(s.id): s.thread_timeout_seconds for s in sources if s is not None}
     live = {str(c.get("conversation_id") or "") for c in active_calls().values()}
     by_thread: dict[str, list[TimelineEvent]] = {}
     for event in scan.events:
@@ -221,6 +222,8 @@ async def threads(deployment, *, limit: int = 50) -> DeploymentThreads:
         events = sorted(by_thread.get(conversation_id, []), key=lambda e: e.at, reverse=True)
         process = scan.processes.get(conversation_id)
         channel = str(getattr(row, "channel", "") or "")
+        source_id = str(getattr(row, "channel_source_id", "") or "")
+        source = scan.sources.get(source_id)
         other = next((e.who for e in reversed(events) if e.kind in ("message_in", "refused") and e.who), "")
         latest = next((e for e in events if e.kind in ("message_in", "reply_sent", "refused")), None)
         out.append(
@@ -229,11 +232,9 @@ async def threads(deployment, *, limit: int = 50) -> DeploymentThreads:
                 title=str(getattr(row, "title", "") or "") or other,
                 who=other,
                 channel=channel,
-                data_source_id=str(getattr(row, "channel_source_id", "") or ""),
+                data_source_id=source_id,
                 process_id=str(process.id) if process is not None else "",
-                status=_status(
-                    conversation_id, channel, process, events, live, timeouts.get(str(getattr(row, "channel_source_id", "") or ""))
-                ),
+                status=_status(conversation_id, channel, process, events, live, getattr(source, "thread_timeout_seconds", None)),
                 started_at=events[-1].at if events else _utc(getattr(row, "created_date", None)),
                 last_at=events[0].at if events else _utc(getattr(row, "updated_date", None)),
                 last_text=latest.text if latest is not None else "",

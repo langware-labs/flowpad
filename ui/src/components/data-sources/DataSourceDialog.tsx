@@ -87,7 +87,7 @@ function draftFrom(source: DataSource, spec?: DataDriver): SourceDraft {
     enabled: source.status !== 'disabled',
     poll_interval_seconds: source.poll_interval_seconds,
     window_days: source.window_days,
-    thread_timeout_seconds: source.thread_timeout_seconds ?? null,
+    thread_timeout_seconds: source.thread_timeout_seconds,
     fields,
     picked,
   };
@@ -195,7 +195,7 @@ export function DataSourceDialog({
           JSON.stringify(editing.config ?? {}) !== JSON.stringify(config) ||
           editing.poll_interval_seconds !== draft.poll_interval_seconds ||
           editing.window_days !== draft.window_days ||
-          (editing.thread_timeout_seconds ?? null) !== draft.thread_timeout_seconds ||
+          editing.thread_timeout_seconds !== draft.thread_timeout_seconds ||
           JSON.stringify(editing.inbound_allowed_senders ?? []) !== JSON.stringify(allowedSenders);
         editing.name = nextName;
         editing.status = nextStatus;

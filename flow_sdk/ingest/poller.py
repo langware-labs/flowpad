@@ -226,7 +226,8 @@ async def dispatch_due_sources(
         return dispatched
 
     due = [s for s in sources if s.id not in _inflight and s.is_due(now) and (only is None or str(s.id) in only)]
-    held = await _held_by_deployments() if due else set()
+    # ``only`` is the caller's own channels (a deployment's process): nobody else holds them.
+    held = await _held_by_deployments() if due and only is None else set()
     for source in due:
         if str(source.id) in held:
             logger.debug("[ingest] %s is held by a running deployment — polled there, not here", source.id)
