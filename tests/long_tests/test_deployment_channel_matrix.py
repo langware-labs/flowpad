@@ -82,6 +82,9 @@ def test_a_deployment_process_answers_the_channel(doubles, tmp_path):
 
         doubles.deliver(provider, "from a stranger", STRANGER)
         delivered = doubles.deliver(provider, f"hello {provider}", None)
+        # Someone is waiting on it: a pulled channel is due now instead of at its interval (a push
+        # needs nothing). Without it, this raced the loop's first poll of the source.
+        httpx.post(f"{doubles.backend}/api/v1/graph/data_source/{source.id}/request_poll", timeout=10).raise_for_status()
         until(f"a reply on {provider} ({log.read_text()[-1500:]})", lambda: doubles.sent(provider), within=45)
         time.sleep(1)  # a second reply (to the stranger) would land by now — it must not
         (reply,) = doubles.sent(provider)

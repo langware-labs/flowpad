@@ -40,6 +40,15 @@ if TYPE_CHECKING:  # pragma: no cover
 from flow_sdk.builtin import deployment_process
 
 logger = logging.getLogger(__name__)
+#: The deployment's console — one plain line per thing that happened, printed on the terminal of the
+#: process that runs it (``agent_loop``); in the app, the ordinary log.
+console = logging.getLogger("flow.deployment")
+
+
+def _line(text: str, width: int = 90) -> str:
+    """*text* on one line, cut at *width*."""
+    flat = " ".join(str(text or "").split())
+    return flat if len(flat) <= width else f"{flat[: width - 1]}…"
 
 # ── the turn record, on the process (durable, so a redelivery is answered from it) ──
 
@@ -279,6 +288,7 @@ class TurnEngine:
             start = len(transcript_entries(ap)) if stream else 0
             await stamp_turn(ap, turn.key, started_record())
             _announce(self.deployment, "turn_started", process_id=str(getattr(ap, "id", "") or ""))
+            console.info("▶ turn  %s", turn.name or turn.session)
             taken = await ap.send_turn(turn.body)
             if not taken.ok:
                 # Nothing ran, so nothing is recorded: a STARTED stamp left behind would
@@ -673,6 +683,8 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
                     source = by_id[page.source_id]
                     for message in page:
                         if is_history(message, bound[page.source_id]):
+                            console.info("· %s  %s — written before the channel was bound: history, not answered",
+                                         source.channel or source.provider, _line(getattr(message, "body", ""), 60))
                             await _skip(message)  # the backlog the channel held when it was bound
                             continue
                         await answer(engine, message, source=source)
@@ -718,11 +730,13 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
     # The loop guard first: pure string work, and every reply the agent sends comes back.
     if is_own_outgoing(source, author):
         return await _skip(message)
+    channel = source.channel or source.provider
     if not admits(source, author):
-        logger.info("agent %s: not answering an unlisted sender on %s", agent.name or agent.id, source.id)
+        console.info("✗ %s  %s — not an allowed sender, not answered", channel, author)
         _announce(engine.deployment, "refused", data_source_id=str(source.id))
         return await _skip(message)
     _announce(engine.deployment, "message_in", data_source_id=str(source.id))
+    console.info("← %s  %s: %s", channel, author, _line(body))
     if not body:
         return await _skip(message)
     # Three facts a source may declare about its messages (the driver class says; nothing here names one):
@@ -752,12 +766,13 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
         process=process,
     )
     if not outcome.ok or not outcome.text:
-        logger.info("agent %s: no reply to %s (%s)", agent.name or agent.id, session, outcome.detail)
+        console.info("✗ %s  %s — no reply: %s", channel, who, _line(outcome.detail))
         return False
     if getattr(driver_cls, "replies_explicitly", False):
         await _skip(message)
         return True
     await message.reply(await message.reply_spec(body=outcome.text))
+    console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
     return True
 
 
@@ -827,7 +842,7 @@ def serving_key(source) -> tuple:
 class AgentServer:
     """Keeps every running local agent deployment's PROCESS running.
 
-    A running local deployment is a subprocess running the agent loop (``builtin/agent_loop``);
+    A running local deployment is its Python file running in its terminal (``builtin/deployment_process``);
     this app only starts it, adopts it alive after a restart, starts it again when it died, and
     stops it when the deployment stops serving, its agent is switched off there, or it is deleted
     (``builtin/deployment_process``). Reconciled at start, on every ``agent``/``deployment`` write
@@ -948,22 +963,18 @@ class AgentServer:
             return
         await ensure_chat_channel(agent, deployment)
         if not deployment_process.alive(deployment):
-            deployment.provider_labels = {**(deployment.provider_labels or {}), **deployment_process.start(deployment)}
-            await deployment.save()
-            logger.info("agent %s: deployment %s runs as pid %s", agent.name or agent.id, deployment.id,
-                        deployment_process.recorded(deployment).pid)
+            labels = await deployment_process.start(deployment)
+            if labels != {k: (deployment.provider_labels or {}).get(k) for k in labels}:
+                deployment.provider_labels = {**(deployment.provider_labels or {}), **labels}
+                await deployment.save()
+            logger.info("agent %s: deployment %s started in terminal %s", agent.name or agent.id, deployment.id,
+                        labels.get(deployment_process.SHELL_LABEL))
         self._running[str(deployment.id)] = deployment   # started now, or alive from before a restart: adopted
 
     async def _stop_process(self, deployment) -> None:
-        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
-
+        """Stop the deployment's loop; its terminal stays, showing how it ended."""
         if not await asyncio.to_thread(deployment_process.stop, deployment):
             logger.warning("deployment %s: its process did not stop", deployment.id)
-            return
-        fresh = await Deployment.get_by_id(str(deployment.id))
-        if fresh is not None:
-            fresh.provider_labels = {**(fresh.provider_labels or {}), **deployment_process.labels_of(None)}
-            await fresh.save()
 
     async def _sync_chiefs_of_staff(self) -> None:
         """A Chief of Staff's Tasks channel follows its checkbox — bound here, so its serve loop picks

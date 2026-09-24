@@ -1,90 +1,201 @@
-"""A local agent deployment's process: started, found alive again, stopped.
+"""A local agent deployment's process: a Python file, run in a shell.
 
-A running local deployment IS a subprocess on this machine running the agent loop
-(``python -m flow_sdk.builtin.agent_loop``, or the deployment's own ``snippet``). It is plain SDK
-code in the same instance: it inherits this process's environment — ``FLOW_INSTANCE`` above all —
-and is told which deployment it is by ``FLOW_DEPLOYMENT_ID``.
+A running local deployment IS ``python <file>`` typed into a terminal (a ``Shell``, the same PTY
+``flow terminal`` opens) on this machine. The file is plain Python — by default two lines that run
+the stock agent loop for this deployment (``builtin/agent_loop``), written once next to the
+instance's other per-deployment state; a deployment's own ``snippet`` names another. Its stdio is
+the terminal, so whoever watches the deployment sees the loop as it works, and can edit the file
+and run it again.
 
-The process is recorded on the deployment row as the ``ProcRef`` ``spawn_detached`` returned
-(``provider_labels``), so a restarted app finds it alive again instead of starting a twin, and a
-recycled pid is never mistaken for it (``create_time`` pins the identity, as ``instances/procs`` does).
+**Who is running** is a lock, not a remembered pid: the loop holds ``<id>.lock`` for as long as it
+runs and writes its pid into it (``hold``). So a second copy — typed twice, run by hand — sees the
+lock and leaves at once; a crashed loop frees it; and asking whether a deployment runs never
+mistakes a recycled pid for it. The typed command names the deployment (``python <file> <id>``), so
+a loop still importing — before it takes the lock — is found by its command line. The shell stays when the loop ends: its output is the record of
+what ran, and ↑ Enter runs it again.
 """
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import IO, Optional
 
-from flow_sdk.instances.model import ProcRef
-
-#: The environment variable that tells the loop which deployment it runs.
+#: The environment variable that tells the loop which deployment it runs (the shell carries it).
 DEPLOYMENT_ENV = "FLOW_DEPLOYMENT_ID"
 
-#: ``provider_labels`` key → ``ProcRef`` field. Labels are strings; ``ProcRef.from_json`` parses them.
-_LABELS = {f"flowpad.process.{f}": f for f in ("pid", "pgid", "create_time", "log")}
+#: ``provider_labels`` key → the deployment's shell (the terminal its process runs in).
+SHELL_LABEL = "flowpad.process.shell"
+
+#: What a deployment runs when it names no file of its own.
+STOCK = '''"""The agent loop of deployment {deployment_id}: answers the agent's channels here, until paused.
+
+Plain Python, run in this deployment's terminal — edit it and run it again (Restart).
+"""
+from flow_sdk.builtin.agent_loop import main
+
+main("{deployment_id}")
+'''
 
 
-def _log_path(deployment) -> Path:
+def _home() -> Path:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-    return Path(get_instance_settings().logs_dir) / "deployments" / f"{deployment.id}.log"
+    return Path(get_instance_settings().logs_dir).parent / "deployments"
 
 
-def _argv(deployment) -> list[str]:
-    snippet = str(getattr(deployment, "snippet", "") or "").strip()
-    return [sys.executable, snippet] if snippet else [sys.executable, "-m", "flow_sdk.builtin.agent_loop"]
+def file_of(deployment) -> Path:
+    """The Python file *deployment* runs: its own ``snippet``, else its stock file (written now if new)."""
+    own = str(getattr(deployment, "snippet", "") or "").strip()
+    if own:
+        return Path(own)
+    path = _home() / f"{deployment.id}.py"
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(STOCK.format(deployment_id=deployment.id), encoding="utf-8")
+    return path
 
 
-def recorded(deployment) -> ProcRef:
-    """The process recorded on *deployment* (every field ``None`` when none is)."""
-    labels = dict(getattr(deployment, "provider_labels", None) or {})
-    return ProcRef.from_json({field: labels.get(key) or None for key, field in _LABELS.items()})
+def _lock_path(deployment_id: str) -> Path:
+    return _home() / f"{deployment_id}.lock"
 
 
-def labels_of(ref: Optional[ProcRef]) -> dict[str, str]:
-    """The ``provider_labels`` that record *ref* — or, for ``None``, that no process is running
-    (its log is kept: it is still where the last run wrote)."""
-    values = ref.to_json() if ref is not None else {}
-    return {key: str(values.get(field) or "") for key, field in _LABELS.items() if ref is not None or field != "log"}
+def hold(deployment_id: str) -> Optional[IO[str]]:
+    """Take *deployment_id*'s lock for this process's lifetime (keep the returned file open), with
+    this pid written in it; ``None`` when another process holds it."""
+    import fcntl  # noqa: PLC0415
+
+    path = _lock_path(deployment_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(path, "a+", encoding="utf-8")  # noqa: SIM115 — held open on purpose: the lock is the fd
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fh.close()
+        return None
+    fh.seek(0)
+    fh.truncate()
+    fh.write(str(os.getpid()))
+    fh.flush()
+    return fh
 
 
-def _process(deployment):
-    """The live ``psutil.Process`` recorded on *deployment*, or ``None``: gone, a zombie, or a
-    recycled pid (no start time recorded, or a different one)."""
+def pid_of(deployment) -> Optional[int]:
+    """The pid of the process running *deployment* — the lock's holder, else one started for it and
+    not yet holding it — or ``None`` when none runs."""
+    import fcntl  # noqa: PLC0415
+
+    path = _lock_path(str(deployment.id))
+    if path.is_file():
+        with open(path, encoding="utf-8") as fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                text = fh.read().strip()
+                if text.isdigit():
+                    return int(text)
+            else:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+    return _starting(str(deployment.id))
+
+
+def _starting(deployment_id: str) -> Optional[int]:
+    """A Python process whose command line names *deployment_id* — typed, still importing."""
     import psutil  # noqa: PLC0415
 
-    ref = recorded(deployment)
-    if ref.pid is None or ref.create_time is None:
-        return None
-    try:
-        proc = psutil.Process(ref.pid)
-        if proc.status() == psutil.STATUS_ZOMBIE or abs(proc.create_time() - ref.create_time) > 1.0:
-            return None
-        return proc
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        return None
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        cmdline = proc.info.get("cmdline") or []
+        if deployment_id in cmdline and proc.info["pid"] != os.getpid():
+            return proc.info["pid"]
+    return None
 
 
 def alive(deployment) -> bool:
-    """Whether the process recorded on *deployment* is running — the same process, not a recycled pid."""
-    return _process(deployment) is not None
+    """Whether a process runs *deployment* now."""
+    return pid_of(deployment) is not None
 
 
-def start(deployment) -> dict[str, str]:
-    """Start the deployment's loop process; the labels that record it (written by the caller)."""
-    from flow_sdk.instances.procs import spawn_detached  # noqa: PLC0415
+def shell_id_of(deployment) -> str:
+    return str((getattr(deployment, "provider_labels", None) or {}).get(SHELL_LABEL) or "")
 
-    env = {**os.environ, DEPLOYMENT_ENV: str(deployment.id)}
-    return labels_of(spawn_detached(_argv(deployment), env=env, log=_log_path(deployment), cwd=Path.cwd()))
+
+def command_of(deployment) -> str:
+    """What is typed into the terminal: this interpreter, on the deployment's file, naming the deployment."""
+    return f"{shlex.quote(sys.executable)} {shlex.quote(str(file_of(deployment)))} {deployment.id}"
+
+
+async def _shell(deployment):
+    """The deployment's terminal — the one it had, else a new one — with a live PTY."""
+    from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+    from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+
+    shell = await Shell.get_by_id(shell_id_of(deployment)) if shell_id_of(deployment) else None
+    if shell is None or shell.status == "closed":
+        node = await ComputeNode.get_local()
+        shell = Shell(
+            compute_node_id=str(node.id),
+            compute_node_uname=getattr(node, "uname", None),
+            name=f"{deployment.name or 'Deployment'} · process",
+            workdir=str(file_of(deployment).parent),
+        )
+        await shell.save()
+    await shell.start_pty(rows=30, cols=120, extra_env={DEPLOYMENT_ENV: str(deployment.id)})
+    _pin(shell)
+    return shell
+
+
+def _pin(shell) -> None:
+    """The loop must outlive its viewers: its terminal is never reaped as an orphan or evicted."""
+    from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry  # noqa: PLC0415
+
+    pty_registry.pin(str(shell.id))
+
+
+async def start(deployment) -> dict[str, str]:
+    """Type the deployment's command into its terminal; the labels that record the terminal. A copy
+    that finds the loop already running leaves at once (the lock), so a start is never a twin."""
+    import asyncio  # noqa: PLC0415
+
+    shell = await _shell(deployment)
+    await shell.write(command_of(deployment))
+    # The command is typed, not yet a process: until the shell has forked it, the next reconcile
+    # would see nothing running and type it again — into the loop's stdin, to run the moment the loop
+    # ends. So this start is over only once the process exists (or plainly never came up).
+    for _ in range(100):
+        if await asyncio.to_thread(pid_of, deployment) is not None:
+            break
+        await asyncio.sleep(0.05)
+    return {SHELL_LABEL: str(shell.id)}
 
 
 def stop(deployment) -> bool:
-    """Stop the recorded process and every process under it; whether none of them is left running."""
+    """Stop the process running *deployment* and everything under it (the terminal stays, showing
+    how it ended); whether nothing of it is left running."""
+    import psutil  # noqa: PLC0415
+
     from flow_sdk.instances.procs import terminate_tree  # noqa: PLC0415
 
-    proc = _process(deployment)
-    return proc is None or not terminate_tree([proc])[1]
+    pid = pid_of(deployment)
+    if pid is None:
+        return True
+    try:
+        proc = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return True
+    return not terminate_tree([proc])[1]
 
 
-__all__ = ["DEPLOYMENT_ENV", "alive", "labels_of", "recorded", "start", "stop"]
+async def close_shell(deployment) -> None:
+    """End the deployment's terminal (a deleted deployment has nothing left to show)."""
+    from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+
+    shell = await Shell.get_by_id(shell_id_of(deployment)) if shell_id_of(deployment) else None
+    if shell is not None:
+        await shell.close()
+
+
+__all__ = [
+    "DEPLOYMENT_ENV", "SHELL_LABEL", "alive", "close_shell", "command_of", "file_of", "hold", "pid_of",
+    "shell_id_of", "start", "stop",
+]
