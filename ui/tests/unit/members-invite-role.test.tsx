@@ -17,6 +17,7 @@ vi.mock('@src/hooks/use-members', () => ({
     members: [
       { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: myRole },
       { user_id: 'dana-id', email: 'dana@example.com', name: 'Dana', role: 'member' },
+      { user_id: 'ari-id', email: 'ari@example.com', name: 'Ari', role: 'admin' },
     ],
     addMembers,
     removeMember: vi.fn(),
@@ -341,5 +342,58 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       expect((await screen.findByRole('alert')).textContent).toBe('Hub said no');
       expect(rowRole('noa@example.com')).toBeTruthy();
     });
+  });
+});
+
+describe('roster — remove (✕) follows the hub ladder', () => {
+  const CONVERSATION = new TypeId('conversation', '22222222-2222-4222-8222-222222222222');
+  const removable = () => screen.queryAllByTestId('member-remove').map((b) => b.getAttribute('aria-label'));
+
+  function openRoster(typeId: TypeId = PROJECT) {
+    render(<MembersAvatarStack typeId={typeId} />);
+    fireEvent.click(screen.getByTestId('members-avatar-stack'));
+  }
+
+  beforeEach(() => {
+    myRole = 'owner';
+  });
+
+  it('lets a project owner remove everyone below them', () => {
+    openRoster();
+
+    expect(removable()).toEqual(['Remove Dana', 'Remove Ari']);
+  });
+
+  it('lets a project editor remove a member, not an admin', () => {
+    myRole = 'editor';
+    openRoster();
+
+    expect(removable()).toEqual(['Remove Dana']);
+  });
+
+  it('lets a project admin remove a member, not a peer admin', () => {
+    myRole = 'admin';
+    openRoster();
+
+    expect(removable()).toEqual(['Remove Dana']);
+  });
+
+  it('gives a plain project member no remove at all', () => {
+    myRole = 'member';
+    openRoster();
+
+    expect(removable()).toEqual([]);
+  });
+
+  it('keeps conversation removal owner-only, as the hub does', () => {
+    myRole = 'admin';
+    openRoster(CONVERSATION);
+    expect(removable()).toEqual([]);
+  });
+
+  it('lets a conversation owner remove anyone else', () => {
+    openRoster(CONVERSATION);
+
+    expect(removable()).toEqual(['Remove Dana', 'Remove Ari']);
   });
 });
