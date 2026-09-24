@@ -365,6 +365,7 @@ async def main() -> int:
         log(step="finished", ok=[c.provider for c in channels if not c.failures])
     finally:
         if watcher is not None:  # the page is read to the end — each thread opened — before anything goes
+            await asyncio.sleep(5)  # the last answer's lines reach the page just after the runner sees it
             (Path(args.watch_out) / "stop").touch()
             await watcher.wait()
         if not args.keep:

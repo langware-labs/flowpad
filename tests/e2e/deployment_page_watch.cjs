@@ -1,12 +1,12 @@
 /**
- * Watch a deployment's page in a real browser while its agent works: a video of the whole run, a
- * screenshot of the thread list every few seconds (with each thread's status as the page shows it),
+ * Watch a deployment's page in a real browser while its agent works: a video of the whole run, its
+ * threads and process console read every second, a screenshot every five (with each thread's status as the page shows it),
  * and — once the run is over — each thread opened, its events screenshotted.
  *
  *   node tests/e2e/deployment_page_watch.cjs <frontend> <agent id> <deployment id> <out dir> <stop file>
  *
  * Runs until <stop file> exists. Writes <out dir>/timeline.jsonl (what the page listed, when),
- * shots/*.png, threads/*.png and the video. Uses ui/node_modules/playwright.
+ * shots/*.png, threads/*.png and the video; each timeline line carries the process console's rows. Uses ui/node_modules/playwright.
  */
 const { mkdirSync, existsSync, appendFileSync } = require('node:fs');
 const { join } = require('node:path');
@@ -37,12 +37,18 @@ const rows = () =>
     els.map((e) => ({ id: e.dataset.testid.replace('deployment-thread-', ''), status: e.dataset.status, text: e.innerText.replace(/\n/g, ' / ').slice(0, 120) })),
   );
 
+/** The process terminal's visible rows — the deployment's console, as the page shows it. */
+const consoleRows = () =>
+  page.$$eval('[data-testid=deployment-process-panel] .xterm-rows > div', (r) => r.map((d) => d.textContent.trimEnd())).catch(() => []);
+
 let n = 0;
 while (!existsSync(stopFile)) {
   const listed = await rows();
-  appendFileSync(join(out, 'timeline.jsonl'), JSON.stringify({ t: new Date().toISOString(), threads: listed }) + '\n');
-  await page.screenshot({ path: join(out, 'shots', `${String(n++).padStart(3, '0')}.png`) });
-  await page.waitForTimeout(5000);
+  appendFileSync(join(out, 'timeline.jsonl'), JSON.stringify({ t: new Date().toISOString(), threads: listed, console: await consoleRows() }) + '\n');
+  // Read every second (the console scrolls), a screenshot every fifth.
+  if (n % 5 === 0) await page.screenshot({ path: join(out, 'shots', `${String(n / 5).padStart(3, '0')}.png`) });
+  n++;
+  await page.waitForTimeout(1000);
 }
 
 // The run is over: open each thread the way a person does (a click), and keep its events.
