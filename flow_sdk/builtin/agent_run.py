@@ -34,8 +34,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.deployment import Deployment
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +65,16 @@ async def dispatch_agent_run(
     deployment: "Deployment",
     prompt: str,
     **options: Any,
-) -> "AgenticProcess":
-    """Run an agent on the machine its deployment places it on.
+) -> "PromptResult":
+    """Run an agent on the machine its deployment places it on — answered as a
+    ``PromptResult`` whose ``executor`` names the process. Never raises for an
+    outcome.
 
-    Raises ``NotImplementedError`` for a non-local deployment rather than
-    quietly running here. A silent local fallback is exactly how "it ran in the
-    cloud" becomes a lie, and it would be invisible in the returned process.
+    A non-local deployment answers NOT_APPLICABLE rather than quietly running
+    here. A silent local fallback is exactly how "it ran in the cloud" becomes a
+    lie, and it would be invisible in the answer.
     """
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
     # An agent placement is always node-backed, so this resolves; the fallback
     # keeps the lifecycle emission addressable rather than crashing the run if a
     # row ever arrives with a provider that is not.
@@ -89,18 +92,24 @@ async def dispatch_agent_run(
 
     if not deployment.is_local:
         _emit(TAG_RUN_FAILED, node_id, {**base, "error": "no transport to a remote node"})
-        raise NotImplementedError(
+        return PromptResult.not_applicable(
             f"agent {agent_name!r} is deployed on compute node {node_id} "
             f"(kind {deployment.kind!r}), which cannot be reached from here yet. "
             "Remote runs need the inbound event relay; running it locally instead "
             "would misreport where it executed."
         )
 
-    try:
-        process = await deployment.launch(prompt, **options)
-    except Exception as exc:
-        _emit(TAG_RUN_FAILED, node_id, {**base, "error": str(exc)})
-        raise
+    answer = await deployment.launch(prompt, **options)
+    if not answer.ok:
+        _emit(TAG_RUN_FAILED, node_id, {**base, "error": answer.detail})
+        return answer
+    _emit(TAG_RUN_STARTED, node_id, {**base, "process_id": process_id_of(answer)})
+    return answer
 
-    _emit(TAG_RUN_STARTED, node_id, {**base, "process_id": process.id})
-    return process
+
+def process_id_of(answer) -> "str | None":
+    """The process id an answer's ``executor`` names, or None."""
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+    executor = getattr(answer, "executor", None)
+    return TypeId(executor).id if executor else None

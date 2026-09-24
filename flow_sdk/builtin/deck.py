@@ -1,9 +1,9 @@
 """``Deck`` — a folder-backed generated presentation.
 
-A deck is a folder under ``<project>/assets/decks/<slug>/`` produced by the
+A deck is a folder under ``<project>/agentic-assets/deck/<slug>/`` produced by the
 `decker` skill from a ``deck_template``:
 
-    assets/decks/<slug>/
+    agentic-assets/deck/<slug>/
       deck.json      # build record: {title, template, slides[]}
       <name>.html    # self-contained Reveal deck (inlined CSS/JS + base64 media)
 

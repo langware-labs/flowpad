@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { APIEntity, getMembers, type Participant, type TypeId, type AnyEntity } from '@sdk';
+import { getMembers, type Participant, type TypeId, type AnyEntity } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import {
   useMembershipAvailability,
@@ -60,11 +60,13 @@ export interface UseMembersResult {
   /** Re-fetch via ``getMembers``. Caller uses this after actions that may
    *  have changed membership (invite, leave, role change). */
   refresh: () => Promise<void>;
-  /** Invite one or more members by email in a single ``share`` round-trip —
-   *  the same path every other invite flow uses. De-dupes + drops blanks
-   *  first; recipients only appear in ``members`` after they accept + join
-   *  hub-side. */
-  addMembers: (emails: string[]) => Promise<void>;
+  /** Invite one or more members in a single ``share`` round-trip — the same
+   *  collapsed shape ``APIEntity.share`` itself takes. ``idOrEmail`` is
+   *  either an email or a hub user id (a contact the address book knows only
+   *  by id, e.g. from a conversation roster, has no email to invite by);
+   *  ``role`` is optional and only a Project invite honours it. Recipients
+   *  only appear in ``members`` after they accept + join hub-side. */
+  addMembers: (users: { idOrEmail: string; role?: string }[]) => Promise<void>;
   /** Remove a member by user id. OWNER ONLY — the hub rejects non-owner (and
    *  owner-self) callers with 403, which throws here. Refreshes after. */
   removeMember: (userId: string) => Promise<void>;
@@ -142,11 +144,10 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
   }, [typeId, available]);
 
   const addMembers = useCallback(
-    async (emails: string[]) => {
-      const cleaned = Array.from(new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean)));
-      if (!cleaned.length) return;
+    async (users: { idOrEmail: string; role?: string }[]) => {
+      if (!users.length) return;
       if (!entity) throw new Error('useMembers: entity not loaded; cannot invite');
-      await entity.share(cleaned);
+      await entity.share(users);
       await refresh();
     },
     [entity, refresh],

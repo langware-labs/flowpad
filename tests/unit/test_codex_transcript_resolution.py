@@ -368,6 +368,20 @@ def test_codex_headless_prefers_rollout_over_process_local_stream(isolated_codex
 
 
 @pytest.mark.asyncio
+def test_codex_never_launched_process_adopts_no_rollout_from_its_cwd(isolated_codex_home):
+    """A second process on the same cwd must not claim the first one's session.
+
+    With no rollout of its own and no launch stamp, the newest rollout for the
+    cwd is someone else's. ``prompt()`` names the process before it launches, so
+    it adopted that id, streamed the other turn's ``turn.completed`` and ended
+    before its own prompt was typed (markdown_index incremental, 2026-09-23).
+    """
+    _write_rollout(isolated_codex_home.codex_sessions_dir, thread_id="019dfe96-cc36-7d80-a907-de19575a6ea4", cwd="/repo")
+    proc = _process(visible=True)
+
+    assert proc.driver.transcript_descriptor(proc) is None
+
+
 async def test_transcript_prompts_uses_visible_codex_rollout(isolated_codex_home):
     thread_id = "019dfe96-cc36-7d80-a907-de19575a6ea4"
     _write_rollout(
@@ -376,7 +390,12 @@ async def test_transcript_prompts_uses_visible_codex_rollout(isolated_codex_home
         cwd="/repo",
         prompt="Return the canonical prompt.",
     )
-    proc = _process(visible=True, session_id="flowpad-preassigned", status=ProcessStatus.NEW.value)
+    proc = _process(
+        visible=True,
+        session_id="flowpad-preassigned",
+        status=ProcessStatus.NEW.value,
+        context_data={AgenticProcessContextKey.WORKER_STARTED_AT.value: "2026-05-06T21:39:48.000Z"},
+    )
 
     req = MagicMock()
     req.sub_path = "prompts"

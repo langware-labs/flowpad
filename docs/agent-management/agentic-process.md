@@ -296,8 +296,13 @@ type WizardProcessResult<T> = {
   status: 'done' | 'cancel' | 'error';
   data: T | null;
   errorStr?: string | null;
+  answer?: WizardResult; // the same close, as every wizard run answers
 };
 ```
+
+`status` is the agent's own word and keeps a cancel apart from an error for the
+person; `answer` is the backend's `WizardResult` for the same close (`OK` with
+`data` as its value when done, `NOT_YET` with the reason otherwise).
 
 There are two completion paths with the same backend contract. The popup footer
 calls `completeWizard(process, result)`. An agent running inside the wizard can

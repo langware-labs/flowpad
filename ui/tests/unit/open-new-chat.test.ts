@@ -48,7 +48,7 @@ describe('openNewChat + NavigationActions', () => {
 
   it('launches a Terminal-mode chat on a PTY, without eagerly starting it', async () => {
     const { createProcessSpy, startSpy } = stubComputeNode();
-    vi.spyOn(viewMode, 'getViewMode').mockReturnValue(viewMode.ViewMode.Advanced);
+    vi.spyOn(viewMode, 'getEffectiveViewMode').mockReturnValue(viewMode.ViewMode.Advanced);
     const navigation = new NavigationActions(vi.fn(), null);
     const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
 
@@ -65,9 +65,28 @@ describe('openNewChat + NavigationActions', () => {
     expect(embedMock).not.toHaveBeenCalled();
   });
 
-  it('launches a Chat-mode chat headless', async () => {
+  it('follows the mode on screen, not the saved preference', async () => {
+    // A `?viewMode=advanced` URL displays Terminal over a saved Standard (a load
+    // only displays; a switch saves). The chat started from that page is the
+    // one the user is looking at: a PTY, opened in Terminal.
     const { createProcessSpy } = stubComputeNode();
     vi.spyOn(viewMode, 'getViewMode').mockReturnValue(viewMode.ViewMode.Standard);
+    vi.spyOn(viewMode, 'getEffectiveViewMode').mockReturnValue(viewMode.ViewMode.Advanced);
+    const navigation = new NavigationActions(vi.fn(), null);
+    const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
+
+    await openNewChat(navigation);
+
+    expect(createProcessSpy).toHaveBeenCalledWith(
+      { workdir: '/tmp/project', processType: 'chat' },
+      { watchProcess: false, visible: true, pty_mode: true },
+    );
+    expect(openShell).toHaveBeenCalledWith('process-123', { viewMode: 'advanced' });
+  });
+
+  it('launches a Chat-mode chat headless', async () => {
+    const { createProcessSpy } = stubComputeNode();
+    vi.spyOn(viewMode, 'getEffectiveViewMode').mockReturnValue(viewMode.ViewMode.Standard);
     const navigation = new NavigationActions(vi.fn(), null);
     const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
 
@@ -87,7 +106,7 @@ describe('openNewChat + NavigationActions', () => {
 
   it('launches a vibe chat headless and carries the vibe view mode', async () => {
     const { createProcessSpy } = stubComputeNode();
-    vi.spyOn(viewMode, 'getViewMode').mockReturnValue(viewMode.ViewMode.Vibe);
+    vi.spyOn(viewMode, 'getEffectiveViewMode').mockReturnValue(viewMode.ViewMode.Vibe);
     const navigation = new NavigationActions(vi.fn(), null);
     const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
 
@@ -113,7 +132,7 @@ describe('openNewChat + NavigationActions', () => {
    */
   it('stamps the chat kind and the project target so every mode lists the session', async () => {
     const { createProcessSpy } = stubComputeNode({ id: 'proj-1' });
-    vi.spyOn(viewMode, 'getViewMode').mockReturnValue(viewMode.ViewMode.Advanced);
+    vi.spyOn(viewMode, 'getEffectiveViewMode').mockReturnValue(viewMode.ViewMode.Advanced);
     const navigation = new NavigationActions(vi.fn(), null);
     vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
 
@@ -134,7 +153,7 @@ describe('openNewChat + NavigationActions', () => {
 
   it('does not embed the chat persona in Dev mode', async () => {
     stubComputeNode();
-    vi.spyOn(viewMode, 'getViewMode').mockReturnValue(viewMode.ViewMode.Dev);
+    vi.spyOn(viewMode, 'getEffectiveViewMode').mockReturnValue(viewMode.ViewMode.Dev);
     const navigation = new NavigationActions(vi.fn(), null);
     vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
 

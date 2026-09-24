@@ -38,7 +38,9 @@ A piece of **code the user should see and run** (not a whole app) is a snippet:
 marker lines (`//` for js/rs). The file runs as written, so it must be a complete
 program (rust: `fn main() { ... }` inside the snippet region). It opens with a Run
 button and the output below;
-`flow snippet run <path>` runs it the same way. Details: flowpad-navigation skill.
+To run it yourself, show it FIRST, then `flow snippet run <path>` with the `path`
+the show answered — never a separate copy (`python3 -c ...`), which is not the
+program the user sees. Details: flowpad-navigation skill.
 
 Exit 0 = shown, done — do not verify, do not re-run. (`2` bad args, `4` entity not
 found, `5` server down.) Rules:

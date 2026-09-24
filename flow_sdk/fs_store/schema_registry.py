@@ -165,6 +165,14 @@ class TypeInfo:
                 and self.asset_hash_fn.func is entity_document_fingerprint
             ):
                 self.asset_hash_fn = partial(entity_document_fingerprint, self)
+        elif getattr(self.shape, "main", None):
+            # Any other asset with a main file is fresh by that file too, not by its folder alone.
+            from flow_sdk.assets.identity import manifest_fingerprint  # noqa: PLC0415
+
+            if self.asset_hash_fn is None or (
+                isinstance(self.asset_hash_fn, partial) and self.asset_hash_fn.func is manifest_fingerprint
+            ):
+                self.asset_hash_fn = partial(manifest_fingerprint, self)
 
     @property
     def is_entity_document(self) -> bool:
@@ -928,8 +936,17 @@ class SchemaRegistry:
     # table is the standing rule. Runtime-only, like ``entity_cls`` — not part
     # of ``to_dict()`` or the schema hash. A miss is None, never a mint.
     _kinds: ClassVar[dict[str, Any]] = {}
-    _kind_loaders: ClassVar[list[tuple[str, Callable[[], Any]]]] = []
-    _kind_of_shape: ClassVar[dict[int, str]] = {}   # id(shape) → kind; the O(1) inverse
+    #: Loaded on a miss, and handed the kind's NAMESPACE — ``None`` for ours, the
+    #: marker's name for anyone else's. Never chosen by how a kind is SPELLED.
+    #: Called SYNCHRONOUSLY from ``kind_type``, so it may not await.
+    _kind_loader: ClassVar[Optional[Callable[[Optional[str]], Any]]] = None
+    #: id(shape) → (shape, kind); the O(1) inverse. The SHAPE is kept beside its
+    #: kind, and read back only when it is still that same object: a shape is not
+    #: always hashable (``list[str]``) so the key must be its address, and an
+    #: address is reused once the object dies — a collected class handed its kind
+    #: to whatever was allocated there next (a parametrization once read as
+    #: ``test.triage``). Holding the shape also stops that reuse.
+    _kind_of_shape: ClassVar[dict[int, tuple[Any, str]]] = {}
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
     #: Run when an entity class first binds to a type (see ``on_entity_bound``).
@@ -1030,15 +1047,25 @@ class SchemaRegistry:
             )
         cls._kinds[kind] = shape
         if derived:
-            cls._kind_of_shape.setdefault(id(shape), kind)
+            cls._kind_of_shape.setdefault(id(shape), (shape, kind))
         else:
-            cls._kind_of_shape[id(shape)] = kind
+            cls._kind_of_shape[id(shape)] = (shape, kind)
+        # Registering IS naming: the class carries the name it was bound under, so a
+        # dump writes the key a read looks up. Stamped HERE rather than at the call
+        # site because this is the only writer of the binding — a registration made
+        # any other way would otherwise leave the class writing a name nothing
+        # resolves, which is the bug this pairing exists to prevent. The inverse map
+        # cannot serve: it is keyed on ``id(shape)``, so a subclass that declares no
+        # kind of its own has no entry, while the stamp inherits like ``spec_kind``.
+        if isinstance(shape, type) and hasattr(shape, "__spec_tag__"):
+            shape.__spec_tag__ = kind
 
     @classmethod
     def kind_for(cls, shape: Any) -> "str | None":
         """The kind a class is registered under, or None. Inverse of ``kind_type``."""
         cls._ensure_loaded()
-        return cls._kind_of_shape.get(id(shape))
+        known, kind = cls._kind_of_shape.get(id(shape), (None, None))
+        return kind if known is shape else None
 
     @classmethod
     def kind_type(cls, kind: str) -> Any:
@@ -1057,21 +1084,28 @@ class SchemaRegistry:
         cls._ensure_loaded()
         hit = cls._kinds.get(kind)
         if hit is None and kind not in cls._types:
-            # A kind can be defined by code loaded on demand (a data source asset's value class):
-            # the loader owning its namespace gets a chance to register it, then look again.
-            for prefix, loader in cls._kind_loaders:
-                if kind.startswith(prefix):
-                    loader()
+            # A kind can be defined by code loaded on demand (an asset's value class).
+            # WHOSE it is decides who is asked, and the kind says so itself: bare is
+            # ours, ``--ns--.`` is theirs. Keying this on a spelling (it was
+            # ``kind.startswith("ingest.")``) asked the wrong loader for anything
+            # spelled differently, and could never reach an authored asset at all.
+            from flow_sdk.tags.grammar import split_namespace  # lazy: avoid import cycle
+
+            if cls._kind_loader is not None:
+                cls._kind_loader(split_namespace(kind)[0])
             hit = cls._kinds.get(kind)
         return hit
 
     @classmethod
-    def add_kind_loader(cls, prefix: str, loader: Callable[[], Any]) -> None:
-        """Ask ``loader`` whenever a kind under ``prefix`` misses — for kinds whose classes are defined
-        by code the process loads lazily. The loader must be cheap once loaded; it is never dropped,
-        so code loaded later (an authored source) still answers."""
-        if (prefix, loader) not in cls._kind_loaders:
-            cls._kind_loaders.append((prefix, loader))
+    def set_kind_loader(cls, loader: Callable[[Optional[str]], Any]) -> None:
+        """Who to ask when a kind misses. Handed the namespace: ``None`` means ours.
+
+        Must be cheap once loaded and must not await — it runs inside ``kind_type``,
+        which a pydantic validator calls while restoring a row. Which loader serves
+        which namespace is the caller's to decide, because the module that owns the
+        loaders is the one that knows.
+        """
+        cls._kind_loader = loader
 
     @classmethod
     def register_crud_type(cls, type_name: str, *, icon: str | None = None) -> None:

@@ -89,3 +89,50 @@ async def test_delete_releases_broadcast_key(initialize_test_db) -> None:
     assert str(ap.id) not in _LAST_BROADCAST_KEYS
     assert ap._last_broadcast_key is None
     assert str(ap.id) not in _REINDEX_WATERMARKS
+
+
+# A transport flip starts a new broadcast history. The key only records what the
+# transcript FLUSH last broadcast; a headless turn's end edge goes out on the
+# prompt path, so the key can still read the old turn's ``busy=True`` triple. A
+# native-xterm turn's busy edges come from the flush alone, so a stale key made
+# the first PTY turn a "duplicate": the UI never saw ``busy=True``, its transport
+# gate passed on a stale idle, and the switch back to chat 409'd with nothing to
+# retry it (ui/tests/long_tests/vibe_return_from_terminal_reconcile.test.tsx).
+
+
+class _StopAfterFlip(Exception):
+    pass
+
+
+@pytest.mark.asyncio
+async def test_headless_to_pty_flip_forgets_broadcast_key(initialize_test_db, monkeypatch) -> None:
+    ap = await _make_ap()
+    ap.pty_mode = False
+    ap.shell_id = str(uuid.uuid4())
+    await ap.save(notify=False)
+    ap._last_broadcast_key = ("running", True, "working")
+
+    async def _stop(self, *a, **kw):
+        raise _StopAfterFlip
+
+    # ``shell()`` is the first await after the flip — stop there, no PTY spawned.
+    # The launch runs on a re-read row, so the flip is observed through the
+    # process-scoped key (and the row it would have saved), not ``ap``.
+    monkeypatch.setattr(AgenticProcess, "shell", _stop)
+    # The open's own failure handling swallows the stop into an ApiFailResponse.
+    await ap.start_pty(visible=True, retry=True)
+
+    assert ap._last_broadcast_key is None
+
+
+@pytest.mark.asyncio
+async def test_pty_to_headless_flip_forgets_broadcast_key(initialize_test_db) -> None:
+    ap = await _make_ap()
+    ap.pty_mode = True
+    await ap.save(notify=False)
+    ap._last_broadcast_key = ("running", True, "working")
+
+    result = await ap._enter_cli_mode()
+
+    assert getattr(result, "status", None) != "FAIL"
+    assert ap._last_broadcast_key is None

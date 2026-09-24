@@ -309,3 +309,19 @@ async def test_the_stream_names_the_entry_each_frame_came_from(
     assert ids[3] in named, (
         f"...and so must the assistant frame that follows it; named={named}"
     )
+
+
+@pytest.mark.asyncio
+async def test_a_client_holding_nothing_gets_the_session_from_the_start(
+    initialize_test_db,
+) -> None:
+    """A pane that mounted before the session had a transcript — a deployment's turn, run by that
+    deployment's own process — holds no entry at all. Watermarking at open would call the turn's
+    head (its prompt, its first tool call) history, and the pane would sit empty until the turn
+    ended. Holding nothing, everything on disk is news."""
+    ap, _path, _session_id = await _session_whose_turn_already_ended()
+
+    body = await _drain(ap, from_start=True)
+
+    assert "earlier answer" in body
+    assert "DRAINED-PROMPT" in body and "HEAD-OUTPUT" in body and "TAIL-OUTPUT" in body

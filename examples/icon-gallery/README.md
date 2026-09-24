@@ -1,3 +1,6 @@
+---
+id: 7221f5ed-5c6a-4c29-823a-f054ea71d179
+---
 # Icon gallery
 
 Every icon this backend serves, drawn by the SDK — the showcase for

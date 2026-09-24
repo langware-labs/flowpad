@@ -310,3 +310,24 @@ def attach_message(
         return
     data = _envelope(resp, not_found_hint=f"Conversation not found: {cid}")
     _emit_send_result(cid, data)
+
+
+@conversation_app.command(
+    "reply",
+    help="Say something to the person in a conversation, on the channel they use (WhatsApp, email, voice …).",
+)
+def reply_on_channel(
+    conversation_id: Annotated[str, typer.Argument(help="Conversation id (bare uuid).")],
+    text: Annotated[str, typer.Argument(help="What to say.")],
+) -> None:
+    from flow_sdk.cli.commands._common import local_request  # noqa: PLC0415
+
+    cid = (conversation_id or "").strip()
+    if not cid or not (text or "").strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "conversation_id and text are required")
+    url = f"http://127.0.0.1:{_discover_port()}/api/v1/conversations/{cid}/reply"
+    body = local_request("POST", url, json={"text": text}, timeout=30).json()
+    if body.get("status") != "SUCCESS":
+        _fail(7, "REFUSED", str(body.get("message") or body))
+    _ok({"conversation_id": cid, **(body.get("data") or {})})
+

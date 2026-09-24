@@ -7,27 +7,27 @@
     "gmail": "Gmail",
     "slack": "Slack"
   },
-  "description": "Reaches a channel through a local agent harness — how Gmail and Slack are read today.",
+  "description": "Reads Gmail or Slack by having your Claude Code session fetch it with the connectors you already authorised there.",
   "kind": "datasource.agent",
   "config": {
     "connector": {
       "type": "text",
-      "label": "Connector",
+      "label": "Service",
       "placeholder": "gmail | slack",
       "account_key": true,
-      "hint": "This is the CHANNEL, and half of every thread key. Required — an empty or unknown connector parks the source on config_error."
-    },
-    "harness": {
-      "type": "text",
-      "label": "Harness",
-      "placeholder": "claude",
-      "hint": "The worker CLI that runs the fetch. Without a launchable one the source parks on config_error."
+      "hint": "gmail or slack."
     },
     "mailbox": {
       "type": "text",
-      "label": "Mailbox",
-      "placeholder": "INBOX — or a channel ID (C…) for slack",
-      "hint": "What to walk: a mailbox/label for gmail (defaults to INBOX), a channel ID for slack (required — a channel id cannot be guessed). Watching several? Add one source per mailbox."
+      "label": "Label or channel",
+      "placeholder": "INBOX",
+      "hint": "Gmail: a label (defaults to INBOX). Slack: a channel ID (C…), required."
+    },
+    "harness": {
+      "type": "text",
+      "label": "Worker CLI",
+      "hint": "The agent CLI that does the reading. Defaults to claude.",
+      "advanced": true
     },
     "agent": {
       "type": "text",

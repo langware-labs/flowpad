@@ -182,8 +182,10 @@ async def test_a_trigger_fired_run_reports_at_instance_scope_not_entity_scope(tm
             "an unattended run must report at instance scope, or the footer chip "
             "never sees it — the run is correct and invisible"
         )
-        # ONE SEGMENT: each wizard is its own activity ROOT.
-        assert seen.get("activity_path") == "wizard-dev-toolchain"
+        # ONE SEGMENT: each wizard is its own activity ROOT — the address the
+        # entity advertises, which is also its run slot (unique per wizard).
+        assert seen.get("activity_path") == wizard.activity_path
+        assert "/" not in wizard.activity_path and "dev-toolchain" in wizard.activity_path
         assert seen.get("trusted") is True, "a shipped wizard runs unprompted"
     finally:
         await _cleanup(wizard, trigger)

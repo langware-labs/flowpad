@@ -136,8 +136,35 @@ Resolving to `flow` emits **no prefix** — that is what "the default is silent"
 means mechanically. What we ship is ours by definition, so shipped assets declare
 nothing and are never asked.
 
+### Writing a kind — the tag written IS the key registered
+
+A registry nothing can read back is not a registry. The name a value carries on the
+wire (`Tagged`'s `spec_kind`, `spec.py`) is the name the class is REGISTERED under —
+`DataSpec.__spec_tag__`, stamped at registration — never the bare `spec_kind` the
+author declared. Ours is bare, so every shipped row is byte-identical either way;
+an external's carries its marker, which is the only way a later read can find the
+class again.
+
+This was not always true, and the asymmetry was invisible for exactly the reason it
+was dangerous: registration qualified and the dump did not, so the bug could only
+appear for an authored asset — and every asset we ship is ours. A project-authored
+driver minted `ingest.feed.item.usgs_earthquake` under its namespace, wrote its 252
+values under the bare name, and every read of them failed *in the process that had
+just written them*. The source parked on `transient_error`; the rows were deleted by
+hand. Keep the two sides together when either moves.
+
 A namespace is **frozen at first publish**: changing it re-keys every kind the
-asset ever minted.
+asset ever minted. That is now a mechanism rather than a rule to remember —
+`ensure_namespace` returns a manifest that already names one untouched, so a rename,
+a re-seed or a second call cannot re-key a project that has minted anything.
+
+**A project is seeded when it is indexed.** `ensure_project_namespace` writes
+`agentic-assets/project_manifest/project_manifest.json` with `ns` taken from the folder
+name, folded to what a marker can hold (`[a-z0-9_]` — `ai-course` becomes `ai_course`),
+and every asset under the project inherits it. A name that folds to nothing stays ours.
+A **system project is never seeded**: what we ship is ours by definition, and stamping a
+namespace on it would push every kind its shipped drivers mint under a marker while the
+bare names already written stopped resolving.
 
 ## An external must name its ontology
 
@@ -152,17 +179,58 @@ with the shipped one and one of them would lose in silence.
 | - | --------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | 1 | `DataSpec.__pydantic_init_subclass__` (`spec.py`) — any spec class, on import           | whatever the loader declared; nothing ⇒ ours                 |
 | 2 | `register_builtin_kinds()` (`_kinds.py`) — explicit SDK kinds (`fs_ref`)                | always ours                                                  |
-| 3 | an asset loaded from a folder — `load_driver`, the lazy `add_kind_loader("ingest.", …)` | declared by `_importing`; an external naming none is refused |
+| 3 | an asset loaded from a folder — `load_driver`, and the lazy loaders keyed by NAMESPACE (`_kinds.py`) | declared by `_importing`; an external naming none is refused |
 | 4 | an `asset_spec` registered under its type name (rule 4)                                 | the type's own project                                       |
 
 Paths 1 and 3 are one mechanism: loading an asset imports its module, and the
 class declaration is what registers. Scoping the declaration to that import
 is what makes it safe — a name cannot be claimed before the loader has had its say.
 
+### Who is asked, on a miss
+
+A kind that misses is loaded by its OWNER, and the kind says who that is: bare is
+ours, `--ns--.` is theirs (`SchemaRegistry.kind_type` → `set_kind_loaders`).
+
+* **ours** — one loader, covering everything the SDK vouches for including the shipped
+  driver folders, built once per process.
+* **an external's** — `load_namespace_value_kinds(ns)` imports the data drivers of the
+  project that owns `ns`, found through the `namespace → project root` map
+  (`fs_store/operations/namespace_roots.py`). An unknown namespace loads NOTHING: no
+  search of other projects, because finding a kind under the wrong owner is the exact
+  collision the namespace exists to prevent.
+
+The key used to be a dot PREFIX (`add_kind_loader("ingest.", …)`), which is a claim
+about what a kind is *about*; a loader answers for what it *owns*. Under the prefix
+rule the only registered loader scanned the shipped tree, so an authored asset's kind
+was unreachable from a read at all — it resolved only in a process that had already
+synced that source, which made the failure look restart-shaped and intermittent.
+
+The map is read SYNCHRONOUSLY (`kind_type` runs inside a pydantic validator and cannot
+await), and filled by the paths that can: the manifest's post-sync hook, project
+creation, and the boot sweep. It is a cache of a fact on disk — an empty map means
+"nobody has told us yet", never "no such namespace", so a miss is never memoized.
+
+Which says what an asset CANNOT do: a folder with no module to import mints
+nothing. A `compute_op` asset is `compute_op.json` plus `setup.md`, so an op's
+`output_spec_kind` names a primitive or a kind flow_sdk registers — never a shape
+the op declares for itself. The day one needs to, the mechanism already exists: the
+asset's kinds are namespaced by its project, and the external loader already imports
+that project's assets. Not a second mechanism.
+
 ## Not yet done
 
-* `Project.ns` is not wired, and nothing stamps a project's namespace into its
-  assets' documents. Until it is, an asset declares its own `ns` or is ours.
+* A legacy row written before the write side was fixed carries a BARE tag for an
+  authored kind, and nothing can resolve it. Such rows are skipped with a warning on a
+  list read (`sqlite_driver.get_all`) and never migrated — a cross-namespace search for
+  a bare name is the collision the namespace exists to prevent.
+
+* A driver folder added to a project AFTER that namespace's first miss in a process
+  resolves only once the map is dropped (a re-index) or the source actually runs, which
+  registers it through the async `resolve` path anyway.
+
+* The seed is a folder NAME, so two checkouts called `ai-course` seed one namespace.
+  That is allowed — a namespace is an unvalidated claim and collisions are contained in
+  their own subtree — but it is a seed, not an identity.
 
 * `ns` is declared on `DataDriverSpec` only. `AssetDocumentSpec` is
   `extra="ignore"`, so an `ns` key in any other asset document is read by the
@@ -172,7 +240,9 @@ is what makes it safe — a name cannot be claimed before the loader has had its
 * ComputeOp is the first type with a `subkind` (`cli | prompt | agent | ask`):
   each subkind's structure is its own DataSpec under the kind
   `compute_op.<subkind>`, nested in `exe_data` rather than flattened onto the op
-  (see [call-returns](snippets/call-returns.md)).
+  (see [call-returns](snippets/call-returns.md)). An op cannot register a kind of its own
+  (see Coverage above) — no shipped op needs one, and giving a JSON document a
+  module to import is a bigger decision than it looks.
 
 * Rules 1–2 (`subkind`, derived `kind`, payload-kind) are otherwise unimplemented. The
   blockers: `Conversation.kind` is a two-repo change gating hub authorization,

@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro';
 import { SharedTaskView } from '@src/components/task-bar/SharedTaskView';
-import { PRIORITY_CONFIG, STATUS_LABELS } from '@src/components/task-bar/constants';
-import { openArtifact } from '@src/components/task-bar/task-utils';
+import { PRIORITY_CONFIG, STATUS_LABELS, statusLabel } from '@src/components/task-bar/constants';
+import { isDelegatedTask, openArtifact, STATUS_FAMILIES, statusFamily } from '@src/components/task-bar/task-utils';
 import { Input } from '@src/components/ui/input';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useParentTask } from '@src/hooks/use-parent-task';
@@ -13,6 +13,7 @@ import { notify } from '@src/notifications';
 import { Archive, ArrowLeft, FileText, User as UserIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnalyzeStatusButton } from './AnalyzeStatusButton';
+import { DelegationBlock } from './DelegationBlock';
 import { MemberTasksSection } from './MemberTasksSection';
 import { OwnerButton } from './OwnerButton';
 import { ParentTaskBlock } from './ParentTaskBlock';
@@ -28,7 +29,7 @@ interface TaskAssetEditorProps {
   task?: Task;
 }
 
-const STATUS_OPTIONS: { value: string; label: string }[] = ['to_do', 'in_progress', 'done'].map((value) => ({
+const STATUS_OPTIONS: { value: string; label: string }[] = STATUS_FAMILIES.map((value) => ({
   value,
   label: STATUS_LABELS[value],
 }));
@@ -162,8 +163,14 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
   const memberMode = !!parentId && !!parent;
 
   // Status segmented control — always the task's OWN status (a member task owns
-  // nothing but this), so it's identical in both modes.
-  const statusControl = (
+  // nothing but this), so it's identical in both modes. A delegated task's status
+  // is the ledger's to write (its owner reports it): shown, not set.
+  const family = statusFamily(status);
+  const statusControl = isDelegatedTask(task) ? (
+    <span className="rounded-full border px-3 py-1 text-xs font-medium" data-testid="task-ledger-status">
+      {statusLabel(status)}
+    </span>
+  ) : (
     <div className="inline-flex overflow-hidden rounded-full border">
       {STATUS_OPTIONS.map((opt) => (
         <button
@@ -171,7 +178,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           onClick={() => applyStatus(opt.value)}
           className={cn(
             'px-3 py-1 text-xs font-medium transition-colors',
-            status === opt.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
+            family === opt.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
           )}
         >
           {opt.label}
@@ -371,6 +378,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           TaskAttachments' internal `flex-1` is neutralized by the plain block
           wrapper so it can't grow and overlap the comments below it. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <DelegationBlock task={task} />
         <div className="shrink-0">
           <TaskDescription task={task} save={save} />
         </div>

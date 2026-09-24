@@ -7,12 +7,6 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@src/components/ui/dropdown-menu';
 
 import { AGENT_EFFORTS, AGENT_MODEL_TIERS, AGENT_PERMISSION_MODES, AGENT_WORKER_TYPES } from './agent-vocabularies';
 
@@ -37,8 +31,9 @@ function show(value: unknown): string {
 }
 
 /**
- * The settings this place overrides — and only those. Everything not listed
- * uses the definition. Overrides are written into agent.json under `places`.
+ * How this deployment runs: every setting with the value in effect — its own override, else the
+ * agent's (the definition). "Change" makes an override for this deployment only; "Reset" drops it.
+ * Overrides are written into agent.json under `places`.
  */
 export function AgentPlaceConfig({ agent, deploymentId, overrides, onChanged }: AgentPlaceConfigProps) {
   const { t } = useLingui();
@@ -60,8 +55,9 @@ export function AgentPlaceConfig({ agent, deploymentId, overrides, onChanged }: 
     mcp_servers: undefined,
   };
 
-  const overridden = AGENT_PLACE_FIELDS.filter((field) => overrides[field] !== undefined && overrides[field] !== null);
-  const available = AGENT_PLACE_FIELDS.filter((field) => !overridden.includes(field));
+  const isOwn = (field: AgentPlaceField) => overrides[field] !== undefined && overrides[field] !== null;
+  // What the agent itself (the definition) says for a field.
+  const agentValue = (field: AgentPlaceField) => (field === 'mcp_servers' ? t`its own servers` : show(definition[field]));
 
   const write = async (field: AgentPlaceField, value: string | string[] | null) => {
     setBusy(true);
@@ -96,39 +92,52 @@ export function AgentPlaceConfig({ agent, deploymentId, overrides, onChanged }: 
 
   return (
     <div className="flex flex-col gap-2" data-testid="agent-place-config">
-      {overridden.length === 0 && !editing && (
-        <p className="text-xs text-muted-foreground" data-testid="agent-place-no-overrides">
-          <Trans>Uses the definition's config.</Trans>
-        </p>
-      )}
-      {overridden.map((field) => (
-        <div
-          key={field}
-          className="flex items-center gap-3 border-b pb-2 last:border-b-0"
-          data-testid={`agent-place-override-${field}`}
-        >
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">
-              {labels[field]}: {show(overrides[field])}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {field === 'mcp_servers' ? t`Default: the definition's servers` : t`Default: ${show(definition[field])}`}
-            </div>
-          </div>
-          <span className="shrink-0 rounded-full bg-orange-500/15 px-2 py-0.5 text-[11px] text-orange-700 dark:text-orange-400">
-            <Trans>Override</Trans>
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => void write(field, null)}
-            data-testid={`agent-place-reset-${field}`}
+      {AGENT_PLACE_FIELDS.map((field) => {
+        const own = isOwn(field);
+        if (editing?.field === field) return null;
+        return (
+          <div
+            key={field}
+            className="flex items-center gap-3 border-b pb-2 last:border-b-0"
+            data-testid={own ? `agent-place-override-${field}` : `agent-place-inherited-${field}`}
           >
-            <Trans>Reset</Trans>
-          </Button>
-        </div>
-      ))}
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">
+                {labels[field]}: {own ? show(overrides[field]) : agentValue(field)}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {own ? t`The agent's: ${agentValue(field)}` : t`From the agent`}
+              </div>
+            </div>
+            {own ? (
+              <>
+                <span className="shrink-0 rounded-full bg-orange-500/15 px-2 py-0.5 text-[11px] text-orange-700 dark:text-orange-400">
+                  <Trans>This deployment</Trans>
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => void write(field, null)}
+                  data-testid={`agent-place-reset-${field}`}
+                >
+                  <Trans>Reset</Trans>
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy || !!editing}
+                onClick={() => setEditing({ field, draft: '' })}
+                data-testid={`agent-place-add-override-${field}`}
+              >
+                <Trans>Change</Trans>
+              </Button>
+            )}
+          </div>
+        );
+      })}
 
       {editing && (
         <div className="flex flex-wrap items-center gap-2" data-testid="agent-place-override-editor">
@@ -166,29 +175,6 @@ export function AgentPlaceConfig({ agent, deploymentId, overrides, onChanged }: 
           <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
             <Trans>Cancel</Trans>
           </Button>
-        </div>
-      )}
-
-      {available.length > 0 && !editing && (
-        <div className="flex justify-end">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" data-testid="agent-place-add-override">
-                <Trans>+ Override</Trans>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {available.map((field) => (
-                <DropdownMenuItem
-                  key={field}
-                  onSelect={() => setEditing({ field, draft: '' })}
-                  data-testid={`agent-place-add-override-${field}`}
-                >
-                  {labels[field]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       )}
     </div>

@@ -16,8 +16,8 @@ import json
 
 import pytest
 
-from flow_sdk.core.compute.ask import open_question
-from flow_sdk.core.compute.ask_window import ask_url, raise_question
+from flow_sdk.core.compute_op.ask import open_question
+from flow_sdk.core.compute_op.ask_window import ask_url, raise_question
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -25,6 +25,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.fixture(autouse=True)
 def _no_browser(monkeypatch):
     monkeypatch.setenv("FLOWPAD_NO_BROWSER", "1")
+
 
 
 def test_the_url_is_the_chromeless_layout():

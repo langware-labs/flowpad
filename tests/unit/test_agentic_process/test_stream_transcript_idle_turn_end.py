@@ -9,6 +9,11 @@ IDLE ends the turn only for a driver that recognises user turns — Claude's bar
 ``system:init`` is IDLE too — and only once a user turn has landed since the
 stream opened: a reused session's tail is the PRIOR turn's IDLE, and settling on
 it returned before the second prompt was typed (markdown_index incremental).
+
+"Since" is counted from the PROMPT, not from the stream's first read: Copilot
+1.0.88 creates its session record only together with the first ``user.message``,
+so the file as first read already held this turn and a fresh PTY turn never
+ended (markdown_index cold build, 240s cap, 2026-09-23).
 """
 
 import asyncio
@@ -101,3 +106,35 @@ async def test_idle_does_not_end_the_stream_for_a_driver_without_user_turns(tmp_
     transcript.write_text(json.dumps({"type": "system", "subtype": "init"}) + "\n", encoding="utf-8")
 
     await _assert_the_stream_does_not_end(_stream(_IdleOnlyDriver(transcript), "proc-claude-init"))
+
+
+def _prompted(driver, process_id):
+    """Take the prompt-time baseline the way ``prompt()`` does, then stream."""
+    process = SimpleNamespace(id=process_id, driver=driver)
+    AgenticProcess._note_transcript_size_at_prompt(process)
+    return AgenticProcess.stream_transcript.__get__(process)
+
+
+@pytest.mark.long  # 2.3s: the stream's own 2s settle window
+@pytest.mark.timeout(10)
+async def test_a_session_record_born_with_its_first_turn_ends_the_stream(tmp_path, monkeypatch):
+    """Copilot 1.0.88: no file at prompt time; it first appears holding the user turn."""
+    transcript = tmp_path / "events.jsonl"
+    stream = _prompted(_copilot_driver(monkeypatch, transcript), "proc-copilot-lazy-record")
+    transcript.write_text(_rows({"type": "session.start", "data": {}}, *FINISHED_TURN), encoding="utf-8")
+
+    types = [entry.get("type") async for entry in stream(timeout=6, poll_interval=0.05)]
+
+    assert types[-2:] == ["assistant.turn_end", "session.usage_checkpoint"]
+
+
+@pytest.mark.timeout(5)
+async def test_a_prior_turns_idle_does_not_end_a_prompted_stream(tmp_path, monkeypatch):
+    """The prompt-time baseline still holds the reused session's earlier turn."""
+    transcript = tmp_path / "events.jsonl"
+    transcript.write_text(
+        _rows({"type": "session.start", "data": {}}, *FINISHED_TURN, {"type": "session.resume", "data": {}}),
+        encoding="utf-8",
+    )
+
+    await _assert_the_stream_does_not_end(_prompted(_copilot_driver(monkeypatch, transcript), "proc-copilot-reprompt"))

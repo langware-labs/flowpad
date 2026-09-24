@@ -623,7 +623,11 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
 
         // Check if this is the final chunk
         if (flowData.isFinal) {
-          const exitCode = parseInt(flowData.attributes['exit-code'] || '0', 10);
+          // A missing or non-numeric code is UNKNOWN, never success: defaulting to
+          // '0' reported a command that never reported an exit (or never started)
+          // as having exited cleanly. `exitCode` stays undefined.
+          const raw = flowData.attributes['exit-code'];
+          const exitCode = raw !== undefined && /^-?\d+$/.test(raw) ? parseInt(raw, 10) : undefined;
           output.markComplete(exitCode);
         }
       }

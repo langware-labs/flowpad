@@ -228,8 +228,8 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
 
     base, token = hub_session["base_url"], hub_session["api_key"]
     await get_or_create_local_user()
-    # The SAME call `server/app.py` makes: arms the projection lanes and the
-    # agent runner, so a projected inbound message runs the turn.
+    # The SAME call `server/app.py` makes: arms the projection lanes, so an ingested ticket is
+    # projected into the agent's stream inbox.
     start_stream_inbox()
 
     agent_id = await create_hub_agent(base, token, f"desk-agent-{uuid.uuid4().hex[:8]}")
@@ -245,6 +245,16 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
     source = await agent.bind_channel(provider="helpdesk", channel=desk)
     assert source.provider == "helpdesk" and not (source.inbound_allowed_senders or [])
     assert str(source.owner) == str(TypeId(type=EntityType.AGENT.value, id=agent_id))
+
+    # The agent answers where it RUNS: its local deployment's loop (``builtin/agent_loop`` — in the app
+    # a process of its own, here the same code as a task, so the turn stays in this test).
+    import asyncio
+
+    from flow_sdk.builtin.agent_loop import run as run_loop
+
+    deployment = await agent.run_locally()
+    stop = asyncio.Event()
+    loop = asyncio.create_task(run_loop(deployment.id, stop=stop))
 
     nonce = f"okra{uuid.uuid4().hex[:8]}"
     ticket = await _open_ticket(base, bob_token, desk, f"Reply with exactly this word and nothing else: {nonce}")
@@ -265,6 +275,8 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
         scope = await resolve_agent_stream_inbox_scope(agent_id)
         assert ticket in scope.conversation_ids, "the ticket is in the agent's stream inbox, not the user's"
     finally:
+        stop.set()  # what the process's SIGTERM does: the loop ends between turns
+        await loop
         await source.delete()
         await agent.delete()
         assert await delete_hub_agent(base, token, agent_id) < 400, f"LEAKED agent {agent_id}"

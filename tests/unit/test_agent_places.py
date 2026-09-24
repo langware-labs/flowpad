@@ -157,6 +157,39 @@ async def test_places_list_this_computer_first_with_what_each_owns(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_listing_places_creates_none_and_deploying_here_is_idempotent(tmp_path):
+    agent = await _agent(tmp_path, "places-none")
+    assert await list_places(agent) == []
+    assert await agent.deployments() == [], "looking at an agent's places deploys it nowhere"
+
+    first = await agent.deploy("local")
+    again = await agent.deploy("local")
+    assert first.id == again.id
+    rows = await list_places(agent)
+    assert [(r["deployment"].id, r["is_local"], r["answers_email"]) for r in rows] == [(first.id, True, True)]
+
+
+@pytest.mark.asyncio
+async def test_each_place_says_when_it_was_last_active(tmp_path):
+    """This computer: its newest run here. A cloud place: when its machine was last seen (its runs
+    live on its own box). Neither ever: None."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+    agent = await _agent(tmp_path, "places-active")
+    cloud = await _cloud_place(agent)
+    local = await agent.local_deployment()
+    rows = await list_places(agent)
+    assert [r["last_active"] for r in rows] == [None, None]
+
+    run = await AgenticProcess(name="a run", deployment_id=local.id, visible=False, pty_mode=False).save()
+    cloud.status = cloud.status.model_copy(update={"observed_at": "2026-09-23T10:00:00+00:00"})
+    await cloud.save()
+    local_row, cloud_row = await list_places(agent)
+    assert local_row["last_active"] and local_row["last_active"][:19] == run.updated_date.isoformat()[:19]
+    assert cloud_row["last_active"] == "2026-09-23T10:00:00+00:00"
+
+
+@pytest.mark.asyncio
 async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
     from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.builtin.data_source import DataSource, SourceStatus

@@ -1,8 +1,8 @@
-import { SquareTerminal } from 'lucide-react';
+import { Bot, SquareTerminal } from 'lucide-react';
 import * as React from 'react';
 
 import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
-import { providerMetaFor } from '@src/tabs/provider-meta';
+import { knownProviderKey, PROVIDER_META } from '@src/tabs/provider-meta';
 
 /**
  * A harness login's glyph: the vendor's own mark, badged as a terminal.
@@ -25,7 +25,10 @@ import { providerMetaFor } from '@src/tabs/provider-meta';
  * badging it there would be noise on every row.
  */
 export function HarnessMark({ worker, className }: { worker: string; className?: string }) {
-  const { Icon, iconClassName } = providerMetaFor(worker);
+  // Not `providerMetaFor`: its Claude fallback suits a tab strip, but here it drew
+  // Claude's mark on Deep Agents' row. A vendor without a mark gets a generic one.
+  const key = knownProviderKey(worker);
+  const { Icon, iconClassName } = key ? PROVIDER_META[key] : { Icon: Bot, iconClassName: 'text-muted-foreground' };
   return (
     <IconWithBadge
       Base={Icon}

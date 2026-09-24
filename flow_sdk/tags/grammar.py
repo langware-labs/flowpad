@@ -32,6 +32,8 @@ TAG_PATTERN = re.compile(r"^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$")
 
 # A namespace marker segment: ``--<ns>--`` with a non-empty simple name.
 NAMESPACE_SEGMENT_PATTERN = re.compile(r"^--([a-z0-9_]+)--$")
+#: The inverse class, for folding an arbitrary name into one (``namespace_from_name``).
+_NAMESPACE_UNUSABLE = re.compile(r"[^a-z0-9_]")
 
 
 @lru_cache(maxsize=4096)
@@ -106,6 +108,20 @@ def join_namespace(ns: "Optional[str]", tag: str) -> str:
     if not NAMESPACE_SEGMENT_PATTERN.fullmatch(marker):
         raise ValueError(f"{ns!r} is not a usable namespace name")
     return f"{marker}.{tag}" if tag else marker
+
+
+def namespace_from_name(name: str) -> str:
+    """``name`` folded into something a namespace marker can hold, or ``""``.
+
+    A marker segment is ``[a-z0-9_]`` (``NAMESPACE_SEGMENT_PATTERN``) and
+    ``join_namespace`` RAISES on anything else — during an asset's import, where it
+    would take the asset down. Real names are not shaped that way: project folders are
+    full of dashes and capitals, so ``ai-course`` has to become ``ai_course`` before it
+    can name an ontology. Lives HERE because the character class is this module's to
+    own; a caller folding by hand would be a second copy of the rule.
+    """
+    folded = _NAMESPACE_UNUSABLE.sub("_", name.lower()).strip("_")
+    return folded if folded and NAMESPACE_SEGMENT_PATTERN.fullmatch(f"--{folded}--") else ""
 
 
 def tag_ancestors(tag: str, *, include_self: bool = False) -> list[str]:

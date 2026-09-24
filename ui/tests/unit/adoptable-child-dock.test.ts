@@ -51,6 +51,12 @@ describe('isAdoptableChildDock', () => {
     expect(isAdoptableChildDock(DockPointer.forFile('/project/src/main.ts'))).toBe(true);
   });
 
+  it('adopts a running app and a web page — workspace content, not a navigation away', () => {
+    expect(isAdoptableChildDock(new DockPointer(ViewType.APP, `webapp-${ID}`))).toBe(true);
+    expect(isAdoptableChildDock(new DockPointer(ViewType.WEB_APP, 'url/aHR0cHMlM0ElMkYlMkZleGFtcGxlLmNvbQ'))).toBe(true);
+    expect(isAdoptableChildDock(new DockPointer(ViewType.WEB_APP, ''))).toBe(false);
+  });
+
   it('never adopts a workspace anchor or a navigation surface', () => {
     // The process dock is the anchor the workspace is mounted OVER; adopting it
     // nests a workspace inside itself (the shell-under-display corruption).

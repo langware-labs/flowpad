@@ -91,7 +91,16 @@ export interface IDataDriver extends IEntity {
   listed?: boolean;
   /** The cloud creates the account for the owning agent — no form to fill. */
   provisioned?: boolean;
+  /**
+   * How a person starts a call on a source of this driver: `webrtc` (this browser's mic and
+   * speakers), `clip` (a recorded sound file), `dial` (a number the agent calls). Empty: no calls.
+   * Mirrors `DataDriverSpec.calls`; the UI offers the matching control from this alone.
+   */
+  calls?: CallStart | '';
 }
+
+/** The ways a call starts on a source that takes calls (`DataDriverSpec.calls`). */
+export type CallStart = 'webrtc' | 'clip' | 'dial';
 
 // `implements IDataDriver` only checks the class; it contributes no members, so every
 // field declared solely on IDataDriver read as "does not exist". deepAssign populates
@@ -129,6 +138,7 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
   manifest_schema: number = 1;
   listed: boolean = true;
   provisioned: boolean = false;
+  calls: CallStart | '' = '';
 
   /**
    * Re-apply the payload after construction.

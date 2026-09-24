@@ -141,8 +141,12 @@ describe('one-click install: hub → desktop → browser SDK → install', () =>
     const deps = JSON.parse(readFileSync(path.join(targetRoot, 'agentic-assets', 'project_manifest', 'deps.json'), 'utf8'));
     expect(deps.entries.map((e: { typeid: string }) => e.typeid)).toEqual([typeid]);
     expect(deps.entries[0].source_project_id).toBe(sourceId);
+    // Both copies live on dev-1 and carry the publisher's id, so the install is
+    // a second OCCURRENCE of the one row (the index collision policy keeps the
+    // incumbent source copy primary, 67fded8ce) — never a second row.
     const rowOnDev1 = await jsonApi(dev1.apiUrl, `/graph/skill/${skillId}`);
-    expect(rowOnDev1.data.project_id).toBe(targetId);
+    const occurrencePaths = (rowOnDev1.data.asset_occurrences ?? []).map((o: { path: string }) => o.path);
+    expect(occurrencePaths).toContain(path.dirname(copied));
     // A dependency is not something the target published.
     const targetView = await jsonApi(dev1.apiUrl, `/graph/project/${targetId}/published`);
     expect(targetView.data.rows).toEqual([]);

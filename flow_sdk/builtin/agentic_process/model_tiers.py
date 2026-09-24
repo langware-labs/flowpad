@@ -38,10 +38,13 @@ CLAUDE_MODEL_TIERS: dict[str, str] = {
     ModelTier.LG.value: "opus",
 }
 
+# Only models a ChatGPT-login codex offers (``~/.codex/models_cache.json``): that
+# account refuses the retired ``gpt-5.4`` family with a 400 "not supported when
+# using Codex with a ChatGPT account", and the turn dies before it answers.
 CODEX_MODEL_TIERS: dict[str, str] = {
-    ModelTier.SM.value: "gpt-5.4-mini",
-    ModelTier.MD.value: "gpt-5.4",
-    ModelTier.LG.value: "gpt-5.5",
+    ModelTier.SM.value: "gpt-5.6-luna",
+    ModelTier.MD.value: "gpt-5.6-terra",
+    ModelTier.LG.value: "gpt-5.6-sol",
 }
 
 COPILOT_MODEL_TIERS: dict[str, str | None] = {

@@ -60,12 +60,14 @@ export interface BodyRef {
   path: string;
 }
 
-/** One row of the hub-wide directory: a published row plus its publisher and hub-body state. */
+/**
+ * One row of the hub-wide directory: a published row plus its publisher and
+ * hub-body state. The document is readable exactly when `body_ref` is set;
+ * otherwise `body_reason` says why not.
+ */
 export interface DirectoryRow extends PublishedRow {
   source_project_id: string;
   source_project_name: string;
-  body_supported: boolean;
-  body_available: boolean;
   body_reason: BodyReason | null;
   body_ref: BodyRef | null;
 }

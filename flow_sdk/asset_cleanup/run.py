@@ -17,7 +17,10 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 _log = logging.getLogger(__name__)
 
@@ -107,28 +110,36 @@ async def run_asset_cleanup(
     hours: int = 24,
     workdir: str | None = None,
     projects: list[dict] | None = None,
-) -> AssetCleanupResult:
-    """Run the ``asset_cleanup`` agent over ``roots`` and return its findings.
+) -> PromptResult:
+    """Run the ``asset_cleanup`` agent over ``roots``; answer with its findings.
 
     ``roots=None`` collects the default set (user home + projects active in
     the last ``hours``) AND the full project inventory for junk-project
     classification. Pass explicit ``roots`` (tests, targeted scans) to skip
-    projects unless ``projects`` is also given. Raises RuntimeError when the
-    agent asset is missing or the worker reply carries no parseable report.
+    projects unless ``projects`` is also given.
+
+    The answer is the worker's own: ``value`` is the :class:`AssetCleanupResult`
+    when the scan reported, and otherwise the answer says why it did not —
+    no instructions (``NOT_FOUND``), nothing to scan or no ``claude`` here
+    (``NOT_APPLICABLE``), a worker that did not finish or wrote no report
+    (``NOT_YET``). A failed scan is never an empty report: an empty one reads
+    as "nothing is garbage".
     """
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, PromptResult  # noqa: PLC0415
+
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
-    from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
     from flow_sdk.builtin.subagent_loading import load_subagent  # noqa: PLC0415
 
     deployment = await get_agent_local_deployment("asset-cleanup")
     task = load_subagent("asset_cleanup")
     if task is None:
-        raise RuntimeError("asset_cleanup task instructions not found")
+        return PromptResult.not_found("asset_cleanup task instructions not found")
     task_prompt = (
         task.data.get("prompt") or task.data.get("prompt_text") or getattr(task, "prompt_text", None) or ""
     ).strip()
     if not task_prompt:
-        raise RuntimeError("asset_cleanup task instructions are empty")
+        return PromptResult.not_found("asset_cleanup task instructions are empty")
 
     if roots is None:
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
@@ -142,7 +153,7 @@ async def run_asset_cleanup(
             projects = await collect_project_inventory(projects=all_projects)
     root_strs = [str(r) for r in roots]
     if not root_strs:
-        raise RuntimeError("no scan roots to inspect")
+        return PromptResult.not_applicable("no scan roots to inspect")
 
     from flow_sdk.assets.cleanup import collect_asset_inventory  # noqa: PLC0415
 
@@ -168,30 +179,30 @@ async def run_asset_cleanup(
     if projects:
         instruction += "\n## Projects\n\n" + json.dumps(projects, indent=2) + "\n"
 
-    # Fail fast rather than let wait() poll a transcript that never appears:
+    # Answer now rather than let wait() poll a transcript that never appears:
     # resolution is lazy, so this is the same answer the spawn itself would get.
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
         worker_path_env,
     )
 
     if worker_path_env("claude") is None:
-        raise RuntimeError("claude CLI not discovered — cannot run asset_cleanup")
+        return PromptResult.not_applicable("claude CLI not discovered — cannot run asset_cleanup")
 
     # Launch through the named agent: worker, model and system prompt come from
     # the `asset-cleanup` Agent, so what runs here is the same thing the user
     # can inspect under the flowpad_assistant project. Headless one-shot —
     # pty=False routes prompt() to the print-mode driver (no PTY/Shell) and
     # wait=True polls the transcript to a terminal state.
-    proc = await deployment.launch(
+    result = await deployment.launch(
         instruction,
         wait=True,
         name="Asset cleanup scan",
         workdir=workdir or root_strs[0],
     )
-    result = _build_run_result(proc)
-    session_id = proc.session_id or ""
-    if not result.ok:
-        raise RuntimeError(f"asset_cleanup worker: {result.detail} (session {session_id})")
+    proc = await AgenticProcess.get_by_typeid(result.executor) if result.executor else None
+    session_id = (proc.session_id if proc is not None else "") or ""
+    if not result.ok or proc is None:
+        return result
 
     text = result.text or ""
     models_used: list[str] = []
@@ -202,7 +213,11 @@ async def run_asset_cleanup(
 
     report = parse_report(text)
     if report is None:
-        raise RuntimeError(f"asset_cleanup worker returned no parseable report (session {session_id})")
+        return result.model_copy(update={
+            "exit_code": ExitCode.NOT_YET,
+            "detail": f"asset_cleanup worker returned no parseable report (session {session_id})",
+            "text": text,
+        })
 
     findings = [
         AssetCleanupFinding(
@@ -225,11 +240,11 @@ async def run_asset_cleanup(
         sum(1 for f in findings if f.verdict == "garbage"),
         session_id,
     )
-    return AssetCleanupResult(
+    return result.model_copy(update={"text": text, "value": AssetCleanupResult(
         roots=report.get("scanned_roots") or root_strs,
         findings=findings,
         summary=summary,
         session_id=session_id,
         models_used=models_used,
         raw_text=text,
-    )
+    )})

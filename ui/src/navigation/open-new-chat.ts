@@ -1,5 +1,5 @@
 import { AgenticProcess, dataContext, ProcessKind, toplog, type ComputeNode } from '@sdk';
-import { getViewMode, surfaceForViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
+import { getEffectiveViewMode, surfaceForViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
 import { chatTargetForProject } from '@src/lib/chat-target';
 import { embedStandardAgent } from './embed-standard-agent';
 import type { NavigationActions } from './NavigationActions';
@@ -20,7 +20,13 @@ export interface OpenNewChatOptions {
  * recovery): those pin their own transport and must never follow a UI
  * preference.
  *
- * The view mode is the one read, and decides all three of:
+ * The view mode is the one read, and decides all three of the below. It is the
+ * mode ON SCREEN — the dock URL's `?viewMode=` when it carries one, else the
+ * saved preference — not the saved preference alone: loading a mode from the
+ * URL only displays it (the preference is saved on a switch), so a page
+ * showing Terminal from its URL over a saved Standard spawned a headless chat
+ * and flipped the user out of the mode they were looking at.
+ *
  *   - TRANSPORT: only the terminal surface runs an interactive PTY; vibe and
  *     chat are headless print-mode.
  *   - SURFACE: the mode rides `?viewMode=` on the process's own shell URL, so the
@@ -47,7 +53,7 @@ export async function openNewChat(
     console.error('[openNewChat] No compute node');
     return null;
   }
-  const mode = getViewMode();
+  const mode = getEffectiveViewMode();
   const ptyMode = viewModePtyMode(mode);
   const project = dataContext.project;
   const projectId = options.projectId ?? project?.id;

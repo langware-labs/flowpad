@@ -88,18 +88,6 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 # stay 0. Re-measure before changing them again.
 
 
-def _xfail_if_codex(worker_id: str) -> None:
-    """xfail on the known codex driver gap (NOT a timeout/latency issue).
-
-    FLAGGED (senior-dev-review): the interactive-PTY first prompt is dropped (no
-    rollout jsonl) and the headless path can't locate the nvm codex binary under
-    the in-process long-test harness. See
-    ui/tests/manual_regression/_results/2026-07-05T08-16-53/flagged.md.
-    """
-    if worker_id == "codex":
-        pytest.xfail("codex driver gap — see cycle flagged.md; not a timeout/latency issue")
-
-
 def _seed_docs(root: Path) -> None:
     """Populate a 2-level docs tree with 3 small markdown files."""
     root.mkdir(parents=True, exist_ok=True)
@@ -149,7 +137,6 @@ async def test_markdown_index_cold_build(
     make_process, local_project, local_compute_node, tmp_path, worker_id,
 ):
     """Cold build: every folder gets an index.md with valid frontmatter."""
-    _xfail_if_codex(worker_id)
     assert local_compute_node is not None
     docs_root = tmp_path / "docs"
     _seed_docs(docs_root)
@@ -175,7 +162,10 @@ async def test_markdown_index_cold_build(
         workdir=str(docs_root),
         cli_config={"model": ModelTier.MD.value},
     )
-    assert is_ready_for_input(process) is False
+    # Never launched, so readiness is the transport's: a fresh PTY process waits for
+    # its worker, a fresh headless one (deepagents is headless-only) takes the first
+    # prompt at once — see ``is_ready_from_busy``.
+    assert is_ready_for_input(process) is (process.pty_mode is False)
 
     await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
 
@@ -226,7 +216,6 @@ async def test_markdown_index_incremental(
     make_process, local_project, local_compute_node, tmp_path, worker_id,
 ):
     """Edit one file → only the chain from leaf to root rebuilds."""
-    _xfail_if_codex(worker_id)
     assert local_compute_node is not None
     docs_root = tmp_path / "docs"
     _seed_docs(docs_root)

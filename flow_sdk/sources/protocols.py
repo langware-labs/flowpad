@@ -9,6 +9,7 @@ from contextlib import AbstractAsyncContextManager
 from typing import Any, AsyncIterator, Mapping, Optional, Protocol, runtime_checkable
 
 from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.sources.values.call import CallEvent, IncomingCall
 from flow_sdk.sources.values.items import FileItem, MessageData, MessageItem, SourceItemSpec, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import DataPage
@@ -92,6 +93,31 @@ class StableHandle(Protocol):
     def handle_of(self, item: SourceItemSpec) -> str: ...
 
 
+@runtime_checkable
+class CallSession(Protocol):
+    """One call on the line. The provider carries the audio; this is the call's control channel —
+    what was said, what the voice asks the agent, and the few things we can tell the call to do."""
+
+    def events(self) -> AsyncIterator[CallEvent]: ...
+    async def resolve(self, ask_id: str, answer: str) -> None: ...
+    async def say(self, text: str) -> None: ...
+    async def hangup(self) -> None: ...
+
+
+@runtime_checkable
+class Calling(Protocol):
+    """A source people talk to live. A call reaches it by the provider's webhook
+    (``calls_from_webhook``) or is started from our side (``start_call``: a browser's offer, a sound
+    file, a number to dial); either way the runtime ``accept``s it and holds the ``CallSession``.
+
+    ``start_call`` answers the starter (an SDP answer, a call id) and the call when it is on the line
+    now — or ``None`` when the provider will ring back through the webhook (a dialled phone)."""
+
+    async def start_call(self, offer: Mapping[str, Any]) -> "tuple[dict, Optional[IncomingCall]]": ...
+    async def accept(self, call: IncomingCall, *, instructions: str) -> CallSession: ...
+    async def reject(self, call: IncomingCall) -> None: ...
+
+
 class Verdict(DataSpec):
     """Whether setup is complete, and what is missing if not. ``pending`` names the units
     still waiting on a person — the granularity a person acts at."""
@@ -115,6 +141,7 @@ CAPABILITIES: dict[str, type] = {
     "choosing": Choosing,
     "identified": Identified,
     "stable_handle": StableHandle,
+    "calling": Calling,
 }
 
 
@@ -125,6 +152,8 @@ def capabilities_of(source: object) -> tuple[str, ...]:
 
 __all__ = [
     "CAPABILITIES",
+    "CallSession",
+    "Calling",
     "ByteStore",
     "Choosing",
     "Drafting",

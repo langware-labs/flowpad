@@ -8,7 +8,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Literal, Optional
 
 from pydantic import (
     BaseModel,
@@ -32,6 +32,7 @@ from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
 from flow_sdk.fs_store.origin.git_origin import GitOrigin, as_git, fresh_clone_slot
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
@@ -46,6 +47,7 @@ from flow_sdk.request_context.methods import (
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
+    from flow_sdk.app.actions.share_action import ShareInvitee
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
 
 log = logging.getLogger(__name__)
@@ -186,6 +188,24 @@ class HelpdeskConfig(BaseModel):
     welcome_message: Optional[str] = None
     mode: HelpdeskMode = HelpdeskMode.HUMAN
     portal_git_url: Optional[str] = None
+
+
+# Roles a project invite may carry. The hub's ``can_assign`` is the authority
+# (strictly below the inviter's rank); this only rejects anything else up front.
+ProjectInviteRole = Literal["member", "admin"]
+PROJECT_INVITE_ROLES: tuple[ProjectInviteRole, ...] = ("member", "admin")
+PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "member"
+
+
+class ProjectInviteRoleError(ValueError):
+    """A ``share()`` invitee's role isn't one of ``PROJECT_INVITE_ROLES``.
+
+    A ``ValueError`` subclass, not a distinct type — anything catching
+    ``ValueError`` broadly still works — but the dedicated type lets
+    ``share_action.py`` tell "bad role" apart from a hub-call failure
+    (``FlowpadClient._unwrap`` also raises plain ``ValueError``) without
+    inspecting message text.
+    """
 
 
 class Project(Entity):
@@ -458,6 +478,71 @@ class Project(Entity):
         except OSError:
             has_bg = False
         return {"home_title": home_title, "has_home_background": has_bg, "brand": brand}
+
+    def home_page_typeid(self) -> str | None:
+        """The asset TypeId the project manifest DECLARES as its home page, or ``None``.
+
+        Declared, not resolved: whether the asset exists and lives in this
+        project needs the DB. ``open_home_page`` is the resolver.
+        """
+        from flow_sdk.assets.project_manifest import read_home_page  # noqa: PLC0415
+
+        root = self.fs_storage_mount_path
+        return read_home_page(Path(root)) if root else None
+
+    @action.post(action_name="set-home-page")
+    async def set_home_page_action(self, typeid: str = "") -> "ApiResponse":
+        """`POST /project/<id>/set-home-page {typeid}` — name (or, empty, clear) the home page.
+
+        Written into ``project_manifest.json`` so it travels with the repo. The
+        asset must be this project's own or a direct context folder's — the same
+        boundary ``open_home_page`` enforces — so the setting is refused here
+        rather than silently ignored on every Home click.
+        """
+        from flow_sdk.assets.project_manifest import ManifestError, set_home_page  # noqa: PLC0415
+
+        if not self.fs_storage_mount_path:
+            return ApiFailResponse(message="Project has no local working directory")
+        typeid = (typeid or "").strip() or None
+        if typeid is not None and await self._own_asset(typeid) is None:
+            return ApiFailResponse(message=f"{typeid} is not an asset of this project", status_code=400)
+        try:
+            spec = set_home_page(Path(self.fs_storage_mount_path), typeid)
+        except ManifestError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"home_page": spec.home_page})
+
+    async def _own_asset(self, typeid: str) -> Entity | None:
+        """The entity ``typeid`` names, if it lives in this Project or a direct
+        context folder (the auto-launch boundary), else ``None``."""
+        try:
+            asset = await Entity.get_by_typeid(typeid)
+        except ValueError:  # an unregistered type
+            return None
+        if asset is None or not assets_under_roots([asset], self.direct_context_roots()):
+            return None
+        return asset
+
+    async def open_home_page(self) -> dict[str, Any]:
+        """The declared home page's ``{asset, type}``, only if it is this project's own
+        (a cloned manifest must not point Home at another project's asset); else nulls."""
+        typeid = self.home_page_typeid()
+        asset = await self._own_asset(typeid) if typeid else None
+        if asset is None:
+            return {"asset": None, "type": None}
+        return {"asset": typeid, "type": asset.get_type()}
+
+    @action.get(action_name="home-page")
+    async def home_page_action(self) -> "ApiResponse":
+        """`GET /project/<id>/home-page` — ``open_home_page``, for the loaders' redirect.
+
+        A failure is a SUCCESS envelope carrying ``error``: the TS client unwraps a
+        fail envelope to ``undefined``, which would read as "no home page"."""
+        try:
+            return ApiSuccessResponse(data=await self.open_home_page())
+        except Exception as exc:  # noqa: BLE001 — the loader must get a stable answer, never a 500
+            log.warning("project home page failed for %s: %s", self.id, exc)
+            return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
 
     @staticmethod
     def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:
@@ -1007,31 +1092,28 @@ class Project(Entity):
                 "the account that owns it, or give this folder a new project id."
             ) from unreachable
 
-    async def share(self, recipients: Optional[List[str]] = None) -> "Project":
-        """Publish this project to the hub as a shared unit + invite recipients.
-
-        Mirrors ``Conversation.share``: the project's own (uuid4) id is the shared
-        identity, so ``super().share()`` publishes the hub row under ``self.id`` —
-        no separate cloud id. Persisting ``remote=True`` on the local row is the
-        caller's responsibility (``share_action.share_entity``).
-
-        Without ``recipients``: just the hub create. The hub stamps the creator
-        as ``owner`` on create (``save(owner=...)`` → literal 'owner' role edge;
-        ``project`` relies on the hub's default ``owner:["*"]`` policy chain), so
-        no explicit join is needed — the roster derives from role edges.
-        With ``recipients`` (emails): one ``MembershipRequest`` per recipient
-        targets ``project-<id>`` with role ``member`` via
-        ``POST /graph/project/<id>/members``. Under the Hub's assignment policy,
-        the recipient is granted immediately and receives the full Project over
-        the live bridge; explicit invitation acceptance remains the fallback
-        when Hub auto-accept is disabled.
+    async def share(self, invitees: Optional[List["ShareInvitee"]] = None) -> "Project":
+        """Publish this project to the hub, then invite each recipient — by
+        email or hub user id (for a contact known only by id) — as one
+        ``MembershipRequest`` per person via
+        ``POST /graph/project/<id>/members``. ``role`` is optional per
+        recipient (default ``member``).
         """
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+        from flow_sdk.builtin.user import recipient_user_id as parse_recipient_user_id  # noqa: PLC0415
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
         from flow_sdk.core.entity.parent_share import parent_share_typeid  # noqa: PLC0415
         from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
+        # Validated up front, before any hub call, so a bad role fails the
+        # whole share rather than landing some invites and rejecting others
+        # partway through.
+        for inv in invitees or []:
+            if inv.role is not None and inv.role not in PROJECT_INVITE_ROLES:
+                raise ProjectInviteRoleError(
+                    f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.role!r}"
+                )
         creds = load_credentials()
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required")
@@ -1074,7 +1156,7 @@ class Project(Entity):
             # so only this line distinguishes "I published it" from "it was
             # shared to me" — which is what the push-to-cloud gate needs.
             self.hub_published_at = _now_iso()
-            if not recipients:
+            if not invitees:
                 return self
             # A grant is idempotent in intent, but inviting someone who already
             # holds a role is a 400 on the hub ("User has already accepted; use
@@ -1082,28 +1164,37 @@ class Project(Entity):
             # note after the grant already landed — fails the whole share with
             # hub_publish_failed. Read the roster once and invite only who is
             # missing: an existing member already HAS what this call grants.
-            already = await self._hub_member_emails(client)
-            for email in recipients:
-                if not email or not isinstance(email, str):
-                    continue
-                email = normalize_email(email)
-                if not email or email in already:
+            already_emails, already_user_ids = await self._hub_member_identities(client)
+
+            for inv in invitees:
+                role = inv.role or PROJECT_DEFAULT_INVITE_ROLE
+                if inv.email:
+                    email = normalize_email(inv.email)
+                    if not email or email in already_emails:
+                        continue
+                    field, recipient_key = "recipient_email", email
+                elif inv.user_id:
+                    user_id = parse_recipient_user_id(inv.user_id)
+                    if not user_id or user_id in already_user_ids:
+                        continue
+                    field, recipient_key = "recipient_user_id", user_id
+                else:
                     continue
                 await client.post(
                     f"/graph/project/{self.id}/members",
                     {
-                        "recipient_email": email,
+                        field: recipient_key,
                         "invitation_targets": [
-                            {"typeid": f"project-{self.id}", "role": "member"},
+                            {"typeid": f"project-{self.id}", "role": role},
                         ],
                     },
                 )
         return self
 
-    async def _hub_member_emails(self, client) -> set[str]:
-        """Emails already on this project's hub roster (any status).
+    async def _hub_member_identities(self, client) -> tuple[set[str], set[str]]:
+        """(``emails``, ``user_ids``) already on this project's hub roster (any status).
 
-        An unreadable roster returns an empty set, which falls through to
+        An unreadable roster returns two empty sets, which falls through to
         inviting everyone — the behaviour before this read existed — so a roster
         outage can only cost a redundant invite, never a missing one.
         """
@@ -1113,8 +1204,9 @@ class Project(Entity):
             rows = await client.get(f"/graph/project/{self.id}/members")
         except Exception:  # noqa: BLE001 — degrade to the old invite-everyone path
             logging.warning("[project.share] roster read failed for %s; inviting all", self.id)
-            return set()
+            return set(), set()
         emails: set[str] = set()
+        user_ids: set[str] = set()
         for row in rows if isinstance(rows, list) else []:
             if not isinstance(row, dict):
                 continue
@@ -1122,7 +1214,10 @@ class Project(Entity):
                 email = normalize_email(row.get(key) or "")
                 if email:
                     emails.add(email)
-        return emails
+            user_id = row.get("user_id")
+            if isinstance(user_id, str) and user_id.strip():
+                user_ids.add(user_id.strip())
+        return emails, user_ids
 
     async def setup_from_git_origin(self) -> "Project":
         """Materialize this shared project into a local Git worktree.
@@ -1606,6 +1701,20 @@ class Project(Entity):
 
         await ensure_default_wiki(self)
         return self
+
+    # A deleted project leaves the scope cache too, or scope resolution keeps serving it
+    # (and startup seeding would write its namespace back into the removed folder).
+    # Both hooks: the HTTP delete goes through delete_by_id, never the instance delete().
+    async def delete(self):
+        result = await super().delete()
+        invalidate_projects_cache()
+        return result
+
+    @classmethod
+    async def delete_by_id(cls, eid: str):
+        result = await super().delete_by_id(eid)
+        invalidate_projects_cache()
+        return result
 
     async def _warn_if_mount_owned_elsewhere(self) -> None:
         """Log (never raise) when a brand-new project lands on a folder another

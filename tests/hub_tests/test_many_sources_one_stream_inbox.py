@@ -26,11 +26,11 @@ import pytest
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.blocks import StreamInbox, pages, workflow
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError, get_agent_mailbox_driver
+from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver
 from flow_sdk.builtin.consumer_position import ConsumerPosition
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
-from tests.hub_tests._hub_agent import create_hub_agent, delete_hub_agent
+from tests.hub_tests._hub_agent import create_hub_agent, delete_hub_agent, mailbox_capability_required
 from tests.hub_tests._local_login import login_as
 from tests.hub_tests.test_agent_email_conversation import _await_reply
 from tests.hub_tests.test_helpdesk_source_roundtrip import (
@@ -150,12 +150,8 @@ async def mailbox(hub_base_url, hub_login_payload):
     outsider_id = await create_hub_agent(hub_base_url, token, f"mail-outsider-{uuid.uuid4().hex[:8]}")
     allocated: list[str] = []
     try:
-        try:
+        with mailbox_capability_required():
             agent_box = await driver.create_mailbox(agent_id)
-        except AgentMailboxError as exc:
-            if "disabled" in str(exc):
-                pytest.skip(f"hub has the agent mailbox capability off: {exc}")
-            raise
         allocated.append(agent_id)
         outsider_box = await driver.create_mailbox(outsider_id)
         allocated.append(outsider_id)
@@ -177,7 +173,7 @@ async def test_a_desk_and_a_mailbox_one_loop_attribution_resolves_by_channel_and
     base, alice = hub_session["base_url"], hub_session["user_id"]
     ts = uuid.uuid4().hex[:8]
     driver = get_agent_mailbox_driver()
-    agent = Agent(id=mailbox["agent_id"], name=f"Mailbot {ts}", worker_type="claude", email_allowed_senders=[mailbox["outsider_address"]])
+    agent = Agent(id=mailbox["agent_id"], name=f"Mailbot {ts}", worker_type="claude")
     await agent.save()
     sources: list[DataSource] = []
     try:
@@ -186,7 +182,7 @@ async def test_a_desk_and_a_mailbox_one_loop_attribution_resolves_by_channel_and
             await driver.send(mailbox["outsider_id"], {"to": mailbox["agent_address"], "subject": "Ping", "text": f"invoice question {ts}"})
 
             desk_box = StreamInbox(desk, provider="helpdesk")
-            mail_box = StreamInbox(mailbox["agent_id"], provider="cloud_email", owner=agent, address=mailbox["agent_address"])
+            mail_box = StreamInbox(mailbox["agent_address"], provider="cloud_email", owner=agent, agent_id=mailbox["agent_id"])
             name = f"desk-and-mail-{mint_uuid()}"
             async with workflow(name):
                 got = await _take(pages(desk_box, mail_box, size=50, poll_every=0), 2)

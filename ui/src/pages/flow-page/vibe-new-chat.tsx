@@ -2,12 +2,13 @@ import { SessionInput } from '@src/components/session-input/session-input';
 import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
+import { AssetCounterRow } from '@src/components/asset-counters/AssetCounterRow';
+import { agentCounterGroup } from '@src/components/asset-counters/agent-counters';
 import { useAuth } from '@sdk/react/hooks';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
 import { VibeModelSelect, useVibeModelTier } from './vibe-model-select';
-import { VibeRecentSessions } from './vibe-recent-sessions';
 
 /**
  * Vibe fallback shown when no build session is active — i.e. we're in Vibe mode
@@ -65,7 +66,7 @@ export function VibeNewChat() {
         {installDialog}
         <ProjectActionsRow className="w-full self-start" />
         <ProjectAgentsStrip className="w-full self-start" />
-        <VibeRecentSessions />
+        <AssetCounterRow group={agentCounterGroup} />
       </div>
     </div>
   );

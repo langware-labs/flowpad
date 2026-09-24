@@ -612,7 +612,8 @@ async def handle_attachment_install(
             if entry_dir is None or not entry_dir.exists():
                 return _staging_gone()
             assert root is not None  # copy mode always resolves a root above
-            _restore_file_backed_entry(entry_dir, root, overwrite)
+            placed: list[Path] = []
+            _restore_file_backed_entry(entry_dir, root, overwrite, placed=placed)
             # The single reception indexer: copy-scope walk (skipped when
             # record_type is None — a raw non-markdown file), git-origin nested
             # re-walk + provenance stamp, and the received-asset notify.
@@ -626,6 +627,7 @@ async def handle_attachment_install(
                         entry_key=entry_key,
                         record_type=record_type,
                         origin=ma.origin.model_dump(mode="python") if ma.origin else None,
+                        files=tuple(placed),
                     )
                 ],
                 project_id=project_id,

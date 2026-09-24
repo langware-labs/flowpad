@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "name": "voice_file",
+  "title": "Voice — sound files",
+  "icon_name": "FileAudio",
+  "channel_icon_names": {
+    "voice": "FileAudio"
+  },
+  "description": "Hand the agent a recording and get a spoken answer back as a sound file. Each clip is a call: transcribed, answered by the agent as itself, and spoken into a reply file next to it.",
+  "kind": "datasource.api.voice.file",
+  "calls": "clip",
+  "auth": {
+    "env": [
+      "OPENAI_API_KEY"
+    ]
+  },
+  "config": {
+    "folder": {
+      "type": "text",
+      "label": "Folder",
+      "placeholder": "~/Flowpad voice",
+      "hint": "Where clips are kept: what came in under in/, the spoken answers under out/."
+    },
+    "voice": {
+      "type": "text",
+      "advanced": true,
+      "label": "Voice",
+      "placeholder": "marin"
+    },
+    "base_url": {
+      "type": "text",
+      "advanced": true,
+      "label": "API base URL"
+    }
+  }
+}

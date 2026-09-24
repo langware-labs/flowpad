@@ -3,6 +3,7 @@ import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { HttpMethod } from '../models/ApiUrl';
 import { kindMatches } from '../models/Kind';
+import type { PromptResult } from '../models/ReturnedValue';
 
 export type CapabilityActionName = 'test' | 'setup';
 
@@ -19,6 +20,8 @@ export interface CapabilityResult {
   process_id?: string | null;
   checked_at?: string;
   state?: CapabilityState;
+  /** The worker's own answer when an install or a probe ran one. */
+  answer?: PromptResult | null;
 }
 
 export interface CapabilityCheck {

@@ -113,6 +113,17 @@ def _install_for_codex(skill_name: str, skills_parent: Path) -> Path | None:
     return dest
 
 
+def _mirror_for_copilot(skill_name: str, skills_parent: Path) -> None:
+    """Copilot loads only ``.github/skills`` from an ``--add-dir`` mount (``copilot
+    --help``; ``CopilotDriver.skills_root``), never ``.claude/skills``; mirror ours.
+
+    Without it the skill tool answers "not available" and the agent reads SKILL.md
+    by hand — which the skip below then mislabelled as LLM non-compliance.
+    """
+    src = skills_parent / ".claude" / "skills" / skill_name
+    shutil.copytree(src, skills_parent / ".github" / "skills" / skill_name)
+
+
 def _skill_call_entries(transcript, skill_name: str) -> list:
     """Official skill entries for ``skill_name`` from the analyzer.
 
@@ -146,6 +157,8 @@ async def test_skill_usage_visible_in_transcript(
         codex_installed = _install_for_codex(skill_name, skills_parent)
         if codex_installed is None:
             pytest.skip("cannot stage skill into ~/.codex/skills")
+    if worker_type is WorkerType.COPILOT:
+        _mirror_for_copilot(skill_name, skills_parent)
 
     # prompt() resolves the process by id server-side — an unsaved instance
     # fails with "not found in database" (which the old `getattr(result, "ok",

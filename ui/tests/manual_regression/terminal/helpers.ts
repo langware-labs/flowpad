@@ -1,4 +1,5 @@
 import { type Page, type Locator, test, expect } from '@playwright/test';
+import { apiOrigin } from '../_shared/api';
 import { selectViewMode, withViewMode } from '../_shared/view-mode';
 
 /**
@@ -43,6 +44,21 @@ async function isPtyExhausted(page: Page): Promise<boolean> {
  * from a nav helper's catch block: a genuine app breakage still throws its own
  * error; only the host-capacity case is skipped (with proof in the reason).
  */
+/**
+ * Sandbox preflight: fail loud and fast when this backend cannot open an e2b
+ * sandbox. Without it a sandbox spec clicks "sandbox", no tab ever appears, and
+ * it dies on its 60s budget with nothing naming the cause. `/graph/info` omits
+ * `sandbox_available` when the probe itself failed — that is unavailable too.
+ * A hard failure, not a skip: the prerequisite is part of the Phase 11 env.
+ */
+export async function requireSandbox(): Promise<void> {
+  const res = await fetch(`${apiOrigin()}/api/v1/graph/info`);
+  const body = (await res.json().catch(() => ({}))) as { data?: { sandbox_available?: boolean } };
+  if (body.data?.sandbox_available !== true) {
+    throw new Error('sandbox unavailable: backend lacks the e2b SDK or E2B_KEY');
+  }
+}
+
 /** The ribbon's button container under the terminal (TerminalBottomRibbon). One
  * selector change here used to be a six-file sweep — keep it single-sourced. */
 export const RIBBON_TABS = '[data-testid="terminal-ribbon-tabs"]';

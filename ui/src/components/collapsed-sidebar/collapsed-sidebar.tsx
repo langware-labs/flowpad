@@ -152,7 +152,8 @@ export function CollapsedSidebar() {
         // navigation path like every other rail click. It used to read the live
         // browser URL directly and call `navigate('/')`, guarding against a
         // lagging `currentView` — `openDock` dedupes on the pointer itself.
-        navigation.goHome();
+        // The rail's Home is a Home button: it asks for the project home page.
+        navigation.goHome({ homePage: true });
       } else {
         if (viewType === ViewType.SHELL) {
           markPerfT0();

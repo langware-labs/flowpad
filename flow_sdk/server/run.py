@@ -36,9 +36,22 @@ if sys.platform == "win32":
         except (AttributeError, ValueError):
             pass
 
+# Boot progress before the heavy imports, not after them. stderr is the server
+# log, and the monitor / desktop gate extend their wait for a slow boot only
+# while that log grows — an import phase that logs nothing would look hung.
+from flow_sdk import boot_progress
+
+boot_progress.start(sys.stderr)
+
 import uvicorn
 from dotenv import load_dotenv
 from filelock import FileLock
+
+# A named logger, never the module-level `logging.info(...)` helpers: those
+# install a root handler in the DEFAULT format on first use, and that first
+# use (raising RLIMIT_NOFILE) happens before app.py's basicConfig — which then
+# silently becomes a no-op and the server log loses its timestamps.
+log = logging.getLogger(__name__)
 
 _lock: FileLock | None = None  # kept alive for the process lifetime
 
@@ -55,9 +68,9 @@ def _raise_nofile_soft_limit(min_soft: int = 4096) -> None:
         target = min(max(soft, min_soft), hard)
         if target > soft:
             resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
-            logging.info("[startup] Raised RLIMIT_NOFILE soft limit from %s to %s", soft, target)
+            log.info("[startup] Raised RLIMIT_NOFILE soft limit from %s to %s", soft, target)
     except (OSError, ValueError) as exc:
-        logging.warning("[startup] Could not raise RLIMIT_NOFILE: %s", exc)
+        log.warning("[startup] Could not raise RLIMIT_NOFILE: %s", exc)
 
 
 def _pid_alive(pid: int) -> bool:
@@ -80,7 +93,7 @@ def _acquire_singleton_lock() -> bool:
     Set FLOWPAD_SKIP_LOCK=true to bypass (for isolated test servers).
     """
     if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
-        logging.info("[singleton] Lock skipped (FLOWPAD_SKIP_LOCK=true)")
+        log.info("[singleton] Lock skipped (FLOWPAD_SKIP_LOCK=true)")
         return True
 
     global _lock
@@ -100,7 +113,7 @@ def _release_singleton_lock() -> None:
         from flow_sdk.instance_settings import get_instance_settings
 
         singleton_lock.release(_lock, get_instance_settings().server_pid_path)
-        logging.info("[singleton] Lock released: pid=%d", os.getpid())
+        log.info("[singleton] Lock released: pid=%d", os.getpid())
 
 
 # Load environment variables (guard against PyInstaller bundle where find_dotenv fails)
@@ -155,10 +168,10 @@ def _register_stack_dump(target: Path) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         stream = open(target, "a", encoding="utf-8")  # noqa: SIM115 - lives as long as the process
     except OSError as exc:
-        logging.warning("[startup] Stack-dump signal not registered: %s", exc)
+        log.warning("[startup] Stack-dump signal not registered: %s", exc)
         return
     faulthandler.register(signal.SIGUSR1, file=stream, all_threads=True)
-    logging.info("[startup] SIGUSR1 dumps all thread stacks to %s", target)
+    log.info("[startup] SIGUSR1 dumps all thread stacks to %s", target)
 
 
 def main():
@@ -168,6 +181,7 @@ def main():
 
     if not _acquire_singleton_lock():
         print(f"[pid={os.getpid()}] Another server instance is already running. Exiting.")
+        boot_progress.stop()
         sys.exit(0)
 
     settings = get_instance_settings()
@@ -210,6 +224,7 @@ def main():
         total_startup = time.time() - startup_start
         print(f"Total startup time (until Uvicorn starts): {total_startup * 1000:.2f} ms\n")
 
+        boot_progress.set_phase("uvicorn")
         uvicorn.run(app, **uvicorn_kwargs)
 
     _release_singleton_lock()

@@ -129,6 +129,32 @@ class ProjectManifestSpec(DataSpec):
     #: nearest declaration wins (``flow_sdk/schema/data_spec/_namespace.py``).
     ns: str = ""
     entries: list[PublishedAssetSpec] = Field(default_factory=list)
+    #: The asset the Home button opens for this project — a TypeId
+    #: (``<type>-<uuid>``) of one of the project's own assets, typically an
+    #: agent whose last chat Home resumes. ``None`` = the default home. Lives
+    #: here, beside ``ns``, because it is a declaration about the whole project
+    #: that must travel with a clone — which is exactly what this file is for.
+    home_page: Optional[str] = None
+
+    @field_validator("home_page", mode="before")
+    @classmethod
+    def _home_page_typeid(cls, value: object) -> Optional[str]:
+        """A malformed pointer declares nothing — the ONE lenient rule here.
+
+        Every other rule rejects: the ledger is authored by our writer. This
+        one is read on every Home click, and a bad value must not take down the
+        whole ledger (published rows, the project namespace) with it — the
+        feature degrades to the default home instead. Existence and "is it this
+        project's" are runtime facts the reader checks, not shape.
+        """
+        if not isinstance(value, str) or not value.strip():
+            return None
+        typeid = value.strip()
+        try:
+            _type_name, entity_id = split_typeid(typeid)
+        except ValueError:
+            return None
+        return typeid if is_valid_entity_id(entity_id) else None
 
     @field_validator("manifest_schema")
     @classmethod
@@ -191,6 +217,13 @@ class ProjectManifestSpec(DataSpec):
             # other defaults: ``schema``, ``requires`` and an empty ``entries``
             # are part of the file format. ``ns`` is the one exception.
             document.pop("ns")
+        if document.get("home_page") is None:
+            # Silent for the same reason, and one more: an older desk reads this
+            # file with ``extra="forbid"``, so a key it does not know fails its
+            # whole ledger. Unset, no manifest gains the key — only a project
+            # that actually names a home page does. (Also keeps ``deps.json``,
+            # which shares this shape, free of a field it has no use for.)
+            document.pop("home_page", None)
         return document
 
 

@@ -36,6 +36,10 @@ class ProjectManifest(Entity):
         ),
     )
     entries: list[PublishedAssetSpec] = APIField(default_factory=list)
+    home_page: str | None = APIField(
+        default=None,
+        description="TypeId of the asset the Home button opens for this project. None = the default home.",
+    )
     asset_ref: str = APIField(default="")
 
 
@@ -84,6 +88,42 @@ async def ensure_manifest_indexed(project) -> Entity | None:
     resolved = await resolve_asset(manifest_dir(mount), write=True, type_name=EntityType.PROJECT_MANIFEST.value)
     await index_one(resolved, notify=True, scope="project", project_id=str(project.id))
     return await ProjectManifest.get_one({"id": resolved.id})
+
+
+def ensure_project_namespace(project) -> None:
+    """The project names its ontology ONCE, so every asset under it inherits.
+
+    Called when a project is first materialized and once per boot for the rest. The
+    namespace is seeded from the folder name and then frozen — ``ensure_namespace``
+    never overwrites a declaration, so this is safe to call on every index.
+
+    **A system project is never seeded.** What we ship is OURS by definition; stamping
+    a namespace on ``flowpad_assistant`` would push every kind its shipped drivers mint
+    under a marker, and every bare kind already written would stop resolving.
+
+    Synchronous: it is a small file read (and, once, a write). Callers that are on an
+    event loop hand the whole sweep to one thread rather than hopping per project —
+    the hop costs several times the read it offloads.
+    """
+    from flow_sdk.assets.project_manifest import ensure_namespace, namespace_seed  # noqa: PLC0415
+    from flow_sdk.config import is_hidden_project  # noqa: PLC0415
+    from flow_sdk.fs_store.operations import namespace_roots  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import is_valid_project_cwd  # noqa: PLC0415
+
+    mount = _mount_of(project)
+    if mount is None or is_hidden_project(str(mount), bool(getattr(project, "system", False))):
+        return
+    if not is_valid_project_cwd(mount):
+        return
+    if not mount.is_dir():  # seeding names a folder; it must never CREATE one
+        return
+    try:
+        spec = ensure_namespace(mount, namespace_seed(mount))
+    except OSError as exc:  # a read-only or vanished checkout is not a startup failure
+        logger.warning("[namespace] %s could not be seeded: %s", mount, exc)
+        return
+    if spec is not None and spec.ns:
+        namespace_roots.remember(spec.ns, mount)
 
 
 async def origin_for_asset(asset_ref: str):

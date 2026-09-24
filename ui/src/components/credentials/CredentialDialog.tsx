@@ -103,6 +103,7 @@ export function CredentialDialog({
   const problemText = (p: DraftProblem): string =>
     ({
       'title-required': t`Give the pack a name`,
+      'setup-required': t`Say how to get these values — the AI setup follows it`,
       'no-vars': t`Add at least one variable`,
       'bad-env-var': t`Letters, digits and _ only`,
       duplicate: t`Listed twice`,
@@ -184,6 +185,25 @@ export function CredentialDialog({
               />
               {attempted && problems.form.includes('title-required') && (
                 <p className="text-xs text-destructive">{problemText('title-required')}</p>
+              )}
+            </div>
+          )}
+
+          {editsDefinition && (
+            <div className="space-y-1">
+              <Label htmlFor="credential-setup" className="text-xs">
+                <Trans>Setup instructions</Trans>
+              </Label>
+              <Textarea
+                id="credential-setup"
+                rows={4}
+                value={d.setup}
+                placeholder={t`Where the key is created, and how to store it: flow credentials set <name> VAR=…`}
+                onChange={(e) => update({ setup: e.target.value })}
+                data-testid="credential-setup"
+              />
+              {attempted && problems.form.includes('setup-required') && (
+                <p className="text-xs text-destructive">{problemText('setup-required')}</p>
               )}
             </div>
           )}

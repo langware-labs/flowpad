@@ -97,18 +97,22 @@ def _run(tmp_path: Path, body: str, *extra: str):
     return result, json.loads(result.stdout.strip().splitlines()[-1])
 
 
-def test_run_exit_codes_mirror_the_snippet(tmp_path):
+def test_run_exits_the_answers_exit_code_and_prints_the_snippets_own(tmp_path):
+    """Like every `flow` command that runs something: the ANSWER's exit code.
+    The snippet's own `returncode` is in the JSON — exiting it raw broke on a
+    stopped run, whose -9 a shell reads as 247, and it made a snippet that
+    exited 7 indistinguishable from a REFUSED one."""
     result, data = _run(tmp_path, "print('hi')")
     assert (result.exit_code, data["stdout"]) == (0, "hi\n")
     result, data = _run(tmp_path, "raise SystemExit(7)")
-    assert result.exit_code == 7
+    assert result.exit_code == 1 and data["returncode"] == 7
     result, data = _run(tmp_path, "1/0")
     assert result.exit_code == 1 and "ZeroDivisionError" in data["stderr"]
     result, data = _run(tmp_path, "import time\nprint('a', flush=True)\ntime.sleep(60)", "--timeout", "0.3")
-    assert result.exit_code == 124 and data["timed_out"] and data["stdout"] == "a\n"
+    assert result.exit_code == 1 and data["timed_out"] and data["stdout"] == "a\n"
 
 
-def test_run_of_something_unrunnable_exits_2(tmp_path):
+def test_a_missing_snippet_exits_not_found(tmp_path):
     result = runner.invoke(app, ["snippet", "run", str(tmp_path / "missing.py")])
-    assert result.exit_code == 2
+    assert result.exit_code == 4, "NOT_FOUND — not 2, which means the request itself was bad"
     assert "not found" in json.loads(result.stdout)["stderr"]

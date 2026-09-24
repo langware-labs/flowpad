@@ -74,7 +74,7 @@ async def execute_wizard(
     try:
         lock.acquire(blocking=False)
     except Timeout:
-        return WizardResult.not_yet(f"{spec.name or wizard_id} {ALREADY_RUNNING}", ran=False)
+        return WizardResult.held(f"{spec.name or wizard_id} {ALREADY_RUNNING}")
 
     try:
         result = await run_wizard(
@@ -105,13 +105,20 @@ async def execute_wizard(
 
 
 def activity_path_for(wizard_id: str, asset_ref: str) -> str:
-    """This wizard's activity ROOT address.
+    """This wizard's activity ROOT address — also its run SLOT.
 
     A function rather than an f-string at the call site because the frontend has
-    to subscribe to the same address, and two spellings of one address is how a
-    viewer ends up watching a tree nothing writes to.
+    to subscribe to the same address (it reads it off ``Wizard.activity_path``),
+    and two spellings of one address is how a viewer ends up watching a tree
+    nothing writes to.
+
+    The id is part of it because the address is a slot: two runs of ONE wizard
+    must collide (that is the busy guard), two wizards must not. The folder name
+    alone made two same-named wizards in different scopes share a slot, so the
+    second answered "already running" and recorded it over its real last run.
     """
-    return f"wizard-{_slug(asset_ref) or wizard_id}"
+    slug = _slug(asset_ref)
+    return f"wizard-{slug}-{wizard_id}" if slug else f"wizard-{wizard_id}"
 
 
 def _slug(asset_ref: str) -> str:

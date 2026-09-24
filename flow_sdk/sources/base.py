@@ -61,9 +61,6 @@ class Source:
     stamps_identity: ClassVar[bool] = True
     #: Sub-tick poll cadence while someone is watching; ``None`` means the provider does not tolerate it.
     attention_poll_seconds: ClassVar[Optional[int]] = None
-    #: A sent message comes back through the source's own listing. A bot that never receives its
-    #: own messages declares ``False``: what ``send`` returns is then the only copy there will be.
-    echoes_sends: ClassVar[bool] = True
     #: Pages one pass may read; ``None`` reads a traversal to its end. A provider whose rate cap
     #: allows one request per interval declares 1.
     pages_per_pass: ClassVar[Optional[int]] = None

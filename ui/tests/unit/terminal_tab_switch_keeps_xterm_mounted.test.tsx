@@ -71,13 +71,13 @@ function mkSession(procId: string, shellId: string): void {
   new Shell({ id: shellId, project_id: PROJECT_ID } as never);
 }
 
-function mkTab(tabId: string, dock: DockPointer, targetId: string, lastActive: number): Tab {
+function mkTab(tabId: string, dock: DockPointer, targetId: string, lastActive: number, projectId = PROJECT_ID): Tab {
   return new Tab({
     id: tabId,
     pointer: dock.toJSON(),
     target_type: 'agentic_process',
     target_id: targetId,
-    project_id: PROJECT_ID,
+    project_id: projectId,
     last_active_at: lastActive,
     visible: true,
   } as never);
@@ -93,51 +93,58 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  tabManager.adoptGlobal([]);
-  tabManager.lifecycle.resetForTests();
+  tabManager.resetForTests();
   vi.restoreAllMocks();
 });
 
-describe('switching terminal tabs must not rebuild the terminal', () => {
-  it('keeps the same terminal DOM node across a switch away and back', async () => {
-    tabManager.adoptGlobal([
-      mkTab('6fe6a58f-10ce-5e41-ae3e-8676067d9b43', dockA, PROC_A, 5_000),
-      mkTab('1a2b3c4d-5e6f-5071-9b8c-1d2e3f4a5b6c', dockB, PROC_B, 1_000),
-    ]);
+const TAB_A = '6fe6a58f-10ce-5e41-ae3e-8676067d9b43';
+const TAB_B = '1a2b3c4d-5e6f-5071-9b8c-1d2e3f4a5b6c';
 
-    const view = render(
-      <Wrap>
-        <TabbedTerminal spawnProjectId={PROJECT_ID} />
-      </Wrap>,
-    );
-    const settle = async () => {
-      await act(async () => {
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-    };
-    const panelA = () => view.container.querySelector(`[data-session-id="agentic_process-${PROC_A}"]`);
-    const goTo = async (dock: DockPointer) => {
-      currentDock = dock;
-      view.rerender(
-        <Wrap>
-          <TabbedTerminal spawnProjectId={PROJECT_ID} />
-        </Wrap>,
-      );
-      await settle();
-    };
-
+/** Render the body with tab A active, and hand back the controls to move around. */
+async function renderTerminal(projectId: string) {
+  const ui = (project: string) => (
+    <Wrap>
+      <TabbedTerminal spawnProjectId={project} />
+    </Wrap>
+  );
+  const view = render(ui(projectId));
+  const settle = async () => {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+  const panelA = () => view.container.querySelector(`[data-session-id="agentic_process-${PROC_A}"]`);
+  const goTo = async (dock: DockPointer, project = projectId) => {
+    currentDock = dock;
+    view.rerender(ui(project));
     await settle();
-
-    // Guard against a vacuous pass: A must really be showing a terminal, not the
-    // startup spinner, or the node comparison below is between two spinners.
+  };
+  await settle();
+  // Guard against a vacuous pass: A must really be showing a terminal, not the
+  // startup spinner, or a node comparison is between two spinners.
+  const terminalNodeA = () => {
     expect(panelA(), 'tab A panel never rendered').not.toBeNull();
     expect(
       panelA()!.querySelector('[data-testid="terminal-panel-starting"]'),
       'tab A is still on the startup spinner — nothing to preserve',
     ).toBeNull();
-    const terminalNode = panelA()!.firstElementChild;
-    expect(terminalNode, 'tab A rendered no terminal').not.toBeNull();
+    const node = panelA()!.firstElementChild;
+    expect(node, 'tab A rendered no terminal').not.toBeNull();
+    return node;
+  };
+  return { view, panelA, goTo, settle, terminalNodeA };
+}
+
+describe('switching terminal tabs must not rebuild the terminal', () => {
+  it('keeps the same terminal DOM node across a switch away and back', async () => {
+    tabManager.adoptGlobal([
+      mkTab(TAB_A, dockA, PROC_A, 5_000),
+      mkTab(TAB_B, dockB, PROC_B, 1_000),
+    ]);
+
+    const { panelA, goTo, terminalNodeA } = await renderTerminal(PROJECT_ID);
+    const terminalNode = terminalNodeA();
 
     await goTo(dockB);
     await goTo(dockA);
@@ -146,5 +153,38 @@ describe('switching terminal tabs must not rebuild the terminal', () => {
     // would have produced a different node — that is the destroy+rebuild the
     // user sees as a redraw (fresh attach, replayPtyStream, term.reset()).
     expect(panelA()!.firstElementChild, 'tab A rebuilt its terminal on a warm switch').toBe(terminalNode);
+  });
+});
+
+describe('switching project must not rebuild a terminal the user already opened', () => {
+  const OTHER_PROJECT = 'd4e5f6a7-b8c9-4d0e-8f1a-2b3c4d5e6f70';
+
+  it('keeps the same terminal DOM node across a switch to another project and back', async () => {
+    // The strip is project-scoped, so the panel used to leave the tree with its
+    // project — and the trip back paid `/open`, a full pty-stream and a replay.
+    tabManager.adoptGlobal([mkTab(TAB_A, dockA, PROC_A, 5_000), mkTab(TAB_B, dockB, PROC_B, 1_000, OTHER_PROJECT)]);
+    const { panelA, goTo, terminalNodeA } = await renderTerminal(PROJECT_ID);
+    const terminalNode = terminalNodeA();
+
+    await goTo(dockB, OTHER_PROJECT);
+    expect(panelA(), 'tab A left the tree when its project was switched away').not.toBeNull();
+    expect(panelA()!.getAttribute('data-active')).toBe('false');
+
+    await goTo(dockA, PROJECT_ID);
+    expect(panelA()!.firstElementChild, 'tab A rebuilt its terminal after a project round trip').toBe(terminalNode);
+  });
+
+  it('drops a kept panel once its tab is closed', async () => {
+    const tabB = mkTab(TAB_B, dockB, PROC_B, 1_000, OTHER_PROJECT);
+    tabManager.adoptGlobal([mkTab(TAB_A, dockA, PROC_A, 5_000), tabB]);
+    const { panelA, goTo, settle } = await renderTerminal(PROJECT_ID);
+    await goTo(dockB, OTHER_PROJECT);
+
+    act(() => {
+      tabManager.adoptGlobal([tabB]);
+    });
+    await settle();
+
+    expect(panelA()).toBeNull();
   });
 });

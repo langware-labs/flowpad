@@ -121,6 +121,7 @@ async def _attention_loop() -> None:
     """Poll every leased source at its cadence until all leases lapse."""
     while _attention:
         now = time.monotonic()
+        held: Optional[set[str]] = None  # read once per pass, and only when something is due
         for source_id, lease in list(_attention.items()):
             if lease["expiry"] <= now:
                 _attention.pop(source_id, None)
@@ -134,8 +135,12 @@ async def _attention_loop() -> None:
             # OTHER leased source then stopped being polled, silently, until
             # something re-armed the lane.
             try:
+                if held is None:
+                    held = await _held_by_deployments()
                 source = await DataSource.get_by_id(source_id)
-                refused = source is None or source.poll_refusal()
+                refused = source is None or source.poll_refusal() or source_id in held
+                if source_id in held:
+                    logger.info("[ingest] %s is held by a running deployment — polled there, not here", source_id)
             except Exception:  # noqa: BLE001 — classified as "drop the lease"
                 logger.exception("[ingest] attention lane: dropping %s", source_id)
                 refused = True
@@ -169,6 +174,17 @@ async def _attention_loop() -> None:
                 pass  # nothing changed; the edge we computed came due
 
 
+async def _held_by_deployments() -> set[str]:
+    """Ids of the sources a running agent deployment's process polls itself (``agent_serve.polled_by_a_deployment``)."""
+    try:
+        from flow_sdk.builtin.agent_serve import polled_by_a_deployment  # noqa: PLC0415
+
+        return await polled_by_a_deployment()
+    except Exception:  # noqa: BLE001 — unknown means "poll here", as before deployments ran as processes
+        logger.debug("[ingest] could not tell which sources a deployment polls", exc_info=True)
+        return set()
+
+
 def _claim(source_id: str) -> bool:
     """Take this source's poll slot, or report that someone already holds it.
 
@@ -187,12 +203,14 @@ async def dispatch_due_sources(
     *,
     now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     spawn: Optional[Callable] = None,
+    only: Optional[set[str]] = None,
 ) -> list[str]:
     """Select due sources and hand each to a background task.
 
     Returns the ids dispatched — for tests and for the log line. ``now_fn`` and
     ``spawn`` are injected so this is testable without sleeping or racing a
-    real event loop.
+    real event loop. ``only`` narrows it to those sources: a deployment's process
+    beats for the channels it answers, and for nothing else.
     """
     now = now_fn()
     spawn = spawn or asyncio.ensure_future
@@ -207,8 +225,12 @@ async def dispatch_due_sources(
         logger.debug("[ingest] could not list data sources", exc_info=True)
         return dispatched
 
-    for source in sources:
-        if source.id in _inflight or not source.is_due(now):
+    due = [s for s in sources if s.id not in _inflight and s.is_due(now) and (only is None or str(s.id) in only)]
+    # ``only`` is the caller's own channels (a deployment's process): nobody else holds them.
+    held = await _held_by_deployments() if due and only is None else set()
+    for source in due:
+        if str(source.id) in held:
+            logger.debug("[ingest] %s is held by a running deployment — polled there, not here", source.id)
             continue
         # Dispatch even when a capability is missing: `sync_source` records it
         # as `capability_unavailable` / config_error, which is what surfaces the

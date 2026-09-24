@@ -81,7 +81,7 @@ class SendStatus(StrEnum):
 @dataclass(frozen=True)
 class SendOutcome:
     """What the channel confirmed about one message. ``recorded`` is load-bearing: False on a SENT
-    message means the mail is gone but the local copy is missing, and re-sending to fix the
+    message means recording the copy failed — the mail is gone, and re-sending to fix the
     bookkeeping would mail the recipient twice."""
 
     external_id: str = ""
@@ -133,6 +133,11 @@ class Pass:
 
 
 # ── identity and provenance ────────────────────────────────────────────────────
+
+
+#: Rows ``DriverRuntime.identify`` already asked this process — once is enough to ask a source that
+#: may not know who it is.
+_IDENTIFY_ASKED: set[str] = set()
 
 
 def identity_stamped(row: Any) -> bool:
@@ -455,6 +460,13 @@ class DriverRuntime:
             # A push-only source (a webhook is its only delivery): a poll finds nothing.
             return Pass(cursor=position.cursor, manifest=dict(position.manifest), unchanged=True)
         source = await self.open(row)
+        if isinstance(source, Identified) and await self._stamp(row, source):
+            # Before the FIRST pass, not only at setup or on a send. A source with no setup step
+            # otherwise projects its first items not knowing who it is (our own messages land as
+            # a stranger's), and the account it later learns re-scopes every origin after it --
+            # the same message would ingest under a second key. Reopened because the binding
+            # reads the account it was opened with.
+            source = await self.open(row)
         cls = type(source)
         async with source:
             cursor = position.cursor if cls.durable_cursor else None
@@ -603,9 +615,8 @@ class DriverRuntime:
         # A transport whose connector may only DRAFT reports the draft with no `sent_at`; one that
         # records its own copy says so on the payload.
         drafted = bool(getattr(type(source), "sends_may_draft", False)) and sent.data.sent_at is None
-        if drafted or type(source).echoes_sends:
-            recorded = bool(getattr(sent.data, "recorded", False))
-        else:
+        recorded = bool(getattr(sent.data, "recorded", False))
+        if not drafted and not recorded:
             recorded = await self._record(row, source, sent)
         return SendOutcome(
             external_id=sent.origin.key,
@@ -615,12 +626,13 @@ class DriverRuntime:
         )
 
     async def _record(self, row: Any, source: Source, sent: Any) -> bool:
-        """Ingest a sent message the provider will never echo back — without it a conversation shows
-        only its inbound half. After identity is stamped, so the copy reads as ours."""
-        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        """Ingest what we just sent, marked ours — at once, not whenever the provider's echo is next
+        read. The echo carries the same natural key, so it lands on this row and keeps the mark;
+        without the mark a copy with no self author would read as a stranger's message."""
+        from flow_sdk.ingest.ingestor import ingest_item  # noqa: PLC0415
 
         try:
-            await ingest_items([envelope_of(sent, data_source_id=str(row.id), provider=self.provider)])
+            await ingest_item(envelope_of(sent, data_source_id=str(row.id), provider=self.provider), sent_by_us=True)
         except Exception:  # noqa: BLE001 — the message IS delivered; bookkeeping must not unsend it
             logger.exception("[ingest] %s sent %s but could not record the copy", self.provider, sent.origin.key)
             return False
@@ -635,8 +647,6 @@ class DriverRuntime:
         # Whoever calls this: the route hands over case-insensitive headers, an in-process caller a plain
         # dict — a class that checks a signature reads them lowercased either way.
         headers = {str(k).lower(): v for k, v in dict(headers or {}).items()}
-        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
-
         credentials = await self.credentials_for(row)
         authentic = getattr(self.cls, "webhook_authentic", None)
         if authentic is not None and not authentic(headers or {}, raw, credentials):
@@ -644,6 +654,18 @@ class DriverRuntime:
         source = await self.open(row, credentials=credentials)
         async with source:
             events = source.events_from_webhook(payload)  # type: ignore[attr-defined]
+            # A source people talk to live rings its calls here too; the caller hands them to whoever answers.
+            calls = list(source.calls_from_webhook(payload)) if hasattr(source, "calls_from_webhook") else []
+        result = await self.ingest_events(row, events)
+        if calls:
+            result["calls"] = calls
+        return result
+
+    async def ingest_events(self, row: Any, events: Any) -> dict:
+        """Events a source produced outside a traversal (a webhook, a live call) through the one ingestion
+        chokepoint: ``{"ingested", "created", "ids"}`` — ``ids`` the stored rows, in event order."""
+        from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+
         items = [
             envelope_of(event.item, data_source_id=str(row.id), provider=self.provider)
             for event in events
@@ -652,7 +674,11 @@ class DriverRuntime:
         if not items:
             return {"ingested": 0}
         report = await ingest_items(items)
-        return {"ingested": len(items), "created": getattr(report, "created", 0)}
+        return {
+            "ingested": len(items),
+            "created": getattr(report, "created", 0),
+            "ids": [o.entity_id for o in getattr(report, "outcomes", [])],
+        }
 
     async def find_reply(self, row: Any, external_id: str) -> Any:
         """The reply to ``external_id`` as an envelope, or ``None`` — one look."""
@@ -684,17 +710,36 @@ class DriverRuntime:
             await self._stamp(row, source)
         return verdict
 
-    async def _stamp(self, row: Any, source: Source) -> None:
-        """Record who the source reads and posts as, once."""
-        if identity_stamped(row):
+    async def identify(self, row: Any) -> None:
+        """Record who the source reads as, if it does not know yet — before its first sync lands a
+        record, so a row only ever synced (never verified, never sent from) still tells our own
+        posts from a stranger's. Asked once per row per process: a source that cannot say is not
+        re-asked on every poll (``send`` and ``verify`` still stamp it)."""
+        key = str(getattr(row, "id", "") or "")
+        if identity_stamped(row) or not issubclass(self.cls, Identified) or key in _IDENTIFY_ASKED:
             return
+        _IDENTIFY_ASKED.add(key)
+        try:
+            source = await self.open(row)
+        except Rejected:
+            return  # the sync that follows reports the refusal
+        async with source:
+            await self._stamp(row, source)
+
+    async def _stamp(self, row: Any, source: Source) -> bool:
+        """Record who the source reads and posts as, once. True when this call wrote it."""
+        if identity_stamped(row):
+            return False
         try:
             profiles = await source.whoami()  # type: ignore[attr-defined]
-            if profiles:
-                identities = [p.origin.key for p in profiles] + [p.name for p in profiles if p.name]
-                await stamp_identity(row, account_key=profiles[0].name or profiles[0].origin.key, identities=identities)
+            if not profiles:
+                return False
+            identities = [p.origin.key for p in profiles] + [p.name for p in profiles if p.name]
+            await stamp_identity(row, account_key=profiles[0].name or profiles[0].origin.key, identities=identities)
+            return True
         except Exception:  # noqa: BLE001 — identity is a nicety; it never fails what asked for it
             logger.debug("[ingest] %s identity stamp failed", self.provider, exc_info=True)
+            return False
 
     async def choices(self, row: Any, field: str) -> list:
         """What the credential can see for one config field. Raises like a fetch; the one caller

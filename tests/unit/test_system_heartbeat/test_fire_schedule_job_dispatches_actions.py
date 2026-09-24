@@ -8,6 +8,8 @@ import asyncio
 
 import pytest
 
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.trigger import Trigger, _fire_schedule_job
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
@@ -123,7 +125,11 @@ def launches(monkeypatch):
         proc = AgenticProcess(id=str(uuid.uuid4()), name=options.get("name") or "scheduled", status="running")
         calls.append({"agent_id": self.id, "prompt": prompt, "options": options, "deployment": deployment,
                       "process": proc, "lifecycle": []})
-        return proc
+        # `launch` answers; its `executor` names the process it started.
+        return PromptResult.satisfied("The turn was accepted.", executor=str(proc.typeid))
+
+    async def _get_by_typeid(typeid):
+        return next((c["process"] for c in calls if str(c["process"].typeid) == str(typeid)), None)
 
     def _call(process):
         return next(c for c in calls if c["process"] is process)
@@ -140,6 +146,7 @@ def launches(monkeypatch):
         return self
 
     monkeypatch.setattr(Agent, "launch", _launch)
+    monkeypatch.setattr(AgenticProcess, "get_by_typeid", staticmethod(_get_by_typeid))
     monkeypatch.setattr(AgenticProcess, "wait", _wait)
     monkeypatch.setattr(AgenticProcess, "exit", _exit)
     monkeypatch.setattr(AgenticProcess, "save", _save)

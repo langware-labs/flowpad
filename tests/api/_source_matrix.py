@@ -141,6 +141,11 @@ async def run_case(name: str, driver, client, monkeypatch, tmp_path) -> None:
             pushed = _data(await client.post(f"/api/v1/data_source/webhook/{name}", content=raw, headers=headers))
             assert pushed.get("ingested", 0) >= 1, pushed
 
+        if case.get("prepare"):
+            # State a send needs that only exists once the source does (a task the channel's principal
+            # created). Async, which a case's own ``with`` block cannot be.
+            case = {**case, **(await case["prepare"](source_id))}
+
         report = await driver.sync(source_id)
         assert report["health"] == "ok", f"{name} sync: {report}"
 

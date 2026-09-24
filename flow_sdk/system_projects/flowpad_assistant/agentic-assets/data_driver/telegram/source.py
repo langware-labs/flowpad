@@ -7,8 +7,8 @@ Three Telegram facts shape it:
   persists it only after committing what it read re-reads the same updates when it did not, so
   the acknowledgement mirrors the commit with no bookkeeping of its own. Updates that are not
   messages (edits, callbacks) still advance the offset: left unacknowledged they wedge the queue.
-* A bot never receives its own messages (``echoes_sends = False``): what ``send`` returns is the
-  only copy of it there will ever be.
+* A bot never receives its own messages: what ``send`` returns is the
+  only copy of it there will ever be, and the send path records it.
 * ``message_id`` is unique per chat only, so a message's key is ``<chat_id>/<message_id>``. The
   chat is the conversation; a forum topic narrows it to ``<chat_id>/<topic_id>``.
 
@@ -65,7 +65,6 @@ class TelegramSource(Source):
     Config = TelegramConfig
     provider = "telegram"
     durable_cursor = True
-    echoes_sends = False
     page_size = PAGE_LIMIT
     #: The token names WHICH bot a row serves — what a caller matches to reuse a source.
     #: The bot is named by getMe, not by a config field: its token is a credential.

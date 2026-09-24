@@ -15,7 +15,8 @@ OUR protocol (the engine is a provider mirror, the wire is ours):
     tool_call    tool_call_id, name, input, message_id, agent
     tool_result  tool_call_id, name, output, is_error, agent
     usage        message_id, model, input_tokens, output_tokens, cache_read_tokens, reasoning_tokens
-    error        message, kind                          — non-terminal; a ``result`` follows
+    error        message, kind                          — non-terminal; a ``result`` follows.
+                 ``kind="incomplete"``: the stream ended but the last message said nothing
     result       subtype, is_error, num_turns, duration_ms, usage   — terminal
 
 Every line also carries ``type``, ``session_id`` and an ISO-8601 UTC ``timestamp``. ``agent`` is
@@ -177,6 +178,12 @@ class TurnTranslator:
         self._model = model
         self._tool_names: dict[str, str] = {}
         self.num_turns = 0
+        #: Whether the MAIN agent's last message called a tool or answered in text. A completed
+        #: turn always ends on one that does; one that does neither was cut short — an upstream
+        #: failure delivered inside a 200 (empty content, no tool calls; ``finish_reason`` may say
+        #: ``error`` or even ``stop``) that ends the graph normally, so nothing raises.
+        self.answered = False
+        self.finish_reason: str | None = None
         self.totals = {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "reasoning_tokens": 0}
 
     def feed(self, namespace: tuple, update: Any) -> None:
@@ -204,6 +211,8 @@ class TurnTranslator:
         text, reasoning = _text_of(getattr(message, "content", ""))
         if agent is None:
             self.num_turns += 1
+            self.answered = bool(text.strip() or getattr(message, "tool_calls", None))
+            self.finish_reason = (getattr(message, "response_metadata", None) or {}).get("finish_reason")
         if reasoning.strip():
             self._emit("reasoning", message_id=message_id, text=reasoning, agent=agent)
         for call in getattr(message, "tool_calls", None) or []:
@@ -333,6 +342,18 @@ async def run_turn(args: argparse.Namespace, prompt: str, emitter: Emitter) -> i
         except Exception as exc:  # noqa: BLE001 — ANY failure must still end the turn with a ``result``
             is_error = True
             emitter.emit("error", message=f"{type(exc).__name__}: {exc}", kind=_error_kind(exc))
+        if not is_error and translator.num_turns and not translator.answered:
+            # Checked on the SHAPE, not a finish_reason whitelist: an empty completion has been
+            # seen arriving with ``finish_reason=stop``.
+            is_error = True
+            emitter.emit(
+                "error",
+                message=(
+                    "The model's last message neither called a tool nor answered "
+                    f"(finish_reason={translator.finish_reason!r}): the turn was cut short upstream."
+                ),
+                kind="incomplete",
+            )
 
     emitter.emit(
         "result",

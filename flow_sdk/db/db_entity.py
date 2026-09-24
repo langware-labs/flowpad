@@ -26,6 +26,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, 
 from flow_sdk.db.drivers.db_driver import DBDriver, LazyDBDriver
 from flow_sdk.db.drivers.path_model import NodesPath
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.db.relationship_model import (
     InvitedThroughRelationship,
     Relationship,
@@ -201,7 +202,9 @@ class DBEntity(DBBaseRecord):
                 raise ValueError(
                     f"Can not serialize form json : Model not found for db_entity type {entity_json['type']}"
                 )
-            return entity_model(**entity_json)
+
+            with lenient_entity_load():  # a wire payload may carry fields this build dropped
+                return entity_model(**entity_json)
         except Exception as e:
             raise e
 
@@ -242,9 +245,12 @@ class DBEntity(DBBaseRecord):
                 fields["expand"] = EntityExpansion(**fields["expand"])  # Convert dict to EntityExpansion
             elif not isinstance(fields["expand"], EntityExpansion):
                 fields["expand"] = EntityExpansion()  # Fallback if value is None or invalid
+
         updated_dump = self.model_dump()
         updated_dump.update(fields)
-        updated_model = self.model_validate(updated_dump)
+        # Only declared fields are applied below; the rest of a client's PUT is dropped, not an error.
+        with lenient_entity_load():
+            updated_model = self.model_validate(updated_dump)
         for k in fields.keys():
             # Computed fields ride every outbound payload, so clients echo them
             # back on a full-entity PUT (e.g. Project.include_dirs) — they have
@@ -455,9 +461,22 @@ class DBEntity(DBBaseRecord):
                 op = OperationType.UPDATE
             # from_entity = the save's owner — rides the notification so the
             # unified-bus adapter can stamp containment scope (phase 3).
-            self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid, from_entity=owner)
-            await self.add_entity_op_notification(self_op)
-            self._notify_observers(self_op)
+            # Announced once the write is DURABLE. Inside a caller's transaction
+            # (``Entity.save`` holds one across the row and its record) that is at
+            # its commit — a listener reading the row on the announcement would
+            # otherwise read the snapshot before it. With none, it is now, as
+            # before. A copy rides, so what is announced is what was written.
+            self_op = DataOpMessage(data=self.model_copy(), op=op, to_entity=self.typeid, from_entity=owner)
+
+            async def announce() -> None:
+                await self.add_entity_op_notification(self_op)
+                self._notify_observers(self_op)
+
+            after_commit = getattr(self._db, "after_commit", None)
+            if after_commit is None:
+                await announce()
+            else:
+                await after_commit(announce)
         self._dirty = False
 
         return self

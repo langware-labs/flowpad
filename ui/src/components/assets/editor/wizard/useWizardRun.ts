@@ -14,13 +14,21 @@ export type WizardStepAnswer = NonNullable<WizardResult['steps']>[string] & { st
 const NO_ANSWERS: WizardStepAnswer[] = [];
 
 /** What a step's answer MEANS, in one word. Derived here from the answer's own
- *  fields, never stored: `exit_code` and `ran` are the whole of it. */
-export function stepStatus(answer: Pick<WizardStepAnswer, 'exit_code' | 'ran'> | null | undefined): string {
+ *  fields, never stored. A NOT_YET is told apart by the facts the answer carries
+ *  — it used to be "failed" whatever became of it, so a step that timed out, one
+ *  a person cancelled and one that never started all read as a failure. */
+export function stepStatus(
+  answer: Pick<WizardStepAnswer, 'exit_code' | 'ran' | 'timed_out' | 'busy' | 'cancelled'> | null | undefined,
+): string {
   if (!answer) return '';
   if (answer.exit_code === ExitCode.NOT_APPLICABLE) return 'not_applicable';
   if (answer.exit_code === ExitCode.OK) return answer.ran === false ? 'satisfied' : 'completed';
   if (answer.exit_code === ExitCode.REFUSED) return 'refused';
   if (answer.exit_code === ExitCode.NOT_FOUND) return 'not_found';
+  if (answer.busy) return 'busy'; //               another run held the slot — try later
+  if (answer.timed_out) return 'timed_out'; //      the wait ended; the work may still be going
+  if (answer.cancelled) return 'cancelled'; //      a person declined to answer
+  if (answer.ran === false) return 'not_started'; // nothing ran: no harness, spawn failed
   return 'failed';
 }
 

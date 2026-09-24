@@ -22,7 +22,7 @@ from typing import Annotated, Any, ClassVar, Literal, Optional, Union
 
 from pydantic import BeforeValidator, ConfigDict, Field, PlainSerializer
 
-from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.spec import DataSpec, spec_tag
 from flow_sdk.tags.grammar import NAMESPACE_SEGMENT_PATTERN, normalize_tag
 
 PROTOCOL_WEB_APP = "web.app"
@@ -149,7 +149,10 @@ def _protocol_in(value: Any) -> Any:
 def _protocol_out(value: Any) -> dict:
     if isinstance(value, ExternalProtocol):
         return {"spec_kind": value.external_kind, **value.fields}
-    return {"spec_kind": value.spec_kind, **value.model_dump(mode="json")}
+    # The REGISTERED name — ``_protocol_in`` refuses a kind it cannot resolve, so a
+    # protocol declared by an authored asset would be written under a name its own
+    # reader then rejects.
+    return {"spec_kind": spec_tag(value), **value.model_dump(mode="json")}
 
 
 def _registered_protocol(kind: str) -> Optional[type[ProtocolSpec]]:
@@ -188,26 +191,26 @@ class ProxyBackend(DataSpec):
     health: str = "/"
 
 
-class AgentBackend(DataSpec):
-    """An agent, answered by the FlowPad app that holds the placement.
+class ChannelBackend(DataSpec):
+    """A message channel: each request is a message on ``data_source_id`` and its reply is the answer.
 
-    No port and no folder: the app itself takes the request and runs the agent's
-    turn on this placement (``builtin/agent_serve``). A deployed agent's ``chat``
-    endpoint is one — reached through the hub like any other, never directly.
+    No port and no folder: the app takes the request, pushes it into the channel, and answers
+    with the reply the channel records — whoever answers the channel (an agent deployment's
+    loop) is not the endpoint's business. A deployed agent's ``chat`` endpoint is one.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    type: Literal["agent"] = "agent"
-    agent_id: str
+    type: Literal["channel"] = "channel"
+    data_source_id: str
 
 
-Backend = Annotated[Union[StaticBackend, ProxyBackend, AgentBackend], Field(discriminator="type")]
+Backend = Annotated[Union[StaticBackend, ProxyBackend, ChannelBackend], Field(discriminator="type")]
 
 
 __all__ = [
-    "AgentBackend",
     "Backend",
+    "ChannelBackend",
     "ChatOpenAIProtocol",
     "ExternalProtocol",
     "McpProtocol",

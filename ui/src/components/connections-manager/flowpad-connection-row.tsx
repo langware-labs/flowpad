@@ -3,14 +3,16 @@ import { i18n } from '@lingui/core';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCloudStatus } from '@sdk/react/hooks';
 import { cloudManager } from '@sdk';
-import { hubStatusVisual } from '../account/hub-status-visuals';
+import { hubStatusVisual, LOGIN_VISUAL } from '../account/hub-status-visuals';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
-import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { TableCell, TableRow } from '../ui/table';
+import { SignInMethodIcon } from './sign-in-method';
+import { MachineWideCell, TextActionCell } from './machine-wide-cell';
+import { hubConnectionState, STATE_VISUAL } from './connection-state-visual';
 
 /**
  * FlowPad's own account, as a row in the Connections table.
@@ -80,13 +82,20 @@ export function FlowpadConnectionRow() {
   // silently instead of failing to compile.
   const visual = hubStatusVisual(login.status, connection.status);
   const signingIn = busy || login.status === 'logging_in';
-  const statusText = signingIn ? t`Signing in…` : i18n._(visual.text);
-  const healthy = visual.variant === 'secondary';
+  // The table's word and dot (`STATE_VISUAL`) whenever a table state says it —
+  // every other row reads "Connected" / "Not connected", and "Connection
+  // verified" / "Logged out" read as two more states. Mid-flight or broken, the
+  // hub names it better, so its own word and dot stay. `busy` covers the moment
+  // before the hub reports `logging_in`.
+  const state = signingIn ? null : hubConnectionState(login.status, connection.status);
+  const hubWord = i18n._(visual.text);
+  const statusText = signingIn ? t`Signing in…` : state ? i18n._(STATE_VISUAL[state].text) : hubWord;
+  const dot = signingIn ? LOGIN_VISUAL.logging_in.dot : state ? STATE_VISUAL[state].dot : visual.dot;
+  const failed = visual.variant === 'destructive';
 
+  const email = typeof login.user?.email === 'string' ? login.user.email : null;
   /** Who this machine is signed in as — the one fact a status word cannot carry. */
-  const account = [cloudUrl, typeof login.user?.email === 'string' ? login.user.email : null]
-    .filter(Boolean)
-    .join(' · ');
+  const account = [statusText !== hubWord ? hubWord : null, cloudUrl, email].filter(Boolean).join(' · ');
 
   return (
     <TableRow data-testid="connection-row-flowpad">
@@ -98,32 +107,29 @@ export function FlowpadConnectionRow() {
       </TableCell>
 
       <TableCell>
-        {/* Not "OAuth": the OAuth rows' `grantLabel` would describe hub login
-            as an authorization-code grant, which it is not. */}
-        <Badge
-          variant="outline"
-          className="text-xs font-normal"
-          title={cloudUrl || t`Your FlowPad account`}
-          data-testid="connection-kind-flowpad"
-        >
-          <Trans>FlowPad</Trans>
-        </Badge>
+        {/* A browser sign-in to the hub. The address and account go in the tooltip. */}
+        <SignInMethodIcon
+          method="oauth"
+          lines={[
+            t`Signed in through your browser`,
+            email,
+            cloudUrl,
+          ]}
+          testId="connection-kind-flowpad"
+        />
       </TableCell>
 
-      {/* Machine-level, not project-scoped: it asks for no per-project scopes
-          and is not attached to a project, so both columns are honestly empty. */}
+      {/* Machine-level: it asks for no per-project scopes, so Access requested is
+          empty, and Used by says every project rather than "—". */}
       <TableCell className="text-sm text-muted-foreground">—</TableCell>
 
       <TableCell>
         <div className="flex items-center gap-2 text-sm">
           <span
-            className={cn(
-              'h-2 w-2 shrink-0 rounded-full',
-              healthy ? 'bg-emerald-500' : loggedIn ? 'bg-amber-500' : 'bg-muted-foreground/40',
-            )}
+            className={cn('h-2 w-2 shrink-0 rounded-full', dot)}
           />
           <span
-            className={cn('whitespace-nowrap', healthy && 'text-emerald-600')}
+            className={cn('whitespace-nowrap', failed && 'text-red-600 dark:text-red-500')}
             title={account || undefined}
             data-testid="connection-status-flowpad"
           >
@@ -132,19 +138,19 @@ export function FlowpadConnectionRow() {
         </div>
       </TableCell>
 
-      <TableCell className="text-sm text-muted-foreground">—</TableCell>
+      <MachineWideCell />
 
       {/* Sign in, or sign out — the account's own lifecycle and nothing more.
           Reconnect / Verify / Disconnect are hub-WEBSOCKET controls, desktop-only
           (`connectionControlsAvailable`), and `account/user-info.tsx` already
           models all 4 login × 6 connection states around them; a lossy copy of
           three of six belongs here even less than none. */}
-      <TableCell className="text-end">
+      <TextActionCell>
         {loggedIn ? (
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="h-7"
+            className="h-7 text-muted-foreground hover:text-foreground"
             disabled={busy}
             onClick={() => void logout()}
             data-testid="connection-flowpad-logout"
@@ -162,7 +168,7 @@ export function FlowpadConnectionRow() {
             {signingIn ? <Trans>Signing in…</Trans> : <Trans>Connect</Trans>}
           </Button>
         )}
-      </TableCell>
+      </TextActionCell>
     </TableRow>
   );
 }

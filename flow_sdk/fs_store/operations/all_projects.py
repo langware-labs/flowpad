@@ -388,3 +388,8 @@ async def _materialize(
     info.project_id = proj.id
     await proj.save()
     invalidate_projects_cache()  # a new project entity exists — drop the GET cache
+    # The project names its ontology now, while it is empty: a namespace is frozen once
+    # its assets have minted anything, so first sight is the only safe moment to seed it.
+    from flow_sdk.builtin.project_manifest import ensure_project_namespace  # noqa: PLC0415 — cycle
+
+    await asyncio.to_thread(ensure_project_namespace, proj)

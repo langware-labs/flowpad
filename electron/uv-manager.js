@@ -160,9 +160,26 @@ const UpdateStatus = Object.freeze({
  * log and the failure dialog, not in a one-line status ticker.
  */
 const INSTALL_PROGRESS_RE =
-  /^(Downloading|Downloaded|Resolved|Prepared|Building|Built|Installing|Installed|Uninstalled|Updating|Updated|Fetching|Fetched)\b/;
+  /^(Downloading|Downloaded|Resolved|Prepared|Building|Built|Installing|Installed|Uninstalled|Updating|Updated|Fetching|Fetched|Bytecode compiled)\b/;
 function isInstallProgressLine(line) {
   return INSTALL_PROGRESS_RE.test(String(line || '').trim());
+}
+
+/**
+ * A chunk-to-line adapter for a child's stdout/stderr: buffers partial lines
+ * across chunks and calls `onLine` once per complete, trimmed, non-empty line.
+ */
+function splitLines(onLine) {
+  let buf = '';
+  return (chunk) => {
+    buf += chunk.toString();
+    let nl;
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, nl).replace(/\r$/, '').trim();
+      buf = buf.slice(nl + 1);
+      if (line) onLine(line);
+    }
+  };
 }
 
 class UvManager {
@@ -380,21 +397,16 @@ class UvManager {
       let stdout = '';
       let stderr = '';
       const feed = (isErr) => {
-        let buf = '';
+        const lines = splitLines((line) => {
+          if (isErr) this.log.warn(`[uv] ${line}`); else this.log.info(`[uv] ${line}`);
+          if (onLine) {
+            try { onLine(line); } catch { /* a UI hiccup must never fail the install */ }
+          }
+        });
         return (chunk) => {
           const text = chunk.toString();
           if (isErr) stderr += text; else stdout += text;
-          buf += text;
-          let nl;
-          while ((nl = buf.indexOf('\n')) !== -1) {
-            const line = buf.slice(0, nl).replace(/\r$/, '').trim();
-            buf = buf.slice(nl + 1);
-            if (!line) continue;
-            if (isErr) this.log.warn(`[uv] ${line}`); else this.log.info(`[uv] ${line}`);
-            if (onLine) {
-              try { onLine(line); } catch { /* a UI hiccup must never fail the install */ }
-            }
-          }
+          lines(text);
         };
       };
       child.stdout.on('data', feed(false));
@@ -817,12 +829,21 @@ class UvManager {
   async _uvToolInstallForce(installArgs, { onProgress } = {}) {
     const MAX_RETRIES = 3;
     const HANDLE_RELEASE_WAIT_MS = 1500;
+    // Compile the venv's bytecode here, in the install, not on the first boot.
+    // uv leaves .py files uncompiled by default, so the first boot after an
+    // install compiles ~2,000 modules while importing them — the slowest phase
+    // of a cold boot on a weak machine, doubled, and under an AV scanner on
+    // Windows far worse. The install has no stall watchdog and reports this
+    // step ("Bytecode compiled N files in Xs"); the boot has both.
+    const args = installArgs.includes('--compile-bytecode')
+      ? installArgs
+      : [...installArgs, '--compile-bytecode'];
     for (let attempt = 1; ; attempt++) {
       await this._drainVenvProcesses();
       try {
         // No wall-clock cap — see _runStreaming. Progress lines go to the
         // caller (the loading window) so a long slow install is visibly alive.
-        return await this._runStreaming('uv', installArgs, {
+        return await this._runStreaming('uv', args, {
           onLine: (line) => {
             if (onProgress && isInstallProgressLine(line)) onProgress(line);
           },
@@ -996,6 +1017,10 @@ class UvManager {
         MINIHUB_RELOAD: 'false',
         FLOWPAD_NO_BROWSER: '1',
         FLOWPAD_DESKTOP: '1',
+        // `flow start` reports its boot phases on stdout (flow_sdk/boot_progress.py)
+        // so the startup gate can tell a slow launcher from a hung one. The CLI
+        // consumes the variable; nothing it spawns inherits it.
+        FLOWPAD_BOOT_PROGRESS: '1',
       };
       if (sodKey) {
         // Matches flow_sdk/instance_settings/base_settings.py:ENV_SOD_ENC_KEY.
@@ -1038,59 +1063,67 @@ class UvManager {
 
       this._backendProcess = child;
 
-      let stderr = '';
-      let stdout = '';
-
-      child.stdout.on('data', (data) => {
-        const text = data.toString();
-        stdout += text;
-        this.log.info(`[flow stdout] ${text.trim()}`);
+      // The launch handle: what `flow start` has said so far, and whether it
+      // has exited. The startup gate (main.js waitForBackend) reads it — a line
+      // on this pipe is evidence that the launcher stage (CLI import, migrations,
+      // monitor spawn) is still moving, and a non-zero exit ends the wait at once
+      // with the launcher's own words. No fixed window here: the old 3s "give it
+      // a chance to fail" was a wait that hid a slow CLI import behind it.
+      const TAIL_CHARS = 4000;
+      const launch = {
+        startedAt: Date.now(),
+        lines: 0,
+        lastLine: '',
+        lastLineAt: null,
+        exit: null, // { code, signal } once the process has ended
+        stdout: '',
+        stderr: '',
+        tail: () => `stdout:\n${launch.stdout.slice(-1000)}\n\nstderr:\n${launch.stderr.slice(-1000)}`,
+      };
+      const feed = (isErr) => splitLines((line) => {
+        launch.lines += 1;
+        launch.lastLine = line;
+        launch.lastLineAt = Date.now();
+        if (isErr) {
+          launch.stderr = (launch.stderr + line + '\n').slice(-TAIL_CHARS);
+          this.log.warn(`[flow stderr] ${line}`);
+        } else {
+          launch.stdout = (launch.stdout + line + '\n').slice(-TAIL_CHARS);
+          this.log.info(`[flow stdout] ${line}`);
+        }
       });
-
-      child.stderr.on('data', (data) => {
-        const text = data.toString();
-        stderr += text;
-        this.log.warn(`[flow stderr] ${text.trim()}`);
-      });
-
+      child.stdout.on('data', feed(false));
+      child.stderr.on('data', feed(true));
       child.on('error', (err) => {
-        this.log.error(`[uv] Failed to spawn flow start: ${err.message}`);
+        this.log.error(`[uv] flow start error: ${err.message}`);
       });
-
-      // Wait for the process to exit or give it a short window to fail
-      await new Promise((resolve, reject) => {
-        let settled = false;
-
-        const timer = setTimeout(() => {
-          settled = true;
-          resolve();
-        }, 3000);
-
+      launch.exited = new Promise((resolve) => {
         child.once('exit', (code, signal) => {
-          if (settled) return;
-          clearTimeout(timer);
-          settled = true;
-
+          launch.exit = { code, signal };
           if (code === 0) {
-            // flow start completed successfully (spawned monitor and exited)
-            resolve();
+            this.log.info('[uv] flow start exited 0 (monitor spawned)');
           } else {
-            reject(new Error(
-              `flow start exited with code ${code}, signal ${signal}\n` +
-              `stdout:\n${stdout.slice(-1000)}\n\nstderr:\n${stderr.slice(-1000)}`
-            ));
+            this.log.error(`[uv] flow start exited with code ${code}, signal ${signal}\n${launch.tail()}`);
           }
-        });
-
-        child.once('error', (err) => {
-          if (settled) return;
-          clearTimeout(timer);
-          settled = true;
-          reject(err);
+          resolve(launch.exit);
         });
       });
+      this._lastLaunch = launch;
 
-      this.log.info('[uv] flow start launched successfully');
+      // A spawn failure (ENOENT, EACCES) is known at once and is an error, not
+      // something to wait out; everything slower than that is the gate's job.
+      await new Promise((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', reject);
+      });
+
+      this.log.info('[uv] flow start launched');
+      return launch;
+    }
+
+    /** The handle of the most recent `flow start` (see start()), or null. */
+    lastLaunch() {
+      return this._lastLaunch || null;
     }
 
   /**
@@ -1702,3 +1735,4 @@ module.exports.needsShellOnWin = needsShellOnWin;
 module.exports.quoteWinCmd = quoteWinCmd;
 module.exports.parseNetstatPids = parseNetstatPids;
 module.exports.isInstallProgressLine = isInstallProgressLine;
+module.exports.splitLines = splitLines;

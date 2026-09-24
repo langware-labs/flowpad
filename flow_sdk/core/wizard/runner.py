@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
+from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
 from flow_sdk.core.compute.exec import run_shell
 from flow_sdk.core.compute.process_step import launch_step_process
 from flow_sdk.core.compute_op.runner import Launch, Shell, run_op
@@ -47,6 +48,16 @@ from flow_sdk.schema.data_spec.wizard_spec import (
 
 logger = logging.getLogger(__name__)
 
+#: How deep one wizard may call another. A cycle is caught exactly, by name (see
+#: ``_Run.chain``); this is the backstop for the other runaway — a chain that
+#: never repeats but never ends. Three is past any real composition.
+#:
+#: It is NOT the Activity tree's depth budget and cannot be derived from it: how
+#: deep a step's node sits depends on the address the top-level run claimed. The
+#: report folds instead of failing (``Activity.child_or_self``), so nesting never
+#: turns into a crash whatever this number is.
+MAX_WIZARD_DEPTH = 3
+
 
 @dataclass(frozen=True)
 class Resolved:
@@ -59,6 +70,19 @@ class Resolved:
 
     spec: Any
     trusted: bool = False
+
+
+def wizard_refused(name: Optional[str]) -> WizardResult:
+    """The one refusal a wizard answers, however it was reached.
+
+    The runner's own gate and the entity's (``Wizard.run``) both say this; a
+    person should not meet two spellings of one sentence depending on which way
+    the wizard was started. ``compute_op.runner.refused_for`` is the op's twin.
+    """
+    return WizardResult.refused(
+        f"{name or 'This wizard'} is not shipped with Flowpad. It runs commands "
+        "on this machine, so it must be approved before it can run."
+    )
 
 
 #: Resolve a step's ``ref``. Injected: the runner does not know what an index is.
@@ -85,7 +109,11 @@ class _Run:
     #: to close. An approval a person gave to a document that names its
     #: callees is a different thing from a trust nobody was asked about.
     approved: bool = False
-    depth: int = 0
+    #: The wizards already running above this one, outermost first. A step that
+    #: names one of them is a cycle — caught by NAME, because that is what the
+    #: hazard actually is; a depth cap alone would only delay it. Its length IS
+    #: the depth, so there is no second counter to keep in step.
+    chain: tuple[str, ...] = ()
     steps: dict[str, ReturnedValue] = field(default_factory=dict)
 
 
@@ -103,7 +131,7 @@ async def run_wizard(
     resolve_wizard: Optional[WizardResolver] = None,
     approved: bool = False,
     platform: str = "",
-    depth: int = 0,
+    chain: tuple[str, ...] = (),
     parent: Any = None,
 ) -> WizardResult:
     """Run every step in order. Never raises for an outcome.
@@ -114,9 +142,7 @@ async def run_wizard(
     bound ``args``, or a person's own call.
     """
     if not trusted:
-        return WizardResult.refused(
-            "This wizard runs commands on the machine and has not been approved."
-        )
+        return wizard_refused(spec.name)
 
     from flow_sdk.activity import Activity  # noqa: PLC0415 — keeps this module entity-free at import
 
@@ -128,7 +154,7 @@ async def run_wizard(
         spec=spec, values=dict(inputs or {}), workdir=workdir, platform=platform,
         subject_entity=subject_entity, shell=shell, launch=launch,
         resolve_op=resolve_op, resolve_wizard=resolve_wizard,
-        approved=approved, depth=depth,
+        approved=approved, chain=chain,
     )
 
     # A nested run reports INTO the caller's node, so the tree is one tree. Only
@@ -149,7 +175,7 @@ async def run_wizard(
         if claimed:
             raise
         # The address is a slot, and another run holds it: nothing ran, try later.
-        return WizardResult.not_yet(f"{spec.name or activity_path} is already running: {busy}", ran=False)
+        return WizardResult.held(f"{spec.name or activity_path} is already running: {busy}")
 
 
 async def _steps(run: _Run, root: Any) -> WizardResult:
@@ -158,7 +184,7 @@ async def _steps(run: _Run, root: Any) -> WizardResult:
         # Deliberately NO activity child for a step never reached: an absent node
         # — and an absent entry in ``steps`` — renders as "never got here", which
         # is true, while a fabricated failed one would blame a step that never ran.
-        child = root.child(step.id).label(step.display_label)
+        child = root.child_or_self(step.id).label(step.display_label)
         root.current(step.display_label)
         answer = await _step(run, step, child)
         run.steps[step.id] = answer
@@ -186,18 +212,71 @@ async def _steps(run: _Run, root: Any) -> WizardResult:
             # know whether it came from a person, a command or a model.
             run.values[step.bind] = answer.value
 
-    if failed is not None:
-        return _answer(run, WizardResult.not_yet, failed.detail)
-    return _answer(
-        run, WizardResult.satisfied, "",
+    unmet = _still_unmet(run)
+    if unmet is not None:
+        return _answer(run, WizardResult.not_yet, unmet.detail)
+    return _held_to_output(run, _answer(run, WizardResult.satisfied, ""))
+
+
+def _still_unmet(run: _Run) -> Optional[ReturnedValue]:
+    """The first failed step whose GOAL no later step reached, or None.
+
+    A wizard answers for the goals it was asked to reach, not for every attempt
+    it made on the way. Two rungs of a fallback are one goal, and they say so by
+    carrying the same completion check — the resolved command a step's answer
+    reports in ``check.command``. So a rung that failed and was covered by a
+    later step that reached the SAME goal does not make the run a failure, while
+    a step with a goal of its own that nobody reached still does.
+    """
+    answers = list(run.steps.values())          # in the order the steps ran
+    for position, answer in enumerate(answers):
+        if answer.ok:
+            continue
+        goal = answer.check.command if answer.check is not None else None
+        covered = goal is not None and any(
+            later.ok and later.check is not None and later.check.command == goal
+            for later in answers[position + 1:]
+        )
+        if not covered:
+            return answer
+    return None
+
+
+def _answer(run: _Run, make: Callable[..., WizardResult], detail: str) -> WizardResult:
+    """The wizard's answer; its value is what each step that reached its goal returned.
+
+    ``ran`` is computed here and nowhere else: a run that installed two things and
+    then hit an untrusted callee did NOT do nothing, and a reader told
+    ``ran=False`` reads it as skipped.
+    """
+    outputs = {key: a.value for key, a in run.steps.items() if a.ok and a.value is not None}
+    return make(
+        detail, value=outputs or None, steps=run.steps,
         ran=any(answer.ran for answer in run.steps.values()),
     )
 
 
-def _answer(run: _Run, make: Callable[..., WizardResult], detail: str, **fields: Any) -> WizardResult:
-    """The wizard's answer; its value is what each step that reached its goal returned."""
-    outputs = {key: a.value for key, a in run.steps.items() if a.ok and a.value is not None}
-    return make(detail, value=outputs or None, steps=run.steps, **fields)
+def _held_to_output(run: _Run, result: WizardResult) -> WizardResult:
+    """*result*, its value held to the shape the wizard declared.
+
+    Only a wizard that reached its goal owes that shape, which is why this wraps
+    the satisfied ending alone — a failure's partial values are evidence, not a
+    return value. A run that produced NOTHING is still held to it: promising an
+    output and returning none is the same broken promise as returning the wrong
+    one. Same rule, same seam, as a ComputeOp's ``output_spec_kind``
+    (``compute_op.runner._with_value``).
+    """
+    if run.spec.output is None:
+        return result
+    try:
+        value = to_declared(result.value, run.spec.output)
+    except DeclaredShapeError as error:
+        return WizardResult.not_yet(
+            f"{run.spec.name or 'wizard'}: the steps reached their goals, but what they "
+            f"returned is not the declared output — {error}",
+            value=None, steps=result.steps, ran=result.ran,
+        )
+    return result.model_copy(update={"value": value})
 
 
 async def _step(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue:
@@ -218,7 +297,13 @@ async def _resolve(run: _Run, step: WizardStepSpec, resolver: Optional[OpResolve
     if found is None:
         return ReturnedValue.not_found(f"there is no {noun} named {step.ref!r}")
     if not found.trusted and not run.approved:
-        return ReturnedValue.refused(
+        # In the CALLEE's own answer class — a refused op step is the op's
+        # CliResult / PromptResult / AskResult, a refused wizard step a
+        # WizardResult — so a reader of `steps` never meets a base ReturnedValue
+        # for a callee whose kind is known. (A callee NOT found has no spec, so
+        # the base class is all that can be said about it.)
+        answer = WizardResult if isinstance(found.spec, WizardSpec) else found.spec.exe_data.ANSWER
+        return answer.refused(
             f"step {step.id!r} calls the {noun} {step.ref!r}, which this instance does not ship. "
             "Approve the run to allow it."
         )
@@ -241,6 +326,20 @@ async def _call_op(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue
 
 async def _call_wizard(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue:
     """Call another wizard, reporting into this step's node so it is ONE tree."""
+    above = (*run.chain, run.spec.name or "")
+    # Two ways a nested call is refused, one sentence: nothing ran, the callee is
+    # not at fault, and the chain says which it was.
+    why = ""
+    if step.ref in above:
+        why = "which is already on this run's stack"
+    elif len(above) > MAX_WIZARD_DEPTH:
+        why = f"which is more than {MAX_WIZARD_DEPTH} levels deep"
+    if why:
+        return WizardResult.not_yet(
+            f"step {step.id!r} calls the wizard {step.ref!r}, {why}: "
+            f"{' -> '.join((*above, step.ref))}.",
+            ran=False,
+        )
     found = await _resolve(run, step, run.resolve_wizard, "wizard")
     if isinstance(found, ReturnedValue):
         return found
@@ -248,7 +347,7 @@ async def _call_wizard(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedV
         found.spec, subject_entity=run.subject_entity, trusted=True,
         workdir=run.workdir, inputs=_scope(run, step), shell=run.shell, launch=run.launch,
         approved=run.approved, resolve_op=run.resolve_op, resolve_wizard=run.resolve_wizard,
-        platform=run.platform, depth=run.depth + 1, parent=child,
+        platform=run.platform, chain=above, parent=child,
     )
 
 

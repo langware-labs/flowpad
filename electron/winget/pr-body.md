@@ -1,3 +1,6 @@
+---
+id: 6a91648c-7a6f-4a89-86ba-f07ff82485fa
+---
 ## 📖 Description
 
 __KIND__: **Langware.Flowpad** version **__VERSION__** — Flowpad desktop app (Electron, NSIS x64 installer, per-user, silent `/S`).

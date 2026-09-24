@@ -17,7 +17,7 @@ from typing import ClassVar
 
 import pytest
 
-from flow_sdk.core.compute.ask import open_questions
+from flow_sdk.core.compute_op.ask import open_questions
 from flow_sdk.core.wizard.runner import Resolved, run_wizard
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import AskResult, ExitCode, WizardResult
@@ -88,7 +88,7 @@ async def test_a_wizard_step_asks_and_binds_what_the_person_typed(client, tmp_pa
 
 
 async def test_a_cancelled_step_stops_the_wizard_without_a_value(client, tmp_path):
-    from flow_sdk.core.compute.ask import cancel
+    from flow_sdk.core.compute_op.ask import cancel
 
     run = asyncio.create_task(run_wizard(
         WIZARD, trusted=True, approved=True, workdir=Path(tmp_path),

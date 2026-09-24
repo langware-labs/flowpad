@@ -81,15 +81,58 @@ def test_an_unapproved_wizard_answers_refused_and_never_raises(tmp_path, monkeyp
     assert result.exit_code is ExitCode.REFUSED and result.ran is False
 
 
-def test_run_action_maps_refused_to_403_with_the_answer_in_the_body(tmp_path, monkeypatch):
+def test_run_action_answers_refused_with_a_200_and_the_answer_in_the_body(tmp_path, monkeypatch):
+    """The exit code IS the answer, read from one place — as `POST
+    /compute_op/<id>/run` does. A 403 would make `flow op`/`flow wizard` exit 2
+    ("the request failed") for what is really a refusal (7)."""
     import asyncio
 
-    from flow_sdk.responses.response import ApiFailResponse
+    from flow_sdk.responses.response import ApiSuccessResponse
 
     wizard = _folder_wizard(tmp_path, monkeypatch)
     response = asyncio.run(wizard.run_action())
-    assert isinstance(response, ApiFailResponse) and response.status_code == 403
+    assert isinstance(response, ApiSuccessResponse)
     assert response.data["exit_code"] == 7 and "steps" in response.data
+
+
+def test_a_wizard_that_did_not_run_is_not_busy_and_not_a_409(tmp_path, monkeypatch):
+    """The regression `busy` exists for. The edge used to send every NOT_YET with
+    `ran=False` to 409 — so a wizard whose op does not exist, one that calls
+    itself, or one on a box with no agent harness all read as "busy, try later",
+    and retrying never changes any of them."""
+    import asyncio
+
+    from flow_sdk.builtin.wizard import Wizard
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    wizard = _folder_wizard(tmp_path, monkeypatch)          # its only op does not exist
+    monkeypatch.setattr(Wizard, "is_system", lambda _self: True)
+    response = asyncio.run(wizard.run_action())
+    assert isinstance(response, ApiSuccessResponse), "never-started is an answer, not busy"
+    assert response.data["exit_code"] == 1 and response.data["ran"] is False
+    assert response.data["busy"] is False
+
+
+def test_the_disabled_and_conversational_gates_hold_outside_http(tmp_path, monkeypatch):
+    """Gates that lived only on the HTTP edge were skipped by triggers and by
+    Python; they are decided in `run` now, so every caller meets them."""
+    import asyncio
+    import json as _json
+
+    from flow_sdk.builtin.wizard import Wizard
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
+    wizard = _folder_wizard(tmp_path, monkeypatch)
+    monkeypatch.setattr(Wizard, "is_system", lambda _self: True)
+    document = Path(wizard.asset_ref) / "wizard.json"
+
+    body = _json.loads(document.read_text())
+    document.write_text(_json.dumps({**body, "enabled": False}))
+    assert asyncio.run(wizard.run()).exit_code is ExitCode.REFUSED
+
+    # A conversational wizard is an agent and NO steps — the spec refuses both.
+    document.write_text(_json.dumps({"name": body["name"], "agent": "helper", "steps": []}))
+    assert asyncio.run(wizard.run()).exit_code is ExitCode.NOT_APPLICABLE
 
 
 def test_run_action_maps_busy_to_409_with_the_answer_in_the_body(tmp_path, monkeypatch):
@@ -115,4 +158,5 @@ def test_run_action_maps_busy_to_409_with_the_answer_in_the_body(tmp_path, monke
         held.release()
     assert isinstance(response, ApiFailResponse) and response.status_code == 409
     assert response.data["exit_code"] == 1 and response.data["ran"] is False
+    assert response.data["busy"] is True, "busy is the ONE thing the edge maps to 409"
     assert "already running" in response.message
