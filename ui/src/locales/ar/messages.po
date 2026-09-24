@@ -1969,6 +1969,7 @@ msgid "Allowed senders"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "Already a member — change their role in the list above"
 msgstr "عضو بالفعل — يمكن تغيير دوره من القائمة أعلاه"
 
@@ -10296,6 +10297,15 @@ msgstr "الدعوات — المتجاهلة"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Invite"
 msgstr "دعوة"
+
+#. placeholder {0}: p.name || p.email || key
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Invite {0} as"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Invite as"
+msgstr ""
 
 #: src/components/account/organization-panel.tsx
 msgid "Invite by email…"
