@@ -1,3 +1,6 @@
+---
+id: f33ec2a5-c2a0-41e5-b633-e4364d30e635
+---
 # Staging OAuth validation — 2026-09-12
 
 Validated with Chrome profile langware.ai / eran@langware.ai against

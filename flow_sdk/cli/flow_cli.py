@@ -202,26 +202,37 @@ def _start_service_guarded(port: int) -> None:
     # stdout streams to this same terminal — the user sees progress.
     # ``run_if_needed`` is a no-op when no recipe exists or the migration
     # already completed, so this is safe on every start.
+    from flow_sdk import boot_progress
     from flow_sdk.migrations import runner as migration_runner
     from flow_sdk.server.launch import check_server_health, start_monitor_detached, wait_for_server_health
 
-    migration_exit = migration_runner.run_if_needed()
-    if migration_exit != 0:
-        typer.echo(
-            f"Migration failed (exit={migration_exit}); refusing to start server.",
-            err=True,
-        )
-        raise typer.Exit(migration_exit)
+    # Each step below is a boot phase the desktop app's startup gate can see
+    # (boot_progress writes to this process's stdout when the app asked for
+    # it). A migration imports nothing for minutes, so without the phase line
+    # the gate would read it as a hang.
+    try:
+        boot_progress.set_phase("migration")
+        migration_exit = migration_runner.run_if_needed()
+        if migration_exit != 0:
+            typer.echo(
+                f"Migration failed (exit={migration_exit}); refusing to start server.",
+                err=True,
+            )
+            raise typer.Exit(migration_exit)
 
-    if check_server_health(port):
-        typer.echo(f"Server already running on port {port}")
-    else:
-        typer.echo(f"Starting Flow server on http://127.0.0.1:{port}")
-        start_monitor_detached(port)
-        if wait_for_server_health(port, timeout=10.0):
-            typer.echo("Server is ready")
+        if check_server_health(port):
+            typer.echo(f"Server already running on port {port}")
         else:
-            typer.echo("Server may still be starting...")
+            typer.echo(f"Starting Flow server on http://127.0.0.1:{port}")
+            boot_progress.set_phase("spawn")
+            start_monitor_detached(port)
+            boot_progress.set_phase("wait_health")
+            if wait_for_server_health(port, timeout=10.0):
+                typer.echo("Server is ready")
+            else:
+                typer.echo("Server may still be starting...")
+    finally:
+        boot_progress.stop()
 
 
 start_app = typer.Typer(help="Start the Flow server.", invoke_without_command=True, add_completion=False)
