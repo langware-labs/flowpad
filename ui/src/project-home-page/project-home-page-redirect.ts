@@ -1,5 +1,4 @@
-import apiClient from '@sdk/client';
-import { Agent, AgenticProcess, dataContext, isHubOnly, TypeId } from '@sdk';
+import { Agent, AgenticProcess, dataContext, isHubOnly, Project, TypeId, type ProjectHomePage } from '@sdk';
 import { replace } from 'react-router';
 
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -12,17 +11,6 @@ import { HOME_PAGE_OPEN, HOME_PAGE_PARAM, rememberProjectHomePage } from './home
 
 /** Registration IS the switch: `false` takes the resolver out of the chain entirely. */
 export const PROJECT_HOME_PAGE_ENABLED = true;
-
-export const PROJECT_HOME_PAGE_ENDPOINT = '/api/v1/project/home-page';
-
-/** `POST /api/v1/project/home-page` — `Project.open_home_page()`. */
-export interface ProjectHomePageResponse {
-  /** The declared asset's TypeId, once it resolves inside this project. */
-  asset: string | null;
-  type?: string | null;
-  /** Set when the backend tried and failed; the rest is null alongside it. */
-  error?: string;
-}
 
 /**
  * Where an AGENT home page lands: its last chat in this project — the rail's
@@ -52,7 +40,7 @@ async function agentHomePageDock(agentTypeId: string, projectId: string): Promis
  * own view — the same routing `flow show entity` uses. Null when the asset
  * addresses nothing openable.
  */
-export async function homePageDock(data: ProjectHomePageResponse, projectId: string): Promise<DockPointer | null> {
+export async function homePageDock(data: ProjectHomePage, projectId: string): Promise<DockPointer | null> {
   if (!data.asset || !data.type) return null;
   if (data.type === Agent.type) return agentHomePageDock(data.asset, projectId);
   return dockForDisplayTarget({ kind: 'entity', typeid: data.asset, type: data.type });
@@ -86,9 +74,9 @@ export async function projectHomePageRedirect(request: Request): Promise<Respons
   const projectId = scoped ?? dataContext.project?.id ?? null;
   if (!projectId) return null;
 
-  let data: ProjectHomePageResponse;
+  let data: ProjectHomePage;
   try {
-    data = await apiClient.post<ProjectHomePageResponse>(PROJECT_HOME_PAGE_ENDPOINT, { project_id: projectId });
+    data = await Project.openHomePage(projectId);
   } catch (e) {
     console.warn('[project-home-page] backend call failed; default home', e);
     return null;
