@@ -59,7 +59,6 @@ from .routes import (
     detection_router,
     directory_router,
     display_router,
-    snippet_router,
     docs_graph_router,
     favorites_router,
     git_router,
@@ -75,6 +74,7 @@ from .routes import (
     runs_router,
     search_router,
     semantic_checker_router,
+    snippet_router,
     subgraph_router,
     tags_router,
     testing_router,
@@ -241,6 +241,7 @@ async def _on_server_startup():
 
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
+    await _start_keep_alive_loop()
     await _start_stream_inbox_catchup()
     await _seed_service_triggers()
     await _prune_orphan_scheduler_jobs()
@@ -257,6 +258,19 @@ async def _on_server_startup():
     # expiry rebuild every schema on the HTTP path (~500 ms).
     await initialize_bootstrap()
     await _start_app_ready_signal()
+
+
+async def _start_keep_alive_loop() -> None:
+    """Spawn the once-a-minute keep-alive reporter (``flow_sdk/compute/keep_alive.py``).
+
+    Started on every instance: the hub assigns a node id after boot, and until it
+    does -- on a desktop, forever -- each tick is a config read and nothing else.
+    """
+    import asyncio as _asyncio
+
+    from flow_sdk.compute.keep_alive import run_keep_alive_loop
+
+    _asyncio.create_task(run_keep_alive_loop(), name="keep-alive")
 
 
 async def _start_app_ready_signal() -> None:
@@ -325,14 +339,16 @@ async def _app_ready_signal() -> None:
         # make+publish rather than emit: `emit` returns None when nothing is
         # subscribed, and this line wants a stable event id in the log either
         # way — it is the join key the trigger log records as `cause_event_id`.
-        event = publish_tag(make_tag_event(
-            "app.ready",
-            target_of("compute_node", local_entity_id("compute_node")),
-            {
-                "version": __version__,
-                "instance": get_instance_settings().instance_name,
-            },
-        ))
+        event = publish_tag(
+            make_tag_event(
+                "app.ready",
+                target_of("compute_node", local_entity_id("compute_node")),
+                {
+                    "version": __version__,
+                    "instance": get_instance_settings().instance_name,
+                },
+            )
+        )
         log.info("[app.ready] emitted event_id=%s", event.id)
     except Exception:
         log.exception("App-ready signal failed")
@@ -355,9 +371,7 @@ async def _start_system_content_index() -> None:
         from flow_sdk.server.routes.bootstrap import index_system_content
 
         global _system_content_index_task
-        _system_content_index_task = _asyncio.create_task(
-            index_system_content(), name="system-content-index"
-        )
+        _system_content_index_task = _asyncio.create_task(index_system_content(), name="system-content-index")
         print("  System content index: scheduled (background)")
     except Exception:
         logging.getLogger(__name__).exception("System content index: failed to start")

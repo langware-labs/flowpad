@@ -35,6 +35,7 @@ from flow_sdk.assets.directory import AssetDir
 from flow_sdk.assets.folder import AssetFolder
 from flow_sdk.assets.usage import AssetUsage
 from flow_sdk.builtin.agent_hook import HookEventType
+from flow_sdk.builtin.agentic_process import transcript_cache
 from flow_sdk.builtin.agentic_process.activity_bridge import (
     end_process_activity,
     sync_process_activity,
@@ -53,13 +54,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     latch_spawn_failure,
     resolve_worker_language,
 )
-from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
-from flow_sdk.builtin.agentic_process.process_assets import (
-    PreparedProcessAssets,
-    ProcessAssets,
-    SystemInstructionAssets,
-)
-from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 from flow_sdk.builtin.agentic_process.display_context import (
     DISPLAY_CONTEXT_KEY,
     DisplayContextTooLarge,
@@ -70,9 +64,14 @@ from flow_sdk.builtin.agentic_process.display_context import (
     with_display_context,
     without_stale_display_context,
 )
-from flow_sdk.builtin.agentic_process import transcript_cache
+from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
+from flow_sdk.builtin.agentic_process.process_assets import (
+    PreparedProcessAssets,
+    ProcessAssets,
+    SystemInstructionAssets,
+)
+from flow_sdk.builtin.agentic_process.process_hooks import clear_process_hook_callbacks
 from flow_sdk.builtin.agentic_process.status_predicates import (
-    WorkerMode,
     is_process_startable,
     is_ready_for_input,
     is_ready_from_busy,
@@ -104,13 +103,13 @@ from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
-    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
     from flow_sdk.builtin.hooks.process_manager import ProcessHooksManager
     from flow_sdk.builtin.shell import Shell
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.fs_store.fs_record import FSRecord
     from flow_sdk.responses.response import ApiResponse
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
     from flow_sdk.transcript_analyzer import AgentTranscriptFile
     from flow_sdk.transcript_analyzer.counters import FocusedAsset
 
@@ -249,6 +248,18 @@ def prompt_worker_active(process_id: str) -> bool:
     projection true until the driver has emitted its final FlowData.
     """
     return process_id in _PROMPT_ADMISSIONS or process_id in _PROMPT_WORKERS
+
+
+def any_prompt_in_flight() -> bool:
+    """True while ANY process has a headless / chat-over-PTY turn in flight.
+
+    The instance-wide form of ``prompt_lock_locked`` + ``prompt_worker_active``,
+    for the one caller that asks about the machine rather than a process: the
+    keep-alive loop, which must hold a sandbox awake while an agent works in it
+    unattended. A native-xterm turn is not seen here -- it holds no lock -- but a
+    person is typing into it, and that is reported as user activity instead.
+    """
+    return bool(_PROMPT_ADMISSIONS or _PROMPT_WORKERS) or any(lock.locked() for lock in _PROMPT_LOCKS.values())
 
 
 def try_admit_prompt(process_id: str) -> object | None:
@@ -526,6 +537,8 @@ def _build_run_result(proc: "AgenticProcess") -> "PromptResult":
 # back-compat readers (standard-mode viewer). Capped; consecutive identical
 # targets refresh the timestamp instead of duplicating.
 DISPLAY_STACK_CAP = 50
+
+
 def _append_display_entry(stack: list[dict], payload: dict, shown_at: str) -> list[dict]:
     """Append ``payload`` (stamped ``shown_at``) to ``stack``; a consecutive
     identical target just refreshes its timestamp. Capped to the newest N."""
@@ -1876,9 +1889,7 @@ class AgenticProcess(Entity):
         # body cannot carry — ``_http_open`` picks it up the same way.
         if request_info and request_info.request_connection_id:
             self.connection_id = request_info.request_connection_id
-        return await self.start_pty(
-            instruction=None, visible=True, retry=True, terminal_theme=switch.theme
-        )
+        return await self.start_pty(instruction=None, visible=True, retry=True, terminal_theme=switch.theme)
 
     @action.post(action_name="restart")
     async def http_restart(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -2521,7 +2532,6 @@ class AgenticProcess(Entity):
             raise InvalidDisplayTarget(str(e)) from e
         return str(endpoint.typeid)
 
-
     async def _artifact_reference(self, payload: dict) -> tuple[str, str]:
         """What a resolved display target points at: ``(asset_ref, entity_kind)``.
 
@@ -2831,9 +2841,7 @@ class AgenticProcess(Entity):
                     context[DISPLAY_CONTEXT_KEY] = latest_ctx[DISPLAY_CONTEXT_KEY]
         stack = _append_display_entry(base, payload, shown_at)
         # A context speaks only for the page it was written on.
-        self.context_data = without_stale_display_context(
-            {**context, "display_stack": stack, "last_shown": payload}
-        )
+        self.context_data = without_stale_display_context({**context, "display_stack": stack, "last_shown": payload})
         try:
             await self._save_display_authoritative()
         except Exception:
@@ -5074,13 +5082,13 @@ class AgenticProcess(Entity):
     async def load_embedded_subagent_action(
         self, asset_ref: str = "", set_ap_persona: bool = False
     ) -> "ApiSuccessResponse | ApiFailResponse":
-        return await self.asset_workspace.load_embedded_subagent_action(asset_ref=asset_ref, set_ap_persona=set_ap_persona)
-
+        return await self.asset_workspace.load_embedded_subagent_action(
+            asset_ref=asset_ref, set_ap_persona=set_ap_persona
+        )
 
     @action.post(action_name="load-embedded-skill")
     async def load_embedded_skill_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
         return await self.asset_workspace.load_embedded_skill_action(asset_ref=asset_ref)
-
 
     async def load_skill(self, skill: "Any") -> "ApiSuccessResponse | ApiFailResponse":
         return await self.asset_workspace.load_skill(skill=skill)
@@ -5115,7 +5123,6 @@ class AgenticProcess(Entity):
     def ensure_process_assets(self) -> AssetDir:
         return self.asset_workspace.ensure_process_assets()
 
-
     @property
     def instructions(self) -> str | None:
         value = (self.context_data or {}).get("instructions")
@@ -5129,7 +5136,6 @@ class AgenticProcess(Entity):
         else:
             context["instructions"] = value
         self.context_data = context
-
 
     async def prepare_process_assets(self) -> PreparedProcessAssets:
         return await self.asset_workspace.prepare_process_assets()
@@ -5363,7 +5369,6 @@ class AgenticProcess(Entity):
             "mcp_config_fragment": dict(prepared.mcp_runtime.config_fragment),
         }
 
-
     @action.post(action_name="attach-embedded-asset")
     async def attach_embedded_asset(self, entity_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
         return await self.asset_workspace.attach_embedded_asset(entity_ref=entity_ref)
@@ -5396,10 +5401,14 @@ class AgenticProcess(Entity):
         transcript = transcript if transcript is not None else self._load_transcript()
         if bindings is None:
             # Only a binding captured with this run can attribute a name-only call.
-            bindings = [InvocationBinding.model_validate(value)
-                        for value in (self.context_data or {}).get("asset_invocation_bindings", [])]
+            bindings = [
+                InvocationBinding.model_validate(value)
+                for value in (self.context_data or {}).get("asset_invocation_bindings", [])
+            ]
         entries = transcript.entries if transcript is not None else []
-        return usage_project_context(resolve_usage(entries, workdir=self.workdir, bindings=bindings), await self.get_asset_folders())
+        return usage_project_context(
+            resolve_usage(entries, workdir=self.workdir, bindings=bindings), await self.get_asset_folders()
+        )
 
     async def get_asset_descriptors(self, *, usages=None) -> list[AssetDescriptor]:
         return (await self.get_asset_catalog(usages=usages)).assets
@@ -5413,7 +5422,13 @@ class AgenticProcess(Entity):
         catalog = await scan_catalog(await self.get_asset_folders(sources=sources), sources, EXECUTABLE_ASSET_TYPES)
         descriptors = list(catalog.assets)
         descriptors.extend(descriptor_from_asset(asset, attached=True) for asset in await self.get_embedded_assets())
-        return catalog.model_copy(update={"assets": apply_usage(descriptors, usages if usages is not None else await self.get_used_assets(), sources=sources)})
+        return catalog.model_copy(
+            update={
+                "assets": apply_usage(
+                    descriptors, usages if usages is not None else await self.get_used_assets(), sources=sources
+                )
+            }
+        )
 
     # ── Restart-required tracking ─────────────────────────────────────────────
 
@@ -5667,7 +5682,9 @@ class AgenticProcess(Entity):
         if isinstance(add_dirs, list):
             worker_snapshot = {
                 **worker_snapshot,
-                "add_dirs": [directory for directory in add_dirs if not self.asset_workspace._is_process_assets_path(directory)],
+                "add_dirs": [
+                    directory for directory in add_dirs if not self.asset_workspace._is_process_assets_path(directory)
+                ],
             }
         return {
             "generic": self._generic_restart_snapshot_payload(driver),
@@ -5843,27 +5860,54 @@ class AgenticProcess(Entity):
             return await self._relay_json("get-assets", method="GET", refresh=False)
         usages = await self.get_used_assets()
         if self.pty_mode and self.restart_required and self.shell_id and not self.last_started_snapshot:
-            return ApiSuccessResponse(data=inventory_payload(apply_usage([], usages, sources=await process_asset_sources(self)), usages,
-                assistant_enabled=self.assistant_enabled,
-                error="Worker has pending restart changes; current configuration does not describe the running worker"))
+            return ApiSuccessResponse(
+                data=inventory_payload(
+                    apply_usage([], usages, sources=await process_asset_sources(self)),
+                    usages,
+                    assistant_enabled=self.assistant_enabled,
+                    error="Worker has pending restart changes; current configuration does not describe the running worker",
+                )
+            )
         inspection = await inventory_process_view(self)
         sources = await process_asset_sources(inspection)
         try:
             catalog = await inspection.get_asset_catalog(usages=usages)
             items = catalog.assets
         except AssetScanError as error:
-            return ApiSuccessResponse(data=inventory_payload(apply_usage([], usages, sources=sources), usages,
-                assistant_enabled=self.assistant_enabled, error=str(error)))
+            return ApiSuccessResponse(
+                data=inventory_payload(
+                    apply_usage([], usages, sources=sources),
+                    usages,
+                    assistant_enabled=self.assistant_enabled,
+                    error=str(error),
+                )
+            )
         if not inspection.workdir:
-            return ApiSuccessResponse(data=inventory_payload(items, usages,
-                assistant_enabled=self.assistant_enabled, error="Worker has no working directory yet", scan_issues=catalog.issues))
+            return ApiSuccessResponse(
+                data=inventory_payload(
+                    items,
+                    usages,
+                    assistant_enabled=self.assistant_enabled,
+                    error="Worker has no working directory yet",
+                    scan_issues=catalog.issues,
+                )
+            )
         try:
             observations = await inspection.driver.available_assets(inspection)
             items = reconcile_assets(items, observations, sources=sources)
         except (AssetInventoryError, AssetScanError, FileNotFoundError, ValueError, LookupError) as error:
-            return ApiSuccessResponse(data=inventory_payload(items, usages,
-                assistant_enabled=self.assistant_enabled, error=str(error), scan_issues=catalog.issues))
-        return ApiSuccessResponse(data=inventory_payload(items, usages, assistant_enabled=self.assistant_enabled, scan_issues=catalog.issues))
+            return ApiSuccessResponse(
+                data=inventory_payload(
+                    items,
+                    usages,
+                    assistant_enabled=self.assistant_enabled,
+                    error=str(error),
+                    scan_issues=catalog.issues,
+                )
+            )
+        return ApiSuccessResponse(
+            data=inventory_payload(items, usages, assistant_enabled=self.assistant_enabled, scan_issues=catalog.issues)
+        )
 
     @action.get(action_name="get-history")
     async def get_history_action(self) -> "ApiSuccessResponse":
@@ -6230,7 +6274,9 @@ class AgenticProcess(Entity):
         if descriptor is not None and self.apply_remote_projection(descriptor):
             await self.save(notify=True)
 
-    async def _relay_json(self, action: str | None, *, method: str = "POST", body: dict | None = None, refresh: bool = True):
+    async def _relay_json(
+        self, action: str | None, *, method: str = "POST", body: dict | None = None, refresh: bool = True
+    ):
         """Forward one JSON action to the hub, unchanged. ``refresh`` re-reads the
         projection afterwards — off for pure reads and for verbs after which the
         row is idle or gone."""
@@ -6317,7 +6363,9 @@ class AgenticProcess(Entity):
         data["queue"] = self._queue_state()
         data["supports_plan_mode"] = self._supports_plan_mode()
         data["additional_dirs"] = [
-            path for path in (data.get("additional_dirs") or []) if not self.asset_workspace._is_process_assets_path(path)
+            path
+            for path in (data.get("additional_dirs") or [])
+            if not self.asset_workspace._is_process_assets_path(path)
         ]
         # NOTE: cmd_line is intentionally NOT computed here. Resolving it walks
         # cli_options -> transcript_descriptor -> get_claude_session, i.e. live
@@ -6905,15 +6953,27 @@ class AgenticProcess(Entity):
         if not isinstance(data, dict):
             return ApiFailResponse(message="Event data must be an object")
         prompt = data.get("prompt")
-        if event is AgenticProcessEventName.FIRST_PROMPT and isinstance(prompt, str) and not prompt.lstrip().startswith("/"):
+        if (
+            event is AgenticProcessEventName.FIRST_PROMPT
+            and isinstance(prompt, str)
+            and not prompt.lstrip().startswith("/")
+        ):
             await self.reconcile_name(first_prompt=prompt)
         driver = self._restart_driver()
         handler = getattr(driver, "report_event", None)
         result = await handler(self, event, data) if callable(handler) else {"handled": False}
-        return ApiSuccessResponse(data={**result, "accepted": True, "scheduled": False,
-                                       "process_id": self.id, "worker_type": self.worker_type,
-                                       "event_name": event.value, "event_data": data,
-                                       "session_id": self.session_id})
+        return ApiSuccessResponse(
+            data={
+                **result,
+                "accepted": True,
+                "scheduled": False,
+                "process_id": self.id,
+                "worker_type": self.worker_type,
+                "event_name": event.value,
+                "event_data": data,
+                "session_id": self.session_id,
+            }
+        )
 
     async def stamp_default_name(self) -> bool:
         """Compatibility entry point for shared name reconciliation on lifecycle edges."""
@@ -7492,8 +7552,12 @@ class AgenticProcess(Entity):
             # One line for both outcomes — a second copy in the except arm drifts
             # the moment a field is added, and says nothing about the failure.
             toplog.log(
-                "pty", "turn_end_reindex process=%s paths=%s counts=%s ms=%.0f",
-                self.id, len(paths), counts, (time.monotonic() - t0) * 1000,
+                "pty",
+                "turn_end_reindex process=%s paths=%s counts=%s ms=%.0f",
+                self.id,
+                len(paths),
+                counts,
+                (time.monotonic() - t0) * 1000,
             )
 
     def _current_transcript(self) -> "AgentTranscriptFile | None":
@@ -7566,8 +7630,14 @@ class AgenticProcess(Entity):
                 "pty",
                 "turn_end_transcript_parse process=%s entries=%s bytes=%s watermark=%s touched=%s "
                 "parse_ms=%.0f scan_ms=%.0f ms=%.0f",
-                self.id, len(entries), size, wm, len(touched),
-                parse_ms, scan_ms, total_ms,
+                self.id,
+                len(entries),
+                size,
+                wm,
+                len(touched),
+                parse_ms,
+                scan_ms,
+                total_ms,
             )
         return touched
 

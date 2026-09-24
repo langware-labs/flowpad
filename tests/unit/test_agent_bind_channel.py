@@ -15,7 +15,7 @@ import pytest
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]
+pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope")]
 
 CHANNEL = "C08L1P4C95J"
 
@@ -24,6 +24,7 @@ CHANNEL = "C08L1P4C95J"
 def connected(monkeypatch):
     """Slack, held. `bind_channel` refuses before it mints a row otherwise —
     see `test_an_unconnected_provider_is_refused_before_a_row_exists`."""
+
     async def _held(provider):
         return SimpleNamespace(provider=provider, connected=True)
 

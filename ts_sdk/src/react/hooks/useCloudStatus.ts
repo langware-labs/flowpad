@@ -9,6 +9,8 @@ export interface UseCloudStatusResult {
   connection: ConnectionSlot<HubConnectionStatus>;
   cloudUrl: string;
   connectionControlsAvailable: boolean;
+  /** See `CloudManager.takenOver` — sticky across the incoming person's LOGGED_IN. */
+  takenOver: boolean;
 }
 
 /**
@@ -32,5 +34,6 @@ export function useCloudStatus(): UseCloudStatusResult {
     connection: cloudManager.connectionSlot as ConnectionSlot<HubConnectionStatus>,
     cloudUrl: cloudManager.cloudUrl,
     connectionControlsAvailable: cloudManager.connectionControlsAvailable,
+    takenOver: cloudManager.takenOver,
   };
 }

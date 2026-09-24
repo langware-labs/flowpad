@@ -5,6 +5,7 @@ exists for is a Slack source whose bot has not been invited yet: nobody disabled
 fetch nothing if polled. That is neither `enabled=False` nor `config_error`, and the old boolean
 could not say it.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -17,7 +18,11 @@ from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.protocols import Verdict
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.timeout(30),  # do not increase timeout without approval
+    pytest.mark.usefixtures("fresh_user_scope"),
+]
 
 
 class _NeedsSetup(Source):
@@ -125,5 +130,10 @@ async def test_status_and_health_are_independent_axes(sources):
 async def test_legacy_rows_keep_the_pause_their_owner_set():
     """The one migration outcome worse than an error is a source someone deliberately paused
     quietly coming back."""
-    assert DataSource.model_validate({"name": "x", "provider": "rss", "enabled": False}).status == SourceStatus.DISABLED.value
-    assert DataSource.model_validate({"name": "x", "provider": "rss", "enabled": True}).status == SourceStatus.ACTIVE.value
+    assert (
+        DataSource.model_validate({"name": "x", "provider": "rss", "enabled": False}).status
+        == SourceStatus.DISABLED.value
+    )
+    assert (
+        DataSource.model_validate({"name": "x", "provider": "rss", "enabled": True}).status == SourceStatus.ACTIVE.value
+    )
