@@ -146,7 +146,10 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
       const replay = stream ? await replayPtyStream(stream).catch(() => null) : null;
       if (disposed) return;
       term.reset();
-      if (replay) term.write(replay.serialized);
+      // The recorded screen's empty rows under the last output are dropped: the stream is recorded at
+      // its own size (a deployment's terminal is 30 rows), and written into a smaller view they scroll
+      // the real lines out and leave it showing blank rows.
+      if (replay) term.write(replay.serialized.replace(/(?:\r\n)+\x1b\[\d+A$/, ''));
       const decoder = new TextDecoder('utf-8', { fatal: false });
       for (const chunk of shell.getPtyChunks()) {
         const text = decoder.decode(chunk.data, { stream: true });
