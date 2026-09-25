@@ -30,7 +30,8 @@ from flow_sdk.external_apis.voice import realtime
 from flow_sdk.sources import http
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import Credentials
-from flow_sdk.sources.errors import Rejected
+from flow_sdk.sources.errors import AccessDenied, Rejected, SourceError
+from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.call import IncomingCall
 from flow_sdk.sources.values.items import MessageItem
 from flow_sdk.sources.voice import VoiceChannel
@@ -64,14 +65,45 @@ class VoicePhoneSource(VoiceChannel):
 
     #: Calls we dialled and OpenAI has not rung back yet, by dial token: (callee, what it is for).
     _dialled: ClassVar[dict[str, tuple[str, str]]] = {}
-    #: Calls on the line from this process, by the person: what ``say_to`` speaks into.
-    _live: ClassVar[dict[str, Any]] = {}
+    #: Calls on the line from this process, by the person: what ``say_to`` speaks into, and the call's conversation key.
+    _live: ClassVar[dict[str, tuple[Any, str]]] = {}
 
     def _model(self) -> str:
         return str(self.config.get("model") or "").strip() or realtime.DEFAULT_MODEL
 
     def _voice(self) -> str:
         return str(self.config.get("voice") or "").strip() or realtime.DEFAULT_VOICE
+
+    # ── setup ───────────────────────────────────────────────────────────────
+    async def verify(self) -> Verdict:
+        """The four keys resolve and the number is on the Twilio account (one
+        ``GET …/IncomingPhoneNumbers.json?PhoneNumber=``). What cannot be checked from here is said:
+        OpenAI's SIP webhook must reach this instance."""
+        try:
+            self.api_key()
+        except AccessDenied as exc:
+            return Verdict(ready=False, detail=str(exc))
+        missing = [n for n in ("OPENAI_WEBHOOK_SECRET", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN") if not self.secret(n)]
+        if missing:
+            return Verdict(ready=False, detail=f"Set {', '.join(missing)} — the line cannot run without them.")
+        if not str(self.config.get("project") or "").strip():
+            return Verdict(ready=False, detail="No OpenAI project yet — name the project whose SIP connector takes the calls.")
+        sid, token = self.secret("TWILIO_ACCOUNT_SID"), self.secret("TWILIO_AUTH_TOKEN")
+        base = str(self.config.get("twilio_base_url") or TWILIO_API).rstrip("/")
+        try:
+            async with http.client() as client:
+                body = await http.request_json(
+                    client, "GET", f"{base}/2010-04-01/Accounts/{sid}/IncomingPhoneNumbers.json",
+                    params={"PhoneNumber": self.account}, auth=(sid, token), hint="Twilio refused the lookup",
+                )
+        except AccessDenied:
+            return Verdict(ready=False, detail="Twilio refused TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN.")
+        except SourceError as exc:
+            return Verdict(ready=False, detail=f"Twilio refused the request: {exc}")
+        if not (body or {}).get("incoming_phone_numbers"):
+            return Verdict(ready=False, detail=f"{self.account} is not a number on this Twilio account.")
+        return Verdict(ready=True, detail=f"Calls on {self.account}. Point the OpenAI project's SIP webhook at "
+                                          "/api/v1/data_source/webhook/voice_phone on this instance — it cannot be checked from here.")
 
     # ── the webhooks ────────────────────────────────────────────────────────
     @classmethod
@@ -107,10 +139,12 @@ class VoicePhoneSource(VoiceChannel):
         call = realtime.incoming(payload) if not _is_carrier(payload) else None
         if call is None or not call.call_id:
             return []
-        placed = self._dialled.pop(_sip_headers(payload).get(DIAL_HEADER.lower(), ""), None)
+        dial_token = _sip_headers(payload).get(DIAL_HEADER.lower(), "")
+        placed = self._dialled.pop(dial_token, None)
         if placed is not None:
             callee, brief = placed
-            return [call.model_copy(update={"caller": callee, "dialed": self.account, "brief": brief, "caller_name": ""})]
+            return [call.model_copy(update={"caller": callee, "dialed": self.account, "brief": brief, "caller_name": "",
+                                            "conversation": placed_key(dial_token)})]
         return [call.model_copy(update={"dialed": self.account})]
 
     # ── the call ────────────────────────────────────────────────────────────
@@ -137,14 +171,14 @@ class VoicePhoneSource(VoiceChannel):
                 hint="Twilio refused the call",
             )
         body = response.json()
-        return {"call_sid": str(body.get("sid") or ""), "status": str(body.get("status") or ""), "to": to}
+        return {"call_sid": str(body.get("sid") or ""), "status": str(body.get("status") or ""), "to": to, "dial": dial}
 
     async def accept(self, call: IncomingCall, *, instructions: str):
         client = self.client()
         await realtime.accept(client, call, instructions=instructions, model=self._model(), voice=self._voice())
         greet = "Open the call now, as your instructions say." if call.brief else "Greet the caller in one short sentence."
         session = realtime.RealtimeCallSession(client, call.call_id, greet=greet)
-        type(self)._live[call.caller] = session
+        type(self)._live[call.caller] = (session, call.conversation_key)
         return _Forgetting(session, lambda: type(self)._live.pop(call.caller, None))
 
     async def reject(self, call: IncomingCall) -> None:
@@ -152,12 +186,20 @@ class VoicePhoneSource(VoiceChannel):
 
     async def say_to(self, person: str, text: str) -> MessageItem:
         """Into their live call when they are on one; otherwise call them, with ``text`` as the call's purpose."""
-        session = type(self)._live.get(person)
-        if session is not None:
+        live = type(self)._live.get(person)
+        if live is not None:
+            session, call = live
             await session.say(text)
-            return self.said(person, text, f"say-{secrets.token_hex(6)}")
+            return self.said(person, text, f"say-{secrets.token_hex(6)}", call=call)
         placed = await self.dial(person, brief=text)
-        return self.said(person, f"Calling {person}: {text}", f"dial-{placed.get('call_sid') or secrets.token_hex(6)}")
+        return self.said(person, f"Calling {person}: {text}", f"dial-{placed.get('call_sid') or placed['dial']}",
+                         call=placed_key(placed["dial"]))
+
+
+def placed_key(dial: str) -> str:
+    """The conversation key of a call we placed: its dial's token — known when we dial, before the
+    call has an id — so the note that placed it and every sentence of it are one conversation."""
+    return f"dial-{dial}"
 
 
 def bridge(project: str, number: str, *, dial: str = "") -> str:

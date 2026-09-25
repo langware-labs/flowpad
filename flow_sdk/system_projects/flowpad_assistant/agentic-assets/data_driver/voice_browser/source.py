@@ -43,7 +43,7 @@ class VoiceBrowserSource(VoiceChannel):
     sends_may_draft: ClassVar[bool] = True
 
     #: Calls on the line from this process, by caller: what ``say_to`` speaks into.
-    _live: ClassVar[dict[str, Any]] = {}
+    _live: ClassVar[dict[str, tuple[Any, str]]] = {}
 
     def _model(self) -> str:
         return str(self.config.get("model") or "").strip() or realtime.DEFAULT_MODEL
@@ -71,7 +71,7 @@ class VoiceBrowserSource(VoiceChannel):
             client, call.call_id, greet=GREETING,
             update=realtime.session_config(instructions=instructions, model=self._model(), voice=self._voice()),
         )
-        type(self)._live[call.caller] = session
+        type(self)._live[call.caller] = (session, call.conversation_key)
         return _Forgetting(session, lambda: type(self)._live.pop(call.caller, None))
 
     async def reject(self, call: IncomingCall) -> None:
@@ -80,11 +80,12 @@ class VoiceBrowserSource(VoiceChannel):
     async def say_to(self, person: str, text: str) -> MessageItem:
         """Said into the person's live call. A browser line reaches nobody who is not on it, so with no
         call the message is a draft (no ``sent_at``) — the outcome says so rather than pretending."""
-        session = type(self)._live.get(person)
-        if session is None:
+        live = type(self)._live.get(person)
+        if live is None:
             return self.said(person, text, f"draft-{secrets.token_hex(6)}", sent_at=None)
+        session, call = live
         await session.say(text)
-        return self.said(person, text, f"say-{secrets.token_hex(6)}")
+        return self.said(person, text, f"say-{secrets.token_hex(6)}", call=call)
 
 
 class _Forgetting:

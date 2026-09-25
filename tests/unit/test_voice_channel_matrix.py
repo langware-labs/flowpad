@@ -218,3 +218,35 @@ async def test_every_call_is_its_own_thread_even_with_the_same_person(provider, 
                 assert texts.count(CALL_ENDED) == 1, texts
         finally:
             await agent.delete()
+
+
+async def test_a_call_the_agent_places_is_one_conversation_with_whom_it_called(monkeypatch, tmp_path):
+    """``line.start`` on a phone dials; the note that placed the call, every sentence of it and its end
+    are ONE conversation, addressed to the person called, begun and ended."""
+    import json  # noqa: PLC0415
+
+    stub_the_turn(monkeypatch, "x")
+    async with double_for("voice_phone", tmp_path) as double:
+        agent, source = await make_agent_source("voice_phone", double, monkeypatch)
+        try:
+            brief = "Confirm tomorrow's delivery window."
+            conversation = await source.start(to=double.sender, body=brief)
+            assert conversation.address == [double.sender] and conversation.started_at is not None
+            assert len(double.dials) == 1, "start on a phone line dials"
+
+            ring = double.rings_back()
+            result = await DataDriver.loaded("voice_phone").ingest_pushed(
+                source, json.loads(ring["body"]), headers=ring["headers"], raw=ring["body"])
+            (call,) = result["calls"]
+            engine = TurnEngine(agent, await agent.local_deployment())
+            assert await answer_call(engine, source, call) == str(conversation.id)
+
+            texts = [m.text for m in sorted(await FlowMessage.get_all({"conversation_id": str(conversation.id)}),
+                                            key=lambda m: str(m.sent_at))]
+            assert texts[0] == f"Calling {double.sender}: {brief}" and texts[-1] == CALL_ENDED, texts
+            ended = await Conversation.get_one({"id": str(conversation.id)})
+            assert ended.address == [double.sender] and ended.ended_at is not None
+            assert len(await Conversation.get_all({"channel_source_id": str(source.id)})) == 1
+        finally:
+            await source.delete()
+            await agent.delete()
