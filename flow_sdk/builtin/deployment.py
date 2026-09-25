@@ -753,6 +753,7 @@ class Deployment(Entity):
         """
         from flow_sdk.builtin.agent import worker_type_value  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.agentic_process import selected_worker_type  # noqa: PLC0415
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
         agent = await self._require_agent()
@@ -812,7 +813,7 @@ class Deployment(Entity):
             # interactive worker pass pty_mode=True and start it themselves.
             pty_mode=options.pop("pty_mode", False),
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
-            worker_type=worker_type_value(worker_override or agent.worker_type),
+            worker_type=worker_type_value(worker_override or agent.worker_type or await selected_worker_type()),
             project_id=options.pop("project_id", None) or agent.project_id,
             load_flowpad_assistant=cos_options.get("load_flowpad_assistant", agent.load_flowpad_assistant),
             additional_dirs=list(agent.additional_dirs or []),
@@ -845,24 +846,19 @@ class Deployment(Entity):
         turn is in flight); a disabled agent is REFUSED, a missing one NOT_FOUND.
         A caller that needs the process resolves it from ``executor``.
 
-        The two modes of ``AgenticProcess.run`` (``process_io``): by default the agent works in its
-        workdir; ``output_spec`` (or the agent's declared ``output``, when that names a DataSpec)
-        declares an output folder it must write, read back into ``value`` — only with ``wait=True``,
-        since without it the turn has not finished. ``input`` is a DataSpec saved into the run's input
-        folder, checked against the agent's declared ``input``.
+        ``input`` / ``output_spec``: typed folder I/O — see ``process_io``; the agent's declared ``input`` /
+        ``output`` apply when omitted, and the output is read back only with ``wait=True``.
         """
-        from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process.process_io import (  # noqa: PLC0415
             check_declared_input,
             declared_output_spec,
-            finish_io,
             prepare_io,
             resolve_output_spec,
+            take_turn,
         )
 
         agent = await self.agent()
-        spec = resolve_output_spec(output_spec) if output_spec is not None else declared_output_spec(
-            getattr(agent, "output", None))
+        spec = resolve_output_spec(output_spec) or declared_output_spec(getattr(agent, "output", None))
         check_declared_input(input, getattr(agent, "input", None))
         try:
             proc = await self.create_process(prompt, **options)
@@ -870,11 +866,7 @@ class Deployment(Entity):
             return gone.answer()
         prepare_io(proc, input=input, output_spec=spec)
         await proc.save()
-        taken = await proc.send_turn(prompt)
-        if not taken.ok or not wait:
-            return taken
-        await proc.wait()
-        return await finish_io(proc, _build_run_result(proc), spec)
+        return await take_turn(proc, prompt, spec, wait=wait)
 
     async def use(self, *, owner=None, **options) -> "AgenticProcess":
         """Open a session AS this agent: a visible, headless Chat process, saved,

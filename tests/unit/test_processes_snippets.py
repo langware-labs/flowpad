@@ -13,7 +13,6 @@ import json
 
 import pytest
 
-from tests.utils.mock_worker import MockDriver
 from tests.utils.snippets import doc, fence_under, run_fence
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10), pytest.mark.usefixtures("tmp_records_root", "home")]  # do not increase timeout without approval
@@ -22,18 +21,8 @@ DOC = "processes.md"
 
 
 @pytest.fixture
-def home(fresh_user_scope):
-    fresh_user_scope.mkdir(exist_ok=True)
-    return fresh_user_scope
-
-
-@pytest.fixture
-def mock(monkeypatch, tmp_path):
-    def install(behavior=None) -> MockDriver:
-        driver = MockDriver(tmp_path / "transcripts", behavior=behavior)
-        monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process.get_driver", lambda _t: driver)
-        return driver
-    return install
+def mock(mock_driver):
+    return mock_driver
 
 
 async def _until(predicate) -> None:
@@ -91,10 +80,8 @@ async def test_3_launch_read_the_answer_and_release_the_worker(initialize_test_d
 
 async def test_4_a_cv_in_is_a_cv_out(initialize_test_db, mock):
     def review(turn):
-        told = turn.instructions
-        main = next(line.split("`")[1] for line in told.splitlines() if "JSON with the fields" in line)
-        cv = json.loads(turn.read(turn.input_dir / main))
-        turn.write(turn.output_dir / main, json.dumps({**cv, "skills": ["Go", "Postgres"]}))
+        cv = json.loads(turn.read(turn.input_dir / turn.main_document))
+        turn.write(turn.output_dir / turn.main_document, json.dumps({**cv, "skills": ["Go", "Postgres"]}))
         turn.write(turn.output_dir / "body.md", "# Dana Levi\n\n" + turn.read(turn.input_dir / "body.md"))
         return "Your CV was reviewed"
 

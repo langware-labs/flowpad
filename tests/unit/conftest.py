@@ -254,6 +254,26 @@ def fresh_user_scope(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def home(fresh_user_scope):
+    """A user scope of this test's own, created — for fences that look assets up by name."""
+    fresh_user_scope.mkdir(exist_ok=True)
+    return fresh_user_scope
+
+
+@pytest.fixture
+def mock_driver(monkeypatch, tmp_path):
+    """Install the mock worker at the driver-resolution seam: ``mock_driver(behavior, **kw) -> MockDriver``."""
+    from tests.utils.mock_worker import MockDriver
+
+    def install(behavior=None, **kw) -> MockDriver:
+        driver = MockDriver(tmp_path / "mock-transcripts", behavior=behavior, **kw)
+        monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process.get_driver", lambda _t: driver)
+        return driver
+
+    return install
+
+
+@pytest.fixture
 def tmp_records_root(tmp_path, monkeypatch):
     """Redirect the records root at every binding site. NON-autouse: files that
     want it opt in with a module-level ``autouse`` wrapper (so it does not apply
