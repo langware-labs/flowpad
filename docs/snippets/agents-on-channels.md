@@ -9,7 +9,7 @@ channel. Two ways to "run" it: **the app runs it** (the source is the agent's, t
 every allowed message — nothing of yours stays running), or **your process runs the loop** (plain
 Python over the same SDK, for a worker or a policy of your own). Both need Flowpad running on the
 machine and an LLM source the harness can spend (Settings → LLM, or the `lm_keys` route).
-Everything below is run as written by `tests/unit/test_agents_on_channels_snippets.py` against the
+§4 puts an agent on a phone line the same way. Everything below is run as written by `tests/unit/test_agents_on_channels_snippets.py` against the
 WhatsApp double; both variants are also proven in Docker by
 `tests/long_tests/test_whatsapp_agent_in_docker.py` — a clean container, the snippet alone, a real model turn.
 
@@ -63,7 +63,7 @@ whatsapp = await DataDriver.get("whatsapp")
 source = whatsapp.create_source(
     whatsapp.create_config(phone_number_id=PHONE_NUMBER_ID, verify_token=VERIFY_TOKEN, **EXTRA_CONFIG),
     name="Acme support line",
-    owner=agent.typeid,                        # the agent's stream inbox; the agent answers
+    owner=agent,                               # the agent's stream inbox; the agent answers
     allowed_senders=[CUSTOMER],        # who may drive it — empty admits nobody
 )
 await source.save()
@@ -106,11 +106,50 @@ To choose which of the agent's channels to listen to, or to route some messages 
 or to one session per customer, see `agent-deployment.md` §6 — the same loop over
 `support.channel("whatsapp")` and `answer(engine, m, session=...)`, with every gate kept.
 
-## 4. How to use it
+## 4. A phone agent
+
+The same shape on a phone line — every channel is: a source the agent owns, saved, verified. The
+`voice_phone` driver carries the line on Twilio and the voice on OpenAI Realtime over SIP; no audio
+passes through Flowpad, only the call's control channel. Its four keys (`OPENAI_API_KEY`,
+`OPENAI_WEBHOOK_SECRET`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`) come from the project's secrets or
+the environment, never config.
+
+```python
+from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.data_driver import DataDriver
+
+agent = Agent(name="front-desk", system_prompt="You answer Acme's phone. Be brief.")
+await agent.save()
+
+phone = await DataDriver.get("voice_phone")                 # Twilio → OpenAI Realtime over SIP
+line = phone.create_source(
+    phone.create_config(number="+14155550100", project="proj_acme", **EXTRA_CONFIG),
+    name="Acme front desk",
+    owner=agent,                                            # the agent's line: it answers every call on it
+    allowed_senders=["+972501234567"],                      # who may call — private to this machine
+)
+await line.save()
+(await line.verify())["ready"]                              # the keys are set, the number is on the Twilio account
+
+await agent.run_locally()                                   # every call is a Conversation, answered live
+call = await line.start(to="+972501234567", body="Confirm tomorrow's delivery window.")
+call.address                                                # ["+972501234567"] — who it is with
+```
+
+A call — one the agent places (`line.start`) or one made to the number — is one **Conversation**:
+the note that placed it, every sentence either side said, and its end (`ended_at` once the line is
+down), with `address` naming who it is with. While it is live `call.send("…")` speaks into it; after, a
+send places a new call — a new Conversation. Point Twilio's voice
+webhook for the number and the OpenAI project's SIP webhook at
+`https://<this instance>/api/v1/data_source/webhook/voice_phone`; a caller not on `allowed_senders` is
+refused before anything is said.
+
+## 5. How to use it
 
 - Text the business number from an allowed phone; the answer arrives in that chat.
 - Watch the conversation in the agent's stream inbox; a reply typed there goes out as the agent.
 - Change who may talk to it: `POST /api/v1/graph/agent/<id>/configure_mailbox {"allowed_senders": [...]}`
   (variant A), or the `senders=` list (variant B).
 
-`EXTRA_CONFIG` is empty in production; a test passes the driver's loopback `base_url` through it.
+`EXTRA_CONFIG` is empty in production; a test passes the driver's loopback `base_url` (and, for the
+phone, `twilio_base_url`) through it.
