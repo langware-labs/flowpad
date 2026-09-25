@@ -31,4 +31,4 @@ async def test_the_agent_helpdesk_program_runs_verbatim(monkeypatch):
     desk: DataSource = ns["desk"]
     assert desk.provider == "helpdesk" and desk.channel == "helpdesk"
     assert str(desk.owner) == str(ns["support"].typeid)
-    assert desk.inbound_allowed_senders in ([], None), "a desk is open unless someone is listed"
+    assert desk.allowed_senders in ([], None), "a desk is open unless someone is listed"

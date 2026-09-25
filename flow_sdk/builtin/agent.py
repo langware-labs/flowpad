@@ -763,8 +763,8 @@ class Agent(Entity):
         senders = [t for t in (str(s).strip() for s in allowed_senders) if t]
         # Only on change: re-binding is the documented common case, and
         # `DataSource.save` is a spec read plus a write.
-        if list(source.inbound_allowed_senders or []) != senders:
-            source.inbound_allowed_senders = senders
+        if list(source.allowed_senders or []) != senders:
+            source.allowed_senders = senders
             await source.save_runtime()
         return source
 
@@ -814,7 +814,7 @@ class Agent(Entity):
                 "provider": source.provider,
                 "status": source.status,
                 "owner": str(self.typeid),
-                "allowed_senders": list(source.inbound_allowed_senders or []),
+                "allowed_senders": list(source.allowed_senders or []),
             }
         )
 

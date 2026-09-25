@@ -118,7 +118,7 @@ async def rig(vendor: str, *, cos: bool, behavior, project, client, monkeypatch,
         monkeypatch.setattr(DataDriver.loaded("telegram"), "credentials_for", double.credentials)
         telegram = make_data_source("telegram", name=f"dana telegram {uuid.uuid4().hex[:6]}", config=dict(double.config),
                                     owner=agent.typeid, status=SourceStatus.ACTIVE.value,
-                                    inbound_allowed_senders=[double.sender], **dict(double.fields))
+                                    allowed_senders=[double.sender], **dict(double.fields))
         await telegram.save()
         await sync_source(telegram)
         tasks = await sync_tasks_channel(agent)

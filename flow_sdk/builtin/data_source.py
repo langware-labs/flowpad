@@ -41,6 +41,7 @@ from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
+from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.secrets.store import SecretStoreRef
@@ -206,16 +207,16 @@ class DataSource(Entity):
     #: Unset: every place holding it answers, as before places existed.
     answer_place: Optional[str] = APIField(default=None, description="The Deployment that answers this source")
 
-    # The mailbox allowlist, cached for the gate that runs on every inbound
-    # message (`AgentMailbox.allowed`). The HUB owns this policy; this is a copy,
-    # refreshed on every reconcile, and it is never read to answer "what is the
-    # policy" — only to apply it without a network call.
-    #
-    # Deliberately NOT inside `config`, for the reason the reflection block below
-    # gives: `config` is provider-opaque and shareable, and these are third
-    # parties' personal addresses. PRIVATE, like `origin`: a fact about this
-    # machine that must not travel to a receiver or back to the hub.
-    inbound_allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
+    #: Who may drive the owning agent through this line: the gate on every inbound message
+    #: (``agent_serve.admits``). Empty admits nobody, unless the driver is ``open_inbound`` (a help desk).
+    #: For an agent's hub mailbox it is a cache of the hub's policy, refreshed on every reconcile.
+    #:
+    #: Deliberately NOT inside ``config``, for the reason the reflection block below gives: ``config`` is
+    #: provider-opaque and shareable, and these are third parties' personal addresses. A driver may still
+    #: offer an ``allowed_senders`` form field (its hint and pattern); the value is moved here on the way in.
+    #: PRIVATE — never to a receiver or the hub — and kept on the row like the engine's own state: a
+    #: re-read file leaves it as it is (``RUNTIME_FIELDS``).
+    allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
 
     # ── reflection — HOW the payload becomes locally present ──
     #
@@ -281,6 +282,35 @@ class DataSource(Entity):
     connection: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     _api_visible: ClassVar[bool] = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _allowlist_off_config(cls, data):
+        """``allowed_senders`` lands on the row, never in ``config``; ``owner`` takes the entity itself.
+
+        One rule for every writer: a driver's form offers the allowlist as a config field and a Python
+        caller may pass it either way, but ``config`` goes into the shareable ``data_source.json``.
+        A row written before the rename carries ``inbound_allowed_senders``: read as ``allowed_senders``.
+        """
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        if "inbound_allowed_senders" in data:
+            legacy = data.pop("inbound_allowed_senders")
+            data.setdefault("allowed_senders", legacy)
+        config = data.get("config")
+        if isinstance(config, dict) and "allowed_senders" in config:
+            config = dict(config)
+            moved = config.pop("allowed_senders")
+            data["config"] = config
+            if not data.get("allowed_senders"):
+                data["allowed_senders"] = moved
+        if isinstance(data.get("allowed_senders"), (list, tuple)):
+            data["allowed_senders"] = [s for s in (str(x).strip() for x in data["allowed_senders"]) if s]
+        owner = data.get("owner")
+        if owner is not None and not isinstance(owner, (str, dict, TypeId)) and getattr(owner, "typeid", None) is not None:
+            data["owner"] = owner.typeid
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -447,18 +477,34 @@ class DataSource(Entity):
             _RUNTIME_WRITE.reset(runtime)
             _SUPPRESS_STORE.reset(token)
 
-    async def _refuse_duplicate_account(self) -> None:
-        """One source per (driver, account, owner) on this machine: the same mailbox polled twice
-        ingests every message twice. The owner stays in the key — a user and an agent may each watch
-        the same account."""
+    async def _existing_account(self) -> "Optional[DataSource]":
+        """The source this owner already has on the same account, if any — one source per (driver,
+        account, owner) on this machine: the same mailbox polled twice ingests every message twice. The
+        owner stays in the key — a user and an agent may each watch the same account."""
         driver = self._driver()
         key = getattr(driver, "identity_config_key", "") if driver is not None else ""
         value = (self.config or {}).get(key) if key else None
+        if isinstance(value, dict):  # a picked choice (`{id, name}`) names its account by id
+            value = value.get("id")
         if not isinstance(value, str) or not value.strip():
-            return
+            return None
         existing = await type(self).find_for_account(self.provider, key, value, owner=self.owner)
-        if existing is not None and str(existing.id) != str(self.id):
-            raise ValueError(f"{value} is already watched by the data source {existing.name or existing.id!s}")
+        return existing if existing is not None and str(existing.id) != str(self.id) else None
+
+    async def _adopt(self, existing: "DataSource", *args, **kwargs):
+        """Save onto the source this owner already has on the account instead of minting a twin: what the
+        caller authored (name, config, allowlist, cadence …) is written to that row, whose runtime
+        state — cursor, health, identities — stays. ``self`` then IS that row."""
+        authored = (set(_AUTHORED_FIELDS) | {"allowed_senders"}) & self.model_fields_set
+        for name in authored:
+            value = getattr(self, name)
+            if name == "config":
+                value = {**(existing.config or {}), **(value or {})}
+            setattr(existing, name, value)
+        result = await existing.save(*args, **kwargs)
+        for name in type(existing).model_fields:
+            object.__setattr__(self, name, getattr(existing, name))
+        return result
 
     @classmethod
     async def find_for_account(
@@ -951,7 +997,9 @@ class DataSource(Entity):
                     setattr(self, name, getattr(stored, name))
             return await super().save(*args, **kwargs)
         if not self.exist_in_db:
-            await self._refuse_duplicate_account()
+            existing = await self._existing_account()
+            if existing is not None:
+                return await self._adopt(existing, *args, **kwargs)
         if not self.exist_in_db or self.status == SourceStatus.NEW.value:
             # An authored source's folder loads on first use, so the create rules below can ask its
             # class. The poller's per-tick re-save of an existing row never pays for the lookup.
@@ -1381,6 +1429,13 @@ RUNTIME_FIELDS: tuple[str, ...] = tuple(
     name for name, field in DataSource.model_fields.items()
     if name in DataSource.__annotations__  # this type's own, not the Entity base's
     and persist_policy(field) == Persist.FALSE
+)
+
+
+#: What a person authors on a source — the fields of ``data_source.json`` — by their row names.
+_AUTHORED_FIELDS: tuple[str, ...] = tuple(
+    name for name in DataSourceSpec.model_fields
+    if name in DataSource.model_fields
 )
 
 

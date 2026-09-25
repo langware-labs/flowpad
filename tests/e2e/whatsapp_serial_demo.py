@@ -100,7 +100,7 @@ class Demo(Mix):
         channel = Channel("waha", self.serial, bound=datetime.now(timezone.utc))
         source = await self.graph("post", f"project/{self.project_id}/data_source", json={
             "name": "Serial WhatsApp", "provider": "waha", "config": config,
-            "owner": f"agent-{self.agent_id}", "inbound_allowed_senders": senders,
+            "owner": f"agent-{self.agent_id}", "allowed_senders": senders,
         })
         channel.source_id = source["id"]
         self.source_ids = [channel.source_id]

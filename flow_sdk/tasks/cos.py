@@ -132,7 +132,7 @@ async def sync_tasks_channel(agent):
         existing = driver.create_source(driver.create_config(**{key: principal}), name=f"{agent.name or agent.id} · tasks")
         existing.owner = agent.typeid
     # The agent's own address on this channel: its own task moves (created, replied) are never news to it.
-    wanted = {"status": SourceStatus.ACTIVE.value, "inbound_allowed_senders": [], "account_key": principal,
+    wanted = {"status": SourceStatus.ACTIVE.value, "allowed_senders": [], "account_key": principal,
               "account_identities": [principal]}
     changed = [f for f, v in wanted.items() if getattr(existing, f, None) != v]
     if not changed and existing.exist_in_db:

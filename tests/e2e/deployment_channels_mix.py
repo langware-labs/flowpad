@@ -129,7 +129,7 @@ class Mix:
                 })
             body = {
                 "name": f"Mix {channel.provider}", "provider": channel.provider, "config": entry["config"],
-                "owner": f"agent-{self.agent_id}", "inbound_allowed_senders": [entry["sender"]],
+                "owner": f"agent-{self.agent_id}", "allowed_senders": [entry["sender"]],
                 "thread_timeout_seconds": self.timeout, **(entry.get("fields") or {}),
                 # A pulled channel is read at its interval (a fast-lane driver sooner): the floor, 60s.
                 "poll_interval_seconds": 60,

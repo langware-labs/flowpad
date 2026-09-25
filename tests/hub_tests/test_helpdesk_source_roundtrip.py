@@ -243,7 +243,7 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
     # `bind_channel` is the one door: the source is born the agent's, with an
     # EMPTY allowlist — a desk is open to strangers by declaration.
     source = await agent.bind_channel(provider="helpdesk", channel=desk)
-    assert source.provider == "helpdesk" and not (source.inbound_allowed_senders or [])
+    assert source.provider == "helpdesk" and not (source.allowed_senders or [])
     assert str(source.owner) == str(TypeId(type=EntityType.AGENT.value, id=agent_id))
 
     # The agent answers where it RUNS: its local deployment's loop (``builtin/agent_loop`` — in the app

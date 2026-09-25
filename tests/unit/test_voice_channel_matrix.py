@@ -98,7 +98,7 @@ async def make_agent_source(provider: str, double, monkeypatch):
     monkeypatch.setattr(DataDriver.loaded(provider), "credentials_for", double.credentials)
     source = make_data_source(
         provider, name=f"voice {provider} {uuid.uuid4().hex[:6]}", config=dict(double.config), owner=agent.typeid,
-        status=SourceStatus.ACTIVE.value, inbound_allowed_senders=[double.sender], **dict(double.fields),
+        status=SourceStatus.ACTIVE.value, allowed_senders=[double.sender], **dict(double.fields),
     )
     await source.save()
     return agent, source
@@ -187,7 +187,7 @@ async def test_a_caller_the_line_does_not_admit_is_refused_before_anything_is_sa
     async with double_for(provider, tmp_path) as double:
         agent, source = await make_agent_source(provider, double, monkeypatch)
         try:
-            source.inbound_allowed_senders = ["+10000000000"]
+            source.allowed_senders = ["+10000000000"]
             call = await double.ring(DataDriver.loaded(provider), source)
             if DataDriver.loaded(provider).cls.open_inbound:
                 pytest.skip("an open line admits whoever is at it")

@@ -73,7 +73,7 @@ async def test_2_variant_a_the_app_answers_on_the_channel(whatsapp, monkeypatch,
     loop = asyncio.create_task(run(deployment.id, stop=stop))
     try:
         assert ns["verdict"]["ready"] is True and source.status == "active"
-        assert str(source.owner) == str(agent.typeid) and source.inbound_allowed_senders == [whatsapp.sender]
+        assert str(source.owner) == str(agent.typeid) and source.allowed_senders == [whatsapp.sender]
         from flow_sdk.builtin.agent_serve import answered_sources
 
         assert str(source.id) in {str(s.id) for s in await answered_sources(agent, deployment)}
