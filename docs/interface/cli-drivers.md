@@ -158,7 +158,10 @@ inputs that would light up a phantom "restart required" glow:
 - `get_driver(worker_type) -> WorkerDriver` (~:1368) — the resolver `AgenticProcess.driver`
   uses. Accepts the `WorkerType` enum, its string value, or `None` (→
   `FLOWPAD_DEFAULT_WORKER` env, `claude` if unset — the hook that lets the UI vitest run the
-  suite under any backend). There is no registry dict: the name resolves through the
+  suite under any backend). A process with no `worker_type` does not reach this `None` on
+  launch: `AgenticProcess.resolve_worker_type` first sets it to the harness selected in settings
+  (`resolve_default_worker_type`) — unless the env hook is set, or the process has already
+  started (a session keeps the worker it began with). There is no registry dict: the name resolves through the
   `VENDORS` table (`flowpad_types/vendors.py` — `Vendor.aliases` carries `claude_code`,
   `claude_code_cli`, …) and the driver is `<Vendor.package>.driver.DRIVER()`; result cached
   per `vendor.key` in `_DRIVER_CACHE`.

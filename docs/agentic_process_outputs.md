@@ -184,9 +184,11 @@ a worker leaves in `execution/output/` so its caller can read a structured
 result (the `agent` data source's `transport.py` reads its `sent.json`). That is a *return value*, not
 a deliverable — nobody asked for it, and registering it would put a file nobody
 wants to open in the run's output list. The email send registers the
-`source_item` it created, and leaves its receipt alone. The platform has no
-named contract for run return values; the receipt convention is local to its
-driver.
+`source_item` it created, and leaves its receipt alone. The named contract for a
+run's return value is `AgenticProcess.run(output_spec=…)` / `launch(output_spec=…)`:
+the agent writes that DataSpec's layout into `execution/output/` and the caller gets
+it back as the answer's `value` ([processes](snippets/processes.md) §4). The `agent`
+data source's receipt predates it and stays local to its driver.
 
 `flow show` remains the display-only verb. The two are distinct contracts:
 `show` changes display focus, `artifact` records durable provenance and may also
