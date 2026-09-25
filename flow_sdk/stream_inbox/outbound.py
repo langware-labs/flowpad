@@ -104,10 +104,10 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
     self_ids = await User.self_ids()
     target = next((m for m in channel_messages if not (m.sender and m.sender.authored_by(self_ids))), None)
     if target is None:
-        # Every message here is ours — a thread we started and nobody answered.
-        # The original recipient is not recorded anywhere, and guessing one is
-        # how a reply reaches the wrong person.
-        raise ChannelSendUnavailable("no one else has written in this thread yet")
+        # Every message here is ours — a conversation we started and nobody answered yet. It is
+        # addressed by who it is WITH (`Conversation.address`, stamped from our first message's
+        # recipients), never by a guess: without an address there is nobody to write to.
+        return await _started_target(conversation_id, channel_messages[0])
 
     # Defensive reads end here: these are typed entities.
     origin = target.origin
@@ -145,6 +145,33 @@ async def _target_for_item(item, source=None) -> ReplyTarget:
     if source is None:
         raise ChannelSendUnavailable("the data source this arrived through is gone")
     return _reply_target(source, item, str(getattr(source, "channel", "") or source.provider))
+
+
+async def _started_target(conversation_id: str, newest) -> ReplyTarget:
+    """The target of a conversation only we have written in: its address, on its thread."""
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    conversation = await Conversation.get_one({"id": conversation_id})
+    address = list(getattr(conversation, "address", None) or [])
+    local = newest.origin_local
+    if not address or local is None:
+        raise ChannelSendUnavailable("no one else has written in this thread yet")
+    source, item = await asyncio.gather(
+        DataSource.get_one({"id": local.data_source_id}),
+        SourceItem.get_one({"id": local.source_item_id}),
+    )
+    if source is None:
+        raise ChannelSendUnavailable("the data source this arrived through is gone")
+    driver = DataDriver.loaded(source.provider)
+    if driver is None or not driver.sends:
+        raise ChannelSendUnavailable(f"the {newest.origin.kind} transport cannot send")
+    return ReplyTarget(
+        driver=driver, source=source, channel=newest.origin.kind, to=address[0],
+        thread_key=str(getattr(item, "thread_key", "") or ""), subject=str(getattr(item, "name", "") or ""), in_reply_to="",
+    )
 
 
 def _reply_target(source, item, channel: str) -> ReplyTarget:

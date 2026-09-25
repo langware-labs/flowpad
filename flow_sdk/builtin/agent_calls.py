@@ -166,7 +166,10 @@ async def _hold(engine, driver, live_source, source, call: IncomingCall, entry: 
             break
     if asking:
         await asyncio.gather(*asking, return_exceptions=True)
-    await record(driver, source, call, CallEvent(kind="said", text=CALL_ENDED, item_id="end"))
+    ended = await record(driver, source, call, CallEvent(kind="said", text=CALL_ENDED, item_id="end"))
+    from flow_sdk.stream_inbox.projection import end_conversation  # noqa: PLC0415
+
+    await end_conversation(ended or conversation or "", datetime.now(timezone.utc))  # the line is down
     return conversation
 
 
