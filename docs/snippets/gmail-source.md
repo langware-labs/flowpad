@@ -1,3 +1,6 @@
+---
+id: abb779e1-ca3c-4717-9344-59422ee06389
+---
 # Gmail source
 
 Set these in `.env.local` first:

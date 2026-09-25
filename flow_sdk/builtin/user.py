@@ -33,6 +33,32 @@ def normalize_email(email: str | None) -> str | None:
     return normalized or None
 
 
+def recipient_user_id(value: object) -> str | None:
+    """A hub user id fit to address an invitation with, or ``None``.
+
+    Accepts a bare id, a ``"user-<uuid>"`` typeid string, or a ``TypeId``.
+    Parsed by hand rather than through ``TypeId`` because a naked UUID would
+    otherwise parse as a type name, not an id. Must be a real UUID or it's
+    dropped, not passed through.
+    """
+    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    if isinstance(value, TypeId):
+        value = str(value)
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    user_prefix = f"{EntityType.USER.value}-"
+    if candidate.startswith(user_prefix):
+        candidate = candidate[len(user_prefix) :]
+    # Anything left that is not a bare UUID (a "project-<id>" typeid, a name) is
+    # not something this path may address.
+    return candidate if is_valid_uuid(candidate) else None
+
+
 def hash_password(salt: str, password: str) -> str:
     """Hash a password with the given salt using SHA256."""
     return hashlib.sha256(f"{salt}{password}".encode()).hexdigest()

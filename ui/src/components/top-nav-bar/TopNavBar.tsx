@@ -72,7 +72,12 @@ export function TopNavBar() {
       {/* A full window reload, the same as the browser's own — no modifier
           gesture and no soft variant. Anything less does not reload. */}
       <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
-      <NavIconButton icon={Home} label={t`Home`} onClick={() => navigation.goHome()} testId="top-nav-home" />
+      <NavIconButton
+        icon={Home}
+        label={t`Home`}
+        onClick={() => navigation.goHome({ homePage: true })}
+        testId="top-nav-home"
+      />
       {/* Files sat on the rail; same destination, same one-liner, just beside
           the other place-buttons instead of below them. */}
       <NavIconButton

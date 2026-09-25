@@ -9,6 +9,7 @@ import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
+import { participantKey } from '@src/components/contact-picker/use-contacts';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForParticipant } from './avatar-color';
 import { ContactPermissionsDialog } from './ContactPermissionsDialog';
@@ -16,6 +17,7 @@ import {
   assignableRoles,
   canInviteMembers,
   contactFromParticipant,
+  grantableRoles,
   participantInitials,
   participantIsUser,
   participantLabel,
@@ -37,6 +39,9 @@ interface MembersAvatarStackProps {
   /** Optional entity-specific prerequisite. Returning false keeps both invite
    *  paths closed; project sharing uses this for its GitHub capability test. */
   beforeInvite?: () => Promise<boolean>;
+  /** Roles the invite form may grant, e.g. ``['member', 'admin']`` for a
+   *  project. Omitted = no picker, and the entity's own default role applies. */
+  inviteRoles?: readonly string[];
 }
 
 /**
@@ -54,6 +59,7 @@ export function MembersAvatarStack({
   allowInviteLink = false,
   showInviteButton = false,
   beforeInvite,
+  inviteRoles,
 }: MembersAvatarStackProps) {
   const { t } = useLingui();
   const { entity, members, addMembers, removeMember, setRole, refresh, updating, stale, available, reason } =
@@ -82,6 +88,26 @@ export function MembersAvatarStack({
   // form there, since this popover is also the first-share entry point and
   // the sharer becomes the owner.
   const mayInvite = me === null ? true : canInviteMembers(me);
+  // Invite roles capped by my rank (the hub refuses a grant at or above it).
+  // No roster row yet = first share, which makes me the owner: offer them all.
+  const offeredRoles = useMemo(() => {
+    if (!inviteRoles?.length) return [];
+    if (me === null) return [...inviteRoles];
+    const grantable = grantableRoles(me);
+    return inviteRoles.filter((r) => grantable.includes(r));
+  }, [inviteRoles, me]);
+  // The role selector on the add row — defaults to ``member``, sits beside the
+  // picker and the Add button. Applied to every recipient staged AFTER this
+  // selector is set, and it seeds each new row's own default below; a row can
+  // still be overridden individually (a project invite is one
+  // ``MembershipRequest`` per person, and each may carry a different role).
+  const [inviteRole, setInviteRole] = useState('member');
+  const effectiveInviteRole = offeredRoles.includes(inviteRole) ? inviteRole : offeredRoles[0];
+  // Per-recipient role, keyed by ``participantKey`` (user_id, else email, else
+  // name) — the same identity key ContactPicker/AddressBookButton already use,
+  // so a staged contact keeps its chosen role however it ends up addressed
+  // (by email or by hub id) once submitted.
+  const [rolesByKey, setRolesByKey] = useState<Record<string, string>>({});
 
   const handleRemove = async (userId: string) => {
     setRemovingId(userId);
@@ -109,17 +135,34 @@ export function MembersAvatarStack({
     }
   };
 
-  // Existing members keyed by email so a staged contact who's already on the
-  // roster is dropped before invite (the hub would 400 "use change_role" on a
-  // re-invite, which would fail the whole batch share).
+  // Existing members keyed by email/user_id so a staged contact who's already
+  // on the roster is dropped before invite (the hub would 400 "use
+  // change_role" on a re-invite, which would fail the whole batch share).
   const existingEmails = useMemo(
     () => new Set(members.map((m) => (m.email ?? '').trim().toLowerCase()).filter(Boolean)),
+    [members],
+  );
+  const existingUserIds = useMemo(
+    () => new Set(members.map((m) => m.user_id).filter((id): id is string => !!id)),
     [members],
   );
 
   const handleSelectionChange = (next: ConversationParticipant[]) => {
     setSelected(next);
     if (inviteError) setInviteError(null);
+    if (!offeredRoles.length) return;
+    // Keep the role map in lockstep with the staged list: a newly-added
+    // recipient gets the default, a removed one drops out (so a re-add starts
+    // fresh rather than resurrecting a role picked in an earlier selection).
+    setRolesByKey((prev) => {
+      const nextRoles: Record<string, string> = {};
+      for (const p of next) {
+        const key = participantKey(p);
+        if (!key) continue;
+        nextRoles[key] = prev[key] && offeredRoles.includes(prev[key]) ? prev[key] : effectiveInviteRole;
+      }
+      return nextRoles;
+    });
   };
 
   /**
@@ -155,19 +198,37 @@ export function MembersAvatarStack({
   };
 
   const handleInvite = async () => {
-    const emails = selected
-      .map((p) => (p.email ?? '').trim().toLowerCase())
-      .filter((e) => !!e && !existingEmails.has(e));
-    if (!emails.length) {
-      setInviteError(t`Pick a contact or enter an email`);
+    // Two addressing forms, because the address book knows people two ways —
+    // a contact learned from a conversation roster carries a hub ``user_id``
+    // and NO email (the hub never discloses another member's email), so an
+    // email-only invite makes exactly those contacts unreachable even though
+    // the picker offers them. Mirrors ``Project.share`` / ``Conversation.share``.
+    // One pass over ``selected``: pick the identifier, skip anyone already on
+    // the roster, attach the role staged under the same ``participantKey`` —
+    // the exact ``{idOrEmail, role?}[]`` shape ``addMembers``/``share`` take.
+    const invitable = selected.flatMap((p) => {
+      const role = rolesByKey[participantKey(p)] ?? effectiveInviteRole;
+      const email = (p.email ?? '').trim().toLowerCase();
+      if (email) return existingEmails.has(email) ? [] : [{ idOrEmail: email, role }];
+      const userId = (p.user_id ?? '').trim();
+      if (userId) return existingUserIds.has(userId) ? [] : [{ idOrEmail: userId, role }];
+      return [];
+    });
+    if (!invitable.length) {
+      setInviteError(
+        selected.length > 0
+          ? t`Already a member — change their role in the list above`
+          : t`Pick a contact or enter an email`,
+      );
       return;
     }
     setInviting(true);
     setInviteError(null);
     try {
       if (beforeInvite && !(await beforeInvite())) return;
-      await addMembers(emails);
+      await addMembers(invitable);
       setSelected([]);
+      setRolesByKey({});
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Invite failed';
       // Re-inviting an accepted member is hub-rejected (400 "use change_role")
@@ -200,6 +261,8 @@ export function MembersAvatarStack({
       // Reset transient state so reopening the popover doesn't show a stale
       // selection or error from a previous attempt.
       setSelected([]);
+      setRolesByKey({});
+      setInviteRole('member');
       setInviteError(null);
       setInviting(false);
       setLinkError(null);
@@ -254,7 +317,11 @@ export function MembersAvatarStack({
               )}
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-72 p-2" align="start">
+          {/* Wider only when the add row grows a role selector (Project) — the
+          merged picker/address-book/role/Add row needs the room; a surface
+          with no ``inviteRoles`` (Conversation) never renders that control and
+          keeps the original compact width. */}
+          <PopoverContent className={offeredRoles.length > 0 ? 'w-96 p-2' : 'w-72 p-2'} align="start">
             {reason === 'local' ? (
               <div className="px-1 py-2 text-[11px] text-muted-foreground" data-testid="members-local-notice">
                 <Trans>Members are unavailable in Local mode.</Trans>
@@ -373,7 +440,13 @@ export function MembersAvatarStack({
             invite can't be attempted only to 409. */}
                 {mayInvite && available && !stale && (
                   <div className="mt-2 border-t border-border pt-2">
-                    <div className="flex items-start gap-1.5">
+                    {/* One row: picker (chips + input, grows/wraps) → address
+                    book → role (defaults to member) → Add — all on the same
+                    line, sized to the input's own height (``h-9``) so nothing
+                    looks like an afterthought below it. ``items-start`` keeps
+                    role/Add pinned to the top when a staged chip wraps the
+                    picker onto two lines. */}
+                    <div className="flex items-start gap-2">
                       <div className="min-w-0 flex-1">
                         <ContactPicker
                           value={selected}
@@ -391,18 +464,74 @@ export function MembersAvatarStack({
                         disabled={inviting}
                         testId="members-address-book"
                       />
-                    </div>
-                    <div className="mt-1.5 flex justify-end">
+                      {offeredRoles.length > 0 && (
+                        <select
+                          aria-label={t`Invite as`}
+                          data-testid="members-invite-role"
+                          value={effectiveInviteRole}
+                          disabled={inviting}
+                          onChange={(e) => setInviteRole(e.target.value)}
+                          className="h-9 shrink-0 rounded-md border border-border bg-transparent px-2 text-xs uppercase tracking-wide text-muted-foreground outline-none hover:border-primary focus:border-primary disabled:opacity-40"
+                        >
+                          {offeredRoles.map((r) => (
+                            <option key={r} value={r}>
+                              {r}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <button
                         type="button"
                         onClick={() => void handleInvite()}
                         disabled={inviting || selected.length === 0}
-                        className="rounded border border-border bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground hover:bg-accent disabled:opacity-50"
+                        className="h-9 shrink-0 rounded-md border border-border bg-muted px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-accent disabled:opacity-50"
                         data-testid="members-invite-submit"
                       >
                         {inviting ? t`Inviting…` : t`+ Add`}
                       </button>
                     </div>
+                    {/* Selected recipients + the role each will be granted —
+                    per-row so a mixed batch (some admin, some member, some
+                    addressed by email, some only by hub id) is one
+                    submission, not several. Skips anyone already on the
+                    roster or with neither identifier, same filters
+                    ``handleInvite`` applies. */}
+                    {offeredRoles.length > 0 && selected.length > 0 && (
+                      <ul className="mt-1.5 flex flex-col gap-1">
+                        {selected.map((p) => {
+                          const email = (p.email ?? '').trim().toLowerCase();
+                          const isExisting = email
+                            ? existingEmails.has(email)
+                            : !!p.user_id && existingUserIds.has(p.user_id);
+                          if (isExisting || (!email && !p.user_id)) return null;
+                          const key = participantKey(p);
+                          const roleValue = rolesByKey[key] ?? effectiveInviteRole;
+                          return (
+                            <li key={key} className="flex items-center justify-between gap-2 text-[10px]">
+                              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                                {p.name || p.email}
+                              </span>
+                              <select
+                                aria-label={t`Invite ${p.name || p.email || key} as`}
+                                data-testid={`members-invite-role-${key}`}
+                                value={roleValue}
+                                disabled={inviting}
+                                onChange={(e) =>
+                                  setRolesByKey((prev) => ({ ...prev, [key]: e.target.value }))
+                                }
+                                className="rounded border border-border bg-transparent px-1 py-0.5 uppercase tracking-wide text-muted-foreground outline-none hover:border-primary focus:border-primary disabled:opacity-40"
+                              >
+                                {offeredRoles.map((r) => (
+                                  <option key={r} value={r}>
+                                    {r}
+                                  </option>
+                                ))}
+                              </select>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                     {inviteError && (
                       <div className="mt-1 text-[10px] text-destructive" role="alert">
                         {inviteError}
