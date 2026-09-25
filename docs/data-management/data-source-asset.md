@@ -29,11 +29,16 @@ agentic-assets/data_source/work_gmail/
 ```
 
 The file (`DataSourceSpec`) is what a person authors and nothing the engine writes: status,
-health, the cursor, the next poll and discovered identities are row-only (`Persist.FALSE`), and the
-engine saves them with `save_runtime()`, which never touches the file. The config is value-free —
+health, the cursor, the next poll, discovered identities and the allowlist (`allowed_senders`,
+PRIVATE: who may drive the source is this machine's business) are row-only (`Persist.FALSE`), and the
+engine saves them with `save_runtime()`, which never touches the file — a re-read of the file leaves
+them as they are. The config is value-free —
 a secret is a credential the driver declares. A folder that arrives by copy, clone or share
 indexes in `setup` ("Received — connect your own account, then press Verify."), and one owner
-watches one account once. Deleting the source removes its folder with the items it ingested; a
+watches one account once: `save()` of a new source for an account its owner already watches adopts
+that row (`find_for_account` on the driver's `identity_config_key`) — the authored fields and the
+config merged onto it, its cursor kept — instead of minting a twin. `owner=` takes the entity itself
+(an `Agent`) or its `TypeId`; a source an Agent owns is that agent's channel, the one way to give it one. Deleting the source removes its folder with the items it ingested; a
 row with no folder (one written before sources were files) is removed at boot.
 
 `agentic-assets/<family>/` is where a native asset lives (glossary), and the main
