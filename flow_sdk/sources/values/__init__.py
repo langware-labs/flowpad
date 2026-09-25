@@ -10,6 +10,8 @@ from flow_sdk.sources.values.items import (
     MessageData,
     MessageItem,
     Payload,
+    RecordData,
+    RecordItem,
     SourceItemSpec,
     UserProfile,
 )
@@ -42,6 +44,8 @@ __all__ = [
     "Move",
     "ObjectQuery",
     "Payload",
+    "RecordData",
+    "RecordItem",
     "RecordQuery",
     "SourceItemSpec",
     "UserProfile",

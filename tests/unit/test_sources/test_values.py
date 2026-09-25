@@ -14,8 +14,11 @@ from flow_sdk.sources import (
     EventKind,
     FileData,
     FileItem,
+    FeedItemData,
     MessageData,
     MessageItem,
+    RecordData,
+    RecordItem,
     SourceItemSpec,
     UserProfile,
 )
@@ -62,6 +65,20 @@ def test_a_concrete_item_accepts_a_plain_dict_for_its_payload():
     assert isinstance(file.data, FileData) and file.data.size == 48_000
     with pytest.raises(ValidationError):
         FileItem(origin=ISSUE, data={"size": -1})
+
+
+def test_a_record_round_trips_and_a_feed_entry_is_a_record():
+    """A record is its own payload family — the kind it is stored under, and the class a tagged dump
+    restores — and a feed entry is one of them."""
+    from flow_sdk.ingest.legacy_lift import FEED_KIND, RECORD_KIND, kind_of
+
+    item = RecordItem(origin=ISSUE, data=RecordData(title="PROJ-7", text="Login fails", url=ISSUE.url))
+    loaded = SourceItemSpec.model_validate(item.model_dump(mode="json"))
+    assert type(loaded.data) is RecordData and loaded.data.title == "PROJ-7"
+    assert kind_of(item.data) == RECORD_KIND
+    assert issubclass(FeedItemData, RecordData) and kind_of(FeedItemData(title="t")) == FEED_KIND
+    with pytest.raises(TypeError):
+        kind_of(FileData(name="a.pdf"))  # a file is never a record: it is reflected, not ingested
 
 
 def test_a_rename_event_carries_its_previous_origin_and_nothing_else_does():
