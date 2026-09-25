@@ -670,8 +670,8 @@ def agent_id_of(source) -> str:
     else in this file.
 
     An agent-owned source answers the same question without that key: a channel
-    is not allocated to an agent, it is BOUND to one (``Agent.bind_channel``),
-    and the binding is the ``owner``. Reading it here is what lets one rule serve
+    is not allocated to an agent, it is OWNED by one (``create_source(owner=agent)``),
+    and that is the ``owner``. Reading it here is what lets one rule serve
     both — otherwise every reader (the turn, the attribution, the outbound
     persona) would have to learn a second spelling of "whose agent is this".
     Config still wins, so a mailbox row is untouched.

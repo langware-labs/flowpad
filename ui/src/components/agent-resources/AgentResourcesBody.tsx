@@ -126,7 +126,7 @@ export function AgentResourcesBody() {
     currentDock && navigation.openDock(currentDock.withChild(section, typeid));
   const isOpen = (typeid: string) => currentDock?.child?.typeId === typeid;
 
-  // Scoped to the agent this panel is open for — the same field `bind_channel`
+  // Scoped to the agent this panel is open for — the same field `create_source(owner=agent)`
   // and this panel's own `owner={editingAgentId}` (above) stamp. Without an
   // agent open there is no owner to match, so the list is empty rather than
   // every source on the instance: an unscoped list here contradicted the

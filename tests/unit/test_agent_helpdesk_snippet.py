@@ -1,7 +1,7 @@
 """``docs/snippets/agent-helpdesk.md``, run as written with the hub legs stubbed.
 
-The snippet's one verb is ``Agent.bind_channel`` — the same seam ``blocks.StreamInbox``
-uses — so what is pinned is that the program compiles and that the bound source
+The snippet gives the Agent the desk the one way — ``create_source(owner=agent)`` and
+``save()`` — so what is pinned is that the program compiles and that the source
 is what the prose promises: provider ``helpdesk``, the desk in its config, owned
 by the Agent.
 """
