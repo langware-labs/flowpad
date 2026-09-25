@@ -167,17 +167,24 @@ class MockTurn:
     # ── the process's folders ─────────────────────────────────────────────────────
 
     @property
-    def execution_dir(self) -> Path:
-        """``<record>/execution`` — where a process's input and output folders live."""
-        return Path(self.process._record_dir()) / "execution"
-
-    @property
     def input_dir(self) -> Path:
-        return self.execution_dir / "input"
+        from flow_sdk.builtin.agentic_process.process_io import input_dir  # noqa: PLC0415
+
+        return input_dir(self.process)
 
     @property
     def output_dir(self) -> Path:
-        return self.execution_dir / "output"
+        from flow_sdk.builtin.agentic_process.process_io import output_dir  # noqa: PLC0415
+
+        return output_dir(self.process)
+
+    @property
+    def main_document(self) -> str:
+        """The output's main document name, as the agent was told it (``cvspec.json``)."""
+        for line in self.instructions.splitlines():
+            if "JSON with the fields" in line:
+                return line.split("`")[1]
+        raise MockUsageError("this turn was not told an output layout")
 
     @property
     def workdir(self) -> Optional[Path]:
@@ -189,7 +196,7 @@ class MockTurn:
         path = Path(path)
         if path.is_absolute():
             return path
-        base = self.workdir or self.execution_dir
+        base = self.workdir or self.output_dir.parent
         return base / path
 
     def _handle(self, name: str, *args: Any) -> Any:
@@ -457,7 +464,4 @@ def mock_driver_for(
     return driver
 
 
-__all__ = [
-    "DEFAULT_HANDLERS", "MOCK_VENDORS", "FileHandler", "MockDriver", "MockTurn", "MockUsageError", "MockWorker",
-    "mock_driver_for",
-]
+__all__ = ["MOCK_VENDORS", "MockDriver", "MockTurn", "MockUsageError", "MockWorker", "mock_driver_for"]

@@ -21,6 +21,7 @@ result: ``CVSpec.load(folder)`` and ``answer.value`` are the same value.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -32,23 +33,18 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-#: Where the output-spec kind is kept on the process, so a restarted process still knows it.
-OUTPUT_SPEC_KEY = "output_spec_kind"
-#: The instruction block ``prepare_io`` last wrote — so a second call replaces it rather than stacking.
-IO_BLOCK_KEY = "io_instructions"
-
-
-def execution_dir(process: "AgenticProcess") -> Path:
-    """``<record>/execution`` — the one owner of this layout is ``execution_base``; this reads it."""
-    return Path(process._record_dir()) / "execution"
-
-
 def input_dir(process: "AgenticProcess") -> Path:
-    return execution_dir(process) / "input"
+    from flow_sdk.graph_workflow_manager.manager import execution_base  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.layout import INPUT  # noqa: PLC0415
+
+    return execution_base(process) / INPUT
 
 
 def output_dir(process: "AgenticProcess") -> Path:
-    return execution_dir(process) / "output"
+    from flow_sdk.graph_workflow_manager.manager import execution_base  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.layout import OUTPUT  # noqa: PLC0415
+
+    return execution_base(process) / OUTPUT
 
 
 def declared_output_spec(shape: Any) -> Optional[type]:
@@ -145,50 +141,34 @@ def io_instructions(process: "AgenticProcess", *, has_input: bool, output_spec: 
 
 
 def prepare_io(process: "AgenticProcess", *, input: Any = None, output_spec: Optional[type] = None) -> None:
-    """Materialize the run's input/output folders and tell the agent about them. Before the turn.
+    """Materialize the run's folders and record what the agent is told about them. Before the turn.
 
-    Workdir mode (no ``input``, no ``output_spec``) touches nothing. Otherwise it raises on failure: the
-    caller asked for that data, and would otherwise get a run that never saw its input or never knew what
-    to write.
+    Workdir mode (no ``input``, no ``output_spec``) touches nothing. Otherwise a failure raises: the caller
+    asked for that data. The block lands in ``context_data["io_instructions"]`` — its own part of the
+    system prompt (``resolve_system_instructions``), never spliced into the caller's instructions.
     """
-    if input is None and output_spec is None:
-        return
-    _prepare(process, input=input, output_spec=output_spec)
-
-
-def _prepare(process: "AgenticProcess", *, input: Any, output_spec: Optional[type]) -> None:
     from flow_sdk.schema.data_spec import DataSpec  # noqa: PLC0415
     from flow_sdk.schema.data_spec.io import save  # noqa: PLC0415
 
+    if input is None and output_spec is None:
+        return
     if input is not None:
         if not isinstance(input, DataSpec):
             raise TypeError(f"input must be a DataSpec instance, not {type(input).__name__}")
         save(input, input_dir(process))
     if output_spec is not None:
         output_dir(process).mkdir(parents=True, exist_ok=True)
-    context = dict(process.context_data or {})
-    existing = str(context.get("instructions") or "").strip()
-    previous = str(context.get(IO_BLOCK_KEY) or "")
-    if previous and previous in existing:
-        # Called again: the newer block replaces the older one instead of stacking two sets of folder
-        # instructions.
-        existing = existing.replace(previous, "").strip()
-    line = io_instructions(process, has_input=input is not None, output_spec=output_spec)
-    context["instructions"] = "\n\n".join(p for p in (existing, line) if p)
-    context[IO_BLOCK_KEY] = line
-    if output_spec is not None:
-        from flow_sdk.schema.data_spec.io import names  # noqa: PLC0415
-
-        context[OUTPUT_SPEC_KEY] = names.kind_of(output_spec)
-    process.context_data = context
+    process.context_data = {
+        **(process.context_data or {}),
+        "io_instructions": io_instructions(process, has_input=input is not None, output_spec=output_spec),
+    }
 
 
 def output_files(process: "AgenticProcess") -> list[str]:
-    """Every file the run left in its output folder, relative, sorted."""
-    root = output_dir(process)
-    if not root.is_dir():
-        return []
-    return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file() and ".flow" not in p.parts)
+    """Every file the run left in its output folder, relative — the runs view's own listing."""
+    from flow_sdk.graph_workflow_manager.manager import GraphWorkflowManager, execution_base  # noqa: PLC0415
+
+    return GraphWorkflowManager._output_listing(execution_base(process))
 
 
 async def register_outputs(process: "AgenticProcess", files: list[str]) -> None:
@@ -202,14 +182,26 @@ async def register_outputs(process: "AgenticProcess", files: list[str]) -> None:
         project_id = await process.effective_project_id()
     except Exception:  # noqa: BLE001 — provenance is a courtesy; the run's answer does not depend on it
         project_id = None
-    for rel in files:
-        try:
-            await Artifact.register(
-                generated_by=str(process.typeid), name=Path(rel).name, kind="content.file",
-                asset_ref=str(root / rel), project_id=project_id,
-            )
-        except Exception:  # noqa: BLE001 — a failed registration must not fail the run
-            logger.debug("register_outputs: could not register %s", rel, exc_info=True)
+    results = await asyncio.gather(*(
+        Artifact.register(generated_by=str(process.typeid), name=Path(rel).name, kind="content.file",
+                          asset_ref=str(root / rel), project_id=project_id)
+        for rel in files
+    ), return_exceptions=True)
+    for rel, result in zip(files, results):
+        if isinstance(result, Exception):  # a failed registration must not fail the run
+            logger.debug("register_outputs: could not register %s: %s", rel, result)
+
+
+async def take_turn(process: "AgenticProcess", prompt: str, output_spec: Optional[type], *, wait: bool = True) -> "PromptResult":
+    """One headless turn: send it; with ``wait``, settle and read the output back. Without ``wait`` the
+    answer is the admission (``send_turn``) — the turn has not finished."""
+    from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+
+    taken = await process.send_turn(prompt)
+    if not taken.ok or not wait:
+        return taken
+    await process.wait()
+    return await finish_io(process, _build_run_result(process), output_spec)
 
 
 async def finish_io(process: "AgenticProcess", answer: "PromptResult", output_spec: Optional[type]) -> "PromptResult":
@@ -238,6 +230,6 @@ async def finish_io(process: "AgenticProcess", answer: "PromptResult", output_sp
 
 
 __all__ = [
-    "IO_BLOCK_KEY", "OUTPUT_SPEC_KEY", "check_declared_input", "declared_output_spec", "execution_dir", "finish_io", "input_dir", "io_instructions", "layout_of", "output_dir",
-    "output_files", "prepare_io", "register_outputs", "resolve_output_spec",
+    "check_declared_input", "declared_output_spec", "finish_io", "input_dir", "output_dir", "prepare_io",
+    "register_outputs", "resolve_output_spec", "take_turn",
 ]

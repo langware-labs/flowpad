@@ -42,11 +42,13 @@ def _cleanup_records(record_type: str, max_keep: int) -> int:
     if not root.is_dir():
         return 0
 
+    dirs = [d for d in root.iterdir() if d.is_dir()]
+    if len(dirs) <= max_keep:
+        return 0
+    # A run's declared OUTPUT is what its caller came for: a record holding output newer than
+    # ``OUTPUT_KEEP_DAYS`` is outside the count cap (``answer.value.save(path)`` is the durable copy).
     now = time.time()
-    # A run's OUTPUT is what a caller came for — ``AgenticProcess.run(output_spec=…)`` loads it, the runs
-    # view shows it. A record holding output newer than ``OUTPUT_KEEP_DAYS`` is outside the count cap;
-    # older ones age out like the rest (``answer.value.save(path)`` is the durable copy).
-    dirs = [d for d in root.iterdir() if d.is_dir() and not _holds_recent_output(d, now)]
+    dirs = [d for d in dirs if not _holds_recent_output(d, now)]
     if len(dirs) <= max_keep:
         return 0
 

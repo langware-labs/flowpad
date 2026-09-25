@@ -21,7 +21,6 @@ from flow_sdk.builtin.agentic_process import process_io
 from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.schema.data_spec.io import Text
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
-from tests.utils.mock_worker import MockDriver
 
 pytestmark = [pytest.mark.timeout(10), pytest.mark.usefixtures("tmp_records_root")]  # do not increase timeout without approval
 
@@ -46,12 +45,8 @@ def _review(turn) -> str:
 
 
 @pytest.fixture
-def mock(monkeypatch, tmp_path):
-    def install(behavior, **kw) -> MockDriver:
-        driver = MockDriver(tmp_path / "transcripts", behavior=behavior, **kw)
-        monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process.get_driver", lambda _t: driver)
-        return driver
-    return install
+def mock(mock_driver):
+    return mock_driver
 
 
 # ── run(): the happy path ───────────────────────────────────────────────────────────────────────
@@ -210,30 +205,18 @@ async def test_an_invalid_output_is_not_registered(initialize_test_db, mock, tmp
 
 
 @pytest.mark.asyncio
-async def test_preparing_twice_replaces_the_folder_instructions(tmp_path):
-    proc = AgenticProcess(workdir=str(tmp_path), pty_mode=False)
+async def test_the_io_block_is_its_own_part_of_the_system_prompt(tmp_path):
+    proc = AgenticProcess(workdir=str(tmp_path), pty_mode=False, context_data={"instructions": "Be brief."})
     process_io.prepare_io(proc)
-    assert "instructions" not in (proc.context_data or {}), "workdir mode says nothing"
+    assert "io_instructions" not in proc.context_data, "workdir mode says nothing"
     process_io.prepare_io(proc, input=CV, output_spec=CVSpec)
     process_io.prepare_io(proc, input=CV, output_spec=CVSpec)
-    told = proc.context_data["instructions"]
-    assert told.count("Your result MUST be") == 1 and told.count("Your input is in") == 1
-
-
-@pytest.mark.asyncio
-async def test_wait_looks_as_often_as_the_driver_says(mock, tmp_path):
-    mock(_review)
-    proc = AgenticProcess(workdir=str(tmp_path), pty_mode=False)
-    assert proc._status_poll_seconds() == pytest.approx(0.01)
+    assert proc.context_data["instructions"] == "Be brief.", "the caller's instructions are never edited"
+    told = await proc.resolve_system_instructions()
+    assert told.startswith("Be brief.") and told.count("Your result MUST be") == 1
 
 
 # ── Agent.launch: the same contract, and the agent's declared shapes ────────────────────────────
-
-
-@pytest.fixture
-def home(fresh_user_scope):
-    fresh_user_scope.mkdir(exist_ok=True)
-    return fresh_user_scope
 
 
 @pytest.mark.asyncio
@@ -252,7 +235,7 @@ async def test_an_agents_declared_output_is_the_default_output_spec(initialize_t
     from flow_sdk.builtin.agent import Agent
 
     def score(turn):
-        turn.write(turn.output_dir / next(p for p in _main_names(turn)), json.dumps({"score": 8}))
+        turn.write(turn.output_dir / turn.main_document, json.dumps({"score": 8}))
         return "scored"
 
     mock(score)
@@ -260,13 +243,6 @@ async def test_an_agents_declared_output_is_the_default_output_spec(initialize_t
     await agent.save()
     answer = await agent.launch("Score the CV", wait=True)
     assert answer.ok and answer.value.score == 8
-
-
-def _main_names(turn):
-    """The main document name the agent was told (``<kind>.json``), read off its instructions."""
-    for line in turn.instructions.splitlines():
-        if "JSON with the fields" in line:
-            yield line.split("`")[1]
 
 
 @pytest.mark.asyncio
@@ -282,11 +258,12 @@ async def test_an_input_that_is_not_the_agents_declared_input_is_refused(initial
     assert driver.received_prompts == []
 
 
-# ── worker selection: an unset worker follows the user's choice ─────────────────────────────────
+# ── worker selection: an unnamed worker is the selected harness, chosen at creation ─────────────
 
 
 @pytest.mark.asyncio
-async def test_an_unset_worker_follows_the_selected_harness(monkeypatch, tmp_path):
+async def test_an_unnamed_worker_is_the_selected_harness(initialize_test_db, mock, monkeypatch, tmp_path):
+    from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
     from flow_sdk.flowpad_types.enums import WorkerType
 
     async def selected():
@@ -294,35 +271,46 @@ async def test_an_unset_worker_follows_the_selected_harness(monkeypatch, tmp_pat
 
     monkeypatch.delenv("FLOWPAD_DEFAULT_WORKER", raising=False)
     monkeypatch.setattr("flow_sdk.core.capabilities.registry.resolve_default_worker_type", selected)
-    proc = AgenticProcess(workdir=str(tmp_path))
-    _ = proc.driver  # cached before resolution …
-    await proc.resolve_worker_type()
-    assert proc.worker_type == WorkerType.CODEX and "driver" not in proc.__dict__, "… and dropped after"
+    assert await ap_mod.selected_worker_type() == WorkerType.CODEX.value
 
-    explicit = AgenticProcess(workdir=str(tmp_path), worker_type=WorkerType.COPILOT)
-    await explicit.resolve_worker_type()
-    assert explicit.worker_type == WorkerType.COPILOT, "an explicit worker is kept"
+    mock(lambda turn: "ok")
+    answer = await AgenticProcess.run("x", workdir=str(tmp_path))
+    assert (await AgenticProcess.get_by_typeid(answer.executor)).worker_type == WorkerType.CODEX, "set at birth, saved"
 
-    started = AgenticProcess(workdir=str(tmp_path), session_id="s-1")
-    await started.resolve_worker_type()
-    assert started.worker_type is None, "a started process keeps the worker it started with"
+    named = await AgenticProcess.run("x", workdir=str(tmp_path), worker_type=WorkerType.COPILOT)
+    assert (await AgenticProcess.get_by_typeid(named.executor)).worker_type == WorkerType.COPILOT, "a named worker is kept"
 
     monkeypatch.setenv("FLOWPAD_DEFAULT_WORKER", "claude")
-    hooked = AgenticProcess(workdir=str(tmp_path))
-    await hooked.resolve_worker_type()
-    assert hooked.worker_type is None, "the env hook wins; get_driver reads it"
+    assert await ap_mod.selected_worker_type() is None, "the env hook wins; get_driver reads it"
 
 
 @pytest.mark.asyncio
-async def test_no_selection_leaves_the_driver_default(monkeypatch, tmp_path):
+async def test_no_selection_leaves_the_driver_default(monkeypatch):
+    from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
+
     async def none_selected():
         raise RuntimeError("Default harness does not reference a concrete capability")
 
     monkeypatch.delenv("FLOWPAD_DEFAULT_WORKER", raising=False)
     monkeypatch.setattr("flow_sdk.core.capabilities.registry.resolve_default_worker_type", none_selected)
-    proc = AgenticProcess(workdir=str(tmp_path))
-    await proc.resolve_worker_type()
-    assert proc.worker_type is None
+    assert await ap_mod.selected_worker_type() is None
+
+
+@pytest.mark.asyncio
+async def test_an_agent_without_a_worker_launches_on_the_selected_harness(initialize_test_db, home, mock, monkeypatch):
+    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.flowpad_types.enums import WorkerType
+
+    async def selected():
+        return WorkerType.OPENCODE.value
+
+    monkeypatch.delenv("FLOWPAD_DEFAULT_WORKER", raising=False)
+    monkeypatch.setattr("flow_sdk.core.capabilities.registry.resolve_default_worker_type", selected)
+    mock(lambda turn: "ok")
+    agent = Agent(name="no-worker", system_prompt="x")
+    await agent.save()
+    proc = await (await agent.local_deployment()).create_process("x")
+    assert proc.worker_type == WorkerType.OPENCODE
 
 
 # ── retention: recent output survives the count cap ─────────────────────────────────────────────
