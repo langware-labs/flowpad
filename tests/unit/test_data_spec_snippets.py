@@ -12,7 +12,6 @@ from typing import Any, ClassVar
 
 import pytest
 from pydantic import ValidationError
-from pydantic.errors import PydanticUserError
 
 from flow_sdk.schema.data_spec import DataSpec, to_authoring_form
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
@@ -258,7 +257,6 @@ async def test_snippet_3_a_declared_output_is_enforced_not_suggested(tmp_path):
     """§3's declaration lines: the shape a callee declares is checked, and a
     mismatch FAILS. Seam-injected, so no process and no DB are involved."""
     import json
-    from typing import ClassVar
 
     from flow_sdk.core.compute.receipt import receipt_path
     from flow_sdk.core.compute_op import run_op
@@ -335,3 +333,45 @@ async def test_snippet_6_the_identity_fence_declares_a_real_shape():
     ns = _namespace(Text=Text)
     await run_fence(fence_under(doc(PAGE), "6."), ns, filename=f"{PAGE}#6")
     assert ns["Op"](name="n", setup="hello").setup == "hello"
+
+
+@pytest.mark.asyncio
+async def test_snippet_6_save_mints_an_id_once_beside_the_content(tmp_path, monkeypatch):
+    """§6 as the reader pastes it: save writes the content and an identity carrier; a second save
+    reuses the id, and load reads back an equal value."""
+    import json
+
+    monkeypatch.chdir(tmp_path)
+    ns = _namespace()
+    await run_fence(fence_under(doc(PAGE), "6."), ns, filename=f"{PAGE}#6")
+    await run_fence(fence_under(doc(PAGE), "6.", nth=1), ns, filename=f"{PAGE}#6b")
+    root = tmp_path / ns["root"]
+    carrier = root / ".flow" / "capsules" / "identity.json"
+    assert json.loads((root / "op.json").read_text()) == {"name": "pick-port"}
+    first = json.loads(carrier.read_text())["data"]["id"]
+    ns["op"].save(ns["root"])
+    assert json.loads(carrier.read_text())["data"]["id"] == first, "a second save reuses the id"
+
+
+# ── §7. One value, fields and documents ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_snippet_7_one_value_fields_and_documents(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    ns = await run_fence(fence_under(doc(PAGE), "7."), _namespace(), filename=f"{PAGE}#7")
+    folder = tmp_path / ns["folder"]
+    assert sorted(p.name for p in folder.iterdir() if p.is_file()) == ["body.md", "note.json"]
+    assert (folder / "body.md").read_text() == "# Goals\n- ship it"
+    assert ns["Note"].load(ns["folder"]) == ns["note"]
+    assert DataSpec.parse("notes.note") is ns["Note"], "flow.kind resolves to the class"
+
+
+# ── §8. An agent is a DataSpec ───────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_snippet_8_an_agent_is_a_dataspec(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    ns = await run_fence(fence_under(doc(PAGE), "8."), _namespace(), filename=f"{PAGE}#8")
+    folder = tmp_path / ns["folder"]
+    assert (folder / "agent.json").exists() and (folder / "system_prompt.md").read_text().startswith("You answer")
+    assert ns["AgentSpec"].load(ns["folder"]) == ns["spec"]

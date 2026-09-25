@@ -16,7 +16,7 @@ from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from tests.unit._stream_inbox_matrix import double_for
 from tests.utils.mock_worker import MockDriver
-from tests.utils.snippets import doc, fence_under, run_fence, run_fence_until
+from tests.utils.snippets import doc, fence_under, point_driver_at, run_fence, run_fence_until
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30), pytest.mark.usefixtures("home")]  # do not increase timeout without approval
 
@@ -34,6 +34,7 @@ def home(sod_env, fresh_user_scope):
 def whatsapp(monkeypatch):
     with double_for("whatsapp") as double:
         monkeypatch.setattr(DataDriver.loaded("whatsapp"), "credentials_for", double.credentials)
+        point_driver_at(monkeypatch, "whatsapp", "GRAPH_API_BASE", double.config["base_url"])
         yield double
 
 
@@ -41,7 +42,7 @@ def _names(double) -> dict:
     return {
         "WHATSAPP_TOKEN": double.secrets["access_token"], "WHATSAPP_APP_SECRET": double.secrets["app_secret"],
         "PHONE_NUMBER_ID": double.config["phone_number_id"], "VERIFY_TOKEN": double.config["verify_token"],
-        "CUSTOMER": double.sender, "EXTRA_CONFIG": {"base_url": double.config["base_url"]},
+        "CUSTOMER": double.sender,
     }
 
 
@@ -131,6 +132,8 @@ async def phone(monkeypatch):
     matrix = load_module(SHIPPED_ROOT / "voice_phone" / "tests", "matrix")
     async with matrix.Double() as double:
         monkeypatch.setattr(DataDriver.loaded("voice_phone"), "credentials_for", double.credentials)
+        point_driver_at(monkeypatch, "voice_phone", "TWILIO_API", double.config["twilio_base_url"])
+        monkeypatch.setenv("OPENAI_BASE_URL", double.config["base_url"])  # the OpenAI SDK's own root override
         yield double
     agent_calls._reset_for_tests()
 
@@ -150,8 +153,7 @@ async def _phone_agent(phone, monkeypatch) -> dict:
     from tests.unit._voice_turn import stub_the_turn
 
     stub_the_turn(monkeypatch, "4")
-    extra = {"EXTRA_CONFIG": {"base_url": phone.config["base_url"], "twilio_base_url": phone.config["twilio_base_url"]}}
-    return await run_fence(fence_under(doc(DOC), "4."), extra, filename=f"{DOC} §4")
+    return await run_fence(fence_under(doc(DOC), "4."), {}, filename=f"{DOC} §4")
 
 
 async def test_4_a_phone_agent_is_a_line_it_owns_and_a_call_it_places(phone, monkeypatch):

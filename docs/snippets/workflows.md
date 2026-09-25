@@ -67,6 +67,10 @@ What each line does:
 Control flow is Python, not configuration:
 
 ```python
+from flow_sdk.blocks import EmailMessageSpec, StreamInbox
+from flow_sdk.builtin.agent_registry import get_agent
+
+agent = await get_agent("email-summarizer")
 stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY, senders=["boss@corp.com"])
 
 async with agent.process_messages():
@@ -200,6 +204,35 @@ TelegramMessageSpec.reply_to(m, body="x").to   # [chat id] — the leading part 
 Three channels, three answers to "who does a reply go to": email to the
 author, Telegram to the chat, Slack to the channel's thread. Each spec owns
 that rule, so the loop body is the same line in all three.
+
+## 6. The opening program
+
+The SDK site opens with this program: §4's loop with the channel written in. Pinned by
+`tests/unit/test_workflows_snippets.py` exactly as shown, on each of the four channels.
+
+```python
+from flow_sdk.blocks import StreamInbox, workflow
+from flow_sdk.builtin.agent_registry import get_agent
+
+async with workflow("any-channel"):
+    # one word = one channel: gmail, slack, telegram, whatsapp
+    stream_inbox = StreamInbox("support@acme.com", provider="gmail")
+    agent = await get_agent("channel-helper")
+
+    async with agent.process_messages():
+        async for m in stream_inbox.listen():
+            out = await agent.process_message(m)
+            # the reply is addressed the way this channel replies
+            await m.reply(await m.reply_spec(body=out.text))
+```
+
+On another channel it is the same program with this one line changed:
+
+```python
+stream_inbox = StreamInbox("C0123456789", provider="slack")
+stream_inbox = StreamInbox("@acme_support_bot", provider="telegram")
+stream_inbox = StreamInbox("106540352242922", provider="whatsapp")
+```
 
 ## Limits today
 

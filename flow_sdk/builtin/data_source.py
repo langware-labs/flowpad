@@ -41,7 +41,6 @@ from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
-from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.secrets.store import SecretStoreRef
@@ -488,11 +487,10 @@ class DataSource(Entity):
         return existing if existing is not None and str(existing.id) != str(self.id) else None
 
     async def _adopt(self, existing: "DataSource", *args, **kwargs):
-        """Save onto the source this owner already has on the account instead of minting a twin: what the
-        caller authored (name, config, allowlist, cadence …) is written to that row, whose runtime
-        state — cursor, health, identities — stays. ``self`` then IS that row."""
-        authored = (set(_AUTHORED_FIELDS) | {"allowed_senders"}) & self.model_fields_set
-        for name in authored:
+        """Save onto the source this owner already has on the account instead of minting a twin: every
+        field the caller SET (name, config, allowlist, cadence — or an identity it just stamped) is written
+        to that row; what it left alone — cursor, health — stays the row's. ``self`` then IS that row."""
+        for name in self.model_fields_set - _NOT_ADOPTED:
             value = getattr(self, name)
             if name == "config":
                 value = {**(existing.config or {}), **(value or {})}
@@ -1447,10 +1445,10 @@ RUNTIME_FIELDS: tuple[str, ...] = tuple(
 
 
 #: What a person authors on a source — the fields of ``data_source.json`` — by their row names.
-_AUTHORED_FIELDS: tuple[str, ...] = tuple(
-    name for name in DataSourceSpec.model_fields
-    if name in DataSource.model_fields
-)
+#: What construction sets on every row, so it says nothing about what the caller meant: never written onto
+#: an adopted row.
+_NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
+
 
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:

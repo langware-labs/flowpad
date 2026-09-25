@@ -33,7 +33,6 @@ from flow_sdk.builtin.agent import Agent
 agent = Agent(
     name="researcher",
     model="sm",
-    permission_mode="bypassPermissions",
     system_prompt="You research; you do not summarize.",
 )
 await agent.save()
@@ -203,8 +202,10 @@ ones (`"2"`, `"3"`, …) answer only what names them. Each gets its `chat` endpo
 channel — at launch.
 
 ```python
+from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
+agent = await Agent.by_name("researcher")
 first = await agent.run_locally()               # a process on this computer running the agent loop
 second = await agent.run_locally()              # one more — its own process, its own chat
 assert (first.slot, second.slot) == ("", "2") and first.serving and second.serving

@@ -91,6 +91,8 @@ The natural key is the config field the manifest marks `account_key: true`
 `SourceItem.body` is FTS-indexed straight from the row.
 
 ```python
+from flow_sdk.builtin.source_item import SourceItem
+
 hits = await SourceItem.search("zebrafish", limit=10)
 ```
 
@@ -154,10 +156,12 @@ poller uses, so a re-run converges instead of duplicating. Pinned by
 `tests/unit/test_ingest_write_route.py`.
 
 ```python
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode
 
+src = await DataSource.get(SOURCE)     # the source these items belong to, by name
 items = [
     SourceItemSpec(
         data_source_id=src.id,
@@ -192,6 +196,9 @@ row; the HTTP route of the same name is a thin wrapper over it. Pinned by
 `tests/unit/test_data_sources_snippets.py` and `tests/unit/test_data_source_actions.py`.
 
 ```python
+from flow_sdk.builtin.data_source import DataSource
+
+src = await DataSource.get(SOURCE)
 await src.verify()          # connection + setup probe → status ACTIVE or SETUP
 await src.poll_now()        # mark due; the heartbeat picks it up within 60s
 await src.replay(since=None)   # re-emit item events from what is stored
@@ -252,7 +259,7 @@ Pinned by `tests/unit/test_data_sources_snippets.py`.
 ```python
 from flow_sdk.builtin.data_source import DataSource
 
-picks = await DataSource.choices_for("gcs", "bucket", {"project": PROJECT, "base_url": BASE_URL})
+picks = await DataSource.choices_for("gcs", "bucket", {"project": PROJECT})
 
 [(c.id, c.name) for c in picks.items]  # what this credential can actually see
 picks.detail  # why the list is empty, when it is
@@ -292,7 +299,7 @@ from flow_sdk.ingest.reflect import ReflectMode
 
 driver = await DataDriver.get("gdrive")
 src = driver.create_source(
-    driver.create_config(cache_root=CACHE_ROOT, base_url=BASE_URL),  # `drive=...` for a shared drive; empty = My Drive
+    driver.create_config(cache_root=CACHE_ROOT),  # `drive=...` for a shared drive; empty = My Drive
     name="My Drive",
     reflect=ReflectMode.COPY.value,
     reflect_into=DESTINATION,
@@ -311,8 +318,7 @@ that says so (`No Google credential on this machine…`); the row parks in
 `setup` and nothing is fetched. Once it is, files land in `cache_root` under
 Drive's own folder names and are reflected into `reflect_into` like a folder
 source's. The report's `created`/`updated` count *records*, so they stay 0 for
-a file source: look at the tree. Leave `base_url` out in real use; it exists so
-a test can point the source at a loopback Drive.
+a file source: look at the tree.
 
 ## 11. Consume a source yourself
 
@@ -387,3 +393,45 @@ answers = (drive.sends, rss.sends, slack.sends)        # (False, False, True)
 
 A provider with two kinds of stream is two drivers: a Jira issue tracker is a `RecordSource`
 of issues, and each issue's comments a `MessageSource`.
+
+## 14. Write your own driver
+
+A driver's class extends its family and, for a listing, `CollectionSource`: three methods, and
+paging, `get` and `iterate` come free. This one keeps its table in memory; a real one reads an API
+in `_scan` (the shipped `hackernews` driver is 130 lines). Pinned by
+`tests/unit/test_data_sources_snippets.py`, which also runs the SDK's conformance kit on it.
+
+```python
+from typing import Any, Optional
+
+from flow_sdk.sources.base import CollectionSource
+from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.families import RecordSource
+from flow_sdk.sources.values.items import RecordData, SourceItemSpec
+
+ROWS = {"q1": "Simple is better than complex.", "q2": "Flat is better than nested.", "q3": "Readability counts."}
+
+
+class ZenSource(RecordSource, CollectionSource):
+    Config = SourceConfig
+    provider = "zen"
+
+    async def _scan(self, query: Any) -> list[tuple[str, str]]:   # list what exists, in key order
+        return sorted(ROWS.items())
+
+    async def _lookup(self, key: str) -> Optional[str]:           # find one by key
+        return ROWS.get(key)
+
+    def _item(self, key: str, raw: str) -> SourceItemSpec:        # one raw record -> a typed item
+        return SourceItemSpec(origin=self.origin(key), data=RecordData(title=key, text=raw))
+
+
+async with ZenSource(SourceBinding(config={}, account_key="zen")) as zen:   # the account it reads as
+    page = await zen.fetch(page_size=2)
+    [item.data.text for item in page.items]        # the first two, in key order
+    await zen.get(zen.origin("q3"))                # one by key
+```
+
+Put it in `agentic-assets/data_driver/zen/source.py` beside a `data_driver.json` naming it, and
+it loads like the shipped ones.

@@ -61,7 +61,7 @@ await agent.run_locally()                      # a process on this machine runs 
 
 whatsapp = await DataDriver.get("whatsapp")
 source = whatsapp.create_source(
-    whatsapp.create_config(phone_number_id=PHONE_NUMBER_ID, verify_token=VERIFY_TOKEN, **EXTRA_CONFIG),
+    whatsapp.create_config(phone_number_id=PHONE_NUMBER_ID, verify_token=VERIFY_TOKEN),
     name="Acme support line",
     owner=agent,                               # the agent's stream inbox; the agent answers
     allowed_senders=[CUSTOMER],        # who may drive it — empty admits nobody
@@ -91,7 +91,7 @@ await agent.save()
 
 async with workflow("whatsapp-support"):
     box = StreamInbox(PHONE_NUMBER_ID, provider="whatsapp", owner=agent,
-                      verify_token=VERIFY_TOKEN, senders=[CUSTOMER], **EXTRA_CONFIG)
+                      verify_token=VERIFY_TOKEN, senders=[CUSTOMER])
     async with agent.process_messages():
         async for m in box.listen():
             out = await agent.process_message(m)              # one session per chat
@@ -123,7 +123,7 @@ await agent.save()
 
 phone = await DataDriver.get("voice_phone")          # Twilio → OpenAI Realtime over SIP
 line = phone.create_source(
-    phone.create_config(number="+14155550100", project="proj_acme", **EXTRA_CONFIG),
+    phone.create_config(number="+14155550100", project="proj_acme"),
     name="Acme front desk",
     owner=agent,                                     # the agent answers every call on it
     allowed_senders=["+972501234567"],               # who may call; kept on this machine
@@ -150,6 +150,3 @@ refused before anything is said.
 - Watch the conversation in the agent's stream inbox; a reply typed there goes out as the agent.
 - Change who may talk to it: `POST /api/v1/graph/agent/<id>/configure_mailbox {"allowed_senders": [...]}`
   (variant A), or the `senders=` list (variant B).
-
-`EXTRA_CONFIG` is empty in production; a test passes the driver's loopback `base_url` (and, for the
-phone, `twilio_base_url`) through it.
