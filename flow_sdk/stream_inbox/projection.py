@@ -104,10 +104,11 @@ async def resolve_thread(
         return thread
     from flow_sdk.db import get_db_driver  # noqa: PLC0415
 
-    retired = None
+    retired, last = None, None
     async with _thread_lock(), get_db_driver().write_transaction():
         thread = await find_thread(channel, key, owner, data_source_id)
-        if thread is not None and await timed_out(thread, timeout_seconds, at):
+        last = await last_message_at(thread) if thread is not None and timeout_seconds and at is not None else None
+        if thread is not None and quiet_past(last, timeout_seconds, at):
             retired = thread
             thread = None  # quiet past the timeout: it stays as it is, and the next thread begins
         if thread is not None:
@@ -136,7 +137,7 @@ async def resolve_thread(
         await thread.save(notify=False)
     if retired is not None:
         # Outside the writer lock: the retired thread's conversation ended with its last message.
-        await end_conversation(retired.conversation_id, await last_message_at(retired))
+        await end_conversation(retired.conversation_id, last)
     return thread
 
 
@@ -163,7 +164,7 @@ async def last_message_at(thread) -> Optional[datetime]:
     return iso_to_utc(rows[0].occurred_at) if rows else None
 
 
-async def end_conversation(conversation_id: str, at: Optional[datetime]) -> None:
+async def end_conversation(conversation_id: str, at: Optional[datetime] = None) -> None:
     """Mark a conversation ended at *at* (a call hung up, a chat retired by the timeout). Once."""
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
 
@@ -265,6 +266,15 @@ def channel_of(source) -> str:
     return (getattr(source, "channel", "") or getattr(source, "provider", "") or "").strip()
 
 
+async def conversation_of(item, *, source=None) -> Optional[str]:
+    """Project *item* and answer the id of the conversation it landed in, or ``None`` when it placed nowhere."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    placed = await project_source_item(item, source=source)
+    message = await FlowMessage.get_by_id(placed[0]) if placed is not None else None
+    return str(message.conversation_id) if message is not None and message.conversation_id else None
+
+
 async def project_source_item(
     item,
     *,
@@ -344,12 +354,13 @@ async def project_source_item(
     # A born-`flowpad` conversation (a help desk ticket) takes the source's channel here;
     # a source channel is never overwritten (`Conversation.adopt_channel`).
     changed = conversation.adopt_channel(channel, str(source.id))
-    if stamp_conversation(conversation, item, ours=item.is_ours(source)):
+    ours = item.is_ours(source)
+    if stamp_conversation(conversation, item, ours=ours):
         changed = True
     if changed:
         await conversation.save(notify=False)
 
-    sender, sender_name = await _sender_for(item, source, channel)
+    sender, sender_name = await _sender_for(item, source, channel, ours=ours)
     # The message row is resolved by its reference column. FIRST placement
     # runs under the shared lock: two lanes (sync ingest + the projected-tag
     # handler) can otherwise both prove "no row" before either inserts — that
@@ -390,11 +401,14 @@ def stamp_conversation(conversation, item, *, ours: bool) -> bool:
     when = iso_to_utc(item.occurred_at) if item.occurred_at else None
     if when is not None and (conversation.started_at is None or when < conversation.started_at):
         conversation.started_at, changed = when, True
-    if ours:
-        who = [addr for _name, addr in getaddresses(list(item.recipients or [])) if addr] if not conversation.address else []
-    else:
+    if not ours:
         who = [str(item.author_external_id).strip()] if (item.author_external_id or "").strip() else []
-    joined = [w for w in who if w not in (conversation.address or [])]
+    elif not conversation.address:
+        who = [addr for _name, addr in getaddresses(list(item.recipients or [])) if addr]
+    else:
+        who = []
+    known = {_fold(a) for a in conversation.address or []}
+    joined = [w for w in who if _fold(w) not in known]
     if joined:
         conversation.address = [*(conversation.address or []), *joined]
         changed = True
@@ -632,7 +646,7 @@ def display_name_of(raw: str, address: str) -> str:
     return name or text or address
 
 
-async def _sender_for(item, source, channel: str) -> tuple[MessageSender, str]:
+async def _sender_for(item, source, channel: str, *, ours: Optional[bool] = None) -> tuple[MessageSender, str]:
     """``(sender, sender_name)`` — who wrote this item, typed, and what to call them.
 
     Load-bearing, not cosmetic. The unread rule gates on the sender
@@ -645,7 +659,7 @@ async def _sender_for(item, source, channel: str) -> tuple[MessageSender, str]:
 
     address = (item.author_external_id or "").strip()
     display = display_name_of(item.author_display or "", address)
-    if item.is_ours(source):
+    if item.is_ours(source) if ours is None else ours:
         # An AGENT's mailbox is not the user's. Attributing its sent copies to
         # the human would put words in their mouth — the owner would appear to
         # have written replies they never saw. Same reasoning as

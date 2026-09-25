@@ -42,6 +42,8 @@ from flow_sdk.sources.protocols import (
     Verdict,
     Verifiable,
 )
+from flow_sdk.sources.values.items import UserProfile
+from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import ChangePage
 from flow_sdk.sources.values.query import MessageQuery
 from flow_sdk.utils.kind_registry import KindRegistry
@@ -623,6 +625,11 @@ class DriverRuntime:
             await self._stamp(row, source)
         # A transport whose connector may only DRAFT reports the draft with no `sent_at`; one that
         # records its own copy says so on the payload.
+        if to and not getattr(sent.data, "recipients", None):
+            # Whom we sent it to is known here even when the provider's answer does not say — a
+            # conversation we open is addressed by it.
+            to_whom = UserProfile(origin=CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=to), address=to)
+            sent = sent.model_copy(update={"data": sent.data.model_copy(update={"recipients": (to_whom,)})})
         drafted = self.cls.sends_may_draft and sent.data.sent_at is None
         recorded = bool(getattr(sent.data, "recorded", False))
         if not drafted and not recorded:

@@ -24,7 +24,7 @@ from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Optional
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing, persist_policy
@@ -208,15 +208,9 @@ class DataSource(Entity):
     #: Unset: every place holding it answers, as before places existed.
     answer_place: Optional[str] = APIField(default=None, description="The Deployment that answers this source")
 
-    #: Who may drive the owning agent through this line: the gate on every inbound message
-    #: (``agent_serve.admits``). Empty admits nobody, unless the driver is ``open_inbound`` (a help desk).
-    #: For an agent's hub mailbox it is a cache of the hub's policy, refreshed on every reconcile.
-    #:
-    #: Deliberately NOT inside ``config``, for the reason the reflection block below gives: ``config`` is
-    #: provider-opaque and shareable, and these are third parties' personal addresses. A driver may still
-    #: offer an ``allowed_senders`` form field (its hint and pattern); the value is moved here on the way in.
-    #: PRIVATE — never to a receiver or the hub — and kept on the row like the engine's own state: a
-    #: re-read file leaves it as it is (``RUNTIME_FIELDS``).
+    #: Who may drive the owning agent through this line (``agent_serve.admits``); empty admits nobody unless
+    #: the driver is ``open_inbound``. Third parties' addresses: PRIVATE, row-only — never in the shareable
+    #: ``config`` (a form's field is moved here), and a re-read file leaves it as it is.
     allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
 
     # ── reflection — HOW the payload becomes locally present ──
@@ -287,12 +281,8 @@ class DataSource(Entity):
     @model_validator(mode="before")
     @classmethod
     def _allowlist_off_config(cls, data):
-        """``allowed_senders`` lands on the row, never in ``config``; ``owner`` takes the entity itself.
-
-        One rule for every writer: a driver's form offers the allowlist as a config field and a Python
-        caller may pass it either way, but ``config`` goes into the shareable ``data_source.json``.
-        A row written before the rename carries ``inbound_allowed_senders``: read as ``allowed_senders``.
-        """
+        """``allowed_senders`` lands on the row, never in the shareable ``config`` — however a form or a
+        caller passed it. A row written before the rename carries ``inbound_allowed_senders``."""
         if not isinstance(data, dict):
             return data
         data = dict(data)
@@ -308,10 +298,15 @@ class DataSource(Entity):
                 data["allowed_senders"] = moved
         if isinstance(data.get("allowed_senders"), (list, tuple)):
             data["allowed_senders"] = [s for s in (str(x).strip() for x in data["allowed_senders"]) if s]
-        owner = data.get("owner")
-        if owner is not None and not isinstance(owner, (str, dict, TypeId)) and getattr(owner, "typeid", None) is not None:
-            data["owner"] = owner.typeid
         return data
+
+    @field_validator("owner", mode="before")
+    @classmethod
+    def _owner_entity(cls, owner):
+        """``owner`` takes the entity itself (an ``Agent``) as well as its ``TypeId``."""
+        if owner is not None and not isinstance(owner, (str, dict, TypeId)) and getattr(owner, "typeid", None) is not None:
+            return owner.typeid
+        return owner
 
     @model_validator(mode="before")
     @classmethod
@@ -584,28 +579,18 @@ class DataSource(Entity):
         message — and answer the Conversation it is. Its ``address`` is *to*, so it can be continued
         (``Conversation.send``) before anyone answers."""
         from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
-        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-        from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import conversation_of  # noqa: PLC0415
 
         driver = self._driver()
-        if driver is None:
-            raise RuntimeError(f"no driver for {self.provider}")
-        spec_cls = driver.outbound_spec(self)
-        fields: dict = {"to": [to], "body": body}
-        if subject and "subject" in spec_cls.model_fields:
-            fields["subject"] = subject
-        outcome = await self.send(spec_cls(**fields))
+        if driver is None or not driver.sends:
+            raise RuntimeError(f"the {self.provider} driver cannot send")
+        outcome = await driver.send(self, thread_key="", to=to, text=body, subject=subject)
         item = await SourceItem.get_one({"data_source_id": str(self.id), "external_id": outcome.external_id}) if outcome.external_id else None
-        placed = await project_source_item(item, source=self) if item is not None else None
-        if placed is None:
+        conversation_id = await conversation_of(item, source=self) if item is not None else None
+        if not conversation_id:
             raise RuntimeError(f"the {self.provider} message to {to} was {outcome.status.value} but not recorded here")
-        thread = await MessageThread.get_one({"id": placed[1]})
-        conversation = await Conversation.get_one({"id": thread.conversation_id})
-        if to not in (conversation.address or []):
-            conversation.address = [to, *(conversation.address or [])]
-            await conversation.save(notify=False)
-        return conversation
+        return await Conversation.get_one({"id": conversation_id})
 
     async def send(self, spec: MessageSpec) -> SendOutcome:
         """Deliver one outbound message through this source's driver.

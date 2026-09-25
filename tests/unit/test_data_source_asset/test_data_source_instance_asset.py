@@ -109,10 +109,10 @@ async def test_one_owner_watches_an_account_once(scope):
     first.cursor = "c-42"
     await first.save_runtime()
 
-    second = await _saved("second", folder="inbox")
+    second = await _saved("second", folder="archive")
 
     assert str(second.id) == str(first.id)
-    assert second.name == "second" and second.config == {"address": "me@x.test", "folder": "inbox"}
+    assert second.name == "second" and second.config == {"address": "me@x.test", "folder": "archive"}
     assert second.cursor == "c-42"
     assert len(await DataSource.get_all({"provider": _Mailbox.provider})) == 1
 

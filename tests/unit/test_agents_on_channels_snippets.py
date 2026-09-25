@@ -131,19 +131,16 @@ async def phone(monkeypatch):
     matrix = load_module(SHIPPED_ROOT / "voice_phone" / "tests", "matrix")
     async with matrix.Double() as double:
         monkeypatch.setattr(DataDriver.loaded("voice_phone"), "credentials_for", double.credentials)
-        double.matrix = matrix
         yield double
     agent_calls._reset_for_tests()
 
 
-async def _answered(line, delivery: dict):
+async def _answered(phone, line, delivery=None):
     """A signed OpenAI ring through the webhook's chokepoint, handed to whoever answers the line — as
     ``data_source_webhook`` does — and the call held to its end."""
     from flow_sdk.builtin import agent_calls
 
-    result = await DataDriver.loaded("voice_phone").ingest_pushed(
-        line, json.loads(delivery["body"]), headers=delivery["headers"], raw=delivery["body"])
-    (call,) = result["calls"]
+    call = await phone.ring_back(DataDriver.loaded("voice_phone"), line, delivery)
     assert await agent_calls.ring(line, call), "nobody on this machine answers the line"
     return await agent_calls._CALLS[call.call_id]["task"]
 
@@ -179,7 +176,7 @@ async def test_4_the_call_it_placed_and_a_strangers_are_answered_on_the_line(pho
     line, agent, call = ns["line"], ns["agent"], ns["call"]
     try:
         # the callee picks up: OpenAI rings back, and the agent holds the call in the conversation start made
-        assert await _answered(line, phone.rings_back()) == str(call.id)
+        assert await _answered(phone, line) == str(call.id)
         held = await Conversation.get_one({"id": str(call.id)})
         assert str(held.owner) == str(agent.typeid) and held.address == [phone.sender]
         assert held.started_at is not None and held.ended_at is not None
@@ -188,10 +185,7 @@ async def test_4_the_call_it_placed_and_a_strangers_are_answered_on_the_line(pho
         assert phone.fake.answers == ["You have two meetings 4."], "the voice was not handed the agent's answer"
 
         # a call from a number the line does not list is refused before anything is said
-        raw = json.dumps(phone.matrix.incoming_call("rtc_stranger", caller="+10000000000", dialled="proj_matrix",
-                                                    number_header=f"sip:{phone.matrix.NUMBER}@pstn.twilio.com")).encode()
-        refused = {"body": raw, "headers": phone.matrix.sign(raw, phone.matrix.SECRET)}
-        assert await _answered(line, refused) is None
+        assert await _answered(phone, line, phone.calls_in("+10000000000")) is None
         assert "reject" in phone.fake.verbs()
         assert len(await Conversation.get_all({"channel_source_id": str(line.id)})) == 1
     finally:

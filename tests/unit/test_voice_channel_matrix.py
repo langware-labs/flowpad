@@ -176,8 +176,6 @@ async def test_every_call_is_its_own_thread_even_with_the_same_person(provider, 
 async def test_a_call_the_agent_places_is_one_conversation_with_whom_it_called(monkeypatch, tmp_path):
     """``line.start`` on a phone dials; the note that placed the call, every sentence of it and its end
     are ONE conversation, addressed to the person called, begun and ended."""
-    import json  # noqa: PLC0415
-
     stub_the_turn(monkeypatch, "x")
     async with double_for("voice_phone", tmp_path) as double:
         agent, source = await make_agent_source("voice_phone", double, monkeypatch)
@@ -187,10 +185,7 @@ async def test_a_call_the_agent_places_is_one_conversation_with_whom_it_called(m
             assert conversation.address == [double.sender] and conversation.started_at is not None
             assert len(double.dials) == 1, "start on a phone line dials"
 
-            ring = double.rings_back()
-            result = await DataDriver.loaded("voice_phone").ingest_pushed(
-                source, json.loads(ring["body"]), headers=ring["headers"], raw=ring["body"])
-            (call,) = result["calls"]
+            call = await double.ring_back(DataDriver.loaded("voice_phone"), source)
             engine = TurnEngine(agent, await agent.local_deployment())
             assert await answer_call(engine, source, call) == str(conversation.id)
 

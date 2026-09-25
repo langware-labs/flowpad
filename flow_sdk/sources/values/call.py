@@ -40,8 +40,8 @@ class IncomingCall(DataSpec):
     caller_name: str = ""
     #: A call we placed: what it is for. The voice opens with it instead of waiting to be spoken to.
     brief: str = ""
-    #: Which conversation the call is — a call we placed keeps its dial's, so the note that placed it
-    #: and the call itself are one conversation. Empty: the call's own id.
+    #: The call's conversation key when not its id: a call we placed keeps its dial's token, so the note
+    #: that placed it and the call are one conversation.
     conversation: str = ""
 
     @property
