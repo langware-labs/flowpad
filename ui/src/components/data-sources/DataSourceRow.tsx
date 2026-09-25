@@ -31,8 +31,7 @@ import { sourceIcon } from './source-icon';
 import { SourceMenu } from './SourceMenu';
 import { OpenFolderButton } from './OpenFolderButton';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
-import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+import { openDriver, openSourceFile } from './data-sources-pointer';
 import { useSourceToggle } from './use-source-toggle';
 import { useSourceVerify } from './use-source-verify';
 
@@ -144,10 +143,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
               title={source.asset_ref ? t`Open data_source.json` : source.name}
               disabled={!source.asset_ref}
               data-testid={`data-source-file-${source.id}`}
-              onClick={() =>
-                source.asset_ref &&
-                navigation.openMachinePath(`${source.asset_ref}/data_source.json`, LOCAL_COMPUTE_NODE)
-              }
+              onClick={() => openSourceFile(navigation, source.asset_ref)}
             >
               {source.name || source.provider || source.id.slice(0, 8)}
             </button>
@@ -157,9 +153,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
                 className="hover:text-foreground hover:underline"
                 title={t`Open the ${source.provider} driver`}
                 data-testid={`data-source-driver-${source.id}`}
-                onClick={() =>
-                  navigation.openDock(DockPointer.forDataSources({ section: 'drivers', driver: source.provider }))
-                }
+                onClick={() => openDriver(navigation, source.provider)}
               >
                 {source.provider}
               </button>
@@ -234,6 +228,10 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
     </div>
   );
 }
+
+/** The header row's look, shared by the sources table and the drivers table. */
+export const HEADER_ROW =
+  'border-b border-border bg-muted/30 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground';
 
 /** The one column template the header and every row share. */
 export const ROW_GRID =
