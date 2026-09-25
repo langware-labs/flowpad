@@ -267,7 +267,7 @@ class AgentMailbox(Entity):
         though the gate consults it.
 
         ``agent_id`` goes through ``agent_id_of`` — not a bare ``config.get``
-        — because a `bind_channel`-bound source (Slack, Teams, …) carries no
+        — because an agent-owned channel source (Slack, Teams, …) carries no
         ``config.agent_id`` at all; its agent is the ``owner``. The serve loop
         only reaches here over sources that agent owns, so the
         helper's fallback is never empty at this call site — a bare
