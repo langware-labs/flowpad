@@ -188,7 +188,7 @@ async def save_credential(
     if not parsed.setup.strip():
         raise CredentialError(
             "a credential needs setup instructions: how to obtain its values and store them "
-            f"(`flow credentials set {parsed.name} VAR=…`)"
+            f"(piped as `VAR=VALUE` lines into `flow credentials set {parsed.name} --stdin`)"
         )
     if parsed.lm_provider and target_scope.scope != SCOPE_USER:
         raise CredentialError("an LLM provider key funds every project, so it can only be added for the user")
