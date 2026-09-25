@@ -26,6 +26,7 @@ import type { ChildSection } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useStagedAssets } from './useStagedAssets';
 import { Empty, IconButton, ResourceRow } from './parts';
+import { AgentCredentialsSection } from './AgentCredentialsSection';
 import { AgentSchedulesSection } from './AgentSchedulesSection';
 import { useQuickCreatePick } from '@src/components/quick-create';
 
@@ -269,6 +270,8 @@ export function AgentResourcesBody() {
       </NavigatorSection>
 
       {editingAgentId && <AgentSchedulesSection agentTypeId={editingAgentId} />}
+
+      {editingAgentId && <AgentCredentialsSection />}
 
       {/* The project's own add-source form, reused verbatim — `editing` unset
           is its create mode. Mounted here rather than behind a navigation so

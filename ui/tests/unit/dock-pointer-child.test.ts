@@ -34,6 +34,15 @@ describe('a nested child view', () => {
     expect(page.tabHash).toBe(agent.tabHash);
   });
 
+  it('a credential opens nested in its agent', () => {
+    const agent = DockPointer.fromUrl(`/dock/assets/editor/agent/typeid/${AGENT}`);
+    const CRED = 'secret_pack-55555555-5555-4555-8555-555555555555';
+    const page = agent.withChild('credential', CRED);
+    expect(page.toUrl()).toContain(`/typeid/${AGENT}/child/credential/${CRED}`);
+    expect(DockPointer.fromUrl(page.toUrl()).child).toEqual({ section: 'credential', typeId: CRED });
+    expect(page.tabHash).toBe(agent.tabHash);
+  });
+
   it('stays in the agent’s tab', () => {
     const agent = DockPointer.fromUrl(`/dock/assets/editor/agent/typeid/${AGENT}`);
     expect(agent.withChild('skill', 'skill-11111111-1111-4111-8111-111111111111').tabHash).toBe(agent.tabHash);
