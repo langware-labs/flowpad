@@ -41,6 +41,8 @@ Assets are JSON. A shape a document declares is text, and `parse` compiles it to
 a class.
 
 ```python
+from flow_sdk.schema.data_spec import DataSpec, to_authoring_form
+
 Endpoint = DataSpec.parse({"host": "string", "port": "int"})
 Endpoint(host="h", port=8099).model_dump()   # {'host': 'h', 'port': 8099}
 to_authoring_form(Endpoint)                  # {'host': 'string', 'port': 'int'}
@@ -75,6 +77,10 @@ Such a class is **anonymous** — `Spec_b297da81`, not a name you wrote. To get
 your own class back, give it a kind:
 
 ```python
+from typing import ClassVar
+
+from flow_sdk.schema.data_spec import DataSpec, to_authoring_form
+
 class Endpoint(DataSpec):
     spec_kind: ClassVar[str] = "demo.endpoint"
     host: str = "localhost"
@@ -227,6 +233,9 @@ Some values are not fields of a document — they ARE one. That is read off the
 type, never off an annotation.
 
 ```python
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.io import Binary, Text
+
 class Op(DataSpec):
     name: str            # a value    -> op.json
     setup: Text = ""     # a document -> setup.md
@@ -271,6 +280,11 @@ So `markdown` needed no new type: `MarkdownSpec` was already the carrier, and
 A shape has no `id` field, and never does:
 
 ```python
+from pathlib import Path
+
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.io import Text
+
 class Op(DataSpec):
     name: str
     setup: Text = ""
@@ -281,9 +295,11 @@ written beside it: the `id:` key of a markdown document's frontmatter, or
 `.flow/capsules/identity.json` next to a folder's main document.
 
 ```python
+op = Op(name="pick-port")
+root = Path("pick-port")
 op.save(root)
-# root/op.json                      {"name": "pick-port"}
-# root/.flow/capsules/identity.json {"id": "e3b0c442-…"}
+# pick-port/op.json                      {"name": "pick-port"}
+# pick-port/.flow/capsules/identity.json {"data": {"id": "e3b0c442-…"}, "version": 1}
 
 Op.load(root) == op                 # True — content is equal
 ```
@@ -296,3 +312,42 @@ An id is a **UUID v4**. A file may already carry one — a hand-authored `id:`, 
 clone, an import — and it is adopted only if it validates; anything else is
 ignored and a stable id is derived instead. An id is a name, never a fact about
 the thing: it encodes no type, no path and no account.
+
+## 7. One value, fields and documents
+
+A shape carries structured fields and whole documents side by side; `spec_kind` names it, so a
+document can refer to it by name. Pinned by `tests/unit/test_data_spec_snippets.py`.
+
+```python
+from pathlib import Path
+from typing import ClassVar
+
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.io import Text
+
+class Note(DataSpec):
+    spec_kind: ClassVar[str] = "notes.note"   # flow.kind
+    title: str                                # structured
+    body: Text = ""                           # unstructured
+
+note = Note(title="Q3 plan", body="# Goals\n- ship it")
+folder = Path("q3-plan")
+note.save(folder)                             # note.json + body.md
+Note.load(folder) == note                     # True
+```
+
+## 8. An agent is a DataSpec
+
+An agent's definition is a shape like any other: validated in memory, a folder on disk, the same
+`save` and `load`. Pinned by `tests/unit/test_data_spec_snippets.py`.
+
+```python
+from pathlib import Path
+
+from flow_sdk.schema.data_spec.agent_spec import AgentSpec
+
+spec = AgentSpec(model="haiku", system_prompt="You answer Acme's phone. Be brief.")
+folder = Path("front-desk")
+spec.save(folder)                    # agent.json + system_prompt.md, like any DataSpec
+AgentSpec.load(folder) == spec       # True
+```

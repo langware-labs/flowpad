@@ -117,6 +117,23 @@ async def test_one_owner_watches_an_account_once(scope):
     assert len(await DataSource.get_all({"provider": _Mailbox.provider})) == 1
 
 
+async def test_what_the_caller_set_wins_on_adoption(scope):
+    """An identity stamped on a new row (a verify before its first save) survives the row being adopted:
+    what the caller set wins, what it left alone stays the adopted row's."""
+    first = await _saved("first")
+    first.account_key = "old-key"
+    first.cursor = "c-7"
+    await first.save_runtime()
+
+    second = DataSource(name="second", provider=_Mailbox.provider, config={"address": "me@x.test"})
+    second.account_key, second.account_identities = "new-key", ["new-key"]
+    await second.save_runtime()
+
+    assert str(second.id) == str(first.id)
+    assert (second.account_key, second.account_identities) == ("new-key", ["new-key"])
+    assert second.cursor == "c-7"
+
+
 async def test_a_file_that_is_a_driver_definition_is_refused_with_where_it_belongs():
     with pytest.raises(ValueError, match="data_driver.json"):
         DataSourceSpec.model_validate({"schema": 1, "name": "rss", "title": "RSS / Atom"})

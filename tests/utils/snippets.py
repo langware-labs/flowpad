@@ -11,6 +11,8 @@ from __future__ import annotations
 import ast
 import asyncio
 import inspect
+import json
+import os
 import re
 from pathlib import Path
 from typing import Optional
@@ -75,7 +77,17 @@ async def run_fence(source: str, namespace: Optional[dict] = None, *, filename: 
     result = eval(compile_fence(source, filename), ns)  # noqa: S307 — executes checked-in documentation
     if inspect.isawaitable(result):
         await result
+    record_run(source)
     return ns
+
+
+def record_run(source: str) -> None:
+    """With ``FLOW_SNIPPET_LEDGER`` naming a file, append the text of every fence that ran to its end
+    without raising — the proof a page quoting a fence (the SDK site) checks it against, verbatim."""
+    path = os.environ.get("FLOW_SNIPPET_LEDGER")
+    if path:
+        with open(path, "a", encoding="utf-8") as ledger:
+            ledger.write(json.dumps(source.strip("\n")) + "\n")
 
 
 async def run_fence_until(
@@ -95,6 +107,8 @@ async def run_fence_until(
             task.result()  # re-raise a fence that died
         elif not finished:
             raise TimeoutError(f"{filename}: the loop neither finished nor signalled within {timeout}s")
+        else:
+            record_run(source)  # the loop did what the test waited for, alive
     finally:
         for t in (task, waiter):
             if not t.done():
@@ -111,4 +125,29 @@ def doc(name: str) -> str:
     return (SHELF / name).read_text(encoding="utf-8")
 
 
-__all__ = ["SHELF", "compile_fence", "doc", "fence_under", "fences", "run_fence", "run_fence_until"]
+
+
+def point_driver_at(monkeypatch, provider: str, root: str, url: str) -> None:
+    """Point a shipped driver's API root (its module's ``root`` constant, e.g. ``GRAPH_API_BASE``) at a
+    loopback double, so a fence runs exactly as the reader pastes it — with no test-only argument."""
+    from flow_sdk.ingest.driver_registry import asset_module  # noqa: PLC0415
+
+    module = asset_module(provider)
+    assert hasattr(module, root), f"{provider} has no {root}"
+    monkeypatch.setattr(module, root, url)
+
+
+def opening_programs() -> dict[str, str]:
+    """``workflows.md`` §6 as the SDK site shows it: the program, and the same program with its one channel
+    line swapped for each line of the section's second fence — channel → the whole program."""
+    page = doc("workflows.md")
+    program, swaps = fence_under(page, "6."), fence_under(page, "6.", nth=1)
+    (line,) = [ln.strip() for ln in program.split("\n") if "StreamInbox(" in ln]
+    programs = {re.search(r'provider="(\w+)"', line).group(1): program}
+    for swap in filter(None, (ln.strip() for ln in swaps.split("\n"))):
+        programs[re.search(r'provider="(\w+)"', swap).group(1)] = program.replace(line, swap)
+    return programs
+
+
+__all__ = ["SHELF", "compile_fence", "doc", "fence_under", "fences", "opening_programs", "point_driver_at",
+           "record_run", "run_fence", "run_fence_until"]

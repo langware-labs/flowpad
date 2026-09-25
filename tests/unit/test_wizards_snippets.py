@@ -23,6 +23,7 @@ from flow_sdk.schema.data_spec.compute_op_spec import CliOp, ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, WizardResult
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
 from tests.unit.test_call_returns_snippets import with_assertions
+from tests.utils.snippets import record_run
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -60,3 +61,4 @@ async def test_every_fence_runs_as_written(index, tmp_path):
     scope = _scope(tmp_path)
     exec("async def __fence():\n" + textwrap.indent(body, "    "), scope)
     await scope["__fence"]()
+    record_run(FENCES[index])

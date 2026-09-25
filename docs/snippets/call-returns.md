@@ -182,8 +182,17 @@ Refused, busy, never started, timed out, failed: all returned. Only bad input
 raise opts in, and the exception carries the answer.
 
 ```python
+import sys
+import tempfile
+from pathlib import Path
+
+from flow_sdk.core.compute_op import run_op
+from flow_sdk.schema.data_spec.compute_op_spec import CliOp, ComputeOpSpec
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, OpNotReached
+
+tmp = Path(tempfile.mkdtemp())
 broken = ComputeOpSpec(name="build", subkind="cli",
-                       exe_data=CliOp(commands={"darwin": "exit 2"}))
+                       exe_data=CliOp(commands={sys.platform: "exit 2"}))
 
 refused = await run_op(broken, trusted=False, workdir=tmp)
 refused.exit_code, refused.ran            # (ExitCode.REFUSED, False) — not approved; nothing ran

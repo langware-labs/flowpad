@@ -35,7 +35,12 @@ def home(fresh_user_scope):
 
 
 async def _placed() -> dict:
-    """§1, both fences, in one namespace — what §3 and §4 read on."""
+    """§1, both fences, in one namespace — what §3 and §4 read on. The session's test DB holds any
+    "researcher" an earlier test placed; the fences find theirs by name, so exactly one must answer."""
+    from flow_sdk.builtin.agent import Agent
+
+    for other in await Agent.get_all({"name": "researcher"}):
+        await other.delete()
     ns = await run_fence(fence_under(doc(DOC), "1."), {}, filename=f"{DOC} §1")
     return await run_fence(fence_under(doc(DOC), "1.", nth=1), ns, filename=f"{DOC} §1b")
 

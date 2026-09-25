@@ -15,8 +15,8 @@ on a Linux CI box (only ``win32`` is spawned differently).
 """
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import functools
 import re
 import textwrap
@@ -26,8 +26,8 @@ from typing import ClassVar
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.core.compute_op.ask import answer, open_questions
 from flow_sdk.core.compute_op import runner
+from flow_sdk.core.compute_op.ask import answer, open_questions
 from flow_sdk.core.wizard.runner import Resolved, run_wizard
 from flow_sdk.schema.data_spec import compute_op_spec, returned_value_spec
 from flow_sdk.schema.data_spec.compute_op_spec import (
@@ -50,6 +50,7 @@ from flow_sdk.schema.data_spec.returned_value_spec import (
 )
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
+from tests.utils.snippets import record_run
 
 DOC = Path(__file__).resolve().parents[2] / "docs" / "snippets" / "call-returns.md"
 LONG_TIER = "# long tier"
@@ -139,6 +140,7 @@ async def test_every_fence_runs_as_written(index, tmp_path):
     finally:
         if person is not None:
             person.cancel()
+    record_run(FAST[index])
 
 
 _CLASSES = {

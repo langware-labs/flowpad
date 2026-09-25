@@ -173,3 +173,32 @@ def test_the_token_exchange_is_form_encoded_unless_a_provider_says_otherwise():
     assert by_name[ANTHROPIC].token_request_json is True
     assert by_name[MICROSOFT].token_request_json is False
     assert [p.name for p in local_providers() if p.token_request_json] == [ANTHROPIC]
+
+
+async def test_the_documented_use_runs_as_written_when_held(monkeypatch):
+    """``docs/snippets/connections.md`` "Require and use a held connection", verbatim: held → its token."""
+    from tests.utils.snippets import doc, fence_under, run_fence
+
+    fake_connections(monkeypatch, [_spec("slack", connected=True)])
+    monkeypatch.setattr(connections, "token_for_spec",
+                        lambda _spec: _async_value(ConnectionTokenResult(status=ConnectionTokenStatus.AVAILABLE, token="xoxb-1")))
+    ns = await run_fence(fence_under(doc("connections.md"), "Require and use a held connection"), {}, filename="connections.md")
+    assert ns["token"] == "xoxb-1"
+
+
+async def test_the_documented_use_runs_as_written_when_not_yet_connected(monkeypatch):
+    """The same fence on a machine without the connection: it connects, and a Hub-held token reads as None."""
+    from tests.utils.snippets import doc, fence_under, run_fence
+
+    fake_connections(monkeypatch, [_spec("slack")])
+    monkeypatch.setattr(connections, "open_authorization_in_system_browser", lambda _authorization: False)
+
+    async def connect(_provider, presenter, *, reauthorize=False):
+        await presenter.present(BrowserAuthorization(oauth_request_id="s", provider="slack", url="https://auth.example/connect"))
+        return ConnectionResult(spec=_spec("slack", connected=True), test=ConnectionTestResult(ok=True, identity="me"))
+
+    monkeypatch.setattr(connections, "_connect", connect)
+    monkeypatch.setattr(connections, "token_for_spec",
+                        lambda _spec: _async_value(ConnectionTokenResult(status=ConnectionTokenStatus.UNAVAILABLE)))
+    ns = await run_fence(fence_under(doc("connections.md"), "Require and use a held connection"), {}, filename="connections.md")
+    assert ns["slack"].connected and ns["token"] is None

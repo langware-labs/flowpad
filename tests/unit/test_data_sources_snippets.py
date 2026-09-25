@@ -14,7 +14,7 @@ import pytest
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
 from tests.unit._ingest_helpers import fixture_bytes, local_http_server
-from tests.utils.snippets import doc, fence_under, run_fence
+from tests.utils.snippets import doc, fence_under, point_driver_at, run_fence
 
 # Doc snippets name their sources for a reader, so each runs in its own user scope.
 pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope")]  # do not increase timeout without approval
@@ -67,9 +67,9 @@ async def test_2_reuse_instead_of_duplicate():
 
 
 async def test_3_search_what_landed(feed_server):
-    ns = await _section("1.", {"FEED_URL": f"{feed_server}/atom"})
-    hits = await SourceItem.search("atom", limit=10)
-    assert any(h.data_source_id == str(ns["src"].id) for h in hits)
+    src = (await _section("1.", {"FEED_URL": f"{feed_server}/atom"}))["src"]
+    ns = await _section("3.")
+    assert any(h.data_source_id == str(src.id) for h in ns["hits"]), "the atom fixture's zebrafish entry is found"
 
 
 async def test_4_watch_a_folder_and_mirror_it(tmp_path):
@@ -89,12 +89,30 @@ async def test_5_subscribe_to_arrivals(feed_server, capsys):
     assert "ingest.rss.item.created" in capsys.readouterr().out
 
 
+async def _watched_source(tmp_path) -> DataSource:
+    """A folder source of its own name — what §6 and §7 name as ``SOURCE``."""
+    import uuid
+
+    from flow_sdk.builtin.data_driver import DataDriver
+
+    (tmp_path / "w").mkdir()
+    folder = await DataDriver.get("folder")
+    src = folder.create_source(folder.create_config(root=str(tmp_path / "w")), name=f"notes {uuid.uuid4().hex[:8]}")
+    await src.save()
+    return src
+
+
+async def test_6_write_items_in_from_outside_a_driver(tmp_path):
+    src = await _watched_source(tmp_path)
+    ns = await _section("6.", {"SOURCE": src.name})
+    assert [o.status for o in ns["report"].outcomes] == ["created"]
+    ns = await _section("6.", {"SOURCE": src.name})
+    assert [o.status for o in ns["report"].outcomes] == ["unchanged"], "a re-run converges, never duplicates"
+
+
 async def test_7_operate_a_source(tmp_path):
-    watched, dest = tmp_path / "w", tmp_path / "d"
-    watched.mkdir()
-    ns = await _section("4.", {"WATCHED": str(watched), "DESTINATION": str(dest)})
-    src: DataSource = ns["src"]
-    await _section("7.", ns)                  # verify, poll_now, replay, reset, purge_items, delete
+    src = await _watched_source(tmp_path)
+    await _section("7.", {"SOURCE": src.name})   # verify, poll_now, replay, reset, purge_items, delete
     assert await DataSource.get_one({"id": src.id}) is None, "delete() cascades"
 
 
@@ -212,7 +230,8 @@ async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
         return 200, json.dumps(body).encode(), {"Content-Type": "application/json"}
 
     with local_http_server(storage) as base:
-        ns = await _section("9.", {"PROJECT": "acme-prod", "BASE_URL": base})
+        point_driver_at(monkeypatch, "gcs", "GCS_API_BASE", base)
+        ns = await _section("9.", {"PROJECT": "acme-prod"})
 
     assert [c.id for c in ns["picks"].items] == ["acme-docs", "acme-logs"]
     assert ns["picks"].detail == "", "a list is the whole answer"
@@ -247,7 +266,8 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
         return sorted(p.name for p in root.rglob("*.txt"))
 
     with local_http_server(drive._Drive(drive.SEEDED)) as base:
-        env = {"CACHE_ROOT": str(cache), "BASE_URL": base, "DESTINATION": str(dest)}
+        point_driver_at(monkeypatch, "gdrive", "DRIVE_API_BASE", base)
+        env = {"CACHE_ROOT": str(cache), "DESTINATION": str(dest)}
 
         monkeypatch.setattr(DataDriver.loaded("gdrive"), "credentials_for", drive._credentials(Credentials()))
         ns = await _section("10.", dict(env))
@@ -271,3 +291,15 @@ async def test_13_three_families():
     ns = await _section("13.")
     assert ns["families"] == ("object", "record", "message")
     assert ns["answers"] == (False, False, True)
+
+
+async def test_14_write_your_own_driver():
+    """The fence's driver pages, gets by key, and passes the SDK's own conformance kit."""
+    from flow_sdk.sources.testing.conformance import Subject, run_all
+
+    ns = await _section("14.", {})
+    assert [i.data.text for i in ns["page"].items] == ["Simple is better than complex.", "Flat is better than nested."]
+    assert ns["page"].next_cursor is not None
+    fresh = lambda: ns["ZenSource"](ns["SourceBinding"](config={}, account_key="zen"))  # noqa: E731
+    results = await run_all(Subject(source=fresh, seeded=tuple(fresh().origin(k) for k in ("q1", "q2", "q3"))))
+    assert results and not {name: err for name, err in results.items() if err is not None}, results
