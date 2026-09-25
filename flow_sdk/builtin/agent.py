@@ -26,7 +26,7 @@ import functools
 import itertools
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import PrivateAttr
 
@@ -432,10 +432,21 @@ class Agent(Entity):
         return await target.create_process(prompt, **options)
 
     async def launch(
-        self, prompt: str, *, deployment: "Deployment | None" = None, wait: bool = False, **options
+        self,
+        prompt: str,
+        *,
+        deployment: "Deployment | None" = None,
+        wait: bool = False,
+        input: Any = None,
+        output_spec: Any = None,
+        **options,
     ) -> "PromptResult":
         """``create_process`` + save + run the first turn — a ``PromptResult``
         whose ``executor`` names the process. Never raises for an outcome.
+
+        ``input`` / ``output_spec``: typed folder I/O, as ``AgenticProcess.run`` — a DataSpec saved for
+        the run to read, and the DataSpec it must write back (``value``, with ``wait=True``). Omitted,
+        the agent's declared ``input`` / ``output`` apply.
 
         Goes through ``dispatch_agent_run`` rather than ``Deployment.launch``
         directly: that function owns the run lifecycle events and the refusal to
@@ -445,7 +456,7 @@ class Agent(Entity):
         from flow_sdk.builtin.agent_run import dispatch_agent_run  # noqa: PLC0415
 
         target = deployment or await self.local_deployment()
-        return await dispatch_agent_run(target, prompt, wait=wait, **options)
+        return await dispatch_agent_run(target, prompt, wait=wait, input=input, output_spec=output_spec, **options)
 
     async def use(
         self, project_id: str | None = None, *, deployment: "Deployment | None" = None, owner=None

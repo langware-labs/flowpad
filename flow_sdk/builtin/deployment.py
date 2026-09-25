@@ -832,7 +832,9 @@ class Deployment(Entity):
         _prepare_output_folder(process)
         return process
 
-    async def launch(self, prompt: str, *, wait: bool = False, **options) -> "PromptResult":
+    async def launch(
+        self, prompt: str, *, wait: bool = False, input: Any = None, output_spec: Any = None, **options
+    ) -> "PromptResult":
         """``create_process`` + save + run the first turn — answered as a
         ``PromptResult`` whose ``executor`` names the process. Never raises for
         an outcome.
@@ -843,19 +845,37 @@ class Deployment(Entity):
         ``AgenticProcess.run`` reads it. Not taken is NOT_YET (``busy`` when a
         turn is in flight); a disabled agent is REFUSED, a missing one NOT_FOUND.
         A caller that needs the process resolves it from ``executor``.
+
+        Typed folder I/O, the same contract as ``AgenticProcess.run`` (``process_io``): ``input`` — a
+        DataSpec saved into the run's input folder (checked against the agent's declared ``input``);
+        ``output_spec`` — the DataSpec the run must write (defaults to the agent's declared ``output``
+        when that names one). The output is read back into ``value`` only with ``wait=True``: without
+        it the turn has not finished.
         """
         from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.process_io import (  # noqa: PLC0415
+            check_declared_input,
+            declared_output_spec,
+            finish_io,
+            prepare_io,
+            resolve_output_spec,
+        )
 
+        agent = await self.agent()
+        spec = resolve_output_spec(output_spec) if output_spec is not None else declared_output_spec(
+            getattr(agent, "output", None))
+        check_declared_input(input, getattr(agent, "input", None))
         try:
             proc = await self.create_process(prompt, **options)
         except AgentUnavailable as gone:
             return gone.answer()
+        prepare_io(proc, input=input, output_spec=spec)
         await proc.save()
         taken = await proc.send_turn(prompt)
         if not taken.ok or not wait:
             return taken
         await proc.wait()
-        return _build_run_result(proc)
+        return await finish_io(proc, _build_run_result(proc), spec)
 
     async def use(self, *, owner=None, **options) -> "AgenticProcess":
         """Open a session AS this agent: a visible, headless Chat process, saved,
@@ -970,27 +990,12 @@ class Deployment(Entity):
 def _prepare_output_folder(process: "AgenticProcess") -> None:
     """Give a non-flow run the same output convention a flow node gets.
 
-    The FOLDER is already universal — every process serializes
-    ``<record>/execution/{input,output,assets}``. What was flow-only is the
-    CONVENTION: only ``_agent_instruction`` ever told an agent that an output
-    folder exists, so a run launched from an Agent produced artifacts nowhere
-    and the runs UI showed "no files" for it.
-
-    Two lines, mirroring the flow engine: materialize the folder before the run
-    (the id is minted at construction, so the path is known pre-save), and say
-    where it is. Best-effort — a read-only disk must not fail the launch.
+    The folder and the instruction live in ``process_io`` now — the one place a run's execution
+    folders are materialized and described (``AgenticProcess.run`` uses the same code). Best-effort:
+    a read-only disk must not fail the launch.
     """
-    try:
-        output = process._record_dir() / "execution" / "output"
-        output.mkdir(parents=True, exist_ok=True)
-    except Exception:  # noqa: BLE001
-        return
-    existing = str(process.context_data.get("instructions") or "").strip()
-    line = (
-        f"Write any files you produce to: `{output}/`\n"
-        "Anything left there is collected as this run's output and shown in the UI."
-    )
-    process.context_data["instructions"] = "\n\n".join(p for p in (existing, line) if p)
+    from flow_sdk.builtin.agentic_process.process_io import prepare_io  # noqa: PLC0415
 
+    prepare_io(process)
 
 __all__ = ["KIND_AGENT", "KIND_NODE", "KIND_WEB", "NODE_PROVIDERS", "Deployment"]

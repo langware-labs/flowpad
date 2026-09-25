@@ -974,27 +974,61 @@ class AgenticProcess(Entity):
         cls,
         instruction: str,
         workdir: str | None = None,
+        *,
+        input: Any = None,
+        output_spec: Any = None,
         **kwargs,
     ) -> "PromptResult":
-        """One-shot: create → start → send → wait → answer → stop.
+        """One-shot: create → prepare → send → wait → answer → stop.
 
-        Answers with a ``PromptResult`` — ``text`` is the reply, ``executor``
-        the process. An error or interrupted end is ``NOT_YET``, never a raise —
-        and so is a worker that never started: the context manager discarded
-        ``start_pty``'s failure, so ``send`` raised "No shell linked" instead.
+        Answers with a ``PromptResult`` — ``text`` is the agent's last message, ``executor`` the
+        process, ``files`` what it left in its output folder. An error or interrupted end is
+        ``NOT_YET``, never a raise — and so is a worker that never started.
+
+        Typed folder I/O (``process_io``):
+
+        * ``input`` — a DataSpec instance, saved into ``<record>/execution/input`` before the turn
+          and mounted for the worker.
+        * ``output_spec`` — a DataSpec class (or its kind name). The agent is told the exact layout
+          to write into ``<record>/execution/output``; after the turn it is loaded back into
+          ``value``. A missing or invalid output is ``NOT_YET`` with the reason in ``detail``. An
+          unknown kind name raises here, before anything starts.
+
+        ``workdir`` defaults to the caller's current directory (a project, when passed, supplies its own).
+
+        A one-shot is headless by default (``pty_mode=False``): nobody types into it, and the
+        headless turn is the path every driver — a test's mock included — runs in-process. Pass
+        ``pty_mode=True`` for the interactive transport.
         """
+        from flow_sdk.builtin.agentic_process.process_io import (  # noqa: PLC0415
+            finish_io,
+            prepare_io,
+            resolve_output_spec,
+        )
         from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
 
+        spec = resolve_output_spec(output_spec)
+        kwargs.setdefault("pty_mode", False)
+        if not workdir and not kwargs.get("project_id"):
+            # A worker needs a cwd; a script's own is the one it means — the ComputeOp runner's rule
+            # (``run_op``: ``workdir or Path.cwd()``). A project, when given, supplies its own.
+            workdir = str(Path.cwd())
         proc = cls(workdir=workdir, **kwargs)
-        started = await proc.start_pty()
-        if isinstance(started, ApiFailResponse):
-            return PromptResult.not_yet(
-                started.message or "The agent could not start.", ran=False, executor=str(proc.typeid),
-            )
+        prepare_io(proc, input=input, output_spec=spec)
         try:
-            await proc.send(instruction)
+            if proc.pty_mode:
+                started = await proc.start_pty()
+                if isinstance(started, ApiFailResponse):
+                    return PromptResult.not_yet(
+                        started.message or "The agent could not start.", ran=False, executor=str(proc.typeid),
+                    )
+                await proc.send(instruction)
+            else:
+                taken = await proc.send_turn(instruction)
+                if not taken.ok:
+                    return taken
             await proc.wait()
-            return _build_run_result(proc)
+            return await finish_io(proc, _build_run_result(proc), spec)
         finally:
             await proc.exit()
 
@@ -1252,6 +1286,8 @@ class AgenticProcess(Entity):
                 fresh = await AgenticProcess.get_by_id(self.id)
             if fresh is None:
                 return ApiFailResponse(message=f"Process not found: {self.id}")
+            # The launch runs on ``fresh``: an unset worker is resolved on the copy that spawns.
+            await fresh.resolve_worker_type()
             if session_id_override:
                 fresh.session_id = session_id_override
             # Same reason as ``session_id_override``: this arrived on the request,
@@ -2152,7 +2188,8 @@ class AgenticProcess(Entity):
         own. Holding out for the slot also means the NEXT turn is admitted
         rather than refused as in flight.
 
-        Polling interval: 2s. Raises TimeoutError if timeout elapses first.
+        Polling interval: 2s, or the driver's ``transcript_poll_seconds`` when shorter. Raises
+        TimeoutError if timeout elapses first.
 
         ``on_status`` observes the status this loop ALREADY reads on every
         iteration. It exists so a caller that blocks here for up to half an hour
@@ -2169,13 +2206,36 @@ class AgenticProcess(Entity):
                     on_status(worker_status)
                 except Exception:  # noqa: BLE001
                     logger.debug("wait() status observer failed", exc_info=True)
-            if worker_status and is_worker_terminal(worker_status) and not is_turn_busy(self, worker_status):
+            if (
+                worker_status
+                and is_worker_terminal(worker_status)
+                and not is_turn_busy(self, worker_status)
+                and not self._turn_task_running()
+            ):
                 return
             if self.status == ProcessStatus.FAILED.value:
                 return
             if deadline and time.monotonic() > deadline:
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(self._status_poll_seconds())
+
+    def _turn_task_running(self) -> bool:
+        """This process's headless turn task is still running its tail (``end_headless_turn``: the slot
+        release, the turn-end reindex). The worker can read terminal a moment before that finishes —
+        invisible behind a 2 s poll, not behind the driver's own cadence — and a caller that reads the
+        run's output right after ``wait`` must see the turn fully over."""
+        task = _PROMPT_TASKS.get(self.id)
+        return task is not None and not task.done()
+
+    def _status_poll_seconds(self) -> float:
+        """How often ``wait`` looks: every 2 s, or sooner when the driver says looking is worth it
+        (``transcript_poll_seconds`` — the same rule ``stream_transcript`` follows). Only ever shorter:
+        this changes how often the status is read, never how long anything is allowed to take."""
+        try:
+            declared = float(getattr(self.driver, "transcript_poll_seconds", 2.0))
+        except (TypeError, ValueError):
+            declared = 2.0
+        return max(0.001, min(2.0, declared))
 
     async def waitForIdle(self, timeout: float | None = None) -> None:
         """Block until the worker is ready for input (``is_ready_for_input(self)``).
@@ -3111,6 +3171,8 @@ class AgenticProcess(Entity):
             # ``flow start`` spawning a migration agent before the
             # substrate is fully initialised).
             try:
+                # After admission (every await follows it): an unset worker follows the user's choice.
+                await self.resolve_worker_type()
                 await self.reconcile_name(first_prompt=instruction)
                 return await self.driver.headless_prompt(self, instruction)
             finally:
@@ -3120,6 +3182,7 @@ class AgenticProcess(Entity):
                 release_prompt_admission(self.id, admission)
         if not self.exist_in_db:
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
+        await self.resolve_worker_type()
         await self.reconcile_name(first_prompt=instruction)
         # A vendor whose PTY launch drops the prompt (copilot, codex read it from
         # stdin) boots to an empty composer and treats a raw paste+CR as literal
@@ -3601,6 +3664,7 @@ class AgenticProcess(Entity):
         # not here — print-mode processes have no persistent worker between
         # turns, so the only contention is the per-process lock above.
         if self.pty_mode:
+            await self.resolve_worker_type()
             await self.reconcile_name(first_prompt=message)
             return self._run_pty_prompt(message)
 
@@ -3616,6 +3680,7 @@ class AgenticProcess(Entity):
         # therefore cannot pass a check-before-register gap while this request
         # resolves project context, instruction assets, or secret environment.
         try:
+            await self.resolve_worker_type()
             await self.reconcile_name(first_prompt=message)
             # Resume ONLY when the worker actually has a resumable session on
             # disk for this id — NOT merely "session_id is set".
@@ -6641,6 +6706,11 @@ class AgenticProcess(Entity):
             assets_str = str(assets_path)
             if assets_str not in dirs:
                 dirs.append(assets_str)
+        # The run's input folder — pasted files and a ``run(input=…)`` DataSpec — is mounted, not just
+        # named in a prompt, so the worker can read it under its own permissions.
+        input_folder = self._record_dir() / "execution" / "input"
+        if input_folder.is_dir() and str(input_folder) not in dirs:
+            dirs.append(str(input_folder))
         if not self.assistant_enabled:
             return dirs
         from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
@@ -7274,6 +7344,37 @@ class AgenticProcess(Entity):
 
     # ── Project ───────────────────────────────────────────────────────────────
 
+    async def resolve_worker_type(self) -> None:
+        """An unset ``worker_type`` follows the user's choice — resolved once, before a launch.
+
+        Precedence: the field when set → ``FLOWPAD_DEFAULT_WORKER`` (the explicit env hook, read by
+        ``get_driver``) → the harness selected in settings (``resolve_default_worker_type``) → ``claude``
+        (``get_driver``'s own default). Before this, an unset field skipped the user's selection and
+        always ran the env default, so a user who picked Codex still got Claude Code.
+
+        Only for a process that has not started yet (no session, no shell): a started one keeps the
+        worker it started with. Idempotent and cheap after the first call (the field is then set); a
+        selection that cannot be read leaves the field unset and ``get_driver`` decides, never fails a launch.
+        """
+        import os  # noqa: PLC0415
+
+        if self.worker_type or os.environ.get("FLOWPAD_DEFAULT_WORKER"):
+            return
+        if self.session_id or self.shell_id or self.status == ProcessStatus.RUNNING.value:
+            # Already started: it runs (and resumes) on the worker it started with. Choosing now would
+            # read as config drift on a live process and relaunch it on a different harness.
+            return
+        try:
+            from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
+
+            chosen = await resolve_default_worker_type()
+            self.worker_type = WorkerType(chosen)
+        except Exception:  # noqa: BLE001 — no selection is an answer: the driver default applies
+            logger.debug("resolve_worker_type: no selected harness; using the driver default", exc_info=True)
+            return
+        # ``driver`` is cached on the instance; it must follow the field it was just derived from.
+        self.__dict__.pop("driver", None)
+
     async def get_project(self) -> None:
         """Resolve project_id and workdir from DB ancestry."""
         from flow_sdk.builtin.project import Project
@@ -7319,8 +7420,13 @@ class AgenticProcess(Entity):
 
     @action.get(action_name="input-dir")
     async def get_input_dir(self):
-        """Return the absolute path of this process's input directory, creating it if needed."""
-        input_dir = self._record_dir() / "input"
+        """Return the absolute path of this process's input directory, creating it if needed.
+
+        ONE input folder: ``<record>/execution/input`` — where ``run(input=…)`` saves a DataSpec, what the
+        runs view lists, and what ``resolved_add_dirs`` mounts. Pasted and dropped files land here too.
+        (Attachments pasted before this change live in ``<record>/input``; their absolute paths are in the
+        prompts that named them, so they keep resolving.)"""
+        input_dir = self._record_dir() / "execution" / "input"
         input_dir.mkdir(parents=True, exist_ok=True)
 
         shell = await self.shell()
@@ -7520,7 +7626,7 @@ class AgenticProcess(Entity):
         its own new file-ops. Their entities re-parse + broadcast a
         ``data_op_msg`` (updated_date bump → frontend body re-read)."""
         try:
-            touched = self._collect_touched_from_transcript_tail()
+            touched = self._outside_own_record(self._collect_touched_from_transcript_tail())
             self._schedule_reindex_paths(touched, f"turn-end-{source}")
         except Exception:
             logger.debug("AP %s: turn-end reindex schedule failed [%s]", self.id, source, exc_info=True)
@@ -7588,6 +7694,25 @@ class AgenticProcess(Entity):
         if streamer is not None:
             return streamer.transcript
         return self._load_transcript()
+
+    def _outside_own_record(self, paths: list[str]) -> list[str]:
+        """Drop paths inside this process's own record (``<record>/execution/{input,output}``).
+
+        Those are the run's I/O, not project content: indexing them minted an ``id:`` frontmatter into
+        the agent's output markdown, so a ``run(output_spec=…)`` body read back with a header the agent
+        never wrote. The run's outputs are registered as its Artifacts (``process_io.register_outputs``)
+        instead of being indexed as assets."""
+        try:
+            own = self._record_dir().resolve()
+        except Exception:  # noqa: BLE001 — no record dir means nothing to exclude
+            return list(paths)
+        kept = []
+        for p in paths:
+            try:
+                Path(p).resolve().relative_to(own)
+            except (ValueError, OSError):
+                kept.append(p)
+        return kept
 
     def _collect_touched_from_transcript_tail(self) -> list[str]:
         """Files this turn wrote/edited, read from the transcript tail.

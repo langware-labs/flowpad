@@ -15,7 +15,6 @@ await flow_sdk.auth.login()
 
 pirate = Agent(
     name="pirate",
-    worker_type="claude",
     model="sm",
     system_prompt="Answer like a pirate. Include 'arr' in every reply.",
 )

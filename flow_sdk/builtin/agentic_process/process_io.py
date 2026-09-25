@@ -1,0 +1,245 @@
+"""Typed folder I/O for one agentic run: a DataSpec in, a DataSpec out.
+
+A process already has an execution record — ``<record>/execution/{input,output,assets}``
+(``graph_workflow_manager.manager.execution_base``). This module gives a run the contract on top of it:
+
+* **input** — ``save(input, execution/input)`` before the turn: the input DataSpec as files the agent
+  can open (its json document, its ``Text``/``Binary`` fields as their own files). The folder is mounted
+  for the worker (``resolved_add_dirs``), not just named.
+* **output** — the agent is told where to write and in which layout (the exact files ``save`` would
+  write for ``output_spec``); after the turn ``load(output_spec, execution/output)`` reads it back.
+  A missing or invalid output is ``NOT_YET`` with the reason in ``detail`` — the rule every declared
+  output follows (``blocks._AgentRunner._output``, the ComputeOp runner) — and the agent's reply is kept.
+* **files** — whatever the run left in ``execution/output`` is listed on the answer and registered as
+  the run's Artifacts, so the runs UI shows it.
+
+The layout is the DataSpec's own (``schema/data_spec/io``), so the same class that declares the shape
+reads the result: ``CVSpec.load(folder)`` and ``answer.value`` are the same value.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+
+logger = logging.getLogger(__name__)
+
+#: Where the output-spec kind is kept on the process, so a restarted process still knows it.
+OUTPUT_SPEC_KEY = "output_spec_kind"
+#: The instruction block ``prepare_io`` last wrote — so a second call replaces it rather than stacking.
+IO_BLOCK_KEY = "io_instructions"
+
+
+def execution_dir(process: "AgenticProcess") -> Path:
+    """``<record>/execution`` — the one owner of this layout is ``execution_base``; this reads it."""
+    return Path(process._record_dir()) / "execution"
+
+
+def input_dir(process: "AgenticProcess") -> Path:
+    return execution_dir(process) / "input"
+
+
+def output_dir(process: "AgenticProcess") -> Path:
+    return execution_dir(process) / "output"
+
+
+def declared_output_spec(shape: Any) -> Optional[type]:
+    """An agent's declared ``output`` as a DataSpec class when it is one (a registered kind, an inline
+    ``{field: shape}`` object), else ``None`` — a primitive (``"string"``) is a reply-text value, not a folder."""
+    from flow_sdk.schema.data_spec import DataSpec  # noqa: PLC0415
+
+    if shape is None:
+        return None
+    try:
+        compiled = DataSpec.parse(shape)
+    except Exception:  # noqa: BLE001 — a declaration that does not compile is not a folder contract
+        return None
+    return compiled if isinstance(compiled, type) and issubclass(compiled, DataSpec) else None
+
+
+def check_declared_input(value: Any, shape: Any) -> None:
+    """Refuse an ``input`` that does not satisfy the agent's declared ``input`` — before the run starts."""
+    if value is None or shape is None:
+        return
+    from flow_sdk.core.compute.declared_value import to_declared  # noqa: PLC0415
+
+    to_declared(value.model_dump(mode="json"), shape)
+
+
+def resolve_output_spec(output_spec: Any) -> Optional[type]:
+    """A DataSpec class, from the class itself or its registered kind name — or ``None``.
+
+    An unknown name is refused HERE, before any process starts: resolving it lazily would let an
+    agent do the whole job and then fail on a typo in the caller's code.
+    """
+    from flow_sdk.schema.data_spec import DataSpec  # noqa: PLC0415
+
+    if output_spec is None:
+        return None
+    if isinstance(output_spec, type) and issubclass(output_spec, DataSpec):
+        return output_spec
+    if isinstance(output_spec, str):
+        # ``parse`` answers ``Any`` for a name nobody registered — legal in a document, a typo here.
+        resolved = DataSpec.parse(output_spec)
+        if isinstance(resolved, type) and issubclass(resolved, DataSpec):
+            return resolved
+        raise ValueError(f"output_spec: unknown kind {output_spec!r} — no DataSpec is registered under that name")
+    raise TypeError(f"output_spec must be a DataSpec class or a kind name, not {type(output_spec).__name__}")
+
+
+def layout_of(spec: type) -> list[str]:
+    """The files ``save`` writes for *spec*, one line each — what the agent is asked to produce."""
+    from flow_sdk.schema.data_spec.io import names  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.io.placement import Placement, placements  # noqa: PLC0415
+
+    inline = [n for n, p in placements(spec).items() if p in (Placement.INLINE, Placement.FREE_SECTION)]
+    lines = [f"- `{names.main_document(spec)}` — JSON with the fields: {', '.join(inline) or '(none)'}"]
+    for name, place in placements(spec).items():
+        if place is Placement.BODY:
+            lines.append(f"- `{names.field_file(name, '.md')}` — the `{name}` text (markdown)")
+        elif place is Placement.DOCUMENT:
+            lines.append(f"- `{names.field_file(name, '.md')}` — the `{name}` document")
+        elif place is Placement.FILE_BYTES:
+            lines.append(f"- `{name}.<ext>` — the `{name}` bytes")
+        elif place in (Placement.DIR_LIST, Placement.DIR_DICT):
+            lines.append(f"- `{name}/` — one folder per `{name}` entry, each in the same layout")
+    return lines
+
+
+def _document_schema(spec: type) -> dict:
+    """The JSON schema of the main document only: fields that land in their own files (a ``Text``
+    body, a nested document, a folder of entries) are described by the layout lines, not here."""
+    from flow_sdk.schema.data_spec.io.placement import Placement, placements  # noqa: PLC0415
+
+    schema = spec.model_json_schema()
+    inline = {n for n, p in placements(spec).items() if p in (Placement.INLINE, Placement.FREE_SECTION)}
+    schema["properties"] = {k: v for k, v in (schema.get("properties") or {}).items() if k in inline}
+    if "required" in schema:
+        schema["required"] = [k for k in schema["required"] if k in inline]
+    return schema
+
+
+def io_instructions(process: "AgenticProcess", *, has_input: bool, output_spec: Optional[type]) -> str:
+    """The lines a run is told about its folders. Plain runs get the output folder; typed runs get the
+    input folder and the exact output layout too."""
+    out = output_dir(process)
+    parts: list[str] = []
+    if has_input:
+        parts.append(f"Your input is in: `{input_dir(process)}/` (read it from there).")
+    parts.append(
+        f"Write any files you produce to: `{out}/`\n"
+        "Anything left there is collected as this run's output and shown in the UI."
+    )
+    if output_spec is not None:
+        schema = json.dumps(_document_schema(output_spec), separators=(",", ":"))
+        parts.append(
+            f"Your result MUST be a `{output_spec.__name__}` written into `{out}/` in exactly this layout:\n"
+            + "\n".join(layout_of(output_spec))
+            + f"\nThe JSON must validate against this schema (no other keys): {schema}"
+        )
+    return "\n\n".join(parts)
+
+
+def prepare_io(process: "AgenticProcess", *, input: Any = None, output_spec: Optional[type] = None) -> None:
+    """Materialize the run's folders and tell the agent about them. Before the turn.
+
+    A plain run (no ``input``, no ``output_spec``) is best-effort: a read-only disk — or a process with
+    no record folder — must not fail a launch that only gets the output convention as a courtesy. A
+    typed run raises instead: the caller asked for that data, and would otherwise get a run that never
+    saw its input or never knew what to write.
+    """
+    if input is None and output_spec is None:
+        try:
+            _prepare(process, input=None, output_spec=None)
+        except Exception:  # noqa: BLE001 — the courtesy must never cost the launch
+            logger.debug("prepare_io: output folder convention skipped", exc_info=True)
+        return
+    _prepare(process, input=input, output_spec=output_spec)
+
+
+def _prepare(process: "AgenticProcess", *, input: Any, output_spec: Optional[type]) -> None:
+    from flow_sdk.schema.data_spec import DataSpec  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.io import save  # noqa: PLC0415
+
+    if input is not None:
+        if not isinstance(input, DataSpec):
+            raise TypeError(f"input must be a DataSpec instance, not {type(input).__name__}")
+        save(input, input_dir(process))
+    output_dir(process).mkdir(parents=True, exist_ok=True)
+    context = dict(process.context_data or {})
+    existing = str(context.get("instructions") or "").strip()
+    previous = str(context.get(IO_BLOCK_KEY) or "")
+    if previous and previous in existing:
+        # Called again (``create_process`` then ``launch``): the newer, more specific block replaces
+        # the older one instead of stacking two sets of folder instructions.
+        existing = existing.replace(previous, "").strip()
+    line = io_instructions(process, has_input=input is not None, output_spec=output_spec)
+    context["instructions"] = "\n\n".join(p for p in (existing, line) if p)
+    context[IO_BLOCK_KEY] = line
+    if output_spec is not None:
+        from flow_sdk.schema.data_spec.io import names  # noqa: PLC0415
+
+        context[OUTPUT_SPEC_KEY] = names.kind_of(output_spec)
+    process.context_data = context
+
+
+def output_files(process: "AgenticProcess") -> list[str]:
+    """Every file the run left in its output folder, relative, sorted."""
+    root = output_dir(process)
+    if not root.is_dir():
+        return []
+    return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file() and ".flow" not in p.parts)
+
+
+async def register_outputs(process: "AgenticProcess", files: list[str]) -> None:
+    """Each output file as an Artifact of this run — converging on a re-run (``Artifact.register``)."""
+    if not files:
+        return
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+
+    root = output_dir(process)
+    try:
+        project_id = await process.effective_project_id()
+    except Exception:  # noqa: BLE001 — provenance is a courtesy; the run's answer does not depend on it
+        project_id = None
+    for rel in files:
+        try:
+            await Artifact.register(
+                generated_by=str(process.typeid), name=Path(rel).name, kind="content.file",
+                asset_ref=str(root / rel), project_id=project_id,
+            )
+        except Exception:  # noqa: BLE001 — a failed registration must not fail the run
+            logger.debug("register_outputs: could not register %s", rel, exc_info=True)
+
+
+async def finish_io(process: "AgenticProcess", answer: "PromptResult", output_spec: Optional[type]) -> "PromptResult":
+    """After the turn: list and register the outputs, then hold ``value`` to ``output_spec``."""
+    from flow_sdk.schema.data_spec.io import load  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
+
+    files = output_files(process)
+    answer = answer.model_copy(update={"files": files})
+    await register_outputs(process, files)
+    if output_spec is None or not answer.ok:
+        return answer
+    try:
+        value = load(output_spec, output_dir(process))
+    except Exception as error:  # noqa: BLE001 — pydantic, a missing file and bad JSON all mean the same thing
+        reason = str(error).splitlines()[0] if str(error) else type(error).__name__
+        return answer.model_copy(update={
+            "exit_code": ExitCode.NOT_YET,
+            "detail": f"The output is not a valid {output_spec.__name__}: {reason}",
+        })
+    return answer.model_copy(update={"value": value})
+
+
+__all__ = [
+    "IO_BLOCK_KEY", "OUTPUT_SPEC_KEY", "check_declared_input", "declared_output_spec", "execution_dir", "finish_io", "input_dir", "io_instructions", "layout_of", "output_dir",
+    "output_files", "prepare_io", "register_outputs", "resolve_output_spec",
+]
