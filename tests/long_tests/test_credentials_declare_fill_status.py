@@ -60,10 +60,9 @@ def test_declared_credential_is_filled_by_the_ai_rung_and_reported(live_backend,
     project_dir.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=project_dir, check=True)
     (project_dir / "service.url").write_text(ENDPOINT + "\n")
-    manifest = MANIFEST_PATH
 
     # 1. declare — the folder becomes a project, the credential its own.
-    declared = _flow(project_dir, transcripts, "credentials", "declare", str(manifest))
+    declared = _flow(project_dir, transcripts, "credentials", "declare", str(MANIFEST_PATH))
     assert declared.returncode == 0, declared.stderr[-2000:]
     project_id = json.loads(declared.stdout.splitlines()[-1])["project_id"]
     assert (project_dir / "agentic-assets/secret_pack/demo-service/secret_pack.json").is_file()

@@ -17,17 +17,21 @@ import subprocess
 from pathlib import Path
 
 MANIFEST_PATH = Path(__file__).with_name("secret_pack.json")
-DEMO: dict = json.loads(MANIFEST_PATH.read_text())
-KEY_PATTERN = DEMO["vars"]["DEMO_API_KEY"]["pattern"]
+KEY_PATTERN = json.loads(MANIFEST_PATH.read_text())["vars"]["DEMO_API_KEY"]["pattern"]
 ENDPOINT = "https://demo.example.test/api"
+#: The values, produced inside the pipe the way the manifest's ``setup`` says.
+PRODUCE = "{ printf 'DEMO_API_KEY=demo_%s\\n' \"$(openssl rand -hex 16)\"; printf 'DEMO_ENDPOINT=%s\\n' \"$(cat service.url)\"; }"
+#: The store command the AI rung's prompt names: the one indented line ending in ``--stdin``.
+STORE = re.compile(r"^ +(\S.* credentials set demo-service .*--stdin)$", re.M)
 
 
 async def follow_setup(turn) -> str:
-    """Run the setup's pipe into the store command the prompt names — recorded as the one Bash call
-    a real harness would make."""
-    store = re.search(r"piping `VAR=VALUE` lines into:\n\n    (.+)\n", turn.prompt).group(1)
-    produce = re.search(r"Produce both and store them in one pipe: `(.+) \| flow credentials set", turn.prompt).group(1)
-    command = f"{produce} | {store}"
+    """Pipe the values into the store command the prompt names — recorded as the one Bash call a
+    real harness would make."""
+    store = STORE.search(turn.prompt)
+    assert store, f"the AI rung's prompt names no `--stdin` store command:\n{turn.prompt}"
+    assert PRODUCE in turn.prompt, "the prompt carries the credential's own setup"
+    command = f"{PRODUCE} | {store.group(1)}"
     shell = await asyncio.create_subprocess_shell(command, cwd=turn.process.workdir,
                                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     said = (await shell.communicate())[0].decode()
