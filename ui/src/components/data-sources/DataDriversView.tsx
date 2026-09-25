@@ -24,7 +24,7 @@ import { openDriver, openSourceFile } from './data-sources-pointer';
 import { sourceIcon } from './source-icon';
 import { useSourceSpecs } from './use-source-specs';
 
-const driverTitle = (driver: DataDriver) => driver.title || driver.name;
+const driverTitle = (driver: DataDriver) => driver.title || driver.name || '';
 
 const DRIVER_GRID = 'grid grid-cols-[minmax(0,1fr)_minmax(0,16rem)_5rem_auto] items-center gap-3 px-4 py-2';
 
@@ -81,7 +81,7 @@ export function DataDriversList({ sources }: { sources: DataSource[] }) {
             <span className="truncate font-mono text-xs text-muted-foreground" title={driver.kind}>
               {driver.kind || '—'}
             </span>
-            <span className="text-xs text-muted-foreground">{inUse.get(driver.name) ?? 0}</span>
+            <span className="text-xs text-muted-foreground">{inUse.get(driver.name ?? '') ?? 0}</span>
             <span className="flex justify-end">
               <OpenFolderButton path={driver.asset_ref} testId={`data-driver-folder-${driver.name}`} />
             </span>
@@ -109,6 +109,9 @@ export function DataDriverPage({ name, sources }: { name: string; sources: DataS
   }
 
   const Icon = sourceIcon(driver, null);
+  // What the driver's items are — the base its source class extends.
+  const familyLabel = (family: DataDriver['family']) =>
+    family === 'object' ? t`Files` : family === 'record' ? t`Records` : family === 'message' ? t`Messages` : '—';
   const { credential, connector } = (driver.auth ?? {}) as { credential?: string; connector?: string };
   const fields = Object.entries(driver.config ?? {});
   const folder = driver.asset_ref ?? null;
@@ -117,10 +120,11 @@ export function DataDriverPage({ name, sources }: { name: string; sources: DataS
   const manifest = () => openFile('data_driver.json');
   const code = () => openFile('source.py');
   const facts: { label: string; value: string; onClick?: () => void }[] = [
-    { label: t`Name`, value: driver.name, onClick: manifest },
+    { label: t`Name`, value: driver.name ?? '—', onClick: manifest },
     { label: t`Kind`, value: driver.kind || '—', onClick: manifest },
     { label: t`Runtime`, value: driver.runtime || '—', onClick: manifest },
     { label: t`Code`, value: 'source.py', onClick: code },
+    { label: t`Family`, value: familyLabel(driver.family), onClick: code },
     { label: t`Sends replies`, value: driver.sends ? t`yes` : t`no`, onClick: code },
     // The credential is a connection: its values are set on the Connections screen.
     {

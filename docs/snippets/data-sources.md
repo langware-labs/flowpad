@@ -362,3 +362,25 @@ async with await merge(support, sales).open() as live:
 
 There is no `merged.send`: a new message needs a channel, so call `send` on the source you mean.
 A push-only source has no pages to read and is refused at `open()`.
+
+## 13. Three families: files, records, messages
+
+Every driver's class extends one family — what its items ARE, and so where they land. An
+`ObjectSource` yields files, reflected onto disk and indexed as assets (§4, §10). A `RecordSource`
+yields records, kept as `SourceItem` rows updated in place (§1). A `MessageSource` is a record
+source of messages in conversations, threaded into the stream inbox and answered through the
+source (§8). The row says which as `family`; only a message source `sends`.
+
+```python
+from flow_sdk.builtin.data_driver import DataDriver
+
+folder = await DataDriver.get("folder")
+rss = await DataDriver.get("rss")
+slack = await DataDriver.get("slack")
+
+families = (folder.family, rss.family, slack.family)   # ("object", "record", "message")
+answers = (folder.sends, rss.sends, slack.sends)       # (False, False, True)
+```
+
+A provider with two kinds of stream is two drivers: a Jira issue tracker is a `RecordSource`
+of issues, and each issue's comments a `MessageSource`.

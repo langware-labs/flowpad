@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { DataSource, DataDriver, QueryRequest } from '@sdk';
+import { DataSource, DataDriver, QueryRequest, type DataSourceFamily } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /** The configured sources — ONE named query, shared by DataSourcesView and the
@@ -43,3 +43,6 @@ export function useSourceSpecs(options?: { enabled?: boolean }) {
 /** A MessageSource's spec: its driver can push a reply back (`IngestDriver.sends`).
  *  The one client-side spelling of `agent_scope.is_message_source`'s driver half. */
 export const isMessageDriverSpec = (spec: DataDriver | undefined | null): boolean => !!spec?.sends;
+
+/** What a driver's items are — the backend's `DataDriver.family` (files, records or messages). */
+export const familyOf = (spec: DataDriver | undefined | null): DataSourceFamily | undefined => spec?.family;
