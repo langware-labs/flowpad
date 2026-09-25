@@ -132,7 +132,8 @@ finally:
 
 ## 4. Typed folder in, typed folder out
 
-A run can take a DataSpec and give one back. `input` is saved into the run's input folder
+By default a process works on top of its `workdir`. Declare an output and it works as a
+function instead: a DataSpec in, a DataSpec out. `input` is saved into the run's input folder
 (`<record>/execution/input`) and mounted for the worker; `output_spec` is the DataSpec it must
 write into its output folder, and the agent is told that exact layout. After the turn the folder
 is loaded back into `value` — the same `save`/`load` a DataSpec always uses.
@@ -162,9 +163,8 @@ cv_reviewed.files                                # ['body.md', 'cvspec.json']
   name is refused before anything starts.
 * A run that writes no output, the wrong file, or a field of the wrong type answers `NOT_YET`
   with the reason in `detail` — the reply stays in `text`, the files in `files`.
-* What the run left in its output folder is also registered as its Artifacts, and a record holding
-  recent output is kept by the startup clean-up for 30 days. `cv_reviewed.value.save(path)` is the
-  durable copy.
+* A valid output's files are registered as the run's Artifacts, and a record holding recent output
+  is kept by the startup clean-up for 30 days. `cv_reviewed.value.save(path)` is the durable copy.
 * `agent.launch(prompt, input=..., output_spec=..., wait=True)` is the same contract for an Agent;
   without `output_spec` the agent's declared `output` applies.
 
