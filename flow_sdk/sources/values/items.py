@@ -1,8 +1,8 @@
 """What a source hands back: a ``SourceItemSpec`` is an origin plus a typed payload.
 
 A payload is a ``Payload`` subclass — ``FileData`` describes bytes without holding them,
-``MessageData`` describes a message, a provider adds its own (``SlackMessageData`` with a
-``raw`` field) or a record source declares one (``IssueData``). A concrete item narrows
+``MessageData`` describes a message, ``RecordData`` a record; a provider adds its own
+(``SlackMessageData`` with a ``raw`` field, a record source's ``IssueData``). A concrete item narrows
 ``data`` to its schema, so ``FileItem.data`` is always a ``FileData``.
 
 ``data`` travels tagged with its ``spec_kind``, which is how a page, an event or an RPC
@@ -102,16 +102,29 @@ class MessageItem(SourceItemSpec):
     data: Tagged[MessageData]
 
 
-class FeedItemData(Payload):
+class RecordData(Payload):
+    """A record: a row a record source keeps, updated in place (an issue, a ticket, a table row, a
+    feed entry). What every record has — a title, a text, a link; a provider narrows it with its own
+    fields (``IssueData``). Stored as a ``SourceItem`` and never threaded, unlike ``MessageData``."""
+
+    spec_kind: ClassVar[str] = "ingest.record"
+
+    title: Optional[str] = None
+    text: Optional[str] = None
+    url: Optional[str] = None
+
+
+class RecordItem(SourceItemSpec):
+    data: Tagged[RecordData]
+
+
+class FeedItemData(RecordData):
     """One entry of a feed or listing (an RSS item, a Hacker News story). ``author`` is an
     identity when the provider names one; ``byline`` is the display text it printed, which
     may exist without any identity behind it."""
 
     spec_kind: ClassVar[str] = "ingest.feed.item"
 
-    title: Optional[str] = None
-    text: Optional[str] = None
-    url: Optional[str] = None
     published_at: Optional[AwareDatetime] = None
     author: Optional[UserProfile] = None
     byline: Optional[str] = None
@@ -125,6 +138,8 @@ __all__ = [
     "MessageData",
     "MessageItem",
     "Payload",
+    "RecordData",
+    "RecordItem",
     "SourceItemSpec",
     "UserProfile",
 ]
