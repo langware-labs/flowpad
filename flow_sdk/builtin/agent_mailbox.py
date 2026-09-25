@@ -287,7 +287,7 @@ class AgentMailbox(Entity):
             provider_inbox_id=str(config.get("provider_inbox_id") or ""),
             status=STATUS_ACTIVE if listening else STATUS_DISABLED,
             agent_typeid=TypeId(type=EntityType.AGENT.value, id=agent_id),
-            allowed_senders=list(getattr(source, "inbound_allowed_senders", None) or []),
+            allowed_senders=list(getattr(source, "allowed_senders", None) or []),
         )
 
     @classmethod
@@ -493,7 +493,7 @@ class AgentMailbox(Entity):
             source = await self.source()
             if source is not None:
                 # The allowlist described a mailbox that no longer exists.
-                source.inbound_allowed_senders = []
+                source.allowed_senders = []
                 source.status = SourceStatus.DISABLED.value
                 await source.save_runtime()
         owner = self._owner
@@ -745,8 +745,8 @@ class AgentMailbox(Entity):
         if source is None:
             return
         cached = list(self.allowed_senders)
-        if list(source.inbound_allowed_senders or []) != cached:
-            source.inbound_allowed_senders = cached
+        if list(source.allowed_senders or []) != cached:
+            source.allowed_senders = cached
             await source.save_runtime()
 
 

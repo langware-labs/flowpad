@@ -45,7 +45,7 @@ async def test_binding_makes_the_source_the_agents(connected):
     source = await agent.bind_channel(provider="slack", channel=CHANNEL, allowed_senders=["U1"])
 
     assert source.owner == agent.typeid, "the binding is the owner; nothing downstream works without it"
-    assert source.inbound_allowed_senders == ["U1"]
+    assert source.allowed_senders == ["U1"]
 
 
 async def test_the_channel_id_is_shaped_by_the_providers_declared_field(connected):
@@ -82,7 +82,7 @@ async def test_the_allowlist_defaults_to_nobody(connected):
 
     source = await agent.bind_channel(provider="slack", channel=CHANNEL)
 
-    assert source.inbound_allowed_senders == []
+    assert source.allowed_senders == []
 
 
 async def test_a_one_way_provider_is_refused(monkeypatch):

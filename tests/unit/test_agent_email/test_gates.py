@@ -60,7 +60,7 @@ async def _source(agent_id: str, allowed: list[str] | None = None) -> DataSource
         },
         account_key=MAILBOX,
         status=SourceStatus.ACTIVE.value,
-        inbound_allowed_senders=list(allowed or []),
+        allowed_senders=list(allowed or []),
     )
     await source.save()
     return source
@@ -122,7 +122,7 @@ async def test_from_source_resolves_the_agent_from_owner_when_config_has_no_agen
         config={"channel": {"id": "C0123456789", "name": "test"}},  # no agent_id key
         owner=TypeId(type="agent", id=agent_id),
         status=SourceStatus.ACTIVE.value,
-        inbound_allowed_senders=["U0BP53L7Z5G"],
+        allowed_senders=["U0BP53L7Z5G"],
     )
 
     mailbox = AgentMailbox.from_source(source)  # must not raise

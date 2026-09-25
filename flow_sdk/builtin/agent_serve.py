@@ -433,7 +433,7 @@ def admits(source, author: str) -> bool:
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
         return False
-    allowlist = [a for a in (getattr(source, "inbound_allowed_senders", None) or []) if str(a).strip()]
+    allowlist = [a for a in (getattr(source, "allowed_senders", None) or []) if str(a).strip()]
     if sender_allowed(allowlist, author):
         return True
     driver = DataDriver.loaded(getattr(source, "provider", "") or "")
@@ -826,7 +826,7 @@ def serving_key(source) -> tuple:
         str(getattr(source, "provider", "") or ""),
         str(getattr(source, "answer_place", "") or ""),
         str(getattr(source, "status", "") or ""),
-        tuple(sorted(str(a) for a in (getattr(source, "inbound_allowed_senders", None) or []))),
+        tuple(sorted(str(a) for a in (getattr(source, "allowed_senders", None) or []))),
         getattr(source, "thread_timeout_seconds", None),
     )
 

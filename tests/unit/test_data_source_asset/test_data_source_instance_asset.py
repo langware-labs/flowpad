@@ -69,6 +69,7 @@ async def test_the_file_holds_the_authored_fields_and_nothing_the_engine_writes(
 async def test_runtime_fields_are_row_only_and_never_authored():
     spec_fields = set(DataSourceSpec.model_fields)
     assert RUNTIME_FIELDS and not spec_fields & set(RUNTIME_FIELDS)
+    assert "allowed_senders" in RUNTIME_FIELDS, "third parties' addresses: the row's, never the file's"
     for name in RUNTIME_FIELDS:
         assert DataSource.model_fields[name].json_schema_extra["persist"] == Persist.FALSE.value, name
 
@@ -102,10 +103,18 @@ async def test_a_copied_folder_arrives_parked_until_its_owner_verifies(scope):
 
 
 async def test_one_owner_watches_an_account_once(scope):
-    await _saved("first")
+    """A second source for an account the owner already watches is saved ONTO the first — what it
+    authored is written there, the row (id, cursor, health) stays: no twin, no error."""
+    first = await _saved("first")
+    first.cursor = "c-42"
+    await first.save_runtime()
 
-    with pytest.raises(ValueError, match="already watched"):
-        await _saved("second")
+    second = await _saved("second", folder="inbox")
+
+    assert str(second.id) == str(first.id)
+    assert second.name == "second" and second.config == {"address": "me@x.test", "folder": "inbox"}
+    assert second.cursor == "c-42"
+    assert len(await DataSource.get_all({"provider": _Mailbox.provider})) == 1
 
 
 async def test_a_file_that_is_a_driver_definition_is_refused_with_where_it_belongs():
@@ -167,3 +176,31 @@ async def test_the_thread_timeout_is_authored_in_the_file(scope):
     await index_path("data_source", _folder(source))
 
     assert (await DataSource.get_by_id(source.id)).thread_timeout_seconds == 600
+
+
+async def test_the_allowlist_is_the_rows_never_the_files(scope):
+    """``allowed_senders`` lands on the row whichever way it is passed — a driver's form sends it in
+    ``config`` — and never reaches the shareable ``data_source.json``."""
+    direct = await _saved("direct", allowed_senders=["+972501234567", " "])
+    assert direct.allowed_senders == ["+972501234567"] and "allowed_senders" not in direct.config
+    assert "allowed_senders" not in _document(direct) and "allowed_senders" not in _document(direct)["data_driver_config"]
+
+    legacy = DataSource.model_validate({"name": "old", "provider": _Mailbox.provider, "inbound_allowed_senders": ["U1"]})
+    assert legacy.allowed_senders == ["U1"], "a row written before the rename still reads"
+
+
+async def test_the_owner_is_the_entity_itself(scope):
+    from flow_sdk.builtin.agent import Agent
+
+    agent = Agent(name=f"owner {uuid.uuid4().hex[:6]}", system_prompt="x")
+    source = DataSource(name="owned", provider=_Mailbox.provider, config={"address": "own@x.test"}, owner=agent)
+    assert source.owner == agent.typeid
+
+
+async def test_a_reread_file_keeps_the_allowlist(scope):
+    """The file does not hold the allowlist, so re-indexing the folder must not reset the row's."""
+    source = await _saved("kept", allowed_senders=["+972501234567"])
+    await index_path("data_source", _folder(source))
+
+    row = await DataSource.get_by_id(str(source.id))
+    assert row.allowed_senders == ["+972501234567"]

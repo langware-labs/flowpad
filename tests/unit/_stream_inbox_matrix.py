@@ -103,7 +103,7 @@ async def served(provider: str, double, monkeypatch, syncs: "list | None" = None
     monkeypatch.setattr(DataDriver.loaded(provider), "credentials_for", double.credentials)
     source = make_data_source(
         provider, name=f"served {provider} {uuid.uuid4().hex[:6]}", config=dict(double.config), owner=agent.typeid,
-        status=SourceStatus.ACTIVE.value, inbound_allowed_senders=[double.sender] if allowed is None else allowed,
+        status=SourceStatus.ACTIVE.value, allowed_senders=[double.sender] if allowed is None else allowed,
         **dict(double.fields), **fields,
     )
     await source.save()
@@ -139,7 +139,7 @@ async def make_cell(owner_kind: str, provider: str, double, monkeypatch) -> Cell
     config = double.config_for(owner) if hasattr(double, "config_for") else dict(double.config)
     source = make_data_source(
         provider, name=f"matrix {owner_kind} {provider} {uuid.uuid4().hex[:6]}", config=config, owner=owner,
-        status=SourceStatus.ACTIVE.value, inbound_allowed_senders=[double.sender], **dict(double.fields),
+        status=SourceStatus.ACTIVE.value, allowed_senders=[double.sender], **dict(double.fields),
     )
     await source.save()
     # One empty pass: stamps kind/channel and takes the double's first position, so the delivery

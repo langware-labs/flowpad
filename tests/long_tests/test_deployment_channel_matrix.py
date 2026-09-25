@@ -51,7 +51,7 @@ def _owned(doubles, owner, provider: str, **extra) -> DataSource:
     entry = doubles.channels()[provider]
     source = make_data_source(
         provider, name=f"{provider} {uuid.uuid4().hex[:6]}", config=dict(entry["config"]), owner=owner.typeid,
-        status=SourceStatus.ACTIVE.value, inbound_allowed_senders=[entry["sender"]], **entry["fields"], **extra,
+        status=SourceStatus.ACTIVE.value, allowed_senders=[entry["sender"]], **entry["fields"], **extra,
     )
     if entry.get("secret_store"):
         source.secret_store = entry["secret_store"]

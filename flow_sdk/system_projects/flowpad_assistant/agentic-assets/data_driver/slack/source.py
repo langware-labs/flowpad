@@ -68,7 +68,7 @@ class SlackConfig(SourceConfig):
     retired_list = ("channels", "channel")
 
     channel: Union[Annotated[str, StringConstraints(pattern=r"^[CGD][A-Z0-9]{6,}$")], ChoiceEntry]
-    #: Who may drive the channel; the row keeps it as ``inbound_allowed_senders``.
+    #: Who may drive the channel; the row keeps it as ``allowed_senders``.
     allowed_senders: list[str] = []
     #: Empty is Slack itself; a test points a row at a local double. Never a secret.
     base_url: str = ""

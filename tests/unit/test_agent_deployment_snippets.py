@@ -63,7 +63,7 @@ async def _owned_source(provider: str, double, owner: Agent):
     """A verified channel the agent owns, its position on the double taken — as a connected one is."""
     source = make_data_source(
         provider, name=f"acme {provider}", config=dict(double.config), owner=owner.typeid,
-        status=SourceStatus.ACTIVE.value, inbound_allowed_senders=[double.sender], **dict(double.fields),
+        status=SourceStatus.ACTIVE.value, allowed_senders=[double.sender], **dict(double.fields),
     )
     await source.save()
     await sync_source(source)

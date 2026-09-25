@@ -64,7 +64,7 @@ source = whatsapp.create_source(
     whatsapp.create_config(phone_number_id=PHONE_NUMBER_ID, verify_token=VERIFY_TOKEN, **EXTRA_CONFIG),
     name="Acme support line",
     owner=agent.typeid,                        # the agent's stream inbox; the agent answers
-    inbound_allowed_senders=[CUSTOMER],        # who may drive it — empty admits nobody
+    allowed_senders=[CUSTOMER],        # who may drive it — empty admits nobody
 )
 await source.save()
 verdict = await source.verify()                # ACTIVE once the token works

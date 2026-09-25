@@ -67,7 +67,7 @@ class WahaConfig(SourceConfig):
     base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     session: str = "default"
     webhook_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-    #: Who may drive the number; the row keeps it as ``inbound_allowed_senders``.
+    #: Who may drive the number; the row keeps it as ``allowed_senders``.
     allowed_senders: list[Annotated[str, StringConstraints(pattern=r"^([0-9]+|[^@\s]+@lid)$")]] = []
 
 
