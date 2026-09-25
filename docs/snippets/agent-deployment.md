@@ -32,7 +32,6 @@ from flow_sdk.builtin.agent import Agent
 
 agent = Agent(
     name="researcher",
-    worker_type="claude",
     model="sm",
     permission_mode="bypassPermissions",
     system_prompt="You research; you do not summarize.",

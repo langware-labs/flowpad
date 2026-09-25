@@ -54,7 +54,7 @@ disabled source is not polled at all.
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_driver import DataDriver
 
-agent = Agent(name="support-bot", worker_type="claude",
+agent = Agent(name="support-bot",
               system_prompt="You answer WhatsApp messages for Acme support. One short paragraph.")
 await agent.save()
 await agent.run_locally()                      # a process on this machine runs its loop and answers
@@ -85,7 +85,7 @@ after the last reply.
 from flow_sdk.blocks import StreamInbox, workflow
 from flow_sdk.builtin.agent import Agent
 
-agent = Agent(name="support-bot-b", worker_type="claude",
+agent = Agent(name="support-bot-b",
               system_prompt="You answer WhatsApp messages for Acme support. One short paragraph.")
 await agent.save()
 

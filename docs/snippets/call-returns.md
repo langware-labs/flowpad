@@ -87,6 +87,7 @@ class CliResult(ReturnedValue):               # compute.returned.cli
 
 class PromptResult(ReturnedValue):            # compute.returned.prompt — a prompt AND an agent
     text: str                                 # the full reply, beside the declared value
+    files: list[str]                          # what an agentic run left in its output folder
 
 class AskResult(ReturnedValue):               # compute.returned.ask
     cancelled: bool

@@ -68,6 +68,9 @@ def _fake_process(shell, *, driver, running: bool):
     async def _reconcile_name(**_kw):
         return None
 
+    async def _resolve_worker_type():
+        return None  # the worker is the driver this fake was given
+
     fake = SimpleNamespace(
         id="proc-gated-prompt",
         driver=driver,
@@ -78,6 +81,7 @@ def _fake_process(shell, *, driver, running: bool):
         start_pty=_start_pty,
         send=_send,
         reconcile_name=_reconcile_name,
+        resolve_worker_type=_resolve_worker_type,
     )
     fake._typed_pty_delivery = AgenticProcess._typed_pty_delivery.__get__(fake)
     fake._schedule_gated_pty_delivery = AgenticProcess._schedule_gated_pty_delivery.__get__(fake)

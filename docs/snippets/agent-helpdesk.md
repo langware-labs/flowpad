@@ -16,7 +16,6 @@ await flow_sdk.auth.login()
 
 support = Agent(
     name="support",
-    worker_type="claude",
     model="sm",
     system_prompt="You are first-line support. Answer in two sentences, then ask one question.",
 )

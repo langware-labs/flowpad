@@ -293,6 +293,9 @@ class PromptResult(ReturnedValue):
 
     #: The full reply, beside the declared ``value``.
     text: str = ""
+    #: The files an agentic run left in its output folder (``<record>/execution/output``), relative
+    #: to it. Empty for a model call, and for a run that produced nothing.
+    files: list[str] = []
 
 
 class AskResult(ReturnedValue):

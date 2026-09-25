@@ -1111,6 +1111,7 @@ async def test_input_dir_returns_abs_path_and_compute_node(bootstrapped_client, 
     assert resp.status_code == 200, resp.text
     data = ApiResponse(**resp.json()).data
     assert Path(data["abs_path"]).is_dir()
+    assert Path(data["abs_path"]).parts[-2:] == ("execution", "input"), "ONE input folder: the run's execution/input"
     assert data["compute_node_id"].startswith("compute_node-")
 
 
