@@ -3,7 +3,7 @@
  * declare secrets (flow_sdk/builtin/secret_pack.py).
  *
  * Where the folder lives is its scope: a project (`<project>/agentic-assets/
- * credential/<name>/`), the user (`~/agentic-assets/secret_pack/<name>/`), or the
+ * secret_pack/<name>/`), the user (`~/agentic-assets/secret_pack/<name>/`), or the
  * shipped catalogue (`system` — a template, added to one of the other two).
  * `value_store` says where its values live: the scope's `.env.local` or the
  * encrypted vault. Declaring, filling and removing go through

@@ -360,13 +360,22 @@ Everything above is one credential or one connection at a time. `flow project se
 from the command line, for the project in the working directory:
 
 ```bash
+flow credentials declare secret_pack.json  # declare one in this folder's project (created if none)
 flow project setup --dry-run    # what the project needs, and what already holds
 flow project setup              # walk it: sign in, type keys, or leave one empty for the AI
 flow project setup --no-ai      # never hand a value to the AI setup
 flow credentials check telegram # exit 0 when every development value is present
 flow credentials set telegram TELEGRAM_BOT_TOKEN=123456:abc  # store one (declares it from its template)
+flow credentials set telegram --stdin  # the same, VAR=VALUE lines on stdin: how an agent stores one
 flow connections test google --scope https://www.googleapis.com/auth/drive.readonly
 ```
+
+A credential the project needs is declared with `flow credentials declare` (the manifest is a
+`secret_pack.json`: `name`, `vars`, `setup`, never a value; declaring it again updates it in place),
+or `credentialsService.save({scope: 'project', project_id, manifest})` from the TS SDK. After setup,
+its status — `credentials_status(project)` in Python, `credentialsService.status(projectId)` in TS,
+`GET compute_node/@local/credentials/status?project_id=` over REST — says `state: "connected"` and
+each var `present`, `found_in: "env"`; it never carries a value.
 
 It **collects** the credentials the project declares and the auth of every data source it holds —
 a driver's `auth.connector` is a connection, `auth.credential` a credential, and `auth.env` /
@@ -381,7 +390,9 @@ memory and never written, and runs it with the stock runner:
 |             | **AI setup**: the `provisioner` agent following the credential's own `setup` instructions         | the same check — so it skips itself when the key step got there |
 
 Every `CredentialSpec` carries `setup`: how to obtain its values and store them, written for an
-agent to follow and ending in `flow credentials set`. Authoring refuses a credential without it; a
+agent to follow and ending in `flow credentials set <name> --stdin`. The AI rung is told the same:
+pipe `VAR=VALUE` lines into the store command, producing each value inside the pipe — a value on a
+command line is visible to every process on the box and lands in the agent's own transcript. Authoring refuses a credential without it; a
 pack written before it existed still loads, and setup reports it as having no AI setup. Leaving a
 question empty is how a person hands that credential to the AI. Values travel ask → the run →
 the environment of `flow credentials set`; nothing prints them, and the CLI log keeps names only.

@@ -202,13 +202,19 @@ def _ask_prompt(req: SetupRequirementSpec, var: SetupVarSpec, *, ai: bool) -> st
 
 
 def _ai_prompt(req: SetupRequirementSpec, project_id: str) -> str:
-    """The contract around the credential's own ``setup`` (which rides the op's ``setup``)."""
-    store = f"flow credentials set {req.name} --project {project_id} VAR=<value>"
+    """The contract around the credential's own ``setup`` (which rides the op's ``setup``).
+
+    The store command is the one the checks run — this interpreter's ``flow``, so it reaches the same
+    install and instance — and it reads ``VAR=VALUE`` lines on stdin: a value on the command line is
+    visible to every process on the box and lands in the agent's own transcript."""
+    store = _flow("credentials", "set", req.name, "--project", project_id, "--stdin", platform=sys.platform)
     return (
         f"Set up the credential {req.title or req.name!r} ({req.name}) for this project, in development, "
-        "following the instructions below.\n"
-        f"Store every value with `{store}` — that command is the only place a value goes. Never print, "
-        "echo or repeat a value: not in your reply, not in a file, not in a log.\n"
+        "following the instructions below. Where they say `flow credentials set …`, use the command below.\n"
+        f"Store the values by piping `VAR=VALUE` lines into:\n\n    {store}\n\n"
+        "That command is the only place a value goes. Produce each value inside the pipe that feeds it "
+        "(a generator, a file, a command's output) so it never passes through you: never print, echo or "
+        "repeat a value — not in a command line, your reply, a file or a log.\n"
         "If a value needs the person (their account, a code sent to them), say exactly what they must do, and stop."
     )
 
