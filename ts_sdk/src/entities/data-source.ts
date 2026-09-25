@@ -38,6 +38,8 @@ export interface DataSourceSendOutcome {
 }
 
 export interface IDataSource extends IEntity {
+  /** The source's asset folder on this machine (`agentic-assets/data_source/<name>/`). */
+  asset_ref?: string | null;
   owner?: string | null;
   name: string;
   kind?: string;
