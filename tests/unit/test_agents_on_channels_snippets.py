@@ -2,7 +2,8 @@
 
 §1 declares the credential; §2 (variant A) leaves an agent-owned, verified source that the agent's
 running local deployment answers on the channel; §3 (variant B) is the loop, driven by a mock worker until its first reply leaves through
-the channel. The Docker proof of §3 is ``tests/long_tests/test_whatsapp_agent_in_docker.py``.
+the channel; §4 is a phone agent against the voice doubles (a loopback Twilio and OpenAI Realtime): the
+call it places and a call made to it are each one Conversation it answers. The Docker proof of §3 is ``tests/long_tests/test_whatsapp_agent_in_docker.py``.
 """
 from __future__ import annotations
 
@@ -120,3 +121,79 @@ async def test_3_variant_b_answers_on_the_channel(whatsapp, monkeypatch, tmp_pat
     assert worker.received_prompts == ["my order arrived cracked, what now?"]
     (reply,) = whatsapp.sent()
     assert reply["to"] == whatsapp.sender and reply["text"].startswith("Mock reply")
+
+
+@pytest.fixture
+async def phone(monkeypatch):
+    from flow_sdk.builtin import agent_calls
+    from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
+
+    matrix = load_module(SHIPPED_ROOT / "voice_phone" / "tests", "matrix")
+    async with matrix.Double() as double:
+        monkeypatch.setattr(DataDriver.loaded("voice_phone"), "credentials_for", double.credentials)
+        double.matrix = matrix
+        yield double
+    agent_calls._reset_for_tests()
+
+
+async def _answered(line, delivery: dict):
+    """A signed OpenAI ring through the webhook's chokepoint, handed to whoever answers the line — as
+    ``data_source_webhook`` does — and the call held to its end."""
+    from flow_sdk.builtin import agent_calls
+
+    result = await DataDriver.loaded("voice_phone").ingest_pushed(
+        line, json.loads(delivery["body"]), headers=delivery["headers"], raw=delivery["body"])
+    (call,) = result["calls"]
+    assert await agent_calls.ring(line, call), "nobody on this machine answers the line"
+    return await agent_calls._CALLS[call.call_id]["task"]
+
+
+async def _phone_agent(phone, monkeypatch) -> dict:
+    """§4 run as written against the voice doubles."""
+    from tests.unit._voice_turn import stub_the_turn
+
+    stub_the_turn(monkeypatch, "4")
+    extra = {"EXTRA_CONFIG": {"base_url": phone.config["base_url"], "twilio_base_url": phone.config["twilio_base_url"]}}
+    return await run_fence(fence_under(doc(DOC), "4."), extra, filename=f"{DOC} §4")
+
+
+async def test_4_a_phone_agent_is_a_line_it_owns_and_a_call_it_places(phone, monkeypatch):
+    ns = await _phone_agent(phone, monkeypatch)
+    line, agent, call = ns["line"], ns["agent"], ns["call"]
+    try:
+        assert line.status == "active" and str(line.owner) == str(agent.typeid)
+        assert line.allowed_senders == [phone.sender]
+        assert call.address == [phone.sender] and call.started_at is not None and call.ended_at is None
+        assert len(phone.dials) == 1 and phone.dials[0]["To"] == phone.sender, "start on a phone line dials"
+    finally:
+        await line.delete()
+        await agent.delete()
+
+
+@pytest.mark.long  # 1.18s: a whole call — the fence, a ring-back held to its end (~7 sentences ingested and projected), a stranger refused
+async def test_4_the_call_it_placed_and_a_strangers_are_answered_on_the_line(phone, monkeypatch):
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.builtin.flow_message import FlowMessage
+
+    ns = await _phone_agent(phone, monkeypatch)
+    line, agent, call = ns["line"], ns["agent"], ns["call"]
+    try:
+        # the callee picks up: OpenAI rings back, and the agent holds the call in the conversation start made
+        assert await _answered(line, phone.rings_back()) == str(call.id)
+        held = await Conversation.get_one({"id": str(call.id)})
+        assert str(held.owner) == str(agent.typeid) and held.address == [phone.sender]
+        assert held.started_at is not None and held.ended_at is not None
+        texts = [m.text for m in sorted(await FlowMessage.get_all({"conversation_id": str(call.id)}), key=lambda m: str(m.sent_at))]
+        assert texts[0] == f"Calling {phone.sender}: Confirm tomorrow's delivery window.", texts
+        assert phone.fake.answers == ["You have two meetings 4."], "the voice was not handed the agent's answer"
+
+        # a call from a number the line does not list is refused before anything is said
+        raw = json.dumps(phone.matrix.incoming_call("rtc_stranger", caller="+10000000000", dialled="proj_matrix",
+                                                    number_header=f"sip:{phone.matrix.NUMBER}@pstn.twilio.com")).encode()
+        refused = {"body": raw, "headers": phone.matrix.sign(raw, phone.matrix.SECRET)}
+        assert await _answered(line, refused) is None
+        assert "reject" in phone.fake.verbs()
+        assert len(await Conversation.get_all({"channel_source_id": str(line.id)})) == 1
+    finally:
+        await line.delete()
+        await agent.delete()
