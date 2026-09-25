@@ -48,6 +48,7 @@ from flow_sdk.secrets.store import SecretStoreRef
 from flow_sdk.utils.serialization import iso_to_utc
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.conversation import Conversation  # noqa: F401
     from flow_sdk.connections import ConnectionRequirements
     from flow_sdk.secrets.requirements import SecretRequirements
 
@@ -577,6 +578,34 @@ class DataSource(Entity):
         if driver is None:
             raise RuntimeError(f"no driver for {self.provider}")
         return driver.outbound_spec(self).reply_to(item, body=body, attachments=attachments)
+
+    async def start(self, *, to: str, body: str, subject: str = "") -> "Conversation":
+        """Open a conversation with *to* on this line — send the email, place the call, write the first chat
+        message — and answer the Conversation it is. Its ``address`` is *to*, so it can be continued
+        (``Conversation.send``) before anyone answers."""
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
+
+        driver = self._driver()
+        if driver is None:
+            raise RuntimeError(f"no driver for {self.provider}")
+        spec_cls = driver.outbound_spec(self)
+        fields: dict = {"to": [to], "body": body}
+        if subject and "subject" in spec_cls.model_fields:
+            fields["subject"] = subject
+        outcome = await self.send(spec_cls(**fields))
+        item = await SourceItem.get_one({"data_source_id": str(self.id), "external_id": outcome.external_id}) if outcome.external_id else None
+        placed = await project_source_item(item, source=self) if item is not None else None
+        if placed is None:
+            raise RuntimeError(f"the {self.provider} message to {to} was {outcome.status.value} but not recorded here")
+        thread = await MessageThread.get_one({"id": placed[1]})
+        conversation = await Conversation.get_one({"id": thread.conversation_id})
+        if to not in (conversation.address or []):
+            conversation.address = [to, *(conversation.address or [])]
+            await conversation.save(notify=False)
+        return conversation
 
     async def send(self, spec: MessageSpec) -> SendOutcome:
         """Deliver one outbound message through this source's driver.

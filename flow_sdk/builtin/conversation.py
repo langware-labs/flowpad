@@ -191,6 +191,15 @@ class Conversation(ProjectedFields, Entity):
     # is PRIVATE.
     channel: str = APIField(default=HOME_CHANNEL, sharing=Sharing.HUB_WRITE)
     channel_source_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # ── the conversation on its channel: an email topic, a chat, a phone call, a Slack thread ──
+    # Who it is with, as the channel addresses them (an email address, a phone number, a Slack channel):
+    # stamped from its first message and extended as others join, so a reply — or the first message of
+    # one WE started — goes to them rather than to whoever wrote last. When it began and ended, in
+    # message time: a call ends on hang-up, a chat when its source's thread timeout retires it; an
+    # email topic or a Slack thread stays open. PRIVATE: third parties' addresses, facts of this machine.
+    address: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    started_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
+    ended_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
@@ -290,6 +299,19 @@ class Conversation(ProjectedFields, Entity):
     def channel_spec(self) -> ChannelSpec:
         """What this conversation's channel is — the traits every surface reads."""
         return channel_spec(self.channel)
+
+    async def send(self, body: str):
+        """Continue this conversation on its channel: to whom it is with, on its own thread — whether
+        they wrote last or only we have (a conversation we started). Answers the channel's ``SendOutcome``."""
+        from flow_sdk.stream_inbox.outbound import resolve_reply_target  # noqa: PLC0415
+
+        target = await resolve_reply_target(str(self.id))
+        spec_cls = target.driver.outbound_spec(target.source)
+        fields: dict = {"to": [target.to], "body": body, "thread_key": target.thread_key,
+                        "reply_to_external_id": target.in_reply_to}
+        if target.subject and "subject" in spec_cls.model_fields:
+            fields["subject"] = target.subject
+        return await target.source.send(spec_cls(**fields))
 
     def adopt_channel(self, channel: str, source_id: str) -> bool:
         """Name the data source channel this conversation replies through. Returns whether
