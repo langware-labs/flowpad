@@ -284,8 +284,9 @@ asset, never both. The family decides which: an `ObjectSource` reflects (a files
 mode), a `RecordSource` or `MessageSource` lands as `record`. Among its family's modes the
 SOURCE picks (`reflect`), not the driver: the same folder could reasonably be indexed in place
 or mirrored, and a driver deciding it would be deciding policy with only transport knowledge.
-`load_driver` refuses a manifest whose `reflect` modes are not its family's
-(`check_family`, `flow_sdk/ingest/driver_registry.py`).
+`load_driver` refuses a manifest whose `reflect` modes are not its family's, and a `MessageSource`
+that is not `Messaging` with `message_for` (`check_family`, `flow_sdk/ingest/driver_registry.py`) —
+so "does it send" (`DataDriver.sends`) is the family itself.
 
 `ingest_items` stays the single chokepoint for `SourceItem` writes; reflection is
 a second destination *beside* it rather than a branch inside it.

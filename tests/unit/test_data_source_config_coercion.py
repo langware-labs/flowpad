@@ -9,8 +9,8 @@ import pytest
 from pydantic import StringConstraints
 
 from flow_sdk.builtin.data_driver import DataDriver
-from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.families import RecordSource
 from tests.unit._ingest_helpers import make_data_source
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10), pytest.mark.usefixtures("fresh_user_scope")]
@@ -71,7 +71,7 @@ class _LenientConfig(SourceConfig):
 
 
 def _driver(name: str, config: type[SourceConfig]) -> None:
-    source = type(f"_{name}", (Source,), {"provider": name, "Config": config})
+    source = type(f"_{name}", (RecordSource,), {"provider": name, "Config": config})
     DataDriver.register(DataDriver.for_class(source))
 
 

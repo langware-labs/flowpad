@@ -9,7 +9,9 @@
  * view, which already holds the one live query for them.
  */
 import { useMemo } from 'react';
-import { DataDriver, DataSource } from '@sdk';
+import { DataDriver, DataSource, type DataSourceFamily } from '@sdk';
+import type { MessageDescriptor } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -23,6 +25,14 @@ import { HEADER_ROW } from './DataSourceRow';
 import { openDriver, openSourceFile } from './data-sources-pointer';
 import { sourceIcon } from './source-icon';
 import { useSourceSpecs } from './use-source-specs';
+
+/** What a driver's items are — the base its source class extends. Keyed by the backend's union, so a
+ *  family added there is a type error here. */
+const FAMILY_LABEL: Record<DataSourceFamily, MessageDescriptor> = {
+  object: msg`Files`,
+  record: msg`Records`,
+  message: msg`Messages`,
+};
 
 const driverTitle = (driver: DataDriver) => driver.title || driver.name || '';
 
@@ -93,7 +103,7 @@ export function DataDriversList({ sources }: { sources: DataSource[] }) {
 }
 
 export function DataDriverPage({ name, sources }: { name: string; sources: DataSource[] }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const { navigation } = useDockNavigation();
   const { specFor } = useSourceSpecs();
   const driver = specFor(name);
@@ -109,9 +119,6 @@ export function DataDriverPage({ name, sources }: { name: string; sources: DataS
   }
 
   const Icon = sourceIcon(driver, null);
-  // What the driver's items are — the base its source class extends.
-  const familyLabel = (family: DataDriver['family']) =>
-    family === 'object' ? t`Files` : family === 'record' ? t`Records` : family === 'message' ? t`Messages` : '—';
   const { credential, connector } = (driver.auth ?? {}) as { credential?: string; connector?: string };
   const fields = Object.entries(driver.config ?? {});
   const folder = driver.asset_ref ?? null;
@@ -124,7 +131,7 @@ export function DataDriverPage({ name, sources }: { name: string; sources: DataS
     { label: t`Kind`, value: driver.kind || '—', onClick: manifest },
     { label: t`Runtime`, value: driver.runtime || '—', onClick: manifest },
     { label: t`Code`, value: 'source.py', onClick: code },
-    { label: t`Family`, value: familyLabel(driver.family), onClick: code },
+    { label: t`Family`, value: driver.family ? i18n._(FAMILY_LABEL[driver.family]) : '—', onClick: code },
     { label: t`Sends replies`, value: driver.sends ? t`yes` : t`no`, onClick: code },
     // The credential is a connection: its values are set on the Connections screen.
     {

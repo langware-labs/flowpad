@@ -11,7 +11,8 @@ the system project, every project mount), for the ONE class extending ``Source``
 with no family yet:
 
 * ``reflects = True`` in its body → ``ObjectSource`` (the line is removed);
-* it defines ``send`` and ``reply``, or extends ``EmailAddressing`` → ``MessageSource``;
+* it answered on a channel before this release — defines ``message_for`` or extends ``EmailAddressing``,
+  the test ``can_send`` made then and ``load_driver`` asks of a ``MessageSource`` now → ``MessageSource``;
 * anything else → ``RecordSource``.
 
 ``Source`` in the base list is replaced by the family; ``CollectionSource`` keeps its place with the family
@@ -39,7 +40,7 @@ logger = logging.getLogger("migrate.source_families")
 
 FAMILIES = ("ObjectSource", "RecordSource", "MessageSource")
 _BARE = ("Source", "CollectionSource")
-_MESSAGE_MIXINS = ("EmailAddressing", "VoiceChannel")
+_MESSAGE_MIXINS = ("EmailAddressing",)
 
 
 @dataclass
@@ -55,20 +56,34 @@ class Report:
     def changed(self) -> bool:
         return bool(self.converted) and not self.dry_run
 
+    def lines(self) -> list[str]:
+        """What the pass did (or, dry, would do), one line each — for the CLI and the upgrade recipe."""
+        verb = "would give" if self.dry_run else "gave"
+        out = [f"data drivers: {verb} {sum(self.converted.values())} authored driver(s) their family: {dict(self.converted)}"
+               if self.converted else "data drivers: every authored driver already extends its family."]
+        out += [f"data drivers: left {len(paths)} as is ({reason}): {', '.join(paths)}" for reason, paths in self.unconverted.items()]
+        return out
+
 
 def _name(node: ast.expr) -> str:
     return node.attr if isinstance(node, ast.Attribute) else node.id if isinstance(node, ast.Name) else ""
 
 
+def _reflects(cls: ast.ClassDef) -> list[ast.stmt]:
+    """The class body's ``reflects = …`` statements — the retired flag."""
+    return [
+        stmt for stmt in cls.body
+        if isinstance(stmt, (ast.Assign, ast.AnnAssign))
+        and any(_name(t) == "reflects" for t in (stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]))
+    ]
+
+
 def family_for(cls: ast.ClassDef) -> str:
     """The family this class's body says it is."""
-    for stmt in cls.body:
-        if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
-            targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
-            if any(_name(t) == "reflects" for t in targets) and isinstance(stmt.value, ast.Constant) and stmt.value.value is True:
-                return "ObjectSource"
+    if any(isinstance(s.value, ast.Constant) and s.value.value is True for s in _reflects(cls)):
+        return "ObjectSource"
     methods = {s.name for s in cls.body if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))}
-    if {"send", "reply"} <= methods or any(_name(b) in _MESSAGE_MIXINS for b in cls.bases):
+    if "message_for" in methods or any(_name(b) in _MESSAGE_MIXINS for b in cls.bases):
         return "MessageSource"
     return "RecordSource"
 
@@ -104,10 +119,9 @@ def convert_text(text: str) -> tuple[str, str]:
     lines[cls.lineno - 1] = f"{match.group(1)}{', '.join(bases)}{match.group(3)}"
 
     # The retired flag goes: the family says it now.
-    for stmt in cls.body:
-        if isinstance(stmt, ast.Assign) and any(_name(t) == "reflects" for t in stmt.targets):
-            for n in range(stmt.lineno - 1, stmt.end_lineno):
-                lines[n] = ""
+    for stmt in _reflects(cls):
+        for n in range(stmt.lineno - 1, stmt.end_lineno):
+            lines[n] = ""
 
     # One import, after the last `from flow_sdk.sources…` import (else after the last import at the top).
     imports = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
@@ -121,24 +135,28 @@ def convert_text(text: str) -> tuple[str, str]:
     return new, family
 
 
-def driver_files(root: Path) -> list[Path]:
-    """Every authored driver's ``source.py`` directly under ``root``'s asset folder (never the shipped tree)."""
-    from flow_sdk.ingest.driver_registry import SHIPPED_ROOT
+def driver_files(root: Path, shipped: Path) -> list[Path]:
+    """Every authored driver's ``source.py`` under ``root``'s asset folder — the folders the loader would
+    load (``driver_folders``) — never the ``shipped`` tree."""
+    from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
+    from flow_sdk.ingest.driver_registry import SOURCE_FILE, driver_folders
 
-    base = Path(root) / "agentic-assets" / "data_driver"
-    if not base.is_dir() or base.resolve() == SHIPPED_ROOT.resolve():
+    base = Path(root) / AGENTIC_ASSETS_DIR / "data_driver"
+    if base.resolve() == shipped:
         return []
-    return sorted(p for p in base.glob("*/source.py") if p.is_file())
+    return [folder / SOURCE_FILE for folder in driver_folders(base) if (folder / SOURCE_FILE).is_file()]
 
 
 def migrate(*, dry_run: bool = True, roots: list[Path] | None = None) -> Report:
     """Give every authored driver under ``roots`` (the instance's when None) its family."""
-    from flow_sdk.migrations.migration_2026_09_entity_json_mains import _default_roots
+    from flow_sdk.ingest.driver_registry import SHIPPED_ROOT
+    from flow_sdk.migrations._roots import instance_roots
 
     report = Report(dry_run=dry_run)
+    shipped = SHIPPED_ROOT.resolve()
     seen: set[str] = set()
-    for root in roots if roots is not None else _default_roots():
-        for path in driver_files(Path(root)):
+    for root in roots if roots is not None else instance_roots():
+        for path in driver_files(Path(root), shipped):
             key = str(path.resolve())
             if key in seen:
                 continue
@@ -166,10 +184,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
     report = migrate(dry_run=not args.apply, roots=[Path(r) for r in args.root] if args.root else None)
-    logger.info("%s: scanned %d authored driver(s); %s: %s", "DRY-RUN" if report.dry_run else "APPLY", report.scanned,
-                "convertible" if report.dry_run else "converted", dict(report.converted))
-    for reason, paths in report.unconverted.items():
-        logger.info("left as is (%s): %s", reason, paths)
+    logger.info("%s: scanned %d authored driver(s)", "DRY-RUN" if report.dry_run else "APPLY", report.scanned)
+    for line in report.lines():
+        logger.info("%s", line)
     return 0
 
 
