@@ -121,19 +121,19 @@ from flow_sdk.builtin.data_driver import DataDriver
 agent = Agent(name="front-desk", system_prompt="You answer Acme's phone. Be brief.")
 await agent.save()
 
-phone = await DataDriver.get("voice_phone")                 # Twilio → OpenAI Realtime over SIP
+phone = await DataDriver.get("voice_phone")          # Twilio → OpenAI Realtime over SIP
 line = phone.create_source(
     phone.create_config(number="+14155550100", project="proj_acme", **EXTRA_CONFIG),
     name="Acme front desk",
-    owner=agent,                                            # the agent's line: it answers every call on it
-    allowed_senders=["+972501234567"],                      # who may call — private to this machine
+    owner=agent,                                     # the agent answers every call on it
+    allowed_senders=["+972501234567"],               # who may call; kept on this machine
 )
 await line.save()
-(await line.verify())["ready"]                              # the keys are set, the number is on the Twilio account
+(await line.verify())["ready"]                       # keys set, number on the Twilio account
 
-await agent.run_locally()                                   # every call is a Conversation, answered live
+await agent.run_locally()                            # each call is a Conversation, live
 call = await line.start(to="+972501234567", body="Confirm tomorrow's delivery window.")
-call.address                                                # ["+972501234567"] — who it is with
+call.address                                         # ["+972501234567"]: who it is with
 ```
 
 A call — one the agent places (`line.start`) or one made to the number — is one **Conversation**:
