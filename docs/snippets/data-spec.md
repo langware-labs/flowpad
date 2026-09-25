@@ -240,9 +240,11 @@ op.setup                 # 'Run `lsof -i` and pick a free one.' — a plain stri
 op.setup.upper()         # works; a Text IS a str
 ```
 
-`Text` is a string wherever you use it. It is not a path, and a reader never
-opens a file to get it — the only difference is where `save` puts it. A shape
-may carry as many as it likes.
+`Text` is a string wherever you use it, and a reader never opens a file to get
+it — the only difference is where `save` puts it. Once it has touched disk it
+knows where: `op.setup.path` is the file `save` wrote it to, or `load` read it
+from (the same `<field>.md` rule both ways); `None` until then. A shape may
+carry as many as it likes.
 
 | the field is | it becomes |
 | --- | --- |

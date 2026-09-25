@@ -156,13 +156,13 @@ cv_reviewed = await AgenticProcess.run("Review and convert the input CV", input=
 cv_reviewed.exit_code                            # ExitCode.OK
 cv_reviewed.text                                 # "Your CV was reviewed" — the agent's last message
 cv_reviewed.value                                # CVSpec — the reviewed CV, loaded from the output folder
-cv_reviewed.files                                # ['body.md', 'cvspec.json']
+cv_reviewed.value.body.path                      # <record>/execution/output/body.md — where save() writes it
 ```
 
 * `output_spec` takes the class or its registered kind name (`output_spec="hr.cv"`); an unknown
   name is refused before anything starts.
 * A run that writes no output, the wrong file, or a field of the wrong type answers `NOT_YET`
-  with the reason in `detail` — the reply stays in `text`, the files in `files`.
+  with the reason in `detail` — the reply stays in `text`.
 * A valid output's files are registered as the run's Artifacts, and a record holding recent output
   is kept by the startup clean-up for 30 days. `cv_reviewed.value.save(path)` is the durable copy.
 * `agent.launch(prompt, input=..., output_spec=..., wait=True)` is the same contract for an Agent;
