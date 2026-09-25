@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "interface",
   "folder_name": "interface",
-  "inputs_hash": "caf3c134b17ab97dc65f8b7cdda33d507e829f1ad14e233b243559ac351ac9a8",
+  "inputs_hash": "5589eb14635e5fe210ed7e61df37726e70b56daea02cb8ebd2bbe057f1c1f221",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
@@ -22,17 +22,17 @@
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess — interface",
-      "summary": "Complete AgenticProcess reference: fields, public methods by concern, display-target and wizard-result contracts, HTTP actions and the TypeScript class.",
-      "content_hash": "e5a0ecab5da83de40c7f8fc60822be5263ff1908f844fd289b637f66ca5be68a",
-      "size_bytes": 61695
+      "summary": "Complete AgenticProcess interface reference: fields, Python methods including typed run(input, output_spec), HTTP actions and the TypeScript class.",
+      "content_hash": "0e4c0702186c3f7dab45169bcb0124623edf0cd9052fa03011c136c748f7bba6",
+      "size_bytes": 61974
     },
     {
       "name": "cli-drivers.md",
       "rel_path": "cli-drivers.md",
       "title": "CLI drivers — interface",
-      "summary": "CLI driver layer reference: AgenticContext, AgenticWorker, AgentOptions and the WorkerDriver protocol hiding Claude, Codex and Copilot differences behind one interface.",
-      "content_hash": "74562e1d69b3b9a8926ea62a67915d699a1aea3bd9db926468b2db345efec542",
-      "size_bytes": 38898
+      "summary": "CLI driver layer: the WorkerDriver protocol, per-vendor packages, get_driver resolution and selected-harness defaults, auth probes and serialization helpers.",
+      "content_hash": "41cf627233df163bcc4defb4cb85fe69c96a70ea776d40b9e061a5f00b4dbb3f",
+      "size_bytes": 39204
     },
     {
       "name": "compute-node.md",
@@ -62,9 +62,9 @@
       "name": "session-naming.md",
       "rel_path": "session-naming.md",
       "title": "Worker session names",
-      "summary": "How a worker session gets its display name: the five-phase priority reducer, user versus harness provenance, and the transcript and lifecycle edges moving it.",
-      "content_hash": "67625a16e201c85493bc6d40890fad37dbe113e0fa4a0939b4e18aab4d34c600",
-      "size_bytes": 6563
+      "summary": "Worker session naming: the backend naming service, five-phase priority reducer, provider provenance and tab projection for process names.",
+      "content_hash": "d6078597376aa7c3e5ff9b6a2b1902b3f869855519dee537377f89639305b6b4",
+      "size_bytes": 6612
     },
     {
       "name": "shell.md",
@@ -92,6 +92,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-23T19:02:04Z",
+  "generated_at": "2026-09-25T12:04:30Z",
   "latest_process_ref": ""
 }

@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "0f9313e09e5f0c7dc1e81e4b2c2c1a8c6eb2b5be31ed9c84be88e03b6279798f",
+  "inputs_hash": "fc1fa459991c4e17e88615586f8183a100b0b29dafe120fc734d8f7e8c688e2e",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the single shape system with its kind registry, data sources and datasets, records, search and the SQLite layer underneath.",
@@ -46,9 +46,9 @@
       "name": "data-sources-ui.md",
       "rel_path": "data-sources-ui.md",
       "title": "Data Sources UI (Frontend)",
-      "summary": "The Data Sources screen frontend: the grid, source cards with lifecycle and health, the driver-driven add/edit dialog, replay, pause and delete flows.",
-      "content_hash": "d1cc6bb937b8987fb44e65e3ecb8aafed9d8bbdd7c55d11853ef8467fe1f065a",
-      "size_bytes": 6142
+      "summary": "Frontend Data Sources screen: grid, cards, add/edit dialog driven by DataDrivers, menus, replay, and liveness display.",
+      "content_hash": "d38086fdf0ed95c082e5ccf5c7ca6477354c9981dab6e88a162be216e27beefd",
+      "size_bytes": 6191
     },
     {
       "name": "data-sources.md",
@@ -220,6 +220,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T21:26:04.324663+00:00",
+  "generated_at": "2026-09-25T12:04:30Z",
   "latest_process_ref": ""
 }
