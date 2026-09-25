@@ -31,13 +31,14 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
-from typing import Iterator, TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Iterator, Optional
 
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.assets.project_manifest import namespace_for
 from flow_sdk.schema.data_spec._namespace import loading as loading_ns
-from flow_sdk.schema.data_spec.data_driver_spec import SOURCE_FILE, DataDriverSpec
-from flow_sdk.sources.base import Source
+from flow_sdk.schema.data_spec.data_driver_spec import SOURCE_FILE, DataDriverSpec, ReflectMode
+from flow_sdk.sources.base import Family, Source
+from flow_sdk.sources.protocols import Messaging
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.data_driver import DataDriver
@@ -154,18 +155,16 @@ def check_family(cls: type[Source], manifest: DataDriverSpec) -> None:
 
     The family is the class's base (``ObjectSource`` / ``RecordSource`` / ``MessageSource``). A file source
     lands on disk, so its modes are filesystem modes; every other source lands as records, so ``record``.
+    A message source answers on its channel: it is ``Messaging`` and says how a send is addressed.
     """
-    from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode  # noqa: PLC0415
-    from flow_sdk.sources.base import Family  # noqa: PLC0415
-
     family = getattr(cls, "family", None)
     if family is None:
         raise DriverLoadError(
             f"{cls.__name__} extends Source directly: extend ObjectSource (files), RecordSource (records) "
             "or MessageSource (messages) from flow_sdk.sources"
         )
-    if any("reflects" in vars(base) for base in cls.__mro__):
-        raise DriverLoadError(f"{cls.__name__} sets `reflects`, which is gone: a file source extends ObjectSource")
+    if family is Family.MESSAGE and not (issubclass(cls, Messaging) and callable(getattr(cls, "message_for", None))):
+        raise DriverLoadError(f"{cls.__name__} is a MessageSource: it must send and reply (Messaging) and define message_for")
     modes = set(manifest.reflect)
     if family is Family.OBJECT and ReflectMode.RECORD.value in modes:
         raise DriverLoadError(f"{manifest.name}: a file source (ObjectSource) cannot offer reflect `record`; name its filesystem modes")
@@ -216,6 +215,11 @@ def load_driver_value_kinds() -> None:
     DRIVERS.ensure()
 
 
+def driver_folders(root: Path) -> list[Path]:
+    """The driver folders directly under ``root`` — each holds a ``data_driver.json`` — sorted."""
+    return sorted(p for p in root.iterdir() if (p / MANIFEST_FILE).is_file()) if root.is_dir() else []
+
+
 def _register_folders(registry: "KindRegistry[DataDriver]", root: Path, label: str) -> None:
     """Every driver folder under ``root``, into ``registry``.
 
@@ -225,9 +229,7 @@ def _register_folders(registry: "KindRegistry[DataDriver]", root: Path, label: s
     folder that fails is logged and recorded, never raised: one broken source must not
     take the registry down with it.
     """
-    if not root.is_dir():
-        return
-    for folder in sorted(p for p in root.iterdir() if (p / MANIFEST_FILE).is_file()):
+    for folder in driver_folders(root):
         name = folder.name
         if registry.get_or_none(name) is not None:
             continue
@@ -313,6 +315,7 @@ __all__ = [
     "MANIFEST_FILE",
     "SHIPPED_ROOT",
     "SOURCE_FILE",
+    "driver_folders",
     "DriverLoadError",
     "asset_module",
     "content_hash",

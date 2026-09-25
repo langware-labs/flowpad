@@ -18,8 +18,8 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.base import Source
-from flow_sdk.sources.families import MessageSource, ObjectSource, RecordSource
 from flow_sdk.sources.errors import InvalidCursor, NotFound, Unsupported
+from flow_sdk.sources.families import MessageSource, ObjectSource, RecordSource
 from flow_sdk.sources.protocols import ByteStore, Drafting, Listable, Messaging, Mutable, Readable
 from flow_sdk.sources.values import (
     CloudOrigin,
@@ -206,10 +206,10 @@ async def notify_rejects_anything_but_an_event(subject: Subject) -> None:
 
 async def _first_page(subject: Subject) -> list:
     """The first listed page, or nothing for a push-only source (its items never come from a listing)."""
+    if not issubclass(type(subject.source()), Listable):
+        return []
     async with await _closing(subject) as s:
-        if not isinstance(s, Listable):
-            return []
-        return list((await s.fetch()).items)
+        return list((await s.fetch()).items)  # type: ignore[attr-defined]
 
 
 @check(ObjectSource)
@@ -220,8 +220,10 @@ async def a_file_source_lists_files(subject: Subject) -> None:
 
 @check(RecordSource)
 async def a_record_source_lists_records_never_files(subject: Subject) -> None:
+    if issubclass(type(subject.source()), MessageSource):
+        return  # the message check below holds it to the tighter family
     for item in await _first_page(subject):
-        assert isinstance(item.data, (RecordData, MessageData)), f"{type(item.data).__name__} is not a record"
+        assert isinstance(item.data, RecordData), f"{type(item.data).__name__} is not a record"
 
 
 @check(MessageSource)

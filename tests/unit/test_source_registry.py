@@ -84,13 +84,14 @@ def test_the_class_names_the_manifests_source(tmp_path):
 
 
 def test_a_driver_extends_one_family(tmp_path):
-    """``Source`` alone is no family: the author picks files, records or messages — and a leftover
-    ``reflects`` (the flag the family replaced) is refused rather than silently landing as records."""
+    """``Source`` alone is no family: the author picks files, records or messages — and a message source
+    that cannot answer is refused, so "sends" is the family and nothing else."""
     bare = SOURCE.replace("from flow_sdk.sources.families import RecordSource", "from flow_sdk.sources.base import Source")
     with pytest.raises(DriverLoadError, match="extends Source directly"):
         load_driver(_folder(tmp_path, source=bare.replace("(RecordSource)", "(Source)")))
-    with pytest.raises(DriverLoadError, match="`reflects`, which is gone"):
-        load_driver(_folder(tmp_path, name="flagged", source=SOURCE + "    reflects = True\n"))
+    mute = SOURCE.replace("RecordSource", "MessageSource")
+    with pytest.raises(DriverLoadError, match="must send and reply"):
+        load_driver(_folder(tmp_path, name="mute", source=mute))
 
 
 def test_the_manifest_reflect_modes_are_the_familys(tmp_path):
