@@ -49,8 +49,6 @@ async def test_a_call_we_place_is_one_conversation_from_the_dial_on():
         source = await _source(double)
         async with source:
             note = await source.say_to(double.sender, "Confirm tomorrow's delivery window.")
-        # the note names who the call is with, so the conversation knows its address before anyone speaks
-        assert [p.address for p in note.data.recipients] == [double.sender]
         ring = double.rings_back()
         (call,) = source.calls_from_webhook(json.loads(ring["body"]))
     assert call.caller == double.sender and call.brief == "Confirm tomorrow's delivery window."

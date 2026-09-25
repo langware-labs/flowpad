@@ -65,8 +65,6 @@ class VoicePhoneSource(VoiceChannel):
 
     #: Calls we dialled and OpenAI has not rung back yet, by dial token: (callee, what it is for).
     _dialled: ClassVar[dict[str, tuple[str, str]]] = {}
-    #: Calls on the line from this process, by the person: what ``say_to`` speaks into, and the call's conversation key.
-    _live: ClassVar[dict[str, tuple[Any, str]]] = {}
 
     def _model(self) -> str:
         return str(self.config.get("model") or "").strip() or realtime.DEFAULT_MODEL
@@ -88,13 +86,12 @@ class VoicePhoneSource(VoiceChannel):
             return Verdict(ready=False, detail=f"Set {', '.join(missing)} — the line cannot run without them.")
         if not str(self.config.get("project") or "").strip():
             return Verdict(ready=False, detail="No OpenAI project yet — name the project whose SIP connector takes the calls.")
-        sid, token = self.secret("TWILIO_ACCOUNT_SID"), self.secret("TWILIO_AUTH_TOKEN")
-        base = str(self.config.get("twilio_base_url") or TWILIO_API).rstrip("/")
+        account, auth = self._twilio()
         try:
             async with http.client() as client:
                 body = await http.request_json(
-                    client, "GET", f"{base}/2010-04-01/Accounts/{sid}/IncomingPhoneNumbers.json",
-                    params={"PhoneNumber": self.account}, auth=(sid, token), hint="Twilio refused the lookup",
+                    client, "GET", f"{account}/IncomingPhoneNumbers.json",
+                    params={"PhoneNumber": self.account}, auth=auth, hint="Twilio refused the lookup",
                 )
         except AccessDenied:
             return Verdict(ready=False, detail="Twilio refused TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN.")
@@ -144,7 +141,7 @@ class VoicePhoneSource(VoiceChannel):
         if placed is not None:
             callee, brief = placed
             return [call.model_copy(update={"caller": callee, "dialed": self.account, "brief": brief, "caller_name": "",
-                                            "conversation": placed_key(dial_token)})]
+                                            "conversation": dial_token})]
         return [call.model_copy(update={"dialed": self.account})]
 
     # ── the call ────────────────────────────────────────────────────────────
@@ -156,16 +153,21 @@ class VoicePhoneSource(VoiceChannel):
             raise ValueError("a phone call needs the number to dial, E.164 (+972…)")
         return await self.dial(to, brief=str(offer.get("brief") or "").strip()), None
 
-    async def dial(self, to: str, *, brief: str = "") -> dict:
+    def _twilio(self) -> "tuple[str, tuple[str, str]]":
+        """The Twilio account's API root and its basic auth."""
         sid, token = self.secret("TWILIO_ACCOUNT_SID"), self.secret("TWILIO_AUTH_TOKEN")
         if not (sid and token):
             raise Rejected("no Twilio credentials — set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN")
         base = str(self.config.get("twilio_base_url") or TWILIO_API).rstrip("/")
+        return f"{base}/2010-04-01/Accounts/{sid}", (sid, token)
+
+    async def dial(self, to: str, *, brief: str = "") -> dict:
+        account, auth = self._twilio()
         dial = secrets.token_hex(8)
         self._dialled[dial] = (to, brief)
         async with http.client() as client:
             response = await http.request(
-                client, "POST", f"{base}/2010-04-01/Accounts/{sid}/Calls.json", auth=(sid, token),
+                client, "POST", f"{account}/Calls.json", auth=auth,
                 data={"To": to, "From": self.account,
                       "Twiml": bridge(str(self.config.get("project") or ""), self.account, dial=dial)},
                 hint="Twilio refused the call",
@@ -178,28 +180,18 @@ class VoicePhoneSource(VoiceChannel):
         await realtime.accept(client, call, instructions=instructions, model=self._model(), voice=self._voice())
         greet = "Open the call now, as your instructions say." if call.brief else "Greet the caller in one short sentence."
         session = realtime.RealtimeCallSession(client, call.call_id, greet=greet)
-        type(self)._live[call.caller] = (session, call.conversation_key)
-        return _Forgetting(session, lambda: type(self)._live.pop(call.caller, None))
+        return self.hold(call, session)
 
     async def reject(self, call: IncomingCall) -> None:
         await realtime.reject(self.client(), call)
 
     async def say_to(self, person: str, text: str) -> MessageItem:
         """Into their live call when they are on one; otherwise call them, with ``text`` as the call's purpose."""
-        live = type(self)._live.get(person)
-        if live is not None:
-            session, call = live
-            await session.say(text)
-            return self.said(person, text, f"say-{secrets.token_hex(6)}", call=call)
+        said = await self.say_live(person, text)
+        if said is not None:
+            return said
         placed = await self.dial(person, brief=text)
-        return self.said(person, f"Calling {person}: {text}", f"dial-{placed.get('call_sid') or placed['dial']}",
-                         call=placed_key(placed["dial"]))
-
-
-def placed_key(dial: str) -> str:
-    """The conversation key of a call we placed: its dial's token — known when we dial, before the
-    call has an id — so the note that placed it and every sentence of it are one conversation."""
-    return f"dial-{dial}"
+        return self.said(person, f"Calling {person}: {text}", f"dial-{placed['call_sid'] or placed['dial']}", call=placed["dial"])
 
 
 def bridge(project: str, number: str, *, dial: str = "") -> str:
@@ -220,26 +212,3 @@ def _is_carrier(payload: Any) -> bool:
 def _sip_headers(payload: Any) -> dict[str, str]:
     data = (payload or {}).get("data") or {} if isinstance(payload, dict) else {}
     return {str(h.get("name", "")).lower(): str(h.get("value", "")) for h in data.get("sip_headers") or []}
-
-
-class _Forgetting:
-    """A call session that forgets its person's line when the call ends."""
-
-    def __init__(self, session, forget):
-        self._session, self._forget = session, forget
-
-    async def events(self):
-        try:
-            async for event in self._session.events():
-                yield event
-        finally:
-            self._forget()
-
-    async def resolve(self, ask_id: str, answer: str) -> None:
-        await self._session.resolve(ask_id, answer)
-
-    async def say(self, text: str) -> None:
-        await self._session.say(text)
-
-    async def hangup(self) -> None:
-        await self._session.hangup()

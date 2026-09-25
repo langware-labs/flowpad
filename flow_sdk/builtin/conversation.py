@@ -303,15 +303,9 @@ class Conversation(ProjectedFields, Entity):
     async def send(self, body: str):
         """Continue this conversation on its channel: to whom it is with, on its own thread — whether
         they wrote last or only we have (a conversation we started). Answers the channel's ``SendOutcome``."""
-        from flow_sdk.stream_inbox.outbound import resolve_reply_target  # noqa: PLC0415
+        from flow_sdk.stream_inbox.outbound import resolve_reply_target, send_to  # noqa: PLC0415
 
-        target = await resolve_reply_target(str(self.id))
-        spec_cls = target.driver.outbound_spec(target.source)
-        fields: dict = {"to": [target.to], "body": body, "thread_key": target.thread_key,
-                        "reply_to_external_id": target.in_reply_to}
-        if target.subject and "subject" in spec_cls.model_fields:
-            fields["subject"] = target.subject
-        return await target.source.send(spec_cls(**fields))
+        return await send_to(str(self.id), await resolve_reply_target(str(self.id)), body)
 
     def adopt_channel(self, channel: str, source_id: str) -> bool:
         """Name the data source channel this conversation replies through. Returns whether
