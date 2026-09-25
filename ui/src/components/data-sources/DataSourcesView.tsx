@@ -17,7 +17,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import { DataSource } from '@sdk';
-import { Plus } from 'lucide-react';
+import { Eye, Plus } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -31,12 +31,22 @@ import { cn } from '@src/lib/utils';
 import { DataSourceDialog } from './DataSourceDialog';
 import { Button } from '@src/components/ui/button';
 import { ReplayDialog } from './ReplayDialog';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { parseDataSourcesPointer } from './data-sources-pointer';
+import { DataDriverPage, DataDriversList } from './DataDriversView';
 
 export function DataSourcesView() {
   const { t } = useLingui();
   const { start: startVibe, installDialog } = useStartVibeSession();
   const { data: sources = [], refetch } = useEntitiesQuery<DataSource>(sourcesQuery);
   const { specFor } = useSourceSpecs();
+  const { navigation, currentDock } = useDockNavigation();
+  // What is shown comes from the URL: the sources, the drivers, or one driver.
+  const route = parseDataSourcesPointer(currentDock?.pointer);
+  // The drivers are the templates behind every source — a look under the hood, so Advanced only.
+  const advanced = useIsAdvanced();
 
   // A separate flag, not the `null = closed` idiom its two neighbours use:
   // `editing === null` is the legitimate "add new" state, so it cannot double
@@ -81,6 +91,19 @@ export function DataSourcesView() {
         {sources.length > 0 && (
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{sources.length}</span>
         )}
+        {advanced && route.section === 'sources' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 px-2 text-muted-foreground"
+            title={t`View the drivers every source is made from`}
+            data-testid="data-sources-view-drivers"
+            onClick={() => navigation.openDock(DockPointer.forDataSources({ section: 'drivers', driver: null }))}
+          >
+            <Eye className="size-3.5" />
+            <Trans>Drivers</Trans>
+          </Button>
+        )}
         {/* The primary act of this screen, where every list screen keeps it:
             top right, before any row — not trailing the grid as a tile. */}
         <Button className="ms-auto gap-1.5" onClick={openAdd} data-testid="add-data-source">
@@ -88,74 +111,92 @@ export function DataSourcesView() {
           <Trans>New source</Trans>
         </Button>
       </header>
-      <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
-        <Trans>
-          One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records
-          you can search, read and build flows on.
-        </Trans>
-      </p>
-
-      {sources.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center">
-          <p className="text-sm text-muted-foreground">
-            <Trans>No sources yet. Connect a feed, a mailbox or a channel and the poller takes it from there.</Trans>
-          </p>
-          <div className="flex items-center gap-2">
-            <Button className="gap-1.5" onClick={openAdd}>
-              <Plus className="size-4" />
-              <Trans>New source</Trans>
-            </Button>
-            {/* The from-scratch entry: the data-integrations persona connects a source,
-                shows a sample and agrees the output shape — the whole loop in one chat. */}
-            <Button
-              variant="outline"
-              className="gap-1.5"
-              data-testid="data-sources-ask-agent"
-              onClick={() =>
-                startVibe(t`Connect a data source for me and help me define what I want out of each item.`)
-              }
-            >
-              <Sparkles className="size-4" />
-              <Trans>Ask the agent to connect one</Trans>
-            </Button>
-            {installDialog}
-          </div>
-        </div>
+      {route.section === 'drivers' ? (
+        route.driver ? (
+          <DataDriverPage name={route.driver} />
+        ) : (
+          <>
+            <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
+              <Trans>
+                The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its
+                code and its tests. Pick one to see its config and the sources made from it.
+              </Trans>
+            </p>
+            <DataDriversList />
+          </>
+        )
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
-          <div
-            className={cn(
-              ROW_GRID,
-              'border-b border-border bg-muted/30 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground',
-            )}
-          >
-            <span>
-              <Trans>Source</Trans>
-            </span>
-            <span>
-              <Trans>Status</Trans>
-            </span>
-            <span>
-              <Trans>Synced</Trans>
-            </span>
-            <span>
-              <Trans>Next poll</Trans>
-            </span>
-            <span className="text-end">
-              <Trans>Actions</Trans>
-            </span>
-          </div>
-          {sorted.map((source) => (
-            <DataSourceRow
-              key={source.id}
-              source={source}
-              spec={specFor(source.provider)}
-              onEdit={openEdit}
-              onReplay={setReplaying}
-              onDelete={setDeleting}
-            />
-          ))}
-        </div>
+        <>
+          <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
+            <Trans>
+              One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records
+              you can search, read and build flows on.
+            </Trans>
+          </p>
+
+          {sources.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center">
+              <p className="text-sm text-muted-foreground">
+                <Trans>No sources yet. Connect a feed, a mailbox or a channel and the poller takes it from there.</Trans>
+              </p>
+              <div className="flex items-center gap-2">
+                <Button className="gap-1.5" onClick={openAdd}>
+                  <Plus className="size-4" />
+                  <Trans>New source</Trans>
+                </Button>
+                {/* The from-scratch entry: the data-integrations persona connects a source,
+                    shows a sample and agrees the output shape — the whole loop in one chat. */}
+                <Button
+                  variant="outline"
+                  className="gap-1.5"
+                  data-testid="data-sources-ask-agent"
+                  onClick={() =>
+                    startVibe(t`Connect a data source for me and help me define what I want out of each item.`)
+                  }
+                >
+                  <Sparkles className="size-4" />
+                  <Trans>Ask the agent to connect one</Trans>
+                </Button>
+                {installDialog}
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-border">
+              <div
+                className={cn(
+                  ROW_GRID,
+                  'border-b border-border bg-muted/30 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground',
+                )}
+              >
+                <span>
+                  <Trans>Source</Trans>
+                </span>
+                <span>
+                  <Trans>Status</Trans>
+                </span>
+                <span>
+                  <Trans>Synced</Trans>
+                </span>
+                <span>
+                  <Trans>Next poll</Trans>
+                </span>
+                <span className="text-end">
+                  <Trans>Actions</Trans>
+                </span>
+              </div>
+              {sorted.map((source) => (
+                <DataSourceRow
+                  key={source.id}
+                  source={source}
+                  spec={specFor(source.provider)}
+                  onEdit={openEdit}
+                  onReplay={setReplaying}
+                  onDelete={setDeleting}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       <DataSourceDialog open={editorOpen} onOpenChange={setEditorOpen} editing={editing} />
