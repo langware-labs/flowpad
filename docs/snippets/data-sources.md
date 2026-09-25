@@ -374,12 +374,12 @@ source (§8). The row says which as `family`; only a message source `sends`.
 ```python
 from flow_sdk.builtin.data_driver import DataDriver
 
-folder = await DataDriver.get("folder")
+drive = await DataDriver.get("gdrive")
 rss = await DataDriver.get("rss")
 slack = await DataDriver.get("slack")
 
-families = (folder.family, rss.family, slack.family)   # ("object", "record", "message")
-answers = (folder.sends, rss.sends, slack.sends)       # (False, False, True)
+families = (drive.family, rss.family, slack.family)    # ("object", "record", "message")
+answers = (drive.sends, rss.sends, slack.sends)        # (False, False, True)
 ```
 
 A provider with two kinds of stream is two drivers: a Jira issue tracker is a `RecordSource`
