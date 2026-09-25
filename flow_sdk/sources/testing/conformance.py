@@ -18,6 +18,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.base import Source
+from flow_sdk.sources.families import MessageSource, ObjectSource, RecordSource
 from flow_sdk.sources.errors import InvalidCursor, NotFound, Unsupported
 from flow_sdk.sources.protocols import ByteStore, Drafting, Listable, Messaging, Mutable, Readable
 from flow_sdk.sources.values import (
@@ -28,6 +29,7 @@ from flow_sdk.sources.values import (
     FileItem,
     MessageData,
     MessageItem,
+    RecordData,
     UserProfile,
 )
 
@@ -197,6 +199,36 @@ async def a_handler_cannot_notify_its_own_source(subject: Subject) -> None:
 async def notify_rejects_anything_but_an_event(subject: Subject) -> None:
     async with subject.source() as s:
         await _expect(TypeError, s.notify({"kind": "upsert"}))  # type: ignore[arg-type]
+
+
+# ── the family: what the items ARE ─────────────────────────────────────────
+
+
+async def _first_page(subject: Subject) -> list:
+    """The first listed page, or nothing for a push-only source (its items never come from a listing)."""
+    async with await _closing(subject) as s:
+        if not isinstance(s, Listable):
+            return []
+        return list((await s.fetch()).items)
+
+
+@check(ObjectSource)
+async def a_file_source_lists_files(subject: Subject) -> None:
+    for item in await _first_page(subject):
+        assert isinstance(item.data, FileData), f"{type(item.data).__name__} is not a file"
+
+
+@check(RecordSource)
+async def a_record_source_lists_records_never_files(subject: Subject) -> None:
+    for item in await _first_page(subject):
+        assert isinstance(item.data, (RecordData, MessageData)), f"{type(item.data).__name__} is not a record"
+
+
+@check(MessageSource)
+async def a_message_source_lists_messages_and_can_answer(subject: Subject) -> None:
+    assert issubclass(type(subject.source()), Messaging), "a message source sends and replies"
+    for item in await _first_page(subject):
+        assert isinstance(item.data, MessageData), f"{type(item.data).__name__} is not a message"
 
 
 # ── Readable ───────────────────────────────────────────────────────────────

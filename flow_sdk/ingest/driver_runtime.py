@@ -30,6 +30,7 @@ from flow_sdk._compat import StrEnum
 from flow_sdk.capsules.atomic import atomic_write
 from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.sources.base import Source
+from flow_sdk.sources.families import MessageSource, ObjectSource
 from flow_sdk.sources.binding import Persona, SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import Credentials
@@ -322,8 +323,19 @@ class DriverRuntime:
 
     # ── traits the application reads ───────────────────────────────────────
     @property
+    def is_object(self) -> bool:
+        """A file source: its items are reflected onto disk, never kept as records."""
+        return issubclass(self.cls, ObjectSource)
+
+    @property
     def can_send(self) -> bool:
-        return issubclass(self.cls, Messaging) and callable(getattr(self.cls, "message_for", None))
+        """The one definition of a channel that answers: a message source that sends and knows how
+        the application's send arguments address it."""
+        return (
+            issubclass(self.cls, MessageSource)
+            and issubclass(self.cls, Messaging)
+            and callable(getattr(self.cls, "message_for", None))
+        )
 
     @property
     def has_setup(self) -> bool:
@@ -340,7 +352,7 @@ class DriverRuntime:
 
     @property
     def open_inbound(self) -> bool:
-        return self.cls.open_inbound
+        return issubclass(self.cls, MessageSource) and self.cls.open_inbound
 
     @property
     def identity_config_key(self) -> str:
@@ -356,21 +368,18 @@ class DriverRuntime:
 
     @property
     def stamps_identity(self) -> bool:
-        return self.cls.stamps_identity
-
-    @property
-    def reflects(self) -> bool:
-        return self.cls.reflects
+        """May reflection write our identity into this source's files. Only a file source has files."""
+        return not self.is_object or self.cls.stamps_identity
 
     def channel_for(self, row: Any) -> str:
         """The user-facing channel a row reaches; a file source has none."""
-        if self.cls.reflects:
+        if self.is_object:
             return ""
         return str(self.cls.origin_kind_for(getattr(row, "config", None) or {}) or "")
 
     def outbound_spec(self, row: Any) -> type["MessageSpec"]:
         """The spec class that knows WHO a reply on this channel is addressed to."""
-        declared = self.cls.outbound_spec()
+        declared = self.cls.outbound_spec() if issubclass(self.cls, MessageSource) else None
         if declared is not None:
             return declared
         from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
@@ -416,7 +425,7 @@ class DriverRuntime:
         """Where a REMOTE file source's bytes land: under this instance, not a project, so deleting
         the source can take its cache without touching anything a person wrote. ``None`` for a
         source with no remote bytes."""
-        if not self.cls.reflects or self.cls.local_tree_key:
+        if not self.is_object or self.cls.local_tree_key:
             return None
         override = (getattr(row, "config", None) or {}).get("cache_root")
         if override:
@@ -428,6 +437,8 @@ class DriverRuntime:
     def tree_root(self, row: Any) -> Optional[Path]:
         """The tree every ref of a reflecting source is relative to: the local tree the source reads
         in place, else its cache. ``None`` when the row does not name one yet."""
+        if not self.is_object:
+            return None
         key = self.cls.local_tree_key
         if not key:
             return self.cache_root(row)
@@ -437,7 +448,7 @@ class DriverRuntime:
     def origin_for(self, row: Any) -> Any:
         """The tree, as the origin a reflecting row is stamped with on save; ``None`` for a record
         source or a row that names no tree yet."""
-        if not self.cls.reflects:
+        if not self.is_object:
             return None
         root = self.tree_root(row)
         if root is None:
@@ -491,7 +502,7 @@ class DriverRuntime:
                     break
             # An idle traversal hands back no new resume point: the position it started from stands.
             carried = (resume or started_at) if cls.durable_cursor else None
-            if cls.reflects:
+            if self.is_object:
                 return await self._files(row, source, items, removed, moved, carried, dict(position.manifest), complete=complete)
             return self._records(row, items, carried, floor, moved_on=carried != started_at)
 

@@ -1,4 +1,4 @@
-"""DataSource — a configured remote system of record we sync from.
+"""DataSource — a configured source we sync from: files, records or messages (its driver's family).
 
 The filesystem indexer walks roots; this walks a remote API. One DataSource owns
 the relationship with one remote account or feed set: which driver, what it needs
@@ -998,7 +998,7 @@ class DataSource(Entity):
         the poller's case on every tick.
         """
         driver = self._driver()
-        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.reflects
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.is_object
         return stuck or not self.exist_in_db
 
     async def _spec(self) -> "Optional[object]":
@@ -1043,7 +1043,7 @@ class DataSource(Entity):
         source never pays a spec read on the poller's per-tick re-save.
         """
         driver = self._driver()
-        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.reflects
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.is_object
         if self.exist_in_db and not stuck:
             return
         modes = list(getattr(spec, "reflect", None) or []) if spec is not None else []
@@ -1060,7 +1060,7 @@ class DataSource(Entity):
         (`origin_for`), pure path arithmetic; a driver with no tree leaves it
         unset, and an unknown provider changes nothing."""
         driver = self._driver()
-        if driver is None or not driver.reflects:
+        if driver is None or not driver.is_object:
             return
         try:
             self.origin = driver.origin_for(self)

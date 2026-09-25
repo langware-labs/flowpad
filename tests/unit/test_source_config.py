@@ -9,8 +9,8 @@ from pydantic import Field, SecretStr, StringConstraints, ValidationError
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import DriverLoadError, check_config
 from flow_sdk.schema.data_spec.data_driver_spec import DataDriverSpec
-from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.families import RecordSource
 
 Url = Annotated[str, StringConstraints(pattern=r"^https?://")]
 
@@ -21,7 +21,7 @@ class _Config(SourceConfig):
     label: Optional[str] = None
 
 
-class _Source(Source):
+class _Source(RecordSource):
     provider = "config-test"
     Config = _Config
 

@@ -15,7 +15,7 @@ import pytest
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.ingest.health import SourceHealth
-from flow_sdk.sources.base import Source
+from flow_sdk.sources.families import RecordSource
 from flow_sdk.sources.protocols import Verdict
 
 pytestmark = [
@@ -25,7 +25,7 @@ pytestmark = [
 ]
 
 
-class _NeedsSetup(Source):
+class _NeedsSetup(RecordSource):
     provider = "needs-setup-test"
     verdict = Verdict(ready=False, detail="invite the bot", pending=("C1",))
 
@@ -33,7 +33,7 @@ class _NeedsSetup(Source):
         return type(self).verdict
 
 
-class _NoSetup(Source):
+class _NoSetup(RecordSource):
     provider = "no-setup-test"
 
 

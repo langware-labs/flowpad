@@ -26,10 +26,11 @@ from email.parser import BytesParser
 from email.utils import formatdate, getaddresses, make_msgid, parseaddr, parsedate_to_datetime
 from typing import Any, AsyncGenerator, ClassVar, Mapping, Optional
 
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
@@ -87,7 +88,7 @@ class GmailConfig(SourceConfig):
     smtp_host: str = ""
 
 
-class GmailSource(EmailAddressing, Source):
+class GmailSource(EmailAddressing, MessageSource):
 
     Config = GmailConfig
     provider = "gmail"

@@ -21,7 +21,7 @@ from __future__ import annotations
 import os
 from typing import Any, ClassVar, Optional
 
-from flow_sdk.sources.base import Source
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.call import IncomingCall
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -48,7 +48,7 @@ def person_profile(kind: str, account: str, address: str, name: str = "") -> Use
                        name=name or None, address=address)
 
 
-class VoiceChannel(Source):
+class VoiceChannel(MessageSource):
     """The shared half of a voice source. A driver subclasses it and adds its transport."""
 
     origin_kind: ClassVar[str] = VOICE

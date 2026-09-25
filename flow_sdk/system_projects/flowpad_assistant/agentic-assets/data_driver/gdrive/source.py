@@ -22,10 +22,11 @@ import httpx
 from pydantic import AwareDatetime
 
 from flow_sdk.sources import http
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, SourceError, SourceUnavailable
+from flow_sdk.sources.families import ObjectSource
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -98,11 +99,10 @@ class DriveConfig(SourceConfig):
     base_url: str = ""
 
 
-class DriveSource(Source):
+class DriveSource(ObjectSource):
 
     Config = DriveConfig
     provider = "gdrive"
-    reflects = True
     #: The change-log token is the only thing that says where the last traversal stopped.
     durable_cursor = True
     page_size = 100
