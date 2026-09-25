@@ -37,6 +37,7 @@ def _summary(spec) -> dict:
 async def credentials_action() -> ApiResponse:
     from flow_sdk.builtin.credential_service import (  # noqa: PLC0415
         CredentialError,
+        declare_credential,
         delete_credential,
         get_project,
         save_credential,
@@ -87,6 +88,9 @@ async def credentials_action() -> ApiResponse:
                     payload.get("name") or "", payload.get("values") or {},
                     project_id=payload.get("project_id"), environment=payload.get("environment"),
                 )
+                return ApiSuccessResponse(data=_summary(spec))
+            if sub_path == "declare":
+                spec = await declare_credential(payload.get("manifest") or {}, project_id=payload.get("project_id") or "")
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "delete":
                 return ApiSuccessResponse(data=await delete_credential(payload.get("typeid") or ""))

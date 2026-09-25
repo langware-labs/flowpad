@@ -106,7 +106,7 @@ class CredentialSpec(DataSpec):
     help_url: str = ""
     setup_wiki: str = ""
     #: How to obtain the values and store them, written for an AGENT to follow (markdown): where the
-    #: key is created, what to click, and the ``flow credentials set <name> VAR=…`` that stores it.
+    #: key is created, what to click, and the ``flow credentials set <name> --stdin`` it is piped into.
     #: Authoring requires it (``credential_service.save_credential``); a pack read from disk without
     #: it still loads — ``flow project setup`` reports it, and offers no AI setup for it.
     setup: str = ""

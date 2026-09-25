@@ -128,39 +128,22 @@ def _set(name: str, values: dict[str, str], project_id: Optional[str]) -> dict:
 
 
 def _declare(manifest: dict, project_id: Optional[str]) -> dict:
-    """Save ``manifest`` in the project scope — the cwd's project, minted when the folder has none.
-    A name the project already declares is updated in place, so declaring twice is declaring once."""
+    """Declare ``manifest`` in the project — the cwd's, minted when the folder has none."""
     port = discover_port(required=False)
     if port is not None:
         pid = project_id or project_for_path(port, os.getcwd(), create=True)
-        status = get_graph_json(f"{_url(port)}/status", params={"project_id": pid}, on_error=_refused) or {}
-        payload: dict[str, Any] = {"manifest": manifest, "scope": "project", "project_id": pid}
-        mine = status_row(status, str(manifest.get("name") or ""))
-        if mine is not None and mine.get("scope") == "project":
-            payload["typeid"] = mine["typeid"]
-        return post_graph_json(f"{_url(port)}/save", payload, on_error=_refused)
+        return post_graph_json(f"{_url(port)}/declare", {"manifest": manifest, "project_id": pid}, on_error=_refused)
 
     async def here() -> dict:
-        from flow_sdk.builtin.credential_service import CredentialError, save_credential  # noqa: PLC0415
-        from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+        from flow_sdk.builtin.credential_service import CredentialError, declare_credential  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd  # noqa: PLC0415
 
-        project = await _project(project_id)
-        if project is None and not project_id:
-            cwd = os.getcwd()
-            if not is_valid_project_cwd(cwd, include_temp=True):
-                fail(EXIT_INVALID_ARG, "INVALID_CWD", f"{cwd} cannot be a project folder; pass --project or cd into one")
-            canonical = canonical_posix_path(cwd)
-            project = await Project(name=os.path.basename(canonical.rstrip("/")) or canonical,
-                                    fs_storage_mount_path=canonical).save()
+        project = await (Project.get_by_id(project_id) if project_id else Project.recover_by_path(os.getcwd()))
         if project is None:
-            fail(EXIT_INVALID_ARG, "NO_PROJECT", f"no project {project_id}")
-        status = (await credentials_status(project)).model_dump(mode="json")
-        mine = status_row(status, str(manifest.get("name") or ""))
-        typeid = mine["typeid"] if mine is not None and mine.get("scope") == "project" else None
+            fail(EXIT_INVALID_ARG, "NO_PROJECT", f"no project {project_id}" if project_id
+                 else f"{os.getcwd()} cannot be a project folder; pass --project or cd into one")
         try:
-            spec = await save_credential(manifest=manifest, scope="project", project_id=str(project.id), typeid=typeid)
+            spec = await declare_credential(manifest, project_id=str(project.id))
         except CredentialError as e:
             fail(EXIT_NOT_YET, e.code or "REFUSED", str(e))
         return {"typeid": str(spec.typeid), "name": spec.name, "scope": spec.scope, "project_id": str(project.id)}
@@ -182,8 +165,7 @@ def declare_credential(
     if not isinstance(body, dict):
         fail(EXIT_INVALID_ARG, "INVALID_ARG", f"{manifest} is not a JSON object")
     saved = _declare(body, project)
-    ok({"name": saved.get("name"), "typeid": saved.get("typeid"), "scope": saved.get("scope"),
-        "project_id": saved.get("project_id")})
+    ok({key: saved.get(key) for key in ("name", "typeid", "scope", "project_id")})
 
 
 def _missing(row: Optional[dict]) -> list[str]:
@@ -208,7 +190,7 @@ def check_credential(
 
 def _stdin_pairs() -> list[str]:
     """``VAR=VALUE`` lines from stdin; blank lines and ``#`` comments skipped."""
-    return [line.strip() for line in sys.stdin.read().splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    return [line for line in map(str.strip, sys.stdin.read().splitlines()) if line and not line.startswith("#")]
 
 
 def _pairs(assignments: list[str]) -> dict[str, str]:

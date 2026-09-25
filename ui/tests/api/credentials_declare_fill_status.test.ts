@@ -142,8 +142,8 @@ describe('credentials: declare → flow project setup (AI rung) → status', () 
     expect(envFile).toMatchObject({ exists: true, blocked: false });
 
     const stored = readFileSync(path.join(mount, '.env.local'), 'utf-8');
-    const key = /^DEMO_API_KEY='?(demo_[0-9a-f]{32})'?$/m.exec(stored)?.[1];
-    expect(key, 'the AI rung stored a key on its pattern').toBeTruthy();
+    const key = /^DEMO_API_KEY='?([^'\n]*)'?$/m.exec(stored)?.[1] ?? '';
+    expect(key, 'the AI rung stored a key on its pattern').toMatch(new RegExp(manifest.vars.DEMO_API_KEY.pattern));
     expect(JSON.stringify(status)).not.toContain(key);
     expect(setup.out).not.toContain(key);
   }, 60_000);
