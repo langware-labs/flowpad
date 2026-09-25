@@ -225,8 +225,9 @@ def sentence_item(source, driver, call: IncomingCall, event: CallEvent):
         data=VoiceTurnData(
             text=event.text,
             call_id=call.call_id,
-            conversation=thread_origin(kind, account, call.caller, call.call_id),
+            conversation=thread_origin(kind, account, call.caller, call.conversation_key),
             sender=person_profile(kind, account, address, name),
+            recipients=(person_profile(kind, account, call.caller),) if ours else (),
             sent_at=datetime.now(timezone.utc),
             attachments=attachments,
         ),

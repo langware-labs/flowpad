@@ -8,9 +8,10 @@ any of them is the channel ``voice``, a thread per person, one message per sente
 
 * **Channel.** ``origin_kind = "voice"`` for every voice driver, the way two WhatsApp transports
   share ``whatsapp`` — a person's calls read as one kind of conversation whichever way they came in.
-* **Addressing.** A call IS the thread: ``<account>/calls`` scopes it and ``<person>/<call id>``
-  keys it, so each call is one conversation, start to end. A voice message outside any call (the
-  note a dial leaves before the call exists) is the person's own thread, keyed by their address.
+* **Addressing.** A call IS the thread: ``<account>/calls`` scopes it and ``<person>/<call>`` keys
+  it (``IncomingCall.conversation_key``: the dial's token for a call we placed — so the note the dial
+  leaves and the call are one conversation — else the call's id). A voice message outside any call is
+  the person's own thread, keyed by their address.
   A sentence lives in ``<account>/calls/<person>``. Replies quote nothing — speech has no quote.
 * **The key.** Calls run on ``OPENAI_API_KEY`` from the source's credential (``auth.env``: the
   project's store, then the process environment), else the key this machine stored for OpenAI.
@@ -136,8 +137,9 @@ class VoiceChannel(MessageSource):
 
         raise Unsupported(f"{type(self).__name__} cannot say anything outside a call")
 
-    def said(self, person: str, text: str, key: str, **extra: Any) -> MessageItem:
-        """What we said to ``person``, as the item ``send`` answers with."""
+    def said(self, person: str, text: str, key: str, *, call: str = "", **extra: Any) -> MessageItem:
+        """What we said to ``person`` — in the call ``call`` (its conversation key) when there is one —
+        as the item ``send`` answers with. Addressed to them, so the conversation knows who it is with."""
         from datetime import datetime, timezone  # noqa: PLC0415
 
         from flow_sdk.sources.values.call import VoiceTurnData  # noqa: PLC0415
@@ -145,7 +147,10 @@ class VoiceChannel(MessageSource):
         extra.setdefault("sent_at", datetime.now(timezone.utc))
         return MessageItem(
             origin=sentence_origin(self._scope.kind, self.account, person, key),
-            data=VoiceTurnData(text=text, conversation=self.thread(person), sender=self.ours(), **extra),
+            data=VoiceTurnData(
+                text=text, conversation=thread_origin(self._scope.kind, self.account, person, call), sender=self.ours(),
+                recipients=(person_profile(self._scope.kind, self.account, person),), **extra,
+            ),
         )
 
     def _person_of(self, data: MessageData) -> str:

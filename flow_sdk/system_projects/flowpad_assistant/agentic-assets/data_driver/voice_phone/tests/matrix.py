@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from contextlib import contextmanager
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, unquote
 from xml.sax.saxutils import unescape
 
 from pydantic import SecretStr
@@ -54,8 +54,10 @@ class Double:
         return {"to": self.sender, "brief": "Confirm tomorrow's delivery window."}
 
     def _carrier(self, path: str, headers: dict):
-        from urllib.parse import parse_qsl  # noqa: PLC0415
-
+        """Twilio: a number lookup (``verify``) lists the line's number; anything else is a dial, recorded."""
+        if "/IncomingPhoneNumbers.json" in path:
+            listed = [{"phone_number": NUMBER, "sid": "PN" + "0" * 32}] if NUMBER in unquote(path) else []
+            return 200, json.dumps({"incoming_phone_numbers": listed}).encode(), {"Content-Type": "application/json"}
         self.dials.append({"path": path, **dict(parse_qsl(str(headers.get("_body", ""))))})
         return 201, json.dumps({"sid": f"CA{len(self.dials):032d}", "status": "queued"}).encode(), {"Content-Type": "application/json"}
 
