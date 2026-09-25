@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from flow_sdk.cli.auth.cloud_login import _finalize_login
+from flow_sdk.cli.auth.cloud_login import _finalize_login, purge_outgoing_user_if_switching
 from flow_sdk.cli.auth.hub_login import validate_api_key_async
 from flow_sdk.cloud_client import ApiConfig
 from flow_sdk.cloud_client.api.auth import LoginData
@@ -30,10 +30,20 @@ def start_sandbox_login(sandbox_id: str) -> dict:
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
         _verifiers.clear()
         _verifiers[request_id] = (verifier, redirect_uri)
-        return hub + "/oauth/authorize?" + urlencode({
-            "client_id": CLIENT_ID, "response_type": "code", "redirect_uri": redirect_uri,
-            "state": request_id, "code_challenge": challenge, "code_challenge_method": "S256",
-        })
+        return (
+            hub
+            + "/oauth/authorize?"
+            + urlencode(
+                {
+                    "client_id": CLIENT_ID,
+                    "response_type": "code",
+                    "redirect_uri": redirect_uri,
+                    "state": request_id,
+                    "code_challenge": challenge,
+                    "code_challenge_method": "S256",
+                }
+            )
+        )
 
     session = state.start_cloud_login_session(authorize_url, get_instance_settings().cloud_login_timeout_seconds)
     return {"status": "started", "url": session["url"], "present_in_browser": True}
@@ -50,19 +60,35 @@ async def complete_sandbox_login(request_id: str, code: str) -> None:
     try:
         hub = ApiConfig.from_env().api_base_url.rstrip("/")
         async with httpx.AsyncClient() as client:
-            response = await client.post(hub + "/oauth/token", data={
-                "grant_type": "authorization_code", "client_id": CLIENT_ID,
-                "code": code, "code_verifier": verifier, "redirect_uri": redirect_uri,
-            })
+            response = await client.post(
+                hub + "/oauth/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": CLIENT_ID,
+                    "code": code,
+                    "code_verifier": verifier,
+                    "redirect_uri": redirect_uri,
+                },
+            )
             response.raise_for_status()
             payload = response.json()
         token = payload["access_token"]
         user = await validate_api_key_async(token)
+
+        # Same switch-detection `/auth/login_callback` runs (FLOWPAD-2151) —
+        # see `purge_outgoing_user_if_switching` for why this reclaim path
+        # needs its own call into it, not just a copy of the check.
+        await purge_outgoing_user_if_switching(user, caller="complete_sandbox_login")
+
         expires_in = payload.get("expires_in")
-        await _finalize_login(LoginData(
-            token=token, user=user, refresh_token=payload.get("refresh_token"),
-            expires=time.time() + float(expires_in) if expires_in is not None else None,
-        ))
+        await _finalize_login(
+            LoginData(
+                token=token,
+                user=user,
+                refresh_token=payload.get("refresh_token"),
+                expires=time.time() + float(expires_in) if expires_in is not None else None,
+            )
+        )
         state.finish_cloud_login_session(request_id, success=True)
     except Exception:
         state.finish_cloud_login_session(request_id, success=False, detail="Sandbox sign-in failed")

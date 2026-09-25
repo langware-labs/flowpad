@@ -30,10 +30,13 @@ from . import state
 # ── Load entities & actions BEFORE importing routes (resolves circular deps) ──
 _startup_times["before_build"] = time.time()
 
+from flow_sdk import boot_progress
 from flow_sdk.core.loaders import load_actions, load_entities
 
+boot_progress.set_phase("entities")
 load_entities()
 load_actions()
+boot_progress.set_phase("app")
 
 # Run the declarative type-info registrations (register_all) at import time so
 # per-type TypeInfo extras — icon/browseable/creatable authored in

@@ -6,6 +6,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { useCallback } from 'react';
+import { withHomePage } from '@src/project-home-page/home-page-state';
 
 export function canonicalPath(path: string): string {
   return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
@@ -73,7 +74,8 @@ export function useEnsureProject() {
       await target.setupForDesktop();
       if (options?.select === false) return target;
       await selectProjectContext(target);
-      navigation.openDock(DockPointer.forProject(target.id));
+      // Launching the project: land on its home page when it names one.
+      navigation.openDock(withHomePage(DockPointer.forProject(target.id)));
       return target;
     },
     [navigation],
@@ -93,7 +95,9 @@ export function useSelectExistingProject(): ProjectLanding {
   return useCallback(
     async (project: Project): Promise<void> => {
       await selectProjectContext(project);
-      navigation.openDock(DockPointer.forProject(project.id));
+      // Launching the project (a pick, or a shared project just set up): land
+      // on its home page when it names one.
+      navigation.openDock(withHomePage(DockPointer.forProject(project.id)));
     },
     [navigation],
   );

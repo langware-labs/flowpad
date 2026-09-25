@@ -1,3 +1,6 @@
+---
+id: 7b5426fe-5d37-412a-bf86-cb3fa211bfb3
+---
 # Deploy checklist — "Set up" Git must not report false success
 
 ## Scenario

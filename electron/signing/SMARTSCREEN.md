@@ -1,3 +1,6 @@
+---
+id: b8a6495b-ab2a-4729-ab6b-c9fb4c58545d
+---
 # SmartScreen investigation — separate from signing correctness
 
 Status (2026-09-07): **investigation only, no conclusion on root cause, no Windows test run
