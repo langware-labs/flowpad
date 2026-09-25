@@ -21,15 +21,14 @@ from flow_sdk.builtin.data_source import (
     prune_fileless_data_sources,
 )
 from flow_sdk.db.db_entity import DBEntity
-from flow_sdk.fs_store.orphan_removal import remove_orphan_row
 from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
-from flow_sdk.sources.base import Source
+from flow_sdk.sources.families import RecordSource
 from tests.fixtures.identity import index_path
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
-class _Mailbox(Source):
+class _Mailbox(RecordSource):
     provider = "asset-mailbox-test"
     identity_config_key = "address"
 

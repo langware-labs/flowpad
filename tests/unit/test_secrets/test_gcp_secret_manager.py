@@ -22,7 +22,7 @@ from flow_sdk.secrets import (
     StoreAccessDenied,
     StoreNeedsConnection,
 )
-from flow_sdk.sources.base import Source
+from flow_sdk.sources.families import RecordSource
 from tests.utils.fake_gcp_secret_manager import serving_gcp_store
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -217,7 +217,7 @@ async def test_another_http_failure_is_reported_as_is(gcp, monkeypatch):
 # ── with a DataSource ───────────────────────────────────────────────────────
 
 
-class _GcpKeyedSource(Source):
+class _GcpKeyedSource(RecordSource):
     provider = "gcp-keyed-test"
 
 

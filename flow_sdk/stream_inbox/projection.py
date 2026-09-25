@@ -364,8 +364,11 @@ def _origins(item, source, channel: str, key: str):
     # The connector's link when it gives one; otherwise the channel's own address
     # formula (the channel's source class says it), so "Open in Gmail" works for records
     # whose provider never supplied a URL. None when neither has one.
+    from flow_sdk.sources.families import MessageSource  # noqa: PLC0415
+
     channel_type = DataDriver.loaded(channel)
-    url = item.permalink or (channel_type.cls.permalink(item.external_id or "", key) if channel_type else "") or None
+    formula = channel_type.cls.permalink if channel_type and issubclass(channel_type.cls, MessageSource) else None
+    url = item.permalink or (formula(item.external_id or "", key) if formula else "") or None
     origin = _origin_of(item, source).model_copy(update={"url": url})
     origin_local = CloudOriginLocal(data_source_id=item.data_source_id or "", source_item_id=item.id or "")
     return origin, origin_local

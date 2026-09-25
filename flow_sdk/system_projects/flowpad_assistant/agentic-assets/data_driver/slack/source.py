@@ -25,10 +25,11 @@ from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, 
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import ChoiceEntry, SourceConfig
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -73,7 +74,7 @@ class SlackConfig(SourceConfig):
     base_url: str = ""
 
 
-class SlackSource(Source):
+class SlackSource(MessageSource):
 
     Config = SlackConfig
     provider = "slack"

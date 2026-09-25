@@ -26,7 +26,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Any, AsyncGenerator, ClassVar, Mapping, Optional, Protocol
 
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.email import EmailAddressing
@@ -39,6 +39,7 @@ from flow_sdk.sources.errors import (
     SourceUnavailable,
     Unsupported,
 )
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
@@ -95,7 +96,7 @@ class CloudEmailConfig(SourceConfig):
         return raw
 
 
-class CloudEmailSource(EmailAddressing, Source):
+class CloudEmailSource(EmailAddressing, MessageSource):
 
     Config = CloudEmailConfig
     provider = "cloud_email"

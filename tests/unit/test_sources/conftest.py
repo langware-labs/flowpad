@@ -5,15 +5,25 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
-from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.sources import CloudOrigin, FolderSource, MemoryMessages, MemorySource, MessageData, UserProfile
+from flow_sdk.sources import (
+    CloudOrigin,
+    FolderSource,
+    MemoryMessages,
+    MemorySource,
+    MessageData,
+    RecordData,
+    UserProfile,
+)
 from flow_sdk.sources.testing import Subject
 
 
-class IssueData(DataSpec):
+class IssueData(RecordData):
+    spec_kind: ClassVar[str] = "ingest.record.issue"
+
     title: str
     status: str = "open"
 

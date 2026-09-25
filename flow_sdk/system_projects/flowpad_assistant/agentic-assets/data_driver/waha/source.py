@@ -26,7 +26,6 @@ from typing import Annotated, Any, ClassVar, Mapping, Optional
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
-from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import Credentials
@@ -39,6 +38,7 @@ from flow_sdk.sources.errors import (
     SourceUnavailable,
     Unsupported,
 )
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
@@ -71,7 +71,7 @@ class WahaConfig(SourceConfig):
     allowed_senders: list[Annotated[str, StringConstraints(pattern=r"^([0-9]+|[^@\s]+@lid)$")]] = []
 
 
-class WahaSource(Source):
+class WahaSource(MessageSource):
 
     Config = WahaConfig
     provider = "waha"

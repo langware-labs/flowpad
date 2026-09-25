@@ -20,8 +20,8 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_runtime import DRIVERS
 from flow_sdk.sources import UserProfile
-from flow_sdk.sources.base import Source
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -56,7 +56,7 @@ class Script:
         self.pages.append(list(messages))
 
 
-class ScriptedSource(Source):
+class ScriptedSource(MessageSource):
     provider = "scripted"
     #: The script a registered subclass is built over — the engine builds a fresh source per session.
     script_of: ClassVar[Optional[Script]] = None

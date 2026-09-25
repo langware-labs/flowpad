@@ -15,19 +15,19 @@ from flow_sdk.ingest.credentials import resolve_credentials
 from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.data_driver_spec import CURRENT_SCHEMA, AuthSpec, DataDriverSpec
 from flow_sdk.secrets import SecretStore
-from flow_sdk.sources.base import Source
 from flow_sdk.sources.credentials import AuthShape
+from flow_sdk.sources.families import RecordSource
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 KEYED = AuthSpec(env=["KEYED_API_KEY"])
 
 
-class _KeyedSource(Source):
+class _KeyedSource(RecordSource):
     provider = "keyed-binding-test"
 
 
-class _DriveSource(Source):
+class _DriveSource(RecordSource):
     provider = "drive-binding-test"
 
 

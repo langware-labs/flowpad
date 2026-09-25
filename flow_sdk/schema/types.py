@@ -250,7 +250,7 @@ class EntityType(StrEnum):
     # message). Generic and discriminated by `kind`, NOT one type per provider
     # — the stream inbox projection has to be one queryable table.
     SOURCE_ITEM = "source_item"
-    # A configured remote system of record we sync from (flow_sdk/ingest).
+    # A configured source we sync from — files, records or messages (flow_sdk/ingest).
     DATA_SOURCE = "data_source"
     # One independently-checkpointed stream within a DataSource — a feed URL, a
     # channel. DB-only: written every poll, so it must never touch disk.

@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, ClassVar, Mapping, Optional
 
 from flow_sdk.sources import http
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import (
@@ -33,6 +33,7 @@ from flow_sdk.sources.errors import (
     SourceUnavailable,
     Unsupported,
 )
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
@@ -60,7 +61,7 @@ class TelegramConfig(SourceConfig):
     base_url: str = ""
 
 
-class TelegramSource(Source):
+class TelegramSource(MessageSource):
 
     Config = TelegramConfig
     provider = "telegram"

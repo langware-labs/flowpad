@@ -9,7 +9,7 @@ only — the sync runtime (``flow_sdk.ingest``), the stream inbox and the pipes 
 built on it, never dependencies of it. See ``docs/data-management/source-contract-boundary.md``.
 """
 
-from flow_sdk.sources.base import Altitude, CollectionSource, Source
+from flow_sdk.sources.base import Altitude, CollectionSource, Family, Source
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, Credentials
 from flow_sdk.sources.errors import (
@@ -22,6 +22,7 @@ from flow_sdk.sources.errors import (
     SourceUnavailable,
     Unsupported,
 )
+from flow_sdk.sources.families import MessageSource, ObjectSource, RecordSource
 from flow_sdk.sources.folder import FolderSource
 from flow_sdk.sources.memory import MemoryMessages, MemorySource, MemoryStore
 from flow_sdk.sources.protocols import (
@@ -84,6 +85,7 @@ __all__ = [
     "EmailMessageData",
     "FeedItemData",
     "EventKind",
+    "Family",
     "FileData",
     "FileDataPage",
     "FileItem",
@@ -97,17 +99,20 @@ __all__ = [
     "MessageData",
     "MessageItem",
     "MessageQuery",
+    "MessageSource",
     "Messaging",
     "Move",
     "Mutable",
     "NotFound",
     "ObjectQuery",
+    "ObjectSource",
     "OutcomeUnknown",
     "Payload",
     "RecordData",
     "RecordItem",
     "Readable",
     "RecordQuery",
+    "RecordSource",
     "Rejected",
     "Source",
     "SourceBinding",

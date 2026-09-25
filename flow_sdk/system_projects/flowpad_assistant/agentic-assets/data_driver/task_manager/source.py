@@ -25,8 +25,8 @@ from datetime import datetime, timezone
 from typing import Any, ClassVar, Optional
 
 from flow_sdk.builtin.source_item import MessageSpec
-from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -65,7 +65,7 @@ class TaskManagerConfig(SourceConfig):
     principal: str
 
 
-class TaskManagerSource(Source):
+class TaskManagerSource(MessageSource):
 
     Config = TaskManagerConfig
     provider = "task_manager"

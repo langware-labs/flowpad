@@ -144,8 +144,33 @@ def load_driver(folder: Path) -> "DataDriver":
         cls = driver_class(load_module(folder, digest=digest))
     if cls.provider != manifest.name:
         raise DriverLoadError(f"{cls.__name__}.provider is {cls.provider!r} but the manifest names {manifest.name!r}")
+    check_family(cls, manifest)
     check_config(cls, manifest)
     return DataDriver.for_class(cls, manifest, folder=folder, content_hash=digest, shipped=shipped)
+
+
+def check_family(cls: type[Source], manifest: DataDriverSpec) -> None:
+    """A driver extends one family, and its manifest's ``reflect`` modes are that family's.
+
+    The family is the class's base (``ObjectSource`` / ``RecordSource`` / ``MessageSource``). A file source
+    lands on disk, so its modes are filesystem modes; every other source lands as records, so ``record``.
+    """
+    from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode  # noqa: PLC0415
+    from flow_sdk.sources.base import Family  # noqa: PLC0415
+
+    family = getattr(cls, "family", None)
+    if family is None:
+        raise DriverLoadError(
+            f"{cls.__name__} extends Source directly: extend ObjectSource (files), RecordSource (records) "
+            "or MessageSource (messages) from flow_sdk.sources"
+        )
+    if any("reflects" in vars(base) for base in cls.__mro__):
+        raise DriverLoadError(f"{cls.__name__} sets `reflects`, which is gone: a file source extends ObjectSource")
+    modes = set(manifest.reflect)
+    if family is Family.OBJECT and ReflectMode.RECORD.value in modes:
+        raise DriverLoadError(f"{manifest.name}: a file source (ObjectSource) cannot offer reflect `record`; name its filesystem modes")
+    if family is not Family.OBJECT and modes != {ReflectMode.RECORD.value}:
+        raise DriverLoadError(f"{manifest.name}: a {family.value} source lands as records; its manifest `reflect` must be [\"record\"]")
 
 
 def check_config(cls: type[Source], manifest: DataDriverSpec) -> None:
