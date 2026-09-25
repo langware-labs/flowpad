@@ -13,6 +13,9 @@
  *
  * No React here: the parser is shared by the view and the address bar.
  */
+import { PageId, ViewType } from '@sdk';
+import type { NavigationActions } from '@src/navigation/NavigationActions';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 
 export const DRIVERS_SEGMENT = 'drivers';
 
@@ -29,4 +32,20 @@ export function parseDataSourcesPointer(pointer?: string | null): DataSourcesRou
   const [head, driver] = (pointer ?? '').split('/').filter(Boolean);
   if (head !== DRIVERS_SEGMENT) return { section: 'sources' };
   return { section: 'drivers', driver: driver ? decodeURIComponent(driver) : null };
+}
+
+/** The configured source's own file — `data_source.json` in its asset folder. */
+export const SOURCE_FILE = 'data_source.json';
+
+/** Open the drivers list, or one driver's page — both nested under the data sources.
+ *  Through `openPage`, not `DockPointer.forDataSources`: DockPointer imports this module. */
+export function openDriver(navigation: NavigationActions, driver: string | null = null): void {
+  navigation.openPage(PageId.DESK, ViewType.DATA_SOURCES, dataSourcesPointer({ section: 'drivers', driver }));
+}
+
+/** Open a configured source's `data_source.json` in the editor. False when the row names no folder. */
+export function openSourceFile(navigation: NavigationActions, assetRef: string | null | undefined): boolean {
+  if (!assetRef) return false;
+  navigation.openMachinePath(`${assetRef}/${SOURCE_FILE}`, LOCAL_COMPUTE_NODE);
+  return true;
 }
