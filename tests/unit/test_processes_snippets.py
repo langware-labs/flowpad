@@ -93,4 +93,4 @@ async def test_4_a_cv_in_is_a_cv_out(initialize_test_db, mock):
     assert answer.value.body == "# Dana Levi\n\nBackend engineer, 8 years."
     path = answer.value.body.path  # the page's comment: <record>/execution/output/body.md
     assert path.parts[-3:] == ("execution", "output", "body.md") and path.read_text() == answer.value.body
-    assert driver.received_prompts == ["Review and convert the input CV"]
+    assert driver.received_prompts == ["Review and improve the CV, save it with _reviewed"]

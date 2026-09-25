@@ -151,7 +151,7 @@ class CVSpec(DataSpec):
 
 cv = CVSpec(name="Dana Levi", email="dana@x.io", body=CV_TEXT)
 
-cv_reviewed = await AgenticProcess.run("Review and convert the input CV", input=cv, output_spec=CVSpec)
+cv_reviewed = await AgenticProcess.run("Review and improve the CV, save it with _reviewed", input=cv, output_spec=CVSpec)
 
 cv_reviewed.exit_code                            # ExitCode.OK
 cv_reviewed.text                                 # "Your CV was reviewed" — the agent's last message
