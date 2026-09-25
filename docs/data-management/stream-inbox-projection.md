@@ -48,6 +48,16 @@ overwritten. What a channel IS — chip, transport, attachments, sessions — is
 `Conversation.channel_spec` (`ChannelSpec`, `schema/data_spec/channel_spec.py`); surfaces
 read those traits and never test the channel's name or treat a missing channel as "ours".
 
+**A conversation knows who it is with and when it ran.** `stamp_conversation` stamps each placed
+message onto its `Conversation`: `started_at` is the earliest message's event time; `address` gains
+each other side's sender, and a conversation WE opened names its recipients from our first message
+(only while `address` is empty) — so `DataSource.start(to=, body=)` returns a conversation that
+`Conversation.send(body)` can continue before anyone answers (`resolve_reply_target` falls back to
+`address` when every message is ours). `ended_at` is set once: when a call's line goes down
+(`agent_calls`) and when `resolve_thread` retires a thread past its channel's timeout
+(`end_conversation`, stamped with the last message's time). The deployment timeline reads
+`ended_at`; it never matches message text.
+
 **The keys.** `channel` is `DataSource.channel`, falling back to `provider`
 for rows written before the field existed. `thread_key` is the driver's
 native handle (`SourceItem.thread_key` — Gmail `threadId`, Slack `thread_ts`)

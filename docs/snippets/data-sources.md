@@ -54,12 +54,13 @@ The config keys are the manifest's, one dict per provider:
 | `git`         | `repo: str`, `branch`                                                | `repo`                  | —                                       |
 | `agentmail`   | `inbox`, `base_url`                                                  | `inbox`                 | machine secret `ingest_api.agentmail`   |
 | `telegram`    | `base_url`                                                           | stamped from `getMe`    | `telegram` pack: `TELEGRAM_BOT_TOKEN`   |
-| `slack`       | `channel` (one id, or a picked `{id, name}`), `allowed_senders`      | `channel`               | the Slack connection                    |
+| `slack`       | `channel` (one id, or a picked `{id, name}`); `allowed_senders` moves onto the row | `channel`               | the Slack connection                    |
 | `gdrive`      | `drive` (empty = My Drive), `cache_root`, `base_url`                 | —                       | the Google connection                   |
 | `gcs`         | `bucket`, `project`, `prefix`, `cache_root`, `base_url`              | `bucket`                | the Google connection                   |
 | `gmail`       | `address`                                                            | `address`               | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`   |
 | `cloud_email` | `address` (`agent_id` is filled from the owner)                      | `agent_id`              | —                                       |
 | `agent`       | `connector`, `harness`, `mailbox`, `agent`, `subagent`, `max_items`  | `connector`             | the harness's own                       |
+| `voice_phone` | `number`, `project` (OpenAI `proj_…`), `voice`, `model`, `base_url`, `twilio_base_url` | `number`  | `OPENAI_API_KEY`, `OPENAI_WEBHOOK_SECRET`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` |
 
 Each driver declares its config as a typed `Config` in its `source.py`: `save()` of a new source
 validates it whole (`ValueError: config.feed_url is required`) and shapes what you typed (`"5"`
@@ -68,7 +69,9 @@ project may share — so it lives in the store the driver's `auth` names.
 
 ## 2. Reuse instead of duplicate
 
-A second source for the same account is a lookup, never a fresh row.
+A second source for the same account is a lookup, never a fresh row. `save()` does it for you — a
+new source for an account its owner already watches adopts that row — and the lookup is there when
+you want the row before deciding.
 
 ```python
 from flow_sdk.builtin.data_driver import DataDriver
