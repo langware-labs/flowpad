@@ -264,3 +264,10 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
         assert names(cache) == names(dest) == ["one.txt", "three.txt", "two.txt"]
         assert ns["outcome"].created == 0, "the report counts records; a file source shows in the tree"
         await ns["src"].delete()
+
+
+async def test_13_three_families():
+    """The family each shipped driver declares, and that only a message source answers."""
+    ns = await _section("13.")
+    assert ns["families"] == ("object", "record", "message")
+    assert ns["answers"] == (False, False, True)

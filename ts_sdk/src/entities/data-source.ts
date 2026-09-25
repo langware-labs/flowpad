@@ -1,5 +1,5 @@
 /**
- * DataSource — a configured remote system of record we sync from
+ * DataSource — a configured source we sync from: files, records or messages
  * (flow_sdk/builtin/data_source.py).
  *
  * NOT to be confused with `FlowDataSource` in `ts_sdk/src/flow_processing/` —

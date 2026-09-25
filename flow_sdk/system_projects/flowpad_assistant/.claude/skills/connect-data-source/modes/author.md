@@ -74,7 +74,7 @@ from typing import Annotated
 
 from pydantic import StringConstraints
 
-from flow_sdk.sources import CollectionSource, FeedItemData, SourceItemSpec
+from flow_sdk.sources import CollectionSource, FeedItemData, RecordSource, SourceItemSpec
 from flow_sdk.sources import http
 from flow_sdk.sources.config import SourceConfig
 
@@ -83,7 +83,7 @@ class WikiConfig(SourceConfig):
     base_url: Annotated[str, StringConstraints(pattern=r"^https?://")]   # required: no default
 
 
-class WikiSource(CollectionSource):
+class WikiSource(RecordSource, CollectionSource):   # the family first
     provider = "wiki"            # = the manifest's name
     Config = WikiConfig          # its fields = the manifest's config keys
     durable_cursor = False       # True only when the provider can resume from your cursor string
@@ -98,6 +98,18 @@ class WikiSource(CollectionSource):
     async def _lookup(self, key): ...
     def _item(self, key, raw) -> SourceItemSpec: ...
 ```
+
+**Pick the family first — it is what the items ARE, and the loader refuses a class that extends
+`Source` directly:**
+
+| Base | Items | Lands as | `reflect` in the manifest |
+| --- | --- | --- | --- |
+| `ObjectSource` | files (`FileItem`) — a folder, a bucket, a drive | files on disk, indexed as assets | `["none", "copy"]` (filesystem modes) |
+| `RecordSource` | records (`RecordData`, e.g. `FeedItemData`) — a feed, issues, rows | `SourceItem` rows, updated in place | omit it (`["record"]`) |
+| `MessageSource` | messages (`MessageData`) in conversations — mail, chat | `SourceItem`s threaded into the stream inbox | omit it (`["record"]`) |
+
+A `MessageSource` must also send (`send`/`reply` + `message_for`). One provider with two kinds of
+stream is two drivers (Jira: issues are records, their comments are messages).
 
 One source reads one stream: a config names ONE feed, channel, drive or prefix,
 and a person watching three adds three sources. Implement only the protocols the

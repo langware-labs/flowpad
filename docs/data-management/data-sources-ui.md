@@ -57,8 +57,9 @@ each `this.post('<action>')` → `dataManager.callAction(ActionInfo)` →
 Pause/resume is not an action: the card sets `status` to `'disabled'` or back to
 `'new'` and saves. "Connect" is the dialog's save; the config form is the
 spec's `config` map (`specFields(spec)` → `Object.entries(spec.config)`). There is no reflect verb in the UI — `reflect` is a
-`DataDriver` property (`ReflectMode`, `flow_sdk/ingest/reflect.py`) consumed
-by the ingest pipeline, not something the user triggers here.
+field on the source ROW (`DataSource.reflect`, one of its driver's manifest modes; `ReflectMode`,
+`flow_sdk/ingest/reflect.py`) consumed by the ingest pipeline, not something the user triggers here.
+The drivers page shows each driver's **Family** (`DataDriver.family`: files, records or messages).
 
 ## URL-first navigation
 
