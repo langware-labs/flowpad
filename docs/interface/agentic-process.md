@@ -55,7 +55,7 @@ Names + one-liners; no bodies.
 
 **Lifecycle**
 
-* `run(instruction, workdir=None, *, input=None, output_spec=None, **kw)` *(classmethod)* — one-shot create→start→send→wait→`PromptResult`→stop (see [call-returns](../snippets/call-returns.md) §5). Headless by default (`pty_mode=False`); `workdir` defaults to the caller's cwd. `input` (a DataSpec) is saved into `execution/input/`; `output_spec` (a DataSpec class or kind name) is the layout the agent writes into `execution/output/`, loaded back into `value` — an invalid output is `NOT_YET` ([processes](../snippets/processes.md) §4).
+* `run(instruction, workdir=None, *, input=None, output_spec=None, **kw)` *(classmethod)* — one-shot create→start→send→wait→`PromptResult`→stop (see [call-returns](../snippets/call-returns.md) §5). Headless by default (`pty_mode=False`); `workdir` defaults to the caller's cwd, where the agent works. `input` (a DataSpec) is saved into `execution/input/`; declaring `output_spec` (a DataSpec class or kind name) makes the agent write that layout into `execution/output/`, loaded back into `value` and registered as the run's Artifacts — an invalid output is `NOT_YET` ([processes](../snippets/processes.md) §4).
 
 * `resume(session_id, workdir=None, **kw)` *(classmethod)* — factory that pre-bakes `--resume <session_id>` cli\_config.
 

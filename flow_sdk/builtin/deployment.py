@@ -829,7 +829,6 @@ class Deployment(Entity):
             deployment_id=self.id,
             **options,
         )
-        _prepare_output_folder(process)
         return process
 
     async def launch(
@@ -846,11 +845,11 @@ class Deployment(Entity):
         turn is in flight); a disabled agent is REFUSED, a missing one NOT_FOUND.
         A caller that needs the process resolves it from ``executor``.
 
-        Typed folder I/O, the same contract as ``AgenticProcess.run`` (``process_io``): ``input`` — a
-        DataSpec saved into the run's input folder (checked against the agent's declared ``input``);
-        ``output_spec`` — the DataSpec the run must write (defaults to the agent's declared ``output``
-        when that names one). The output is read back into ``value`` only with ``wait=True``: without
-        it the turn has not finished.
+        The two modes of ``AgenticProcess.run`` (``process_io``): by default the agent works in its
+        workdir; ``output_spec`` (or the agent's declared ``output``, when that names a DataSpec)
+        declares an output folder it must write, read back into ``value`` — only with ``wait=True``,
+        since without it the turn has not finished. ``input`` is a DataSpec saved into the run's input
+        folder, checked against the agent's declared ``input``.
         """
         from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process.process_io import (  # noqa: PLC0415
@@ -986,16 +985,5 @@ class Deployment(Entity):
                 raise ValueError(f"{kind.value} observation requires a declared window")
         return value
 
-
-def _prepare_output_folder(process: "AgenticProcess") -> None:
-    """Give a non-flow run the same output convention a flow node gets.
-
-    The folder and the instruction live in ``process_io`` now — the one place a run's execution
-    folders are materialized and described (``AgenticProcess.run`` uses the same code). Best-effort:
-    a read-only disk must not fail the launch.
-    """
-    from flow_sdk.builtin.agentic_process.process_io import prepare_io  # noqa: PLC0415
-
-    prepare_io(process)
 
 __all__ = ["KIND_AGENT", "KIND_NODE", "KIND_WEB", "NODE_PROVIDERS", "Deployment"]

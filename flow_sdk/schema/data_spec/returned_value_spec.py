@@ -293,8 +293,8 @@ class PromptResult(ReturnedValue):
 
     #: The full reply, beside the declared ``value``.
     text: str = ""
-    #: The files an agentic run left in its output folder (``<record>/execution/output``), relative
-    #: to it. Empty for a model call, and for a run that produced nothing.
+    #: A declared-output run's files (``run(output_spec=…)``): what it left in its output folder
+    #: (``<record>/execution/output``), relative to it. Empty for a model call and a workdir-mode run.
     files: list[str] = []
 
 

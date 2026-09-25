@@ -982,17 +982,16 @@ class AgenticProcess(Entity):
         """One-shot: create → prepare → send → wait → answer → stop.
 
         Answers with a ``PromptResult`` — ``text`` is the agent's last message, ``executor`` the
-        process, ``files`` what it left in its output folder. An error or interrupted end is
-        ``NOT_YET``, never a raise — and so is a worker that never started.
+        process. An error or interrupted end is ``NOT_YET``, never a raise — and so is a worker that
+        never started.
 
-        Typed folder I/O (``process_io``):
-
-        * ``input`` — a DataSpec instance, saved into ``<record>/execution/input`` before the turn
-          and mounted for the worker.
-        * ``output_spec`` — a DataSpec class (or its kind name). The agent is told the exact layout
-          to write into ``<record>/execution/output``; after the turn it is loaded back into
-          ``value``. A missing or invalid output is ``NOT_YET`` with the reason in ``detail``. An
-          unknown kind name raises here, before anything starts.
+        Two modes (``process_io``). By default the agent works on top of its ``workdir``. With
+        ``output_spec`` — a DataSpec class or its kind name — the output is declared: the agent is told
+        the exact layout to write into ``<record>/execution/output``, it is loaded back into ``value``,
+        its files are listed in ``files`` and registered as the run's Artifacts. A missing or invalid
+        output is ``NOT_YET`` with the reason in ``detail``; an unknown kind name raises here, before
+        anything starts. Either mode takes ``input`` — a DataSpec saved into ``<record>/execution/input``
+        and mounted for the worker.
 
         ``workdir`` defaults to the caller's current directory (a project, when passed, supplies its own).
 

@@ -1,20 +1,22 @@
 """Typed folder I/O for one agentic run: a DataSpec in, a DataSpec out.
 
-A process already has an execution record — ``<record>/execution/{input,output,assets}``
-(``graph_workflow_manager.manager.execution_base``). This module gives a run the contract on top of it:
+A process works in one of two modes:
 
-* **input** — ``save(input, execution/input)`` before the turn: the input DataSpec as files the agent
-  can open (its json document, its ``Text``/``Binary`` fields as their own files). The folder is mounted
-  for the worker (``resolved_add_dirs``), not just named.
-* **output** — the agent is told where to write and in which layout (the exact files ``save`` would
-  write for ``output_spec``); after the turn ``load(output_spec, execution/output)`` reads it back.
-  A missing or invalid output is ``NOT_YET`` with the reason in ``detail`` — the rule every declared
-  output follows (``blocks._AgentRunner._output``, the ComputeOp runner) — and the agent's reply is kept.
-* **files** — whatever the run left in ``execution/output`` is listed on the answer and registered as
-  the run's Artifacts, so the runs UI shows it.
+* **workdir** (the default) — the agent works on top of its ``workdir``. Nothing about output folders
+  is said or read; the answer is the reply (``text``).
+* **declared output** — the caller declares ``output_spec``. The agent is told the exact layout to write
+  into ``<record>/execution/output`` (the files ``save`` writes for that DataSpec); after the turn
+  ``load(output_spec, execution/output)`` reads it back into ``value``. A missing or invalid output is
+  ``NOT_YET`` with the reason in ``detail`` — the rule every declared output follows
+  (``blocks._AgentRunner._output``, the ComputeOp runner) — and the reply is kept in ``text``. A valid
+  output's files are listed on the answer (``files``) and registered as the run's Artifacts: a declared
+  output is a product of the run, saved as an entity.
 
-The layout is the DataSpec's own (``schema/data_spec/io``), so the same class that declares the shape
-reads the result: ``CVSpec.load(folder)`` and ``answer.value`` are the same value.
+Either mode may take an ``input``: ``save(input, execution/input)`` before the turn, the folder mounted
+for the worker (``resolved_add_dirs``) and named in the instructions.
+
+The layout is the DataSpec's own (``schema/data_spec/io``), so the class that declares the shape reads the
+result: ``CVSpec.load(folder)`` and ``answer.value`` are the same value.
 """
 
 from __future__ import annotations
@@ -126,17 +128,13 @@ def _document_schema(spec: type) -> dict:
 
 
 def io_instructions(process: "AgenticProcess", *, has_input: bool, output_spec: Optional[type]) -> str:
-    """The lines a run is told about its folders. Plain runs get the output folder; typed runs get the
-    input folder and the exact output layout too."""
-    out = output_dir(process)
+    """What a run is told about its folders: the input folder when it has one, and — only when an output
+    is declared — where and in which exact layout to write it. A workdir-mode run is told nothing."""
     parts: list[str] = []
     if has_input:
         parts.append(f"Your input is in: `{input_dir(process)}/` (read it from there).")
-    parts.append(
-        f"Write any files you produce to: `{out}/`\n"
-        "Anything left there is collected as this run's output and shown in the UI."
-    )
     if output_spec is not None:
+        out = output_dir(process)
         schema = json.dumps(_document_schema(output_spec), separators=(",", ":"))
         parts.append(
             f"Your result MUST be a `{output_spec.__name__}` written into `{out}/` in exactly this layout:\n"
@@ -147,18 +145,13 @@ def io_instructions(process: "AgenticProcess", *, has_input: bool, output_spec: 
 
 
 def prepare_io(process: "AgenticProcess", *, input: Any = None, output_spec: Optional[type] = None) -> None:
-    """Materialize the run's folders and tell the agent about them. Before the turn.
+    """Materialize the run's input/output folders and tell the agent about them. Before the turn.
 
-    A plain run (no ``input``, no ``output_spec``) is best-effort: a read-only disk — or a process with
-    no record folder — must not fail a launch that only gets the output convention as a courtesy. A
-    typed run raises instead: the caller asked for that data, and would otherwise get a run that never
-    saw its input or never knew what to write.
+    Workdir mode (no ``input``, no ``output_spec``) touches nothing. Otherwise it raises on failure: the
+    caller asked for that data, and would otherwise get a run that never saw its input or never knew what
+    to write.
     """
     if input is None and output_spec is None:
-        try:
-            _prepare(process, input=None, output_spec=None)
-        except Exception:  # noqa: BLE001 — the courtesy must never cost the launch
-            logger.debug("prepare_io: output folder convention skipped", exc_info=True)
         return
     _prepare(process, input=input, output_spec=output_spec)
 
@@ -171,13 +164,14 @@ def _prepare(process: "AgenticProcess", *, input: Any, output_spec: Optional[typ
         if not isinstance(input, DataSpec):
             raise TypeError(f"input must be a DataSpec instance, not {type(input).__name__}")
         save(input, input_dir(process))
-    output_dir(process).mkdir(parents=True, exist_ok=True)
+    if output_spec is not None:
+        output_dir(process).mkdir(parents=True, exist_ok=True)
     context = dict(process.context_data or {})
     existing = str(context.get("instructions") or "").strip()
     previous = str(context.get(IO_BLOCK_KEY) or "")
     if previous and previous in existing:
-        # Called again (``create_process`` then ``launch``): the newer, more specific block replaces
-        # the older one instead of stacking two sets of folder instructions.
+        # Called again: the newer block replaces the older one instead of stacking two sets of folder
+        # instructions.
         existing = existing.replace(previous, "").strip()
     line = io_instructions(process, has_input=input is not None, output_spec=output_spec)
     context["instructions"] = "\n\n".join(p for p in (existing, line) if p)
@@ -219,14 +213,16 @@ async def register_outputs(process: "AgenticProcess", files: list[str]) -> None:
 
 
 async def finish_io(process: "AgenticProcess", answer: "PromptResult", output_spec: Optional[type]) -> "PromptResult":
-    """After the turn: list and register the outputs, then hold ``value`` to ``output_spec``."""
+    """After the turn, in declared-output mode: hold ``value`` to ``output_spec``, list the output files and
+    register them as the run's Artifacts. Workdir mode returns the answer as it is."""
     from flow_sdk.schema.data_spec.io import load  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
 
+    if output_spec is None:
+        return answer
     files = output_files(process)
     answer = answer.model_copy(update={"files": files})
-    await register_outputs(process, files)
-    if output_spec is None or not answer.ok:
+    if not answer.ok:
         return answer
     try:
         value = load(output_spec, output_dir(process))
@@ -236,6 +232,8 @@ async def finish_io(process: "AgenticProcess", answer: "PromptResult", output_sp
             "exit_code": ExitCode.NOT_YET,
             "detail": f"The output is not a valid {output_spec.__name__}: {reason}",
         })
+    # Only a valid declared output is a product of the run; a failed one is evidence, kept in ``files``.
+    await register_outputs(process, files)
     return answer.model_copy(update={"value": value})
 
 

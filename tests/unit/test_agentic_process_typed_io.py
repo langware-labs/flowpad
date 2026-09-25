@@ -169,27 +169,55 @@ async def test_an_unknown_kind_is_refused_before_anything_runs(initialize_test_d
 
 
 @pytest.mark.asyncio
-async def test_a_plain_run_still_lists_and_registers_what_it_wrote(initialize_test_db, mock, tmp_path):
+async def test_by_default_a_run_works_in_its_workdir(initialize_test_db, mock, tmp_path):
+    """Workdir mode: nothing is said about output folders, nothing is read back or registered."""
     from flow_sdk.builtin.artifact import Artifact
 
-    mock(lambda turn: (turn.write(turn.output_dir / "notes.md", "# notes"), "wrote notes")[1])
+    def notes(turn):
+        turn.write("notes.md", "# notes")                   # relative -> the workdir
+        return "wrote notes"
+
+    driver = mock(notes)
     answer = await AgenticProcess.run("Write notes", workdir=str(tmp_path))
-    assert answer.ok and answer.value is None and answer.files == ["notes.md"]
+    assert answer.ok and answer.value is None and answer.files == []
+    assert (tmp_path / "notes.md").read_text().endswith("# notes"), "workdir files are project content (indexed)"
+    assert "execution/output" not in driver.turns[0].instructions
+    assert await Artifact.get_all({"generated_by": answer.executor}) == []
+
+
+@pytest.mark.asyncio
+async def test_a_declared_output_is_registered_as_the_runs_artifacts(initialize_test_db, mock, tmp_path):
+    from flow_sdk.builtin.artifact import Artifact
+
+    mock(_review)
+    answer = await AgenticProcess.run("x", input=CV, output_spec=CVSpec, workdir=str(tmp_path))
     rows = await Artifact.get_all({"generated_by": answer.executor})
-    assert [r.name for r in rows] == ["notes.md"]
+    assert sorted(r.name for r in rows) == ["body.md", "cv.json"]
 
     proc = await AgenticProcess.get_by_typeid(answer.executor)
     await process_io.register_outputs(proc, answer.files)
-    assert len(await Artifact.get_all({"generated_by": answer.executor})) == 1, "a re-registration converges"
+    assert len(await Artifact.get_all({"generated_by": answer.executor})) == 2, "a re-registration converges"
+
+
+@pytest.mark.asyncio
+async def test_an_invalid_output_is_not_registered(initialize_test_db, mock, tmp_path):
+    from flow_sdk.builtin.artifact import Artifact
+
+    mock(lambda turn: (turn.write(turn.output_dir / "cv.json", "{not json"), "done")[1])
+    answer = await AgenticProcess.run("x", output_spec=CVSpec, workdir=str(tmp_path))
+    assert answer.exit_code is ExitCode.NOT_YET and answer.files == ["cv.json"], "kept as evidence"
+    assert await Artifact.get_all({"generated_by": answer.executor}) == []
 
 
 @pytest.mark.asyncio
 async def test_preparing_twice_replaces_the_folder_instructions(tmp_path):
     proc = AgenticProcess(workdir=str(tmp_path), pty_mode=False)
     process_io.prepare_io(proc)
+    assert "instructions" not in (proc.context_data or {}), "workdir mode says nothing"
+    process_io.prepare_io(proc, input=CV, output_spec=CVSpec)
     process_io.prepare_io(proc, input=CV, output_spec=CVSpec)
     told = proc.context_data["instructions"]
-    assert told.count("Write any files you produce to") == 1 and "Your input is in" in told
+    assert told.count("Your result MUST be") == 1 and told.count("Your input is in") == 1
 
 
 @pytest.mark.asyncio
