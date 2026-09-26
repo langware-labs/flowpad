@@ -37,9 +37,9 @@ from flow_sdk.schema.data_spec.project_setup_spec import (
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.credential import Credential
     from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.project import Project
-    from flow_sdk.builtin.credential import Credential
     from flow_sdk.schema.data_spec.credential_status_spec import CredentialStatusRowSpec
 
 #: The agent every AI rung runs — "reaches one ComputeOp goal after the cheap attempt failed".
@@ -102,9 +102,11 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
     from flow_sdk.builtin import credential_service  # noqa: PLC0415
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
-    from flow_sdk.builtin.readiness import requirements_of_source  # noqa: PLC0415
+    from flow_sdk.builtin.readiness import (
+        connection_of,  # noqa: PLC0415
+        requirements_of_source,  # noqa: PLC0415
+    )
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-    from flow_sdk.builtin.readiness import connection_of  # noqa: PLC0415
     from flow_sdk.schema.data_spec.requirement_spec import (  # noqa: PLC0415
         REQUIREMENT_CREDENTIAL,
         REQUIREMENT_VARIABLE,
@@ -195,15 +197,16 @@ def _ask_prompt(req: SetupRequirementSpec, var: SetupVarSpec, *, ai: bool) -> st
     return "\n".join(lines)
 
 
-def _ai_prompt(req: SetupRequirementSpec, project_id: str) -> str:
+def _ai_prompt(req: SetupRequirementSpec, project_id: str, target: tuple[str, ...] = ()) -> str:
     """The contract around the credential's own ``setup`` (which rides the op's ``setup``).
 
     The store command is the one the checks run — this interpreter's ``flow``, so it reaches the same
     install and instance — and it reads ``VAR=VALUE`` lines on stdin: a value on the command line is
     visible to every process on the box and lands in the agent's own transcript."""
-    store = _flow("credentials", "set", req.name, "--project", project_id, "--stdin", platform=sys.platform)
+    store = _flow("credentials", "set", req.name, "--project", project_id, *target, "--stdin", platform=sys.platform)
     return (
-        f"Set up the credential {req.title or req.name!r} ({req.name}) for this project, in development, "
+        f"Set up the credential {req.title or req.name!r} ({req.name}) for this project, "
+        f"{'in development' if not target else 'for deployment ' + target[-1]}, "
         "following the instructions below. Where they say `flow credentials set …`, use the command below.\n"
         f"Store the values by piping `VAR=VALUE` lines into:\n\n    {store}\n\n"
         "That command is the only place a value goes. Produce each value inside the pipe that feeds it "
@@ -214,10 +217,13 @@ def _ai_prompt(req: SetupRequirementSpec, project_id: str) -> str:
 
 
 def compile_setup(
-    project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True
+    project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True, deployment_id: str = ""
 ) -> tuple[WizardSpec, dict[str, ComputeOpSpec]]:
     """The wizard for ``requirements``, and the ops it calls by name. Every step continues on failure:
-    one credential nobody can provide must not stop the next one."""
+    one credential nobody can provide must not stop the next one. ``deployment_id``: store and check
+    each value where that deployment keeps it (default: this computer)."""
+    target = ("--deployment", deployment_id) if deployment_id else ()
+    where = f"deployment {deployment_id}" if deployment_id else "development"
     ops: dict[str, ComputeOpSpec] = {}
     steps: list[dict[str, Any]] = []
 
@@ -237,7 +243,7 @@ def compile_setup(
             })
         elif req.kind == REQUIREMENT_PACK:
             with_ai = ai and bool(req.setup.strip())
-            check = _cli("credentials", "check", req.name, "--project", project_id)
+            check = _cli("credentials", "check", req.name, "--project", project_id, *target)
             for var in req.missing:
                 add({
                     "name": f"ask-{req.name}-{var.env_var}", "label": f"{req.title or req.name}: {var.label or var.env_var}",
@@ -246,15 +252,15 @@ def compile_setup(
                 }, bind=input_name(req.name, var.env_var))
             add({
                 "name": f"store-{req.name}", "label": f"Store {req.title or req.name}",
-                "description": f"{req.name} has every value it needs in development.",
-                "subkind": "cli", "exe_data": _cli("credentials", "set", req.name, "--project", project_id, "--from-inputs"),
+                "description": f"{req.name} has every value it needs in {where}.",
+                "subkind": "cli", "exe_data": _cli("credentials", "set", req.name, "--project", project_id, *target, "--from-inputs"),
                 "completion_check": check,
             })
             if with_ai:
                 add({
                     "name": f"ai-{req.name}", "label": f"AI setup: {req.title or req.name}",
-                    "description": f"{req.name} has every value it needs in development.",
-                    "subkind": "agent", "exe_data": {"agent": AI_AGENT, "prompt": _ai_prompt(req, project_id)},
+                    "description": f"{req.name} has every value it needs in {where}.",
+                    "subkind": "agent", "exe_data": {"agent": AI_AGENT, "prompt": _ai_prompt(req, project_id, target)},
                     "setup": req.setup,
                     "completion_check": check,
                 })

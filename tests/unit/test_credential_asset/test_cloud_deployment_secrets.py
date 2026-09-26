@@ -124,3 +124,36 @@ async def test_an_oauth_need_on_a_cloud_deployment_needs_the_owners_authorizatio
     await deployment.authorize("slack", ["permission.slack.chat.write"])
     after = await readiness(agent, deployment)
     assert after.ready and after.items[0].status == "verified"
+
+
+async def test_flow_credentials_diff_then_use_mine_closes_the_gap(home, project, hub, run_flow):
+    agent = await _agent(project)
+    await _stripe_here(project)
+    deployment = str((await agent.plan_deployment("production")).id)
+    diff = ("credentials", "diff", "here", deployment, "--project", str(project.id))
+
+    before = json.loads((await run_flow(*diff)).stdout)
+    copied = await run_flow("credentials", "use-mine", deployment, "--name", "STRIPE_KEY")
+    after = json.loads((await run_flow(*diff)).stdout)
+
+    assert [r["name"] for r in before["differ"]] == ["STRIPE_KEY"]
+    assert before["differ"][0][deployment]["store"] == "hub"
+    assert copied.exit_code == 0 and json.loads(copied.stdout)["copied"] == ["STRIPE_KEY"]
+    assert VALUE not in copied.stdout + json.dumps(before) + json.dumps(after)
+    assert after["differ"] == []
+
+
+async def test_flow_credentials_check_and_set_take_a_deployment(home, project, hub, run_flow):
+    agent = await _agent(project)
+    await _stripe_here(project)
+    deployment = str((await agent.plan_deployment("production")).id)
+    check = ("credentials", "check", "stripe", "--project", str(project.id), "--deployment", deployment)
+
+    missing = await run_flow(*check)
+    set_ = await run_flow("credentials", "set", "stripe", "--stdin", "--project", str(project.id),
+                          "--deployment", deployment, input=f"STRIPE_KEY={VALUE}\n")
+    ready = await run_flow(*check)
+
+    assert (missing.exit_code, ready.exit_code) == (1, 0), (missing.stdout, set_.stdout, ready.stdout)
+    assert hub.values[deployment] == {"STRIPE_KEY": VALUE}
+    assert VALUE not in set_.stdout
