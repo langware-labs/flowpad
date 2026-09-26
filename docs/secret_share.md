@@ -48,7 +48,7 @@ variable and a deployment become a store config):
 | `env_file` (default) | `<scope root>/.env.local` | `<scope root>/.env.production.local` |
 | `vault` | `credential.project.<pid>.VAR` / `credential.user.VAR` | `credential.production.project.<pid>.VAR` |
 
-A remote store (GCP Secret Manager) is used as configured. A credential that
+A remote store (GCP Secret Manager, the hub store below) is used as configured. A credential that
 names an `lm_provider` is one key, always the vault entry `lm_api.<provider>`
 that the funding resolver reads, user-scoped, with no per-environment value
 (deployments are hub-funded). A project's vault entry never answers for another
@@ -86,6 +86,51 @@ a source syncing on a production box reads production values. A named
 environment's env file is read with `dotenv_values`, never loaded into the
 backend's own environment.
 
+## A cloud deployment — the hub store, placement, authorization
+
+A cloud deployment keeps its values in the **hub store** (`flow_sdk/secrets/hub.py`,
+store type `hub`, config `{deployment_id}`): the confidential env vars of the hub's
+Deployment row, values in the hub's SOD (`deployment_<VAR>_<id>`). A laptop writes and
+lists them by name and never reads one back (`load` returns nothing). Planning a cloud
+placement gives it that store (`Agent.plan_deployment(environment)` →
+`POST agent/<id>/plan_deployment`: the hub's row, found or created with no machine yet,
+adopted here). Every write, delete, placement and token handed out is audited on the hub
+(`SecretEvent`: who, which deployment, which name, when — never a value).
+
+**Use mine** (`credential_service.use_mine`, `POST …/credentials/use-mine`,
+`flow credentials use-mine <deployment> [--name VAR]`) copies this computer's values into
+a deployment's store — by default what its agent needs and the store lacks. Values move
+machine → hub and are never shown; the answer is names: `copied`, `not_here` (this
+computer has none either) and `hub_funded` (an `lm_provider` key is never copied — a
+deployment is hub-funded). A `protected` deployment refuses: its values are entered
+directly.
+
+**Placement** — the hub puts the store's values on the deployment's machine
+(`hub app/services/deployment_secrets.place_secrets`) with the compute-node tools: the box
+hands out a private drop folder (`POST credentials/drop`, 0700), the hub writes one JSON
+file there with the provider's file API, and `POST credentials/place` reads it, deletes it
+at once and writes the values where that machine's own lookup reads them
+(`credential_service.place_values`: one write per store, 0600, git-excluded). A value never
+rides a box call's body — that is a curl argument. The machine IS the deployment: it places
+at its row for the deployment's id, else its own placement, always in the environment the
+hub sends, which becomes the instance default; a name nothing on the machine declares is
+declared from its shipped template (else a bare credential) under the name the agent's
+requirements give it. The hub places on deploy, redeploy, update and resume, and re-places
+one name when it is written while the machine runs; it wipes (`credentials/unplace`) before a
+user pause and on a store delete. An automatic pause on the provider's idle timeout cannot be
+intercepted — its snapshot keeps the file until the machine is destroyed. The agent itself
+(a model with a shell) can read what is placed; only what its store holds is placed.
+
+**Authorization** — a cloud machine uses a person's OAuth connection only if its owner
+authorized that provider for THAT deployment (`Deployment.authorize(provider, permissions)`,
+`revoke(provider)`; hub `DeploymentAuthorization`). The machine then asks the hub for a
+fresh token as its node identity (`GET compute_node/<id>/connection-token/<name>`, answered
+only for the key bound to that machine and only while authorized; `hub_oauth` does this on
+a box); the refresh token never leaves the hub, nothing is cached on the machine, and
+deleting the deployment revokes every authorization. `Deployment.secrets_inventory()`
+(`GET deployment/<id>/secrets`) lists each stored name with its last write and placement and
+the authorizations — names only; the cloud place's **Secrets** tab shows it.
+
 ## Resolution — what a process receives
 
 `flow_sdk/builtin/credential_resolver.py`:
@@ -117,6 +162,8 @@ Call sites: worker spawn (`apply_worker_secret_env`), terminals
 | `POST values` | set or rotate the values a deployment reads; empty values are skipped |
 | `POST delete` | delete the credential's values from every store any known deployment keeps them in — vault entries and `.env*` lines — then the folder; the result reports each store (`CredentialDeletedSpec`) |
 | `POST audit` | the leftover sweep over this instance's stores (`credential_sweep.sweep_local`) — names only |
+| `POST use-mine` | copy this computer's values into a deployment's store (above) — names only |
+| `POST drop` / `place` / `unplace` | on a deployment's machine, for the hub only: the drop folder, placing a dropped values file, wiping names |
 
 Every entry point uses `save`: Connections → Add connection (catalogue templates
 and **Custom credentials**), packing detected `.env.local` keys into one credential,
@@ -140,7 +187,9 @@ behind every confidential env var of the entity (an API key under the entity, an
 OAuth token under the caller's copy; a ref row is someone's own secret and stays),
 so an Agent's delete — its mailbox decommissioned first, its deployments and their
 machines through the `is_child` cascade — and a Project's delete leave no stored
-secret. A pause keeps everything.
+secret. A pause keeps the store (and wipes the machine, above). A cloud deployment's store is
+reached by a credential's delete like any other: its local row names the hub store, whose
+`forget` deletes each env var on the hub. Deleting the deployment revokes its authorizations.
 
 **The leftover sweep** — `flow credentials audit --project … --agent … --deployment …
 --name … [--root DIR] [--hub-root HUB_CHECKOUT] [--e2b]` (`builtin/credential_sweep.py`)
@@ -170,7 +219,18 @@ permissions, each MCP server's `${VAR}`, and anything authored — written into
 (`GET agent/<id>/readiness?deployment_id=`) answers per requirement at one
 deployment: `verified` (an OAuth grant holding the mapped scopes), `declared` (a
 value present — what a key allows cannot be checked) or `missing`, with the one
-fix. `flow project setup` folds the same per-source derivation.
+fix as a sentence and as a `remedy` a screen acts on (`use_mine`, `authorize`). At a cloud
+deployment a value counts only in its store, and a connection only when authorized for it.
+`flow project setup` folds the same per-source derivation (`--deployment` sets up a
+deployment's values).
+
+Readiness **gates a cloud deploy**: `Agent.deploy_to_cloud` publishes, plans the
+placement, and raises `NotReady` (HTTP 409, `code: not_ready`, with the readiness and the
+planned deployment) before any machine is paid for; the hub checks the same names again
+(`require`). The deploy dialog renders that refusal with Use mine / Authorize per item.
+`flow agent deploy <agent> [--environment E]` exits 1 on it; `flow credentials check|set|status
+--deployment D` and `flow credentials diff <A|here> <B|here>` (which names each holds) work on
+one deployment's values.
 
 ## Status vocabulary
 
